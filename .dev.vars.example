@@ -1,0 +1,16 @@
+# Cloudflare Pages Functions environment variables
+# Copy this to .dev.vars and fill in real values for local development
+# In production, set these in Cloudflare Dashboard → Pages → Settings → Environment Variables
+
+# Supabase
+SUPABASE_URL=https://glsmljpabrwonfiltiqm.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+# Twilio (fill in after account setup)
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your-auth-token-here
+TWILIO_PHONE_NUMBER=+18015551234
+TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Pages URL (auto-set in production, manual for local)
+PAGES_URL=http://localhost:5173
