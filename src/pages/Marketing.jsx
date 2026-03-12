@@ -7,7 +7,7 @@ export default function Marketing() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('campaigns', 'order=created_at.desc&select=id,name,type,status,audience_size,sent_count,response_count,created_at&limit=50')
+    db.select('campaigns', 'order=created_at.desc&select=id,name,campaign_type,status,audience_count,total_sent,total_delivered,total_replied,created_at&limit=50')
       .then(setCampaigns)
       .catch(() => setCampaigns([]))
       .finally(() => setLoading(false));
@@ -34,15 +34,16 @@ export default function Marketing() {
             </div>
           ) : (
             <table>
-              <thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th>Sent</th><th>Responses</th><th>Created</th></tr></thead>
+              <thead><tr><th>Campaign</th><th>Type</th><th>Status</th><th>Sent</th><th>Delivered</th><th>Replies</th><th>Created</th></tr></thead>
               <tbody>
                 {campaigns.map(c => (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 600 }}>{c.name}</td>
-                    <td>{c.type || '—'}</td>
+                    <td>{c.campaign_type || '—'}</td>
                     <td><span className={`status-badge status-${c.status === 'sent' ? 'resolved' : c.status === 'draft' ? 'waiting' : 'active'}`}>{c.status}</span></td>
-                    <td>{c.sent_count ?? '—'}</td>
-                    <td>{c.response_count ?? '—'}</td>
+                    <td>{c.total_sent ?? '—'}</td>
+                    <td>{c.total_delivered ?? '—'}</td>
+                    <td>{c.total_replied ?? '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>{new Date(c.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}

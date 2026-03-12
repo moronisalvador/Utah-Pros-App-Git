@@ -3,13 +3,13 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function Schedule() {
   const { db } = useAuth();
-  const [schedules, setSchedules] = useState([]);
+  const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('job_schedules', 'order=scheduled_date.asc&select=id,job_id,employee_id,scheduled_date,start_time,end_time,notes&limit=50')
-      .then(setSchedules)
-      .catch(() => setSchedules([]))
+    db.select('schedule_blocks', 'order=block_date.asc,start_time.asc&select=id,employee_id,job_id,title,block_date,start_time,end_time,all_day,block_type,notes&limit=50')
+      .then(setBlocks)
+      .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
   }, [db]);
 
@@ -24,23 +24,25 @@ export default function Schedule() {
 
       <div className="card">
         <div className="card-body">
-          {schedules.length === 0 ? (
+          {blocks.length === 0 ? (
             <div className="empty-state">
-              <p className="empty-state-title">No schedules yet</p>
+              <p className="empty-state-title">No schedule blocks yet</p>
               <p className="empty-state-text">Calendar view and drag-to-schedule coming in the next build phase.</p>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Time</th><th>Notes</th></tr>
+                  <tr><th>Date</th><th>Title</th><th>Time</th><th>Type</th><th>Notes</th></tr>
                 </thead>
                 <tbody>
-                  {schedules.map(s => (
-                    <tr key={s.id}>
-                      <td style={{ fontWeight: 600 }}>{s.scheduled_date}</td>
-                      <td>{s.start_time || '—'} — {s.end_time || '—'}</td>
-                      <td style={{ color: 'var(--text-tertiary)' }}>{s.notes || '—'}</td>
+                  {blocks.map(b => (
+                    <tr key={b.id}>
+                      <td style={{ fontWeight: 600 }}>{b.block_date}</td>
+                      <td>{b.title || '—'}</td>
+                      <td>{b.all_day ? 'All day' : `${b.start_time || '—'} — ${b.end_time || '—'}`}</td>
+                      <td>{b.block_type || '—'}</td>
+                      <td style={{ color: 'var(--text-tertiary)' }}>{b.notes || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -6,7 +6,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     activeJobs: 0,
     needsResponse: 0,
-    todayScheduled: 0,
+    totalContacts: 0,
     openLeads: 0,
   });
   const [recentJobs, setRecentJobs] = useState([]);
@@ -18,18 +18,20 @@ export default function Dashboard() {
 
   const loadDashboard = async () => {
     try {
-      const [jobs, conversations, leads] = await Promise.all([
-        db.select('jobs', 'select=id,title,status,client_name,created_at&order=created_at.desc&limit=10'),
-        db.select('conversations', 'select=id,status&status=eq.needs_response'),
-        db.select('contacts', 'select=id&role=eq.lead'),
+      const [jobs, conversations, contacts] = await Promise.all([
+        db.select('jobs', 'select=id,job_number,insured_name,phase,division,source,created_at&order=created_at.desc&limit=10'),
+        db.select('conversations', 'select=id,status&status=eq.needs_response').catch(() => []),
+        db.select('contacts', 'select=id,role').catch(() => []),
       ]);
 
-      const activeJobs = jobs.filter(j => j.status !== 'completed' && j.status !== 'cancelled');
+      const terminalPhases = ['completed', 'closed', 'cancelled'];
+      const activeJobs = jobs.filter(j => !terminalPhases.includes(j.phase));
+      const leads = contacts.filter(c => c.role === 'lead');
 
       setStats({
         activeJobs: activeJobs.length,
         needsResponse: conversations.length,
-        todayScheduled: 0, // TODO: wire to schedule table
+        totalContacts: contacts.length,
         openLeads: leads.length,
       });
 
@@ -57,7 +59,7 @@ export default function Dashboard() {
       <div className="stats-grid">
         <StatCard label="Active Jobs" value={stats.activeJobs} />
         <StatCard label="Needs Response" value={stats.needsResponse} alert={stats.needsResponse > 0} />
-        <StatCard label="Scheduled Today" value={stats.todayScheduled} />
+        <StatCard label="Total Contacts" value={stats.totalContacts} />
         <StatCard label="Open Leads" value={stats.openLeads} />
       </div>
 
@@ -75,22 +77,24 @@ export default function Dashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Job</th>
+                  <th>Job #</th>
                   <th>Client</th>
-                  <th>Status</th>
+                  <th>Phase</th>
+                  <th>Division</th>
                   <th>Created</th>
                 </tr>
               </thead>
               <tbody>
                 {recentJobs.map(job => (
                   <tr key={job.id}>
-                    <td style={{ fontWeight: 600 }}>{job.title || `Job #${job.id.slice(0, 8)}`}</td>
-                    <td>{job.client_name || '—'}</td>
+                    <td style={{ fontWeight: 600 }}>{job.job_number || '—'}</td>
+                    <td>{job.insured_name || '—'}</td>
                     <td>
-                      <span className={`status-badge status-${statusClass(job.status)}`}>
-                        {job.status?.replace(/_/g, ' ') || 'unknown'}
+                      <span className={`status-badge status-${phaseClass(job.phase)}`}>
+                        {job.phase || 'unknown'}
                       </span>
                     </td>
+                    <td>{job.division || '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(job.created_at).toLocaleDateString()}
                     </td>
@@ -116,10 +120,10 @@ function StatCard({ label, value, alert }) {
   );
 }
 
-function statusClass(status) {
-  if (!status) return 'active';
-  if (status.includes('complete') || status.includes('closed')) return 'resolved';
-  if (status.includes('pending') || status.includes('waiting')) return 'waiting';
-  if (status.includes('need') || status.includes('urgent')) return 'needs-response';
+function phaseClass(phase) {
+  if (!phase) return 'active';
+  if (['completed', 'closed'].includes(phase)) return 'resolved';
+  if (['on_hold', 'cancelled'].includes(phase)) return 'waiting';
+  if (['lead', 'emergency'].includes(phase)) return 'needs-response';
   return 'active';
 }

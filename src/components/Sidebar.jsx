@@ -16,13 +16,13 @@ const NAV_ITEMS = [
 
   { section: 'Operations' },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
-  { key: 'time-tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
+  { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
 
   { section: 'Growth' },
   { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing },
 
   { section: 'System' },
-  { key: 'admin', label: 'Admin', path: '/admin', icon: IconAdmin },
+  { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
   { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings },
 ];
 

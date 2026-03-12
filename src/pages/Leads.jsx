@@ -7,7 +7,7 @@ export default function Leads() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('contacts', 'role=eq.lead&order=created_at.desc&select=id,name,phone,email,source,created_at')
+    db.select('contacts', 'role=eq.lead&order=created_at.desc&select=id,name,phone,email,opt_in_source,created_at')
       .then(setLeads)
       .catch(err => console.error('Leads load error:', err))
       .finally(() => setLoading(false));
@@ -49,7 +49,7 @@ export default function Leads() {
                     <td style={{ fontWeight: 600 }}>{lead.name || 'Unknown'}</td>
                     <td>{lead.phone || '—'}</td>
                     <td>{lead.email || '—'}</td>
-                    <td>{lead.source || '—'}</td>
+                    <td>{lead.opt_in_source || '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>{new Date(lead.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}

@@ -7,7 +7,7 @@ export default function TimeTracking() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('time_entries', 'order=clock_in.desc&select=id,employee_id,job_id,clock_in,clock_out,hours,notes&limit=50')
+    db.select('job_time_entries', 'order=clock_in.desc.nullslast&select=id,employee_id,job_id,clock_in,clock_out,hours,work_type,notes&limit=50')
       .then(setEntries)
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));

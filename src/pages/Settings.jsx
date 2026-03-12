@@ -7,7 +7,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('message_templates', 'order=name.asc&select=id,name,body,category,is_active')
+    db.select('message_templates', 'order=title.asc&select=id,title,body,category,is_active')
       .then(setTemplates)
       .catch(() => setTemplates([]))
       .finally(() => setLoading(false));
@@ -67,7 +67,7 @@ export default function Settings() {
               <tbody>
                 {templates.map(t => (
                   <tr key={t.id}>
-                    <td style={{ fontWeight: 600 }}>{t.name}</td>
+                    <td style={{ fontWeight: 600 }}>{t.title}</td>
                     <td>{t.category || '—'}</td>
                     <td style={{ color: 'var(--text-tertiary)', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.body}</td>
                     <td>{t.is_active ? 'Yes' : 'No'}</td>

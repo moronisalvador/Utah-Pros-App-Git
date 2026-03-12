@@ -81,7 +81,7 @@ export function AuthProvider({ children }) {
     try {
       const perms = await db.select(
         'nav_permissions',
-        `role=eq.${encodeURIComponent(role)}&is_visible=eq.true&select=nav_item,can_access`
+        `role=eq.${encodeURIComponent(role)}&can_view=eq.true&select=nav_key,can_view,can_edit`
       );
       setPermissions(perms);
     } catch (err) {
@@ -146,14 +146,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Permission check helper ──
-  const canAccess = useCallback((navItem) => {
+  const canAccess = useCallback((navKey) => {
     if (!employee) return false;
     // Admins see everything
-    if (employee.role === 'admin' || employee.role === 'owner') return true;
+    if (employee.role === 'admin' || employee.role === 'project_manager') return true;
     // Check permissions table
     if (permissions.length === 0) return true; // No permissions loaded = show all (fallback)
-    const perm = permissions.find(p => p.nav_item === navItem);
-    return perm ? perm.can_access : false;
+    const perm = permissions.find(p => p.nav_key === navKey);
+    return perm ? perm.can_view : false;
   }, [employee, permissions]);
 
   const value = {
