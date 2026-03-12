@@ -310,3 +310,124 @@ tr:hover td { background: var(--bg-secondary); }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--border-color); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-page { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 300px; }
+
+/* ═══ Jobs Page ═══ */
+.jobs-page {
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  padding: var(--space-6); padding-bottom: 0;
+}
+
+.jobs-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--space-4); flex-shrink: 0;
+}
+
+.jobs-filters {
+  display: flex; gap: var(--space-3); margin-bottom: var(--space-4); flex-shrink: 0;
+  flex-wrap: wrap; align-items: center;
+}
+
+.jobs-search-wrap {
+  position: relative; flex: 1; min-width: 200px; max-width: 320px;
+}
+
+.jobs-search {
+  padding-left: 32px !important; height: 34px;
+}
+
+.jobs-filter-select {
+  width: auto; min-width: 140px; height: 34px;
+}
+
+/* Division badges */
+.division-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 4px;
+  font-size: var(--text-xs); font-weight: 600; text-transform: capitalize;
+}
+.division-badge[data-division="water"] { background: #dbeafe; color: #1e40af; }
+.division-badge[data-division="mold"] { background: #fce7f3; color: #9d174d; }
+.division-badge[data-division="reconstruction"] { background: #fef3c7; color: #92400e; }
+.division-badge[data-division="contents"] { background: #d1fae5; color: #065f46; }
+
+/* Pipeline phase-move dropdown on cards */
+.pipeline-phase-select {
+  font-size: 10px; padding: 1px 4px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); background: var(--bg-secondary);
+  color: var(--text-tertiary); cursor: pointer; font-family: inherit;
+  max-width: 80px;
+}
+.pipeline-phase-select:hover { border-color: var(--accent); color: var(--text-primary); }
+.pipeline-phase-select:focus { outline: none; border-color: var(--accent); }
+
+/* Job flags */
+.job-flag {
+  display: inline-block; padding: 0 5px; border-radius: 3px;
+  font-size: var(--text-xs); font-weight: 700; line-height: 1.6;
+}
+.flag-red { background: #fef2f2; color: #dc2626; }
+.flag-yellow { background: #fffbeb; color: #d97706; }
+
+/* ═══ Job Detail Panel ═══ */
+.job-detail-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.3); z-index: 100;
+  display: flex; justify-content: flex-end;
+  animation: fadeIn 150ms ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.job-detail-panel {
+  width: 420px; max-width: 90vw; height: 100vh;
+  background: var(--bg-primary); overflow-y: auto;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+  animation: slideIn 200ms ease;
+}
+
+.job-detail-header {
+  position: sticky; top: 0; background: var(--bg-primary);
+  padding: var(--space-5); z-index: 1;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.job-detail-jobnumber {
+  font-size: var(--text-xl); font-weight: 700; line-height: 1.2;
+}
+
+.job-detail-client {
+  font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px;
+}
+
+.job-detail-section {
+  padding: var(--space-3) var(--space-5);
+}
+
+.job-detail-section-title {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-tertiary); margin-bottom: var(--space-2);
+}
+
+.job-detail-label {
+  font-size: var(--text-xs); font-weight: 600; color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.job-detail-divider {
+  height: 1px; background: var(--border-light); margin: 0 var(--space-5);
+}
+
+.job-detail-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 3px 0; font-size: var(--text-sm);
+}
+
+.job-detail-row-label {
+  color: var(--text-tertiary); font-size: var(--text-xs); flex-shrink: 0; width: 110px;
+}
+
+.job-detail-row-value {
+  text-align: right; word-break: break-word;
+}
