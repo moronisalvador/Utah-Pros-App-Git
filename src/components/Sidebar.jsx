@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onNavClick }) {
   const { employee, canAccess, logout } = useAuth();
 
   const initials = employee?.full_name
@@ -34,7 +34,7 @@ export default function Sidebar() {
     : '?';
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${isOpen ? ' sidebar-open' : ''}`}>
       <div className="sidebar-header">
         <div className="sidebar-logo">U</div>
         <span className="sidebar-title">UPR Platform</span>
@@ -62,11 +62,11 @@ export default function Sidebar() {
               className={({ isActive }) =>
                 `sidebar-link${isActive ? ' active' : ''}`
               }
+              onClick={onNavClick}
             >
               <item.icon className="nav-icon" />
               {item.label}
-              {/* Badge placeholder for unread conversation count */}
-              {item.badge && null /* TODO: wire unread count */}
+              {item.badge && null}
             </NavLink>
           );
         })}
