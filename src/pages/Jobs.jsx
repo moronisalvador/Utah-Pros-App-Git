@@ -3,13 +3,56 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 
+// ── Macro group definitions ──
+// Phase keys can appear in multiple groups (estimate_pending, on_hold)
+const MACRO_GROUPS = [
+  {
+    key: 'leads',
+    label: 'Leads',
+    color: '#8b5cf6',
+    emoji: '🎯',
+    description: 'New jobs and incoming leads',
+    phases: ['job_received', 'lead'],
+  },
+  {
+    key: 'mitigation',
+    label: 'Mitigation',
+    color: '#2563eb',
+    emoji: '💧',
+    description: 'Active mitigation work',
+    phases: ['emergency', 'inspection', 'waiting_on_approval', 'mitigation', 'demolition', 'drying', 'mitigation_complete', 'on_hold'],
+  },
+  {
+    key: 'reconstruction',
+    label: 'Reconstruction',
+    color: '#d97706',
+    emoji: '🏗️',
+    description: 'Rebuild and restoration',
+    phases: ['estimate_pending', 'awaiting_payment', 'ready_to_start', 'drywall', 'carpentry', 'painting', 'floors', 'cabinetry', 'other_recon', 'final_walk_through', 'closeout', 'on_hold'],
+  },
+  {
+    key: 'billing',
+    label: 'Billing',
+    color: '#059669',
+    emoji: '💰',
+    description: 'Estimates, negotiation, and payment',
+    phases: ['estimate_pending', 'waiting_for_deductible', 'insurance_negotiation', 'awaiting_payment', 'paid'],
+  },
+];
+
+// Terminal phases hidden from macro view
+const TERMINAL_PHASES = ['completed', 'closed', 'cancelled'];
+
 export default function Jobs() {
   const { db } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('pipeline');
+  const [view, setView] = useState('pipeline'); // pipeline | list
+
+  // Which macro group is expanded (null = show macro cards)
+  const [activeGroup, setActiveGroup] = useState(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -19,9 +62,11 @@ export default function Jobs() {
   // Detail panel
   const [selectedJob, setSelectedJob] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Drag and drop
+  const [dragJob, setDragJob] = useState(null);
+  const [dragOverPhase, setDragOverPhase] = useState(null);
+
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
@@ -30,7 +75,6 @@ export default function Jobs() {
         db.select('job_phases', 'is_active=eq.true&order=display_order.asc'),
         db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
       ]);
-
       setJobs(jobsData);
       setPhases(phasesData);
       setEmployees(empsData);
@@ -41,48 +85,85 @@ export default function Jobs() {
     }
   };
 
-  // Get unique divisions from data
-  const divisions = useMemo(() => {
-    const divs = [...new Set(jobs.map(j => j.division).filter(Boolean))];
-    return divs.sort();
-  }, [jobs]);
+  // Phase lookup
+  const phaseMap = useMemo(() => {
+    const m = {};
+    for (const p of phases) m[p.key] = p;
+    return m;
+  }, [phases]);
 
-  // Filter jobs
-  const filteredJobs = useMemo(() => {
+  // Unique divisions
+  const divisions = useMemo(() =>
+    [...new Set(jobs.map(j => j.division).filter(Boolean))].sort()
+  , [jobs]);
+
+  // Apply search + division filter (not phase filter — that's per-view)
+  const baseFilteredJobs = useMemo(() => {
     return jobs.filter(j => {
       if (filterDivision !== 'all' && j.division !== filterDivision) return false;
-      if (filterPhase !== 'all' && j.phase !== filterPhase) return false;
       if (search) {
         const q = search.toLowerCase();
-        const searchable = [j.insured_name, j.job_number, j.address, j.claim_number, j.insurance_company]
+        const s = [j.insured_name, j.job_number, j.address, j.claim_number, j.insurance_company]
           .filter(Boolean).join(' ').toLowerCase();
-        if (!searchable.includes(q)) return false;
+        if (!s.includes(q)) return false;
       }
       return true;
     });
-  }, [jobs, filterDivision, filterPhase, search]);
+  }, [jobs, filterDivision, search]);
 
-  // Group filtered jobs by phase
-  const jobsByPhase = useMemo(() => {
+  // Jobs for list view (also applies phase filter)
+  const listFilteredJobs = useMemo(() => {
+    if (filterPhase === 'all') return baseFilteredJobs;
+    return baseFilteredJobs.filter(j => j.phase === filterPhase);
+  }, [baseFilteredJobs, filterPhase]);
+
+  // Count jobs per phase (from base filtered, so search/division apply)
+  const jobCountByPhase = useMemo(() => {
+    const counts = {};
+    for (const j of baseFilteredJobs) {
+      counts[j.phase] = (counts[j.phase] || 0) + 1;
+    }
+    return counts;
+  }, [baseFilteredJobs]);
+
+  // Count jobs per macro group
+  const groupCounts = useMemo(() => {
+    const counts = {};
+    for (const g of MACRO_GROUPS) {
+      const phaseSet = new Set(g.phases);
+      counts[g.key] = baseFilteredJobs.filter(j => phaseSet.has(j.phase)).length;
+    }
+    return counts;
+  }, [baseFilteredJobs]);
+
+  // Terminal phase counts
+  const terminalCount = useMemo(() =>
+    baseFilteredJobs.filter(j => TERMINAL_PHASES.includes(j.phase)).length
+  , [baseFilteredJobs]);
+
+  // Get phases for the active group
+  const activeGroupPhases = useMemo(() => {
+    if (!activeGroup) return [];
+    const group = MACRO_GROUPS.find(g => g.key === activeGroup);
+    if (!group) return [];
+    // Return phase objects in the order defined by the group, filtering to existing phases
+    return group.phases
+      .map(key => phaseMap[key])
+      .filter(Boolean);
+  }, [activeGroup, phaseMap]);
+
+  // Jobs grouped by phase within active group
+  const activeGroupJobsByPhase = useMemo(() => {
     const grouped = {};
-    for (const phase of phases) {
-      grouped[phase.key] = filteredJobs.filter(j => j.phase === phase.key);
+    for (const phase of activeGroupPhases) {
+      grouped[phase.key] = baseFilteredJobs.filter(j => j.phase === phase.key);
     }
     return grouped;
-  }, [filteredJobs, phases]);
+  }, [activeGroupPhases, baseFilteredJobs]);
 
-  // Unmatched jobs
-  const knownKeys = useMemo(() => new Set(phases.map(p => p.key)), [phases]);
-  const unmatchedJobs = useMemo(() => filteredJobs.filter(j => !knownKeys.has(j.phase)), [filteredJobs, knownKeys]);
-
-  // Handle job update from detail panel
-  const handleJobUpdate = useCallback((updatedJob) => {
-    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
-    setSelectedJob(updatedJob);
-  }, []);
-
-  // Quick phase change from pipeline card
-  const handleQuickPhaseChange = async (job, newPhase) => {
+  // ── Phase change ──
+  const changeJobPhase = useCallback(async (job, newPhase) => {
+    if (newPhase === job.phase) return;
     try {
       await db.update('jobs', `id=eq.${job.id}`, {
         phase: newPhase,
@@ -99,24 +180,70 @@ export default function Jobs() {
       setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
       if (selectedJob?.id === job.id) setSelectedJob(updated);
     } catch (err) {
-      console.error('Quick phase change error:', err);
+      console.error('Phase change error:', err);
       alert('Failed: ' + err.message);
+    }
+  }, [db, selectedJob]);
+
+  // ── Drag and Drop ──
+  const handleDragStart = (e, job) => {
+    setDragJob(job);
+    e.dataTransfer.effectAllowed = 'move';
+    if (e.target) {
+      e.target.style.opacity = '0.4';
+      setTimeout(() => { if (e.target) e.target.style.opacity = '1'; }, 0);
     }
   };
 
-  const getPhaseLabel = (key) => phases.find(p => p.key === key)?.label || key;
+  const handleDragEnd = () => { setDragJob(null); setDragOverPhase(null); };
 
-  if (loading) {
-    return <div className="loading-page"><div className="spinner" /></div>;
-  }
+  const handleDragOver = (e, phaseKey) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverPhase(phaseKey);
+  };
+
+  const handleDragLeave = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setDragOverPhase(null);
+  };
+
+  const handleDrop = (e, phaseKey) => {
+    e.preventDefault();
+    setDragOverPhase(null);
+    if (dragJob && dragJob.phase !== phaseKey) changeJobPhase(dragJob, phaseKey);
+    setDragJob(null);
+  };
+
+  const handleJobUpdate = useCallback((updatedJob) => {
+    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+    setSelectedJob(updatedJob);
+  }, []);
+
+  const getPhaseLabel = (key) => phaseMap[key]?.label || key;
+
+  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   return (
     <div className="jobs-page">
-      {/* ── Header ── */}
+      {/* ══ Header ══ */}
       <div className="jobs-header">
-        <div>
-          <h1 className="page-title">Jobs</h1>
-          <p className="page-subtitle">{filteredJobs.length} of {jobs.length} jobs</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {activeGroup && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setActiveGroup(null)} style={{ fontSize: 16, padding: '4px 8px' }}>
+              ←
+            </button>
+          )}
+          <div>
+            <h1 className="page-title">
+              {activeGroup ? MACRO_GROUPS.find(g => g.key === activeGroup)?.label : 'Jobs'}
+            </h1>
+            <p className="page-subtitle">
+              {activeGroup
+                ? `${Object.values(activeGroupJobsByPhase).flat().length} jobs in ${activeGroupPhases.length} phases`
+                : `${baseFilteredJobs.length} total jobs`
+              }
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className={`btn ${view === 'pipeline' ? 'btn-primary' : 'btn-secondary'} btn-sm`} onClick={() => setView('pipeline')}>Pipeline</button>
@@ -124,87 +251,111 @@ export default function Jobs() {
         </div>
       </div>
 
-      {/* ── Filters ── */}
+      {/* ══ Filters ══ */}
       <div className="jobs-filters">
         <div className="jobs-search-wrap">
           <IconSearch style={{ width: 14, height: 14, position: 'absolute', left: 10, top: 9, color: 'var(--text-tertiary)' }} />
-          <input
-            className="input jobs-search"
-            placeholder="Search by name, job #, address..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <input className="input jobs-search" placeholder="Search by name, job #, address..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="input jobs-filter-select" value={filterDivision} onChange={e => setFilterDivision(e.target.value)}>
           <option value="all">All Divisions</option>
           {divisions.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
         </select>
-        <select className="input jobs-filter-select" value={filterPhase} onChange={e => setFilterPhase(e.target.value)}>
-          <option value="all">All Phases</option>
-          {phases.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
+        {view === 'list' && (
+          <select className="input jobs-filter-select" value={filterPhase} onChange={e => setFilterPhase(e.target.value)}>
+            <option value="all">All Phases</option>
+            {phases.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+        )}
         {(search || filterDivision !== 'all' || filterPhase !== 'all') && (
-          <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setFilterDivision('all'); setFilterPhase('all'); }}>
-            Clear
-          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setFilterDivision('all'); setFilterPhase('all'); }}>Clear</button>
         )}
       </div>
 
-      {/* ── Pipeline View ── */}
+      {/* ══ Pipeline View ══ */}
       {view === 'pipeline' ? (
-        <div className="pipeline">
-          {phases.map(phase => {
-            const phaseJobs = jobsByPhase[phase.key] || [];
-            const isTerminal = phase.is_terminal;
+        activeGroup ? (
+          /* ── Expanded Group View: sub-phase columns ── */
+          <div className="pipeline">
+            {activeGroupPhases.map(phase => {
+              const phaseJobs = activeGroupJobsByPhase[phase.key] || [];
+              const isDragTarget = dragOverPhase === phase.key && dragJob?.phase !== phase.key;
 
-            return (
-              <div className="pipeline-column" key={phase.key}>
-                <div className="pipeline-column-header" style={phase.color ? { borderBottomColor: phase.color } : undefined}>
-                  <span>{phase.label}</span>
-                  <span className="pipeline-column-count">{phaseJobs.length}</span>
+              return (
+                <div
+                  className={`pipeline-column${isDragTarget ? ' drag-over' : ''}`}
+                  key={phase.key}
+                  onDragOver={e => handleDragOver(e, phase.key)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={e => handleDrop(e, phase.key)}
+                >
+                  <div className="pipeline-column-header">
+                    <span>{phase.label}</span>
+                    <span className="pipeline-column-count">{phaseJobs.length}</span>
+                  </div>
+                  <div className="pipeline-cards">
+                    {phaseJobs.map(job => (
+                      <JobCard
+                        key={job.id}
+                        job={job}
+                        isDragging={dragJob?.id === job.id}
+                        onDragStart={e => handleDragStart(e, job)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => setSelectedJob(job)}
+                      />
+                    ))}
+                    {phaseJobs.length === 0 && !dragJob && (
+                      <div className="pipeline-empty">No jobs</div>
+                    )}
+                    {dragJob && isDragTarget && phaseJobs.length === 0 && (
+                      <div className="pipeline-drop-hint">Drop here</div>
+                    )}
+                  </div>
                 </div>
-                <div className="pipeline-cards">
-                  {phaseJobs.map(job => (
-                    <PipelineCard
-                      key={job.id}
-                      job={job}
-                      phases={phases}
-                      onClick={() => setSelectedJob(job)}
-                      onPhaseChange={handleQuickPhaseChange}
-                    />
-                  ))}
-                  {phaseJobs.length === 0 && (
-                    <div style={{ padding: 12, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>
-                      No jobs
-                    </div>
-                  )}
+              );
+            })}
+          </div>
+        ) : (
+          /* ── Macro Group View: 4 big cards ── */
+          <div className="macro-grid">
+            {MACRO_GROUPS.map(group => (
+              <button
+                key={group.key}
+                className="macro-card"
+                style={{ '--macro-color': group.color }}
+                onClick={() => setActiveGroup(group.key)}
+              >
+                <div className="macro-card-emoji">{group.emoji}</div>
+                <div className="macro-card-count">{groupCounts[group.key] || 0}</div>
+                <div className="macro-card-label">{group.label}</div>
+                <div className="macro-card-desc">{group.description}</div>
+                <div className="macro-card-phases">
+                  {group.phases.map(pk => {
+                    const count = jobCountByPhase[pk] || 0;
+                    if (!phaseMap[pk]) return null;
+                    return (
+                      <span key={pk} className={`macro-phase-pill${count > 0 ? ' has-jobs' : ''}`}>
+                        {phaseMap[pk]?.label}: {count}
+                      </span>
+                    );
+                  })}
                 </div>
-              </div>
-            );
-          })}
+              </button>
+            ))}
 
-          {unmatchedJobs.length > 0 && (
-            <div className="pipeline-column">
-              <div className="pipeline-column-header" style={{ borderBottomColor: '#ef4444' }}>
-                <span>Uncategorized</span>
-                <span className="pipeline-column-count">{unmatchedJobs.length}</span>
+            {/* Terminal phases summary */}
+            {terminalCount > 0 && (
+              <div className="hidden-phases-banner" style={{ gridColumn: '1 / -1' }}>
+                <span>
+                  {TERMINAL_PHASES.map(pk => `${getPhaseLabel(pk)}: ${jobCountByPhase[pk] || 0}`).join(' · ')}
+                  {' '}({terminalCount} total)
+                </span>
               </div>
-              <div className="pipeline-cards">
-                {unmatchedJobs.map(job => (
-                  <PipelineCard
-                    key={job.id}
-                    job={job}
-                    phases={phases}
-                    onClick={() => setSelectedJob(job)}
-                    onPhaseChange={handleQuickPhaseChange}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )
       ) : (
-        /* ── List View ── */
+        /* ══ List View ══ */
         <div className="card" style={{ flex: 1, overflow: 'auto' }}>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -221,15 +372,11 @@ export default function Jobs() {
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.map(job => (
+                {listFilteredJobs.map(job => (
                   <tr key={job.id} onClick={() => setSelectedJob(job)} style={{ cursor: 'pointer' }}>
                     <td style={{ fontWeight: 600 }}>{job.job_number || '—'}</td>
                     <td>{job.insured_name || '—'}</td>
-                    <td>
-                      <span className="division-badge" data-division={job.division}>
-                        {job.division}
-                      </span>
-                    </td>
+                    <td><span className="division-badge" data-division={job.division}>{job.division}</span></td>
                     <td>
                       <span className={`status-badge status-${phaseClass(job.phase)}`}>
                         {getPhaseLabel(job.phase)}
@@ -245,8 +392,7 @@ export default function Jobs() {
                     <td>
                       {job.priority && (
                         <span style={{
-                          fontSize: 'var(--text-xs)',
-                          fontWeight: 600,
+                          fontSize: 'var(--text-xs)', fontWeight: 600,
                           color: job.priority <= 1 ? 'var(--status-needs-response)' : job.priority <= 2 ? '#f59e0b' : 'var(--text-tertiary)',
                         }}>
                           {job.priority <= 1 ? 'Urgent' : job.priority <= 2 ? 'High' : job.priority <= 3 ? 'Normal' : 'Low'}
@@ -261,7 +407,7 @@ export default function Jobs() {
         </div>
       )}
 
-      {/* ── Detail Panel ── */}
+      {/* ══ Detail Panel ══ */}
       {selectedJob && (
         <JobDetailPanel
           job={selectedJob}
@@ -275,31 +421,22 @@ export default function Jobs() {
   );
 }
 
-/* ── Pipeline Card Component ── */
-function PipelineCard({ job, phases, onClick, onPhaseChange }) {
-  const [showPhaseMenu, setShowPhaseMenu] = useState(false);
-
-  const handlePhaseSelect = (e) => {
-    e.stopPropagation();
-    const newPhase = e.target.value;
-    if (newPhase && newPhase !== job.phase) {
-      onPhaseChange(job, newPhase);
-    }
-    setShowPhaseMenu(false);
-  };
-
+/* ── Reusable Pipeline Card ── */
+function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick }) {
   return (
-    <div className="pipeline-card" onClick={onClick}>
+    <div
+      className={`pipeline-card${isDragging ? ' dragging' : ''}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onClick}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div className="pipeline-card-title">
-          {job.job_number ? `${job.job_number}` : job.insured_name || `#${job.id.slice(0, 6)}`}
+          {job.job_number || job.insured_name || `#${job.id.slice(0, 6)}`}
         </div>
         {job.priority && job.priority <= 2 && (
-          <span style={{
-            fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
-            background: job.priority <= 1 ? 'var(--status-needs-response-bg)' : 'var(--status-waiting-bg)',
-            color: job.priority <= 1 ? 'var(--status-needs-response)' : '#b45309',
-          }}>
+          <span className={`priority-tag priority-${job.priority <= 1 ? 'urgent' : 'high'}`}>
             {job.priority <= 1 ? 'URGENT' : 'HIGH'}
           </span>
         )}
@@ -311,39 +448,24 @@ function PipelineCard({ job, phases, onClick, onPhaseChange }) {
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-        <span className="division-badge" data-division={job.division}>
-          {job.division}
-        </span>
-
-        {/* Phase change dropdown */}
-        <select
-          className="pipeline-phase-select"
-          value=""
-          onChange={handlePhaseSelect}
-          onClick={e => e.stopPropagation()}
-          title="Move to phase..."
-        >
-          <option value="" disabled>Move →</option>
-          {phases.filter(p => p.key !== job.phase).map(p => (
-            <option key={p.key} value={p.key}>{p.label}</option>
-          ))}
-        </select>
+        <span className="division-badge" data-division={job.division}>{job.division}</span>
+        {(job.has_asbestos || job.has_lead || job.is_cat_loss) && (
+          <div style={{ display: 'flex', gap: 3 }}>
+            {job.is_cat_loss && <span className="job-flag flag-red" style={{ fontSize: 9 }}>CAT</span>}
+            {job.has_asbestos && <span className="job-flag flag-red" style={{ fontSize: 9 }}>ASB</span>}
+            {job.has_lead && <span className="job-flag flag-red" style={{ fontSize: 9 }}>LEAD</span>}
+          </div>
+        )}
       </div>
-      {(job.has_asbestos || job.has_lead || job.is_cat_loss) && (
-        <div style={{ display: 'flex', gap: 3, marginTop: 4 }}>
-          {job.is_cat_loss && <span className="job-flag flag-red" style={{ fontSize: 9 }}>CAT</span>}
-          {job.has_asbestos && <span className="job-flag flag-red" style={{ fontSize: 9 }}>ASB</span>}
-          {job.has_lead && <span className="job-flag flag-red" style={{ fontSize: 9 }}>LEAD</span>}
-        </div>
-      )}
     </div>
   );
 }
 
 function phaseClass(phase) {
   if (!phase) return 'active';
-  if (['completed', 'closed'].includes(phase)) return 'resolved';
-  if (['on_hold', 'cancelled'].includes(phase)) return 'waiting';
-  if (['lead', 'emergency'].includes(phase)) return 'needs-response';
+  if (['completed', 'closed', 'paid'].includes(phase)) return 'resolved';
+  if (['on_hold', 'cancelled', 'waiting_on_approval', 'waiting_for_deductible', 'awaiting_payment'].includes(phase)) return 'waiting';
+  if (['lead', 'emergency', 'job_received'].includes(phase)) return 'needs-response';
+  if (['drywall', 'carpentry', 'painting', 'floors', 'cabinetry', 'other_recon', 'reconstruction', 'demolition', 'drying', 'mitigation'].includes(phase)) return 'active';
   return 'active';
 }
