@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
+import { IconDashboard, IconConversations, IconJobs, IconProduction } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
-  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
+  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
 ];
 
 function IconMore(props) {

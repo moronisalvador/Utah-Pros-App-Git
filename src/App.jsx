@@ -8,6 +8,7 @@ import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
+import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
 import Schedule from '@/pages/Schedule';
@@ -35,6 +36,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="conversations" element={<Conversations />} />
             <Route path="jobs" element={<Jobs />} />
+            <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
             <Route path="customers" element={<Customers />} />
             <Route path="schedule" element={<Schedule />} />

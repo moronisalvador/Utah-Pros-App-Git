@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   IconDashboard, IconConversations, IconJobs, IconLeads,
   IconCustomers, IconSchedule, IconTimeTracking, IconMarketing,
-  IconAdmin, IconSettings, IconLogout,
+  IconAdmin, IconSettings, IconLogout, IconProduction,
 } from './Icons';
 
 const NAV_ITEMS = [
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { key: 'customers', label: 'Customers', path: '/customers', icon: IconCustomers },
 
   { section: 'Operations' },
+  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
 
