@@ -716,6 +716,149 @@ tr:hover td { background: var(--bg-secondary); }
   margin-top: 6px;
 }
 
+/* ═══ Mobile Long-Press Hint ═══ */
+.mobile-longpress-hint {
+  display: none; /* Hidden on desktop */
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 6px;
+  opacity: 0.6;
+}
+
+/* ═══ Phase Picker Modal (mobile bottom sheet) ═══ */
+.phase-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 150ms ease;
+}
+
+.phase-picker-sheet {
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: sheetSlideUp 250ms cubic-bezier(0.32, 0.72, 0, 1);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.phase-picker-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  margin: var(--space-3) auto var(--space-2);
+  flex-shrink: 0;
+}
+
+.phase-picker-header {
+  padding: 0 var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.phase-picker-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.phase-picker-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.phase-picker-options {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+}
+
+.phase-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+}
+
+.phase-picker-option:hover { background: var(--bg-secondary); }
+.phase-picker-option:active { background: var(--bg-tertiary); }
+
+.phase-picker-option.current {
+  color: var(--text-tertiary);
+  cursor: default;
+  background: var(--bg-secondary);
+}
+
+.phase-picker-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.phase-picker-option-label {
+  font-weight: 500;
+}
+
+.phase-picker-current-badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.phase-picker-arrow {
+  font-size: var(--text-lg);
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+.phase-picker-cancel {
+  display: block;
+  width: calc(100% - var(--space-5) * 2);
+  margin: var(--space-2) var(--space-5) var(--space-4);
+  padding: var(--space-3);
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.phase-picker-cancel:active { background: var(--border-color); }
+
 /* ═══════════════════════════════════════════════════
    RESPONSIVE / MOBILE
    ═══════════════════════════════════════════════════ */
@@ -808,8 +951,14 @@ tr:hover td { background: var(--bg-secondary); }
 
   /* Pipeline */
   .pipeline-column { width: 220px; min-width: 220px; }
-  .pipeline-card { padding: var(--space-2); }
+  .pipeline-card { padding: var(--space-2); cursor: pointer; }
   .pipeline-card-title { font-size: var(--text-xs); }
+
+  /* Show long-press hint on mobile */
+  .mobile-longpress-hint { display: block; }
+
+  /* Disable drag cursor on mobile */
+  .pipeline-card:active { cursor: pointer; }
 
   /* Job detail panel: full screen */
   .job-detail-panel { width: 100vw; max-width: 100vw; }

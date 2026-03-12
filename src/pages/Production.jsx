@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 
 // ── Macro group definitions ──
-// Phase keys can appear in multiple groups (estimate_pending, on_hold)
 const MACRO_GROUPS = [
   {
     key: 'leads',
@@ -40,8 +39,10 @@ const MACRO_GROUPS = [
   },
 ];
 
-// Terminal phases hidden from macro view
 const TERMINAL_PHASES = ['completed', 'closed', 'cancelled'];
+
+// Touch detection
+const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 export default function Production() {
   const { db } = useAuth();
@@ -49,9 +50,8 @@ export default function Production() {
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('pipeline'); // pipeline | list
+  const [view, setView] = useState('pipeline');
 
-  // Which macro group is expanded (null = show macro cards)
   const [activeGroup, setActiveGroup] = useState(null);
 
   // Filters
@@ -62,9 +62,12 @@ export default function Production() {
   // Detail panel
   const [selectedJob, setSelectedJob] = useState(null);
 
-  // Drag and drop
+  // Desktop drag and drop
   const [dragJob, setDragJob] = useState(null);
   const [dragOverPhase, setDragOverPhase] = useState(null);
+
+  // Mobile long-press phase picker
+  const [phasePickerJob, setPhasePickerJob] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -85,19 +88,16 @@ export default function Production() {
     }
   };
 
-  // Phase lookup
   const phaseMap = useMemo(() => {
     const m = {};
     for (const p of phases) m[p.key] = p;
     return m;
   }, [phases]);
 
-  // Unique divisions
   const divisions = useMemo(() =>
     [...new Set(jobs.map(j => j.division).filter(Boolean))].sort()
   , [jobs]);
 
-  // Apply search + division filter (not phase filter — that's per-view)
   const baseFilteredJobs = useMemo(() => {
     return jobs.filter(j => {
       if (filterDivision !== 'all' && j.division !== filterDivision) return false;
@@ -111,13 +111,11 @@ export default function Production() {
     });
   }, [jobs, filterDivision, search]);
 
-  // Jobs for list view (also applies phase filter)
   const listFilteredJobs = useMemo(() => {
     if (filterPhase === 'all') return baseFilteredJobs;
     return baseFilteredJobs.filter(j => j.phase === filterPhase);
   }, [baseFilteredJobs, filterPhase]);
 
-  // Count jobs per phase (from base filtered, so search/division apply)
   const jobCountByPhase = useMemo(() => {
     const counts = {};
     for (const j of baseFilteredJobs) {
@@ -126,7 +124,6 @@ export default function Production() {
     return counts;
   }, [baseFilteredJobs]);
 
-  // Count jobs per macro group
   const groupCounts = useMemo(() => {
     const counts = {};
     for (const g of MACRO_GROUPS) {
@@ -136,23 +133,17 @@ export default function Production() {
     return counts;
   }, [baseFilteredJobs]);
 
-  // Terminal phase counts
   const terminalCount = useMemo(() =>
     baseFilteredJobs.filter(j => TERMINAL_PHASES.includes(j.phase)).length
   , [baseFilteredJobs]);
 
-  // Get phases for the active group
   const activeGroupPhases = useMemo(() => {
     if (!activeGroup) return [];
     const group = MACRO_GROUPS.find(g => g.key === activeGroup);
     if (!group) return [];
-    // Return phase objects in the order defined by the group, filtering to existing phases
-    return group.phases
-      .map(key => phaseMap[key])
-      .filter(Boolean);
+    return group.phases.map(key => phaseMap[key]).filter(Boolean);
   }, [activeGroup, phaseMap]);
 
-  // Jobs grouped by phase within active group
   const activeGroupJobsByPhase = useMemo(() => {
     const grouped = {};
     for (const phase of activeGroupPhases) {
@@ -185,7 +176,7 @@ export default function Production() {
     }
   }, [db, selectedJob]);
 
-  // ── Drag and Drop ──
+  // ── Desktop Drag and Drop ──
   const handleDragStart = (e, job) => {
     setDragJob(job);
     e.dataTransfer.effectAllowed = 'move';
@@ -194,24 +185,28 @@ export default function Production() {
       setTimeout(() => { if (e.target) e.target.style.opacity = '1'; }, 0);
     }
   };
-
   const handleDragEnd = () => { setDragJob(null); setDragOverPhase(null); };
-
   const handleDragOver = (e, phaseKey) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverPhase(phaseKey);
   };
-
   const handleDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setDragOverPhase(null);
   };
-
   const handleDrop = (e, phaseKey) => {
     e.preventDefault();
     setDragOverPhase(null);
     if (dragJob && dragJob.phase !== phaseKey) changeJobPhase(dragJob, phaseKey);
     setDragJob(null);
+  };
+
+  // ── Mobile: phase picker selection ──
+  const handlePhasePickerSelect = (newPhase) => {
+    if (phasePickerJob) {
+      changeJobPhase(phasePickerJob, newPhase);
+    }
+    setPhasePickerJob(null);
   };
 
   const handleJobUpdate = useCallback((updatedJob) => {
@@ -275,7 +270,6 @@ export default function Production() {
       {/* ══ Pipeline View ══ */}
       {view === 'pipeline' ? (
         activeGroup ? (
-          /* ── Expanded Group View: sub-phase columns ── */
           <div className="pipeline">
             {activeGroupPhases.map(phase => {
               const phaseJobs = activeGroupJobsByPhase[phase.key] || [];
@@ -302,6 +296,7 @@ export default function Production() {
                         onDragStart={e => handleDragStart(e, job)}
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedJob(job)}
+                        onLongPress={() => setPhasePickerJob(job)}
                       />
                     ))}
                     {phaseJobs.length === 0 && !dragJob && (
@@ -316,7 +311,6 @@ export default function Production() {
             })}
           </div>
         ) : (
-          /* ── Macro Group View: 4 big cards ── */
           <div className="macro-grid">
             {MACRO_GROUPS.map(group => (
               <button
@@ -342,8 +336,6 @@ export default function Production() {
                 </div>
               </button>
             ))}
-
-            {/* Terminal phases summary */}
             {terminalCount > 0 && (
               <div className="hidden-phases-banner" style={{ gridColumn: '1 / -1' }}>
                 <span>
@@ -355,7 +347,6 @@ export default function Production() {
           </div>
         )
       ) : (
-        /* ══ List View ══ */
         <div className="card" style={{ flex: 1, overflow: 'auto' }}>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -417,19 +408,76 @@ export default function Production() {
           onUpdate={handleJobUpdate}
         />
       )}
+
+      {/* ══ Mobile Phase Picker Modal ══ */}
+      {phasePickerJob && (
+        <PhasePickerModal
+          job={phasePickerJob}
+          phases={activeGroupPhases}
+          onSelect={handlePhasePickerSelect}
+          onClose={() => setPhasePickerJob(null)}
+        />
+      )}
     </div>
   );
 }
 
-/* ── Reusable Pipeline Card ── */
-function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick }) {
+/* ═══════════════════════════════════════════════════
+   JobCard — desktop drag + mobile long-press
+   ═══════════════════════════════════════════════════ */
+function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick, onLongPress }) {
+  const longPressTimer = useRef(null);
+  const touchMoved = useRef(false);
+  const longPressFired = useRef(false);
+
+  const handleTouchStart = () => {
+    touchMoved.current = false;
+    longPressFired.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      onLongPress();
+    }, 500);
+  };
+
+  const handleTouchMove = () => {
+    touchMoved.current = true;
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    // If long press fired, prevent tap-through
+    if (longPressFired.current) {
+      e.preventDefault();
+      return;
+    }
+    // Normal tap (didn't move, didn't long-press) → open detail panel
+    if (!touchMoved.current) {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <div
       className={`pipeline-card${isDragging ? ' dragging' : ''}`}
-      draggable
+      draggable={!isTouchDevice()}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={onClick}
+      onClick={(e) => {
+        // Desktop click — touch devices handle via touchEnd
+        if (!isTouchDevice()) onClick();
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div className="pipeline-card-title">
@@ -456,6 +504,56 @@ function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick }) {
             {job.has_lead && <span className="job-flag flag-red" style={{ fontSize: 9 }}>LEAD</span>}
           </div>
         )}
+      </div>
+      <div className="mobile-longpress-hint">Hold to move phase</div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   PhasePickerModal — iOS-style bottom sheet
+   ═══════════════════════════════════════════════════ */
+function PhasePickerModal({ job, phases, onSelect, onClose }) {
+  const [saving, setSaving] = useState(false);
+
+  const handleSelect = async (phaseKey) => {
+    if (phaseKey === job.phase || saving) return;
+    setSaving(true);
+    await onSelect(phaseKey);
+    setSaving(false);
+  };
+
+  return (
+    <div className="phase-picker-overlay" onClick={onClose}>
+      <div className="phase-picker-sheet" onClick={e => e.stopPropagation()}>
+        <div className="phase-picker-handle" />
+
+        <div className="phase-picker-header">
+          <div className="phase-picker-title">Move to Phase</div>
+          <div className="phase-picker-subtitle">
+            {job.job_number || job.insured_name || 'Job'}
+          </div>
+        </div>
+
+        <div className="phase-picker-options">
+          {phases.map(phase => {
+            const isCurrent = phase.key === job.phase;
+            return (
+              <button
+                key={phase.key}
+                className={`phase-picker-option${isCurrent ? ' current' : ''}`}
+                onClick={() => handleSelect(phase.key)}
+                disabled={isCurrent || saving}
+              >
+                <span className="phase-picker-option-label">{phase.label}</span>
+                {isCurrent && <span className="phase-picker-current-badge">Current</span>}
+                {!isCurrent && <span className="phase-picker-arrow">→</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <button className="phase-picker-cancel" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
