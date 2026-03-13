@@ -3,14 +3,14 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
-import { IconDashboard, IconConversations, IconJobs, IconProduction } from './Icons';
+import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
-  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
+  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
 
 // Pages that show the Create FAB
