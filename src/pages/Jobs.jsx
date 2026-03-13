@@ -205,8 +205,8 @@ export default function Jobs() {
               phaseClass={getPhaseClass(job.phase)}
               formatDate={formatDate}
               formatCurrency={formatCurrency}
-              onClick={() => setSelectedJob(job)}
-              onOpenPage={() => navigate(`/jobs/${job.id}`)}
+              onClick={() => navigate(`/jobs/${job.id}`)}
+              onQuickView={() => setSelectedJob(job)}
             />
           ))
         )}
@@ -227,7 +227,7 @@ export default function Jobs() {
 }
 
 /* ── Job List Card ── */
-function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, onClick, onOpenPage }) {
+function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, onClick, onQuickView }) {
   const divIcon = DIVISION_ICON[job.division] || '📁';
   const estimatedVal = formatCurrency(job.estimated_value);
   const lossDate = formatDate(job.date_of_loss);
@@ -275,13 +275,13 @@ function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, 
         )}
       </div>
 
-      {/* Right: Open Page icon */}
+      {/* Right: Quick View icon (opens sidebar) */}
       <button
         className="job-card-open-btn"
-        onClick={e => { e.stopPropagation(); onOpenPage(); }}
-        title="Open job page"
+        onClick={e => { e.stopPropagation(); onQuickView(); }}
+        title="Quick view"
       >
-        <IconOpenPage style={{ width: 16, height: 16 }} />
+        <IconSearch style={{ width: 14, height: 14 }} />
       </button>
     </div>
   );
