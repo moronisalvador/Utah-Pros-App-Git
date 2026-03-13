@@ -375,19 +375,35 @@ function ContactCard({ contact, jobCount, onClick }) {
    ═══════════════════════════════════════════════════════════════════ */
 
 function AddContactModal({ onClose, onSave }) {
-  const [form, setForm] = useState({
-    name: '', phone: '', phone_secondary: '', email: '', company: '',
-    role: 'homeowner', preferred_contact_method: 'sms',
-    billing_address: '', billing_city: '', billing_state: '', billing_zip: '',
-    insurance_carrier: '', policy_number: '', claim_number: '',
-    referral_source: '', tags: '', notes: '',
-  });
+  const [step, setStep] = useState('pick'); // 'pick' | 'form'
+  const [role, setRole] = useState(null);
+  const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const nameRef = useRef(null);
 
-  useEffect(() => { nameRef.current?.focus(); }, []);
+  const ROLE_CARDS = [
+    { value: 'homeowner', emoji: '\u{1F3E0}', label: 'Homeowner', desc: 'Property owner, policyholder, client' },
+    { value: 'adjuster', emoji: '\u{1F4CB}', label: 'Adjuster', desc: 'Insurance field or desk adjuster' },
+    { value: 'vendor', emoji: '\u{1F3E2}', label: 'Vendor', desc: 'Material supplier, equipment provider' },
+    { value: 'subcontractor', emoji: '\u{1F527}', label: 'Subcontractor', desc: 'Trade contractor, specialist' },
+    { value: 'agent', emoji: '\u{1F91D}', label: 'Agent / Broker', desc: 'Insurance or real estate agent' },
+    { value: 'property_manager', emoji: '\u{1F3E8}', label: 'Property Manager', desc: 'Manages rental or commercial property' },
+    { value: 'referral_partner', emoji: '\u{2B50}', label: 'Referral Partner', desc: 'Plumber, roofer, referral source' },
+    { value: 'tenant', emoji: '\u{1F6CF}\uFE0F', label: 'Tenant', desc: 'Occupant of affected property' },
+    { value: 'other', emoji: '\u{1F464}', label: 'Other', desc: 'Mortgage co, insurance rep, etc.' },
+  ];
 
-  const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const initForm = (r) => {
+    const base = { name: '', phone: '', email: '', company: '', role: r, preferred_contact_method: 'sms', preferred_language: 'en', referral_source: '', tags: '', notes: '' };
+    if (r === 'homeowner') return { ...base, billing_address: '', billing_city: '', billing_state: '', billing_zip: '', insurance_carrier: '', policy_number: '' };
+    if (r === 'adjuster') return { ...base, company: '', desk_phone: '', desk_extension: '', territory: '', relationship_notes: '', insurance_carrier: '' };
+    if (r === 'vendor') return { ...base, trade_specialty: '', payment_terms: 'net_30', w9_on_file: false };
+    if (r === 'subcontractor') return { ...base, trade_specialty: '', payment_terms: 'net_30', coi_expiration: '', w9_on_file: false };
+    return base;
+  };
+
+  const selectRole = (r) => { setRole(r); setForm(initForm(r)); setStep('form'); setTimeout(() => nameRef.current?.focus(), 50); };
+  const set = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.phone.trim()) return;
@@ -397,50 +413,72 @@ function AddContactModal({ onClose, onSave }) {
       if (phone.length === 10) phone = '1' + phone;
       if (!phone.startsWith('+')) phone = '+' + phone;
 
-      let phoneSec = form.phone_secondary.replace(/\D/g, '');
-      if (phoneSec && phoneSec.length === 10) phoneSec = '1' + phoneSec;
-      if (phoneSec && !phoneSec.startsWith('+')) phoneSec = '+' + phoneSec;
+      let deskPh = (form.desk_phone || '').replace(/\D/g, '');
+      if (deskPh && deskPh.length === 10) deskPh = '1' + deskPh;
+      if (deskPh && !deskPh.startsWith('+')) deskPh = '+' + deskPh;
 
-      const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
+      const tags = (form.tags || '').split(',').map(t => t.trim()).filter(Boolean);
 
-      await onSave({
-        name: form.name.trim(),
-        phone,
-        phone_secondary: phoneSec || null,
+      const data = {
+        name: form.name.trim(), phone, role: form.role,
         email: form.email.trim() || null,
         company: form.company.trim() || null,
-        role: form.role,
         preferred_contact_method: form.preferred_contact_method,
-        billing_address: form.billing_address.trim() || null,
-        billing_city: form.billing_city.trim() || null,
-        billing_state: form.billing_state.trim() || null,
-        billing_zip: form.billing_zip.trim() || null,
-        insurance_carrier: form.insurance_carrier.trim() || null,
-        policy_number: form.policy_number.trim() || null,
-        claim_number: form.claim_number.trim() || null,
-        referral_source: form.referral_source.trim() || null,
+        preferred_language: form.preferred_language || 'en',
+        referral_source: form.referral_source?.trim() || null,
         tags: JSON.stringify(tags),
-        notes: form.notes.trim() || null,
+        notes: form.notes?.trim() || null,
         opt_in_status: false,
-      });
-    } catch (err) {
-      // Error handled in parent
-    } finally {
-      setSaving(false);
-    }
-  };
+      };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') onClose();
+      // Role-specific fields
+      if (form.role === 'homeowner') {
+        Object.assign(data, {
+          billing_address: form.billing_address?.trim() || null,
+          billing_city: form.billing_city?.trim() || null,
+          billing_state: form.billing_state?.trim() || null,
+          billing_zip: form.billing_zip?.trim() || null,
+          insurance_carrier: form.insurance_carrier?.trim() || null,
+          policy_number: form.policy_number?.trim() || null,
+        });
+      }
+      if (form.role === 'adjuster') {
+        Object.assign(data, {
+          insurance_carrier: form.insurance_carrier?.trim() || null,
+          desk_phone: deskPh || null,
+          desk_extension: form.desk_extension?.trim() || null,
+          territory: form.territory?.trim() || null,
+          relationship_notes: form.relationship_notes?.trim() || null,
+        });
+      }
+      if (form.role === 'vendor' || form.role === 'subcontractor') {
+        Object.assign(data, {
+          trade_specialty: form.trade_specialty?.trim() || null,
+          payment_terms: form.payment_terms || 'net_30',
+          w9_on_file: form.w9_on_file || false,
+        });
+        if (form.role === 'subcontractor' && form.coi_expiration) {
+          data.coi_expiration = form.coi_expiration;
+        }
+      }
+
+      await onSave(data);
+    } catch (err) { /* handled in parent */ }
+    finally { setSaving(false); }
   };
 
   const Field = ({ label, field, type = 'text', placeholder, required }) => (
     <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
       <label className="label">{label}{required && ' *'}</label>
       {type === 'textarea' ? (
-        <textarea className="input textarea" value={form[field]} onChange={e => set(field, e.target.value)} rows={2} placeholder={placeholder} onKeyDown={handleKeyDown} />
+        <textarea className="input textarea" value={form[field] || ''} onChange={e => set(field, e.target.value)} rows={2} placeholder={placeholder} />
+      ) : type === 'checkbox' ? (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)' }}>
+          <input type="checkbox" checked={form[field] || false} onChange={e => set(field, e.target.checked)} style={{ width: 16, height: 16 }} />
+          {placeholder || label}
+        </label>
       ) : (
-        <input ref={field === 'name' ? nameRef : undefined} className="input" type={type} value={form[field]} onChange={e => set(field, e.target.value)} placeholder={placeholder} onKeyDown={handleKeyDown} />
+        <input ref={field === 'name' ? nameRef : undefined} className="input" type={type} value={form[field] || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} />
       )}
     </div>
   );
@@ -448,51 +486,112 @@ function AddContactModal({ onClose, onSave }) {
   const Select = ({ label, field, options }) => (
     <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
       <label className="label">{label}</label>
-      <select className="input" value={form[field]} onChange={e => set(field, e.target.value)} style={{ cursor: 'pointer' }}>
+      <select className="input" value={form[field] || ''} onChange={e => set(field, e.target.value)} style={{ cursor: 'pointer' }}>
         {options.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
       </select>
     </div>
   );
+
+  const PAYMENT_TERMS = [{ value: 'due_on_receipt', label: 'Due on Receipt' }, { value: 'net_15', label: 'Net 15' }, { value: 'net_30', label: 'Net 30' }, { value: 'net_45', label: 'Net 45' }, { value: 'net_60', label: 'Net 60' }];
+  const LANG_OPTIONS = [{ value: 'en', label: 'English' }, { value: 'es', label: 'Spanish' }, { value: 'pt', label: 'Portuguese' }];
 
   return (
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal add-contact-modal" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="conv-modal-header">
-          <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Add Contact</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            {step === 'form' && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setStep('pick')} style={{ width: 28, height: 28, padding: 0 }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+            )}
+            <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>
+              {step === 'pick' ? 'New Contact' : `New ${ROLE_LABELS[role] || 'Contact'}`}
+            </span>
+          </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
             <IconX style={{ width: 18, height: 18 }} />
           </button>
         </div>
 
-        {/* Scrollable form body */}
-        <div className="add-contact-body">
-          <div className="cp-edit-section-label" style={{ marginTop: 0 }}>Identity</div>
-          <div className="add-contact-row"><Field label="Name" field="name" placeholder="John Smith" required /><Field label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required /></div>
-          <div className="add-contact-row"><Field label="Email" field="email" type="email" placeholder="john@email.com" /><Field label="Company" field="company" placeholder="Allstate, etc." /></div>
-          <div className="add-contact-row"><Select label="Role" field="role" options={ROLE_OPTIONS} /><Select label="Preferred Contact" field="preferred_contact_method" options={CONTACT_METHOD_OPTIONS} /></div>
+        {step === 'pick' ? (
+          /* ── Step 1: Role picker ── */
+          <div className="add-contact-body">
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
+              What type of contact is this?
+            </div>
+            <div className="role-picker-grid">
+              {ROLE_CARDS.map(rc => (
+                <button key={rc.value} className="role-picker-card" onClick={() => selectRole(rc.value)}>
+                  <span className="role-picker-emoji">{rc.emoji}</span>
+                  <div className="role-picker-text">
+                    <div className="role-picker-label">{rc.label}</div>
+                    <div className="role-picker-desc">{rc.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* ── Step 2: Role-specific form ── */
+          <>
+            <div className="add-contact-body">
+              {/* Always shown */}
+              <div className="cp-edit-section-label" style={{ marginTop: 0 }}>Basic Info</div>
+              <div className="add-contact-row"><Field label="Name" field="name" placeholder="Full name" required /><Field label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required /></div>
+              <div className="add-contact-row"><Field label="Email" field="email" type="email" placeholder="email@example.com" /><Field label="Company" field="company" placeholder={role === 'adjuster' ? 'Carrier name' : role === 'vendor' ? 'Company name' : 'Company (optional)'} /></div>
+              <div className="add-contact-row">
+                <Select label="Preferred Contact" field="preferred_contact_method" options={CONTACT_METHOD_OPTIONS} />
+                <Select label="Language" field="preferred_language" options={LANG_OPTIONS} />
+              </div>
 
-          <div className="cp-edit-section-label">Phone & Address</div>
-          <div className="add-contact-row"><Field label="Secondary Phone" field="phone_secondary" type="tel" placeholder="(801) 555-5678" /></div>
-          <div className="add-contact-row"><Field label="Billing Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" /></div>
-          <div className="add-contact-row"><Field label="City" field="billing_city" placeholder="Lehi" /><Field label="State" field="billing_state" placeholder="UT" /><Field label="ZIP" field="billing_zip" placeholder="84043" /></div>
+              {/* Homeowner fields */}
+              {role === 'homeowner' && (<>
+                <div className="cp-edit-section-label">Billing Address</div>
+                <div className="add-contact-row"><Field label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" /></div>
+                <div className="add-contact-row"><Field label="City" field="billing_city" placeholder="Lehi" /><Field label="State" field="billing_state" placeholder="UT" /><Field label="ZIP" field="billing_zip" placeholder="84043" /></div>
+                <div className="cp-edit-section-label">Insurance</div>
+                <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." /><Field label="Policy #" field="policy_number" placeholder="SF-8820114" /></div>
+              </>)}
 
-          <div className="cp-edit-section-label">Insurance</div>
-          <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." /></div>
-          <div className="add-contact-row"><Field label="Policy #" field="policy_number" placeholder="SF-8820114" /><Field label="Claim #" field="claim_number" placeholder="CLM-2026-44819" /></div>
+              {/* Adjuster fields */}
+              {role === 'adjuster' && (<>
+                <div className="cp-edit-section-label">Adjuster Details</div>
+                <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." required /></div>
+                <div className="add-contact-row"><Field label="Desk Phone" field="desk_phone" type="tel" placeholder="(800) 555-0100" /><Field label="Extension" field="desk_extension" placeholder="4412" /></div>
+                <div className="add-contact-row"><Field label="Territory / Region" field="territory" placeholder="Northern Utah - Salt Lake, Davis, Weber" /></div>
+                <Field label="Relationship Notes" field="relationship_notes" type="textarea" placeholder="Response time, negotiation style, preferences..." />
+              </>)}
 
-          <div className="cp-edit-section-label">Other</div>
-          <div className="add-contact-row"><Field label="Referral Source" field="referral_source" placeholder="Google, agent name..." /><Field label="Tags" field="tags" placeholder="VIP, repeat, priority" /></div>
-          <Field label="Notes" field="notes" type="textarea" placeholder="Internal notes about this contact..." />
-        </div>
+              {/* Vendor fields */}
+              {role === 'vendor' && (<>
+                <div className="cp-edit-section-label">Vendor Details</div>
+                <div className="add-contact-row"><Field label="Trade / Specialty" field="trade_specialty" placeholder="Flooring, plumbing, electrical..." /><Select label="Payment Terms" field="payment_terms" options={PAYMENT_TERMS} /></div>
+                <div className="add-contact-row"><Field label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file" /></div>
+              </>)}
 
-        {/* Footer */}
-        <div className="add-contact-footer">
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name.trim() || !form.phone.trim()}>
-            {saving ? 'Saving...' : 'Add Contact'}
-          </button>
-        </div>
+              {/* Subcontractor fields */}
+              {role === 'subcontractor' && (<>
+                <div className="cp-edit-section-label">Subcontractor Details</div>
+                <div className="add-contact-row"><Field label="Trade / Specialty" field="trade_specialty" placeholder="Drywall, painting, tile..." /><Select label="Payment Terms" field="payment_terms" options={PAYMENT_TERMS} /></div>
+                <div className="add-contact-row"><Field label="COI Expiration" field="coi_expiration" type="date" /><Field label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file" /></div>
+              </>)}
+
+              {/* Always at bottom */}
+              <div className="cp-edit-section-label">Other</div>
+              <div className="add-contact-row"><Field label="Referral Source" field="referral_source" placeholder="Google, agent name..." /><Field label="Tags" field="tags" placeholder="VIP, repeat, priority" /></div>
+              <Field label="Notes" field="notes" type="textarea" placeholder="Internal notes..." />
+            </div>
+
+            <div className="add-contact-footer">
+              <button className="btn btn-secondary" onClick={() => setStep('pick')}>Back</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name?.trim() || !form.phone?.trim()}>
+                {saving ? 'Saving...' : 'Add Contact'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
