@@ -512,17 +512,17 @@ export default function Conversations() {
             {/* ── Compose Actions Sheet ── */}
             {showComposeActions && (
               <div className="conv-actions-sheet">
-                <button className="conv-action-item" onClick={() => { setIsNote(!isNote); setShowSchedule(false); setShowComposeActions(false); }}>
+                <button className="conv-action-item" onClick={() => { setIsNote(!isNote); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); setShowTemplates(false); setShowComposeActions(false); }}>
                   <span className="conv-action-icon" style={{ background: isNote ? '#fef9c3' : 'var(--bg-tertiary)' }}><IconNote style={{ width: 18, height: 18, color: isNote ? '#92400e' : 'var(--text-secondary)' }} /></span>
                   <div><div className="conv-action-label">{isNote ? 'Switch to Message' : 'Internal Note'}</div><div className="conv-action-desc">{isNote ? 'Send as SMS to contact' : 'Only visible to your team'}</div></div>
                 </button>
-                <button className="conv-action-item" onClick={() => { openTemplates(); setShowComposeActions(false); }}>
+                <button className="conv-action-item" onClick={() => { setIsNote(false); setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); openTemplates(); setShowComposeActions(false); }}>
                   <span className="conv-action-icon"><IconTemplate style={{ width: 18, height: 18 }} /></span>
                   <div><div className="conv-action-label">Templates</div><div className="conv-action-desc">Insert a saved message template</div></div>
                 </button>
-                <button className="conv-action-item" onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); setShowComposeActions(false); }}>
+                <button className="conv-action-item" onClick={() => { setIsNote(false); setShowSchedule(!showSchedule); if (showSchedule) { setScheduleDate(''); setScheduleTime(''); } setShowTemplates(false); setShowComposeActions(false); }}>
                   <span className="conv-action-icon" style={{ background: showSchedule ? 'var(--accent-light)' : 'var(--bg-tertiary)' }}><IconClock style={{ width: 18, height: 18, color: showSchedule ? 'var(--accent)' : 'var(--text-secondary)' }} /></span>
-                  <div><div className="conv-action-label">Schedule Message</div><div className="conv-action-desc">{showSchedule ? 'Scheduling is on — pick date above' : 'Choose when to send'}</div></div>
+                  <div><div className="conv-action-label">{showSchedule ? 'Cancel Schedule' : 'Schedule Message'}</div><div className="conv-action-desc">{showSchedule ? 'Send immediately instead' : 'Choose when to send'}</div></div>
                 </button>
                 <button className="conv-action-item" onClick={() => setShowComposeActions(false)} disabled>
                   <span className="conv-action-icon"><IconPaperclip style={{ width: 18, height: 18 }} /></span>
