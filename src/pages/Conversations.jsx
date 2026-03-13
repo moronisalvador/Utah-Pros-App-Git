@@ -480,7 +480,7 @@ export default function Conversations() {
                       {tmpls.map(t => (
                         <button key={t.id} className="conv-template-item" onClick={() => insertTemplate(t)}>
                           <div className="conv-template-title">{t.title}</div>
-                          <div className="conv-template-body">{t.body.substring(0, 80)}{t.body.length > 80 ? '...' : ''}</div>
+                          <div className="conv-template-body">{t.body}</div>
                         </button>
                       ))}
                     </div>

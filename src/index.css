@@ -514,8 +514,10 @@ tr:hover td { background: var(--bg-secondary); }
 /* Template + Schedule pickers */
 .conv-template-picker, .conv-schedule-picker {
   border-top: 1px solid var(--border-color); background: var(--bg-primary);
-  max-height: 240px; display: flex; flex-direction: column;
+  display: flex; flex-direction: column;
 }
+.conv-template-picker { max-height: 50vh; }
+.conv-schedule-picker { max-height: 240px; }
 .conv-template-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-light); flex-shrink: 0;
@@ -528,14 +530,14 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--bg-secondary); position: sticky; top: 0; z-index: 1;
 }
 .conv-template-item {
-  display: block; width: 100%; padding: var(--space-2) var(--space-4);
+  display: block; width: 100%; padding: var(--space-3) var(--space-4);
   border: none; background: transparent; cursor: pointer; text-align: left;
   font-family: inherit; transition: background var(--transition-fast);
   border-bottom: 1px solid var(--border-light);
 }
 .conv-template-item:hover { background: var(--accent-light); }
 .conv-template-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
-.conv-template-body { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-template-body { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 2px; line-height: 1.4; }
 
 /* Schedule mode */
 .btn-schedule { background: #7c3aed; border-color: #7c3aed; color: white; }
@@ -1153,7 +1155,8 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-item-action { display: flex; }
 
   /* Pickers constrain height */
-  .conv-template-picker, .conv-schedule-picker { max-height: 200px; }
+  .conv-template-picker { max-height: 45vh; }
+  .conv-schedule-picker { max-height: 200px; }
 
   /* Modal: bottom sheet on mobile */
   .conv-modal-backdrop { padding-top: 0; align-items: flex-end; }
