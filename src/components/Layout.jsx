@@ -6,7 +6,6 @@ import CreateMenu from './CreateMenu';
 import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
-// Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
@@ -14,7 +13,6 @@ const BOTTOM_TABS = [
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
 
-// Pages that show the Create FAB
 const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule', '/customers', '/leads'];
 
 function IconMore(props) {
@@ -32,11 +30,11 @@ export default function Layout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showAddContact, setShowAddContact] = useState(false);
   const [carriers, setCarriers] = useState([]);
+  const [referralSources, setReferralSources] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
 
-  // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
       const convs = await db.select('conversations', 'select=unread_count');
@@ -51,14 +49,14 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
-  // Refetch on navigation (catches mark-as-read when leaving conversations)
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
-  // ── Fetch carriers once (for AddContactModal) ──
+  // Fetch lookup tables once
   useEffect(() => {
     db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name')
-      .then(setCarriers)
-      .catch(() => {});
+      .then(setCarriers).catch(() => {});
+    db.select('referral_sources', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category')
+      .then(setReferralSources).catch(() => {});
   }, [db]);
 
   const handleNavClick = () => setSidebarOpen(false);
@@ -74,7 +72,6 @@ export default function Layout() {
     return location.pathname === p;
   });
 
-  // ── Handle CreateMenu actions ──
   const handleCreateAction = (key) => {
     switch (key) {
       case 'job': navigate('/jobs/new'); break;
@@ -83,7 +80,6 @@ export default function Layout() {
     }
   };
 
-  // ── Save new contact from modal ──
   const handleSaveContact = async (data) => {
     try {
       const inserted = await db.insert('contacts', {
@@ -92,7 +88,6 @@ export default function Layout() {
         updated_at: new Date().toISOString(),
       });
       setShowAddContact(false);
-      // Navigate to the new contact's profile
       if (inserted?.length > 0) {
         navigate(`/contacts/${inserted[0].id}`);
       }
@@ -115,16 +110,15 @@ export default function Layout() {
 
       {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
 
-      {/* Add Contact Modal — accessible from any page via CreateMenu */}
       {showAddContact && (
         <AddContactModal
           onClose={() => setShowAddContact(false)}
           onSave={handleSaveContact}
           carriers={carriers}
+          referralSources={referralSources}
         />
       )}
 
-      {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">
         {BOTTOM_TABS.map(tab => (
           <button

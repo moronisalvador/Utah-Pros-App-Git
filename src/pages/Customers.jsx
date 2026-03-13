@@ -125,6 +125,7 @@ export default function Customers() {
   const [contacts, setContacts] = useState([]);
   const [jobCounts, setJobCounts] = useState({}); // { contactId: count }
   const [carriers, setCarriers] = useState([]);
+  const [referralSources, setReferralSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -135,13 +136,15 @@ export default function Customers() {
   // ── Load data ──
   const loadData = useCallback(async () => {
     try {
-      const [contactsData, contactJobsData, carriersData] = await Promise.all([
+      const [contactsData, contactJobsData, carriersData, refSourcesData] = await Promise.all([
         db.select('contacts', 'order=name.asc.nullslast&select=id,name,phone,email,company,role,opt_in_status,dnd,created_at'),
         db.select('contact_jobs', 'select=contact_id').catch(() => []),
         db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(() => []),
+        db.select('referral_sources', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category').catch(() => []),
       ]);
       setContacts(contactsData);
       setCarriers(carriersData);
+      setReferralSources(refSourcesData);
 
       // Count jobs per contact client-side
       const counts = {};
@@ -305,6 +308,7 @@ export default function Customers() {
             onClose={() => setShowAddModal(false)}
             onSave={handleAddContact}
             carriers={carriers}
+            referralSources={referralSources}
           />
         )}
       </div>

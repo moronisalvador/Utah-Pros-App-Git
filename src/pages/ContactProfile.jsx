@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
-import { CarrierSelect } from '@/components/AddContactModal';
+import { LookupSelect } from '@/components/AddContactModal';
 
 /* ═══ ICONS ═══ */
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
@@ -46,7 +46,7 @@ export default function ContactProfile(){
   const[convos,setConvos]=useState([]);const[jobs,setJobs]=useState([]);const[ests,setEsts]=useState([]);
   const[invs,setInvs]=useState([]);const[pays,setPays]=useState([]);const[clog,setClog]=useState([]);
   const[claims,setClaims]=useState([]);const[claimJobs,setClaimJobs]=useState({});
-  const[carriers,setCarriers]=useState([]);
+  const[carriers,setCarriers]=useState([]);const[refSources,setRefSources]=useState([]);
   const[ef,setEf]=useState({});
 
   const rEf=(x)=>setEf({name:x.name||'',phone:x.phone||'',phone_secondary:x.phone_secondary||'',email:x.email||'',company:x.company||'',role:x.role||'homeowner',preferred_contact_method:x.preferred_contact_method||'sms',preferred_language:x.preferred_language||'en',billing_address:x.billing_address||'',billing_city:x.billing_city||'',billing_state:x.billing_state||'',billing_zip:x.billing_zip||'',insurance_carrier:x.insurance_carrier||'',policy_number:x.policy_number||'',referral_source:x.referral_source||'',notes:x.notes||'',tags:(x.tags||[]).join(', '),desk_phone:x.desk_phone||'',desk_extension:x.desk_extension||'',territory:x.territory||'',relationship_notes:x.relationship_notes||'',trade_specialty:x.trade_specialty||'',payment_terms:x.payment_terms||'net_30',coi_expiration:x.coi_expiration||'',w9_on_file:x.w9_on_file||false});
@@ -55,13 +55,14 @@ export default function ContactProfile(){
     try{
       const cd=await db.select('contacts',`id=eq.${id}`);if(cd.length===0){nav('/customers',{replace:true});return;}
       const x=cd[0];setC(x);rEf(x);
-      const[cp,cj,inv,pay,con,carD]=await Promise.all([
+      const[cp,cj,inv,pay,con,carD,refD]=await Promise.all([
         db.select('conversation_participants',`contact_id=eq.${id}&is_active=eq.true&select=conversation_id`).catch(()=>[]),
         db.select('contact_jobs',`contact_id=eq.${id}&select=job_id,role,is_primary`).catch(()=>[]),
         db.select('invoices',`contact_id=eq.${id}&order=invoice_date.desc.nullslast&select=id,invoice_number,invoice_date,status,original_total,adjusted_total,balance_due,job_id`).catch(()=>[]),
         db.select('payments',`contact_id=eq.${id}&order=payment_date.desc.nullslast&select=id,amount,payment_date,payment_method,payer_type,payer_name,reference_number`).catch(()=>[]),
         db.select('sms_consent_log',`contact_id=eq.${id}&order=created_at.desc&limit=50`).catch(()=>[]),
-        db.select('insurance_carriers','is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(()=>[])]);
+        db.select('insurance_carriers','is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(()=>[]),
+        db.select('referral_sources','is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category').catch(()=>[])]);
       // Conversations
       if(cp.length>0){const ids=cp.map(p=>p.conversation_id);setConvos(await db.select('conversations',`id=in.(${ids.join(',')})&order=last_message_at.desc.nullslast&select=id,title,status,last_message_at,last_message_preview,unread_count,job_id`).catch(()=>[]));} else setConvos([]);
       // Jobs + estimates
@@ -72,7 +73,7 @@ export default function ContactProfile(){
       setClaims(clD);
       // Load jobs per claim
       if(clD.length>0){const clIds=clD.map(cl=>cl.id);const cjD=await db.select('jobs',`claim_id=in.(${clIds.join(',')})&select=id,job_number,insured_name,division,phase,address,claim_id`).catch(()=>[]);const cjMap={};for(const j of cjD){if(!cjMap[j.claim_id])cjMap[j.claim_id]=[];cjMap[j.claim_id].push(j);}setClaimJobs(cjMap);} else setClaimJobs({});
-      setInvs(inv);setPays(pay);setClog(con);setCarriers(carD);
+      setInvs(inv);setPays(pay);setClog(con);setCarriers(carD);setRefSources(refD);
     }catch(err){console.error('CP load:',err);}finally{setLoading(false);}
   },[db,id,nav]);
   useEffect(()=>{load();},[load]);
@@ -108,7 +109,7 @@ export default function ContactProfile(){
     <div className="cp-body">
       {/* ════ LEFT SIDEBAR ════ */}
       <div className="cp-sidebar">
-        {editing?<EditForm form={ef} setForm={setEf} onSave={save} onCancel={()=>{setEditing(false);rEf(c);}} saving={saving} role={c.role} carriers={carriers}/>:(<>
+        {editing?<EditForm form={ef} setForm={setEf} onSave={save} onCancel={()=>{setEditing(false);rEf(c);}} saving={saving} role={c.role} carriers={carriers} refSources={refSources}/>:(<>
           {/* Identity */}
           <div className="cp-sidebar-section"><div className="cp-identity">
             <div className="cp-avatar-lg">{gi(c.name)}</div>
@@ -186,7 +187,7 @@ export default function ContactProfile(){
 }
 
 /* ═══ EDIT FORM ═══ */
-function EditForm({form,setForm,onSave,onCancel,saving,role,carriers}){
+function EditForm({form,setForm,onSave,onCancel,saving,role,carriers,refSources}){
   const s=(f,v)=>setForm(p=>({...p,[f]:v}));const nr=useRef(null);useEffect(()=>{nr.current?.focus();},[]);
   const F=({label,field,type='text',placeholder})=>(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label>{type==='textarea'?<textarea className="input textarea" value={form[field]||''} onChange={e=>s(field,e.target.value)} rows={2} placeholder={placeholder}/>:type==='checkbox'?<label style={{display:'flex',alignItems:'center',gap:'var(--space-2)',cursor:'pointer',fontSize:'var(--text-sm)'}}><input type="checkbox" checked={form[field]||false} onChange={e=>s(field,e.target.checked)} style={{width:16,height:16}}/>{placeholder||label}</label>:<input ref={field==='name'?nr:undefined} className="input" type={type} value={form[field]||''} onChange={e=>s(field,e.target.value)} placeholder={placeholder}/> }</div>);
   const Sel=({label,field,options})=>(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label><select className="input" value={form[field]||''} onChange={e=>s(field,e.target.value)} style={{cursor:'pointer'}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>);
@@ -201,7 +202,7 @@ function EditForm({form,setForm,onSave,onCancel,saving,role,carriers}){
     <div className="cp-edit-row"><F label="Phone 2" field="phone_secondary" type="tel"/></div>
     <div className="cp-edit-row"><F label="Email" field="email" type="email"/></div>
     {isAdj&&<><div className="cp-edit-section-label">Adjuster Details</div>
-    <div className="cp-edit-row"><CarrierSelect value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} carriers={carriers}/></div>
+    <div className="cp-edit-row"><LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/></div>
     <div className="cp-edit-row"><F label="Desk Phone" field="desk_phone" type="tel"/></div>
     <div className="cp-edit-row"><F label="Extension" field="desk_extension"/></div>
     <div className="cp-edit-row"><F label="Territory" field="territory"/></div>
@@ -216,9 +217,9 @@ function EditForm({form,setForm,onSave,onCancel,saving,role,carriers}){
     <div className="cp-edit-row"><F label="City" field="billing_city"/><F label="State" field="billing_state"/></div>
     <div className="cp-edit-row"><F label="ZIP" field="billing_zip"/></div>
     <div className="cp-edit-section-label">Insurance</div>
-    <div className="cp-edit-row"><CarrierSelect value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} carriers={carriers}/><F label="Policy #" field="policy_number"/></div></>}
+    <div className="cp-edit-row"><LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/><F label="Policy #" field="policy_number"/></div></>}
     <div className="cp-edit-section-label">Other</div>
-    <div className="cp-edit-row"><F label="Referral" field="referral_source"/></div>
+    <div className="cp-edit-row"><LookupSelect label="Referral Source" value={form.referral_source} onChange={v=>s('referral_source',v)} items={refSources} placeholder="Search sources..."/></div>
     <div className="cp-edit-row"><F label="Tags" field="tags" placeholder="VIP, repeat"/></div>
     <F label="Notes" field="notes" type="textarea"/>
     <div className="cp-edit-actions"><button className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button><button className="btn btn-primary btn-sm" onClick={onSave} disabled={saving}>{saving?'Saving...':'Save'}</button></div>
