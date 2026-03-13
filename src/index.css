@@ -1259,6 +1259,24 @@ tr:hover td { background: var(--bg-secondary); }
 .cp-info-link:hover { opacity: 0.7; text-decoration: none; }
 .cp-info-link .cp-info-value { color: var(--accent); }
 
+/* ── Address rows ── */
+.cp-addr-row {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: var(--space-2) 0; font-size: var(--text-sm);
+}
+.cp-addr-text { flex: 1; min-width: 0; color: var(--text-primary); line-height: 1.4; }
+.cp-addr-job {
+  display: inline; font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--text-tertiary); margin-left: var(--space-2);
+}
+.cp-addr-tag {
+  display: inline-flex; padding: 1px 8px; border-radius: 9999px;
+  font-size: 10px; font-weight: 700; flex-shrink: 0; white-space: nowrap;
+  letter-spacing: 0.02em; margin-top: 2px;
+}
+.cp-addr-tag.billing { background: var(--accent-light); color: var(--accent); }
+.cp-addr-tag.service { background: var(--bg-tertiary); color: var(--text-tertiary); }
+
 .cp-header-footer {
   display: flex; flex-direction: column; gap: var(--space-3);
 }
