@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
+import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -14,7 +15,7 @@ const BOTTOM_TABS = [
 ];
 
 // Pages that show the Create FAB
-const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule'];
+const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule', '/customers', '/leads'];
 
 function IconMore(props) {
   return (
@@ -29,6 +30,8 @@ function IconMore(props) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [carriers, setCarriers] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -51,6 +54,13 @@ export default function Layout() {
   // Refetch on navigation (catches mark-as-read when leaving conversations)
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
+  // ── Fetch carriers once (for AddContactModal) ──
+  useEffect(() => {
+    db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name')
+      .then(setCarriers)
+      .catch(() => {});
+  }, [db]);
+
   const handleNavClick = () => setSidebarOpen(false);
   const handleBottomTab = (path) => navigate(path);
 
@@ -64,6 +74,33 @@ export default function Layout() {
     return location.pathname === p;
   });
 
+  // ── Handle CreateMenu actions ──
+  const handleCreateAction = (key) => {
+    switch (key) {
+      case 'job': navigate('/jobs/new'); break;
+      case 'estimate': navigate('/estimates/new'); break;
+      case 'customer': setShowAddContact(true); break;
+    }
+  };
+
+  // ── Save new contact from modal ──
+  const handleSaveContact = async (data) => {
+    try {
+      const inserted = await db.insert('contacts', {
+        ...data,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      setShowAddContact(false);
+      // Navigate to the new contact's profile
+      if (inserted?.length > 0) {
+        navigate(`/contacts/${inserted[0].id}`);
+      }
+    } catch (err) {
+      alert('Failed to add contact: ' + err.message);
+    }
+  };
+
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -76,7 +113,16 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu />}
+      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
+
+      {/* Add Contact Modal — accessible from any page via CreateMenu */}
+      {showAddContact && (
+        <AddContactModal
+          onClose={() => setShowAddContact(false)}
+          onSave={handleSaveContact}
+          carriers={carriers}
+        />
+      )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">

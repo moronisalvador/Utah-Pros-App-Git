@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import { CarrierSelect } from '@/components/AddContactModal';
 
 /* ═══ ICONS ═══ */
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
@@ -36,18 +37,6 @@ const fdt=(v)=>v?new Date(v).toLocaleString('en-US',{month:'short',day:'numeric'
 const fm=(v)=>v==null?'\u2014':`$${Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const rt=(iso)=>{if(!iso)return'';const d=new Date(iso),dd=Math.floor((new Date()-d)/86400000);if(dd===0)return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});if(dd===1)return'Yesterday';if(dd<7)return d.toLocaleDateString('en-US',{weekday:'short'});return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
 const fa=(s,c,st,z)=>{const p=[s,[c,st].filter(Boolean).join(', '),z].filter(Boolean);return p.join(', ')||null;};
-
-/* ═══ CARRIER SELECT ═══ */
-function CarrierSelect({value,onChange,carriers,placeholder='Search carriers...'}){
-  const[open,setOpen]=useState(false);const[search,setSearch]=useState('');const wr=useRef(null);
-  useEffect(()=>{const h=(e)=>{if(wr.current&&!wr.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
-  const fil=useMemo(()=>{if(!search.trim())return carriers;const q=search.toLowerCase();return carriers.filter(c=>c.name.toLowerCase().includes(q)||(c.short_name&&c.short_name.toLowerCase().includes(q)));},[carriers,search]);
-  const sel=(n)=>{onChange(n);setSearch('');setOpen(false);};
-  return(<div className="form-group" style={{flex:1,marginBottom:0}} ref={wr}><label className="label">Insurance Carrier</label><div className="carrier-select-wrap">
-    <input className="input" value={open?search:value||''} onChange={e=>{setSearch(e.target.value);if(!open)setOpen(true);}} onFocus={()=>{setOpen(true);setSearch('');}} placeholder={value||placeholder}/>
-    {open&&<div className="carrier-dropdown">{fil.length===0?(search.trim()?<button className="carrier-dropdown-item" onClick={()=>sel(search.trim())}>Use "<strong>{search.trim()}</strong>"</button>:<div className="carrier-dropdown-empty">No carriers</div>):(<>{fil.map(c=><button key={c.id} className={`carrier-dropdown-item${c.name===value?' active':''}`} onClick={()=>sel(c.name)}><span className="carrier-dropdown-name">{c.name}</span>{c.short_name&&<span className="carrier-dropdown-short">{c.short_name}</span>}</button>)}{search.trim()&&!fil.find(c=>c.name.toLowerCase()===search.toLowerCase())&&<button className="carrier-dropdown-item carrier-dropdown-custom" onClick={()=>sel(search.trim())}>Use "<strong>{search.trim()}</strong>"</button>}</>)}</div>}
-  </div></div>);
-}
 
 /* ═══ MAIN ═══ */
 export default function ContactProfile(){
