@@ -914,6 +914,93 @@ tr:hover td { background: var(--bg-secondary); }
   font-size: var(--text-sm);
 }
 
+.job-page-info-row.clickable {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 4px 4px;
+  margin: 0 -4px;
+  transition: background var(--transition-fast);
+}
+
+.job-page-info-row.clickable:hover {
+  background: var(--bg-secondary);
+}
+
+.job-page-info-row.editing {
+  padding: 4px 4px;
+  margin: 0 -4px;
+  align-items: center;
+}
+
+.job-page-edit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.job-page-edit-input {
+  height: 28px !important;
+  font-size: var(--text-sm) !important;
+  width: auto !important;
+  min-width: 120px;
+  max-width: 200px;
+  text-align: right;
+}
+
+.job-page-edit-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.job-page-edit-actions .btn-sm {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.job-page-inline-select {
+  height: 28px !important;
+  font-size: var(--text-sm) !important;
+  width: auto !important;
+  min-width: 120px;
+  max-width: 200px;
+  text-align: right;
+}
+
+/* ── Flag Toggles ── */
+.job-page-flag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.job-page-flag-toggle:hover {
+  border-color: var(--status-needs-response);
+  color: var(--text-secondary);
+}
+
+.job-page-flag-toggle.active {
+  background: var(--status-needs-response-bg);
+  border-color: var(--status-needs-response);
+  color: var(--status-needs-response);
+}
+
 .job-page-info-label {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
