@@ -61,8 +61,8 @@ export default function ContactProfile(){
         db.select('invoices',`contact_id=eq.${id}&order=invoice_date.desc.nullslast&select=id,invoice_number,invoice_date,status,original_total,adjusted_total,balance_due,job_id`).catch(()=>[]),
         db.select('payments',`contact_id=eq.${id}&order=payment_date.desc.nullslast&select=id,amount,payment_date,payment_method,payer_type,payer_name,reference_number`).catch(()=>[]),
         db.select('sms_consent_log',`contact_id=eq.${id}&order=created_at.desc&limit=50`).catch(()=>[]),
-        db.select('insurance_carriers','is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(()=>[]),
-        db.select('referral_sources','is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category').catch(()=>[])]);
+        db.rpc('get_insurance_carriers').catch(()=>[]),
+        db.rpc('get_referral_sources').catch(()=>[])]);
       // Conversations
       if(cp.length>0){const ids=cp.map(p=>p.conversation_id);setConvos(await db.select('conversations',`id=in.(${ids.join(',')})&order=last_message_at.desc.nullslast&select=id,title,status,last_message_at,last_message_preview,unread_count,job_id`).catch(()=>[]));} else setConvos([]);
       // Jobs + estimates

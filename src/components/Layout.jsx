@@ -51,12 +51,10 @@ export default function Layout() {
 
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
-  // Fetch lookup tables once
+  // Fetch lookup tables once (via RPC — bypasses schema cache)
   useEffect(() => {
-    db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name')
-      .then(setCarriers).catch(() => {});
-    db.select('referral_sources', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category')
-      .then(setReferralSources).catch(() => {});
+    db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
+    db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
   }, [db]);
 
   const handleNavClick = () => setSidebarOpen(false);

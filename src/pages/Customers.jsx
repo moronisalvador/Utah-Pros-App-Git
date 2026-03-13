@@ -139,8 +139,8 @@ export default function Customers() {
       const [contactsData, contactJobsData, carriersData, refSourcesData] = await Promise.all([
         db.select('contacts', 'order=name.asc.nullslast&select=id,name,phone,email,company,role,opt_in_status,dnd,created_at'),
         db.select('contact_jobs', 'select=contact_id').catch(() => []),
-        db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(() => []),
-        db.select('referral_sources', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,category').catch(() => []),
+        db.rpc('get_insurance_carriers').catch(() => []),
+        db.rpc('get_referral_sources').catch(() => []),
       ]);
       setContacts(contactsData);
       setCarriers(carriersData);
