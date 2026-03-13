@@ -470,6 +470,55 @@ tr:hover td { background: var(--bg-secondary); }
   padding: var(--space-1) 0; font-size: var(--text-sm);
 }
 .conv-detail-meta-row > span:first-child { color: var(--text-tertiary); font-size: var(--text-xs); }
+
+/* Profile link in detail panel */
+.conv-detail-profile-link {
+  display: block; text-decoration: none; color: inherit; cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+.conv-detail-profile-link:hover { opacity: 0.8; text-decoration: none; }
+.conv-detail-profile-link .conv-detail-avatar-lg {
+  border: 2px solid transparent; transition: border-color var(--transition-fast);
+}
+.conv-detail-profile-link:hover .conv-detail-avatar-lg { border-color: var(--accent); }
+.conv-detail-view-profile {
+  margin-top: var(--space-2);
+}
+.conv-detail-view-profile a {
+  font-size: var(--text-xs); color: var(--accent); font-weight: 500;
+}
+.conv-detail-view-profile a:hover { text-decoration: underline; }
+
+/* DND toggle */
+.conv-dnd-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+}
+.conv-dnd-info { flex: 1; min-width: 0; }
+.conv-dnd-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.conv-dnd-desc { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; }
+.conv-dnd-toggle {
+  width: 44px; height: 24px; border-radius: 12px; border: none; cursor: pointer;
+  background: var(--border-color); position: relative; flex-shrink: 0;
+  transition: background 200ms ease; padding: 0;
+}
+.conv-dnd-toggle.on { background: var(--status-needs-response); }
+.conv-dnd-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform 200ms ease;
+}
+.conv-dnd-toggle.on .conv-dnd-knob { transform: translateX(20px); }
+
+/* DND banner above compose */
+.conv-dnd-banner {
+  padding: var(--space-2) var(--space-4);
+  background: var(--status-needs-response-bg);
+  color: var(--status-needs-response);
+  font-size: var(--text-xs); font-weight: 500;
+  display: flex; align-items: center; gap: var(--space-2);
+  border-top: 1px solid #fecaca;
+}
 .conv-info-backdrop { display: none; }
 
 /* Context menu */
@@ -543,6 +592,18 @@ tr:hover td { background: var(--bg-secondary); }
 .btn-schedule { background: #7c3aed; border-color: #7c3aed; color: white; }
 .btn-schedule:hover:not(:disabled) { background: #6d28d9; }
 .conv-compose.schedule-mode { border-top-color: #7c3aed; }
+
+/* Toast notification */
+.conv-toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: var(--sidebar-bg); color: var(--text-inverse);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-full);
+  font-size: var(--text-sm); font-weight: 500; white-space: nowrap;
+  box-shadow: var(--shadow-lg); z-index: 300;
+  animation: toastIn 200ms ease, toastOut 300ms ease 1.7s forwards;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
 
 /* Slide-in animation for mobile thread */
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }

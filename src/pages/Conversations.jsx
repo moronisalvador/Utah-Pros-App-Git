@@ -134,6 +134,7 @@ export default function Conversations() {
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
   const [showComposeActions, setShowComposeActions] = useState(false);
+  const [toast, setToast] = useState(null); // { text, key }
 
   const messagesEndRef = useRef(null);
   const composeRef = useRef(null);
@@ -143,7 +144,7 @@ export default function Conversations() {
   const loadConversations = useCallback(async () => {
     try {
       const data = await db.select('conversations',
-        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role))&order=last_message_at.desc.nullslast'
+        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at))&order=last_message_at.desc.nullslast'
       );
       setConversations(data);
     } catch (err) { console.error('Load conversations error:', err); }
@@ -259,21 +260,58 @@ export default function Conversations() {
   };
   const goBackToList = () => { setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false); };
 
+  const showToast = (text) => {
+    setToast({ text, key: Date.now() });
+    setTimeout(() => setToast(null), 2000);
+  };
+
   const markAsUnread = async (convId) => {
     setContextMenu(null);
-    try { await db.update('conversations', `id=eq.${convId}`, { unread_count: 1 }); setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 1 } : c)); }
-    catch (err) { console.error('Mark unread error:', err); }
+    try {
+      await db.update('conversations', `id=eq.${convId}`, { unread_count: 1 });
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 1 } : c));
+      showToast('Marked as unread');
+    } catch (err) { console.error('Mark unread error:', err); }
   };
   const markAsRead = async (convId) => {
     setContextMenu(null);
-    try { await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 }); setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c)); }
-    catch (err) { console.error('Mark read error:', err); }
+    try {
+      await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 });
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
+      showToast('Marked as read');
+    } catch (err) { console.error('Mark read error:', err); }
   };
   const readAll = async () => {
     const unread = conversations.filter(c => c.unread_count > 0);
     if (!unread.length) return;
-    try { await Promise.all(unread.map(c => db.update('conversations', `id=eq.${c.id}`, { unread_count: 0 }))); setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 }))); }
-    catch (err) { console.error('Read all error:', err); }
+    try {
+      await Promise.all(unread.map(c => db.update('conversations', `id=eq.${c.id}`, { unread_count: 0 })));
+      setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 })));
+      showToast(`${unread.length} conversations marked as read`);
+    } catch (err) { console.error('Read all error:', err); }
+  };
+
+  const toggleDnd = async (contactId, currentDnd) => {
+    const newDnd = !currentDnd;
+    try {
+      await db.update('contacts', `id=eq.${contactId}`, {
+        dnd: newDnd,
+        dnd_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      // Update the embedded contact data in conversations state
+      setConversations(prev => prev.map(c => ({
+        ...c,
+        conversation_participants: c.conversation_participants?.map(p =>
+          p.contact_id === contactId
+            ? { ...p, contacts: { ...p.contacts, dnd: newDnd, dnd_at: new Date().toISOString() } }
+            : p
+        ),
+      })));
+      showToast(newDnd ? 'DND enabled — messaging blocked' : 'DND disabled — messaging allowed');
+    } catch (err) {
+      console.error('Toggle DND error:', err);
+    }
   };
 
   const handleSend = async () => {
@@ -439,8 +477,17 @@ export default function Conversations() {
                   title={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
                 >
                   {activeConv?.unread_count > 0
-                    ? <IconCheck style={{ width: 18, height: 18 }} />
-                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="none" /><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                    ? /* Open envelope = "mark as read" */
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
+                        <path d="M21.2 8L12 13 2.8 8" />
+                        <path d="M2 8v10c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2V8" />
+                        <path d="M2 8l10-5 10 5" />
+                      </svg>
+                    : /* Closed envelope = "mark as unread" */
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <polyline points="22,4 12,13 2,4" />
+                      </svg>
                   }
                 </button>
                 {linkedJob && (
@@ -519,6 +566,13 @@ export default function Conversations() {
               </div>
             )}
 
+            {/* ── DND Banner ── */}
+            {activeContact?.dnd && !isNote && (
+              <div className="conv-dnd-banner">
+                <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
+              </div>
+            )}
+
             {/* ── Compose Actions Sheet ── */}
             {showComposeActions && (
               <div className="conv-actions-sheet">
@@ -546,11 +600,10 @@ export default function Conversations() {
               <button className={`conv-plus-btn${showComposeActions ? ' active' : ''}${isNote ? ' note-active' : ''}`} onClick={() => setShowComposeActions(!showComposeActions)} aria-label="More actions">
                 <IconPlus style={{ width: 18, height: 18, transition: 'transform 200ms ease', transform: showComposeActions ? 'rotate(45deg)' : 'none' }} />
               </button>
-              {/* Active mode chips */}
               {isNote && !showComposeActions && <span className="conv-mode-chip note">📝 Note</span>}
               {showSchedule && scheduleDate && scheduleTime && !showComposeActions && <span className="conv-mode-chip schedule">🕐 Scheduled</span>}
-              <textarea ref={composeRef} className="conv-compose-input" placeholder={isNote ? 'Write an internal note...' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'} value={compose} onChange={handleComposeInput} onKeyDown={handleKeyDown} rows={1} />
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || sending || (showSchedule && (!scheduleDate || !scheduleTime))} aria-label="Send">
+              <textarea ref={composeRef} className="conv-compose-input" placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'} value={compose} onChange={handleComposeInput} onKeyDown={handleKeyDown} rows={1} />
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || sending || (showSchedule && (!scheduleDate || !scheduleTime)) || (activeContact?.dnd && !isNote)} aria-label="Send">
                 {sending ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>
@@ -564,12 +617,50 @@ export default function Conversations() {
         {activeConv ? (
           <>
             <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
+
+            {/* Avatar + Name — clickable to profile page */}
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
-              <div className="conv-detail-avatar-lg">{getInitials(activeContact?.name || activeConv.title)}</div>
-              <div className="conv-detail-name">{cleanName(activeContact?.name || activeConv.title)}</div>
-              {activeContact?.company && <div className="conv-detail-company">{activeContact.company}</div>}
+              <a href={activeContact ? `/contacts/${activeContact.id}` : '#'} className="conv-detail-profile-link">
+                <div className="conv-detail-avatar-lg">{getInitials(activeContact?.name || activeConv.title)}</div>
+                <div className="conv-detail-name">{cleanName(activeContact?.name || activeConv.title)}</div>
+                {activeContact?.company && <div className="conv-detail-company">{activeContact.company}</div>}
+              </a>
               {activeContact?.role && <span className="conv-detail-role-tag">{activeContact.role.replace(/_/g, ' ')}</span>}
+              {activeContact && (
+                <div className="conv-detail-view-profile">
+                  <a href={`/contacts/${activeContact.id}`}>View full profile →</a>
+                </div>
+              )}
             </div>
+
+            {/* DND Toggle — Twilio compliance */}
+            {activeContact && (
+              <div className="conv-detail-section">
+                <div className="conv-detail-label">Messaging</div>
+                <div className="conv-dnd-row">
+                  <div className="conv-dnd-info">
+                    <div className="conv-dnd-title">Do Not Disturb</div>
+                    <div className="conv-dnd-desc">{activeContact.dnd ? 'All outbound messages blocked' : 'Outbound messaging allowed'}</div>
+                  </div>
+                  <button
+                    className={`conv-dnd-toggle${activeContact.dnd ? ' on' : ''}`}
+                    onClick={() => toggleDnd(activeContact.id, activeContact.dnd)}
+                    role="switch"
+                    aria-checked={activeContact.dnd}
+                    aria-label="Do Not Disturb"
+                  >
+                    <span className="conv-dnd-knob" />
+                  </button>
+                </div>
+                {activeContact.dnd && activeContact.dnd_at && (
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--status-needs-response)', marginTop: 'var(--space-2)' }}>
+                    Enabled {new Date(activeContact.dnd_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Contact details */}
             <div className="conv-detail-section">
               <div className="conv-detail-label">Contact</div>
               {activeContact?.phone && <div className="conv-detail-row"><IconPhone style={{ width: 14, height: 14, color: 'var(--text-tertiary)', flexShrink: 0 }} /><a href={`tel:${activeContact.phone}`} className="conv-detail-link">{activeContact.phone}</a></div>}
@@ -640,6 +731,11 @@ export default function Conversations() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══ Toast Notification ═══ */}
+      {toast && (
+        <div className="conv-toast" key={toast.key}>{toast.text}</div>
       )}
     </div>
   );
