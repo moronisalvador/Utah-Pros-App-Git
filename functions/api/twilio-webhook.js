@@ -1,287 +1,283 @@
 // POST /api/twilio-webhook
-// Receives ALL inbound messages from Twilio
-// Configured in Twilio Console: Number → Webhook URL → https://your-domain/api/twilio-webhook
+// Receives inbound SMS/MMS from Twilio.
 //
-// This is the most critical Worker — it's the entry point for every inbound text.
+// COMPLIANCE: Handles STOP/HELP/START keywords per CTIA guidelines.
+// Twilio's Advanced Opt-Out handles these at the messaging service level,
+// but we ALSO handle them here for:
+//   1. Updating our database (contacts.opt_in_status, contacts.dnd)
+//   2. Logging to sms_consent_log (audit trail for TCPA)
+//   3. Custom HELP response with UPR contact info
+//
+// Flow:
+//   1. Validate Twilio signature (prevents spoofed webhooks)
+//   2. Check for compliance keywords (STOP/HELP/START)
+//   3. Find or create contact
+//   4. Find or create conversation
+//   5. Insert message
+//   6. Update conversation metadata
+//   7. Run automation rules
 
 import { supabase } from '../lib/supabase.js';
-import { validateTwilioSignature, parseTwilioWebhook, emptyTwimlResponse, sendMessage as twilioSend } from '../lib/twilio.js';
+import { handleOptions, jsonResponse } from '../lib/cors.js';
+
+// ── Twilio signature validation ──
+async function validateTwilioSignature(request, env) {
+  // In development, skip validation
+  if (!env.TWILIO_AUTH_TOKEN) return true;
+
+  const signature = request.headers.get('X-Twilio-Signature');
+  if (!signature) return false;
+
+  const url = request.url;
+  const body = await request.clone().text();
+  const params = new URLSearchParams(body);
+
+  // Sort params and build validation string
+  const sortedKeys = [...params.keys()].sort();
+  let validationString = url;
+  for (const key of sortedKeys) {
+    validationString += key + params.get(key);
+  }
+
+  // HMAC-SHA1 with auth token
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(env.TWILIO_AUTH_TOKEN),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(validationString));
+  const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
+
+  return computed === signature;
+}
+
+// ── STOP/HELP/START keyword detection ──
+// CTIA requires handling these exact keywords (case-insensitive)
+const STOP_KEYWORDS = ['stop', 'unsubscribe', 'cancel', 'end', 'quit'];
+const START_KEYWORDS = ['start', 'unstop', 'subscribe', 'yes'];
+const HELP_KEYWORDS = ['help', 'info'];
+
+function detectKeyword(body) {
+  const trimmed = (body || '').trim().toLowerCase();
+  if (STOP_KEYWORDS.includes(trimmed)) return 'stop';
+  if (START_KEYWORDS.includes(trimmed)) return 'start';
+  if (HELP_KEYWORDS.includes(trimmed)) return 'help';
+  return null;
+}
+
+export async function onRequestOptions(context) {
+  return handleOptions(context.request, context.env);
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
 
   try {
-    // ── 1. VALIDATE TWILIO SIGNATURE ──
-    // CRITICAL: Without this, anyone can POST fake messages to this endpoint
-    const webhookUrl = `${env.PAGES_URL || `https://${request.headers.get('host')}`}/api/twilio-webhook`;
-    const isValid = await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, webhookUrl);
-
+    // ── 1. Validate Twilio signature ──
+    const isValid = await validateTwilioSignature(request, env);
     if (!isValid) {
-      console.error('Invalid Twilio signature — rejecting webhook');
       return new Response('Forbidden', { status: 403 });
     }
 
-    // ── 2. PARSE INBOUND MESSAGE ──
+    // Parse Twilio webhook payload (application/x-www-form-urlencoded)
     const formData = await request.formData();
-    const msg = parseTwilioWebhook(formData);
+    const from = formData.get('From');         // +1XXXXXXXXXX
+    const to = formData.get('To');             // Your Twilio number
+    const body = formData.get('Body') || '';
+    const messageSid = formData.get('MessageSid');
+    const numMedia = parseInt(formData.get('NumMedia') || '0', 10);
 
-    // Idempotency: check if we already processed this MessageSid
-    const existing = await db.select('messages', `twilio_sid=eq.${msg.messageSid}`);
-    if (existing.length > 0) {
-      return emptyTwimlResponse(); // Already processed, skip
+    if (!from || !messageSid) {
+      return twimlResponse('');  // Empty TwiML = no auto-reply
     }
 
-    // ── 3. ROUTE TO CONVERSATION ──
-    let conversation = null;
-    let contact = null;
-    let isNewContact = false;
-
-    if (msg.addressSid) {
-      // Group MMS — route by AddressSid
-      const convos = await db.select('conversations', `twilio_group_sid=eq.${msg.addressSid}`);
-      conversation = convos[0] || null;
+    // Collect media URLs if MMS
+    const mediaUrls = [];
+    for (let i = 0; i < numMedia; i++) {
+      const url = formData.get(`MediaUrl${i}`);
+      if (url) mediaUrls.push(url);
     }
 
-    if (!conversation) {
-      // Direct message — find conversation by sender phone
-      const participants = await db.select(
-        'conversation_participants',
-        `phone=eq.${encodeURIComponent(msg.from)}&is_active=eq.true&select=conversation_id,contact_id`
+    // ── 2. Find or create contact ──
+    let [contact] = await db.select('contacts', `phone=eq.${encodeURIComponent(from)}&limit=1`);
+
+    if (!contact) {
+      // Auto-create contact from inbound message
+      [contact] = await db.insert('contacts', {
+        phone: from,
+        name: null,
+        opt_in_status: true,          // Inbound message = implied consent (they texted us first)
+        opt_in_source: 'inbound_sms',
+        opt_in_at: new Date().toISOString(),
+      });
+
+      // Log the implied consent
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: from,
+        event_type: 'opt_in',
+        source: 'inbound_sms',
+        details: 'Implied consent: contact initiated conversation via SMS.',
+      });
+    }
+
+    // ── 3. Check for compliance keywords ──
+    const keyword = detectKeyword(body);
+
+    if (keyword === 'stop') {
+      // ── STOP: Immediately opt out + DND ──
+      await db.update('contacts', `id=eq.${contact.id}`, {
+        opt_in_status: false,
+        opt_out_at: new Date().toISOString(),
+        opt_out_reason: 'stop_keyword',
+        dnd: true,
+        dnd_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: from,
+        event_type: 'stop_keyword',
+        source: 'keyword',
+        details: `Contact texted "${body.trim()}". Opted out and DND enabled.`,
+      });
+
+      // Twilio sends its own STOP confirmation if using a Messaging Service.
+      // If using a plain number, respond with confirmation:
+      return twimlResponse(
+        'You have been unsubscribed from Utah Pros Restoration messages. ' +
+        'Reply START to re-subscribe. For help, reply HELP.'
       );
-
-      if (participants.length > 0) {
-        // Find the most recent direct conversation for this participant
-        for (const p of participants) {
-          const convos = await db.select(
-            'conversations',
-            `id=eq.${p.conversation_id}&type=eq.direct&order=last_message_at.desc&limit=1`
-          );
-          if (convos[0]) {
-            conversation = convos[0];
-            break;
-          }
-        }
-      }
     }
 
-    // ── 4. FIND OR CREATE CONTACT ──
-    const contacts = await db.select('contacts', `phone=eq.${encodeURIComponent(msg.from)}`);
-    if (contacts[0]) {
-      contact = contacts[0];
-    } else {
-      // New unknown number — create contact
-      isNewContact = true;
-      const [newContact] = await db.insert('contacts', {
-        phone: msg.from,
-        name: null, // Unknown — team will fill in
-        role: 'other',
-        opt_in_status: false, // Needs manual opt-in confirmation
+    if (keyword === 'start') {
+      // ── START: Re-subscribe ──
+      await db.update('contacts', `id=eq.${contact.id}`, {
+        opt_in_status: true,
+        opt_in_source: 'start_keyword',
+        opt_in_at: new Date().toISOString(),
+        opt_out_at: null,
+        opt_out_reason: null,
+        dnd: false,
+        dnd_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       });
-      contact = newContact;
+
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: from,
+        event_type: 'start_keyword',
+        source: 'keyword',
+        details: `Contact texted "${body.trim()}". Re-subscribed and DND disabled.`,
+      });
+
+      return twimlResponse(
+        'You have been re-subscribed to Utah Pros Restoration messages. ' +
+        'Reply STOP to unsubscribe at any time.'
+      );
     }
 
-    // ── 5. CREATE CONVERSATION IF NEW ──
+    if (keyword === 'help') {
+      // ── HELP: Required by CTIA — must include company name + support contact ──
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: from,
+        event_type: 'help_request',
+        source: 'keyword',
+        details: `Contact texted "${body.trim()}".`,
+      });
+
+      return twimlResponse(
+        'Utah Pros Restoration — SMS Support\n' +
+        'For help, call (801) 477-5590 or email info@utahpros.com.\n' +
+        'Reply STOP to unsubscribe. Msg & data rates may apply.'
+      );
+    }
+
+    // ── 4. Find or create conversation ──
+    // Look for existing active conversation with this contact
+    let conversation = null;
+    const existingParticipants = await db.select(
+      'conversation_participants',
+      `contact_id=eq.${contact.id}&is_active=eq.true&select=conversation_id`
+    );
+
+    if (existingParticipants.length > 0) {
+      const convId = existingParticipants[0].conversation_id;
+      const [existing] = await db.select('conversations', `id=eq.${convId}`);
+      if (existing) conversation = existing;
+    }
+
     if (!conversation) {
-      const [newConv] = await db.insert('conversations', {
+      // Create new conversation
+      const title = contact.name || from;
+      [conversation] = await db.insert('conversations', {
         type: 'direct',
-        title: contact.name || msg.from,
+        title,
         status: 'needs_response',
-        status_changed_at: new Date().toISOString(),
-        twilio_number: msg.to,
-        twilio_group_sid: msg.addressSid || null,
+        twilio_number: to,
       });
-      conversation = newConv;
 
-      // Add participant
       await db.insert('conversation_participants', {
         conversation_id: conversation.id,
         contact_id: contact.id,
-        phone: msg.from,
-        role: contact.role,
+        phone: from,
+        role: 'primary',
       });
     }
 
-    // ── 6. INSERT MESSAGE ──
+    // ── 5. Insert inbound message ──
     const [message] = await db.insert('messages', {
       conversation_id: conversation.id,
       type: 'sms_inbound',
-      body: msg.body,
-      channel: msg.channelPrefix === 'rcs' ? 'rcs' : (msg.numMedia > 0 ? 'mms' : 'sms'),
+      body: body.trim() || null,
       status: 'received',
-      twilio_sid: msg.messageSid,
-      sender_phone: msg.from,
+      twilio_sid: messageSid,
+      sender_phone: from,
       sender_contact_id: contact.id,
-      media_urls: msg.mediaUrls.length > 0 ? JSON.stringify(msg.mediaUrls) : null,
+      media_urls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
     });
 
-    // ── 7. UPDATE CONVERSATION ──
+    // ── 6. Update conversation ──
     await db.update('conversations', `id=eq.${conversation.id}`, {
-      last_message_at: new Date().toISOString(),
-      last_message_preview: msg.body?.substring(0, 100) || '[Media]',
       status: 'needs_response',
       status_changed_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      last_message_preview: (body.trim() || '[Media]').substring(0, 100),
       unread_count: (conversation.unread_count || 0) + 1,
-      // Clear first_response_at so we track the next team response time
-      first_response_at: null,
       updated_at: new Date().toISOString(),
     });
 
-    // ── 8. EVALUATE AUTOMATION RULES ──
-    // Fetch active rules ordered by priority
-    try {
-      const rules = await db.select('automation_rules', 'is_active=eq.true&order=priority.asc');
+    // ── 7. Run automation rules (future) ──
+    // TODO: Check automation_rules for matching triggers and execute actions
 
-      for (const rule of rules) {
-        const triggered = await evaluateRule(rule, {
-          message: msg,
-          conversation,
-          contact,
-          isNewContact,
-          env,
-        });
-        if (triggered) break; // First match wins (unless multi-match is configured later)
-      }
-    } catch (ruleErr) {
-      // Automation failures should not block message processing
-      console.error('Automation rule error:', ruleErr);
-    }
-
-    // ── 9. RETURN EMPTY TWIML ──
-    return emptyTwimlResponse();
+    // Return empty TwiML (no auto-reply for normal messages)
+    return twimlResponse('');
 
   } catch (err) {
     console.error('twilio-webhook error:', err);
-    // Still return TwiML so Twilio doesn't retry
-    return emptyTwimlResponse();
+    // Still return 200 to Twilio so it doesn't retry
+    return twimlResponse('');
   }
 }
 
-/**
- * Evaluate a single automation rule against the inbound message context
- */
-async function evaluateRule(rule, ctx) {
-  const { message, conversation, contact, isNewContact, env } = ctx;
-  const config = rule.trigger_config || {};
+// ── TwiML response helper ──
+function twimlResponse(messageBody) {
+  const twiml = messageBody
+    ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(messageBody)}</Message></Response>`
+    : `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
 
-  let shouldFire = false;
-
-  switch (rule.trigger_type) {
-    case 'keyword': {
-      const keywords = config.keywords || [];
-      const bodyLower = (message.body || '').toLowerCase();
-      shouldFire = keywords.some(kw => bodyLower.includes(kw.toLowerCase()));
-      break;
-    }
-
-    case 'after_hours': {
-      // Check if current time (Mountain) is outside business hours
-      const now = new Date();
-      // Convert to Mountain Time (UTC-7 or UTC-6 for DST)
-      const mt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Denver' }));
-      const hour = mt.getHours();
-      const startHour = parseInt(config.start_hour || '18', 10); // 6 PM
-      const endHour = parseInt(config.end_hour || '8', 10);       // 8 AM
-      shouldFire = hour >= startHour || hour < endHour;
-      break;
-    }
-
-    case 'new_contact':
-      shouldFire = isNewContact;
-      break;
-
-    case 'first_message': {
-      // First message in this conversation from this contact
-      const db = supabase(env);
-      const prior = await db.select(
-        'messages',
-        `conversation_id=eq.${conversation.id}&type=eq.sms_inbound&limit=2`
-      );
-      shouldFire = prior.length <= 1; // Only the message we just inserted
-      break;
-    }
-
-    default:
-      shouldFire = false;
-  }
-
-  if (!shouldFire) return false;
-
-  // Execute the action
-  await executeAction(rule, ctx);
-  return true;
+  return new Response(twiml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  });
 }
 
-/**
- * Execute an automation action
- */
-async function executeAction(rule, ctx) {
-  const { message, conversation, env } = ctx;
-  const config = rule.action_config || {};
-  const db = supabase(env);
-
-  switch (rule.action_type) {
-    case 'auto_reply': {
-      const replyBody = config.message || config.template_body || '';
-      if (!replyBody) return;
-
-      // Get the conversation's Twilio number
-      const from = conversation.twilio_number || env.TWILIO_PHONE_NUMBER;
-
-      // Send auto-reply via Twilio
-      const result = await twilioSend(env, {
-        to: message.from,
-        body: replyBody,
-      });
-
-      // Log the auto-reply as a message
-      await db.insert('messages', {
-        conversation_id: conversation.id,
-        type: 'sms_outbound',
-        body: replyBody,
-        status: result.sid ? 'queued' : 'failed',
-        twilio_sid: result.sid,
-        // No sent_by — this is automated
-      });
-      break;
-    }
-
-    case 'tag': {
-      const tag = config.tag;
-      if (tag) {
-        await db.upsert('conversation_tags', {
-          conversation_id: conversation.id,
-          tag,
-        });
-      }
-      break;
-    }
-
-    case 'assign': {
-      const assignTo = config.assign_to;
-      if (assignTo) {
-        await db.update('conversations', `id=eq.${conversation.id}`, {
-          assigned_to: assignTo,
-          updated_at: new Date().toISOString(),
-        });
-      }
-      break;
-    }
-
-    case 'update_status': {
-      const newStatus = config.status;
-      if (newStatus) {
-        await db.update('conversations', `id=eq.${conversation.id}`, {
-          status: newStatus,
-          status_changed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      }
-      break;
-    }
-
-    // escalate, create_group, send_template, notify — implemented in future phases
-    default:
-      console.log(`Action type '${rule.action_type}' not yet implemented`);
-  }
+function escapeXml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

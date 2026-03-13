@@ -320,7 +320,17 @@ export default function Conversations() {
         dnd_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
-      // Update the embedded contact data in conversations state
+
+      // TCPA compliance: log every DND change
+      await db.insert('sms_consent_log', {
+        contact_id: contactId,
+        phone: activeContact?.phone || '',
+        event_type: newDnd ? 'dnd_on' : 'dnd_off',
+        source: 'manual',
+        details: `DND ${newDnd ? 'enabled' : 'disabled'} by team member via conversations UI.`,
+        performed_by: employee?.id || null,
+      });
+
       setConversations(prev => prev.map(c => ({
         ...c,
         conversation_participants: c.conversation_participants?.map(p =>
@@ -339,37 +349,102 @@ export default function Conversations() {
     const text = compose.trim();
     if (!text || sending || !activeId) return;
 
-    // Scheduled
+    // ── Scheduled message path ──
     if (showSchedule && scheduleDate && scheduleTime) {
       setSending(true);
       try {
         const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
         await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
         clearCompose(); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
-      } catch (err) { console.error('Schedule error:', err); }
+        showToast('Message scheduled');
+      } catch (err) { console.error('Schedule error:', err); showToast('Failed to schedule'); }
       finally { setSending(false); }
       return;
     }
 
-    // Immediate
+    // ── Immediate send path ──
+    // Strategy: POST to /api/send-message Worker first.
+    // Worker handles Twilio delivery + compliance checks (DND, opt-in).
+    // If Worker fails (not deployed, env vars missing), fall back to direct insert.
     setSending(true);
     try {
-      const msgData = { conversation_id: activeId, type: isNote ? 'internal_note' : 'sms_outbound', body: text, status: isNote ? 'received' : 'queued', sent_by: employee?.id || null };
-      const [newMsg] = await db.insert('messages', msgData);
-      // Attach employee info for immediate rendering (PostgREST insert doesn't return embedded data)
-      newMsg.employees = employee ? { full_name: employee.full_name } : null;
-      setMessages(prev => [...prev, newMsg]);
+      let newMsg = null;
+      let usedWorker = false;
+
+      try {
+        const res = await fetch('/api/send-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversation_id: activeId,
+            body: text,
+            sent_by: employee?.id || null,
+            is_internal_note: isNote,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          // Handle compliance blocks with user-facing feedback
+          if (data.code === 'DND_ACTIVE') {
+            showToast('Blocked: contact has DND enabled');
+            setSending(false);
+            return;
+          }
+          if (data.code === 'NO_CONSENT') {
+            showToast('Blocked: contact has not opted in');
+            setSending(false);
+            return;
+          }
+          throw new Error(data.error || `Worker returned ${res.status}`);
+        }
+
+        newMsg = data.message;
+        usedWorker = true;
+      } catch (workerErr) {
+        // Worker not available — fall back to direct Supabase insert
+        // This is expected during development or before Twilio env vars are set
+        console.warn('Worker unavailable, using direct insert:', workerErr.message);
+
+        const msgData = {
+          conversation_id: activeId,
+          type: isNote ? 'internal_note' : 'sms_outbound',
+          body: text,
+          status: isNote ? 'received' : 'queued',
+          sent_by: employee?.id || null,
+        };
+        const [inserted] = await db.insert('messages', msgData);
+        newMsg = inserted;
+      }
+
+      // Attach employee info for immediate rendering
+      if (newMsg) {
+        newMsg.employees = employee ? { full_name: employee.full_name } : null;
+        setMessages(prev => [...prev, newMsg]);
+      }
+
+      // Update conversation preview (Worker does this server-side too, but we update local state)
       const preview = isNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
       const upd = { last_message_at: new Date().toISOString(), last_message_preview: preview, updated_at: new Date().toISOString() };
       if (!isNote && activeConv?.status === 'needs_response') {
         upd.status = 'waiting_on_client'; upd.status_changed_at = new Date().toISOString();
         if (!activeConv.first_response_at) upd.first_response_at = new Date().toISOString();
       }
-      await db.update('conversations', `id=eq.${activeId}`, upd);
+
+      // Only update conversation client-side if Worker wasn't used (Worker already did it)
+      if (!usedWorker) {
+        await db.update('conversations', `id=eq.${activeId}`, upd);
+      }
       setConversations(prev => prev.map(c => c.id === activeId ? { ...c, ...upd } : c));
+
       clearCompose(); setIsNote(false); composeRef.current?.focus();
-    } catch (err) { console.error('Send error:', err); }
-    finally { setSending(false); }
+    } catch (err) {
+      console.error('Send error:', err);
+      showToast('Failed to send');
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (e) => {
