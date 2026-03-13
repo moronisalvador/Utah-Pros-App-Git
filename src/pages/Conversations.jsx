@@ -172,7 +172,7 @@ export default function Conversations() {
       setMsgLoading(true);
       try {
         const msgs = await db.select('messages',
-          `conversation_id=eq.${activeId}&order=created_at.asc&select=id,type,body,status,sent_by,sender_contact_id,media_urls,created_at`
+          `conversation_id=eq.${activeId}&order=created_at.asc&select=id,type,body,status,sent_by,sender_contact_id,media_urls,created_at,employees(full_name)`
         );
         if (!cancelled) setMessages(msgs);
         const conv = conversations.find(c => c.id === activeId);
@@ -335,6 +335,8 @@ export default function Conversations() {
     try {
       const msgData = { conversation_id: activeId, type: isNote ? 'internal_note' : 'sms_outbound', body: text, status: isNote ? 'received' : 'queued', sent_by: employee?.id || null };
       const [newMsg] = await db.insert('messages', msgData);
+      // Attach employee info for immediate rendering (PostgREST insert doesn't return embedded data)
+      newMsg.employees = employee ? { full_name: employee.full_name } : null;
       setMessages(prev => [...prev, newMsg]);
       const preview = isNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
       const upd = { last_message_at: new Date().toISOString(), last_message_preview: preview, updated_at: new Date().toISOString() };
@@ -541,7 +543,7 @@ export default function Conversations() {
                 return (
                   <div key={msg.id} className={cls}>
                     <div className="message-bubble">
-                      {msg.type === 'internal_note' && <span className="msg-note-label">📝 Note</span>}
+                      {msg.type === 'internal_note' && <span className="msg-note-label">📝 {msg.employees?.full_name || 'Note'}</span>}
                       {msg.body}
                     </div>
                     <div className="message-meta">
