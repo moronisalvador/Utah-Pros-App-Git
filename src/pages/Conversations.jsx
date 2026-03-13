@@ -433,6 +433,16 @@ export default function Conversations() {
                 </div>
               </div>
               <div className="conv-thread-header-right">
+                <button
+                  className="conv-info-btn"
+                  onClick={() => activeConv?.unread_count > 0 ? markAsRead(activeId) : markAsUnread(activeId)}
+                  title={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
+                >
+                  {activeConv?.unread_count > 0
+                    ? <IconCheck style={{ width: 18, height: 18 }} />
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="none" /><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                  }
+                </button>
                 {linkedJob && (
                   <a href={`/jobs/${linkedJob.id}`} className="btn btn-sm btn-secondary conv-job-link" title={linkedJob.job_number}>
                     <span className="conv-job-link-num">{linkedJob.job_number}</span><IconLink style={{ width: 12, height: 12 }} />
