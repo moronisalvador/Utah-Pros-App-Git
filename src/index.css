@@ -301,6 +301,15 @@ tr:hover td { background: var(--bg-secondary); }
   min-width: 18px; height: 18px; border-radius: 9px;
   display: inline-flex; align-items: center; justify-content: center; padding: 0 5px;
 }
+.conv-item-action {
+  display: none; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-md);
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-tertiary); padding: 0; flex-shrink: 0; align-self: center;
+  transition: all var(--transition-fast);
+}
+.conv-item:hover .conv-item-action { display: flex; }
+.conv-item-action:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
 /* Thread panel */
 .conv-thread-panel { flex: 1; display: flex; flex-direction: column; background: var(--bg-primary); min-width: 0; }
@@ -313,7 +322,7 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-thread-title { font-size: var(--text-base); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-thread-subtitle { font-size: var(--text-xs); color: var(--text-tertiary); }
 .conv-back-btn {
-  display: none; /* hidden on desktop, shown on mobile */
+  display: none;
   align-items: center; justify-content: center;
   width: 36px; height: 36px; border-radius: var(--radius-md);
   background: transparent; border: none; cursor: pointer;
@@ -330,7 +339,7 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-job-link { text-decoration: none; gap: var(--space-1); }
 .conv-job-link-num { font-family: var(--font-mono); font-size: var(--text-xs); }
 
-/* Messages area */
+/* Messages */
 .conv-messages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .conv-date-sep {
   display: flex; align-items: center; gap: var(--space-3);
@@ -353,7 +362,7 @@ tr:hover td { background: var(--bg-secondary); }
   color: var(--text-tertiary); gap: var(--space-2); text-align: center; padding: var(--space-8);
 }
 
-/* Compose bar */
+/* Compose */
 .conv-compose {
   padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-color);
   display: flex; gap: var(--space-2); align-items: flex-end; background: var(--bg-primary);
@@ -379,7 +388,7 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-compose.note-mode .conv-compose-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
 .conv-send-btn { width: 36px; height: 36px; padding: 0; flex-shrink: 0; border-radius: var(--radius-md); }
 
-/* Detail panel — slides in on tablet/mobile, static on desktop */
+/* Detail panel */
 .conv-detail-panel {
   width: 300px; border-left: 1px solid var(--border-color);
   background: var(--bg-primary); overflow-y: auto; flex-shrink: 0;
@@ -428,18 +437,7 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-detail-meta-row > span:first-child { color: var(--text-tertiary); font-size: var(--text-xs); }
 .conv-info-backdrop { display: none; }
 
-/* ── Conv item action button (dots) ── */
-.conv-item-action {
-  display: none; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--radius-md);
-  background: transparent; border: none; cursor: pointer;
-  color: var(--text-tertiary); padding: 0; flex-shrink: 0; align-self: center;
-  transition: all var(--transition-fast);
-}
-.conv-item:hover .conv-item-action { display: flex; }
-.conv-item-action:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-
-/* ── Context menu ── */
+/* Context menu */
 .conv-context-menu {
   position: fixed; z-index: 200; background: var(--bg-primary);
   border: 1px solid var(--border-color); border-radius: var(--radius-md);
@@ -454,49 +452,40 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-context-item:hover { background: var(--bg-secondary); }
 .conv-ctx-unread-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); display: inline-block; flex-shrink: 0; }
 
-/* ── New Conversation Modal ── */
+/* New Conversation Modal */
 .conv-modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
-  display: flex; align-items: flex-start; justify-content: center;
-  padding-top: 10vh;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh;
 }
 .conv-modal {
   width: 100%; max-width: 440px; max-height: 70vh;
   background: var(--bg-primary); border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
-  overflow: hidden;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
 }
 .conv-modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-light);
 }
-.conv-modal-list {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  max-height: 400px;
-}
+.conv-modal-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; max-height: 400px; }
 .conv-contact-item {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-4); border: none; background: transparent;
   width: 100%; cursor: pointer; font-family: inherit; text-align: left;
-  border-bottom: 1px solid var(--border-light); transition: background var(--transition-fast);
-  min-height: 56px;
+  border-bottom: 1px solid var(--border-light); transition: background var(--transition-fast); min-height: 56px;
 }
 .conv-contact-item:hover { background: var(--bg-secondary); }
 .conv-contact-item:disabled { opacity: 0.5; cursor: wait; }
 
-/* ── Template Picker ── */
+/* Template + Schedule pickers */
 .conv-template-picker, .conv-schedule-picker {
   border-top: 1px solid var(--border-color); background: var(--bg-primary);
   max-height: 240px; display: flex; flex-direction: column;
 }
 .conv-template-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-light);
-  flex-shrink: 0;
+  padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-light); flex-shrink: 0;
 }
-.conv-template-list {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-}
+.conv-template-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .conv-template-cat {
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-xs); font-weight: 700; color: var(--text-tertiary);
@@ -513,11 +502,15 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-template-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .conv-template-body { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Schedule mode ── */
+/* Schedule mode */
 .conv-note-toggle.active-schedule { background: var(--accent-light); color: var(--accent); }
 .btn-schedule { background: #7c3aed; border-color: #7c3aed; color: white; }
 .btn-schedule:hover:not(:disabled) { background: #6d28d9; }
 .conv-compose.schedule-mode { border-top-color: #7c3aed; }
+
+/* Slide-in animation for mobile thread */
+@keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes convSlideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ── Login ── */
 .login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; min-height: 100dvh; background: var(--sidebar-bg); }
@@ -982,12 +975,10 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ── Tablet: < 1024px ── */
 @media (max-width: 1024px) {
-  /* Detail panel becomes slide-over on tablet */
   .conv-detail-panel {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
     transform: translateX(100%); transition: transform 250ms ease;
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
-    width: 320px;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1); width: 320px;
   }
   .conv-detail-panel.open { transform: translateX(0); }
   .conv-detail-close-row {
@@ -1077,37 +1068,29 @@ tr:hover td { background: var(--bg-secondary); }
 
   .hidden-phases-banner { flex-direction: column; text-align: center; gap: var(--space-2); }
 
-  /* ── Conversations ── */
+  /* ── Conversations: iOS-safe display toggle with slide animation ── */
   .conversations-layout {
-    flex-direction: row; /* Keep row for side-by-side slide */
+    /* Keep flex row for desktop compat but constrain height for mobile */
+    height: calc(100vh - var(--bottom-bar-h) - var(--safe-bottom));
     height: calc(100dvh - var(--bottom-bar-h) - var(--safe-bottom));
-    overflow: hidden;
   }
 
-  /* Both panels fill 100% — sit side by side, parent hides overflow */
-  .conv-list-panel {
-    width: 100%; min-width: 100%; flex-shrink: 0;
-    border-right: none;
-    transform: translateX(0);
-    transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .conv-thread-panel {
-    width: 100%; min-width: 100%; flex-shrink: 0;
-    transform: translateX(0);
-    transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  /* When thread active: slide both panels left */
-  .conversations-layout.mobile-thread .conv-list-panel { transform: translateX(-100%); }
-  .conversations-layout.mobile-thread .conv-thread-panel { transform: translateX(-100%); }
-
-  /* Detail panel hidden by default */
+  /* Default mobile: full-width list, thread + detail hidden */
+  .conv-list-panel { width: 100%; border-right: none; }
+  .conv-thread-panel { display: none; }
   .conv-detail-panel { display: none; }
 
-  /* Show back button */
+  /* Thread active: swap panels. display toggle = zero layout bugs on Safari */
+  .conversations-layout.mobile-thread .conv-list-panel { display: none; }
+  .conversations-layout.mobile-thread .conv-thread-panel {
+    display: flex; flex: 1; width: 100%;
+    animation: convSlideIn 200ms ease both;
+  }
+
+  /* Back button visible */
   .conv-back-btn { display: flex; }
 
-  /* Detail panel: slide-over from right */
+  /* Detail panel: fixed slide-over from right */
   .conversations-layout.mobile-thread .conv-detail-panel {
     display: block;
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
@@ -1115,7 +1098,6 @@ tr:hover td { background: var(--bg-secondary); }
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
     width: 300px; max-width: 85vw;
     padding-top: var(--safe-top);
-    min-width: auto;
   }
   .conversations-layout.mobile-thread .conv-detail-panel.open { transform: translateX(0); }
   .conversations-layout.mobile-thread .conv-detail-close-row {
@@ -1133,13 +1115,13 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-thread-header { padding: var(--space-2) var(--space-3); min-height: 52px; }
   .conv-job-link { display: none; }
 
-  /* Show dots button always on mobile (no hover) */
+  /* Always show dots button on mobile (no hover) */
   .conv-item-action { display: flex; }
 
-  /* Template/schedule pickers: full width */
+  /* Pickers constrain height */
   .conv-template-picker, .conv-schedule-picker { max-height: 200px; }
 
-  /* Modal: mobile-optimized */
+  /* Modal: bottom sheet on mobile */
   .conv-modal-backdrop { padding-top: 0; align-items: flex-end; }
   .conv-modal {
     max-width: 100%; max-height: 85vh;
