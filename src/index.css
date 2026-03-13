@@ -1105,10 +1105,19 @@ tr:hover td { background: var(--bg-secondary); }
   .hidden-phases-banner { flex-direction: column; text-align: center; gap: var(--space-2); }
 
   /* ── Conversations: iOS-safe display toggle with slide animation ── */
+
+  /* List view: account for bottom bar */
   .conversations-layout {
-    /* Keep flex row for desktop compat but constrain height for mobile */
     height: calc(100vh - var(--bottom-bar-h) - var(--safe-bottom));
     height: calc(100dvh - var(--bottom-bar-h) - var(--safe-bottom));
+  }
+
+  /* Thread view: hide bottom bar, go full screen like iMessage/WhatsApp */
+  .app-layout:has(.conversations-layout.mobile-thread) > .bottom-bar { display: none; }
+  .app-layout:has(.conversations-layout.mobile-thread) > .app-content { padding-bottom: 0; }
+  .conversations-layout.mobile-thread {
+    height: 100vh;
+    height: 100dvh;
   }
 
   /* Default mobile: full-width list, thread + detail hidden */
@@ -1144,7 +1153,7 @@ tr:hover td { background: var(--bg-secondary); }
     display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 99;
   }
 
-  /* Compose safe area */
+  /* Compose: safe-area bottom only when keyboard is closed */
   .conv-compose { padding-bottom: calc(var(--space-3) + var(--safe-bottom)); }
   .message { max-width: 85%; }
   .conv-item { min-height: 56px; }
