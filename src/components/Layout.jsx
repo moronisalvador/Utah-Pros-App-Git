@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import CreateMenu from './CreateMenu';
 import { IconDashboard, IconConversations, IconJobs, IconProduction } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -10,6 +11,9 @@ const BOTTOM_TABS = [
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
 ];
+
+// Pages that show the Create FAB
+const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule'];
 
 function IconMore(props) {
   return (
@@ -37,6 +41,12 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
+  // Show CreateMenu on specific pages (exact match for /, startsWith for others)
+  const showCreateMenu = CREATE_MENU_PATHS.some(p => {
+    if (p === '/') return location.pathname === '/';
+    return location.pathname === p; // exact match, not /jobs/:id
+  });
+
   return (
     <div className="app-layout">
       {/* Sidebar overlay backdrop (mobile) */}
@@ -49,6 +59,9 @@ export default function Layout() {
       <main className="app-content">
         <Outlet />
       </main>
+
+      {/* ── Create FAB ── */}
+      {showCreateMenu && <CreateMenu />}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">
