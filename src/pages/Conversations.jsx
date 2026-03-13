@@ -256,7 +256,7 @@ export default function Conversations() {
 
   const selectConversation = (id) => {
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
-    setCompose(''); setIsNote(false); setShowTemplates(false); setShowSchedule(false); setContextMenu(null); setShowComposeActions(false);
+    clearCompose(); setIsNote(false); setShowTemplates(false); setShowSchedule(false); setContextMenu(null); setShowComposeActions(false);
   };
   const goBackToList = () => { setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false); };
 
@@ -324,7 +324,7 @@ export default function Conversations() {
       try {
         const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
         await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
-        setCompose(''); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
+        clearCompose(); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
       } catch (err) { console.error('Schedule error:', err); }
       finally { setSending(false); }
       return;
@@ -344,13 +344,39 @@ export default function Conversations() {
       }
       await db.update('conversations', `id=eq.${activeId}`, upd);
       setConversations(prev => prev.map(c => c.id === activeId ? { ...c, ...upd } : c));
-      setCompose(''); setIsNote(false); composeRef.current?.focus();
+      clearCompose(); setIsNote(false); composeRef.current?.focus();
     } catch (err) { console.error('Send error:', err); }
     finally { setSending(false); }
   };
 
-  const handleKeyDown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
-  const handleComposeInput = (e) => { setCompose(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; };
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // Read text from contentEditable div
+  const handleComposeInput = () => {
+    const el = composeRef.current;
+    if (!el) return;
+    setCompose(el.innerText || '');
+  };
+
+  // Clear the contentEditable div content
+  const clearCompose = () => {
+    setCompose('');
+    if (composeRef.current) {
+      composeRef.current.innerText = '';
+    }
+  };
+
+  // Paste plain text only (strip HTML from clipboard)
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  };
 
   const openNewConvModal = async () => {
     setShowNewConv(true); setContactSearch('');
@@ -378,7 +404,12 @@ export default function Conversations() {
       catch (err) { console.error('Load templates error:', err); }
     }
   };
-  const insertTemplate = (tmpl) => { setCompose(tmpl.body); setShowTemplates(false); composeRef.current?.focus(); };
+  const insertTemplate = (tmpl) => {
+    setCompose(tmpl.body);
+    if (composeRef.current) composeRef.current.innerText = tmpl.body;
+    setShowTemplates(false);
+    composeRef.current?.focus();
+  };
 
   // Close context menu on click anywhere
   useEffect(() => {
@@ -602,7 +633,18 @@ export default function Conversations() {
               </button>
               {isNote && !showComposeActions && <span className="conv-mode-chip note">📝 Note</span>}
               {showSchedule && scheduleDate && scheduleTime && !showComposeActions && <span className="conv-mode-chip schedule">🕐 Scheduled</span>}
-              <textarea ref={composeRef} className="conv-compose-input" placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'} value={compose} onChange={handleComposeInput} onKeyDown={handleKeyDown} rows={1} />
+              <div
+                ref={composeRef}
+                className="conv-compose-input"
+                contentEditable
+                role="textbox"
+                data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
+                onInput={handleComposeInput}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                enterKeyHint="send"
+                suppressContentEditableWarning
+              />
               <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || sending || (showSchedule && (!scheduleDate || !scheduleTime)) || (activeContact?.dnd && !isNote)} aria-label="Send">
                 {sending ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>

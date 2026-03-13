@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
 import { IconDashboard, IconConversations, IconJobs, IconProduction } from './Icons';
@@ -27,29 +28,44 @@ function IconMore(props) {
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const location = useLocation();
   const navigate = useNavigate();
+  const { db } = useAuth();
+
+  // ── Poll unread count for badge ──
+  const fetchUnread = useCallback(async () => {
+    try {
+      const convs = await db.select('conversations', 'select=unread_count');
+      const total = convs.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+      setUnreadCount(total);
+    } catch { /* silent */ }
+  }, [db]);
+
+  useEffect(() => {
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [fetchUnread]);
+
+  // Refetch on navigation (catches mark-as-read when leaving conversations)
+  useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
   const handleNavClick = () => setSidebarOpen(false);
-
-  const handleBottomTab = (path) => {
-    navigate(path);
-  };
+  const handleBottomTab = (path) => navigate(path);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
 
-  // Show CreateMenu on specific pages (exact match for /, startsWith for others)
   const showCreateMenu = CREATE_MENU_PATHS.some(p => {
     if (p === '/') return location.pathname === '/';
-    return location.pathname === p; // exact match, not /jobs/:id
+    return location.pathname === p;
   });
 
   return (
     <div className="app-layout">
-      {/* Sidebar overlay backdrop (mobile) */}
       {sidebarOpen && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
@@ -60,7 +76,6 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* ── Create FAB ── */}
       {showCreateMenu && <CreateMenu />}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
@@ -71,7 +86,12 @@ export default function Layout() {
             className={`bottom-tab${isActive(tab.path) ? ' active' : ''}`}
             onClick={() => handleBottomTab(tab.path)}
           >
-            <tab.icon className="bottom-tab-icon" />
+            <span className="bottom-tab-icon-wrap">
+              <tab.icon className="bottom-tab-icon" />
+              {tab.key === 'conversations' && unreadCount > 0 && (
+                <span className="bottom-tab-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+              )}
+            </span>
             <span className="bottom-tab-label">{tab.label}</span>
           </button>
         ))}
@@ -79,7 +99,9 @@ export default function Layout() {
           className={`bottom-tab${sidebarOpen ? ' active' : ''}`}
           onClick={() => setSidebarOpen(!sidebarOpen)}
         >
-          <IconMore className="bottom-tab-icon" />
+          <span className="bottom-tab-icon-wrap">
+            <IconMore className="bottom-tab-icon" />
+          </span>
           <span className="bottom-tab-label">More</span>
         </button>
       </nav>
