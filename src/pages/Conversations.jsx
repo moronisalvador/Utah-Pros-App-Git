@@ -202,26 +202,28 @@ export default function Conversations() {
     return unsubscribe;
   }, [activeId]);
 
-  // Auto-scroll to bottom — delay on mobile to wait for panel layout
+  // Auto-scroll to bottom
   const scrollToBottom = useCallback((smooth = true) => {
     const doScroll = () => messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
-    // Immediate attempt + delayed retry for mobile display toggle
     doScroll();
-    requestAnimationFrame(() => {
-      requestAnimationFrame(doScroll);
-    });
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
 
-  useEffect(() => { if (messages.length > 0) scrollToBottom(true); }, [messages, scrollToBottom]);
-
-  // When switching to thread view on mobile, force scroll after animation
+  // Scroll on new messages arriving (realtime / send)
   useEffect(() => {
-    if (mobileView === 'thread' && messages.length > 0) {
-      // Wait for the CSS animation (200ms) + one extra frame
-      const timer = setTimeout(() => scrollToBottom(false), 250);
-      return () => clearTimeout(timer);
+    if (messages.length > 0 && !msgLoading) scrollToBottom(true);
+  }, [messages, scrollToBottom]);
+
+  // Scroll after messages finish loading (initial open + mobile panel transition)
+  const prevMsgLoading = useRef(true);
+  useEffect(() => {
+    if (prevMsgLoading.current && !msgLoading && messages.length > 0) {
+      // msgLoading just flipped false → messages are ready, scroll to bottom
+      // Use a timeout to let mobile display:none → display:flex finish painting
+      setTimeout(() => scrollToBottom(false), 50);
     }
-  }, [mobileView, scrollToBottom]);
+    prevMsgLoading.current = msgLoading;
+  }, [msgLoading, messages.length, scrollToBottom]);
 
   // ═══ DERIVED ═══
 
