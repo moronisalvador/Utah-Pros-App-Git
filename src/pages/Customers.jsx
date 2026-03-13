@@ -89,6 +89,12 @@ const ROLE_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
+const CONTACT_METHOD_OPTIONS = [
+  { value: 'sms', label: 'SMS' },
+  { value: 'call', label: 'Phone Call' },
+  { value: 'email', label: 'Email' },
+];
+
 /* ═══════════════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════════════ */
@@ -370,18 +376,16 @@ function ContactCard({ contact, jobCount, onClick }) {
 
 function AddContactModal({ onClose, onSave }) {
   const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    company: '',
-    role: 'homeowner',
+    name: '', phone: '', phone_secondary: '', email: '', company: '',
+    role: 'homeowner', preferred_contact_method: 'sms',
+    billing_address: '', billing_city: '', billing_state: '', billing_zip: '',
+    insurance_carrier: '', policy_number: '', claim_number: '',
+    referral_source: '', tags: '', notes: '',
   });
   const [saving, setSaving] = useState(false);
   const nameRef = useRef(null);
 
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
+  useEffect(() => { nameRef.current?.focus(); }, []);
 
   const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -389,17 +393,34 @@ function AddContactModal({ onClose, onSave }) {
     if (!form.name.trim() || !form.phone.trim()) return;
     setSaving(true);
     try {
-      // Normalize phone: strip non-digits, add +1 if 10 digits
       let phone = form.phone.replace(/\D/g, '');
       if (phone.length === 10) phone = '1' + phone;
       if (!phone.startsWith('+')) phone = '+' + phone;
 
+      let phoneSec = form.phone_secondary.replace(/\D/g, '');
+      if (phoneSec && phoneSec.length === 10) phoneSec = '1' + phoneSec;
+      if (phoneSec && !phoneSec.startsWith('+')) phoneSec = '+' + phoneSec;
+
+      const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean);
+
       await onSave({
         name: form.name.trim(),
         phone,
+        phone_secondary: phoneSec || null,
         email: form.email.trim() || null,
         company: form.company.trim() || null,
         role: form.role,
+        preferred_contact_method: form.preferred_contact_method,
+        billing_address: form.billing_address.trim() || null,
+        billing_city: form.billing_city.trim() || null,
+        billing_state: form.billing_state.trim() || null,
+        billing_zip: form.billing_zip.trim() || null,
+        insurance_carrier: form.insurance_carrier.trim() || null,
+        policy_number: form.policy_number.trim() || null,
+        claim_number: form.claim_number.trim() || null,
+        referral_source: form.referral_source.trim() || null,
+        tags: JSON.stringify(tags),
+        notes: form.notes.trim() || null,
         opt_in_status: false,
       });
     } catch (err) {
@@ -410,109 +431,65 @@ function AddContactModal({ onClose, onSave }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSave();
-    }
     if (e.key === 'Escape') onClose();
   };
 
+  const Field = ({ label, field, type = 'text', placeholder, required }) => (
+    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+      <label className="label">{label}{required && ' *'}</label>
+      {type === 'textarea' ? (
+        <textarea className="input textarea" value={form[field]} onChange={e => set(field, e.target.value)} rows={2} placeholder={placeholder} onKeyDown={handleKeyDown} />
+      ) : (
+        <input ref={field === 'name' ? nameRef : undefined} className="input" type={type} value={form[field]} onChange={e => set(field, e.target.value)} placeholder={placeholder} onKeyDown={handleKeyDown} />
+      )}
+    </div>
+  );
+
+  const Select = ({ label, field, options }) => (
+    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+      <label className="label">{label}</label>
+      <select className="input" value={form[field]} onChange={e => set(field, e.target.value)} style={{ cursor: 'pointer' }}>
+        {options.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+      </select>
+    </div>
+  );
+
   return (
     <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+      <div className="conv-modal add-contact-modal" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="conv-modal-header">
           <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>Add Contact</span>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={onClose}
-            style={{ width: 32, height: 32, padding: 0 }}
-          >
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
             <IconX style={{ width: 18, height: 18 }} />
           </button>
         </div>
 
-        {/* Form */}
-        <div style={{ padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* Name + Phone row */}
-          <div className="add-contact-row">
-            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="label">Name *</label>
-              <input
-                ref={nameRef}
-                className="input"
-                placeholder="John Smith"
-                value={form.name}
-                onChange={e => set('name', e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="label">Phone *</label>
-              <input
-                className="input"
-                type="tel"
-                placeholder="(801) 555-1234"
-                value={form.phone}
-                onChange={e => set('phone', e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-          </div>
+        {/* Scrollable form body */}
+        <div className="add-contact-body">
+          <div className="cp-edit-section-label" style={{ marginTop: 0 }}>Identity</div>
+          <div className="add-contact-row"><Field label="Name" field="name" placeholder="John Smith" required /><Field label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required /></div>
+          <div className="add-contact-row"><Field label="Email" field="email" type="email" placeholder="john@email.com" /><Field label="Company" field="company" placeholder="Allstate, etc." /></div>
+          <div className="add-contact-row"><Select label="Role" field="role" options={ROLE_OPTIONS} /><Select label="Preferred Contact" field="preferred_contact_method" options={CONTACT_METHOD_OPTIONS} /></div>
 
-          {/* Email + Company row */}
-          <div className="add-contact-row">
-            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="label">Email</label>
-              <input
-                className="input"
-                type="email"
-                placeholder="john@email.com"
-                value={form.email}
-                onChange={e => set('email', e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="label">Company</label>
-              <input
-                className="input"
-                placeholder="Allstate, etc."
-                value={form.company}
-                onChange={e => set('company', e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-          </div>
+          <div className="cp-edit-section-label">Phone & Address</div>
+          <div className="add-contact-row"><Field label="Secondary Phone" field="phone_secondary" type="tel" placeholder="(801) 555-5678" /></div>
+          <div className="add-contact-row"><Field label="Billing Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" /></div>
+          <div className="add-contact-row"><Field label="City" field="billing_city" placeholder="Lehi" /><Field label="State" field="billing_state" placeholder="UT" /><Field label="ZIP" field="billing_zip" placeholder="84043" /></div>
 
-          {/* Role */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="label">Role</label>
-            <select
-              className="input"
-              value={form.role}
-              onChange={e => set('role', e.target.value)}
-              style={{ cursor: 'pointer' }}
-            >
-              {ROLE_OPTIONS.map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
+          <div className="cp-edit-section-label">Insurance</div>
+          <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." /></div>
+          <div className="add-contact-row"><Field label="Policy #" field="policy_number" placeholder="SF-8820114" /><Field label="Claim #" field="claim_number" placeholder="CLM-2026-44819" /></div>
+
+          <div className="cp-edit-section-label">Other</div>
+          <div className="add-contact-row"><Field label="Referral Source" field="referral_source" placeholder="Google, agent name..." /><Field label="Tags" field="tags" placeholder="VIP, repeat, priority" /></div>
+          <Field label="Notes" field="notes" type="textarea" placeholder="Internal notes about this contact..." />
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: 'var(--space-4) var(--space-5)',
-          borderTop: '1px solid var(--border-light)',
-          display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)',
-        }}>
+        <div className="add-contact-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !form.name.trim() || !form.phone.trim()}
-          >
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name.trim() || !form.phone.trim()}>
             {saving ? 'Saving...' : 'Add Contact'}
           </button>
         </div>

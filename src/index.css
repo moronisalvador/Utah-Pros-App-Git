@@ -1159,6 +1159,19 @@ tr:hover td { background: var(--bg-secondary); }
 .add-contact-row {
   display: flex; gap: var(--space-3);
 }
+.add-contact-modal {
+  max-width: 560px; max-height: 85vh;
+}
+.add-contact-body {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3);
+}
+.add-contact-footer {
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-light);
+  display: flex; justify-content: flex-end; gap: var(--space-3);
+  flex-shrink: 0;
+}
 
 /* ═══ Contact Profile — Two-Column Layout ═══ */
 .cp-page { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
@@ -1657,6 +1670,8 @@ tr:hover td { background: var(--bg-secondary); }
   .customer-avatar { width: 36px; height: 36px; }
   .customer-card-name { font-size: var(--text-sm); }
   .add-contact-row { flex-direction: column; gap: var(--space-3); }
+  .add-contact-modal { max-width: 100% !important; max-height: 90vh; }
+  .add-contact-body { padding: var(--space-4); }
 
   /* ── Contact Profile ── */
   .cp-page {
