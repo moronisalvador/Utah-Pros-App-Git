@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
+import PullToRefresh from '@/components/PullToRefresh';
 
 // ── Macro group definitions ──
 const MACRO_GROUPS = [
@@ -314,7 +315,7 @@ export default function Production() {
             })}
           </div>
         ) : (
-          <div className="macro-grid">
+          <PullToRefresh onRefresh={loadData} className="macro-grid">
             {MACRO_GROUPS.map(group => (
               <button
                 key={group.key}
@@ -347,7 +348,7 @@ export default function Production() {
                 </span>
               </div>
             )}
-          </div>
+          </PullToRefresh>
         )
       ) : (
         <div className="card" style={{ flex: 1, overflow: 'auto' }}>

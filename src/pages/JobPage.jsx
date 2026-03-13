@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import PullToRefresh from '@/components/PullToRefresh';
 
 const PRIORITY_OPTIONS = [
   { value: 1, label: 'Urgent', color: '#ef4444' },
@@ -225,7 +226,7 @@ export default function JobPage() {
       </div>
 
       {/* ══ Tab Content ══ */}
-      <div className="job-page-content">
+      <PullToRefresh onRefresh={loadJob} className="job-page-content">
         {activeTab === 'overview' && (
           <OverviewTab job={job} employees={employees} phases={phases} editProps={editProps} saveFieldDirect={saveFieldDirect} fmtDate={fmtDate} />
         )}
@@ -239,7 +240,7 @@ export default function JobPage() {
           <ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees}
             phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime} />
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
+import PullToRefresh from '@/components/PullToRefresh';
 
 const DIVISION_TABS = [
   { key: 'all', label: 'All', emoji: '' },
@@ -189,7 +190,7 @@ export default function Jobs() {
       </div>
 
       {/* ══ Job Cards ══ */}
-      <div className="job-card-list">
+      <PullToRefresh onRefresh={loadData} className="job-card-list">
         {filteredJobs.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>
@@ -210,7 +211,7 @@ export default function Jobs() {
             />
           ))
         )}
-      </div>
+      </PullToRefresh>
 
       {/* ══ Detail Panel ══ */}
       {selectedJob && (

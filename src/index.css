@@ -676,6 +676,51 @@ tr:hover td { background: var(--bg-secondary); }
 .create-job-row .create-job-field, .create-job-row-3 .create-job-field { flex: 1; }
 .create-job-bottom-bar { display: none; }
 
+/* ═══ Pull to Refresh ═══ */
+.ptr-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--accent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ptr-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--accent);
+  transition: transform 100ms ease;
+}
+
+.ptr-spinner.spinning {
+  animation: ptrSpin 0.8s linear infinite;
+}
+
+@keyframes ptrSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ptr-text {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* ═══ Mobile Long-Press Hint ═══ */
 .mobile-longpress-hint { display: none; font-size: 10px; color: var(--text-tertiary); text-align: center; margin-top: 6px; opacity: 0.6; }
 
