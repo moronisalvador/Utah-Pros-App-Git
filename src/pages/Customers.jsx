@@ -120,6 +120,85 @@ function formatPhone(phone) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   CARRIER SELECT — searchable dropdown for insurance carriers
+   ═══════════════════════════════════════════════════════════════════ */
+
+function CarrierSelect({ value, onChange, carriers, placeholder = 'Search carriers...' }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapRef = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return carriers;
+    const q = search.toLowerCase();
+    return carriers.filter(c => c.name.toLowerCase().includes(q) || (c.short_name && c.short_name.toLowerCase().includes(q)));
+  }, [carriers, search]);
+
+  const handleSelect = (name) => {
+    onChange(name);
+    setSearch('');
+    setOpen(false);
+  };
+
+  const displayValue = value || '';
+
+  return (
+    <div className="form-group" style={{ flex: 1, marginBottom: 0 }} ref={wrapRef}>
+      <label className="label">Insurance Carrier</label>
+      <div className="carrier-select-wrap">
+        <input
+          className="input"
+          value={open ? search : displayValue}
+          onChange={e => { setSearch(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => { setOpen(true); setSearch(''); }}
+          placeholder={value ? value : placeholder}
+        />
+        {open && (
+          <div className="carrier-dropdown">
+            {filtered.length === 0 ? (
+              <div className="carrier-dropdown-empty">
+                {search.trim() ? (
+                  <button className="carrier-dropdown-item" onClick={() => handleSelect(search.trim())}>
+                    Use "<strong>{search.trim()}</strong>"
+                  </button>
+                ) : (
+                  <span>No carriers found</span>
+                )}
+              </div>
+            ) : (
+              <>
+                {filtered.map(c => (
+                  <button
+                    key={c.id}
+                    className={`carrier-dropdown-item${c.name === value ? ' active' : ''}`}
+                    onClick={() => handleSelect(c.name)}
+                  >
+                    <span className="carrier-dropdown-name">{c.name}</span>
+                    {c.short_name && <span className="carrier-dropdown-short">{c.short_name}</span>}
+                  </button>
+                ))}
+                {search.trim() && !filtered.find(c => c.name.toLowerCase() === search.toLowerCase()) && (
+                  <button className="carrier-dropdown-item carrier-dropdown-custom" onClick={() => handleSelect(search.trim())}>
+                    Use "<strong>{search.trim()}</strong>"
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -129,6 +208,7 @@ export default function Customers() {
 
   const [contacts, setContacts] = useState([]);
   const [jobCounts, setJobCounts] = useState({}); // { contactId: count }
+  const [carriers, setCarriers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -139,11 +219,13 @@ export default function Customers() {
   // ── Load data ──
   const loadData = useCallback(async () => {
     try {
-      const [contactsData, contactJobsData] = await Promise.all([
+      const [contactsData, contactJobsData, carriersData] = await Promise.all([
         db.select('contacts', 'order=name.asc.nullslast&select=id,name,phone,email,company,role,opt_in_status,dnd,created_at'),
         db.select('contact_jobs', 'select=contact_id').catch(() => []),
+        db.select('insurance_carriers', 'is_active=eq.true&order=sort_order.asc,name.asc&select=id,name,short_name').catch(() => []),
       ]);
       setContacts(contactsData);
+      setCarriers(carriersData);
 
       // Count jobs per contact client-side
       const counts = {};
@@ -306,6 +388,7 @@ export default function Customers() {
           <AddContactModal
             onClose={() => setShowAddModal(false)}
             onSave={handleAddContact}
+            carriers={carriers}
           />
         )}
       </div>
@@ -374,7 +457,7 @@ function ContactCard({ contact, jobCount, onClick }) {
    ADD CONTACT MODAL
    ═══════════════════════════════════════════════════════════════════ */
 
-function AddContactModal({ onClose, onSave }) {
+function AddContactModal({ onClose, onSave, carriers }) {
   const [step, setStep] = useState('pick'); // 'pick' | 'form'
   const [role, setRole] = useState(null);
   const [form, setForm] = useState({});
@@ -552,13 +635,13 @@ function AddContactModal({ onClose, onSave }) {
                 <div className="add-contact-row"><Field label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" /></div>
                 <div className="add-contact-row"><Field label="City" field="billing_city" placeholder="Lehi" /><Field label="State" field="billing_state" placeholder="UT" /><Field label="ZIP" field="billing_zip" placeholder="84043" /></div>
                 <div className="cp-edit-section-label">Insurance</div>
-                <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." /><Field label="Policy #" field="policy_number" placeholder="SF-8820114" /></div>
+                <div className="add-contact-row"><CarrierSelect value={form.insurance_carrier} onChange={v=>set('insurance_carrier',v)} carriers={carriers} /><Field label="Policy #" field="policy_number" placeholder="SF-8820114" /></div>
               </>)}
 
               {/* Adjuster fields */}
               {role === 'adjuster' && (<>
                 <div className="cp-edit-section-label">Adjuster Details</div>
-                <div className="add-contact-row"><Field label="Carrier" field="insurance_carrier" placeholder="State Farm, Allstate..." required /></div>
+                <div className="add-contact-row"><CarrierSelect value={form.insurance_carrier} onChange={v=>set('insurance_carrier',v)} carriers={carriers} /></div>
                 <div className="add-contact-row"><Field label="Desk Phone" field="desk_phone" type="tel" placeholder="(800) 555-0100" /><Field label="Extension" field="desk_extension" placeholder="4412" /></div>
                 <div className="add-contact-row"><Field label="Territory / Region" field="territory" placeholder="Northern Utah - Salt Lake, Davis, Weber" /></div>
                 <Field label="Relationship Notes" field="relationship_notes" type="textarea" placeholder="Response time, negotiation style, preferences..." />

@@ -1191,6 +1191,30 @@ tr:hover td { background: var(--bg-secondary); }
 .role-picker-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .role-picker-desc { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 1px; line-height: 1.3; }
 
+/* ── Carrier Select Dropdown ── */
+.carrier-select-wrap { position: relative; }
+.carrier-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  max-height: 240px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  margin-top: 2px;
+}
+.carrier-dropdown-item {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: var(--space-2) var(--space-3);
+  background: transparent; border: none; cursor: pointer;
+  font-family: inherit; font-size: var(--text-sm); color: var(--text-primary);
+  text-align: left; transition: background var(--transition-fast);
+  min-height: 36px;
+}
+.carrier-dropdown-item:hover { background: var(--bg-secondary); }
+.carrier-dropdown-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.carrier-dropdown-item.carrier-dropdown-custom { color: var(--accent); border-top: 1px solid var(--border-light); }
+.carrier-dropdown-name { flex: 1; }
+.carrier-dropdown-short { font-size: var(--text-xs); color: var(--text-tertiary); font-family: var(--font-mono); font-weight: 600; }
+.carrier-dropdown-empty { padding: var(--space-3); font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
+
 /* ═══ Contact Profile — Two-Column Layout ═══ */
 .cp-page { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
 .cp-topbar { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border-light); flex-shrink: 0; background: var(--bg-primary); }
