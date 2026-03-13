@@ -40,6 +40,9 @@ function IconCheck(props) {
 function IconCheckAll(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="18 6 7 17 2 12" /><polyline points="22 6 11 17" /></svg>);
 }
+function IconPaperclip(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -130,6 +133,7 @@ export default function Conversations() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
+  const [showComposeActions, setShowComposeActions] = useState(false);
 
   const messagesEndRef = useRef(null);
   const composeRef = useRef(null);
@@ -251,7 +255,7 @@ export default function Conversations() {
 
   const selectConversation = (id) => {
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
-    setCompose(''); setIsNote(false); setShowTemplates(false); setShowSchedule(false); setContextMenu(null);
+    setCompose(''); setIsNote(false); setShowTemplates(false); setShowSchedule(false); setContextMenu(null); setShowComposeActions(false);
   };
   const goBackToList = () => { setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false); };
 
@@ -505,17 +509,36 @@ export default function Conversations() {
               </div>
             )}
 
-            {/* Compose */}
+            {/* ── Compose Actions Sheet ── */}
+            {showComposeActions && (
+              <div className="conv-actions-sheet">
+                <button className="conv-action-item" onClick={() => { setIsNote(!isNote); setShowSchedule(false); setShowComposeActions(false); }}>
+                  <span className="conv-action-icon" style={{ background: isNote ? '#fef9c3' : 'var(--bg-tertiary)' }}><IconNote style={{ width: 18, height: 18, color: isNote ? '#92400e' : 'var(--text-secondary)' }} /></span>
+                  <div><div className="conv-action-label">{isNote ? 'Switch to Message' : 'Internal Note'}</div><div className="conv-action-desc">{isNote ? 'Send as SMS to contact' : 'Only visible to your team'}</div></div>
+                </button>
+                <button className="conv-action-item" onClick={() => { openTemplates(); setShowComposeActions(false); }}>
+                  <span className="conv-action-icon"><IconTemplate style={{ width: 18, height: 18 }} /></span>
+                  <div><div className="conv-action-label">Templates</div><div className="conv-action-desc">Insert a saved message template</div></div>
+                </button>
+                <button className="conv-action-item" onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); setShowComposeActions(false); }}>
+                  <span className="conv-action-icon" style={{ background: showSchedule ? 'var(--accent-light)' : 'var(--bg-tertiary)' }}><IconClock style={{ width: 18, height: 18, color: showSchedule ? 'var(--accent)' : 'var(--text-secondary)' }} /></span>
+                  <div><div className="conv-action-label">Schedule Message</div><div className="conv-action-desc">{showSchedule ? 'Scheduling is on — pick date above' : 'Choose when to send'}</div></div>
+                </button>
+                <button className="conv-action-item" onClick={() => setShowComposeActions(false)} disabled>
+                  <span className="conv-action-icon"><IconPaperclip style={{ width: 18, height: 18 }} /></span>
+                  <div><div className="conv-action-label">Attach File</div><div className="conv-action-desc">Photos, documents — coming soon</div></div>
+                </button>
+              </div>
+            )}
+
+            {/* ── Compose bar: [+] [input] [send] ── */}
             <div className={`conv-compose${isNote ? ' note-mode' : ''}${showSchedule && scheduleDate && scheduleTime ? ' schedule-mode' : ''}`}>
-              <button className={`conv-note-toggle${isNote ? ' active' : ''}`} onClick={() => { setIsNote(!isNote); setShowSchedule(false); }} title={isNote ? 'Switch to message' : 'Internal note'}>
-                <IconNote style={{ width: 18, height: 18 }} />
+              <button className={`conv-plus-btn${showComposeActions ? ' active' : ''}${isNote ? ' note-active' : ''}`} onClick={() => setShowComposeActions(!showComposeActions)} aria-label="More actions">
+                <IconPlus style={{ width: 18, height: 18, transition: 'transform 200ms ease', transform: showComposeActions ? 'rotate(45deg)' : 'none' }} />
               </button>
-              {!isNote && (
-                <>
-                  <button className="conv-note-toggle" onClick={openTemplates} title="Templates"><IconTemplate style={{ width: 17, height: 17 }} /></button>
-                  <button className={`conv-note-toggle${showSchedule ? ' active-schedule' : ''}`} onClick={() => { setShowSchedule(!showSchedule); setShowTemplates(false); }} title="Schedule"><IconClock style={{ width: 17, height: 17 }} /></button>
-                </>
-              )}
+              {/* Active mode chips */}
+              {isNote && !showComposeActions && <span className="conv-mode-chip note">📝 Note</span>}
+              {showSchedule && scheduleDate && scheduleTime && !showComposeActions && <span className="conv-mode-chip schedule">🕐 Scheduled</span>}
               <textarea ref={composeRef} className="conv-compose-input" placeholder={isNote ? 'Write an internal note...' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'} value={compose} onChange={handleComposeInput} onKeyDown={handleKeyDown} rows={1} />
               <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || sending || (showSchedule && (!scheduleDate || !scheduleTime))} aria-label="Send">
                 {sending ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
