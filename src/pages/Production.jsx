@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { IconSearch } from '@/components/Icons';
+import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 
 // ── Macro group definitions ──
@@ -46,6 +47,7 @@ const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints
 
 export default function Production() {
   const { db } = useAuth();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -297,6 +299,7 @@ export default function Production() {
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedJob(job)}
                         onLongPress={() => setPhasePickerJob(job)}
+                        onOpenPage={() => navigate(`/jobs/${job.id}`)}
                       />
                     ))}
                     {phaseJobs.length === 0 && !dragJob && (
@@ -425,7 +428,7 @@ export default function Production() {
 /* ═══════════════════════════════════════════════════
    JobCard — desktop drag + mobile long-press
    ═══════════════════════════════════════════════════ */
-function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick, onLongPress }) {
+function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick, onLongPress, onOpenPage }) {
   const longPressTimer = useRef(null);
   const touchMoved = useRef(false);
   const longPressFired = useRef(false);
@@ -497,13 +500,23 @@ function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick, onLongPress
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
         <span className="division-badge" data-division={job.division}>{job.division}</span>
-        {(job.has_asbestos || job.has_lead || job.is_cat_loss) && (
-          <div style={{ display: 'flex', gap: 3 }}>
-            {job.is_cat_loss && <span className="job-flag flag-red" style={{ fontSize: 9 }}>CAT</span>}
-            {job.has_asbestos && <span className="job-flag flag-red" style={{ fontSize: 9 }}>ASB</span>}
-            {job.has_lead && <span className="job-flag flag-red" style={{ fontSize: 9 }}>LEAD</span>}
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {(job.has_asbestos || job.has_lead || job.is_cat_loss) && (
+            <div style={{ display: 'flex', gap: 3 }}>
+              {job.is_cat_loss && <span className="job-flag flag-red" style={{ fontSize: 9 }}>CAT</span>}
+              {job.has_asbestos && <span className="job-flag flag-red" style={{ fontSize: 9 }}>ASB</span>}
+              {job.has_lead && <span className="job-flag flag-red" style={{ fontSize: 9 }}>LEAD</span>}
+            </div>
+          )}
+          <button
+            className="job-card-open-btn"
+            onClick={e => { e.stopPropagation(); onOpenPage(); }}
+            onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onOpenPage(); }}
+            title="Open job page"
+          >
+            <IconOpenPage style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
       </div>
       <div className="mobile-longpress-hint">Hold to move phase</div>
     </div>

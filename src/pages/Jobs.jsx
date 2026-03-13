@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { IconSearch } from '@/components/Icons';
+import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 
 const DIVISION_TABS = [
@@ -26,6 +27,7 @@ const SORT_OPTIONS = [
 
 export default function Jobs() {
   const { db } = useAuth();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -204,6 +206,7 @@ export default function Jobs() {
               formatDate={formatDate}
               formatCurrency={formatCurrency}
               onClick={() => setSelectedJob(job)}
+              onOpenPage={() => navigate(`/jobs/${job.id}`)}
             />
           ))
         )}
@@ -224,7 +227,7 @@ export default function Jobs() {
 }
 
 /* ── Job List Card ── */
-function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, onClick }) {
+function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, onClick, onOpenPage }) {
   const divIcon = DIVISION_ICON[job.division] || '📁';
   const estimatedVal = formatCurrency(job.estimated_value);
   const lossDate = formatDate(job.date_of_loss);
@@ -272,8 +275,14 @@ function JobListCard({ job, phaseLabel, phaseClass, formatDate, formatCurrency, 
         )}
       </div>
 
-      {/* Right: Chevron */}
-      <div className="job-list-card-chevron">›</div>
+      {/* Right: Open Page icon */}
+      <button
+        className="job-card-open-btn"
+        onClick={e => { e.stopPropagation(); onOpenPage(); }}
+        title="Open job page"
+      >
+        <IconOpenPage style={{ width: 16, height: 16 }} />
+      </button>
     </div>
   );
 }
