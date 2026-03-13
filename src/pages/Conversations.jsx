@@ -202,7 +202,26 @@ export default function Conversations() {
     return unsubscribe;
   }, [activeId]);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // Auto-scroll to bottom — delay on mobile to wait for panel layout
+  const scrollToBottom = useCallback((smooth = true) => {
+    const doScroll = () => messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+    // Immediate attempt + delayed retry for mobile display toggle
+    doScroll();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(doScroll);
+    });
+  }, []);
+
+  useEffect(() => { if (messages.length > 0) scrollToBottom(true); }, [messages, scrollToBottom]);
+
+  // When switching to thread view on mobile, force scroll after animation
+  useEffect(() => {
+    if (mobileView === 'thread' && messages.length > 0) {
+      // Wait for the CSS animation (200ms) + one extra frame
+      const timer = setTimeout(() => scrollToBottom(false), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [mobileView, scrollToBottom]);
 
   // ═══ DERIVED ═══
 
