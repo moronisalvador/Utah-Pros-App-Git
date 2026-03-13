@@ -13,6 +13,7 @@ import JobPage from '@/pages/JobPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
+import ContactProfile from '@/pages/ContactProfile';
 import Schedule from '@/pages/Schedule';
 import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
             <Route path="customers" element={<Customers />} />
+            <Route path="contacts/:id" element={<ContactProfile />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="time-tracking" element={<TimeTracking />} />
             <Route path="marketing" element={<Marketing />} />
