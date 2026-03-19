@@ -16,6 +16,15 @@ export function AuthProvider({ children }) {
 
   // ── Bootstrap: check existing session ──
   useEffect(() => {
+    // Intercept recovery links — if URL hash contains type=recovery,
+    // redirect to /set-password before anything else loads
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery') && !window.location.pathname.startsWith('/set-password')) {
+      // Preserve the hash (contains the tokens Supabase needs)
+      window.location.replace('/set-password' + hash);
+      return;
+    }
+
     const init = async () => {
       try {
         const { data: { session } } = await realtimeClient.auth.getSession();
@@ -34,7 +43,21 @@ export function AuthProvider({ children }) {
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = realtimeClient.auth.onAuthStateChange(
       async (event, session) => {
+        // Recovery event — redirect to set-password page
+        if (event === 'PASSWORD_RECOVERY') {
+          if (!window.location.pathname.startsWith('/set-password')) {
+            window.location.replace('/set-password');
+          }
+          return;
+        }
+
         if (event === 'SIGNED_IN' && session?.user) {
+          // Skip full auth flow if we're on the set-password page (recovery in progress)
+          if (window.location.pathname.startsWith('/set-password')) {
+            setUser(session.user);
+            setLoading(false);
+            return;
+          }
           await handleAuthUser(session.user, session.access_token);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
