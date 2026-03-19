@@ -6,14 +6,14 @@ import CreateMenu from './CreateMenu';
 import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
-const BOTTOM_TABS = [
+ BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
 
-const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule', '/customers', '/leads'];
+const CREATE_MENU_PATHS = ['/', '/jobs', '/production'];
 
 function IconMore(props) {
   return (
