@@ -1727,6 +1727,39 @@ tr:hover td { background: var(--bg-secondary); }
   color: var(--text-tertiary);
 }
 
+/* ── Password toggle ── */
+.admin-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.admin-password-input {
+  padding-right: 40px !important;
+  width: 100%;
+}
+
+.admin-password-toggle {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.admin-password-toggle:hover {
+  color: var(--text-primary);
+}
+
 /* ═══════════════════════════════════════════════════
    PERMISSIONS MATRIX
    ═══════════════════════════════════════════════════ */
