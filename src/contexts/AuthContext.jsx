@@ -148,8 +148,8 @@ export function AuthProvider({ children }) {
   // ── Permission check helper ──
   const canAccess = useCallback((navKey) => {
     if (!employee) return false;
-    // Admins see everything
-    if (employee.role === 'admin' || employee.role === 'project_manager') return true;
+    // Admins always see everything
+    if (employee.role === 'admin') return true;
     // Check permissions table
     if (permissions.length === 0) return true; // No permissions loaded = show all (fallback)
     const perm = permissions.find(p => p.nav_key === navKey);
