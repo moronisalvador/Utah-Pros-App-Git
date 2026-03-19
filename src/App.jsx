@@ -5,6 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Pages
 import Login from '@/pages/Login';
+import SetPassword from '@/pages/SetPassword';
 import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
@@ -13,7 +14,6 @@ import JobPage from '@/pages/JobPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
-import ContactProfile from '@/pages/ContactProfile';
 import Schedule from '@/pages/Schedule';
 import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
@@ -27,6 +27,7 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/login" element={<Login />} />
+          <Route path="/set-password" element={<SetPassword />} />
 
           {/* Protected — all wrapped in Layout */}
           <Route
@@ -44,7 +45,6 @@ export default function App() {
             <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
             <Route path="customers" element={<Customers />} />
-            <Route path="contacts/:id" element={<ContactProfile />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="time-tracking" element={<TimeTracking />} />
             <Route path="marketing" element={<Marketing />} />

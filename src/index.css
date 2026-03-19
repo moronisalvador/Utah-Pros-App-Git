@@ -1888,6 +1888,136 @@ tr:hover td { background: var(--bg-secondary); }
   line-height: 1.5;
 }
 
+/* ── Success banner ── */
+.admin-success-banner {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* ── Invite toggle in modal ── */
+.admin-invite-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.admin-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.admin-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════
+   SET PASSWORD PAGE
+   ═══════════════════════════════════════════════════ */
+
+.set-pw-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  padding: var(--space-4);
+}
+
+.set-pw-card {
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-8);
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.set-pw-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-5);
+}
+
+.set-pw-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.set-pw-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-5);
+}
+
+.set-pw-checking {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  padding: var(--space-6) 0;
+}
+
+.set-pw-field {
+  text-align: left;
+  margin-bottom: var(--space-4);
+}
+
+.set-pw-field .label {
+  margin-bottom: var(--space-1);
+}
+
+.set-pw-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+  text-align: left;
+}
+
+.set-pw-match {
+  font-size: var(--text-xs);
+  color: #059669;
+  font-weight: 500;
+  text-align: left;
+  margin-bottom: var(--space-2);
+}
+
+.set-pw-mismatch {
+  font-size: var(--text-xs);
+  color: #dc2626;
+  font-weight: 500;
+  text-align: left;
+  margin-bottom: var(--space-2);
+}
+
 /* ═══════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════ */

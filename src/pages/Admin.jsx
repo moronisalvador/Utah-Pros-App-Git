@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/supabase';
+import { realtimeClient } from '@/lib/realtime';
 import PullToRefresh from '@/components/PullToRefresh';
 
 // ── Nav keys for permissions matrix (must match Sidebar.jsx) ──
@@ -152,6 +153,39 @@ function EmployeesTab() {
     }
   };
 
+  const [inviteMsg, setInviteMsg] = useState(null); // { type: 'success'|'error', text }
+
+  const handleSendInvite = async (emp) => {
+    setActionLoading(`invite-${emp.id}`);
+    setInviteMsg(null);
+    try {
+      // If no auth account, create one first with a random temp password
+      if (!emp.auth_user_id) {
+        const tempPw = crypto.randomUUID();
+        const res = await fetch('/api/admin-users', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employee_id: emp.id, password: tempPw }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create auth account');
+      }
+
+      // Send recovery email via Supabase (this IS the welcome email)
+      const { error: resetErr } = await realtimeClient.auth.resetPasswordForEmail(emp.email, {
+        redirectTo: window.location.origin + '/set-password',
+      });
+      if (resetErr) throw resetErr;
+
+      setInviteMsg({ type: 'success', text: `Welcome email sent to ${emp.email}` });
+      await loadEmployees(); // Refresh to show updated auth_user_id
+    } catch (err) {
+      setInviteMsg({ type: 'error', text: err.message });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const filtered = showInactive ? employees : employees.filter(e => e.is_active !== false);
   const activeCount = employees.filter(e => e.is_active !== false).length;
   const inactiveCount = employees.filter(e => e.is_active === false).length;
@@ -182,6 +216,13 @@ function EmployeesTab() {
           <div className="admin-error">
             {error}
             <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>✕</button>
+          </div>
+        )}
+
+        {inviteMsg && (
+          <div className={`admin-${inviteMsg.type === 'success' ? 'success' : 'error'}-banner`}>
+            {inviteMsg.text}
+            <button className="btn btn-ghost btn-sm" onClick={() => setInviteMsg(null)}>✕</button>
           </div>
         )}
 
@@ -238,6 +279,16 @@ function EmployeesTab() {
                         >
                           ✏️
                         </button>
+                        {emp.is_active !== false && emp.email && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleSendInvite(emp)}
+                            disabled={actionLoading === `invite-${emp.id}`}
+                            title="Send welcome email"
+                          >
+                            {actionLoading === `invite-${emp.id}` ? '…' : '✉️'}
+                          </button>
+                        )}
                         <button
                           className="btn btn-ghost btn-sm"
                           onClick={() => handleToggleActive(emp)}
@@ -290,6 +341,15 @@ function EmployeesTab() {
                     <button className="btn btn-secondary btn-sm" onClick={() => { setEditingEmployee(emp); setShowModal(true); }}>
                       Edit
                     </button>
+                    {emp.is_active !== false && emp.email && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleSendInvite(emp)}
+                        disabled={actionLoading === `invite-${emp.id}`}
+                      >
+                        {actionLoading === `invite-${emp.id}` ? 'Sending…' : 'Send Invite'}
+                      </button>
+                    )}
                     <button
                       className="btn btn-ghost btn-sm"
                       onClick={() => handleToggleActive(emp)}
@@ -368,6 +428,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [sendInvite, setSendInvite] = useState(!isEdit); // Default: invite for new
 
   const [form, setForm] = useState({
     full_name: employee?.full_name || '',
@@ -410,12 +471,14 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         if (!res.ok) throw new Error(data.error || 'Failed to update employee');
       } else {
         // POST — create new
+        const password = sendInvite ? crypto.randomUUID() : form.password;
+
         const res = await fetch('/api/admin-users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: form.email,
-            password: form.password,
+            password,
             full_name: form.full_name,
             display_name: form.display_name,
             role: form.role,
@@ -426,6 +489,15 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to create employee');
+
+        // If invite mode, send the welcome/recovery email
+        if (sendInvite) {
+          const { error: resetErr } = await realtimeClient.auth.resetPasswordForEmail(
+            form.email.trim(),
+            { redirectTo: window.location.origin + '/set-password' }
+          );
+          if (resetErr) throw resetErr;
+        }
       }
 
       onSaved();
@@ -506,39 +578,93 @@ function EmployeeModal({ employee, onClose, onSaved }) {
               </select>
             </div>
             <div className="admin-field">
-              <label className="label">
-                Password {isEdit && employee.auth_user_id ? '(leave blank to keep current)' : '*'}
-              </label>
-              <div className="admin-password-wrap">
-                <input
-                  className="input admin-password-input"
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={e => set('password', e.target.value)}
-                  placeholder={isEdit && employee.auth_user_id ? '••••••••' : 'Min 6 characters'}
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  className="admin-password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  tabIndex={-1}
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
+              {isEdit ? (
+                <>
+                  <label className="label">
+                    Password {employee.auth_user_id ? '(leave blank to keep current)' : '*'}
+                  </label>
+                  <div className="admin-password-wrap">
+                    <input
+                      className="input admin-password-input"
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={e => set('password', e.target.value)}
+                      placeholder={employee.auth_user_id ? '••••••••' : 'Min 6 characters'}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      className="admin-password-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                          <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                          <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="label">Login Access</label>
+                  <div className="admin-invite-toggle">
+                    <label className="admin-checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={sendInvite}
+                        onChange={e => setSendInvite(e.target.checked)}
+                      />
+                      <span>Send welcome email</span>
+                    </label>
+                    <span className="admin-field-hint">
+                      {sendInvite
+                        ? 'Employee will receive an email to set their own password.'
+                        : 'Set the password manually below.'}
+                    </span>
+                  </div>
+                  {!sendInvite && (
+                    <div className="admin-password-wrap" style={{ marginTop: 'var(--space-2)' }}>
+                      <input
+                        className="input admin-password-input"
+                        type={showPassword ? 'text' : 'password'}
+                        value={form.password}
+                        onChange={e => set('password', e.target.value)}
+                        placeholder="Min 6 characters"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="admin-password-toggle"
+                        onClick={() => setShowPassword(!showPassword)}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                            <line x1="1" y1="1" x2="23" y2="23"/>
+                          </svg>
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
+                </>
+              )}
             </div>
             <div className="admin-field">
               <label className="label">Hourly Rate</label>
@@ -572,9 +698,9 @@ function EmployeeModal({ employee, onClose, onSaved }) {
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={saving || !form.full_name.trim() || !form.email.trim() || !form.role.trim() || (!isEdit && !form.password)}
+            disabled={saving || !form.full_name.trim() || !form.email.trim() || !form.role.trim() || (!isEdit && !sendInvite && !form.password)}
           >
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Employee'}
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : sendInvite ? 'Create & Send Invite' : 'Create Employee'}
           </button>
         </div>
       </div>
