@@ -796,6 +796,7 @@ export default function Schedule() {
   const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
   const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
   const [allEmployees, setAllEmployees] = useState([]);
+  const [autoShow, setAutoShow] = useState(true); // auto-include jobs with appts this week
 
   // ── Week days ──
   const days = useMemo(() => {
@@ -822,11 +823,15 @@ export default function Schedule() {
   const loadBoard = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key });
+      const r = await db.rpc('get_dispatch_board', {
+        p_start_date: days[0].key,
+        p_end_date: days[days.length - 1].key,
+        p_auto_show: autoShow,
+      });
       setBoardData(Array.isArray(r) ? r : []);
     } catch (e) { console.error('Board:', e); }
     finally { setLoading(false); }
-  }, [db, days]);
+  }, [db, days, autoShow]);
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);
@@ -976,6 +981,10 @@ export default function Schedule() {
               <input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} />
               <span>Wknd</span>
             </label>
+            <label style={S.checkLabel}>
+              <input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} />
+              <span>Auto-show</span>
+            </label>
           </div>
         </div>
 
@@ -1064,9 +1073,14 @@ export default function Schedule() {
                   <div key={`lbl-${job.job_id}`} style={S.jobCell}>
                     <div style={S.jobCellName} title={job.insured_name}>{job.insured_name}</div>
                     {job.job_number && <div style={S.jobCellNum}>#{job.job_number}</div>}
-                    <span style={{ fontSize: 9, fontWeight: 600, padding: '0 5px', borderRadius: 3, background: dc.bg, color: dc.text, marginTop: 3, display: 'inline-block' }}>
-                      {dc.label}
-                    </span>
+                    <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '0 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>
+                        {dc.label}
+                      </span>
+                      {!job.pinned && (
+                        <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>auto</span>
+                      )}
+                    </div>
                     {job.address && <div style={S.jobCellAddr} title={job.address}>{job.address.split(',')[0]}</div>}
                   </div>,
                   ...days.map(day => {
