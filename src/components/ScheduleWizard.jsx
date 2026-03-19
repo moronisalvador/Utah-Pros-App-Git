@@ -33,6 +33,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
   const [expandedPhase, setExpandedPhase] = useState(null);
   const [customTasks, setCustomTasks] = useState({}); // phase_id → [{title}]
   const [customPhases, setCustomPhases] = useState([]); // [{name, duration, color, tasks:[{title}]}]
+  const [durationOverrides, setDurationOverrides] = useState({}); // phase_id → days
   const [addingTaskIn, setAddingTaskIn] = useState(null); // phase_id currently adding to
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showAddPhase, setShowAddPhase] = useState(false);
@@ -84,6 +85,33 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
       setStep('preview');
     } catch (e) { setError('Failed to generate preview: ' + e.message); }
     finally { setPreviewLoading(false); }
+  };
+
+  // Re-preview with current overrides (called when start date or durations change)
+  const rePreview = async (newStartDate, newDurOverrides) => {
+    const sd = newStartDate || startDate;
+    const overrides = Object.entries(newDurOverrides || durationOverrides).map(([id, days]) => ({
+      phase_id: id, duration_days: days,
+    }));
+    try {
+      const prev = await db.rpc('preview_schedule', {
+        p_template_id: selectedTemplate, p_start_date: sd,
+        p_skip_weekends: skipWeekends, p_duration_overrides: overrides,
+      });
+      setPreview(prev);
+    } catch (e) { console.error('Re-preview:', e); }
+  };
+
+  const changeDuration = (phaseId, days) => {
+    const d = Math.max(1, Math.min(30, parseInt(days) || 1));
+    const next = { ...durationOverrides, [phaseId]: d };
+    setDurationOverrides(next);
+    rePreview(null, next);
+  };
+
+  const changeStartDate = (newDate) => {
+    setStartDate(newDate);
+    rePreview(newDate, null);
   };
 
   // Toggle phase
@@ -169,10 +197,23 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
   const generateSchedule = async () => {
     setStep('generating'); setError(null);
     try {
-      // Build phase overrides — skip disabled phases
-      const overrides = (preview?.phases || [])
-        .filter(p => !enabledPhases.has(p.phase_id))
-        .map(p => ({ phase_id: p.phase_id, skip: true }));
+      // Build phase overrides — skip disabled phases + duration changes
+      const overrides = [];
+      for (const p of (preview?.phases || [])) {
+        const entry = {};
+        let hasOverride = false;
+        if (!enabledPhases.has(p.phase_id)) {
+          entry.phase_id = p.phase_id;
+          entry.skip = true;
+          hasOverride = true;
+        } else if (durationOverrides[p.phase_id]) {
+          entry.phase_id = p.phase_id;
+          entry.start_date = p.start_date;
+          entry.end_date = p.end_date;
+          hasOverride = true;
+        }
+        if (hasOverride) overrides.push(entry);
+      }
 
       // 1. Generate the main schedule
       const data = await db.rpc('generate_full_schedule', {
@@ -299,15 +340,24 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
           {/* ═══ STEP 2: Preview with editable phases/tasks ═══ */}
           {step === 'preview' && preview && (
             <>
-              {/* Summary bar */}
+              {/* Summary bar with editable start date */}
               <div style={W.summaryBar}>
                 <div style={W.summaryItem}>
-                  <div style={W.summaryValue}>{fmtDate(preview.project_start).split(',')[1]?.trim()} – {fmtDate(preview.project_end).split(',')[1]?.trim()}</div>
-                  <div style={W.summaryLabel}>Project span</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                    <input type="date" value={startDate} onChange={e => changeStartDate(e.target.value)}
+                      style={{ border: 'none', background: 'transparent', fontSize: 12, fontWeight: 600,
+                        color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'center',
+                        cursor: 'pointer', outline: 'none', width: 120 }} />
+                  </div>
+                  <div style={W.summaryLabel}>Start date (click to change)</div>
                 </div>
                 <div style={W.summaryItem}>
                   <div style={W.summaryValue}>{enabledPhaseCount} phases</div>
                   <div style={W.summaryLabel}>{enabledTaskCount} tasks</div>
+                </div>
+                <div style={W.summaryItem}>
+                  <div style={W.summaryValue}>{fmtDate(preview.project_end).split(',').pop().trim()}</div>
+                  <div style={W.summaryLabel}>End date</div>
                 </div>
               </div>
 
@@ -345,10 +395,19 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
                           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)',
                             transform: expanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
                         </div>
-                        <div style={W.phaseDate}>
-                          {fmtRange(phase.start_date, phase.end_date)}
-                          {!phase.is_milestone && phase.duration_days > 1 && (
-                            <span style={{ color: 'var(--text-tertiary)' }}> ({phase.duration_days} days)</span>
+                        <div style={{ ...W.phaseDate, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{fmtRange(phase.start_date, phase.end_date)}</span>
+                          {!phase.is_milestone && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--text-tertiary)' }}>
+                              <input type="number" min="1" max="30"
+                                value={durationOverrides[phase.phase_id] || phase.duration_days}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => changeDuration(phase.phase_id, e.target.value)}
+                                style={{ width: 36, padding: '1px 4px', border: '1px solid var(--border-color)',
+                                  borderRadius: 3, fontSize: 11, textAlign: 'center', fontFamily: 'var(--font-sans)',
+                                  color: 'var(--text-primary)', background: 'var(--bg-primary)', outline: 'none' }} />
+                              <span style={{ fontSize: 11 }}>days</span>
+                            </span>
                           )}
                         </div>
                       </div>
