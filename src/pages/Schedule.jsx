@@ -71,19 +71,34 @@ function fmtTime(t) {
 // JOB SELECTOR PANEL
 // ═══════════════════════════════════════════════════════════════
 
+const MITIGATION_DIVS = ['water', 'mold', 'fire', 'contents'];
+const RECON_DIVS = ['reconstruction'];
+
 function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
+  const [divFilter, setDivFilter] = useState('all'); // 'all' | 'mitigation' | 'reconstruction'
+
+  // Counts for filter buttons (based on full list, not filtered)
+  const mitigationCount = jobs.filter(j => MITIGATION_DIVS.includes(j.division)).length;
+  const reconCount = jobs.filter(j => RECON_DIVS.includes(j.division)).length;
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return jobs;
-    const q = search.toLowerCase();
-    return jobs.filter(j =>
-      (j.insured_name || '').toLowerCase().includes(q) ||
-      (j.job_number || '').toLowerCase().includes(q) ||
-      (j.address || '').toLowerCase().includes(q)
-    );
-  }, [jobs, search]);
+    let list = jobs;
+    // Division filter
+    if (divFilter === 'mitigation') list = list.filter(j => MITIGATION_DIVS.includes(j.division));
+    else if (divFilter === 'reconstruction') list = list.filter(j => RECON_DIVS.includes(j.division));
+    // Search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(j =>
+        (j.insured_name || '').toLowerCase().includes(q) ||
+        (j.job_number || '').toLowerCase().includes(q) ||
+        (j.address || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [jobs, search, divFilter]);
 
   const onBoard = filtered.filter(j => j.on_board);
   const offBoard = filtered.filter(j => !j.on_board);
@@ -128,6 +143,21 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading }) {
       </div>
 
       <div style={P.searchWrap}>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+          {[
+            { key: 'all', label: `All (${jobs.length})` },
+            { key: 'mitigation', label: `Mitigation (${mitigationCount})` },
+            { key: 'reconstruction', label: `Recon (${reconCount})` },
+          ].map(f => (
+            <button key={f.key} onClick={() => setDivFilter(f.key)} style={{
+              flex: 1, fontSize: 11, fontWeight: 600, padding: '5px 0', borderRadius: 'var(--radius-md)',
+              border: divFilter === f.key ? '1px solid var(--accent)' : '1px solid var(--border-color)',
+              background: divFilter === f.key ? 'var(--accent-light)' : 'var(--bg-primary)',
+              color: divFilter === f.key ? 'var(--accent)' : 'var(--text-secondary)',
+              cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 120ms ease',
+            }}>{f.label}</button>
+          ))}
+        </div>
         <input style={P.searchInput} placeholder="Search jobs..." value={search}
           onChange={e => setSearch(e.target.value)} />
       </div>
