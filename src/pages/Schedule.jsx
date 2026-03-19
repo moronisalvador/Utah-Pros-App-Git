@@ -19,6 +19,16 @@ const TYPE_COLORS = {
   mold_remediation: '#059669', content_cleaning: '#8b5cf6', other: '#6b7280',
 };
 
+const APPT_TYPES = [
+  { value: 'reconstruction', label: 'Reconstruction' },
+  { value: 'inspection', label: 'Inspection' },
+  { value: 'estimate', label: 'Estimate' },
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'monitoring', label: 'Monitoring' },
+  { value: 'mitigation', label: 'Mitigation' },
+  { value: 'other', label: 'Other' },
+];
+
 const STATUS_LABELS = {
   scheduled:   { label: 'Scheduled', color: '#3b82f6' },
   en_route:    { label: 'En Route',  color: '#f59e0b' },
@@ -410,6 +420,365 @@ function CrewApptCard({ appt, onClick }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// CREATE APPOINTMENT MODAL
+// ═══════════════════════════════════════════════════════════════
+
+function CreateAppointmentModal({ jobId, jobName, dateKey, db, employees, onClose, onSaved }) {
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState('reconstruction');
+  const [timeStart, setTimeStart] = useState('07:00');
+  const [timeEnd, setTimeEnd] = useState('15:30');
+  const [notes, setNotes] = useState('');
+  const [selectedCrew, setSelectedCrew] = useState([]);   // [{ employee_id, role }]
+  const [selectedTasks, setSelectedTasks] = useState([]);  // [task_id]
+  const [taskPool, setTaskPool] = useState([]);            // grouped by phase
+  const [saving, setSaving] = useState(false);
+  const [poolLoading, setPoolLoading] = useState(true);
+
+  // Load unassigned tasks for this job
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
+        setTaskPool(Array.isArray(data) ? data : []);
+      } catch (e) { console.error('Load task pool:', e); }
+      finally { setPoolLoading(false); }
+    })();
+  }, [db, jobId]);
+
+  const totalUnassigned = taskPool.reduce((s, g) => s + (g.tasks?.length || 0), 0);
+
+  const toggleCrew = (empId) => {
+    setSelectedCrew(prev => {
+      const exists = prev.find(c => c.employee_id === empId);
+      if (exists) return prev.filter(c => c.employee_id !== empId);
+      return [...prev, { employee_id: empId, role: prev.length === 0 ? 'lead' : 'tech' }];
+    });
+  };
+
+  const toggleTask = (taskId) => {
+    setSelectedTasks(prev =>
+      prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
+    );
+  };
+
+  const selectPhaseGroup = (tasks) => {
+    const ids = tasks.map(t => t.id);
+    const allSelected = ids.every(id => selectedTasks.includes(id));
+    if (allSelected) {
+      setSelectedTasks(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedTasks(prev => [...new Set([...prev, ...ids])]);
+    }
+  };
+
+  const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric',
+  });
+
+  const handleSave = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    try {
+      // 1. Create appointment
+      const apptResult = await db.insert('appointments', {
+        job_id: jobId,
+        title: title.trim(),
+        date: dateKey,
+        time_start: timeStart || null,
+        time_end: timeEnd || null,
+        type,
+        status: 'scheduled',
+        notes: notes.trim() || null,
+      });
+      const apptId = apptResult[0]?.id;
+      if (!apptId) throw new Error('Failed to create appointment');
+
+      // 2. Assign crew
+      if (selectedCrew.length > 0) {
+        for (const crew of selectedCrew) {
+          await db.insert('appointment_crew', {
+            appointment_id: apptId,
+            employee_id: crew.employee_id,
+            role: crew.role,
+          });
+        }
+      }
+
+      // 3. Assign tasks
+      if (selectedTasks.length > 0) {
+        await db.rpc('assign_tasks_to_appointment', {
+          p_appointment_id: apptId,
+          p_task_ids: selectedTasks,
+        });
+      }
+
+      onSaved();
+    } catch (e) {
+      console.error('Save appointment:', e);
+      alert('Failed to save: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={M.overlay} onClick={onClose}>
+      <div style={M.modal} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={M.header}>
+          <div>
+            <div style={M.headerTitle}>New appointment</div>
+            <div style={M.headerSub}>{jobName} — {dateLabel}</div>
+          </div>
+          <button style={M.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={M.body}>
+          {/* Title */}
+          <div style={M.field}>
+            <label style={M.label}>Title</label>
+            <input style={M.input} value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Drywall — tape and mud" autoFocus />
+          </div>
+
+          {/* Type + Times */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ ...M.field, flex: 1 }}>
+              <label style={M.label}>Type</label>
+              <select style={M.input} value={type} onChange={e => setType(e.target.value)}>
+                {APPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={M.field}>
+              <label style={M.label}>Start</label>
+              <input type="time" style={{ ...M.input, width: 110 }} value={timeStart}
+                onChange={e => setTimeStart(e.target.value)} />
+            </div>
+            <div style={M.field}>
+              <label style={M.label}>End</label>
+              <input type="time" style={{ ...M.input, width: 110 }} value={timeEnd}
+                onChange={e => setTimeEnd(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div style={M.field}>
+            <label style={M.label}>Notes</label>
+            <textarea style={{ ...M.input, minHeight: 48, resize: 'vertical' }} value={notes}
+              onChange={e => setNotes(e.target.value)} placeholder="Instructions for the crew..." />
+          </div>
+
+          {/* ── Crew ── */}
+          <div style={M.section}>
+            <div style={M.sectionTitle}>
+              Crew
+              {selectedCrew.length > 0 && (
+                <span style={M.sectionBadge}>{selectedCrew.length} selected</span>
+              )}
+            </div>
+            <div style={M.crewGrid}>
+              {employees.map(emp => {
+                const sel = selectedCrew.find(c => c.employee_id === emp.id);
+                return (
+                  <button key={emp.id} onClick={() => toggleCrew(emp.id)} style={{
+                    ...M.crewChip,
+                    background: sel ? 'var(--accent-light)' : 'var(--bg-primary)',
+                    borderColor: sel ? 'var(--accent)' : 'var(--border-color)',
+                    color: sel ? 'var(--accent)' : 'var(--text-secondary)',
+                  }}>
+                    <span style={{ fontWeight: 600, fontSize: 12 }}>
+                      {emp.display_name || emp.full_name}
+                    </span>
+                    {sel && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: '0 4px', borderRadius: 3,
+                        background: sel.role === 'lead' ? '#fffbeb' : 'transparent',
+                        color: sel.role === 'lead' ? '#92400e' : 'var(--text-tertiary)',
+                      }}>{sel.role === 'lead' ? 'LEAD' : 'TECH'}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Task Picker ── */}
+          <div style={M.section}>
+            <div style={M.sectionTitle}>
+              Assign tasks
+              <span style={M.sectionBadge}>
+                {selectedTasks.length} of {totalUnassigned} selected
+              </span>
+            </div>
+
+            {poolLoading && (
+              <div style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>
+                Loading tasks...
+              </div>
+            )}
+
+            {!poolLoading && taskPool.length === 0 && (
+              <div style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>
+                No unassigned tasks — apply a template to this job first, or add ad-hoc tasks
+              </div>
+            )}
+
+            {taskPool.map(group => {
+              const groupIds = group.tasks.map(t => t.id);
+              const allSelected = groupIds.every(id => selectedTasks.includes(id));
+              const someSelected = groupIds.some(id => selectedTasks.includes(id));
+              return (
+                <div key={group.phase_name} style={{ marginBottom: 8 }}>
+                  {/* Phase header — click to select/deselect all in group */}
+                  <div
+                    style={M.phaseHeader}
+                    onClick={() => selectPhaseGroup(group.tasks)}
+                  >
+                    <span style={{
+                      width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                      background: group.phase_color || '#6b7280',
+                    }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
+                      {group.phase_name}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                      {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{
+                      width: 16, height: 16, borderRadius: 3, display: 'flex',
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      border: allSelected ? 'none' : someSelected ? '2px solid var(--accent)' : '1.5px solid var(--border-color)',
+                      background: allSelected ? 'var(--accent)' : 'transparent',
+                      fontSize: 10, color: '#fff', fontWeight: 700,
+                    }}>
+                      {allSelected ? '✓' : someSelected ? '–' : ''}
+                    </span>
+                  </div>
+
+                  {/* Individual tasks */}
+                  {group.tasks.map(task => {
+                    const checked = selectedTasks.includes(task.id);
+                    return (
+                      <div key={task.id} style={M.taskRow} onClick={() => toggleTask(task.id)}>
+                        <span style={{
+                          width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                          border: checked ? 'none' : '1.5px solid var(--border-color)',
+                          background: checked ? 'var(--accent)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, color: '#fff', fontWeight: 700,
+                        }}>
+                          {checked ? '✓' : ''}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>
+                          {task.title}
+                        </span>
+                        {task.is_required && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, color: '#ef4444',
+                            background: '#fef2f2', padding: '1px 5px', borderRadius: 3,
+                          }}>REQ</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={M.footer}>
+          <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
+          <button style={M.saveBtn} onClick={handleSave}
+            disabled={!title.trim() || saving}>
+            {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const M = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    zIndex: 1000, paddingTop: 40, overflow: 'auto',
+  },
+  modal: {
+    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
+  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
+  closeBtn: {
+    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 4,
+  },
+  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
+  field: { marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
+    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
+  },
+  section: {
+    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: 'var(--text-tertiary)', marginBottom: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  sectionBadge: {
+    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
+    letterSpacing: 0,
+  },
+  crewGrid: {
+    display: 'flex', flexWrap: 'wrap', gap: 6,
+  },
+  crewChip: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
+    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
+    background: 'var(--bg-primary)',
+  },
+  phaseHeader: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
+    cursor: 'pointer', userSelect: 'none',
+    borderBottom: '1px solid var(--border-light)',
+  },
+  taskRow: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0 5px 18px',
+    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
+  },
+  footer: {
+    display: 'flex', justifyContent: 'flex-end', gap: 8,
+    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  cancelBtn: {
+    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+  saveBtn: {
+    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN: SCHEDULE PAGE
 // ═══════════════════════════════════════════════════════════════
 
@@ -425,6 +794,8 @@ export default function Schedule() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [viewMode, setViewMode] = useState('jobs'); // 'jobs' | 'crew'
   const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
+  const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
+  const [allEmployees, setAllEmployees] = useState([]);
 
   // ── Week days ──
   const days = useMemo(() => {
@@ -459,6 +830,13 @@ export default function Schedule() {
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);
+
+  // ── Load employees for crew assignment ──
+  useEffect(() => {
+    db.select('employees', 'is_active=eq.true&order=display_name.asc&select=id,display_name,full_name,role')
+      .then(setAllEmployees)
+      .catch(() => {});
+  }, [db]);
 
   // ── Toggle job on/off board ──
   const toggleJob = async (jobId, addToBoard) => {
@@ -555,7 +933,10 @@ export default function Schedule() {
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
   const handleApptClick = (appt) => { console.log('Appointment:', appt); };
-  const handleCellClick = (jobId, dateKey) => { console.log('Create:', jobId, dateKey); };
+  const handleCellClick = (jobId, dateKey) => {
+    const job = boardData.find(j => j.job_id === jobId);
+    setCreateModal({ jobId, dateKey, jobName: job?.insured_name || 'Unknown' });
+  };
 
   return (
     <div style={S.page}>
@@ -735,6 +1116,19 @@ export default function Schedule() {
           </div>
         )}
       </div>
+
+      {/* Create appointment modal */}
+      {createModal && (
+        <CreateAppointmentModal
+          jobId={createModal.jobId}
+          jobName={createModal.jobName}
+          dateKey={createModal.dateKey}
+          db={db}
+          employees={allEmployees}
+          onClose={() => setCreateModal(null)}
+          onSaved={() => { setCreateModal(null); loadBoard(); }}
+        />
+      )}
     </div>
   );
 }
