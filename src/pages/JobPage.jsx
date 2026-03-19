@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import ScheduleWizard from '@/components/ScheduleWizard';
 
 const PRIORITY_OPTIONS = [
   { value: 1, label: 'Urgent', color: '#ef4444' },
@@ -48,6 +49,10 @@ export default function JobPage() {
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Schedule
+  const [showWizard, setShowWizard] = useState(false);
+  const [taskSummary, setTaskSummary] = useState(null);
+
   useEffect(() => { loadJob(); }, [jobId]);
 
   const loadJob = async () => {
@@ -68,6 +73,10 @@ export default function JobPage() {
       setDocuments(docsData);
       setNotes(notesData);
       setHistory(histData);
+      // Load task summary for schedule tab
+      db.rpc('get_job_task_summary', { p_job_id: jobId })
+        .then(data => setTaskSummary(data))
+        .catch(() => setTaskSummary(null));
     } catch (err) {
       console.error('Job load error:', err);
     } finally {
@@ -169,6 +178,7 @@ export default function JobPage() {
 
   const TABS = [
     { key: 'overview', label: 'Overview' },
+    { key: 'schedule', label: 'Schedule', count: taskSummary?.total || 0 },
     { key: 'files', label: 'Files', count: documents.length },
     { key: 'financial', label: 'Financial' },
     { key: 'activity', label: 'Activity', count: notes.length + history.length },
@@ -230,6 +240,9 @@ export default function JobPage() {
         {activeTab === 'overview' && (
           <OverviewTab job={job} employees={employees} phases={phases} editProps={editProps} saveFieldDirect={saveFieldDirect} fmtDate={fmtDate} />
         )}
+        {activeTab === 'schedule' && (
+          <ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={() => setShowWizard(true)} navigate={navigate} />
+        )}
         {activeTab === 'files' && (
           <FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} />
         )}
@@ -241,6 +254,19 @@ export default function JobPage() {
             phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime} />
         )}
       </PullToRefresh>
+
+      {/* Schedule Wizard Modal */}
+      {showWizard && (
+        <ScheduleWizard
+          jobId={job.id}
+          jobName={job.insured_name || job.job_number || 'Job'}
+          onClose={() => setShowWizard(false)}
+          onGenerated={() => {
+            setShowWizard(false);
+            loadJob(); // Refresh task summary
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -685,6 +711,114 @@ function ActivityTab({ job, notes, setNotes, history, employees, phaseMap, db, c
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════
+   SCHEDULE TAB — phase progress + generate button
+   ═══════════════════════════════════════════════════ */
+function ScheduleTab({ jobId, taskSummary, onGenerateClick, navigate }) {
+  const hasSchedule = taskSummary && taskSummary.total > 0;
+
+  if (!hasSchedule) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: 36, opacity: 0.15, marginBottom: 12 }}>📅</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+          No schedule created yet
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20, maxWidth: 320, margin: '0 auto 20px' }}>
+          Apply a template to auto-generate appointments and tasks for this job. The entire reconstruction schedule gets created in one click.
+        </div>
+        <button className="btn btn-primary" onClick={onGenerateClick}
+          style={{ padding: '10px 24px', fontSize: 14 }}>
+          Generate schedule
+        </button>
+      </div>
+    );
+  }
+
+  const byPhase = taskSummary.by_phase || [];
+  const pctComplete = taskSummary.total > 0 ? Math.round((taskSummary.completed / taskSummary.total) * 100) : 0;
+
+  return (
+    <div style={{ padding: '16px 0' }}>
+      {/* Summary cards */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, padding: '0 16px' }}>
+        <div style={schedStyles.card}>
+          <div style={schedStyles.cardValue}>{pctComplete}%</div>
+          <div style={schedStyles.cardLabel}>Complete</div>
+        </div>
+        <div style={schedStyles.card}>
+          <div style={schedStyles.cardValue}>{taskSummary.completed}/{taskSummary.total}</div>
+          <div style={schedStyles.cardLabel}>Tasks done</div>
+        </div>
+        <div style={schedStyles.card}>
+          <div style={schedStyles.cardValue}>{taskSummary.assigned}</div>
+          <div style={schedStyles.cardLabel}>Assigned</div>
+        </div>
+        <div style={schedStyles.card}>
+          <div style={schedStyles.cardValue}>{taskSummary.unassigned}</div>
+          <div style={schedStyles.cardLabel}>Unassigned</div>
+        </div>
+      </div>
+
+      {/* Overall progress bar */}
+      <div style={{ padding: '0 16px', marginBottom: 20 }}>
+        <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ width: `${pctComplete}%`, height: '100%', background: pctComplete === 100 ? '#10b981' : 'var(--accent)', borderRadius: 3, transition: 'width 300ms ease' }} />
+        </div>
+      </div>
+
+      {/* Phase breakdown */}
+      <div style={{ padding: '0 16px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 10 }}>
+          Phase progress
+        </div>
+        {byPhase.map(phase => {
+          const phasePct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
+          const isDone = phase.completed === phase.total;
+          return (
+            <div key={phase.phase_name} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)', textDecoration: isDone ? 'line-through' : 'none' }}>
+                    {phase.phase_name}
+                  </span>
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  {phase.completed}/{phase.total}{phase.assigned < phase.total && !isDone ? ` (${phase.total - phase.assigned} unscheduled)` : ''}
+                </span>
+              </div>
+              <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: `${phasePct}%`, height: '100%', background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div style={{ padding: '16px', borderTop: '1px solid var(--border-light)', marginTop: 8, display: 'flex', gap: 8 }}>
+        <button className="btn btn-sm btn-secondary" onClick={() => navigate('/schedule')}>
+          Open dispatch board
+        </button>
+        {taskSummary.unassigned > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', alignSelf: 'center' }}>
+            {taskSummary.unassigned} tasks still need to be scheduled
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const schedStyles = {
+  card: {
+    flex: 1, padding: '10px 8px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center',
+  },
+  cardValue: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
+  cardLabel: { fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' },
+};
 
 /* ── Helpers ── */
 function phaseClass(phase) {
