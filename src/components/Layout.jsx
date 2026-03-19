@@ -3,16 +3,17 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
-import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
- BOTTOM_TABS = [
+// Bottom bar items — the 4 most-used + More
+const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
 
+// Pages that show the Create FAB
 const CREATE_MENU_PATHS = ['/', '/jobs', '/production'];
 
 function IconMore(props) {
@@ -28,13 +29,11 @@ function IconMore(props) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [carriers, setCarriers] = useState([]);
-  const [referralSources, setReferralSources] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
 
+  // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
       const convs = await db.select('conversations', 'select=unread_count');
@@ -49,13 +48,8 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
+  // Refetch on navigation (catches mark-as-read when leaving conversations)
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
-
-  // Fetch lookup tables once (via RPC — bypasses schema cache)
-  useEffect(() => {
-    db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
-    db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
-  }, [db]);
 
   const handleNavClick = () => setSidebarOpen(false);
   const handleBottomTab = (path) => navigate(path);
@@ -70,30 +64,6 @@ export default function Layout() {
     return location.pathname === p;
   });
 
-  const handleCreateAction = (key) => {
-    switch (key) {
-      case 'job': navigate('/jobs/new'); break;
-      case 'estimate': navigate('/estimates/new'); break;
-      case 'customer': setShowAddContact(true); break;
-    }
-  };
-
-  const handleSaveContact = async (data) => {
-    try {
-      const inserted = await db.insert('contacts', {
-        ...data,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-      setShowAddContact(false);
-      if (inserted?.length > 0) {
-        navigate(`/contacts/${inserted[0].id}`);
-      }
-    } catch (err) {
-      alert('Failed to add contact: ' + err.message);
-    }
-  };
-
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -106,17 +76,9 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
+      {showCreateMenu && <CreateMenu />}
 
-      {showAddContact && (
-        <AddContactModal
-          onClose={() => setShowAddContact(false)}
-          onSave={handleSaveContact}
-          carriers={carriers}
-          referralSources={referralSources}
-        />
-      )}
-
+      {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">
         {BOTTOM_TABS.map(tab => (
           <button

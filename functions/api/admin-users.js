@@ -13,7 +13,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
 function supabaseAdmin(env) {
-  const url = env.SUPABASE_URL;
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
   const headers = {
