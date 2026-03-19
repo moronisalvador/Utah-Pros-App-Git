@@ -620,6 +620,9 @@ tr:hover td { background: var(--bg-secondary); }
 .login-logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: var(--text-lg); color: white; }
 .login-logo-text { font-size: var(--text-xl); font-weight: 700; }
 .login-error { background: var(--status-needs-response-bg); color: var(--status-needs-response); padding: var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+.login-forgot-link { display: block; width: 100%; background: none; border: none; padding: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--accent); cursor: pointer; text-align: center; font-weight: 500; }
+.login-forgot-link:hover { text-decoration: underline; }
+.login-reset-sent { text-align: center; padding: var(--space-4) 0; }
 
 /* ── Dashboard ── */
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
