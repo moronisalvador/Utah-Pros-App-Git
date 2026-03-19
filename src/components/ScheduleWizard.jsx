@@ -78,7 +78,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
         p_template_id: selectedTemplate,
         p_start_date: startDate,
         p_skip_weekends: skipWeekends,
-        p_phase_overrides: '[]',
+        p_phase_overrides: [],
         p_created_by: employee?.id || null,
       });
       setResult(data);
