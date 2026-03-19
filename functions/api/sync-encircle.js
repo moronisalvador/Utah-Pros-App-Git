@@ -1,7 +1,6 @@
 // POST /api/sync-encircle
 // Fetches recent claims from Encircle, upserts into Supabase jobs table,
 // and creates contacts for each insured with a phone or email.
-// Cloudflare Pages function format.
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
@@ -11,15 +10,6 @@ function cleanJobNumber(val) {
   if (val.length > 20) return null;
   if (val.includes(' ') && !/\d/.test(val)) return null;
   return val;
-}
-
-function mapDivision(typeOfLoss) {
-  if (!typeOfLoss) return 'water';
-  const t = typeOfLoss.toLowerCase();
-  if (t.includes('fire') || t.includes('smoke')) return 'fire';
-  if (t.includes('mold')) return 'mold';
-  if (t.includes('wind') || t.includes('storm')) return 'general';
-  return 'water';
 }
 
 function normalizePhone(phone) {
@@ -36,15 +26,12 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestPost(context) {
-  const { env } = context;
-  const db = supabase(env);
+  const { request, env } = context;
 
   try {
-    const limit = 15;
-
     // 1. Fetch claims from Encircle
     const encRes = await fetch(
-      `https://api.encircleapp.com/v1/property_claims?limit=${limit}&order=newest`,
+      'https://api.encircleapp.com/v1/property_claims?limit=15&order=newest',
       {
         headers: {
           'Authorization': `Bearer ${env.ENCIRCLE_API_KEY}`,
@@ -56,7 +43,7 @@ export async function onRequestPost(context) {
 
     if (!encRes.ok) {
       const errText = await encRes.text();
-      throw new Error(`Encircle API ${encRes.status}: ${errText.slice(0, 200)}`);
+      return jsonResponse({ error: `Encircle API ${encRes.status}: ${errText.slice(0, 200)}` }, 502, request, env);
     }
 
     const encData = await encRes.json();
@@ -67,10 +54,10 @@ export async function onRequestPost(context) {
       : encData.list || encData.property_claims || encData.results || encData.claims || encData.data || [];
 
     if (!claims.length) {
-      return jsonResponse({ jobs: [], synced: 0, message: 'No claims found in Encircle' }, env);
+      return jsonResponse({ jobs: [], synced: 0, message: 'No claims found', debug_keys: Object.keys(encData) }, 200, request, env);
     }
 
-    // 2. Map Encircle fields → jobs table
+    // 2. Map Encircle → jobs table
     const jobRows = claims.map(c => ({
       encircle_claim_id:     String(c.id),
       insured_name:          c.policyholder_name || null,
@@ -88,59 +75,58 @@ export async function onRequestPost(context) {
       project_manager:       c.project_manager || null,
       broker_agent:          c.broker_agent || null,
       encircle_summary:      c.summary || null,
-      division:              'reconstruction',  // All pulled jobs are recon
+      division:              'reconstruction',
       encircle_created_at:   c.created_at || null,
     }));
 
-    // 3. Upsert jobs (on conflict: encircle_claim_id)
-    const upsertUrl = `${env.SUPABASE_URL || env.VITE_SUPABASE_URL}/rest/v1/jobs?on_conflict=encircle_claim_id`;
-    const serviceKey = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+    // 3. Upsert jobs
+    const sbUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+    const sbKey = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
-    const upsertRes = await fetch(upsertUrl, {
-      method: 'POST',
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates,return=representation',
-      },
-      body: JSON.stringify(jobRows),
-    });
+    const upsertRes = await fetch(
+      `${sbUrl}/rest/v1/jobs?on_conflict=encircle_claim_id`,
+      {
+        method: 'POST',
+        headers: {
+          'apikey': sbKey,
+          'Authorization': `Bearer ${sbKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify(jobRows),
+      }
+    );
 
     if (!upsertRes.ok) {
       const err = await upsertRes.text();
-      throw new Error(`Supabase upsert failed: ${err.slice(0, 300)}`);
+      return jsonResponse({ error: `Supabase upsert failed: ${err.slice(0, 300)}` }, 500, request, env);
     }
 
     const upsertedJobs = await upsertRes.json();
 
-    // 4. Create contacts for each job that has a phone or email
+    // 4. Create contacts for each job with a phone or email
     let contactsCreated = 0;
     for (const job of upsertedJobs) {
       if (!job.insured_name) continue;
       const phone = normalizePhone(job.client_phone);
       if (!phone && !job.client_email) continue;
 
-      // Check if contact already exists (by phone)
+      // Check if contact already exists by phone
       if (phone) {
-        const checkUrl = `${env.SUPABASE_URL || env.VITE_SUPABASE_URL}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1`;
-        const checkRes = await fetch(checkUrl, {
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-          },
-        });
+        const checkRes = await fetch(
+          `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1`,
+          { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
+        );
         const existing = checkRes.ok ? await checkRes.json() : [];
-        if (existing.length > 0) continue; // Already exists
+        if (existing.length > 0) continue;
       }
 
       // Create contact
-      const contactUrl = `${env.SUPABASE_URL || env.VITE_SUPABASE_URL}/rest/v1/contacts`;
-      const contactRes = await fetch(contactUrl, {
+      const contactRes = await fetch(`${sbUrl}/rest/v1/contacts`, {
         method: 'POST',
         headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
+          'apikey': sbKey,
+          'Authorization': `Bearer ${sbKey}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
@@ -149,7 +135,6 @@ export async function onRequestPost(context) {
           phone: phone || 'no-phone',
           email: job.client_email || null,
           role: 'homeowner',
-          company: null,
           address: job.address || null,
         }),
       });
@@ -166,12 +151,11 @@ export async function onRequestPost(context) {
         address: j.address,
         division: j.division,
         job_number: j.job_number,
-        encircle_claim_id: j.encircle_claim_id,
       })),
-    }, env);
+    }, 200, request, env);
 
   } catch (e) {
     console.error('[sync-encircle]', e.message);
-    return jsonResponse({ error: e.message }, env, 500);
+    return jsonResponse({ error: e.message }, 500, request, env);
   }
 }
