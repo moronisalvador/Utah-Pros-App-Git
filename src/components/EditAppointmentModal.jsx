@@ -26,6 +26,11 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [crewSearch, setCrewSearch] = useState('');
+  const [nextVisitPrompt, setNextVisitPrompt] = useState(null); // null | 'asking' | 'pick_date'
+  const [nextVisitDate, setNextVisitDate] = useState('');
+
+  const isMitigationType = ['mitigation', 'monitoring'].includes(appointment.type) ||
+    ['water', 'mold', 'fire', 'contents'].includes(appointment._division);
 
   // Initialize crew from appointment data
   const initialCrew = (appointment.crew || []).map(c => ({
@@ -146,9 +151,62 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     setSaving(true);
     try {
       await db.rpc('finish_appointment', { p_appointment_id: appointment.id });
-      onSaved();
+      // For mitigation appointments, ask about next visit
+      if (isMitigationType) {
+        setSaving(false);
+        setNextVisitPrompt('asking');
+      } else {
+        onSaved();
+      }
     } catch (e) { console.error('Finish:', e); alert('Failed: ' + e.message); }
+    finally { if (!isMitigationType) setSaving(false); }
+  };
+
+  // Clone appointment to a specific date (for "schedule next visit")
+  const handleCloneVisit = async (targetDate) => {
+    setSaving(true);
+    try {
+      const result = await db.insert('appointments', {
+        job_id: appointment._jobId || appointment.job_id,
+        title: title || appointment.title,
+        date: targetDate,
+        time_start: timeStart || appointment.time_start,
+        time_end: timeEnd || appointment.time_end,
+        type: type || appointment.type,
+        status: 'scheduled',
+        notes: null,
+      });
+      if (result && result.length > 0) {
+        const newId = result[0].id;
+        // Copy crew
+        for (const c of selectedCrew) {
+          await db.insert('appointment_crew', { appointment_id: newId, employee_id: c.employee_id, role: c.role });
+        }
+        // Clone the same task set (monitoring tasks)
+        const taskTemplates = tasks.map(t => t.title);
+        if (taskTemplates.length > 0) {
+          for (const taskTitle of taskTemplates) {
+            await db.insert('job_tasks', {
+              job_id: appointment._jobId || appointment.job_id,
+              appointment_id: newId,
+              title: taskTitle,
+              phase_name: tasks[0]?.phase_name || 'Monitoring',
+              is_completed: false,
+            });
+          }
+        }
+      }
+      onSaved();
+    } catch (e) { console.error('Clone visit:', e); alert('Failed: ' + e.message); }
     finally { setSaving(false); }
+  };
+
+  const getNextBusinessDay = (fromDate) => {
+    const d = new Date(fromDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
   };
 
   // Delete appointment
@@ -367,37 +425,81 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
           </div>
         </div>
 
-        {/* Footer */}
-        <div style={S.footer}>
-          {/* Left: destructive actions */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!showDeleteConfirm ? (
-              <button onClick={() => setShowDeleteConfirm(true)}
-                style={{ ...S.ghostBtn, color: '#ef4444' }}>Delete</button>
-            ) : (
+        {/* Footer / Next Visit Prompt */}
+        {nextVisitPrompt ? (
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', background: '#f8fffe', flexShrink: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              ✅ Appointment completed
+            </div>
+            {nextVisitPrompt === 'asking' && (
               <>
-                <button onClick={handleDelete} disabled={saving}
-                  style={{ ...S.ghostBtn, color: '#fff', background: '#ef4444' }}>Confirm delete</button>
-                <button onClick={() => setShowDeleteConfirm(false)}
-                  style={S.ghostBtn}>Cancel</button>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                  Schedule another visit for this job?
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => handleCloneVisit(getNextBusinessDay(date))} disabled={saving}
+                    style={{ ...S.primaryBtn, background: '#10b981', flex: 1 }}>
+                    {saving ? 'Creating...' : `Tomorrow (${new Date(getNextBusinessDay(date) + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })})`}
+                  </button>
+                  <button onClick={() => { setNextVisitPrompt('pick_date'); setNextVisitDate(''); }}
+                    style={{ ...S.outlineBtn, flex: 1 }}>
+                    Pick a day
+                  </button>
+                  <button onClick={() => onSaved()}
+                    style={{ ...S.ghostBtn, color: 'var(--text-tertiary)' }}>
+                    No — done with this job
+                  </button>
+                </div>
+              </>
+            )}
+            {nextVisitPrompt === 'pick_date' && (
+              <>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  Pick the date for the next visit:
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <DatePicker value={nextVisitDate} onChange={setNextVisitDate} min={date} />
+                  </div>
+                  <button onClick={() => nextVisitDate && handleCloneVisit(nextVisitDate)}
+                    disabled={saving || !nextVisitDate}
+                    style={{ ...S.primaryBtn, background: '#10b981', opacity: (!nextVisitDate || saving) ? 0.5 : 1 }}>
+                    {saving ? 'Creating...' : 'Schedule'}
+                  </button>
+                  <button onClick={() => setNextVisitPrompt('asking')} style={S.ghostBtn}>Back</button>
+                </div>
               </>
             )}
           </div>
-
-          {/* Right: save + finish */}
-          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-            {!isCompleted && (
-              <button onClick={handleFinish} disabled={saving}
-                style={{ ...S.outlineBtn, color: '#10b981', borderColor: '#10b981' }}>
-                Finish
+        ) : (
+          <div style={S.footer}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!showDeleteConfirm ? (
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  style={{ ...S.ghostBtn, color: '#ef4444' }}>Delete</button>
+              ) : (
+                <>
+                  <button onClick={handleDelete} disabled={saving}
+                    style={{ ...S.ghostBtn, color: '#fff', background: '#ef4444' }}>Confirm delete</button>
+                  <button onClick={() => setShowDeleteConfirm(false)}
+                    style={S.ghostBtn}>Cancel</button>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {!isCompleted && (
+                <button onClick={handleFinish} disabled={saving}
+                  style={{ ...S.outlineBtn, color: '#10b981', borderColor: '#10b981' }}>
+                  Finish
+                </button>
+              )}
+              <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
+                style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>
+                {saving ? 'Saving...' : 'Save changes'}
               </button>
-            )}
-            <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
-              style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>
-              {saving ? 'Saving...' : 'Save changes'}
-            </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

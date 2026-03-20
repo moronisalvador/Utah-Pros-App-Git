@@ -16,6 +16,13 @@ const MONTHS_FULL = ['January','February','March','April','May','June','July','A
 const HOVER_DELAY = 350;
 const HOVER_LINGER = 200;
 
+const MITIGATION_DIVISIONS = ['water', 'mold', 'fire', 'contents'];
+const DIV_FILTER_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'mitigation', label: 'Mitigation', emoji: '💧' },
+  { key: 'reconstruction', label: 'Recon', emoji: '🏗️' },
+];
+
 function fmtFullDate(s) {
   if (!s) return '';
   return new Date(s + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -416,6 +423,7 @@ export default function Schedule() {
   const [autoShow, setAutoShow] = useState(true);
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
   const [placementMode, setPlacementMode] = useState(null);
+  const [divFilter, setDivFilter] = useState(() => employee?.default_division || 'all');
 
   // ── Grid hover popover state ──
   const [gridHover, setGridHover] = useState(null); // { appt, rect }
@@ -467,28 +475,36 @@ export default function Schedule() {
 
   const toggleJob = async (jobId, addToBoard) => { try { if (addToBoard) await db.insert('dispatch_board_jobs', { job_id: jobId, added_by: employee?.id }); else await db.delete('dispatch_board_jobs', `job_id=eq.${jobId}`); setPanelJobs(prev => prev.map(j => j.id === jobId ? { ...j, on_board: addToBoard } : j)); loadBoard(); } catch (e) { console.error('Toggle:', e); } };
 
+  // ── Division filter ──
+  const divFilteredBoardData = useMemo(() => {
+    if (divFilter === 'all' || !divFilter) return boardData;
+    if (divFilter === 'mitigation') return boardData.filter(j => MITIGATION_DIVISIONS.includes(j.division));
+    if (divFilter === 'reconstruction') return boardData.filter(j => j.division === 'reconstruction');
+    return boardData;
+  }, [boardData, divFilter]);
+
   // ── Cell lookups (enriched with job metadata) ──
   const cellMap = useMemo(() => {
     const m = {};
-    for (const job of boardData) for (const appt of (job.appointments || [])) {
+    for (const job of divFilteredBoardData) for (const appt of (job.appointments || [])) {
       const k = `${job.job_id}_${appt.date}`; if (!m[k]) m[k] = [];
       m[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _address: job.address, _division: job.division, _jobId: job.job_id });
     }
     return m;
-  }, [boardData]);
+  }, [divFilteredBoardData]);
 
   const { crewList, crewCellMap } = useMemo(() => {
     const empMap = {}, cells = {};
-    for (const job of boardData) for (const appt of (job.appointments || [])) for (const crew of (appt.crew || [])) {
+    for (const job of divFilteredBoardData) for (const appt of (job.appointments || [])) for (const crew of (appt.crew || [])) {
       if (!empMap[crew.employee_id]) empMap[crew.employee_id] = { id: crew.employee_id, display_name: crew.display_name, full_name: crew.full_name, role: crew.role };
       const k = `${crew.employee_id}_${appt.date}`; if (!cells[k]) cells[k] = [];
       cells[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _division: job.division, _jobId: job.job_id, _address: job.address });
     }
     return { crewList: Object.values(empMap).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '')), crewCellMap: cells };
-  }, [boardData]);
+  }, [divFilteredBoardData]);
 
   const filteredCellMap = useMemo(() => { if (!crewFilter) return cellMap; const m = {}; for (const [key, appts] of Object.entries(cellMap)) { const f = appts.filter(a => a.crew?.some(c => c.employee_id === crewFilter)); if (f.length > 0) m[key] = f; } return m; }, [cellMap, crewFilter]);
-  const filteredBoardData = useMemo(() => crewFilter ? boardData.filter(j => j.appointments?.some(a => a.crew?.some(c => c.employee_id === crewFilter))) : boardData, [boardData, crewFilter]);
+  const filteredBoardData = useMemo(() => crewFilter ? divFilteredBoardData.filter(j => j.appointments?.some(a => a.crew?.some(c => c.employee_id === crewFilter))) : divFilteredBoardData, [divFilteredBoardData, crewFilter]);
   const filteredCrewList = useMemo(() => crewFilter ? crewList.filter(e => e.id === crewFilter) : crewList, [crewList, crewFilter]);
 
   const totalAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.length || 0), 0);
@@ -614,14 +630,29 @@ export default function Schedule() {
           </div>
         </div>
 
-        {crewList.length > 0 && (
-          <div style={S.filterBar}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
-            <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, ...(crewFilter === null ? S.crewPillActive : {}) }}>All</button>
-            {crewList.map(emp => <button key={emp.id} onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)} style={{ ...S.crewPill, ...(crewFilter === emp.id ? S.crewPillActive : {}) }}>{emp.display_name || emp.full_name}</button>)}
-            {crewFilter && <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>}
-          </div>
-        )}
+        {/* Division + Crew filter bar */}
+        <div style={S.filterBar}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Division:</span>
+          {DIV_FILTER_OPTIONS.map(opt => (
+            <button key={opt.key} onClick={() => setDivFilter(opt.key)}
+              style={{ ...S.crewPill, ...(divFilter === opt.key ? S.crewPillActive : {}), display: 'flex', alignItems: 'center', gap: 4 }}>
+              {opt.emoji && <span style={{ fontSize: 12 }}>{opt.emoji}</span>}
+              {opt.label}
+            </button>
+          ))}
+          {divFilter !== 'all' && (
+            <button onClick={() => setDivFilter('all')} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>
+          )}
+          {crewList.length > 0 && (
+            <>
+              <span style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 6px', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
+              <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, ...(crewFilter === null ? S.crewPillActive : {}) }}>All</button>
+              {crewList.map(emp => <button key={emp.id} onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)} style={{ ...S.crewPill, ...(crewFilter === emp.id ? S.crewPillActive : {}) }}>{emp.display_name || emp.full_name}</button>)}
+              {crewFilter && <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>}
+            </>
+          )}
+        </div>
 
         {/* Board */}
         {loading ? (
@@ -630,10 +661,10 @@ export default function Schedule() {
           <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
           <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} />
-        ) : filteredBoardData.length === 0 && !crewFilter ? (
+        ) : filteredBoardData.length === 0 && !crewFilter && divFilter === 'all' ? (
           <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>Jobs move here automatically when a schedule is generated</div></div>
-        ) : filteredBoardData.length === 0 && crewFilter ? (
-          <div style={S.center}><button onClick={() => setCrewFilter(null)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'var(--font-sans)' }}>Clear filter</button> to see all</div>
+        ) : filteredBoardData.length === 0 ? (
+          <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No appointments match current filters</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}><button onClick={() => { setCrewFilter(null); setDivFilter('all'); }} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'var(--font-sans)' }}>Clear all filters</button></div></div>
         ) : viewMode === 'crew' && filteredCrewList.length === 0 ? (
           <div style={S.center}>No crew assigned</div>
         ) : (
