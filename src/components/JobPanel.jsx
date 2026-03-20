@@ -188,6 +188,19 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
       } catch (e) { console.error('Add task:', e); }
     };
 
+    // Duplicate a task (creates unassigned copy)
+    const handleDuplicateTask = async (task, phaseName, phaseColor) => {
+      try {
+        await db.rpc('add_adhoc_job_task', {
+          p_job_id: activeJob.id,
+          p_title: task.title,
+          p_phase_name: phaseName,
+          p_phase_color: phaseColor || '#6b7280',
+        });
+        await refreshPool();
+      } catch (e) { console.error('Duplicate task:', e); }
+    };
+
     // Add phase handler
     const handleAddPhase = async () => {
       if (!newPhaseName.trim()) return;
@@ -486,6 +499,12 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                   textDecoration: task.is_completed ? 'line-through' : 'none' }}>
                                   {task.title}
                                 </span>
+                                <button onClick={e => { e.stopPropagation(); handleDuplicateTask(task, phase.phase_name, phase.phase_color); }}
+                                  title="Duplicate task"
+                                  style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                    cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                  onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                  onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>⧉</button>
                                 {task.is_completed ? (
                                   <span style={{ fontSize: 8, fontWeight: 600, color: '#10b981' }}>DONE</span>
                                 ) : task.appointment_id ? (
