@@ -98,10 +98,11 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const [activeJob, setActiveJob] = useState(null);
   const [taskPool, setTaskPool] = useState([]);
   const [poolLoading, setPoolLoading] = useState(false);
-  const [expandedPhase, setExpandedPhase] = useState(null);
+  const [expandedPhase, setExpandedPhase] = useState(new Set());
 
   // Task selection
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [showScheduledPhases, setShowScheduledPhases] = useState(new Set()); // phases where we show scheduled/done tasks
 
   // Add task / add phase
   const [addingTaskToPhase, setAddingTaskToPhase] = useState(null);
@@ -159,7 +160,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   // Open job detail
   const openJob = async (job) => {
     setActiveJob(job);
-    setExpandedPhase(null);
+    setExpandedPhase(new Set());
     setPoolLoading(true);
     onSelectJob?.(job.id);
     try {
@@ -174,7 +175,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const goBack = () => {
     setActiveJob(null);
     setTaskPool([]);
-    setExpandedPhase(null);
+    setExpandedPhase(new Set());
     setSelectedTaskIds(new Set());
     setAddingTaskToPhase(null);
     setNewTaskTitle('');
@@ -409,18 +410,21 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                   const assigned = phase.assigned || 0;
                   const unassigned = total - assigned;
                   const isDone = completed === total && total > 0;
-                  const isExpanded = expandedPhase === phase.phase_name;
+                  const isExpanded = expandedPhase.has(phase.phase_name);
                   const tasks = phase.tasks || [];
                   const phasePct = total > 0 ? Math.round((completed / total) * 100) : 0;
                   const isBehind = !isDone && phase.target_end && phase.target_end < today;
                   const selectableTasks = tasks.filter(t => !t.is_completed && !t.appointment_id);
                   const selectedInPhase = selectableTasks.filter(t => selectedTaskIds.has(t.id)).length;
+                  const showAll = showScheduledPhases.has(phase.phase_name);
+                  const visibleTasks = showAll ? tasks : selectableTasks;
+                  const hiddenCount = tasks.length - selectableTasks.length;
 
                   return (
                     <div key={phase.phase_name}>
                       {/* Phase header */}
                       <div
-                        onClick={() => setExpandedPhase(isExpanded ? null : phase.phase_name)}
+                        onClick={() => setExpandedPhase(prev => { const n = new Set(prev); n.has(phase.phase_name) ? n.delete(phase.phase_name) : n.add(phase.phase_name); return n; })}
                         style={{
                           padding: '8px 14px', cursor: 'pointer',
                           borderBottom: '1px solid var(--border-light)',
@@ -471,29 +475,48 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                       {/* Expanded tasks */}
                       {isExpanded && (
                         <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-light)' }}>
-                          {/* Select all for this phase */}
-                          {selectableTasks.length > 0 && (
-                            <div onClick={() => selectAllInPhase(tasks)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 3px 32px', cursor: 'pointer' }}>
-                              <span style={{
-                                width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                                border: selectedInPhase === selectableTasks.length && selectableTasks.length > 0
-                                  ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color)',
-                                background: selectedInPhase === selectableTasks.length && selectableTasks.length > 0
-                                  ? 'var(--accent)' : 'transparent',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              }}>
-                                {selectedInPhase === selectableTasks.length && selectableTasks.length > 0 && (
-                                  <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>
-                                )}
-                              </span>
-                              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>
-                                Select all open ({selectableTasks.length})
-                              </span>
-                            </div>
-                          )}
+                          {/* Toolbar: Select all + eye toggle */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 3px 32px' }}>
+                            {selectableTasks.length > 0 && (
+                              <div onClick={() => selectAllInPhase(tasks)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', flex: 1 }}>
+                                <span style={{
+                                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                  border: selectedInPhase === selectableTasks.length && selectableTasks.length > 0
+                                    ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color)',
+                                  background: selectedInPhase === selectableTasks.length && selectableTasks.length > 0
+                                    ? 'var(--accent)' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {selectedInPhase === selectableTasks.length && selectableTasks.length > 0 && (
+                                    <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>
+                                  )}
+                                </span>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>
+                                  Select all open ({selectableTasks.length})
+                                </span>
+                              </div>
+                            )}
+                            {hiddenCount > 0 && (
+                              <button onClick={e => {
+                                e.stopPropagation();
+                                setShowScheduledPhases(prev => {
+                                  const n = new Set(prev);
+                                  n.has(phase.phase_name) ? n.delete(phase.phase_name) : n.add(phase.phase_name);
+                                  return n;
+                                });
+                              }} style={{
+                                display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none',
+                                cursor: 'pointer', fontSize: 10, color: showAll ? 'var(--accent)' : 'var(--text-tertiary)',
+                                fontFamily: 'var(--font-sans)', padding: '2px 4px', marginLeft: 'auto', flexShrink: 0,
+                              }} title={showAll ? 'Hide scheduled/done' : `Show ${hiddenCount} scheduled/done`}>
+                                <span style={{ fontSize: 13 }}>{showAll ? '👁' : '👁‍🗨'}</span>
+                                <span>{hiddenCount}</span>
+                              </button>
+                            )}
+                          </div>
 
-                          {tasks.map(task => {
+                          {visibleTasks.map(task => {
                             const isSelectable = !task.is_completed && !task.appointment_id;
                             const isSelected = selectedTaskIds.has(task.id);
                             return (
@@ -503,7 +526,6 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                   cursor: isSelectable ? 'pointer' : 'default',
                                   background: isSelected ? 'var(--accent-light)' : 'transparent',
                                 }}>
-                                {/* Selection checkbox for open tasks; status icon for completed/scheduled */}
                                 {isSelectable ? (
                                   <span style={{
                                     width: 14, height: 14, borderRadius: 3, flexShrink: 0,
@@ -536,6 +558,13 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                               </div>
                             );
                           })}
+
+                          {/* No open tasks message */}
+                          {selectableTasks.length === 0 && !showAll && (
+                            <div style={{ padding: '8px 14px 4px 32px', fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                              All tasks scheduled or done
+                            </div>
+                          )}
 
                           {/* Add task inline */}
                           {addingTaskToPhase === phase.phase_name ? (
@@ -934,26 +963,52 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   const [timeStart, setTimeStart] = useState('07:00');
   const [timeEnd, setTimeEnd] = useState('15:30');
   const [notes, setNotes] = useState('');
-  const [selectedCrew, setSelectedCrew] = useState([]);   // [{ employee_id, role }]
-  const [selectedTasks, setSelectedTasks] = useState(prefillTaskIds);  // [task_id]
-  const [taskPool, setTaskPool] = useState([]);            // grouped by phase
+  const [selectedCrew, setSelectedCrew] = useState([]);
+  const [selectedTasks, setSelectedTasks] = useState([...prefillTaskIds]);
+  const [taskPool, setTaskPool] = useState([]);
   const [saving, setSaving] = useState(false);
   const [poolLoading, setPoolLoading] = useState(true);
+  const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [taskSearch, setTaskSearch] = useState('');
 
-  // Load unassigned tasks for this job
   useEffect(() => {
     (async () => {
       try {
         const data = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
         setTaskPool(Array.isArray(data) ? data : []);
-        // If prefillTaskIds were passed, keep them selected (they should be in the pool)
         if (prefillTaskIds.length > 0) setSelectedTasks([...prefillTaskIds]);
       } catch (e) { console.error('Load task pool:', e); }
       finally { setPoolLoading(false); }
     })();
   }, [db, jobId]);
 
-  const totalUnassigned = taskPool.reduce((s, g) => s + (g.tasks?.length || 0), 0);
+  // All tasks flat for lookup
+  const allTasks = useMemo(() => {
+    const map = {};
+    for (const g of taskPool) for (const t of (g.tasks || [])) map[t.id] = { ...t, phase_name: g.phase_name, phase_color: g.phase_color };
+    return map;
+  }, [taskPool]);
+
+  // Selected task objects grouped by phase
+  const assignedByPhase = useMemo(() => {
+    const groups = {};
+    for (const id of selectedTasks) {
+      const t = allTasks[id];
+      if (!t) continue;
+      if (!groups[t.phase_name]) groups[t.phase_name] = { phase_name: t.phase_name, phase_color: t.phase_color, tasks: [] };
+      groups[t.phase_name].tasks.push(t);
+    }
+    return Object.values(groups);
+  }, [selectedTasks, allTasks]);
+
+  // Unselected tasks for the picker
+  const availableTasks = useMemo(() => {
+    const q = taskSearch.toLowerCase();
+    return taskPool.map(g => ({
+      ...g,
+      tasks: (g.tasks || []).filter(t => !selectedTasks.includes(t.id) && (!q || t.title.toLowerCase().includes(q))),
+    })).filter(g => g.tasks.length > 0);
+  }, [taskPool, selectedTasks, taskSearch]);
 
   const toggleCrew = (empId) => {
     setSelectedCrew(prev => {
@@ -963,20 +1018,18 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
     });
   };
 
-  const toggleTask = (taskId) => {
-    setSelectedTasks(prev =>
-      prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
-    );
+  const removeTask = (taskId) => {
+    setSelectedTasks(prev => prev.filter(id => id !== taskId));
   };
 
-  const selectPhaseGroup = (tasks) => {
-    const ids = tasks.map(t => t.id);
-    const allSelected = ids.every(id => selectedTasks.includes(id));
-    if (allSelected) {
-      setSelectedTasks(prev => prev.filter(id => !ids.includes(id)));
-    } else {
-      setSelectedTasks(prev => [...new Set([...prev, ...ids])]);
-    }
+  const addTask = (taskId) => {
+    setSelectedTasks(prev => [...prev, taskId]);
+  };
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
   };
 
   const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-US', {
@@ -984,13 +1037,14 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   });
 
   const handleSave = async () => {
-    if (!title.trim()) return;
+    const finalTitle = title.trim() || (assignedByPhase.length > 0
+      ? assignedByPhase.map(g => g.phase_name).join(' + ')
+      : `Appointment ${dateLabel}`);
     setSaving(true);
     try {
-      // 1. Create appointment
       const apptResult = await db.insert('appointments', {
         job_id: jobId,
-        title: title.trim(),
+        title: finalTitle,
         date: dateKey,
         time_start: timeStart || null,
         time_end: timeEnd || null,
@@ -1001,7 +1055,6 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
       const apptId = apptResult[0]?.id;
       if (!apptId) throw new Error('Failed to create appointment');
 
-      // 2. Assign crew
       if (selectedCrew.length > 0) {
         for (const crew of selectedCrew) {
           await db.insert('appointment_crew', {
@@ -1012,7 +1065,6 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
         }
       }
 
-      // 3. Assign tasks
       if (selectedTasks.length > 0) {
         await db.rpc('assign_tasks_to_appointment', {
           p_appointment_id: apptId,
@@ -1046,7 +1098,8 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
           <div style={M.field}>
             <label style={M.label}>Title</label>
             <input style={M.input} value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Drywall — tape and mud" autoFocus />
+              placeholder={assignedByPhase.length > 0 ? assignedByPhase.map(g => g.phase_name).join(' + ') : 'e.g. Drywall — tape and mud'}
+              autoFocus />
           </div>
 
           {/* Type + Times */}
@@ -1076,17 +1129,16 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
               onChange={e => setNotes(e.target.value)} placeholder="Instructions for the crew..." />
           </div>
 
-          {/* ── Crew ── */}
+          {/* ── Crew with initials circles ── */}
           <div style={M.section}>
             <div style={M.sectionTitle}>
               Crew
-              {selectedCrew.length > 0 && (
-                <span style={M.sectionBadge}>{selectedCrew.length} selected</span>
-              )}
+              {selectedCrew.length > 0 && <span style={M.sectionBadge}>{selectedCrew.length}</span>}
             </div>
             <div style={M.crewGrid}>
               {employees.map(emp => {
                 const sel = selectedCrew.find(c => c.employee_id === emp.id);
+                const initials = getInitials(emp.display_name || emp.full_name);
                 return (
                   <button key={emp.id} onClick={() => toggleCrew(emp.id)} style={{
                     ...M.crewChip,
@@ -1094,6 +1146,13 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
                     borderColor: sel ? 'var(--accent)' : 'var(--border-color)',
                     color: sel ? 'var(--accent)' : 'var(--text-secondary)',
                   }}>
+                    <span style={{
+                      width: 26, height: 26, borderRadius: 13, flexShrink: 0,
+                      background: sel ? 'var(--accent)' : 'var(--bg-tertiary)',
+                      color: sel ? '#fff' : 'var(--text-secondary)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 700,
+                    }}>{initials}</span>
                     <span style={{ fontWeight: 600, fontSize: 12 }}>
                       {emp.display_name || emp.full_name}
                     </span>
@@ -1110,96 +1169,91 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
             </div>
           </div>
 
-          {/* ── Task Picker ── */}
+          {/* ── Assigned Tasks ── */}
           <div style={M.section}>
             <div style={M.sectionTitle}>
-              Assign tasks
-              <span style={M.sectionBadge}>
-                {selectedTasks.length} of {totalUnassigned} selected
-              </span>
+              Tasks
+              <span style={M.sectionBadge}>{selectedTasks.length}</span>
             </div>
 
-            {poolLoading && (
-              <div style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>
-                Loading tasks...
+            {assignedByPhase.length === 0 && !showTaskPicker && (
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '4px 0 8px' }}>
+                No tasks assigned yet
               </div>
             )}
 
-            {!poolLoading && taskPool.length === 0 && (
-              <div style={{ padding: '12px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>
-                No unassigned tasks — apply a template to this job first, or add ad-hoc tasks
-              </div>
-            )}
-
-            {taskPool.map(group => {
-              const groupIds = group.tasks.map(t => t.id);
-              const allSelected = groupIds.every(id => selectedTasks.includes(id));
-              const someSelected = groupIds.some(id => selectedTasks.includes(id));
-              return (
-                <div key={group.phase_name} style={{ marginBottom: 8 }}>
-                  {/* Phase header — click to select/deselect all in group */}
-                  <div
-                    style={M.phaseHeader}
-                    onClick={() => selectPhaseGroup(group.tasks)}
-                  >
-                    <span style={{
-                      width: 10, height: 10, borderRadius: 2, flexShrink: 0,
-                      background: group.phase_color || '#6b7280',
-                    }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
-                      {group.phase_name}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                      {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
-                    </span>
-                    <span style={{
-                      width: 16, height: 16, borderRadius: 3, display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                      border: allSelected ? 'none' : someSelected ? '2px solid var(--accent)' : '1.5px solid var(--border-color)',
-                      background: allSelected ? 'var(--accent)' : 'transparent',
-                      fontSize: 10, color: '#fff', fontWeight: 700,
-                    }}>
-                      {allSelected ? '✓' : someSelected ? '–' : ''}
-                    </span>
-                  </div>
-
-                  {/* Individual tasks */}
-                  {group.tasks.map(task => {
-                    const checked = selectedTasks.includes(task.id);
-                    return (
-                      <div key={task.id} style={M.taskRow} onClick={() => toggleTask(task.id)}>
-                        <span style={{
-                          width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                          border: checked ? 'none' : '1.5px solid var(--border-color)',
-                          background: checked ? 'var(--accent)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 10, color: '#fff', fontWeight: 700,
-                        }}>
-                          {checked ? '✓' : ''}
-                        </span>
-                        <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>
-                          {task.title}
-                        </span>
-                        {task.is_required && (
-                          <span style={{
-                            fontSize: 9, fontWeight: 600, color: '#ef4444',
-                            background: '#fef2f2', padding: '1px 5px', borderRadius: 3,
-                          }}>REQ</span>
-                        )}
-                      </div>
-                    );
-                  })}
+            {assignedByPhase.map(group => (
+              <div key={group.phase_name} style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: group.phase_color || '#6b7280', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{group.phase_name}</span>
                 </div>
-              );
-            })}
+                {group.tasks.map(task => (
+                  <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0 3px 14px' }}>
+                    <span style={{ width: 14, height: 14, borderRadius: 3, background: 'var(--accent)', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>
+                    </span>
+                    <span style={{ fontSize: 12, flex: 1, color: 'var(--text-primary)' }}>{task.title}</span>
+                    <button onClick={() => removeTask(task.id)} style={{
+                      fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                      cursor: 'pointer', padding: '2px 4px',
+                    }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Add more tasks toggle */}
+            {!showTaskPicker ? (
+              <button onClick={() => setShowTaskPicker(true)} style={{
+                fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none',
+                cursor: 'pointer', padding: '6px 0', fontFamily: 'var(--font-sans)',
+              }}>+ Add tasks</button>
+            ) : (
+              <div style={{ marginTop: 6, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <input style={{ ...M.input, border: 'none', borderBottom: '1px solid var(--border-light)', borderRadius: 0 }}
+                  placeholder="Search tasks..." value={taskSearch} onChange={e => setTaskSearch(e.target.value)} autoFocus />
+                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                  {poolLoading && <div style={{ padding: 10, fontSize: 12, color: 'var(--text-tertiary)' }}>Loading...</div>}
+                  {availableTasks.map(group => (
+                    <div key={group.phase_name}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: 'var(--bg-secondary)' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 2, background: group.phase_color || '#6b7280' }} />
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>{group.phase_name}</span>
+                      </div>
+                      {group.tasks.map(task => (
+                        <div key={task.id} onClick={() => addTask(task.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px 6px 20px',
+                            cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <span style={{ fontSize: 12, flex: 1, color: 'var(--text-primary)' }}>{task.title}</span>
+                          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>+</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {!poolLoading && availableTasks.length === 0 && (
+                    <div style={{ padding: 10, fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                      {taskSearch ? 'No matching tasks' : 'All tasks assigned'}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { setShowTaskPicker(false); setTaskSearch(''); }}
+                  style={{ width: '100%', padding: '6px', fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg-secondary)',
+                    border: 'none', borderTop: '1px solid var(--border-light)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Footer */}
         <div style={M.footer}>
           <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
-          <button style={M.saveBtn} onClick={handleSave}
-            disabled={!title.trim() || saving}>
+          <button style={{ ...M.saveBtn, opacity: saving ? 0.6 : 1 }} onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
           </button>
         </div>
@@ -1453,7 +1507,13 @@ export default function Schedule() {
   const [panelLoading, setPanelLoading] = useState(true);
   const [showWeekend, setShowWeekend] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [viewMode, setViewMode] = useState('jobs'); // 'jobs' | 'crew'
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem('upr_schedule_view') || 'calendar'; } catch { return 'calendar'; }
+  });
+  const changeViewMode = (mode) => {
+    setViewMode(mode);
+    try { localStorage.setItem('upr_schedule_view', mode); } catch {}
+  };
   const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
   const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
   const [allEmployees, setAllEmployees] = useState([]);
@@ -1641,11 +1701,11 @@ export default function Schedule() {
             {/* View toggle */}
             <div style={S.viewToggle}>
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }}
-                onClick={() => setViewMode('jobs')}>Jobs</button>
+                onClick={() => changeViewMode('jobs')}>Jobs</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}) }}
-                onClick={() => setViewMode('crew')}>Crew</button>
+                onClick={() => changeViewMode('crew')}>Crew</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }}
-                onClick={() => setViewMode('calendar')}>Calendar</button>
+                onClick={() => changeViewMode('calendar')}>Calendar</button>
             </div>
             {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
             <button style={S.btn} onClick={goThisWeek}>This week</button>
