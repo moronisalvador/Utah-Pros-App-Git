@@ -1502,6 +1502,8 @@ export default function Schedule() {
         {/* Board */}
         {loading ? (
           <div style={S.center}>Loading...</div>
+        ) : viewMode === 'calendar' ? (
+          <CalendarView days={days} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} />
         ) : filteredBoardData.length === 0 && !crewFilter ? (
           <div style={S.center}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
@@ -1531,8 +1533,6 @@ export default function Schedule() {
               Assign crew members to appointments to see them here, or switch to Jobs view
             </div>
           </div>
-        ) : viewMode === 'calendar' ? (
-          <CalendarView days={days} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} />
         ) : (
           <div style={S.gridWrap}>
             <div style={{
