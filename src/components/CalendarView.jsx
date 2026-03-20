@@ -148,37 +148,37 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                         onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
                         onMouseLeave={e => e.currentTarget.style.filter = 'none'}
                       >
-                      {/* Row 1: Job name + crew initials */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', flex: 1,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>
-                          {appt._jobName}
-                        </span>
-                        {crew.length > 0 && (
-                          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                            {crew.slice(0, 3).map(c => (
-                              <span key={c.id} title={c.display_name || c.full_name} style={{
-                                width: 22, height: 22, borderRadius: 11, fontSize: 8, fontWeight: 700,
-                                background: c.color || 'rgba(255,255,255,0.3)', color: '#fff',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                border: c.role === 'lead' ? '2px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.3)',
-                              }}>{getInitials(c.full_name || c.display_name)}</span>
-                            ))}
-                            {crew.length > 3 && (
-                              <span style={{ fontSize: 8, fontWeight: 600, color: 'rgba(255,255,255,0.7)', alignSelf: 'center' }}>+{crew.length - 3}</span>
-                            )}
-                          </div>
-                        )}
+                      {/* Row 1: Job name */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', lineHeight: 1.2, marginBottom: 2,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {appt._jobName}
                       </div>
 
-                      {/* Row 2: Time window */}
+                      {/* Row 2: Crew initials */}
+                      {crew.length > 0 && (
+                        <div style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap' }}>
+                          {crew.slice(0, 4).map(c => (
+                            <span key={c.id} title={c.display_name || c.full_name} style={{
+                              width: 20, height: 20, borderRadius: 10, fontSize: 8, fontWeight: 700,
+                              background: c.color || 'rgba(255,255,255,0.3)', color: '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              border: c.role === 'lead' ? '2px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.3)',
+                            }}>{getInitials(c.full_name || c.display_name)}</span>
+                          ))}
+                          {crew.length > 4 && (
+                            <span style={{ fontSize: 8, fontWeight: 600, color: 'rgba(255,255,255,0.7)', alignSelf: 'center' }}>+{crew.length - 4}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Row 3: Time window */}
                       {appt.time_start && (
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>
                           🕐 {fmtTime(appt.time_start)}{appt.time_end ? `-${fmtTime(appt.time_end)}` : ''}
                         </div>
                       )}
 
-                      {/* Row 3: Address (if space) */}
+                      {/* Row 4: Address (if space) */}
                       {height > 60 && shortAddr && (
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -186,14 +186,14 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                         </div>
                       )}
 
-                      {/* Row 4: Job number (if space) */}
+                      {/* Row 5: Job number (if space) */}
                       {height > 80 && appt._jobNumber && (
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>
                           Job #{appt._jobNumber}
                         </div>
                       )}
 
-                      {/* Row 5: Task progress (if space) */}
+                      {/* Row 6: Task progress (if space) */}
                       {height > 100 && appt.tasks_total > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                           <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden' }}>
@@ -206,7 +206,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                         </div>
                       )}
 
-                      {/* Row 6: Task names (if space) */}
+                      {/* Row 7: Task names (if space) */}
                       {height > 120 && (appt.task_names || []).length > 0 && (
                         <div style={{ marginTop: 3 }}>
                           {(appt.task_names || []).slice(0, Math.floor((height - 120) / 14)).map((name, i) => (
@@ -225,7 +225,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                         </div>
                       )}
 
-                      {/* Row 7: Appointment title (if still space after tasks) */}
+                      {/* Row 8: Appointment title (if still space after tasks) */}
                       {height > 120 && (appt.task_names || []).length === 0 && (
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, lineHeight: 1.3,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
