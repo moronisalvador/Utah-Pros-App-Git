@@ -68,7 +68,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
         allPhaseIds.add(phase.phase_id);
         const phaseTasks = await db.select(
           'template_tasks',
-          `phase_id=eq.${phase.phase_id}&order=sort_order.asc&select=id,title,is_required,sort_order`
+          `template_phase_id=eq.${phase.phase_id}&order=display_order.asc&select=id,title,is_required,display_order`
         );
         tasks[phase.phase_id] = phaseTasks || [];
         for (const t of (phaseTasks || [])) allTaskIds.add(t.id);
