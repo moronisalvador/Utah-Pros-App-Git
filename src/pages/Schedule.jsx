@@ -366,7 +366,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
             <div style={{ padding: 16, fontSize: 12, color: 'var(--text-tertiary)' }}>Loading schedule...</div>
           ) : taskPool.length === 0 ? (
             <div style={{ padding: '24px 14px', textAlign: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4 }}>No schedule plan</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4 }}>No schedule generated</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>Apply a template from the job page, or add phases manually</div>
               {/* Allow adding phases even without a template */}
               {showAddPhase ? (
@@ -1808,7 +1808,7 @@ export default function Schedule() {
               No jobs in production
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4, maxWidth: 280, textAlign: 'center' }}>
-              Jobs move here automatically when a schedule plan is applied
+              Jobs move here automatically when a schedule is generated
             </div>
           </div>
         ) : filteredBoardData.length === 0 && crewFilter ? (

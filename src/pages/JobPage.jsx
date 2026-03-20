@@ -484,12 +484,12 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
     return (
       <div className="job-page-section" style={{ textAlign: 'center', padding: '40px 20px' }}>
         <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}>📋</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No schedule plan yet</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No schedule generated yet</div>
         <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16, maxWidth: 320, margin: '0 auto 16px' }}>
-          Apply a schedule template to create a task pool with target dates for each phase.
+          Select a template to generate the schedule with phases, tasks, and target dates.
         </div>
         <button className="btn btn-primary" onClick={onOpenWizard} style={{ fontWeight: 600 }}>
-          Apply schedule plan
+          Generate schedule & tasks
         </button>
       </div>
     );
@@ -819,7 +819,7 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
           Open dispatch board
         </button>
         <button className="btn btn-ghost" onClick={onOpenWizard} style={{ fontSize: 12 }}>
-          Re-apply template
+          Re-generate schedule
         </button>
       </div>
 

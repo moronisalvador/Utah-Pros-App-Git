@@ -293,7 +293,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
       });
       setStep('done');
     } catch (e) {
-      setError('Failed to apply plan: ' + e.message);
+      setError('Failed to generate schedule: ' + e.message);
       setStep('preview');
     }
   };
@@ -304,7 +304,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
         {/* Header */}
         <div style={W.header}>
           <div>
-            <div style={W.title}>{step === 'done' ? 'Plan applied' : 'Schedule plan'}</div>
+            <div style={W.title}>{step === 'done' ? 'Schedule generated' : 'Generate schedule'}</div>
             <div style={W.subtitle}>{jobName}</div>
           </div>
           <button style={W.closeBtn} onClick={onClose}>✕</button>
@@ -548,7 +548,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
               )}
 
               <div style={W.hint}>
-                This creates a task pool with target dates for each phase.
+                This generates phases with target dates and tasks for the crew to complete.
                 Marcelo will then create appointments on the dispatch board and assign tasks manually.
               </div>
             </>
@@ -568,7 +568,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             <div style={{ padding: '20px 0' }}>
               <div style={W.successBox}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>
-                  Schedule plan applied
+                  Schedule generated
                 </div>
                 <div style={{ fontSize: 13, color: '#047857', lineHeight: 1.6 }}>
                   {result.phases_created} phases with target dates.
@@ -579,7 +579,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
               </div>
               <div style={W.hint}>
                 Open the dispatch board to see phases with target dates.
-                Create appointments and assign tasks from the task pool.
+                Create appointments on the dispatch board and assign tasks to them.
               </div>
             </div>
           )}
@@ -600,7 +600,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             <>
               <button style={W.cancelBtn} onClick={() => setStep('pick')}>Back</button>
               <button style={W.primaryBtn} onClick={applyPlan} disabled={enabledPhaseCount === 0}>
-                Apply plan — {enabledPhaseCount} phase{enabledPhaseCount !== 1 ? 's' : ''}, {enabledTaskCount} task{enabledTaskCount !== 1 ? 's' : ''}
+                Generate — {enabledPhaseCount} phase{enabledPhaseCount !== 1 ? 's' : ''}, {enabledTaskCount} task{enabledTaskCount !== 1 ? 's' : ''}
               </button>
             </>
           )}
