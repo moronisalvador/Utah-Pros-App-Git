@@ -213,6 +213,14 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
       } catch (e) { console.error('Delete task:', e); }
     };
 
+    // Toggle task completion (un-complete also unassigns)
+    const handleToggleTask = async (taskId) => {
+      try {
+        await db.rpc('toggle_job_task', { p_task_id: taskId, p_employee_id: null });
+        await refreshPool();
+      } catch (e) { console.error('Toggle task:', e); }
+    };
+
     // Add phase handler
     const handleAddPhase = async () => {
       if (!newPhaseName.trim()) return;
@@ -550,11 +558,14 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                               {showAll && hiddenTasks.map(task => (
                                 <div key={task.id}
                                   style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 14px 4px 32px' }}>
-                                  <span style={{
-                                    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                  <span onClick={() => handleToggleTask(task.id)}
+                                    title={task.is_completed ? 'Mark incomplete — returns to open tasks' : 'Mark complete'}
+                                    style={{
+                                    width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: 'pointer',
                                     border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
                                     background: task.is_completed ? '#10b981' : (task.appointment_id ? '#dbeafe' : 'transparent'),
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 100ms ease',
                                   }}>
                                     {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
                                   </span>

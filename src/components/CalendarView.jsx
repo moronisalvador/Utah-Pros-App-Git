@@ -173,8 +173,27 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                         </div>
                       )}
 
-                      {/* Row 6: Appointment title / phases (if space) */}
-                      {height > 120 && (
+                      {/* Row 6: Task names (if space) */}
+                      {height > 120 && (appt.task_names || []).length > 0 && (
+                        <div style={{ marginTop: 3 }}>
+                          {(appt.task_names || []).slice(0, Math.floor((height - 120) / 14)).map((name, i) => (
+                            <div key={i} style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              paddingLeft: 8, position: 'relative' }}>
+                              <span style={{ position: 'absolute', left: 0, top: 1, fontSize: 7 }}>•</span>
+                              {name}
+                            </div>
+                          ))}
+                          {(appt.task_names || []).length > Math.floor((height - 120) / 14) && (
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', paddingLeft: 8, marginTop: 1 }}>
+                              +{(appt.task_names || []).length - Math.floor((height - 120) / 14)} more
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Row 7: Appointment title (if still space after tasks) */}
+                      {height > 120 && (appt.task_names || []).length === 0 && (
                         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, lineHeight: 1.3,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {appt.title}
