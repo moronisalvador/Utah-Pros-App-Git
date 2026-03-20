@@ -31,7 +31,7 @@ function getInitials(name) {
 // GRID POPOVER (shared by Jobs + Crew views)
 // ═══════════════════════════════════════════════════════════════
 
-function GridPopover({ appt, rect, onEdit, onMouseEnter, onMouseLeave }) {
+function GridPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, onMouseLeave }) {
   const popRef = useRef(null);
   const [pos, setPos] = useState(null);
   const [tasksExpanded, setTasksExpanded] = useState(false);
@@ -136,6 +136,24 @@ function GridPopover({ appt, rect, onEdit, onMouseEnter, onMouseLeave }) {
       {appt.notes && (
         <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, fontStyle: 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>"{appt.notes}"</div>
+        </div>
+      )}
+      {hasTasks && appt.tasks_done < appt.tasks_total && appt.status !== 'completed' && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <button onClick={e => { e.stopPropagation(); onRescheduleRemaining(appt); }}
+            style={{
+              width: '100%', padding: '7px 0', fontSize: 12, fontWeight: 600,
+              color: 'var(--accent)', background: 'var(--accent-light)',
+              border: '1px solid rgba(37,99,235,0.2)', borderRadius: 'var(--radius-md)',
+              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-light)'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            Reschedule {appt.tasks_total - appt.tasks_done} remaining tasks
+          </button>
         </div>
       )}
     </div>
@@ -435,6 +453,8 @@ export default function Schedule() {
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
       const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 120;
       setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id });
+      // Auto-switch to calendar for ghost placement
+      if (viewMode !== 'calendar') changeViewMode('calendar');
     } catch (e) { console.error('Reschedule remaining:', e); }
   };
 
@@ -588,6 +608,7 @@ export default function Schedule() {
       {gridHover && (viewMode === 'jobs' || viewMode === 'crew') && (
         <GridPopover appt={gridHover.appt} rect={gridHover.rect}
           onEdit={a => { dismissGridHover(); setEditModal(a); }}
+          onRescheduleRemaining={a => { dismissGridHover(); handleRescheduleRemaining(a); }}
           onMouseEnter={keepGridHover} onMouseLeave={dismissGridHover} />
       )}
 
