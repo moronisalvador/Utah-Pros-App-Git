@@ -143,7 +143,7 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true);
   const [panelLoading, setPanelLoading] = useState(true);
   const [showWeekend, setShowWeekend] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [viewMode, setViewMode] = useState(() => {
     try { return localStorage.getItem('upr_schedule_view') || 'calendar'; } catch { return 'calendar'; }
   });
@@ -380,12 +380,12 @@ export default function Schedule() {
           <div style={S.controls}>
             {/* View toggle */}
             <div style={S.viewToggle}>
-              <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }}
-                onClick={() => changeViewMode('jobs')}>Jobs</button>
-              <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}) }}
-                onClick={() => changeViewMode('crew')}>Crew</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }}
                 onClick={() => changeViewMode('calendar')}>Calendar</button>
+              <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }}
+                onClick={() => changeViewMode('jobs')}>Jobs</button>
+              <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }}
+                onClick={() => changeViewMode('crew')}>Crew</button>
             </div>
             {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
             <button style={S.btn} onClick={goThisWeek}>This week</button>
@@ -579,6 +579,7 @@ export default function Schedule() {
         <EditAppointmentModal
           appointment={editModal}
           db={db}
+          employees={allEmployees}
           onClose={() => setEditModal(null)}
           onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
           onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}

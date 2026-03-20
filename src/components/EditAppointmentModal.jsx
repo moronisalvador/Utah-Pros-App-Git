@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 
-function EditAppointmentModal({ appointment, db, onClose, onSaved, onDeleted }) {
+function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
   const [title, setTitle] = useState(appointment.title || '');
   const [date, setDate] = useState(appointment.date || '');
   const [timeStart, setTimeStart] = useState(appointment.time_start?.slice(0, 5) || '');
@@ -14,8 +14,32 @@ function EditAppointmentModal({ appointment, db, onClose, onSaved, onDeleted }) 
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [crewSearch, setCrewSearch] = useState('');
 
-  const crew = appointment.crew || [];
+  // Initialize crew from appointment data
+  const initialCrew = (appointment.crew || []).map(c => ({
+    employee_id: c.employee_id,
+    role: c.role,
+    display_name: c.display_name,
+    full_name: c.full_name,
+    color: c.color,
+  }));
+  const [selectedCrew, setSelectedCrew] = useState(initialCrew);
+
+  const toggleCrew = (emp) => {
+    setSelectedCrew(prev => {
+      const exists = prev.find(c => c.employee_id === emp.id);
+      if (exists) return prev.filter(c => c.employee_id !== emp.id);
+      return [...prev, {
+        employee_id: emp.id,
+        role: prev.length === 0 ? 'lead' : 'tech',
+        display_name: emp.display_name,
+        full_name: emp.full_name,
+        color: emp.color,
+      }];
+    });
+    setDirty(true);
+  };
 
   // Escape to close
   useEffect(() => {
@@ -83,6 +107,17 @@ function EditAppointmentModal({ appointment, db, onClose, onSaved, onDeleted }) 
         p_status: status || null,
         p_notes: notes.trim() || null,
       });
+
+      // Save crew changes — delete all and re-insert
+      await db.delete('appointment_crew', `appointment_id=eq.${appointment.id}`);
+      for (const c of selectedCrew) {
+        await db.insert('appointment_crew', {
+          appointment_id: appointment.id,
+          employee_id: c.employee_id,
+          role: c.role,
+        });
+      }
+
       onSaved();
     } catch (e) {
       console.error('Save appointment:', e);
@@ -204,33 +239,51 @@ function EditAppointmentModal({ appointment, db, onClose, onSaved, onDeleted }) 
           <div style={S.section}>
             <div style={S.sectionTitle}>
               Crew
-              <span style={S.sectionBadge}>{crew.length}</span>
+              <span style={S.sectionBadge}>{selectedCrew.length}</span>
             </div>
-            {crew.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '4px 0' }}>No crew assigned</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {crew.map(c => (
-                  <div key={c.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
-                    background: 'var(--bg-primary)',
-                  }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: 12, fontSize: 9, fontWeight: 700,
-                      background: c.color || 'var(--bg-tertiary)', color: c.color ? '#fff' : 'var(--text-secondary)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>{getInitials(c.full_name || c.display_name)}</span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {c.display_name || c.full_name}
-                    </span>
-                    {c.role === 'lead' && (
-                      <span style={{ fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fffbeb', padding: '0 4px', borderRadius: 3 }}>LEAD</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+            {employees.length > 5 && (
+              <input style={{ ...S.input, marginBottom: 8, padding: '6px 10px', fontSize: 12 }}
+                placeholder="Search crew..." value={crewSearch}
+                onChange={e => setCrewSearch(e.target.value)} />
             )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {employees
+                .filter(emp => {
+                  if (selectedCrew.find(c => c.employee_id === emp.id)) return true;
+                  if (!crewSearch.trim()) return true;
+                  const q = crewSearch.toLowerCase();
+                  return (emp.display_name || '').toLowerCase().includes(q) || (emp.full_name || '').toLowerCase().includes(q);
+                })
+                .map(emp => {
+                  const sel = selectedCrew.find(c => c.employee_id === emp.id);
+                  return (
+                    <button key={emp.id} onClick={() => toggleCrew(emp)} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      border: sel ? `1.5px solid ${emp.color || 'var(--accent)'}` : '1px solid var(--border-color)',
+                      background: sel ? `${emp.color || 'var(--accent)'}15` : 'var(--bg-primary)',
+                      transition: 'all 100ms ease',
+                    }}>
+                      <span style={{
+                        width: 24, height: 24, borderRadius: 12, fontSize: 9, fontWeight: 700,
+                        background: sel ? (emp.color || 'var(--accent)') : 'var(--bg-tertiary)',
+                        color: sel ? '#fff' : 'var(--text-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>{getInitials(emp.full_name || emp.display_name)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600,
+                        color: sel ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {emp.display_name || emp.full_name}
+                      </span>
+                      {sel && (
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '0 4px', borderRadius: 3,
+                          background: sel.role === 'lead' ? '#fffbeb' : 'transparent',
+                          color: sel.role === 'lead' ? '#92400e' : 'var(--text-tertiary)',
+                        }}>{sel.role === 'lead' ? 'LEAD' : 'TECH'}</span>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
           </div>
 
           {/* ── Tasks ── */}
