@@ -299,16 +299,36 @@ export default function Schedule() {
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
   const handleApptClick = (appt) => { setEditModal(appt); };
+  const [jobPickerModal, setJobPickerModal] = useState(null); // { dateKey, hour }
+  const [jobPickerSearch, setJobPickerSearch] = useState('');
+
   const handleCellClick = (dateKey, hour) => {
-    // Use selected panel job, or first job on board, or show alert
-    const job = selectedPanelJob
-      || (boardData.length > 0 ? { id: boardData[0].job_id, insured_name: boardData[0].insured_name } : null);
-    if (!job) { alert('Select a job first from the side panel'); return; }
+    if (selectedPanelJob) {
+      const timeStr = `${String(hour).padStart(2, '0')}:00`;
+      const endHour = Math.min(hour + 2, 18);
+      const endStr = `${String(endHour).padStart(2, '0')}:00`;
+      setCreateModal({
+        jobId: selectedPanelJob.id,
+        jobName: selectedPanelJob.insured_name,
+        dateKey,
+        prefillTaskIds: [],
+        prefillTimeStart: timeStr,
+        prefillTimeEnd: endStr,
+      });
+    } else {
+      setJobPickerModal({ dateKey, hour });
+      setJobPickerSearch('');
+    }
+  };
+
+  const handleJobPicked = (job) => {
+    const { dateKey, hour } = jobPickerModal;
     const timeStr = `${String(hour).padStart(2, '0')}:00`;
     const endHour = Math.min(hour + 2, 18);
     const endStr = `${String(endHour).padStart(2, '0')}:00`;
+    setJobPickerModal(null);
     setCreateModal({
-      jobId: job.id,
+      jobId: job.job_id || job.id,
       jobName: job.insured_name,
       dateKey,
       prefillTaskIds: [],
@@ -564,6 +584,90 @@ export default function Schedule() {
           onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
         />
       )}
+
+      {/* Job picker modal — shows when clicking empty calendar cell with no job selected */}
+      {jobPickerModal && (() => {
+        const fmtPickerDate = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric',
+        });
+        const fmtPickerTime = `${jobPickerModal.hour % 12 || 12}:00${jobPickerModal.hour >= 12 ? 'pm' : 'am'}`;
+        const q = jobPickerSearch.toLowerCase();
+        const productionJobs = boardData.filter(j => q ? j.insured_name.toLowerCase().includes(q) : true);
+        const otherJobs = panelJobs.filter(j =>
+          !boardData.some(b => b.job_id === j.id) &&
+          (q ? j.insured_name.toLowerCase().includes(q) : true)
+        );
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex',
+            alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 80 }}
+            onClick={() => setJobPickerModal(null)}>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+              width: '100%', maxWidth: 400, maxHeight: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column',
+              boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}
+              onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Select job</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{fmtPickerDate} at {fmtPickerTime}</div>
+              </div>
+              {/* Search */}
+              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-light)' }}>
+                <input style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)',
+                  outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                  placeholder="Search jobs..." value={jobPickerSearch}
+                  onChange={e => setJobPickerSearch(e.target.value)} autoFocus />
+              </div>
+              {/* Job list */}
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {productionJobs.length > 0 && (
+                  <>
+                    <div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>
+                      In Production ({productionJobs.length})
+                    </div>
+                    {productionJobs.map(job => (
+                      <div key={job.job_id} onClick={() => handleJobPicked(job)}
+                        style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{job.insured_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                          #{job.job_number} · {job.address?.split(',')[0]}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {otherJobs.length > 0 && (
+                  <>
+                    <div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>
+                      Other Jobs ({otherJobs.length})
+                    </div>
+                    {otherJobs.map(job => (
+                      <div key={job.id} onClick={() => handleJobPicked(job)}
+                        style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{job.insured_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                          #{job.job_number}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {productionJobs.length === 0 && otherJobs.length === 0 && (
+                  <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                    No jobs found
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
