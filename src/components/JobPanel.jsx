@@ -203,9 +203,10 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
 
     // Delete a task
     const handleDeleteTask = async (task) => {
-      if (task.appointment_id) {
-        if (!confirm(`"${task.title}" is scheduled on an appointment. Delete anyway?`)) return;
-      }
+      const msg = task.appointment_id
+        ? `"${task.title}" is scheduled on an appointment. Delete anyway?`
+        : `Delete "${task.title}"?`;
+      if (!confirm(msg)) return;
       try {
         await db.delete('job_tasks', `id=eq.${task.id}`);
         await refreshPool();
