@@ -299,6 +299,41 @@ export default function Schedule() {
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
   const handleApptClick = (appt) => { setEditModal(appt); };
+
+  // ── Drag-and-drop: MOVE appointment to new day/time ──
+  const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {
+    try {
+      await db.rpc('update_appointment', {
+        p_appointment_id: apptId,
+        p_title: null,
+        p_date: newDate,
+        p_time_start: newTimeStart,
+        p_time_end: newTimeEnd,
+        p_type: null,
+        p_status: null,
+        p_notes: null,
+      });
+      loadBoard();
+    } catch (e) { console.error('Drop move failed:', e); }
+  };
+
+  // ── Drag resize: change appointment end time ──
+  const handleApptResize = async (apptId, newTimeEnd) => {
+    try {
+      await db.rpc('update_appointment', {
+        p_appointment_id: apptId,
+        p_title: null,
+        p_date: null,
+        p_time_start: null,
+        p_time_end: newTimeEnd,
+        p_type: null,
+        p_status: null,
+        p_notes: null,
+      });
+      loadBoard();
+    } catch (e) { console.error('Resize failed:', e); }
+  };
+
   const [jobPickerModal, setJobPickerModal] = useState(null); // { dateKey, hour }
   const [jobPickerSearch, setJobPickerSearch] = useState('');
 
@@ -436,7 +471,14 @@ export default function Schedule() {
         {loading ? (
           <div style={S.center}>Loading...</div>
         ) : viewMode === 'calendar' ? (
-          <CalendarView days={days} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} />
+          <CalendarView
+            days={days}
+            boardData={filteredBoardData}
+            onApptClick={handleApptClick}
+            onCellClick={handleCellClick}
+            onApptDrop={handleApptDrop}
+            onApptResize={handleApptResize}
+          />
         ) : filteredBoardData.length === 0 && !crewFilter ? (
           <div style={S.center}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>

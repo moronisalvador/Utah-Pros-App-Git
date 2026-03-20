@@ -378,7 +378,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           }
                         }}
                       >
-                        {/* Content clipping wrapper — keeps text inside rounded block */}
+                        {/* Content clipping wrapper */}
                         <div style={{ overflow: 'hidden', height: '100%' }}>
 
                         {/* Row 1: Job name */}
