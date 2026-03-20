@@ -122,9 +122,10 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                   return withTotal.map(appt => {
                     const top = ((appt._startMins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
                     const height = Math.max(((appt._endMins - appt._startMins) / 60) * CAL_HOUR_HEIGHT, 28);
-                    const color = appt.color || TYPE_COLORS[appt.type] || '#6b7280';
-                    const isDone = appt.status === 'completed';
                     const crew = appt.crew || [];
+                    const leadCrew = crew.find(c => c.role === 'lead');
+                    const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+                    const isDone = appt.status === 'completed';
                     const getInitials = (name) => {
                       if (!name) return '?';
                       const parts = name.trim().split(/\s+/);
