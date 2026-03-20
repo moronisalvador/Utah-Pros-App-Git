@@ -400,7 +400,12 @@ export default function Schedule() {
   const [showWeekend, setShowWeekend] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('upr_schedule_view') || 'calendar'; } catch { return 'calendar'; } });
-  const changeViewMode = (mode) => { setViewMode(mode); try { localStorage.setItem('upr_schedule_view', mode); } catch {} };
+  const changeViewMode = (mode) => {
+    setViewMode(mode);
+    try { localStorage.setItem('upr_schedule_view', mode); } catch {}
+    // Month only available in calendar view
+    if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
+  };
   const [calSpan, setCalSpan] = useState(() => { try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; } });
   const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch {} };
   const [crewFilter, setCrewFilter] = useState(null);
@@ -596,9 +601,9 @@ export default function Schedule() {
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }} onClick={() => changeViewMode('crew')}>Crew</button>
             </div>
             <div style={S.viewToggle}>
-              {SPAN_OPTIONS.map((opt, i) => (
+              {SPAN_OPTIONS.filter(opt => viewMode === 'calendar' || opt.value !== 'month').map((opt, i, arr) => (
                 <button key={opt.value} onClick={() => changeCalSpan(opt.value)}
-                  style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === SPAN_OPTIONS.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
+                  style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === arr.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
               ))}
             </div>
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
@@ -819,6 +824,11 @@ export default function Schedule() {
                 </div>
               </div>
 
+              {/* Time validation warning */}
+              {gp.timeStart && gp.timeEnd && gp.timeEnd <= gp.timeStart && (
+                <div style={{ padding: '0 20px 8px', fontSize: 11, color: '#ef4444', fontWeight: 500 }}>End time must be after start time</div>
+              )}
+
               {/* Footer */}
               <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setGridPlacementPicker(null)}
@@ -827,7 +837,8 @@ export default function Schedule() {
                   handlePlacementClick(gp.dateKey, gp.timeStart, gp.timeEnd, gp.crew);
                   setGridPlacementPicker(null);
                 }}
-                  style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                  disabled={gp.timeStart && gp.timeEnd && gp.timeEnd <= gp.timeStart}
+                  style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer', fontFamily: 'var(--font-sans)', opacity: (gp.timeStart && gp.timeEnd && gp.timeEnd <= gp.timeStart) ? 0.5 : 1 }}>
                   Create appointment
                 </button>
               </div>

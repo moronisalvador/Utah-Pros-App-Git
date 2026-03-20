@@ -16,13 +16,14 @@ const NAV_ITEMS = [
 
   { section: 'Operations' },
   { key: 'production', label: 'Production', path: '/production', icon: IconProduction, hidden: true },
-  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
+  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule, end: true },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
 
   { section: 'Growth', hidden: true },
   { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing, hidden: true },
 
   { section: 'System' },
+  { key: 'schedule_templates', label: 'Templates', path: '/schedule/templates', icon: IconSchedule },
   { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
   { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings },
 ];
@@ -62,7 +63,7 @@ export default function Sidebar({ isOpen, onNavClick }) {
             <NavLink
               key={item.key}
               to={item.path}
-              end={item.path === '/'}
+              end={item.path === '/' || item.end}
               className={({ isActive }) =>
                 `sidebar-link${isActive ? ' active' : ''}`
               }

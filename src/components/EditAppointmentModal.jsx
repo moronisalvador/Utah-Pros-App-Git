@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
+const TIME_OPTIONS = (() => {
+  const opts = [];
+  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+    const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const hr = h % 12 || 12;
+    opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
+  }
+  return opts;
+})();
+
 function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
   const [title, setTitle] = useState(appointment.title || '');
   const [date, setDate] = useState(appointment.date || '');
@@ -203,20 +213,31 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
           </div>
 
           {/* Date + Time */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
             <div style={{ ...S.field, flex: 1 }}>
               <label style={S.label}>Date</label>
               <DatePicker value={date} onChange={v => { setDate(v); setDirty(true); }} />
             </div>
             <div style={{ ...S.field, flex: 1 }}>
               <label style={S.label}>Start</label>
-              <input type="time" style={S.input} value={timeStart}
-                onChange={e => { setTimeStart(e.target.value); setDirty(true); }} />
+              <select style={S.input} value={timeStart}
+                onChange={e => { setTimeStart(e.target.value); setDirty(true); }}>
+                <option value="">—</option>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
             </div>
             <div style={{ ...S.field, flex: 1 }}>
               <label style={S.label}>End</label>
-              <input type="time" style={S.input} value={timeEnd}
-                onChange={e => { setTimeEnd(e.target.value); setDirty(true); }} />
+              <select style={S.input} value={timeEnd}
+                onChange={e => { setTimeEnd(e.target.value); setDirty(true); }}>
+                <option value="">—</option>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          {timeStart && timeEnd && timeEnd <= timeStart && (
+            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 500, marginBottom: 8 }}>End time must be after start time</div>
+          )}
             </div>
           </div>
 
@@ -373,8 +394,8 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                 Finish
               </button>
             )}
-            <button onClick={handleSave} disabled={saving || !dirty}
-              style={{ ...S.primaryBtn, opacity: (saving || !dirty) ? 0.5 : 1 }}>
+            <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
+              style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>
               {saving ? 'Saving...' : 'Save changes'}
             </button>
           </div>

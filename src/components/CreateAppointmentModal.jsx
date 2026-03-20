@@ -2,6 +2,16 @@ import { useState, useEffect, useMemo } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
+const TIME_OPTIONS = (() => {
+  const opts = [];
+  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+    const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const hr = h % 12 || 12;
+    opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
+  }
+  return opts;
+})();
+
 function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
@@ -203,15 +213,20 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>Start</label>
-              <input type="time" style={M.input} value={timeStart}
-                onChange={e => setTimeStart(e.target.value)} />
+              <select style={M.input} value={timeStart} onChange={e => setTimeStart(e.target.value)}>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
             </div>
             <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>End</label>
-              <input type="time" style={M.input} value={timeEnd}
-                onChange={e => setTimeEnd(e.target.value)} />
+              <select style={M.input} value={timeEnd} onChange={e => setTimeEnd(e.target.value)}>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
             </div>
           </div>
+          {timeStart && timeEnd && timeEnd <= timeStart && (
+            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 500, marginTop: -4, marginBottom: 4 }}>End time must be after start time</div>
+          )}
 
           {/* Notes */}
           <div style={M.field}>
@@ -389,7 +404,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
         {/* Footer */}
         <div style={M.footer}>
           <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
-          <button style={{ ...M.saveBtn, opacity: saving ? 0.6 : 1 }} onClick={handleSave} disabled={saving}>
+          <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
             {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
           </button>
         </div>
