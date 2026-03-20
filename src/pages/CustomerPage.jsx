@@ -115,9 +115,6 @@ export default function CustomerPage() {
       {/* ══ Top Bar ══ */}
       <div className="job-page-topbar">
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/customers')} style={{ gap: 4 }}>← Customers</button>
-        <button className="btn btn-secondary btn-sm" onClick={() => setShowEdit(true)} style={{ gap: 4 }}>
-          <IconEdit style={{ width: 13, height: 13 }} /> Edit
-        </button>
       </div>
 
       {/* ══ Header ══ */}
@@ -137,6 +134,7 @@ export default function CustomerPage() {
           {c.phone && <a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{ width: 16, height: 16 }} />Call</a>}
           {c.phone && <button className="customer-action-btn" onClick={() => navigate('/conversations')}><IconMsg style={{ width: 16, height: 16 }} />Text</button>}
           {c.email && <a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{ width: 16, height: 16 }} />Email</a>}
+          <button className="customer-action-btn" onClick={() => setShowEdit(true)}><IconEdit style={{ width: 16, height: 16 }} />Edit</button>
         </div>
       </div>
 
