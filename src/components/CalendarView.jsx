@@ -39,23 +39,27 @@ function getInitials(name) {
 
 function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, onMouseLeave }) {
   const popRef = useRef(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState(null); // null = not positioned yet
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
   useEffect(() => {
     if (!popRef.current || !rect) return;
-    const popW = 300;
-    const popH = popRef.current.offsetHeight || 300;
-    const pad = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let left = rect.right + pad;
-    if (left + popW > vw - pad) left = rect.left - popW - pad;
-    if (left < pad) left = pad;
-    let top = rect.top;
-    if (top + popH > vh - pad) top = vh - pad - popH;
-    if (top < pad) top = pad;
-    setPos({ top, left });
+    // Wait one frame for the popover to render so we can measure it
+    requestAnimationFrame(() => {
+      if (!popRef.current) return;
+      const popW = 300;
+      const popH = popRef.current.offsetHeight || 300;
+      const pad = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = rect.right + pad;
+      if (left + popW > vw - pad) left = rect.left - popW - pad;
+      if (left < pad) left = pad;
+      let top = rect.top;
+      if (top + popH > vh - pad) top = vh - pad - popH;
+      if (top < pad) top = pad;
+      setPos({ top, left });
+    });
   }, [rect, tasksExpanded]);
 
   const crew = appt.crew || [];
@@ -74,10 +78,12 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
   return (
     <div ref={popRef} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
       style={{
-        position: 'fixed', top: pos.top, left: pos.left, width: 300, zIndex: 100,
+        position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999,
+        width: 300, zIndex: 100,
         background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
         borderLeft: `4px solid ${color}`, overflow: 'hidden',
+        opacity: pos ? 1 : 0, transition: 'opacity 80ms ease',
       }}>
       {/* Header */}
       <div style={{ padding: '10px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
