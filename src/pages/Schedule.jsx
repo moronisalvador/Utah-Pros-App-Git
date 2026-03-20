@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_COLORS, TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
+import EditAppointmentModal from '@/components/EditAppointmentModal';
 import CalendarView from '@/components/CalendarView';
 
 // ═══════════════════════════════════════════════════════════════
@@ -152,6 +153,7 @@ export default function Schedule() {
   };
   const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
   const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
+  const [editModal, setEditModal] = useState(null);    // appointment object
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true); // auto-include jobs with appts this week
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
@@ -295,7 +297,7 @@ export default function Schedule() {
   const todayKey = fmtDate(new Date());
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
-  const handleApptClick = (appt) => { console.log('Appointment:', appt); };
+  const handleApptClick = (appt) => { setEditModal(appt); };
   const handleCellClick = (jobId, dateKey) => {
     const job = boardData.find(j => j.job_id === jobId);
     setCreateModal({ jobId, dateKey, jobName: job?.insured_name || 'Unknown' });
@@ -519,6 +521,17 @@ export default function Schedule() {
             loadBoard();
             setPanelRefreshKey(k => k + 1);
           }}
+        />
+      )}
+
+      {/* Edit appointment modal */}
+      {editModal && (
+        <EditAppointmentModal
+          appointment={editModal}
+          db={db}
+          onClose={() => setEditModal(null)}
+          onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
+          onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
         />
       )}
     </div>
