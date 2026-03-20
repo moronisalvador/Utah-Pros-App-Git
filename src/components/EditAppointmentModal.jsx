@@ -238,8 +238,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
           {timeStart && timeEnd && timeEnd <= timeStart && (
             <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 500, marginBottom: 8 }}>End time must be after start time</div>
           )}
-            </div>
-          </div>
 
           {/* Type */}
           <div style={{ ...S.field, marginBottom: 12 }}>

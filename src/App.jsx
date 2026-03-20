@@ -14,7 +14,7 @@ import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
 import Schedule from '@/pages/Schedule';
-import ScheduleTemplates from '@/components/ScheduleTemplates';
+import ScheduleTemplates from '@/pages/ScheduleTemplates';
 import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
