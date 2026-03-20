@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import ScheduleWizard from '@/components/ScheduleWizard';
+import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 
 const PRIORITY_OPTIONS = [
@@ -28,7 +29,12 @@ const FILE_CATEGORIES = [
   { key: 'other', label: 'Other' },
 ];
 
-const DIVISION_EMOJI = { water: '💧', mold: '🦠', reconstruction: '🏗️' };
+const DIVISION_EMOJI = { water: '💧', mold: '🦠', reconstruction: '🏗️', fire: '🔥', contents: '📦' };
+
+const DIVISION_COLORS = {
+  water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706',
+  fire: '#dc2626', contents: '#059669',
+};
 
 export default function JobPage() {
   const { jobId } = useParams();
@@ -54,6 +60,11 @@ export default function JobPage() {
   const [showWizard, setShowWizard] = useState(false);
   const [taskSummary, setTaskSummary] = useState(null);
 
+  // Claim / related jobs
+  const [claimData, setClaimData] = useState(null);
+  const [siblingJobs, setSiblingJobs] = useState([]);
+  const [showAddRelated, setShowAddRelated] = useState(false);
+
   useEffect(() => { loadJob(); }, [jobId]);
 
   const loadJob = async () => {
@@ -78,6 +89,15 @@ export default function JobPage() {
       db.rpc('get_job_task_summary', { p_job_id: jobId })
         .then(data => setTaskSummary(data))
         .catch(() => setTaskSummary(null));
+      // Load claim data (related jobs)
+      if (jobsData[0]?.claim_id) {
+        db.rpc('get_claim_jobs', { p_claim_id: jobsData[0].claim_id })
+          .then(data => {
+            setClaimData(data?.claim || null);
+            setSiblingJobs((data?.jobs || []).filter(j => j.id !== jobsData[0].id));
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('Job load error:', err);
     } finally {
@@ -239,7 +259,11 @@ export default function JobPage() {
       {/* ══ Tab Content ══ */}
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
         {activeTab === 'overview' && (
-          <OverviewTab job={job} employees={employees} phases={phases} editProps={editProps} saveFieldDirect={saveFieldDirect} fmtDate={fmtDate} />
+          <OverviewTab job={job} employees={employees} phases={phases} editProps={editProps}
+            saveFieldDirect={saveFieldDirect} fmtDate={fmtDate}
+            claimData={claimData} siblingJobs={siblingJobs}
+            onAddRelatedJob={() => setShowAddRelated(true)}
+            onNavigateJob={(id) => navigate(`/jobs/${id}`)} />
         )}
         {activeTab === 'schedule' && (
           <ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={() => setShowWizard(true)} navigate={navigate} />
@@ -265,6 +289,22 @@ export default function JobPage() {
           onGenerated={() => {
             setShowWizard(false);
             loadJob(); // Refresh task summary
+          }}
+        />
+      )}
+
+      {/* Add Related Job Modal */}
+      {showAddRelated && (
+        <AddRelatedJobModal
+          sourceJob={job}
+          claimData={claimData}
+          siblingJobs={siblingJobs}
+          employees={employees}
+          db={db}
+          onClose={() => setShowAddRelated(false)}
+          onCreated={(result) => {
+            setShowAddRelated(false);
+            if (result?.job?.id) navigate(`/jobs/${result.job.id}`);
           }}
         />
       )}
@@ -360,7 +400,7 @@ function SelectRow({ label, field, value, options, saveFieldDirect, saving, valu
 /* ═══════════════════════════════════════════════════
    OVERVIEW TAB
    ═══════════════════════════════════════════════════ */
-function OverviewTab({ job, employees, phases, editProps, saveFieldDirect, fmtDate }) {
+function OverviewTab({ job, employees, phases, editProps, saveFieldDirect, fmtDate, claimData, siblingJobs, onAddRelatedJob, onNavigateJob }) {
   const { editingField, editValue, saving, startEdit, cancelEdit, saveField, setEditValue, handleEditKeyDown } = editProps;
 
   return (
@@ -448,6 +488,55 @@ function OverviewTab({ job, employees, phases, editProps, saveFieldDirect, fmtDa
           <div style={{ fontSize: 'var(--text-sm)', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
             {job.encircle_summary}
           </div>
+        </div>
+      )}
+
+      {/* ═══ Related Jobs (same claim/occurrence) ═══ */}
+      {claimData && (
+        <div className="job-page-section job-page-section-full">
+          <div className="job-page-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Related Jobs</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', fontStyle: 'normal', textTransform: 'none', letterSpacing: 0 }}>
+              {claimData.claim_number}
+            </span>
+          </div>
+
+          {siblingJobs && siblingJobs.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {siblingJobs.map(sj => {
+                const divColor = DIVISION_COLORS[sj.division] || '#6b7280';
+                const divEmoji = DIVISION_EMOJI[sj.division] || '📁';
+                return (
+                  <div key={sj.id} onClick={() => onNavigateJob?.(sj.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
+                      padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)',
+                      borderLeft: `3px solid ${divColor}`, cursor: 'pointer',
+                      transition: 'border-color 0.15s' }}>
+                    <span style={{ fontSize: 16 }}>{divEmoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {sj.job_number || 'New Job'} — {sj.division?.replace(/_/g, ' ')}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                        {sj.phase?.replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--brand-primary)', fontWeight: 600 }}>→</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-2) 0' }}>
+              No other jobs under this claim yet
+            </div>
+          )}
+
+          <button className="btn btn-secondary btn-sm" onClick={onAddRelatedJob}
+            style={{ marginTop: 'var(--space-3)', gap: 4, width: '100%', justifyContent: 'center' }}>
+            + Add Related Job
+          </button>
         </div>
       )}
     </div>

@@ -233,6 +233,7 @@ function CustomerCard({ customer, fmtPhone, initials, onClick }) {
 function CustomerDetailPanel({ customer, fmtPhone, initials, onClose, onNavigateJob, onNavigateMessage }) {
   const c = customer;
   const jobs = Array.isArray(c.jobs) ? c.jobs : [];
+  const claims = Array.isArray(c.claims) ? c.claims : [];
   const hasAddress = c.billing_address || c.billing_city;
 
   const fmtDate = (val) => {
@@ -349,16 +350,66 @@ function CustomerDetailPanel({ customer, fmtPhone, initials, onClose, onNavigate
           </div>
         )}
 
-        {/* Linked Jobs */}
+        {/* Jobs grouped by Claim/Occurrence */}
         <div className="customer-detail-section">
           <div className="customer-detail-section-title">
             Jobs ({jobs.length})
           </div>
-          {jobs.length === 0 ? (
+          {claims.length > 0 ? (
+            claims.map(claim => {
+              const claimJobs = Array.isArray(claim.jobs) ? claim.jobs : [];
+              return (
+                <div key={claim.id} style={{ marginBottom: 'var(--space-4)' }}>
+                  {/* Claim header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                    marginBottom: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)',
+                    background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      {claim.claim_number}
+                    </span>
+                    {claim.date_of_loss && (
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                        · Loss: {fmtDate(claim.date_of_loss)}
+                      </span>
+                    )}
+                    {claim.insurance_carrier && (
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                        · {claim.insurance_carrier}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99,
+                      background: claim.status === 'open' ? '#eff6ff' : '#f1f3f5',
+                      color: claim.status === 'open' ? '#2563eb' : '#6b7280',
+                      fontWeight: 600, marginLeft: 'auto' }}>
+                      {claim.status}
+                    </span>
+                  </div>
+                  {/* Jobs under this claim */}
+                  {claimJobs.map(j => {
+                    const ps = getPhaseStyle(j.phase);
+                    return (
+                      <div key={j.id} className="customer-detail-job" onClick={() => onNavigateJob(j.id)}>
+                        <div className="customer-detail-job-div" style={{ background: DIVISION_COLORS[j.division] || '#6b7280' }} />
+                        <div className="customer-detail-job-info">
+                          <div className="customer-detail-job-number">{j.job_number || 'No Job #'}</div>
+                          {j.address && <div className="customer-detail-job-address">{j.address}{j.city ? `, ${j.city}` : ''}</div>}
+                          {j.insurance_company && <div className="customer-detail-job-address">{j.insurance_company}</div>}
+                        </div>
+                        <span className="customer-detail-job-phase" style={{ background: ps.bg, color: ps.color }}>
+                          {ps.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })
+          ) : jobs.length === 0 ? (
             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', padding: 'var(--space-3) 0' }}>
               No jobs linked yet
             </div>
           ) : (
+            /* Fallback: flat job list if no claims data */
             jobs.map(j => {
               const ps = getPhaseStyle(j.phase);
               return (
@@ -367,7 +418,6 @@ function CustomerDetailPanel({ customer, fmtPhone, initials, onClose, onNavigate
                   <div className="customer-detail-job-info">
                     <div className="customer-detail-job-number">{j.job_number || 'No Job #'}</div>
                     {j.address && <div className="customer-detail-job-address">{j.address}{j.city ? `, ${j.city}` : ''}</div>}
-                    {j.insurance_company && <div className="customer-detail-job-address">{j.insurance_company}</div>}
                   </div>
                   <span className="customer-detail-job-phase" style={{ background: ps.bg, color: ps.color }}>
                     {ps.label}
