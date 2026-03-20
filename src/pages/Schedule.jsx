@@ -154,6 +154,7 @@ export default function Schedule() {
   const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
   const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
   const [editModal, setEditModal] = useState(null);    // appointment object
+  const [selectedPanelJob, setSelectedPanelJob] = useState(null); // { id, insured_name } from panel
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true); // auto-include jobs with appts this week
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
@@ -298,9 +299,22 @@ export default function Schedule() {
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
   const handleApptClick = (appt) => { setEditModal(appt); };
-  const handleCellClick = (jobId, dateKey) => {
-    const job = boardData.find(j => j.job_id === jobId);
-    setCreateModal({ jobId, dateKey, jobName: job?.insured_name || 'Unknown' });
+  const handleCellClick = (dateKey, hour) => {
+    // Use selected panel job, or first job on board, or show alert
+    const job = selectedPanelJob
+      || (boardData.length > 0 ? { id: boardData[0].job_id, insured_name: boardData[0].insured_name } : null);
+    if (!job) { alert('Select a job first from the side panel'); return; }
+    const timeStr = `${String(hour).padStart(2, '0')}:00`;
+    const endHour = Math.min(hour + 2, 18);
+    const endStr = `${String(endHour).padStart(2, '0')}:00`;
+    setCreateModal({
+      jobId: job.id,
+      jobName: job.insured_name,
+      dateKey,
+      prefillTaskIds: [],
+      prefillTimeStart: timeStr,
+      prefillTimeEnd: endStr,
+    });
   };
 
   return (
@@ -319,7 +333,14 @@ export default function Schedule() {
         onCreateAppointment={(jobId, jobName, dateKey, taskIds) => {
           setCreateModal({ jobId, jobName, dateKey, prefillTaskIds: taskIds || [] });
         }}
-        onSelectJob={(jobId) => {}}
+        onSelectJob={(jobId) => {
+          if (jobId) {
+            const job = panelJobs.find(j => j.id === jobId);
+            setSelectedPanelJob(job ? { id: job.id, insured_name: job.insured_name } : null);
+          } else {
+            setSelectedPanelJob(null);
+          }
+        }}
         onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
       />
 
@@ -462,7 +483,14 @@ export default function Schedule() {
                       <div
                         key={`${job.job_id}_${day.key}`}
                         style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
-                        onClick={() => handleCellClick(job.job_id, day.key)}
+                        onClick={() => {
+                          setCreateModal({
+                            jobId: job.job_id,
+                            jobName: job.insured_name,
+                            dateKey: day.key,
+                            prefillTaskIds: [],
+                          });
+                        }}
                         onMouseEnter={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1'; }}
                         onMouseLeave={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '0'; }}
                       >
@@ -511,6 +539,8 @@ export default function Schedule() {
           jobName={createModal.jobName}
           dateKey={createModal.dateKey}
           prefillTaskIds={createModal.prefillTaskIds || []}
+          prefillTimeStart={createModal.prefillTimeStart}
+          prefillTimeEnd={createModal.prefillTimeEnd}
           db={db}
           employees={allEmployees}
           onClose={() => setCreateModal(null)}

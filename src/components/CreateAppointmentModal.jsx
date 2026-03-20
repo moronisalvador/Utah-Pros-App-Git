@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 
-function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], db, employees, onClose, onSaved }) {
+function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
   const [type, setType] = useState('reconstruction');
-  const [timeStart, setTimeStart] = useState('07:00');
-  const [timeEnd, setTimeEnd] = useState('15:30');
+  const [timeStart, setTimeStart] = useState(prefillTimeStart || '07:00');
+  const [timeEnd, setTimeEnd] = useState(prefillTimeEnd || '15:30');
   const [notes, setNotes] = useState('');
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([...prefillTaskIds]);

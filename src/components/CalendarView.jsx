@@ -68,10 +68,14 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                 {/* Hour lines */}
                 {hours.map(h => (
                   <div key={h} style={{ ...CV.hourLine, top: (h - CAL_START_HOUR) * CAL_HOUR_HEIGHT }}
-                    onClick={() => {
-                      // Find first job on board to create appointment
-                      if (boardData.length > 0) onCellClick(boardData[0].job_id, day.key);
-                    }} />
+                    onClick={() => onCellClick(day.key, h)}
+                    onMouseEnter={e => e.currentTarget.querySelector('.plus')?.style && (e.currentTarget.querySelector('.plus').style.opacity = '1')}
+                    onMouseLeave={e => e.currentTarget.querySelector('.plus')?.style && (e.currentTarget.querySelector('.plus').style.opacity = '0')}>
+                    <div className="plus" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      height: '100%', opacity: 0, transition: 'opacity 100ms', pointerEvents: 'none' }}>
+                      <span style={{ fontSize: 18, color: 'var(--accent)', fontWeight: 300 }}>+</span>
+                    </div>
+                  </div>
                 ))}
 
                 {/* Now line */}
