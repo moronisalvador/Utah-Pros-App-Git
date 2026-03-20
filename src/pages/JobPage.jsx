@@ -295,6 +295,11 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
   const [apptsLoading, setApptsLoading] = useState(true);
   const [editingPhase, setEditingPhase] = useState(null); // { phase_name, field, value }
   const [saving, setSaving] = useState(false);
+  const [showAddPhase, setShowAddPhase] = useState(false);
+  const [newPhaseName, setNewPhaseName] = useState('');
+  const [newPhaseDuration, setNewPhaseDuration] = useState(1);
+  const [addingTaskIn, setAddingTaskIn] = useState(null);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
 
   // Load appointments for this job
   useEffect(() => {
@@ -334,6 +339,65 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
         onRefresh?.();
       }
     } catch (e) { console.error('Save phase date:', e); alert('Failed to save: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  // Add a new phase
+  const handleAddPhase = async () => {
+    if (!newPhaseName.trim()) return;
+    setSaving(true);
+    try {
+      await db.rpc('add_custom_schedule_phase', {
+        p_job_id: jobId,
+        p_phase_name: newPhaseName.trim(),
+        p_phase_color: '#6b7280',
+        p_duration_days: newPhaseDuration,
+      });
+      setNewPhaseName('');
+      setNewPhaseDuration(1);
+      setShowAddPhase(false);
+      onRefresh?.();
+    } catch (e) { console.error('Add phase:', e); alert('Failed: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  // Remove a phase and its tasks
+  const handleRemovePhase = async (phaseName) => {
+    if (!confirm(`Remove "${phaseName}" and all its tasks? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      const schedules = await db.select('job_schedules', `job_id=eq.${jobId}&limit=1`);
+      if (schedules.length === 0) return;
+      const scheduleId = schedules[0].id;
+      const phases = await db.select('job_schedule_phases',
+        `job_schedule_id=eq.${scheduleId}&phase_name=eq.${encodeURIComponent(phaseName)}&limit=1`
+      );
+      if (phases.length > 0) {
+        // Delete tasks for this phase
+        await db.delete('job_tasks', `job_id=eq.${jobId}&job_schedule_phase_id=eq.${phases[0].id}`);
+        // Delete the phase record
+        await db.delete('job_schedule_phases', `id=eq.${phases[0].id}`);
+        onRefresh?.();
+      }
+    } catch (e) { console.error('Remove phase:', e); alert('Failed: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  // Add a task to a phase
+  const handleAddTask = async (phaseName, phaseColor) => {
+    if (!newTaskTitle.trim()) return;
+    setSaving(true);
+    try {
+      await db.rpc('add_adhoc_job_task', {
+        p_job_id: jobId,
+        p_title: newTaskTitle.trim(),
+        p_phase_name: phaseName,
+        p_phase_color: phaseColor || '#6b7280',
+      });
+      setNewTaskTitle('');
+      setAddingTaskIn(null);
+      onRefresh?.();
+    } catch (e) { console.error('Add task:', e); alert('Failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
@@ -495,10 +559,10 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
           return (
             <div key={phase.phase_name}>
               <div
-                onClick={() => tasks.length > 0 && setExpandedPhase(isExpanded ? null : phase.phase_name)}
+                onClick={() => setExpandedPhase(isExpanded ? null : phase.phase_name)}
                 style={{
                   padding: '10px 14px', borderBottom: '1px solid var(--border-light)',
-                  cursor: tasks.length > 0 ? 'pointer' : 'default',
+                  cursor: 'pointer',
                   background: isExpanded ? 'var(--bg-secondary)' : 'transparent',
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -508,10 +572,14 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
                     {phase.phase_name}
                   </span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: isDone ? '#10b981' : 'var(--text-secondary)' }}>{phasePct}%</span>
-                  {tasks.length > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)',
-                      transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
-                  )}
+                  <button onClick={e => { e.stopPropagation(); handleRemovePhase(phase.phase_name); }}
+                    style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                      cursor: 'pointer', padding: '2px 4px', opacity: 0.5, flexShrink: 0 }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+                    title="Remove phase">✕</button>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)',
+                    transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
                 </div>
                 {/* Editable target dates */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 16 }}>
@@ -572,7 +640,7 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
               </div>
 
               {/* Expanded task list */}
-              {isExpanded && tasks.length > 0 && (
+              {isExpanded && (
                 <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-light)' }}>
                   {tasks.map(task => (
                     <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px 6px 38px',
@@ -597,11 +665,67 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
                       )}
                     </div>
                   ))}
+                  {tasks.length === 0 && (
+                    <div style={{ padding: '10px 14px 4px 38px', fontSize: 12, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>No tasks in this phase</div>
+                  )}
+                  {/* Add task inline */}
+                  {addingTaskIn === phase.phase_name ? (
+                    <div style={{ display: 'flex', gap: 6, padding: '6px 14px 8px 38px' }}>
+                      <input style={{ flex: 1, padding: '6px 8px', fontSize: 12, border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none' }}
+                        placeholder="Task name..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleAddTask(phase.phase_name, phase.phase_color);
+                          if (e.key === 'Escape') { setAddingTaskIn(null); setNewTaskTitle(''); }
+                        }}
+                        autoFocus />
+                      <button onClick={() => handleAddTask(phase.phase_name, phase.phase_color)} disabled={saving}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', background: 'var(--accent)', color: '#fff',
+                          border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Add</button>
+                      <button onClick={() => { setAddingTaskIn(null); setNewTaskTitle(''); }}
+                        style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setAddingTaskIn(phase.phase_name); setNewTaskTitle(''); }}
+                      style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none',
+                        cursor: 'pointer', padding: '6px 14px 8px 38px', fontFamily: 'var(--font-sans)', textAlign: 'left', width: '100%' }}>
+                      + Add task
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
+
+        {/* Add phase */}
+        {showAddPhase ? (
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input style={{ flex: 1, padding: '7px 10px', fontSize: 12, border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none' }}
+                placeholder="Phase name..." value={newPhaseName} onChange={e => setNewPhaseName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddPhase(); if (e.key === 'Escape') { setShowAddPhase(false); setNewPhaseName(''); } }}
+                autoFocus />
+              <select style={{ padding: '7px 6px', fontSize: 12, border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none', width: 80 }}
+                value={newPhaseDuration} onChange={e => setNewPhaseDuration(parseInt(e.target.value))}>
+                {[1,2,3,4,5,7,10,14].map(n => <option key={n} value={n}>{n} day{n > 1 ? 's' : ''}</option>)}
+              </select>
+              <button onClick={handleAddPhase} disabled={saving || !newPhaseName.trim()}
+                style={{ fontSize: 11, fontWeight: 600, padding: '7px 12px', background: 'var(--accent)', color: '#fff',
+                  border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Add</button>
+              <button onClick={() => { setShowAddPhase(false); setNewPhaseName(''); }}
+                style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setShowAddPhase(true)}
+            style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none',
+              cursor: 'pointer', padding: '10px 14px', fontFamily: 'var(--font-sans)', textAlign: 'left', width: '100%' }}>
+            + Add phase
+          </button>
+        )}
       </div>
 
       {/* Actions */}
