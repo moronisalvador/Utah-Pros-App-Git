@@ -342,8 +342,8 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             <>
               {/* Summary bar with editable start date */}
               <div style={W.summaryBar}>
-                <div style={W.summaryItem}>
-                  <input type="date" value={startDate} onChange={e => changeStartDate(e.target.value)}
+                <div style={W.summaryItem} onClick={() => document.getElementById('wiz-start-date')?.showPicker?.()}>
+                  <input type="date" id="wiz-start-date" value={startDate} onChange={e => changeStartDate(e.target.value)}
                     style={{ border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
                       fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
                       borderRadius: 'var(--radius-md)', padding: '4px 8px',

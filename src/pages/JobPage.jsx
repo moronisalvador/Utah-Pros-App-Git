@@ -742,7 +742,7 @@ function ScheduleTab({ jobId, taskSummary, onGenerateClick, navigate }) {
   return (
     <div style={{ padding: '16px 0' }}>
       {/* Summary cards */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20, padding: '0 16px' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 8, padding: '0 16px' }}>
         <div style={schedStyles.card}>
           <div style={schedStyles.cardValue}>{pctComplete}%</div>
           <div style={schedStyles.cardLabel}>Complete</div>
@@ -753,13 +753,18 @@ function ScheduleTab({ jobId, taskSummary, onGenerateClick, navigate }) {
         </div>
         <div style={schedStyles.card}>
           <div style={schedStyles.cardValue}>{taskSummary.assigned}</div>
-          <div style={schedStyles.cardLabel}>Assigned</div>
+          <div style={schedStyles.cardLabel}>On calendar</div>
         </div>
         <div style={schedStyles.card}>
           <div style={schedStyles.cardValue}>{taskSummary.unassigned}</div>
-          <div style={schedStyles.cardLabel}>Unassigned</div>
+          <div style={schedStyles.cardLabel}>Need scheduling</div>
         </div>
       </div>
+      {taskSummary.unassigned === 0 && taskSummary.completed === 0 && (
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '0 16px 8px', lineHeight: 1.4 }}>
+          All tasks are on the calendar. Open the dispatch board and navigate to the start week to see appointments. Assign crew from there.
+        </div>
+      )}
 
       {/* Overall progress bar */}
       <div style={{ padding: '0 16px', marginBottom: 20 }}>
