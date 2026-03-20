@@ -91,34 +91,63 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                   );
                 })()}
 
-                {/* Appointment blocks */}
-                {appts.map(appt => {
-                  const startMins = timeToMinutes(appt.time_start);
-                  const endMins = appt.time_end ? timeToMinutes(appt.time_end) : startMins + 60;
-                  const top = ((startMins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
-                  const height = Math.max(((endMins - startMins) / 60) * CAL_HOUR_HEIGHT, 28);
-                  const color = appt.color || TYPE_COLORS[appt.type] || '#6b7280';
-                  const isDone = appt.status === 'completed';
-                  const crew = appt.crew || [];
-                  const getInitials = (name) => {
-                    if (!name) return '?';
-                    const parts = name.trim().split(/\s+/);
-                    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
-                  };
-                  // Short address — just street
-                  const shortAddr = appt._address ? appt._address.split(',')[0] : '';
+                {/* Appointment blocks — with overlap detection */}
+                {(() => {
+                  // Calculate overlap groups
+                  const sorted = [...appts].map(appt => {
+                    const startMins = timeToMinutes(appt.time_start);
+                    const endMins = appt.time_end ? timeToMinutes(appt.time_end) : startMins + 60;
+                    return { ...appt, _startMins: startMins, _endMins: endMins };
+                  }).sort((a, b) => a._startMins - b._startMins || a._endMins - b._endMins);
 
-                  return (
-                    <div key={appt.id} onClick={e => { e.stopPropagation(); onApptClick(appt); }}
-                      style={{
-                        position: 'absolute', top, left: 2, right: 2, height: Math.max(height - 2, 26),
-                        background: color, borderLeft: `4px solid ${color}`, borderRadius: 4,
-                        padding: '4px 7px', overflow: 'hidden', cursor: 'pointer', zIndex: 2,
-                        opacity: isDone ? 0.5 : 1,
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
-                      onMouseLeave={e => e.currentTarget.style.filter = 'none'}
-                    >
+                  // Assign columns: greedy left-to-right packing
+                  const columns = []; // array of end times per column
+                  const layout = sorted.map(appt => {
+                    let col = columns.findIndex(endMin => endMin <= appt._startMins);
+                    if (col === -1) { col = columns.length; columns.push(0); }
+                    columns[col] = appt._endMins;
+                    return { ...appt, _col: col };
+                  });
+
+                  // Calculate max concurrent per group
+                  // For each appointment, find the max number of overlapping appointments
+                  const withTotal = layout.map(appt => {
+                    const overlapping = layout.filter(other =>
+                      other._startMins < appt._endMins && other._endMins > appt._startMins
+                    );
+                    const maxCol = Math.max(...overlapping.map(o => o._col)) + 1;
+                    return { ...appt, _totalCols: maxCol };
+                  });
+
+                  return withTotal.map(appt => {
+                    const top = ((appt._startMins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
+                    const height = Math.max(((appt._endMins - appt._startMins) / 60) * CAL_HOUR_HEIGHT, 28);
+                    const color = appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+                    const isDone = appt.status === 'completed';
+                    const crew = appt.crew || [];
+                    const getInitials = (name) => {
+                      if (!name) return '?';
+                      const parts = name.trim().split(/\s+/);
+                      return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
+                    };
+                    const shortAddr = appt._address ? appt._address.split(',')[0] : '';
+
+                    // Overlap layout
+                    const colWidth = 100 / appt._totalCols;
+                    const leftPct = appt._col * colWidth;
+
+                    return (
+                      <div key={appt.id} onClick={e => { e.stopPropagation(); onApptClick(appt); }}
+                        style={{
+                          position: 'absolute', top, height: Math.max(height - 2, 26),
+                          left: `calc(${leftPct}% + 1px)`, width: `calc(${colWidth}% - 2px)`,
+                          background: color, borderLeft: `3px solid ${color}`, borderRadius: 4,
+                          padding: '4px 6px', overflow: 'hidden', cursor: 'pointer', zIndex: 2,
+                          opacity: isDone ? 0.5 : 1,
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+                        onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                      >
                       {/* Row 1: Job name + crew initials */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', flex: 1,
@@ -203,9 +232,10 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                           {appt.title}
                         </div>
                       )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           );
