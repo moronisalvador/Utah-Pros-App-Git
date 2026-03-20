@@ -1142,7 +1142,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
               autoFocus />
           </div>
 
-          {/* Date + Type + Times */}
+          {/* Date + Type */}
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>Date</label>
@@ -1155,14 +1155,18 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
                 {APPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
-            <div style={M.field}>
+          </div>
+
+          {/* Start + End */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>Start</label>
-              <input type="time" style={{ ...M.input, width: 150 }} value={timeStart}
+              <input type="time" style={M.input} value={timeStart}
                 onChange={e => setTimeStart(e.target.value)} />
             </div>
-            <div style={M.field}>
+            <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>End</label>
-              <input type="time" style={{ ...M.input, width: 150 }} value={timeEnd}
+              <input type="time" style={M.input} value={timeEnd}
                 onChange={e => setTimeEnd(e.target.value)} />
             </div>
           </div>
