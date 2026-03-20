@@ -972,6 +972,13 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
 
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -1083,7 +1090,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   };
 
   return (
-    <div style={M.overlay} onClick={onClose}>
+    <div style={M.overlay}>
       <div style={M.modal} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={M.header}>
@@ -1349,7 +1356,7 @@ const M = {
 // CALENDAR VIEW (HouseCall Pro style — hours × days)
 // ═══════════════════════════════════════════════════════════════
 
-const CAL_START_HOUR = 6;
+const CAL_START_HOUR = 7;
 const CAL_END_HOUR = 18;
 const CAL_HOUR_HEIGHT = 60;
 const CAL_TOTAL_HOURS = CAL_END_HOUR - CAL_START_HOUR;
@@ -1386,7 +1393,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
           <div style={CV.timeHeader} />
           {hours.map(h => (
             <div key={h} style={CV.timeLabel}>
-              <span style={CV.timeTxt}>{h === 0 ? '12am' : h <= 12 ? `${h}am` : `${h - 12}pm`}</span>
+              <span style={CV.timeTxt}>{h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`}</span>
             </div>
           ))}
         </div>
