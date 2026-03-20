@@ -1073,7 +1073,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
         });
       }
 
-      onSaved();
+      onSaved(date);
     } catch (e) {
       console.error('Save appointment:', e);
       alert('Failed to save: ' + e.message);
@@ -1883,7 +1883,13 @@ export default function Schedule() {
           db={db}
           employees={allEmployees}
           onClose={() => setCreateModal(null)}
-          onSaved={() => { setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
+          onSaved={(savedDate) => {
+            // Navigate to the week containing the appointment
+            if (savedDate) setWeekStart(getMonday(new Date(savedDate + 'T00:00:00')));
+            setCreateModal(null);
+            loadBoard();
+            setPanelRefreshKey(k => k + 1);
+          }}
         />
       )}
     </div>
