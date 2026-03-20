@@ -531,16 +531,22 @@ export default function Schedule() {
 
   const handleGridPlacementCellClick = (dateKey) => {
     if (!placementMode) return;
-    setGridPlacementPicker({ dateKey, timeStart: placementMode.timeStart || '09:00', timeEnd: placementMode.timeEnd || '11:00' });
+    setGridPlacementPicker({
+      dateKey,
+      timeStart: placementMode.timeStart || '09:00',
+      timeEnd: placementMode.timeEnd || '11:00',
+      crew: [...(placementMode.crew || [])], // editable copy
+    });
   };
 
-  const handlePlacementClick = async (dateKey, timeStart, timeEnd) => {
+  const handlePlacementClick = async (dateKey, timeStart, timeEnd, crewOverride) => {
     if (!placementMode) return; const pm = placementMode; setPlacementMode(null);
+    const crewToUse = crewOverride || pm.crew || [];
     try {
       const result = await db.insert('appointments', { job_id: pm.jobId, title: `${pm.jobName} (continued)`, date: dateKey, time_start: timeStart, time_end: timeEnd, type: pm.type, status: 'scheduled' });
       if (result && result.length > 0) {
         const nid = result[0].id;
-        for (const c of pm.crew) await db.insert('appointment_crew', { appointment_id: nid, employee_id: c.employee_id, role: c.role });
+        for (const c of crewToUse) await db.insert('appointment_crew', { appointment_id: nid, employee_id: c.employee_id, role: c.role });
         if (pm.taskIds.length > 0) await db.rpc('assign_tasks_to_appointment', { p_appointment_id: nid, p_task_ids: pm.taskIds });
       }
       loadBoard(); setPanelRefreshKey(k => k + 1);
@@ -657,14 +663,26 @@ export default function Schedule() {
                     const appts = filteredCellMap[`${job.job_id}_${day.key}`] || [];
                     return (
                       <div key={`${job.job_id}_${day.key}`}
-                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy' } : {}) }}
+                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
                         onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : setCreateModal({ jobId: job.job_id, jobName: job.insured_name, dateKey: day.key, prefillTaskIds: [] })}
                         onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
-                        onMouseEnter={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1'; }}
-                        onMouseLeave={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '0'; }}>
+                        onMouseEnter={e => {
+                          const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1';
+                          const ghost = e.currentTarget.querySelector('[data-ghost]'); if (ghost) ghost.style.opacity = '1';
+                        }}
+                        onMouseLeave={e => {
+                          const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '0';
+                          const ghost = e.currentTarget.querySelector('[data-ghost]'); if (ghost) ghost.style.opacity = '0';
+                        }}>
                         {appts.map(a => <ApptCard key={a.id} appt={a} onClick={handleApptClick}
                           onDragStart={dismissGridHover} onHoverEnter={scheduleGridHover} onHoverLeave={cancelGridHover} />)}
-                        {appts.length === 0 && <div data-plus style={S.plusWrap}><span style={S.plus}>+</span></div>}
+                        {appts.length === 0 && !placementMode && <div data-plus style={S.plusWrap}><span style={S.plus}>+</span></div>}
+                        {placementMode && (
+                          <div data-ghost style={{ opacity: 0, transition: 'opacity 100ms', borderLeft: `3px solid ${placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb'}`, borderRadius: 4, background: hexToTint(placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb', 0.1), padding: '5px 7px', marginBottom: 3, pointerEvents: 'none' }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3 }}>{placementMode.jobName}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{placementMode.taskCount} tasks</div>
+                          </div>
+                        )}
                       </div>
                     );
                   }),
@@ -678,11 +696,19 @@ export default function Schedule() {
                   const appts = crewCellMap[`${emp.id}_${day.key}`] || [];
                   return (
                     <div key={`${emp.id}_${day.key}`}
-                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy' } : {}) }}
+                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
                       onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : undefined}
-                      onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}>
+                      onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
+                      onMouseEnter={e => { const ghost = e.currentTarget.querySelector('[data-ghost]'); if (ghost) ghost.style.opacity = '1'; }}
+                      onMouseLeave={e => { const ghost = e.currentTarget.querySelector('[data-ghost]'); if (ghost) ghost.style.opacity = '0'; }}>
                       {appts.map(a => <CrewApptCard key={`${a.id}_${emp.id}`} appt={a} onClick={handleApptClick}
                         onDragStart={dismissGridHover} onHoverEnter={scheduleGridHover} onHoverLeave={cancelGridHover} />)}
+                      {placementMode && (
+                        <div data-ghost style={{ opacity: 0, transition: 'opacity 100ms', borderLeft: `3px solid ${placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb'}`, borderRadius: 4, background: hexToTint(placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb', 0.1), padding: '5px 7px', marginBottom: 3, pointerEvents: 'none' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3 }}>{placementMode.jobName}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>{placementMode.taskCount} tasks</div>
+                        </div>
+                      )}
                     </div>
                   );
                 }),
@@ -704,56 +730,111 @@ export default function Schedule() {
       {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
 
       {/* Grid placement time picker (Jobs/Crew views) */}
-      {gridPlacementPicker && placementMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 120 }}
-          onClick={() => setGridPlacementPicker(null)}>
-          <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 360, boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Place appointment</div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                {placementMode.jobName} · {new Date(gridPlacementPicker.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+      {gridPlacementPicker && placementMode && (() => {
+        const gp = gridPlacementPicker;
+        const placementColor = placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb';
+
+        // Time helpers
+        const parseTime = (t) => { const [h, m] = (t || '09:00').split(':').map(Number); return { h, m: m || 0 }; };
+        const formatTime12 = (t) => { const { h, m } = parseTime(t); const hr = h % 12 || 12; return `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
+
+        const HOUR_OPTIONS = [];
+        for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+          const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          const hr = h % 12 || 12;
+          const label = `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+          HOUR_OPTIONS.push({ val, label });
+        }
+
+        const togglePickerCrew = (emp) => {
+          setGridPlacementPicker(prev => {
+            const exists = prev.crew.find(c => c.employee_id === emp.id);
+            if (exists) return { ...prev, crew: prev.crew.filter(c => c.employee_id !== emp.id) };
+            return { ...prev, crew: [...prev.crew, { employee_id: emp.id, role: prev.crew.length === 0 ? 'lead' : 'tech', display_name: emp.display_name, full_name: emp.full_name, color: emp.color }] };
+          });
+        };
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 100 }}
+            onClick={() => setGridPlacementPicker(null)}>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 380, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', borderTop: `3px solid ${placementColor}` }}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div style={{ padding: '16px 20px 12px' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Place appointment</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  {placementMode.jobName} · {new Date(gp.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3, fontWeight: 500 }}>{placementMode.taskCount} tasks will be assigned</div>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>{placementMode.taskCount} tasks will be assigned</div>
-            </div>
-            <div style={{ padding: '16px 20px', display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Start</label>
-                <input type="time" value={gridPlacementPicker.timeStart}
-                  onChange={e => setGridPlacementPicker(p => ({ ...p, timeStart: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)' }} />
+
+              {/* Time selects */}
+              <div style={{ padding: '0 20px 16px', display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Start</label>
+                  <select value={gp.timeStart}
+                    onChange={e => setGridPlacementPicker(p => ({ ...p, timeStart: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)', cursor: 'pointer', appearance: 'none', backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%238b929e\' stroke-width=\'1.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}>
+                    {HOUR_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>End</label>
+                  <select value={gp.timeEnd}
+                    onChange={e => setGridPlacementPicker(p => ({ ...p, timeEnd: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)', cursor: 'pointer', appearance: 'none', backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'10\' height=\'6\' viewBox=\'0 0 10 6\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M1 1l4 4 4-4\' stroke=\'%238b929e\' stroke-width=\'1.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}>
+                    {HOUR_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+                  </select>
+                </div>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>End</label>
-                <input type="time" value={gridPlacementPicker.timeEnd}
-                  onChange={e => setGridPlacementPicker(p => ({ ...p, timeEnd: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)' }} />
+
+              {/* Crew toggle */}
+              <div style={{ padding: '0 20px 16px' }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Crew</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {allEmployees.map(emp => {
+                    const sel = gp.crew.find(c => c.employee_id === emp.id);
+                    return (
+                      <button key={emp.id} onClick={() => togglePickerCrew(emp)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px 4px 4px',
+                          borderRadius: 99, border: sel ? `2px solid ${emp.color || 'var(--accent)'}` : '1px solid var(--border-color)',
+                          background: sel ? hexToTint(emp.color || '#2563eb', 0.1) : 'var(--bg-primary)',
+                          cursor: 'pointer', fontSize: 12, fontWeight: sel ? 600 : 400,
+                          color: sel ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
+                        }}>
+                        <span style={{
+                          width: 22, height: 22, borderRadius: 11, fontSize: 9, fontWeight: 700,
+                          background: sel ? (emp.color || 'var(--accent)') : 'var(--bg-tertiary)',
+                          color: sel ? '#fff' : 'var(--text-secondary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>{getInitials(emp.full_name || emp.display_name)}</span>
+                        {emp.display_name || emp.full_name}
+                        {sel?.role === 'lead' && <span style={{ fontSize: 8, fontWeight: 700, color: '#92400e', background: '#fffbeb', padding: '0 3px', borderRadius: 2, marginLeft: 2 }}>LEAD</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-            {/* Crew preview */}
-            {placementMode.crew?.length > 0 && (
-              <div style={{ padding: '0 20px 12px', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {placementMode.crew.map(c => (
-                  <span key={c.employee_id} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)', color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)', border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none' }}>
-                    {c.display_name || c.full_name}
-                  </span>
-                ))}
+
+              {/* Footer */}
+              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button onClick={() => setGridPlacementPicker(null)}
+                  style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+                <button onClick={() => {
+                  handlePlacementClick(gp.dateKey, gp.timeStart, gp.timeEnd, gp.crew);
+                  setGridPlacementPicker(null);
+                }}
+                  style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                  Create appointment
+                </button>
               </div>
-            )}
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setGridPlacementPicker(null)}
-                style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
-              <button onClick={() => {
-                handlePlacementClick(gridPlacementPicker.dateKey, gridPlacementPicker.timeStart, gridPlacementPicker.timeEnd);
-                setGridPlacementPicker(null);
-              }}
-                style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
-                Create appointment
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {jobPickerModal && (() => {
         const fpd = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
