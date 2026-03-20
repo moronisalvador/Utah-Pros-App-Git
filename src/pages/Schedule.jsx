@@ -51,11 +51,13 @@ const WAITING_PHASES = [
   'waiting_on_client', 'waiting_on_adjuster', 'on_hold',
   'supplement_submitted', 'supplement_review',
 ];
+const LEAD_PHASES = ['lead'];
 
 function classifyPhase(phase) {
   if (ACTIVE_PHASES.includes(phase)) return 'active';
   if (READY_PHASES.includes(phase)) return 'ready';
   if (WAITING_PHASES.includes(phase)) return 'waiting';
+  if (LEAD_PHASES.includes(phase)) return 'leads';
   return 'other';
 }
 
@@ -145,15 +147,16 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const offBoard = filtered.filter(j => !j.on_board);
 
   const grouped = useMemo(() => {
-    const g = { active: [], ready: [], waiting: [], other: [] };
+    const g = { active: [], ready: [], waiting: [], leads: [], other: [] };
     for (const j of offBoard) g[classifyPhase(j.phase)].push(j);
     return g;
   }, [offBoard]);
 
   const groups = [
-    { key: 'active', label: 'Active', color: '#10b981', items: grouped.active },
-    { key: 'ready', label: 'Ready to start', color: '#3b82f6', items: grouped.ready },
+    { key: 'active', label: 'In Production', color: '#10b981', items: grouped.active },
+    { key: 'ready', label: 'Ready to Start', color: '#3b82f6', items: grouped.ready },
     { key: 'waiting', label: 'Waiting', color: '#f59e0b', items: grouped.waiting },
+    { key: 'leads', label: 'Leads', color: '#8b5cf6', items: grouped.leads },
     { key: 'other', label: 'Other', color: '#6b7280', items: grouped.other },
   ].filter(g => g.items.length > 0);
 
