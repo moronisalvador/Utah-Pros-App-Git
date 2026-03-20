@@ -94,7 +94,13 @@ function fmtShortDate(d) {
 function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onCreateAppointment, onSelectJob, selectedJobId, refreshKey }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
-  const [divFilter, setDivFilter] = useState('all');
+  const [divFilter, setDivFilter] = useState(() => {
+    try { return localStorage.getItem('upr_schedule_div_filter') || 'all'; } catch { return 'all'; }
+  });
+  const changeDivFilter = (f) => {
+    setDivFilter(f);
+    try { localStorage.setItem('upr_schedule_div_filter', f); } catch {}
+  };
 
   // Detail view state
   const [activeJob, setActiveJob] = useState(null);
@@ -690,7 +696,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
             { key: 'mitigation', label: `Mitigation (${mitigationCount})` },
             { key: 'reconstruction', label: `Recon (${reconCount})` },
           ].map(f => (
-            <button key={f.key} onClick={() => setDivFilter(f.key)} style={{
+            <button key={f.key} onClick={() => changeDivFilter(f.key)} style={{
               flex: 1, fontSize: 11, fontWeight: 600, padding: '5px 0', borderRadius: 'var(--radius-md)',
               border: divFilter === f.key ? '1px solid var(--accent)' : '1px solid var(--border-color)',
               background: divFilter === f.key ? 'var(--accent-light)' : 'var(--bg-primary)',
