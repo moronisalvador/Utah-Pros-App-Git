@@ -196,7 +196,7 @@ export default function Schedule() {
 
   // ── Load employees for crew assignment ──
   useEffect(() => {
-    db.select('employees', 'is_active=eq.true&order=display_name.asc&select=id,display_name,full_name,role')
+    db.select('employees', 'is_active=eq.true&order=display_name.asc&select=id,display_name,full_name,role,color,avatar_url')
       .then(setAllEmployees)
       .catch(() => {});
   }, [db]);

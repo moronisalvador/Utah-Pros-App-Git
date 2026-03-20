@@ -16,6 +16,9 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
   const [crewSearch, setCrewSearch] = useState('');
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPhase, setNewTaskPhase] = useState('');
 
   // Close on Escape
   useEffect(() => {
@@ -77,6 +80,32 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
 
   const addTask = (taskId) => {
     setSelectedTasks(prev => [...prev, taskId]);
+  };
+
+  // Create an ad-hoc task and auto-select it
+  const createNewTask = async () => {
+    if (!newTaskTitle.trim() || !newTaskPhase) return;
+    const phase = taskPool.find(g => g.phase_name === newTaskPhase) || taskPool[0];
+    try {
+      const result = await db.rpc('add_adhoc_job_task', {
+        p_job_id: jobId,
+        p_title: newTaskTitle.trim(),
+        p_phase_name: phase?.phase_name || newTaskPhase,
+        p_phase_color: phase?.phase_color || '#6b7280',
+      });
+      // Reload pool and auto-select the new task
+      const data = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
+      const newPool = Array.isArray(data) ? data : [];
+      setTaskPool(newPool);
+      // Find the newly created task (last one in the matching phase)
+      const matchPhase = newPool.find(g => g.phase_name === (phase?.phase_name || newTaskPhase));
+      if (matchPhase) {
+        const newTask = matchPhase.tasks.find(t => t.title === newTaskTitle.trim() && !selectedTasks.includes(t.id));
+        if (newTask) setSelectedTasks(prev => [...prev, newTask.id]);
+      }
+      setNewTaskTitle('');
+      setCreatingTask(false);
+    } catch (e) { console.error('Create task:', e); alert('Failed: ' + e.message); }
   };
 
   const getInitials = (name) => {
@@ -223,7 +252,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
                   }}>
                     <span style={{
                       width: 26, height: 26, borderRadius: 13, flexShrink: 0,
-                      background: sel ? 'var(--accent)' : 'var(--bg-tertiary)',
+                      background: sel ? (emp.color || 'var(--accent)') : 'var(--bg-tertiary)',
                       color: sel ? '#fff' : 'var(--text-secondary)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 10, fontWeight: 700,
@@ -309,17 +338,49 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
                       ))}
                     </div>
                   ))}
-                  {!poolLoading && availableTasks.length === 0 && (
+                  {!poolLoading && availableTasks.length === 0 && !creatingTask && (
                     <div style={{ padding: 10, fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
                       {taskSearch ? 'No matching tasks' : 'All tasks assigned'}
                     </div>
                   )}
                 </div>
-                <button onClick={() => { setShowTaskPicker(false); setTaskSearch(''); }}
-                  style={{ width: '100%', padding: '6px', fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg-secondary)',
-                    border: 'none', borderTop: '1px solid var(--border-light)', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
-                  Done
-                </button>
+
+                {/* Create new task inline */}
+                {creatingTask ? (
+                  <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-light)', background: 'var(--bg-secondary)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4, textTransform: 'uppercase' }}>Create new task</div>
+                    <input style={{ ...M.input, marginBottom: 6, padding: '6px 8px', fontSize: 12, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}
+                      placeholder="Task name..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') createNewTask(); if (e.key === 'Escape') setCreatingTask(false); }}
+                      autoFocus />
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <select style={{ ...M.input, flex: 1, padding: '5px 6px', fontSize: 11 }}
+                        value={newTaskPhase} onChange={e => setNewTaskPhase(e.target.value)}>
+                        <option value="">Select phase...</option>
+                        {taskPool.map(g => <option key={g.phase_name} value={g.phase_name}>{g.phase_name}</option>)}
+                      </select>
+                      <button onClick={createNewTask} disabled={!newTaskTitle.trim() || !newTaskPhase}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', background: 'var(--accent)', color: '#fff',
+                          border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                          opacity: (!newTaskTitle.trim() || !newTaskPhase) ? 0.5 : 1, flexShrink: 0 }}>Add</button>
+                      <button onClick={() => { setCreatingTask(false); setNewTaskTitle(''); }}
+                        style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', borderTop: '1px solid var(--border-light)' }}>
+                    <button onClick={() => { setCreatingTask(true); setNewTaskPhase(taskPool[0]?.phase_name || ''); }}
+                      style={{ flex: 1, padding: '6px', fontSize: 11, color: 'var(--accent)', fontWeight: 500, background: 'var(--bg-secondary)',
+                        border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', borderRight: '1px solid var(--border-light)' }}>
+                      + Create task
+                    </button>
+                    <button onClick={() => { setShowTaskPicker(false); setTaskSearch(''); }}
+                      style={{ flex: 1, padding: '6px', fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg-secondary)',
+                        border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                      Done
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

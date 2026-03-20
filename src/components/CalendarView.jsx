@@ -125,10 +125,10 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                             {crew.slice(0, 3).map(c => (
                               <span key={c.id} title={c.display_name || c.full_name} style={{
-                                width: 20, height: 20, borderRadius: 10, fontSize: 8, fontWeight: 700,
-                                background: 'rgba(255,255,255,0.3)', color: '#fff',
+                                width: 22, height: 22, borderRadius: 11, fontSize: 8, fontWeight: 700,
+                                background: c.color || 'rgba(255,255,255,0.3)', color: '#fff',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                border: c.role === 'lead' ? '1.5px solid rgba(255,255,255,0.8)' : 'none',
+                                border: c.role === 'lead' ? '2px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.3)',
                               }}>{getInitials(c.display_name || c.full_name)}</span>
                             ))}
                             {crew.length > 3 && (
