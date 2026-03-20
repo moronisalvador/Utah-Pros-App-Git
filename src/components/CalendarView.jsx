@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { TYPE_COLORS, fmtTime } from '@/lib/scheduleUtils';
+import { TYPE_COLORS, STATUS_LABELS, fmtTime } from '@/lib/scheduleUtils';
 
 const CAL_START_HOUR = 7;
 const CAL_END_HOUR = 18;
 const CAL_HOUR_HEIGHT = 60;
 const CAL_TOTAL_HOURS = CAL_END_HOUR - CAL_START_HOUR;
 const SNAP_MINUTES = 30;
-const MIN_DURATION = 30; // minimum 30 min appointment
-const RESIZE_HANDLE_HEIGHT = 10; // px grab zone at bottom
+const MIN_DURATION = 30;
+const RESIZE_HANDLE_HEIGHT = 10;
+const HOVER_DELAY = 350;   // ms before popover appears
+const HOVER_LINGER = 200;  // ms grace period to move to popover
 
 function timeToMinutes(t) {
   if (!t) return CAL_START_HOUR * 60 + 60;
@@ -29,14 +31,206 @@ function clampMinutes(mins) {
   return Math.max(CAL_START_HOUR * 60, Math.min(CAL_END_HOUR * 60, mins));
 }
 
+function fmtFullDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HOVER POPOVER
+// ═══════════════════════════════════════════════════════════════
+
+function ApptPopover({ appt, rect, onEdit, onMouseEnter, onMouseLeave }) {
+  const popRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!popRef.current || !rect) return;
+    const popW = 300;
+    const popH = popRef.current.offsetHeight || 280;
+    const pad = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Try right of block, then left, then overlay
+    let left = rect.right + pad;
+    if (left + popW > vw - pad) left = rect.left - popW - pad;
+    if (left < pad) left = pad;
+
+    // Vertical: align top of popover with top of block, clamp to viewport
+    let top = rect.top;
+    if (top + popH > vh - pad) top = vh - pad - popH;
+    if (top < pad) top = pad;
+
+    setPos({ top, left });
+  }, [rect]);
+
+  const crew = appt.crew || [];
+  const taskNames = appt.task_names || [];
+  const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
+  const leadCrew = crew.find(c => c.role === 'lead');
+  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+  const hasTasks = appt.tasks_total > 0;
+  const pct = hasTasks ? Math.round((appt.tasks_done / appt.tasks_total) * 100) : 0;
+
+  return (
+    <div ref={popRef} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
+      style={{
+        position: 'fixed', top: pos.top, left: pos.left, width: 300, zIndex: 100,
+        background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
+        borderLeft: `4px solid ${color}`, overflow: 'hidden',
+      }}>
+      {/* Header */}
+      <div style={{ padding: '10px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+            {appt._jobName}
+          </div>
+          {appt._jobNumber && (
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>
+              Job #{appt._jobNumber}
+            </div>
+          )}
+        </div>
+        <button onClick={(e) => { e.stopPropagation(); onEdit(appt); }}
+          style={{
+            fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none',
+            border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 'var(--radius-md)',
+            fontFamily: 'var(--font-sans)', flexShrink: 0,
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+        >Edit</button>
+      </div>
+
+      {/* Details */}
+      <div style={{ padding: '0 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* Date + Time */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>{fmtFullDate(appt.date)}</span>
+        </div>
+        {appt.time_start && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</span>
+          </div>
+        )}
+
+        {/* Address */}
+        {appt._address && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>{appt._address}</span>
+          </div>
+        )}
+
+        {/* Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: 4, background: status.color, flexShrink: 0,
+          }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: status.color }}>{status.label}</span>
+          {appt.title && appt.title !== appt._jobName && (
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>· {appt.title}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Crew */}
+      {crew.length > 0 && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 6 }}>Crew</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {crew.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: 11, fontSize: 9, fontWeight: 700,
+                  background: c.color || 'var(--bg-tertiary)', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: c.role === 'lead' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                }}>{getInitials(c.full_name || c.display_name)}</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {c.display_name || c.full_name}
+                </span>
+                {c.role === 'lead' && (
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fffbeb', padding: '0 4px', borderRadius: 3 }}>LEAD</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tasks */}
+      {hasTasks && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>Tasks</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: pct === 100 ? '#10b981' : 'var(--text-secondary)' }}>
+              {appt.tasks_done}/{appt.tasks_total}
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10b981' : color, borderRadius: 2 }} />
+          </div>
+          {/* Task list */}
+          {taskNames.slice(0, 5).map((name, i) => (
+            <div key={i} style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, paddingLeft: 10, position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 0, top: 4, width: 4, height: 4, borderRadius: 2, background: 'var(--text-tertiary)' }} />
+              {name}
+            </div>
+          ))}
+          {taskNames.length > 5 && (
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', paddingLeft: 10, marginTop: 2 }}>+{taskNames.length - 5} more</div>
+          )}
+        </div>
+      )}
+
+      {/* Notes */}
+      {appt.notes && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{
+            fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, fontStyle: 'italic',
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>"{appt.notes}"</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
 
 function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, onApptResize }) {
-  const [dragOver, setDragOver] = useState(null);         // { dayKey, minutes } — move indicator
-  const [resizing, setResizing] = useState(null);          // { apptId, dayKey, startMins, endMins } — live resize
+  const [dragOver, setDragOver] = useState(null);
+  const [resizing, setResizing] = useState(null);
+  const [hoveredAppt, setHoveredAppt] = useState(null); // { appt, rect }
   const dayBodyRefs = useRef({});
-  const didResizeRef = useRef(false);                      // prevents click after resize
-  const resizingRef = useRef(null);                        // mirror for mousemove listener
+  const didResizeRef = useRef(false);
+  const resizingRef = useRef(null);
+  const hoverShowRef = useRef(null);   // timeout to show
+  const hoverHideRef = useRef(null);   // timeout to hide
+
+  // Clear hover on any drag/resize
+  useEffect(() => {
+    if (resizing || dragOver) {
+      clearTimeout(hoverShowRef.current);
+      clearTimeout(hoverHideRef.current);
+      setHoveredAppt(null);
+    }
+  }, [resizing, dragOver]);
 
   // Flatten all appointments with job info
   const allAppts = [];
@@ -62,29 +256,54 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
 
   const hours = Array.from({ length: CAL_TOTAL_HOURS }, (_, i) => CAL_START_HOUR + i);
 
-  // ══════════════════════════════════════════════════════════
-  // MOVE — HTML5 Drag API
-  // ══════════════════════════════════════════════════════════
+  // ── Hover handlers ──
+  const scheduleShowHover = useCallback((appt, blockEl) => {
+    clearTimeout(hoverHideRef.current);
+    clearTimeout(hoverShowRef.current);
+    hoverShowRef.current = setTimeout(() => {
+      if (resizingRef.current) return; // don't show during resize
+      const rect = blockEl.getBoundingClientRect();
+      setHoveredAppt({ appt, rect });
+    }, HOVER_DELAY);
+  }, []);
+
+  const scheduleCancelHover = useCallback(() => {
+    clearTimeout(hoverShowRef.current);
+    hoverHideRef.current = setTimeout(() => {
+      setHoveredAppt(null);
+    }, HOVER_LINGER);
+  }, []);
+
+  const keepHoverAlive = useCallback(() => {
+    clearTimeout(hoverHideRef.current);
+    clearTimeout(hoverShowRef.current);
+  }, []);
+
+  const dismissHover = useCallback(() => {
+    clearTimeout(hoverHideRef.current);
+    clearTimeout(hoverShowRef.current);
+    setHoveredAppt(null);
+  }, []);
+
+  // ── MOVE — HTML5 Drag API ──
 
   const handleDragStart = useCallback((e, appt) => {
+    dismissHover();
     const startMins = timeToMinutes(appt.time_start);
     const endMins = appt.time_end ? timeToMinutes(appt.time_end) : startMins + 60;
     const duration = endMins - startMins;
 
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify({
-      apptId: appt.id,
-      duration,
-      origDate: appt.date,
-      origStart: appt.time_start,
-      origEnd: appt.time_end,
+      apptId: appt.id, duration, origDate: appt.date,
+      origStart: appt.time_start, origEnd: appt.time_end,
     }));
 
     if (e.currentTarget) e.dataTransfer.setDragImage(e.currentTarget, 40, 14);
     requestAnimationFrame(() => {
       if (e.currentTarget) e.currentTarget.style.opacity = '0.35';
     });
-  }, []);
+  }, [dismissHover]);
 
   const handleDragEnd = useCallback((e) => {
     e.currentTarget.style.opacity = '';
@@ -132,13 +351,12 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
     onApptDrop(data.apptId, dayKey, newStartStr, newEndStr);
   }, [onApptDrop, getMinutesFromY]);
 
-  // ══════════════════════════════════════════════════════════
-  // RESIZE — Pointer events on bottom handle
-  // ══════════════════════════════════════════════════════════
+  // ── RESIZE — Pointer events ──
 
   const handleResizeStart = useCallback((e, appt) => {
     e.preventDefault();
     e.stopPropagation();
+    dismissHover();
 
     const startMins = timeToMinutes(appt.time_start);
     const endMins = appt.time_end ? timeToMinutes(appt.time_end) : startMins + 60;
@@ -150,7 +368,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
 
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'ns-resize';
-  }, []);
+  }, [dismissHover]);
 
   useEffect(() => {
     const onMouseMove = (e) => {
@@ -186,9 +404,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
       resizingRef.current = null;
       setResizing(null);
 
-      if (changed && onApptResize) {
-        onApptResize(r.apptId, newEndStr);
-      }
+      if (changed && onApptResize) onApptResize(r.apptId, newEndStr);
     };
 
     document.addEventListener('mousemove', onMouseMove);
@@ -266,10 +482,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                     background: '#2563eb', zIndex: 10, pointerEvents: 'none',
                     boxShadow: '0 0 6px rgba(37, 99, 235, 0.4)',
                   }}>
-                    <div style={{
-                      position: 'absolute', left: -1, top: -4, width: 10, height: 10,
-                      borderRadius: 5, background: '#2563eb',
-                    }} />
+                    <div style={{ position: 'absolute', left: -1, top: -4, width: 10, height: 10, borderRadius: 5, background: '#2563eb' }} />
                     <div style={{
                       position: 'absolute', right: 4, top: -8, fontSize: 9, fontWeight: 700,
                       color: '#2563eb', background: '#eff6ff', padding: '0 4px', borderRadius: 3,
@@ -291,21 +504,15 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                   );
                 })()}
 
-                {/* Appointment blocks — with overlap detection */}
+                {/* Appointment blocks */}
                 {(() => {
                   const sorted = [...appts].map(appt => {
                     const startMins = timeToMinutes(appt.time_start);
                     let endMins = appt.time_end ? timeToMinutes(appt.time_end) : startMins + 60;
-
-                    // Live resize override
-                    if (resizing && resizing.apptId === appt.id) {
-                      endMins = resizing.endMins;
-                    }
-
+                    if (resizing && resizing.apptId === appt.id) endMins = resizing.endMins;
                     return { ...appt, _startMins: startMins, _endMins: endMins };
                   }).sort((a, b) => a._startMins - b._startMins || a._endMins - b._endMins);
 
-                  // Assign columns: greedy left-to-right packing
                   const columns = [];
                   const layout = sorted.map(appt => {
                     let col = columns.findIndex(endMin => endMin <= appt._startMins);
@@ -331,13 +538,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                     const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
                     const isDone = appt.status === 'completed';
                     const canInteract = !isDone;
-                    const getInitials = (name) => {
-                      if (!name) return '?';
-                      const parts = name.trim().split(/\s+/);
-                      return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
-                    };
                     const shortAddr = appt._address ? appt._address.split(',')[0] : '';
-
                     const colWidth = 100 / appt._totalCols;
                     const leftPct = appt._col * colWidth;
 
@@ -349,6 +550,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                         onClick={e => {
                           e.stopPropagation();
                           if (didResizeRef.current) { didResizeRef.current = false; return; }
+                          dismissHover();
                           onApptClick(appt);
                         }}
                         style={{
@@ -367,6 +569,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
                             const handle = e.currentTarget.querySelector('[data-resize]');
                             if (handle) handle.style.opacity = '1';
+                            scheduleShowHover(appt, e.currentTarget);
                           }
                         }}
                         onMouseLeave={e => {
@@ -375,6 +578,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                             e.currentTarget.style.boxShadow = 'none';
                             const handle = e.currentTarget.querySelector('[data-resize]');
                             if (handle) handle.style.opacity = '0';
+                            scheduleCancelHover();
                           }
                         }}
                       >
@@ -404,7 +608,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           </div>
                         )}
 
-                        {/* Row 3: Time window — live-updates during resize */}
+                        {/* Row 3: Time window */}
                         {appt.time_start && (
                           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>
                             🕐 {fmtTime(appt.time_start)}{appt.time_end || isBeingResized
@@ -460,7 +664,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           </div>
                         )}
 
-                        {/* Row 8: Appointment title (if still space after tasks) */}
+                        {/* Row 8: Appointment title */}
                         {height > 120 && (appt.task_names || []).length === 0 && (
                           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, lineHeight: 1.3,
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -468,22 +672,18 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           </div>
                         )}
 
-                        </div>{/* end content clip wrapper */}
+                        </div>{/* end content clip */}
 
-                        {/* ── Resize handle at bottom ── */}
+                        {/* Resize handle */}
                         {canInteract && (
-                          <div
-                            data-resize
-                            onMouseDown={e => handleResizeStart(e, appt)}
+                          <div data-resize onMouseDown={e => handleResizeStart(e, appt)}
                             style={{
                               position: 'absolute', bottom: 0, left: 0, right: 0, height: RESIZE_HANDLE_HEIGHT,
                               cursor: 'ns-resize', display: 'flex', alignItems: 'center', justifyContent: 'center',
                               opacity: isBeingResized ? 1 : 0, transition: 'opacity 100ms',
                               borderRadius: '0 0 4px 4px',
                               background: 'linear-gradient(transparent, rgba(0,0,0,0.15))',
-                            }}
-                          >
-                            {/* Grip lines */}
+                            }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1.5, alignItems: 'center' }}>
                               <div style={{ width: 16, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.7)' }} />
                               <div style={{ width: 12, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.5)' }} />
@@ -491,7 +691,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           </div>
                         )}
 
-                        {/* Resize time tooltip at bottom edge */}
+                        {/* Resize tooltip */}
                         {isBeingResized && (
                           <div style={{
                             position: 'absolute', bottom: -20, left: '50%', transform: 'translateX(-50%)',
@@ -510,12 +710,23 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
           );
         })}
       </div>
+
+      {/* Hover popover — rendered as portal-like fixed element */}
+      {hoveredAppt && (
+        <ApptPopover
+          appt={hoveredAppt.appt}
+          rect={hoveredAppt.rect}
+          onEdit={(appt) => { dismissHover(); onApptClick(appt); }}
+          onMouseEnter={keepHoverAlive}
+          onMouseLeave={dismissHover}
+        />
+      )}
     </div>
   );
 }
 
 const CV = {
-  wrap: { flex: 1, overflow: 'auto' },
+  wrap: { flex: 1, overflow: 'auto', position: 'relative' },
   grid: { display: 'flex', minWidth: 600 },
   timeCol: { width: 52, flexShrink: 0, borderRight: '1px solid var(--border-color)' },
   timeHeader: { height: 44, borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' },

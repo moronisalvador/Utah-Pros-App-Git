@@ -144,7 +144,7 @@ function CrewApptCard({ appt, onClick }) {
 // MONTH VIEW — traditional calendar grid
 // ═══════════════════════════════════════════════════════════════
 
-function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
+function MonthView({ anchor, boardData, onApptClick, onDayClick, showWeekend }) {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   const firstOfMonth = new Date(year, month, 1);
@@ -152,6 +152,8 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
   const startDow = firstOfMonth.getDay(); // 0=Sun
   const daysInMonth = lastOfMonth.getDate();
   const todayKey = fmtDate(new Date());
+  const weekdayHeaders = showWeekend ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const colCount = weekdayHeaders.length;
 
   // Build appointment lookup by date
   const byDate = {};
@@ -185,8 +187,8 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 0 8px' }}>
       {/* Weekday headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--border-color)' }}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colCount}, 1fr)`, borderBottom: '1px solid var(--border-color)' }}>
+        {weekdayHeaders.map(d => (
           <div key={d} style={{
             fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
             textAlign: 'center', padding: '8px 0', background: 'var(--bg-secondary)',
@@ -195,9 +197,14 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
       </div>
 
       {/* Week rows */}
-      {weeks.map((week, wi) => (
-        <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: 90 }}>
-          {week.map((cell, di) => {
+      {weeks.map((week, wi) => {
+        const filtered = showWeekend ? week : week.filter(cell => {
+          const dow = cell.date.getDay();
+          return dow !== 0 && dow !== 6;
+        });
+        return (
+        <div key={wi} style={{ display: 'grid', gridTemplateColumns: `repeat(${colCount}, 1fr)`, minHeight: 90 }}>
+          {filtered.map((cell, di) => {
             const appts = byDate[cell.key] || [];
             const isToday = cell.key === todayKey;
             return (
@@ -205,7 +212,7 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
                 onClick={() => cell.inMonth && onDayClick(cell.key)}
                 style={{
                   borderBottom: '1px solid var(--border-light)',
-                  borderRight: di < 6 ? '1px solid var(--border-light)' : 'none',
+                  borderRight: di < filtered.length - 1 ? '1px solid var(--border-light)' : 'none',
                   padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default',
                   background: isToday ? '#f8fbff' : 'transparent',
                   opacity: cell.inMonth ? 1 : 0.35,
@@ -250,7 +257,8 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
             );
           })}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -303,12 +311,17 @@ export default function Schedule() {
     }
 
     if (calSpan === '3day') {
-      return Array.from({ length: 3 }, (_, i) => {
-        const d = new Date(anchor);
-        d.setDate(anchor.getDate() + i);
-        const key = fmtDate(d);
-        return { date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr };
-      });
+      const result = [];
+      const cursor = new Date(anchor);
+      while (result.length < 3) {
+        const dow = cursor.getDay();
+        if (showWeekend || (dow !== 0 && dow !== 6)) {
+          const key = fmtDate(cursor);
+          result.push({ date: new Date(cursor), key, label: WEEKDAYS_FULL[dow], shortDate: fmtShort(cursor), isToday: key === todayStr });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return result;
     }
 
     if (calSpan === 'month') {
@@ -627,14 +640,29 @@ export default function Schedule() {
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }}
                 onClick={() => changeViewMode('crew')}>Crew</button>
             </div>
+            {/* Span toggle (Day/3 Day/Week/Month) — only in calendar mode */}
+            {viewMode === 'calendar' && (
+              <div style={S.viewToggle}>
+                {SPAN_OPTIONS.map((opt, i) => (
+                  <button key={opt.value}
+                    onClick={() => changeCalSpan(opt.value)}
+                    style={{
+                      ...S.viewBtn,
+                      ...(calSpan === opt.value ? S.viewBtnActive : {}),
+                      ...(i === SPAN_OPTIONS.length - 1 ? { borderRight: 'none' } : {}),
+                    }}
+                  >{opt.label}</button>
+                ))}
+              </div>
+            )}
             {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
-            {calSpan === 'week' && (
+            {viewMode === 'calendar' && calSpan !== 'day' && (
               <label style={S.checkLabel}>
                 <input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} />
-                <span>Wknd</span>
+                <span>Weekends</span>
               </label>
             )}
             <label style={S.checkLabel}>
@@ -643,24 +671,6 @@ export default function Schedule() {
             </label>
           </div>
         </div>
-
-        {/* Span toggle bar (Day / 3 Day / Week / Month) — only in calendar mode */}
-        {viewMode === 'calendar' && (
-          <div style={S.spanBar}>
-            {SPAN_OPTIONS.map((opt, i) => (
-              <button key={opt.value}
-                onClick={() => changeCalSpan(opt.value)}
-                style={{
-                  ...S.spanBtn,
-                  ...(calSpan === opt.value ? S.spanBtnActive : {}),
-                  ...(i === 0 ? { borderRadius: 'var(--radius-md) 0 0 var(--radius-md)' } : {}),
-                  ...(i === SPAN_OPTIONS.length - 1 ? { borderRadius: '0 var(--radius-md) var(--radius-md) 0', borderRight: '1px solid var(--border-color)' } : {}),
-                  ...(i === SPAN_OPTIONS.length - 1 && calSpan === opt.value ? { borderRightColor: 'var(--accent)' } : {}),
-                }}
-              >{opt.label}</button>
-            ))}
-          </div>
-        )}
 
         {/* Crew filter bar */}
         {crewList.length > 0 && (
@@ -686,7 +696,7 @@ export default function Schedule() {
         {loading ? (
           <div style={S.center}>Loading...</div>
         ) : viewMode === 'calendar' && calSpan === 'month' ? (
-          <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} />
+          <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
           <CalendarView
             days={days}
@@ -952,23 +962,6 @@ const S = {
     background: 'var(--bg-primary)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
   },
   checkLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' },
-
-  // Span bar
-  spanBar: {
-    display: 'flex', alignItems: 'center', gap: 0, padding: '6px 20px',
-    background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)',
-    flexShrink: 0,
-  },
-  spanBtn: {
-    fontSize: 12, fontWeight: 500, padding: '4px 14px',
-    border: '1px solid var(--border-color)', borderRight: 'none',
-    background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-tertiary)',
-    fontFamily: 'var(--font-sans)', transition: 'all 120ms ease',
-  },
-  spanBtnActive: {
-    background: 'var(--accent-light)', color: 'var(--accent)', fontWeight: 600,
-    borderColor: 'var(--accent)',
-  },
 
   filterBar: {
     display: 'flex', alignItems: 'center', gap: 5, padding: '6px 20px',
