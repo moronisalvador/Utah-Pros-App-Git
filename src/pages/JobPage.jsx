@@ -256,6 +256,9 @@ export default function JobPage() {
             onOpenWizard={() => setShowWizard(true)}
             onNavigateSchedule={() => navigate('/schedule')}
             fmtDate={fmtDate}
+            db={db}
+            jobId={jobId}
+            onRefresh={loadSchedule}
           />
         )}
         {activeTab === 'files' && (
@@ -286,8 +289,53 @@ export default function JobPage() {
 /* ═══════════════════════════════════════════════════
    SCHEDULE TAB — task pool with phase progress + target dates
    ═══════════════════════════════════════════════════ */
-function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, fmtDate }) {
+function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, fmtDate, db, jobId, onRefresh }) {
   const [expandedPhase, setExpandedPhase] = useState(null);
+  const [appointments, setAppointments] = useState([]);
+  const [apptsLoading, setApptsLoading] = useState(true);
+  const [editingPhase, setEditingPhase] = useState(null); // { phase_name, field, value }
+  const [saving, setSaving] = useState(false);
+
+  // Load appointments for this job
+  useEffect(() => {
+    if (!jobId || !db) return;
+    (async () => {
+      setApptsLoading(true);
+      try {
+        const data = await db.select('appointments',
+          `job_id=eq.${jobId}&status=neq.cancelled&order=date.asc,time_start.asc&select=id,title,date,time_start,time_end,type,status,notes,appointment_crew(id,role,employee_id,employees(display_name,full_name))`
+        );
+        setAppointments(data || []);
+      } catch (e) { console.error('Load appointments:', e); setAppointments([]); }
+      finally { setApptsLoading(false); }
+    })();
+  }, [db, jobId, scheduleData]);
+
+  // Save phase date edit
+  const savePhaseDate = async (phaseName, field, value) => {
+    if (!value) return;
+    setSaving(true);
+    try {
+      // Get the schedule ID first
+      const schedules = await db.select('job_schedules', `job_id=eq.${jobId}&limit=1`);
+      if (schedules.length === 0) return;
+      const scheduleId = schedules[0].id;
+      // Find the phase
+      const phases = await db.select('job_schedule_phases',
+        `job_schedule_id=eq.${scheduleId}&phase_name=eq.${encodeURIComponent(phaseName)}&limit=1`
+      );
+      if (phases.length > 0) {
+        const update = { [field]: value };
+        if (field === 'target_start' && phases[0].target_end < value) {
+          update.target_end = value;
+        }
+        await db.update('job_schedule_phases', `id=eq.${phases[0].id}`, update);
+        setEditingPhase(null);
+        onRefresh?.();
+      }
+    } catch (e) { console.error('Save phase date:', e); alert('Failed to save: ' + e.message); }
+    finally { setSaving(false); }
+  };
 
   if (loading) return <div style={{ padding: 20, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading schedule...</div>;
 
@@ -314,11 +362,27 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
   const unassignedTasks = totalTasks - assignedTasks;
   const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // Date range
   const allStarts = scheduleData.filter(p => p.target_start).map(p => p.target_start);
   const allEnds = scheduleData.filter(p => p.target_end).map(p => p.target_end);
   const projectStart = allStarts.length > 0 ? allStarts.sort()[0] : null;
   const projectEnd = allEnds.length > 0 ? allEnds.sort().reverse()[0] : null;
+
+  const fmtTime = (t) => {
+    if (!t) return '';
+    const [h, m] = t.split(':');
+    const hr = parseInt(h, 10);
+    return `${hr % 12 || 12}:${m}${hr >= 12 ? 'p' : 'a'}`;
+  };
+
+  const fmtApptDate = (d) => {
+    if (!d) return '';
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  const STATUS_COLORS = {
+    scheduled: '#3b82f6', en_route: '#f59e0b', in_progress: '#10b981',
+    paused: '#ef4444', completed: '#6b7280', cancelled: '#9ca3af',
+  };
 
   return (
     <>
@@ -358,7 +422,59 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
         </div>
       </div>
 
-      {/* Phase breakdown */}
+      {/* ═══ Appointments ═══ */}
+      <div className="job-page-section" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Appointments</span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {apptsLoading ? '...' : `${appointments.length} scheduled`}
+          </span>
+        </div>
+        {!apptsLoading && appointments.length === 0 && (
+          <div style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
+            No appointments yet — create them from the dispatch board
+          </div>
+        )}
+        {appointments.map(appt => {
+          const crew = appt.appointment_crew || [];
+          const statusColor = STATUS_COLORS[appt.status] || '#6b7280';
+          return (
+            <div key={appt.id} style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: statusColor, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{appt.title}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: statusColor, textTransform: 'capitalize' }}>{appt.status?.replace('_', ' ')}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, paddingLeft: 16 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{fmtApptDate(appt.date)}</span>
+                {appt.time_start && (
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}
+                  </span>
+                )}
+              </div>
+              {crew.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginTop: 4, paddingLeft: 16, flexWrap: 'wrap' }}>
+                  {crew.map(c => (
+                    <span key={c.id} style={{
+                      fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99,
+                      background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)',
+                      color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)',
+                      border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none',
+                    }}>{c.employees?.display_name || c.employees?.full_name || '?'}</span>
+                  ))}
+                </div>
+              )}
+              {appt.notes && (
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, paddingLeft: 16,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.notes}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ═══ Phase breakdown ═══ */}
       <div className="job-page-section" style={{ padding: '0', overflow: 'hidden' }}>
         <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Phases</span>
@@ -373,6 +489,8 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
           const isExpanded = expandedPhase === phase.phase_name;
           const tasks = phase.tasks || [];
           const phasePct = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const isEditingStart = editingPhase?.phase_name === phase.phase_name && editingPhase?.field === 'target_start';
+          const isEditingEnd = editingPhase?.phase_name === phase.phase_name && editingPhase?.field === 'target_end';
 
           return (
             <div key={phase.phase_name}>
@@ -395,13 +513,46 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
                       transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
                   )}
                 </div>
-                {/* Target dates + counts */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, paddingLeft: 16 }}>
+                {/* Editable target dates */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 16 }}>
                   {phase.target_start && (
-                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                      {fmtDate(phase.target_start)}
-                      {phase.target_end && phase.target_end !== phase.target_start && ` – ${fmtDate(phase.target_end)}`}
-                    </span>
+                    isEditingStart ? (
+                      <input type="date" autoFocus value={editingPhase.value}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setEditingPhase(prev => ({ ...prev, value: e.target.value }))}
+                        onBlur={() => savePhaseDate(phase.phase_name, 'target_start', editingPhase.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') savePhaseDate(phase.phase_name, 'target_start', editingPhase.value); if (e.key === 'Escape') setEditingPhase(null); }}
+                        style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--accent)', borderRadius: 3, fontFamily: 'var(--font-sans)', outline: 'none', width: 120 }} />
+                    ) : (
+                      <span onClick={e => { e.stopPropagation(); setEditingPhase({ phase_name: phase.phase_name, field: 'target_start', value: phase.target_start }); }}
+                        style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'pointer', padding: '1px 3px', borderRadius: 3 }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        title="Click to edit start date">
+                        {fmtDate(phase.target_start)}
+                      </span>
+                    )
+                  )}
+                  {phase.target_end && phase.target_end !== phase.target_start && (
+                    <>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>–</span>
+                      {isEditingEnd ? (
+                        <input type="date" autoFocus value={editingPhase.value}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setEditingPhase(prev => ({ ...prev, value: e.target.value }))}
+                          onBlur={() => savePhaseDate(phase.phase_name, 'target_end', editingPhase.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') savePhaseDate(phase.phase_name, 'target_end', editingPhase.value); if (e.key === 'Escape') setEditingPhase(null); }}
+                          style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--accent)', borderRadius: 3, fontFamily: 'var(--font-sans)', outline: 'none', width: 120 }} />
+                      ) : (
+                        <span onClick={e => { e.stopPropagation(); setEditingPhase({ phase_name: phase.phase_name, field: 'target_end', value: phase.target_end }); }}
+                          style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'pointer', padding: '1px 3px', borderRadius: 3 }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          title="Click to edit end date">
+                          {fmtDate(phase.target_end)}
+                        </span>
+                      )}
+                    </>
                   )}
                   <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
                     {completed}/{total} done
@@ -443,11 +594,6 @@ function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, 
                         <span style={{ fontSize: 10, color: '#2563eb', background: '#eff6ff', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>Scheduled</span>
                       ) : (
                         <span style={{ fontSize: 10, color: '#92400e', background: '#fef3c7', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>Unscheduled</span>
-                      )}
-                      {task.completed_at && (
-                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                          {fmtDate(task.completed_at)}
-                        </span>
                       )}
                     </div>
                   ))}
