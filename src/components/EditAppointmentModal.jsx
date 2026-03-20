@@ -119,7 +119,15 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     try {
       const jobId = appointment._jobId || appointment.job_id;
       const result = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
-      setUnassignedTasks(Array.isArray(result) ? result : []);
+      // RPC returns grouped by phase: [{ phase_name, phase_color, tasks: [...] }]
+      // Flatten into a single array with phase info on each task
+      const flat = [];
+      for (const group of (Array.isArray(result) ? result : [])) {
+        for (const task of (group.tasks || [])) {
+          flat.push({ ...task, phase_name: group.phase_name, phase_color: group.phase_color });
+        }
+      }
+      setUnassignedTasks(flat);
     } catch (e) { console.error('Load unassigned:', e); setUnassignedTasks([]); }
     finally { setUnassignedLoading(false); }
   };
