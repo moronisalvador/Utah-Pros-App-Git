@@ -19,6 +19,7 @@ import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
+import CustomerPage from '@/pages/CustomerPage';
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="jobs/:jobId" element={<JobPage />} />
             <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
+            <Route path="customers/:contactId" element={<CustomerPage />} />
             <Route path="customers" element={<Customers />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="schedule/templates" element={<ScheduleTemplates />} />
