@@ -32,6 +32,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [unassignedTasks, setUnassignedTasks] = useState([]);
   const [unassignedLoading, setUnassignedLoading] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
 
   const isMitigationType = ['mitigation', 'monitoring'].includes(appointment.type) ||
     ['water', 'mold', 'fire', 'contents'].includes(appointment._division);
@@ -134,19 +135,42 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
 
   const handleOpenAddTasks = () => {
     setShowAddTasks(true);
+    setSelectedTaskIds(new Set());
     loadUnassignedTasks();
   };
 
-  // Assign a task from the pool to this appointment
-  const handleAssignTask = async (taskId) => {
+  // Toggle task selection for batch assign
+  const toggleTaskSelection = (taskId) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  };
+
+  // Select all tasks in a phase group
+  const togglePhaseGroup = (phaseTasks) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      const allSelected = phaseTasks.every(t => next.has(t.id));
+      for (const t of phaseTasks) {
+        if (allSelected) next.delete(t.id); else next.add(t.id);
+      }
+      return next;
+    });
+  };
+
+  // Batch assign selected tasks to this appointment
+  const handleAssignSelected = async () => {
+    if (selectedTaskIds.size === 0) return;
     try {
-      await db.rpc('assign_tasks_to_appointment', { p_appointment_id: appointment.id, p_task_ids: [taskId] });
-      setUnassignedTasks(prev => prev.filter(t => t.id !== taskId));
-      // Reload tasks for this appointment
+      await db.rpc('assign_tasks_to_appointment', { p_appointment_id: appointment.id, p_task_ids: [...selectedTaskIds] });
+      setUnassignedTasks(prev => prev.filter(t => !selectedTaskIds.has(t.id)));
+      setSelectedTaskIds(new Set());
       const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
       setTasks(Array.isArray(refreshed) ? refreshed : []);
       setDirty(true);
-    } catch (e) { console.error('Assign task:', e); }
+    } catch (e) { console.error('Assign tasks:', e); }
   };
 
   // Create ad-hoc task and assign to this appointment
@@ -503,34 +527,84 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                   </button>
                 </div>
 
-                {/* Unassigned tasks from pool */}
+                {/* Unassigned tasks grouped by phase */}
                 {unassignedLoading && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>Loading pool...</div>}
-                {!unassignedLoading && unassignedTasks.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                      Unassigned tasks ({unassignedTasks.length})
-                    </div>
-                    <div style={{ maxHeight: 150, overflowY: 'auto' }}>
-                      {unassignedTasks.map(ut => (
-                        <div key={ut.id} onClick={() => handleAssignTask(ut.id)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 6px', cursor: 'pointer', borderRadius: 'var(--radius-sm)', marginBottom: 2 }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, flexShrink: 0 }}>+</span>
-                          <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{ut.title}</span>
-                          {ut.phase_name && (
-                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{ut.phase_name}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
+                {!unassignedLoading && unassignedTasks.length > 0 && (() => {
+                  // Group by phase
+                  const groups = {};
+                  for (const t of unassignedTasks) {
+                    const key = t.phase_name || 'Other';
+                    if (!groups[key]) groups[key] = { color: t.phase_color || '#6b7280', tasks: [] };
+                    groups[key].tasks.push(t);
+                  }
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
+                          Unassigned tasks ({unassignedTasks.length})
+                        </span>
+                        {selectedTaskIds.size > 0 && (
+                          <button onClick={handleAssignSelected}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                            Assign {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                        {Object.entries(groups).map(([phaseName, group]) => {
+                          const allSelected = group.tasks.every(t => selectedTaskIds.has(t.id));
+                          const someSelected = group.tasks.some(t => selectedTaskIds.has(t.id));
+                          return (
+                            <div key={phaseName} style={{ marginBottom: 8 }}>
+                              {/* Phase header — click to toggle all */}
+                              <div onClick={() => togglePhaseGroup(group.tasks)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', cursor: 'pointer', userSelect: 'none' }}>
+                                <span style={{
+                                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                  border: allSelected ? 'none' : someSelected ? '2px solid var(--accent)' : '1.5px solid var(--border-color)',
+                                  background: allSelected ? 'var(--accent)' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {allSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                  {someSelected && !allSelected && <span style={{ width: 6, height: 2, background: 'var(--accent)', borderRadius: 1 }} />}
+                                </span>
+                                <span style={{ width: 6, height: 6, borderRadius: 2, background: group.color, flexShrink: 0 }} />
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{phaseName}</span>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>({group.tasks.length})</span>
+                              </div>
+                              {/* Tasks in this phase */}
+                              {group.tasks.map(ut => {
+                                const sel = selectedTaskIds.has(ut.id);
+                                return (
+                                  <div key={ut.id} onClick={() => toggleTaskSelection(ut.id)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px 4px 20px', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <span style={{
+                                      width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                      border: sel ? 'none' : '1.5px solid var(--border-color)',
+                                      background: sel ? 'var(--accent)' : 'transparent',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                      {sel && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                    </span>
+                                    <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{ut.title}</span>
+                                    {ut.is_required && <span style={{ fontSize: 8, fontWeight: 700, color: '#ef4444', background: '#fef2f2', padding: '0 3px', borderRadius: 2 }}>REQ</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
                 {!unassignedLoading && unassignedTasks.length === 0 && (
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>No unassigned tasks in the pool</div>
                 )}
 
-                <button onClick={() => setShowAddTasks(false)}
+                <button onClick={() => { setShowAddTasks(false); setSelectedTaskIds(new Set()); }}
                   style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 6, fontFamily: 'var(--font-sans)' }}>
                   Close
                 </button>
