@@ -40,24 +40,25 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
 export const CarrierSelect = ({value,onChange,carriers,...rest}) => <LookupSelect label="Insurance Carrier" value={value} onChange={onChange} items={carriers} placeholder="Search carriers..." {...rest} />;
 
 /* ═══ ADD CONTACT MODAL ═══ */
-export default function AddContactModal({onClose,onSave,carriers,referralSources}){
-  const[step,setStep]=useState('pick');
-  const[role,setRole]=useState(null);
-  const[form,setForm]=useState({});
+// defaultRole: if provided, skips role picker and goes straight to form
+export default function AddContactModal({onClose,onSave,carriers,referralSources,defaultRole}){
+  const hasDefault = !!defaultRole;
+  const[step,setStep]=useState(hasDefault ? 'form' : 'pick');
+  const[role,setRole]=useState(hasDefault ? defaultRole : null);
+  const[form,setForm]=useState(hasDefault ? initFormStatic(defaultRole) : {});
   const[saving,setSaving]=useState(false);
   const nameRef=useRef(null);
 
-  const initForm=(r)=>{
-    const base={name:'',phone:'',email:'',company:'',role:r,preferred_contact_method:'sms',preferred_language:'en',referral_source:'',tags:'',notes:''};
-    if(r==='homeowner')return{...base,billing_address:'',billing_city:'',billing_state:'',billing_zip:'',insurance_carrier:'',policy_number:''};
-    if(r==='adjuster')return{...base,company:'',desk_phone:'',desk_extension:'',territory:'',relationship_notes:'',insurance_carrier:''};
-    if(r==='vendor')return{...base,trade_specialty:'',payment_terms:'net_30',w9_on_file:false};
-    if(r==='subcontractor')return{...base,trade_specialty:'',payment_terms:'net_30',coi_expiration:'',w9_on_file:false};
-    return base;
-  };
+  // Auto-focus name field when starting with defaultRole
+  useEffect(() => { if (hasDefault) setTimeout(() => nameRef.current?.focus(), 50); }, []);
 
-  const selectRole=(r)=>{setRole(r);setForm(initForm(r));setStep('form');setTimeout(()=>nameRef.current?.focus(),50);};
+  const selectRole=(r)=>{setRole(r);setForm(initFormStatic(r));setStep('form');setTimeout(()=>nameRef.current?.focus(),50);};
   const set=(f,v)=>setForm(prev=>({...prev,[f]:v}));
+
+  const handleBack = () => {
+    if (hasDefault) { onClose(); return; }
+    setStep('pick');
+  };
 
   const handleSave=async()=>{
     if(!form.name?.trim()||!form.phone?.trim())return;
@@ -82,7 +83,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
       <div className="conv-modal add-contact-modal" onClick={e=>e.stopPropagation()}>
         <div className="conv-modal-header">
           <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
-            {step==='form'&&<button className="btn btn-ghost btn-sm" onClick={()=>setStep('pick')} style={{width:28,height:28,padding:0}}><IconBack style={{width:16,height:16}}/></button>}
+            {step==='form'&&<button className="btn btn-ghost btn-sm" onClick={handleBack} style={{width:28,height:28,padding:0}}><IconBack style={{width:16,height:16}}/></button>}
             <span style={{fontSize:'var(--text-lg)',fontWeight:700}}>{step==='pick'?'New Contact':`New ${ROLE_LABELS[role]||'Contact'}`}</span>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{width:32,height:32,padding:0}}><IconX style={{width:18,height:18}}/></button>
@@ -116,10 +117,20 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
               </div>
               <F label="Notes" field="notes" type="textarea" placeholder="Internal notes..."/>
             </div>
-            <div className="add-contact-footer"><button className="btn btn-secondary" onClick={()=>setStep('pick')}>Back</button><button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>{saving?'Saving...':'Add Contact'}</button></div>
+            <div className="add-contact-footer"><button className="btn btn-secondary" onClick={handleBack}>{hasDefault ? 'Cancel' : 'Back'}</button><button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>{saving?'Saving...':'Add Contact'}</button></div>
           </>
         )}
       </div>
     </div>
   );
+}
+
+/* ═══ Helper ═══ */
+function initFormStatic(r){
+  const base={name:'',phone:'',email:'',company:'',role:r,preferred_contact_method:'sms',preferred_language:'en',referral_source:'',tags:'',notes:''};
+  if(r==='homeowner')return{...base,billing_address:'',billing_city:'',billing_state:'',billing_zip:'',insurance_carrier:'',policy_number:''};
+  if(r==='adjuster')return{...base,company:'',desk_phone:'',desk_extension:'',territory:'',relationship_notes:'',insurance_carrier:''};
+  if(r==='vendor')return{...base,trade_specialty:'',payment_terms:'net_30',w9_on_file:false};
+  if(r==='subcontractor')return{...base,trade_specialty:'',payment_terms:'net_30',coi_expiration:'',w9_on_file:false};
+  return base;
 }
