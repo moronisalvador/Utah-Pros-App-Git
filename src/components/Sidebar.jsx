@@ -11,16 +11,16 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Conversations', path: '/conversations', icon: IconConversations, badge: true },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
-  { key: 'leads', label: 'Leads', path: '/leads', icon: IconLeads },
+  { key: 'leads', label: 'Leads', path: '/leads', icon: IconLeads, hidden: true },
   { key: 'customers', label: 'Customers', path: '/customers', icon: IconCustomers },
 
   { section: 'Operations' },
-  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
+  { key: 'production', label: 'Production', path: '/production', icon: IconProduction, hidden: true },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
 
-  { section: 'Growth' },
-  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing },
+  { section: 'Growth', hidden: true },
+  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing, hidden: true },
 
   { section: 'System' },
   { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
@@ -43,6 +43,9 @@ export default function Sidebar({ isOpen, onNavClick }) {
 
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item, i) => {
+          // Hidden items
+          if (item.hidden) return null;
+
           // Section header
           if (item.section) {
             return (
