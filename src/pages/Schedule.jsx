@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_COLORS, TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
@@ -13,46 +13,236 @@ const SPAN_OPTIONS = [
   { value: 'month', label: 'Month' },
 ];
 const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const HOVER_DELAY = 350;
+const HOVER_LINGER = 200;
+
+function fmtFullDate(s) {
+  if (!s) return '';
+  return new Date(s + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  const p = name.trim().split(/\s+/);
+  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : p[0][0].toUpperCase();
+}
 
 // ═══════════════════════════════════════════════════════════════
-// APPOINTMENT CARDS (Jobs/Crew grid views)
+// GRID POPOVER (shared by Jobs + Crew views)
 // ═══════════════════════════════════════════════════════════════
 
-function ApptCard({ appt, onClick }) {
-  const color = appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+function GridPopover({ appt, rect, onEdit, onMouseEnter, onMouseLeave }) {
+  const popRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!popRef.current || !rect) return;
+    requestAnimationFrame(() => {
+      if (!popRef.current) return;
+      const popW = 300; const popH = popRef.current.offsetHeight || 300;
+      const pad = 8; const vw = window.innerWidth; const vh = window.innerHeight;
+      let left = rect.right + pad;
+      if (left + popW > vw - pad) left = rect.left - popW - pad;
+      if (left < pad) left = pad;
+      let top = rect.top;
+      if (top + popH > vh - pad) top = vh - pad - popH;
+      if (top < pad) top = pad;
+      setPos({ top, left });
+    });
+  }, [rect, tasksExpanded]);
+
+  const crew = appt.crew || [];
+  const taskNames = appt.task_names || [];
+  const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
+  const leadCrew = crew.find(c => c.role === 'lead');
+  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+  const hasTasks = appt.tasks_total > 0;
+  const pct = hasTasks ? Math.round((appt.tasks_done / appt.tasks_total) * 100) : 0;
+  const visibleTasks = tasksExpanded ? taskNames : taskNames.slice(0, 5);
+  const hiddenCount = taskNames.length - 5;
+
+  return (
+    <div ref={popRef} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
+      style={{
+        position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999,
+        width: 300, zIndex: 100, background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
+        borderLeft: `4px solid ${color}`, overflow: 'hidden',
+        opacity: pos ? 1 : 0, transition: 'opacity 80ms ease',
+      }}>
+      <div style={{ padding: '10px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{appt._jobName || 'Job'}</div>
+          {appt._jobNumber && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>Job #{appt._jobNumber}</div>}
+        </div>
+        <button onClick={e => { e.stopPropagation(); onEdit(appt); }}
+          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)' }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Edit</button>
+      </div>
+      <div style={{ padding: '0 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>{fmtFullDate(appt.date)}</span>
+        </div>
+        {appt.time_start && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</span>
+          </div>
+        )}
+        {appt._address && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>{appt._address}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 4, background: status.color }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: status.color }}>{status.label}</span>
+          {appt.title && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>· {appt.title}</span>}
+        </div>
+      </div>
+      {crew.length > 0 && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 6 }}>Crew</div>
+          {crew.map(c => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{ width: 22, height: 22, borderRadius: 11, fontSize: 9, fontWeight: 700, background: c.color || 'var(--bg-tertiary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: c.role === 'lead' ? '2px solid var(--accent)' : '1px solid var(--border-color)' }}>{getInitials(c.full_name || c.display_name)}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{c.display_name || c.full_name}</span>
+              {c.role === 'lead' && <span style={{ fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fffbeb', padding: '0 4px', borderRadius: 3 }}>LEAD</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {hasTasks && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>Tasks</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: pct === 100 ? '#10b981' : 'var(--text-secondary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
+          </div>
+          <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10b981' : color, borderRadius: 2 }} />
+          </div>
+          {visibleTasks.map((name, i) => (
+            <div key={i} style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5, paddingLeft: 10, position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 0, top: 4, width: 4, height: 4, borderRadius: 2, background: 'var(--text-tertiary)' }} />{name}
+            </div>
+          ))}
+          {!tasksExpanded && hiddenCount > 0 && <button onClick={e => { e.stopPropagation(); setTasksExpanded(true); }} style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', paddingLeft: 10, marginTop: 3, fontFamily: 'var(--font-sans)' }}>+{hiddenCount} more</button>}
+          {tasksExpanded && hiddenCount > 0 && <button onClick={e => { e.stopPropagation(); setTasksExpanded(false); }} style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', paddingLeft: 10, marginTop: 3, fontFamily: 'var(--font-sans)' }}>Show less</button>}
+        </div>
+      )}
+      {appt.notes && (
+        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, fontStyle: 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>"{appt.notes}"</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENHANCED APPOINTMENT CARD (Jobs view — draggable, colored, hoverable)
+// ═══════════════════════════════════════════════════════════════
+
+function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
+  const crew = appt.crew || [];
+  const leadCrew = crew.find(c => c.role === 'lead');
+  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
   const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const isDone = appt.status === 'completed';
-  const crew = appt.crew || [];
   const hasTasks = appt.tasks_total > 0;
+
   return (
-    <div onClick={e => { e.stopPropagation(); onClick?.(appt); }}
-      style={{ borderLeft: `3px solid ${color}`, borderRadius: 0, background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)', padding: '5px 7px', marginBottom: 3, cursor: 'pointer', opacity: isDone ? 0.6 : 1 }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = 'var(--shadow-sm)'} onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
+    <div
+      draggable={!isDone}
+      onDragStart={e => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', JSON.stringify({ apptId: appt.id, origDate: appt.date, time_start: appt.time_start, time_end: appt.time_end }));
+        requestAnimationFrame(() => { e.target.style.opacity = '0.35'; });
+        if (onDragStart) onDragStart();
+      }}
+      onDragEnd={e => { e.target.style.opacity = ''; }}
+      onClick={e => { e.stopPropagation(); onClick?.(appt); }}
+      onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
+      onMouseLeave={() => onHoverLeave?.()}
+      style={{
+        borderLeft: `3px solid ${color}`, borderRadius: 0,
+        background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+        padding: '5px 7px', marginBottom: 3, cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+      }}
+      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+      onMouseOut={e => { e.currentTarget.style.boxShadow = 'none'; }}
+    >
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2 }}>{appt.title}</div>
       {appt.time_start && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 3 }}>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</div>}
-      {appt.notes && <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.3, marginBottom: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{appt.notes}</div>}
-      {crew.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: hasTasks ? 3 : 0 }}>{crew.map(c => <span key={c.id} style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 99, background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)', color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)', border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none' }}>{c.display_name || c.full_name?.split(' ')[0]}</span>)}</div>}
-      {hasTasks && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={{ flex: 1, height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}><div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} /></div><span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span></div>}
+      {crew.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: hasTasks ? 3 : 0 }}>
+          {crew.map(c => (
+            <span key={c.id} style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 99,
+              background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)',
+              color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)',
+              border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none',
+            }}>{c.display_name || c.full_name?.split(' ')[0]}</span>
+          ))}
+        </div>
+      )}
+      {hasTasks && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ flex: 1, height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
+        </div>
+      )}
       {isActive && <div style={{ fontSize: 10, fontWeight: 600, color: status.color, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: status.color }} />{status.label}</div>}
     </div>
   );
 }
 
-function CrewApptCard({ appt, onClick }) {
+// ═══════════════════════════════════════════════════════════════
+// ENHANCED CREW CARD (Crew view — draggable, colored, hoverable)
+// ═══════════════════════════════════════════════════════════════
+
+function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
   const dc = DIV_COLORS[appt._division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
-  const color = appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+  const crew = appt.crew || [];
+  const leadCrew = crew.find(c => c.role === 'lead');
+  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
   const isDone = appt.status === 'completed';
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
+
   return (
-    <div onClick={e => { e.stopPropagation(); onClick?.(appt); }}
-      style={{ borderLeft: `3px solid ${color}`, borderRadius: 0, background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)', padding: '5px 7px', marginBottom: 3, cursor: 'pointer', opacity: isDone ? 0.6 : 1 }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = 'var(--shadow-sm)'} onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}><span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>{appt._jobName}</span></div>
+    <div
+      draggable={!isDone}
+      onDragStart={e => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', JSON.stringify({ apptId: appt.id, origDate: appt.date, time_start: appt.time_start, time_end: appt.time_end }));
+        requestAnimationFrame(() => { e.target.style.opacity = '0.35'; });
+        if (onDragStart) onDragStart();
+      }}
+      onDragEnd={e => { e.target.style.opacity = ''; }}
+      onClick={e => { e.stopPropagation(); onClick?.(appt); }}
+      onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
+      onMouseLeave={() => onHoverLeave?.()}
+      style={{
+        borderLeft: `3px solid ${color}`, borderRadius: 0,
+        background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+        padding: '5px 7px', marginBottom: 3, cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+      }}
+      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+      onMouseOut={e => { e.currentTarget.style.boxShadow = 'none'; }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>{appt._jobName}</span>
+      </div>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2 }}>{appt.title}</div>
       {appt.time_start && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</div>}
-      {appt.notes && <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.3, marginBottom: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{appt.notes}</div>}
       {isActive && <div style={{ fontSize: 10, fontWeight: 600, color: status.color, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: status.color }} />{status.label}</div>}
     </div>
   );
@@ -67,48 +257,35 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick, showWeekend }) 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const startDow = new Date(year, month, 1).getDay();
   const todayKey = fmtDate(new Date());
-  const weekdayHeaders = showWeekend ? ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] : ['Mon','Tue','Wed','Thu','Fri'];
-  const colCount = weekdayHeaders.length;
-
+  const hdrs = showWeekend ? ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] : ['Mon','Tue','Wed','Thu','Fri'];
+  const cols = hdrs.length;
   const byDate = {};
   for (const job of boardData) for (const appt of (job.appointments || [])) {
     if (!byDate[appt.date]) byDate[appt.date] = [];
-    const crew = appt.crew || []; const lc = crew.find(c => c.role === 'lead');
+    const lc = (appt.crew || []).find(c => c.role === 'lead');
     byDate[appt.date].push({ ...appt, _jobName: job.insured_name, _color: lc?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280' });
   }
-
   const weeks = []; let day = 1 - startDow;
-  for (let w = 0; w < 6; w++) {
-    const week = [];
-    for (let d = 0; d < 7; d++) { const date = new Date(year, month, day); week.push({ day, date, inMonth: day >= 1 && day <= daysInMonth, key: fmtDate(date) }); day++; }
-    weeks.push(week);
-  }
+  for (let w = 0; w < 6; w++) { const wk = []; for (let d = 0; d < 7; d++) { const dt = new Date(year, month, day); wk.push({ day, date: dt, inMonth: day >= 1 && day <= daysInMonth, key: fmtDate(dt) }); day++; } weeks.push(wk); }
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 0 8px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colCount}, 1fr)`, borderBottom: '1px solid var(--border-color)' }}>
-        {weekdayHeaders.map(d => <div key={d} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textAlign: 'center', padding: '8px 0', background: 'var(--bg-secondary)' }}>{d}</div>)}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, borderBottom: '1px solid var(--border-color)' }}>
+        {hdrs.map(d => <div key={d} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textAlign: 'center', padding: '8px 0', background: 'var(--bg-secondary)' }}>{d}</div>)}
       </div>
-      {weeks.map((week, wi) => {
-        const filtered = showWeekend ? week : week.filter(c => { const dow = c.date.getDay(); return dow !== 0 && dow !== 6; });
+      {weeks.map((wk, wi) => {
+        const f = showWeekend ? wk : wk.filter(c => { const dow = c.date.getDay(); return dow !== 0 && dow !== 6; });
         return (
-          <div key={wi} style={{ display: 'grid', gridTemplateColumns: `repeat(${colCount}, 1fr)`, minHeight: 90 }}>
-            {filtered.map((cell, di) => {
-              const appts = byDate[cell.key] || [];
-              const isToday = cell.key === todayKey;
+          <div key={wi} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, minHeight: 90 }}>
+            {f.map((cell, di) => {
+              const appts = byDate[cell.key] || []; const isToday = cell.key === todayKey;
               return (
                 <div key={di} onClick={() => cell.inMonth && onDayClick(cell.key)}
-                  style={{ borderBottom: '1px solid var(--border-light)', borderRight: di < filtered.length - 1 ? '1px solid var(--border-light)' : 'none', padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default', background: isToday ? '#f8fbff' : 'transparent', opacity: cell.inMonth ? 1 : 0.35, minHeight: 90 }}
+                  style={{ borderBottom: '1px solid var(--border-light)', borderRight: di < f.length - 1 ? '1px solid var(--border-light)' : 'none', padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default', background: isToday ? '#f8fbff' : 'transparent', opacity: cell.inMonth ? 1 : 0.35, minHeight: 90 }}
                   onMouseEnter={e => { if (cell.inMonth) e.currentTarget.style.background = isToday ? '#f0f7ff' : 'var(--bg-secondary)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#f8fbff' : 'transparent'; }}>
                   <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? '#fff' : cell.inMonth ? 'var(--text-primary)' : 'var(--text-tertiary)', width: isToday ? 22 : 'auto', height: isToday ? 22 : 'auto', borderRadius: 11, background: isToday ? 'var(--accent)' : 'transparent', display: isToday ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>{cell.date.getDate()}</div>
-                  {appts.slice(0, 3).map(a => (
-                    <div key={a.id} onClick={e => { e.stopPropagation(); onApptClick(a); }}
-                      style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2, padding: '2px 4px', marginBottom: 2, borderRadius: 3, background: a._color, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }}
-                      onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.15)'} onMouseLeave={e => e.currentTarget.style.filter = 'none'}>
-                      {a.time_start ? fmtTime(a.time_start) + ' ' : ''}{a._jobName}
-                    </div>
-                  ))}
+                  {appts.slice(0, 3).map(a => <div key={a.id} onClick={e => { e.stopPropagation(); onApptClick(a); }} style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2, padding: '2px 4px', marginBottom: 2, borderRadius: 3, background: a._color, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.15)'} onMouseLeave={e => e.currentTarget.style.filter = 'none'}>{a.time_start ? fmtTime(a.time_start) + ' ' : ''}{a._jobName}</div>)}
                   {appts.length > 3 && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 500, paddingLeft: 4 }}>+{appts.length - 3} more</div>}
                 </div>
               );
@@ -145,41 +322,38 @@ export default function Schedule() {
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true);
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
-  const [placementMode, setPlacementMode] = useState(null); // { jobId, jobName, taskIds, crew, duration, taskCount, type }
+  const [placementMode, setPlacementMode] = useState(null);
 
-  // ── Escape to cancel placement ──
-  useEffect(() => {
-    if (!placementMode) return;
-    const handler = (e) => { if (e.key === 'Escape') setPlacementMode(null); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [placementMode]);
+  // ── Grid hover popover state ──
+  const [gridHover, setGridHover] = useState(null); // { appt, rect }
+  const gridHoverShowRef = useRef(null);
+  const gridHoverHideRef = useRef(null);
+
+  const scheduleGridHover = useCallback((appt, el) => {
+    clearTimeout(gridHoverHideRef.current);
+    clearTimeout(gridHoverShowRef.current);
+    gridHoverShowRef.current = setTimeout(() => {
+      setGridHover({ appt, rect: el.getBoundingClientRect() });
+    }, HOVER_DELAY);
+  }, []);
+  const cancelGridHover = useCallback(() => {
+    clearTimeout(gridHoverShowRef.current);
+    gridHoverHideRef.current = setTimeout(() => setGridHover(null), HOVER_LINGER);
+  }, []);
+  const keepGridHover = useCallback(() => { clearTimeout(gridHoverHideRef.current); clearTimeout(gridHoverShowRef.current); }, []);
+  const dismissGridHover = useCallback(() => { clearTimeout(gridHoverHideRef.current); clearTimeout(gridHoverShowRef.current); setGridHover(null); }, []);
+
+  // ── Placement: Escape to cancel ──
+  useEffect(() => { if (!placementMode) return; const h = e => { if (e.key === 'Escape') setPlacementMode(null); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [placementMode]);
 
   // ── Days ──
   const days = useMemo(() => {
     const todayStr = fmtDate(new Date());
-    if (calSpan === 'day') {
-      const d = new Date(anchor); const key = fmtDate(d);
-      return [{ date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr }];
-    }
-    if (calSpan === '3day') {
-      const result = []; const cursor = new Date(anchor);
-      while (result.length < 3) { const dow = cursor.getDay(); if (showWeekend || (dow !== 0 && dow !== 6)) { const key = fmtDate(cursor); result.push({ date: new Date(cursor), key, label: WEEKDAYS_FULL[dow], shortDate: fmtShort(cursor), isToday: key === todayStr }); } cursor.setDate(cursor.getDate() + 1); }
-      return result;
-    }
-    if (calSpan === 'month') {
-      const y = anchor.getFullYear(), m = anchor.getMonth();
-      const first = new Date(y, m, 1); const last = new Date(y, m + 1, 0);
-      const startDay = new Date(first); startDay.setDate(1 - first.getDay());
-      const endDay = new Date(last); endDay.setDate(last.getDate() + (6 - last.getDay()));
-      const result = []; const cursor = new Date(startDay);
-      while (cursor <= endDay) { const key = fmtDate(cursor); result.push({ date: new Date(cursor), key, label: WEEKDAYS_FULL[cursor.getDay()], shortDate: fmtShort(cursor), isToday: key === todayStr }); cursor.setDate(cursor.getDate() + 1); }
-      return result;
-    }
-    // week
-    const monday = getMonday(anchor); const count = showWeekend ? 7 : 5;
-    const start = showWeekend ? new Date(monday.getTime() - 86400000) : monday;
-    return Array.from({ length: count }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); const key = fmtDate(d); return { date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr }; });
+    if (calSpan === 'day') { const d = new Date(anchor); const k = fmtDate(d); return [{ date: d, key: k, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: k === todayStr }]; }
+    if (calSpan === '3day') { const r = []; const c = new Date(anchor); while (r.length < 3) { const dow = c.getDay(); if (showWeekend || (dow !== 0 && dow !== 6)) { const k = fmtDate(c); r.push({ date: new Date(c), key: k, label: WEEKDAYS_FULL[dow], shortDate: fmtShort(c), isToday: k === todayStr }); } c.setDate(c.getDate() + 1); } return r; }
+    if (calSpan === 'month') { const y = anchor.getFullYear(), m = anchor.getMonth(); const first = new Date(y, m, 1); const last = new Date(y, m + 1, 0); const s = new Date(first); s.setDate(1 - first.getDay()); const e = new Date(last); e.setDate(last.getDate() + (6 - last.getDay())); const r = []; const c = new Date(s); while (c <= e) { const k = fmtDate(c); r.push({ date: new Date(c), key: k, label: WEEKDAYS_FULL[c.getDay()], shortDate: fmtShort(c), isToday: k === todayStr }); c.setDate(c.getDate() + 1); } return r; }
+    const monday = getMonday(anchor); const count = showWeekend ? 7 : 5; const start = showWeekend ? new Date(monday.getTime() - 86400000) : monday;
+    return Array.from({ length: count }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); const k = fmtDate(d); return { date: d, key: k, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: k === todayStr }; });
   }, [anchor, calSpan, showWeekend]);
 
   // ── Nav ──
@@ -187,12 +361,7 @@ export default function Schedule() {
   const goPrev = () => setAnchor(d => { const n = new Date(d); if (calSpan === 'day') n.setDate(n.getDate() - 1); else if (calSpan === '3day') n.setDate(n.getDate() - 3); else if (calSpan === 'month') n.setMonth(n.getMonth() - 1); else n.setDate(n.getDate() - 7); return n; });
   const goNext = () => setAnchor(d => { const n = new Date(d); if (calSpan === 'day') n.setDate(n.getDate() + 1); else if (calSpan === '3day') n.setDate(n.getDate() + 3); else if (calSpan === 'month') n.setMonth(n.getMonth() + 1); else n.setDate(n.getDate() + 7); return n; });
   const todayLabel = calSpan === 'month' ? 'This month' : calSpan === 'week' ? 'This week' : 'Today';
-
-  const subtitleText = useMemo(() => {
-    if (calSpan === 'month') return `${MONTHS_FULL[anchor.getMonth()]} ${anchor.getFullYear()}`;
-    if (calSpan === 'day') return days[0]?.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) || '';
-    return `${fmtShort(days[0]?.date)} – ${fmtShort(days[days.length - 1]?.date)}`;
-  }, [days, calSpan, anchor]);
+  const subtitleText = useMemo(() => { if (calSpan === 'month') return `${MONTHS_FULL[anchor.getMonth()]} ${anchor.getFullYear()}`; if (calSpan === 'day') return days[0]?.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) || ''; return `${fmtShort(days[0]?.date)} – ${fmtShort(days[days.length - 1]?.date)}`; }, [days, calSpan, anchor]);
 
   // ── Load ──
   const loadPanelJobs = useCallback(async () => { setPanelLoading(true); try { const r = await db.rpc('get_dispatch_panel_jobs'); setPanelJobs(Array.isArray(r) ? r : []); } catch (e) { console.error('Panel:', e); } finally { setPanelLoading(false); } }, [db]);
@@ -205,9 +374,26 @@ export default function Schedule() {
 
   const toggleJob = async (jobId, addToBoard) => { try { if (addToBoard) await db.insert('dispatch_board_jobs', { job_id: jobId, added_by: employee?.id }); else await db.delete('dispatch_board_jobs', `job_id=eq.${jobId}`); setPanelJobs(prev => prev.map(j => j.id === jobId ? { ...j, on_board: addToBoard } : j)); loadBoard(); } catch (e) { console.error('Toggle:', e); } };
 
-  // ── Cell/crew lookups ──
-  const cellMap = useMemo(() => { const m = {}; for (const job of boardData) for (const appt of (job.appointments || [])) { const k = `${job.job_id}_${appt.date}`; if (!m[k]) m[k] = []; m[k].push(appt); } return m; }, [boardData]);
-  const { crewList, crewCellMap } = useMemo(() => { const empMap = {}, cells = {}; for (const job of boardData) for (const appt of (job.appointments || [])) for (const crew of (appt.crew || [])) { if (!empMap[crew.employee_id]) empMap[crew.employee_id] = { id: crew.employee_id, display_name: crew.display_name, full_name: crew.full_name, role: crew.role }; const k = `${crew.employee_id}_${appt.date}`; if (!cells[k]) cells[k] = []; cells[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _division: job.division, _jobId: job.job_id }); } return { crewList: Object.values(empMap).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '')), crewCellMap: cells }; }, [boardData]);
+  // ── Cell lookups (enriched with job metadata) ──
+  const cellMap = useMemo(() => {
+    const m = {};
+    for (const job of boardData) for (const appt of (job.appointments || [])) {
+      const k = `${job.job_id}_${appt.date}`; if (!m[k]) m[k] = [];
+      m[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _address: job.address, _division: job.division, _jobId: job.job_id });
+    }
+    return m;
+  }, [boardData]);
+
+  const { crewList, crewCellMap } = useMemo(() => {
+    const empMap = {}, cells = {};
+    for (const job of boardData) for (const appt of (job.appointments || [])) for (const crew of (appt.crew || [])) {
+      if (!empMap[crew.employee_id]) empMap[crew.employee_id] = { id: crew.employee_id, display_name: crew.display_name, full_name: crew.full_name, role: crew.role };
+      const k = `${crew.employee_id}_${appt.date}`; if (!cells[k]) cells[k] = [];
+      cells[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _division: job.division, _jobId: job.job_id, _address: job.address });
+    }
+    return { crewList: Object.values(empMap).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '')), crewCellMap: cells };
+  }, [boardData]);
+
   const filteredCellMap = useMemo(() => { if (!crewFilter) return cellMap; const m = {}; for (const [key, appts] of Object.entries(cellMap)) { const f = appts.filter(a => a.crew?.some(c => c.employee_id === crewFilter)); if (f.length > 0) m[key] = f; } return m; }, [cellMap, crewFilter]);
   const filteredBoardData = useMemo(() => crewFilter ? boardData.filter(j => j.appointments?.some(a => a.crew?.some(c => c.employee_id === crewFilter))) : boardData, [boardData, crewFilter]);
   const filteredCrewList = useMemo(() => crewFilter ? crewList.filter(e => e.id === crewFilter) : crewList, [crewList, crewFilter]);
@@ -216,128 +402,81 @@ export default function Schedule() {
   const todayKey = fmtDate(new Date());
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
-  const handleApptClick = (appt) => { setEditModal(appt); };
+  const handleApptClick = (appt) => { dismissGridHover(); setEditModal(appt); };
 
-  // ── Drag move (optimistic) ──
+  // ── Optimistic drag-drop (move) ──
   const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {
     const prev = boardData;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : a) })));
     try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prev); }
   };
-
-  // ── Resize (optimistic) ──
   const handleApptResize = async (apptId, newTimeEnd) => {
     const prev = boardData;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, time_end: newTimeEnd } : a) })));
     try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prev); }
   };
 
-  // ── Reschedule remaining: enter placement mode ──
+  // ── Grid cell drop handler (Jobs/Crew views — date change only) ──
+  const handleGridCellDrop = useCallback((e, newDateKey) => {
+    e.preventDefault();
+    let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+    if (!data?.apptId) return;
+    if (newDateKey === data.origDate) return; // same day, no-op
+    handleApptDrop(data.apptId, newDateKey, data.time_start, data.time_end);
+  }, [handleApptDrop]);
+
+  const handleGridCellDragOver = useCallback((e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }, []);
+
+  // ── Reschedule remaining ──
   const handleRescheduleRemaining = async (appt) => {
     try {
-      // Fetch incomplete tasks for this appointment
-      const tasks = await db.select('job_tasks',
-        `appointment_id=eq.${appt.id}&is_completed=eq.false&select=id,title,phase_name`
-      );
+      const tasks = await db.select('job_tasks', `appointment_id=eq.${appt.id}&is_completed=eq.false&select=id,title,phase_name`);
       if (!tasks || tasks.length === 0) { alert('No incomplete tasks on this appointment.'); return; }
-
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
       const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 120;
-      const duration = endMins - startMins;
-
-      setPlacementMode({
-        jobId: appt._jobId || appt.job_id,
-        jobName: appt._jobName,
-        taskIds: tasks.map(t => t.id),
-        taskCount: tasks.length,
-        crew: appt.crew || [],
-        duration: Math.max(duration, 60),
-        type: appt.type || 'reconstruction',
-        sourceApptId: appt.id,
-      });
+      setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id });
     } catch (e) { console.error('Reschedule remaining:', e); }
   };
 
-  // ── Placement click: create appointment + assign tasks ──
   const handlePlacementClick = async (dateKey, timeStart, timeEnd) => {
-    if (!placementMode) return;
-    const pm = placementMode;
-    setPlacementMode(null);
-
+    if (!placementMode) return; const pm = placementMode; setPlacementMode(null);
     try {
-      // Create the appointment
-      const result = await db.insert('appointments', {
-        job_id: pm.jobId,
-        title: `${pm.jobName} (continued)`,
-        date: dateKey,
-        time_start: timeStart,
-        time_end: timeEnd,
-        type: pm.type,
-        status: 'scheduled',
-      });
-
+      const result = await db.insert('appointments', { job_id: pm.jobId, title: `${pm.jobName} (continued)`, date: dateKey, time_start: timeStart, time_end: timeEnd, type: pm.type, status: 'scheduled' });
       if (result && result.length > 0) {
-        const newApptId = result[0].id;
-
-        // Add crew
-        for (const c of pm.crew) {
-          await db.insert('appointment_crew', {
-            appointment_id: newApptId,
-            employee_id: c.employee_id,
-            role: c.role,
-          });
-        }
-
-        // Assign incomplete tasks to new appointment
-        if (pm.taskIds.length > 0) {
-          await db.rpc('assign_tasks_to_appointment', {
-            p_appointment_id: newApptId,
-            p_task_ids: pm.taskIds,
-          });
-        }
+        const nid = result[0].id;
+        for (const c of pm.crew) await db.insert('appointment_crew', { appointment_id: nid, employee_id: c.employee_id, role: c.role });
+        if (pm.taskIds.length > 0) await db.rpc('assign_tasks_to_appointment', { p_appointment_id: nid, p_task_ids: pm.taskIds });
       }
-
-      loadBoard();
-      setPanelRefreshKey(k => k + 1);
-    } catch (e) {
-      console.error('Placement create failed:', e);
-      alert('Failed to create appointment: ' + e.message);
-    }
+      loadBoard(); setPanelRefreshKey(k => k + 1);
+    } catch (e) { console.error('Placement create failed:', e); alert('Failed: ' + e.message); }
   };
 
   const [jobPickerModal, setJobPickerModal] = useState(null);
   const [jobPickerSearch, setJobPickerSearch] = useState('');
-
   const handleCellClick = (dateKey, hour) => {
-    if (placementMode) return; // CalendarView handles placement clicks directly
-    if (selectedPanelJob) {
-      const timeStr = `${String(hour).padStart(2, '0')}:00`;
-      const endHour = Math.min(hour + 2, 18);
-      setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: timeStr, prefillTimeEnd: `${String(endHour).padStart(2, '0')}:00` });
-    } else { setJobPickerModal({ dateKey, hour }); setJobPickerSearch(''); }
+    if (placementMode) return;
+    if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
+    else { setJobPickerModal({ dateKey, hour }); setJobPickerSearch(''); }
   };
-
-  const handleJobPicked = (job) => {
-    const { dateKey, hour } = jobPickerModal;
-    const timeStr = `${String(hour).padStart(2, '0')}:00`;
-    const endHour = Math.min(hour + 2, 18);
-    setJobPickerModal(null);
-    setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: timeStr, prefillTimeEnd: `${String(endHour).padStart(2, '0')}:00` });
-  };
-
+  const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
   const handleMonthDayClick = (dateKey) => { setAnchor(new Date(dateKey + 'T00:00:00')); changeCalSpan('day'); };
+
+  // Filter days for Jobs/Crew grids (respect weekends)
+  const gridDays = useMemo(() => {
+    if (calSpan === 'month') return days; // month uses its own renderer
+    return days;
+  }, [days, calSpan]);
 
   return (
     <div style={S.page}>
       <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
-        onSchedulePhase={(jobId, jobName, phase) => { setCreateModal({ jobId, jobName, dateKey: phase?.target_start || fmtDate(new Date()), prefillPhase: phase?.phase_name || null, prefillTaskIds: [] }); }}
-        onCreateAppointment={(jobId, jobName, dateKey, taskIds) => { setCreateModal({ jobId, jobName, dateKey, prefillTaskIds: taskIds || [] }); }}
-        onSelectJob={(jobId) => { if (jobId) { const job = panelJobs.find(j => j.id === jobId); setSelectedPanelJob(job ? { id: job.id, insured_name: job.insured_name } : null); } else setSelectedPanelJob(null); }}
+        onSchedulePhase={(jid, jn, ph) => setCreateModal({ jobId: jid, jobName: jn, dateKey: ph?.target_start || fmtDate(new Date()), prefillPhase: ph?.phase_name || null, prefillTaskIds: [] })}
+        onCreateAppointment={(jid, jn, dk, tids) => setCreateModal({ jobId: jid, jobName: jn, dateKey: dk, prefillTaskIds: tids || [] })}
+        onSelectJob={(jid) => { if (jid) { const j = panelJobs.find(x => x.id === jid); setSelectedPanelJob(j ? { id: j.id, insured_name: j.insured_name } : null); } else setSelectedPanelJob(null); }}
         onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
       />
 
       <div style={S.main}>
-        {/* Header */}
         <div style={S.header}>
           <div>
             <h1 style={S.title}>Schedule</h1>
@@ -354,26 +493,21 @@ export default function Schedule() {
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }} onClick={() => changeViewMode('crew')}>Crew</button>
             </div>
-            {viewMode === 'calendar' && (
-              <div style={S.viewToggle}>
-                {SPAN_OPTIONS.map((opt, i) => (
-                  <button key={opt.value} onClick={() => changeCalSpan(opt.value)}
-                    style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === SPAN_OPTIONS.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
-                ))}
-              </div>
-            )}
+            <div style={S.viewToggle}>
+              {SPAN_OPTIONS.map((opt, i) => (
+                <button key={opt.value} onClick={() => changeCalSpan(opt.value)}
+                  style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === SPAN_OPTIONS.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
+              ))}
+            </div>
             {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
-            {viewMode === 'calendar' && calSpan !== 'day' && (
-              <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>
-            )}
+            {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>}
             <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} /><span>Auto-show</span></label>
           </div>
         </div>
 
-        {/* Crew filter */}
         {crewList.length > 0 && (
           <div style={S.filterBar}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
@@ -389,25 +523,20 @@ export default function Schedule() {
         ) : viewMode === 'calendar' && calSpan === 'month' ? (
           <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
-          <CalendarView days={days} boardData={filteredBoardData}
-            onApptClick={handleApptClick} onCellClick={handleCellClick}
-            onApptDrop={handleApptDrop} onApptResize={handleApptResize}
-            placementMode={placementMode} onPlacementClick={handlePlacementClick}
-            onCancelPlacement={() => setPlacementMode(null)}
-            onRescheduleRemaining={handleRescheduleRemaining}
-          />
+          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} />
         ) : filteredBoardData.length === 0 && !crewFilter ? (
-          <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4, maxWidth: 280, textAlign: 'center' }}>Jobs move here automatically when a schedule is generated</div></div>
+          <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>Jobs move here automatically when a schedule is generated</div></div>
         ) : filteredBoardData.length === 0 && crewFilter ? (
-          <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No appointments for this crew member</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}><button onClick={() => setCrewFilter(null)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'var(--font-sans)' }}>Clear filter</button> to see all</div></div>
+          <div style={S.center}><button onClick={() => setCrewFilter(null)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'var(--font-sans)' }}>Clear filter</button> to see all</div>
         ) : viewMode === 'crew' && filteredCrewList.length === 0 ? (
-          <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No crew assigned this week</div></div>
+          <div style={S.center}>No crew assigned</div>
         ) : (
           <div style={S.gridWrap}>
-            <div style={{ display: 'grid', gridTemplateColumns: `200px repeat(${days.length}, minmax(140px, 1fr))`, minWidth: 200 + days.length * 140 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `200px repeat(${gridDays.length}, minmax(140px, 1fr))`, minWidth: 200 + gridDays.length * 140 }}>
               <div style={S.corner} />
-              {days.map(day => <div key={day.key} style={{ ...S.dayHead, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}><div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div><div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', marginTop: 1, fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div></div>)}
+              {gridDays.map(day => <div key={day.key} style={{ ...S.dayHead, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}><div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div><div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', marginTop: 1, fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div></div>)}
 
+              {/* ═══ JOBS VIEW ═══ */}
               {viewMode === 'jobs' && filteredBoardData.map(job => {
                 const dc = DIV_COLORS[job.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
                 return [
@@ -417,14 +546,17 @@ export default function Schedule() {
                     <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}><span style={{ fontSize: 9, fontWeight: 600, padding: '0 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>{dc.label}</span>{!job.pinned && <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>auto</span>}</div>
                     {job.address && <div style={S.jobCellAddr} title={job.address}>{job.address.split(',')[0]}</div>}
                   </div>,
-                  ...days.map(day => {
+                  ...gridDays.map(day => {
                     const appts = filteredCellMap[`${job.job_id}_${day.key}`] || [];
                     return (
-                      <div key={`${job.job_id}_${day.key}`} style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
+                      <div key={`${job.job_id}_${day.key}`}
+                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
                         onClick={() => setCreateModal({ jobId: job.job_id, jobName: job.insured_name, dateKey: day.key, prefillTaskIds: [] })}
+                        onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
                         onMouseEnter={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1'; }}
                         onMouseLeave={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '0'; }}>
-                        {appts.map(a => <ApptCard key={a.id} appt={a} onClick={handleApptClick} />)}
+                        {appts.map(a => <ApptCard key={a.id} appt={a} onClick={handleApptClick}
+                          onDragStart={dismissGridHover} onHoverEnter={scheduleGridHover} onHoverLeave={cancelGridHover} />)}
                         {appts.length === 0 && <div data-plus style={S.plusWrap}><span style={S.plus}>+</span></div>}
                       </div>
                     );
@@ -432,34 +564,51 @@ export default function Schedule() {
                 ];
               })}
 
+              {/* ═══ CREW VIEW ═══ */}
               {viewMode === 'crew' && filteredCrewList.map(emp => [
-                <div key={`emp-${emp.id}`} style={S.jobCell}><div style={S.jobCellName}>{emp.display_name || emp.full_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{days.reduce((c, d) => c + (crewCellMap[`${emp.id}_${d.key}`]?.length || 0), 0)} appts this week</div></div>,
-                ...days.map(day => { const appts = crewCellMap[`${emp.id}_${day.key}`] || []; return <div key={`${emp.id}_${day.key}`} style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}>{appts.map(a => <CrewApptCard key={`${a.id}_${emp.id}`} appt={a} onClick={handleApptClick} />)}</div>; }),
+                <div key={`emp-${emp.id}`} style={S.jobCell}><div style={S.jobCellName}>{emp.display_name || emp.full_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{gridDays.reduce((c, d) => c + (crewCellMap[`${emp.id}_${d.key}`]?.length || 0), 0)} appts</div></div>,
+                ...gridDays.map(day => {
+                  const appts = crewCellMap[`${emp.id}_${day.key}`] || [];
+                  return (
+                    <div key={`${emp.id}_${day.key}`}
+                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
+                      onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}>
+                      {appts.map(a => <CrewApptCard key={`${a.id}_${emp.id}`} appt={a} onClick={handleApptClick}
+                        onDragStart={dismissGridHover} onHoverEnter={scheduleGridHover} onHoverLeave={cancelGridHover} />)}
+                    </div>
+                  );
+                }),
               ])}
             </div>
           </div>
         )}
       </div>
 
-      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(savedDate) => { if (savedDate) setAnchor(new Date(savedDate + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {/* Grid hover popover (Jobs/Crew views) */}
+      {gridHover && (viewMode === 'jobs' || viewMode === 'crew') && (
+        <GridPopover appt={gridHover.appt} rect={gridHover.rect}
+          onEdit={a => { dismissGridHover(); setEditModal(a); }}
+          onMouseEnter={keepGridHover} onMouseLeave={dismissGridHover} />
+      )}
+
+      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
       {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
 
-      {/* Job picker modal */}
       {jobPickerModal && (() => {
-        const fmtPickerDate = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const fmtPickerTime = `${jobPickerModal.hour % 12 || 12}:00${jobPickerModal.hour >= 12 ? 'pm' : 'am'}`;
+        const fpd = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const fpt = `${jobPickerModal.hour % 12 || 12}:00${jobPickerModal.hour >= 12 ? 'pm' : 'am'}`;
         const q = jobPickerSearch.toLowerCase();
-        const productionJobs = boardData.filter(j => q ? j.insured_name.toLowerCase().includes(q) : true);
-        const otherJobs = panelJobs.filter(j => !boardData.some(b => b.job_id === j.id) && (q ? j.insured_name.toLowerCase().includes(q) : true));
+        const pj = boardData.filter(j => q ? j.insured_name.toLowerCase().includes(q) : true);
+        const oj = panelJobs.filter(j => !boardData.some(b => b.job_id === j.id) && (q ? j.insured_name.toLowerCase().includes(q) : true));
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 80 }} onClick={() => setJobPickerModal(null)}>
             <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 400, maxHeight: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
-              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)' }}><div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Select job</div><div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{fmtPickerDate} at {fmtPickerTime}</div></div>
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)' }}><div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Select job</div><div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{fpd} at {fpt}</div></div>
               <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-light)' }}><input style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)' }} placeholder="Search jobs..." value={jobPickerSearch} onChange={e => setJobPickerSearch(e.target.value)} autoFocus /></div>
               <div style={{ flex: 1, overflowY: 'auto' }}>
-                {productionJobs.length > 0 && <><div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>In Production ({productionJobs.length})</div>{productionJobs.map(job => <div key={job.job_id} onClick={() => handleJobPicked(job)} style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{job.insured_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>#{job.job_number} · {job.address?.split(',')[0]}</div></div>)}</>}
-                {otherJobs.length > 0 && <><div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>Other Jobs ({otherJobs.length})</div>{otherJobs.map(job => <div key={job.id} onClick={() => handleJobPicked(job)} style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{job.insured_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>#{job.job_number}</div></div>)}</>}
-                {productionJobs.length === 0 && otherJobs.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>No jobs found</div>}
+                {pj.length > 0 && <><div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>In Production ({pj.length})</div>{pj.map(j => <div key={j.job_id} onClick={() => handleJobPicked(j)} style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{j.insured_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>#{j.job_number} · {j.address?.split(',')[0]}</div></div>)}</>}
+                {oj.length > 0 && <><div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.04em', background: 'var(--bg-secondary)' }}>Other ({oj.length})</div>{oj.map(j => <div key={j.id} onClick={() => handleJobPicked(j)} style={{ padding: '8px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{j.insured_name}</div><div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>#{j.job_number}</div></div>)}</>}
+                {pj.length === 0 && oj.length === 0 && <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>No jobs found</div>}
               </div>
             </div>
           </div>
