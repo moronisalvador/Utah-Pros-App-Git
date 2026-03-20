@@ -959,6 +959,7 @@ function CrewApptCard({ appt, onClick }) {
 
 function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], db, employees, onClose, onSaved }) {
   const [title, setTitle] = useState('');
+  const [date, setDate] = useState(dateKey);
   const [type, setType] = useState('reconstruction');
   const [timeStart, setTimeStart] = useState('07:00');
   const [timeEnd, setTimeEnd] = useState('15:30');
@@ -1032,7 +1033,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
     return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
   };
 
-  const dateLabel = new Date(dateKey + 'T00:00:00').toLocaleDateString('en-US', {
+  const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'short', day: 'numeric',
   });
 
@@ -1045,7 +1046,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
       const apptResult = await db.insert('appointments', {
         job_id: jobId,
         title: finalTitle,
-        date: dateKey,
+        date: date,
         time_start: timeStart || null,
         time_end: timeEnd || null,
         type,
@@ -1102,8 +1103,13 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
               autoFocus />
           </div>
 
-          {/* Type + Times */}
+          {/* Date + Type + Times */}
           <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ ...M.field, flex: 1 }}>
+              <label style={M.label}>Date</label>
+              <input type="date" style={M.input} value={date}
+                onChange={e => setDate(e.target.value)} />
+            </div>
             <div style={{ ...M.field, flex: 1 }}>
               <label style={M.label}>Type</label>
               <select style={M.input} value={type} onChange={e => setType(e.target.value)}>
