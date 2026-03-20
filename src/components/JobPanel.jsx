@@ -201,6 +201,17 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
       } catch (e) { console.error('Duplicate task:', e); }
     };
 
+    // Delete a task
+    const handleDeleteTask = async (task) => {
+      if (task.appointment_id) {
+        if (!confirm(`"${task.title}" is scheduled on an appointment. Delete anyway?`)) return;
+      }
+      try {
+        await db.delete('job_tasks', `id=eq.${task.id}`);
+        await refreshPool();
+      } catch (e) { console.error('Delete task:', e); }
+    };
+
     // Add phase handler
     const handleAddPhase = async () => {
       if (!newPhaseName.trim()) return;
@@ -366,8 +377,8 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                   const selectableTasks = tasks.filter(t => !t.is_completed && !t.appointment_id);
                   const selectedInPhase = selectableTasks.filter(t => selectedTaskIds.has(t.id)).length;
                   const showAll = showScheduledPhases.has(phase.phase_name);
-                  const visibleTasks = showAll ? tasks : selectableTasks;
-                  const hiddenCount = tasks.length - selectableTasks.length;
+                  const hiddenTasks = tasks.filter(t => t.is_completed || t.appointment_id);
+                  const hiddenCount = hiddenTasks.length;
 
                   return (
                     <div key={phase.phase_name}>
@@ -424,9 +435,9 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                       {/* Expanded tasks */}
                       {isExpanded && (
                         <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-light)' }}>
-                          {/* Toolbar: Select all + eye toggle */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 3px 32px' }}>
-                            {selectableTasks.length > 0 && (
+                          {/* Select all open */}
+                          {selectableTasks.length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 3px 32px' }}>
                               <div onClick={() => selectAllInPhase(tasks)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', flex: 1 }}>
                                 <span style={{
@@ -445,58 +456,28 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                   Select all open ({selectableTasks.length})
                                 </span>
                               </div>
-                            )}
-                            {hiddenCount > 0 && (
-                              <button onClick={e => {
-                                e.stopPropagation();
-                                setShowScheduledPhases(prev => {
-                                  const n = new Set(prev);
-                                  n.has(phase.phase_name) ? n.delete(phase.phase_name) : n.add(phase.phase_name);
-                                  return n;
-                                });
-                              }} style={{
-                                display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none',
-                                cursor: 'pointer', fontSize: 10, color: showAll ? 'var(--accent)' : 'var(--text-tertiary)',
-                                fontFamily: 'var(--font-sans)', padding: '2px 4px', marginLeft: 'auto', flexShrink: 0,
-                              }} title={showAll ? 'Hide scheduled/done' : `Show ${hiddenCount} scheduled/done`}>
-                                <span style={{ fontSize: 13 }}>{showAll ? '👁' : '👁‍🗨'}</span>
-                                <span>{hiddenCount}</span>
-                              </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
 
-                          {visibleTasks.map(task => {
-                            const isSelectable = !task.is_completed && !task.appointment_id;
+                          {/* Open/unassigned tasks */}
+                          {selectableTasks.map(task => {
                             const isSelected = selectedTaskIds.has(task.id);
                             return (
                               <div key={task.id}
-                                onClick={() => isSelectable && toggleTaskSelection(task.id)}
+                                onClick={() => toggleTaskSelection(task.id)}
                                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 5px 32px',
-                                  cursor: isSelectable ? 'pointer' : 'default',
+                                  cursor: 'pointer',
                                   background: isSelected ? 'var(--accent-light)' : 'transparent',
                                 }}>
-                                {isSelectable ? (
-                                  <span style={{
-                                    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                                    border: isSelected ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color)',
-                                    background: isSelected ? 'var(--accent)' : 'transparent',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}>
-                                    {isSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                                  </span>
-                                ) : (
-                                  <span style={{
-                                    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                                    border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
-                                    background: task.is_completed ? '#10b981' : (task.appointment_id ? '#dbeafe' : 'transparent'),
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}>
-                                    {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                                  </span>
-                                )}
-                                <span style={{ fontSize: 11, flex: 1,
-                                  color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                                  textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                                <span style={{
+                                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                  border: isSelected ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color)',
+                                  background: isSelected ? 'var(--accent)' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {isSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                </span>
+                                <span style={{ fontSize: 11, flex: 1, color: 'var(--text-primary)' }}>
                                   {task.title}
                                 </span>
                                 <button onClick={e => { e.stopPropagation(); handleDuplicateTask(task, phase.phase_name, phase.phase_color); }}
@@ -505,19 +486,19 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                     cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
                                   onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                                   onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>⧉</button>
-                                {task.is_completed ? (
-                                  <span style={{ fontSize: 8, fontWeight: 600, color: '#10b981' }}>DONE</span>
-                                ) : task.appointment_id ? (
-                                  <span style={{ fontSize: 8, fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '1px 4px', borderRadius: 3 }}>SCHED</span>
-                                ) : null}
+                                <button onClick={e => { e.stopPropagation(); handleDeleteTask(task); }}
+                                  title="Delete task"
+                                  style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                    cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
                               </div>
                             );
                           })}
 
-                          {/* No open tasks message */}
-                          {selectableTasks.length === 0 && !showAll && (
+                          {selectableTasks.length === 0 && hiddenCount === 0 && (
                             <div style={{ padding: '8px 14px 4px 32px', fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                              All tasks scheduled or done
+                              No tasks in this phase
                             </div>
                           )}
 
@@ -543,6 +524,64 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                 cursor: 'pointer', padding: '5px 14px 6px 32px', fontFamily: 'var(--font-sans)', fontWeight: 500, textAlign: 'left', width: '100%' }}>
                               + Add task
                             </button>
+                          )}
+
+                          {/* Collapsible: Scheduled & Completed tasks */}
+                          {hiddenCount > 0 && (
+                            <>
+                              <div onClick={e => {
+                                e.stopPropagation();
+                                setShowScheduledPhases(prev => {
+                                  const n = new Set(prev);
+                                  n.has(phase.phase_name) ? n.delete(phase.phase_name) : n.add(phase.phase_name);
+                                  return n;
+                                });
+                              }} style={{
+                                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 5px 32px',
+                                cursor: 'pointer', borderTop: '1px solid var(--border-light)',
+                              }}>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)',
+                                  transform: showAll ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>
+                                  Scheduled & Completed ({hiddenCount})
+                                </span>
+                              </div>
+                              {showAll && hiddenTasks.map(task => (
+                                <div key={task.id}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 14px 4px 32px' }}>
+                                  <span style={{
+                                    width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                    border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
+                                    background: task.is_completed ? '#10b981' : (task.appointment_id ? '#dbeafe' : 'transparent'),
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  }}>
+                                    {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                  </span>
+                                  <span style={{ fontSize: 11, flex: 1,
+                                    color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                    textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                                    {task.title}
+                                  </span>
+                                  <button onClick={e => { e.stopPropagation(); handleDuplicateTask(task, phase.phase_name, phase.phase_color); }}
+                                    title="Duplicate task"
+                                    style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                      cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>⧉</button>
+                                  <button onClick={e => { e.stopPropagation(); handleDeleteTask(task); }}
+                                    title="Delete task"
+                                    style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                      cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
+                                  {task.is_completed ? (
+                                    <span style={{ fontSize: 8, fontWeight: 600, color: '#10b981' }}>DONE</span>
+                                  ) : (
+                                    <span style={{ fontSize: 8, fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '1px 4px', borderRadius: 3 }}>SCHED</span>
+                                  )}
+                                </div>
+                              ))}
+                            </>
                           )}
                         </div>
                       )}
