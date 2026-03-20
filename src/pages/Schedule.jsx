@@ -499,7 +499,7 @@ export default function Schedule() {
                   style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === SPAN_OPTIONS.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
               ))}
             </div>
-            {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
+            {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>☰ Panel</button>}
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
