@@ -362,7 +362,7 @@ export default function Schedule() {
   const dismissGridHover = useCallback(() => { clearTimeout(gridHoverHideRef.current); clearTimeout(gridHoverShowRef.current); setGridHover(null); }, []);
 
   // ── Placement: Escape to cancel ──
-  useEffect(() => { if (!placementMode) return; const h = e => { if (e.key === 'Escape') setPlacementMode(null); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [placementMode]);
+  useEffect(() => { if (!placementMode) { setGridPlacementPicker(null); return; } const h = e => { if (e.key === 'Escape') { setPlacementMode(null); setGridPlacementPicker(null); } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [placementMode]);
 
   // ── Days ──
   const days = useMemo(() => {
@@ -452,10 +452,16 @@ export default function Schedule() {
       if (!tasks || tasks.length === 0) { alert('No incomplete tasks on this appointment.'); return; }
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
       const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 120;
-      setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id });
-      // Auto-switch to calendar for ghost placement
-      if (viewMode !== 'calendar') changeViewMode('calendar');
+      setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id, timeStart: appt.time_start || '09:00', timeEnd: appt.time_end || '11:00' });
     } catch (e) { console.error('Reschedule remaining:', e); }
+  };
+
+  // Grid placement: clicking a day cell in Jobs/Crew during placement mode
+  const [gridPlacementPicker, setGridPlacementPicker] = useState(null); // { dateKey }
+
+  const handleGridPlacementCellClick = (dateKey) => {
+    if (!placementMode) return;
+    setGridPlacementPicker({ dateKey, timeStart: placementMode.timeStart || '09:00', timeEnd: placementMode.timeEnd || '11:00' });
   };
 
   const handlePlacementClick = async (dateKey, timeStart, timeEnd) => {
@@ -551,6 +557,18 @@ export default function Schedule() {
           <div style={S.center}>No crew assigned</div>
         ) : (
           <div style={S.gridWrap}>
+            {/* Placement banner for Jobs/Crew views */}
+            {placementMode && (viewMode === 'jobs' || viewMode === 'crew') && (
+              <div style={{ padding: '8px 20px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb' }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1e40af' }}>Click a day to place: {placementMode.jobName}</span>
+                  <span style={{ fontSize: 12, color: '#3b82f6' }}>· {placementMode.taskCount} tasks</span>
+                </div>
+                <button onClick={() => { setPlacementMode(null); setGridPlacementPicker(null); }}
+                  style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', background: 'none', border: '1px solid #d1d5db', borderRadius: 'var(--radius-md)', padding: '4px 12px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: `200px repeat(${gridDays.length}, minmax(140px, 1fr))`, minWidth: 200 + gridDays.length * 140 }}>
               <div style={S.corner} />
               {gridDays.map(day => <div key={day.key} style={{ ...S.dayHead, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}><div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div><div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', marginTop: 1, fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div></div>)}
@@ -569,8 +587,8 @@ export default function Schedule() {
                     const appts = filteredCellMap[`${job.job_id}_${day.key}`] || [];
                     return (
                       <div key={`${job.job_id}_${day.key}`}
-                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
-                        onClick={() => setCreateModal({ jobId: job.job_id, jobName: job.insured_name, dateKey: day.key, prefillTaskIds: [] })}
+                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy' } : {}) }}
+                        onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : setCreateModal({ jobId: job.job_id, jobName: job.insured_name, dateKey: day.key, prefillTaskIds: [] })}
                         onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
                         onMouseEnter={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1'; }}
                         onMouseLeave={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '0'; }}>
@@ -590,7 +608,8 @@ export default function Schedule() {
                   const appts = crewCellMap[`${emp.id}_${day.key}`] || [];
                   return (
                     <div key={`${emp.id}_${day.key}`}
-                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
+                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy' } : {}) }}
+                      onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : undefined}
                       onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}>
                       {appts.map(a => <CrewApptCard key={`${a.id}_${emp.id}`} appt={a} onClick={handleApptClick}
                         onDragStart={dismissGridHover} onHoverEnter={scheduleGridHover} onHoverLeave={cancelGridHover} />)}
@@ -613,6 +632,58 @@ export default function Schedule() {
 
       {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
       {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+
+      {/* Grid placement time picker (Jobs/Crew views) */}
+      {gridPlacementPicker && placementMode && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 120 }}
+          onClick={() => setGridPlacementPicker(null)}>
+          <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 360, boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Place appointment</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                {placementMode.jobName} · {new Date(gridPlacementPicker.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>{placementMode.taskCount} tasks will be assigned</div>
+            </div>
+            <div style={{ padding: '16px 20px', display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Start</label>
+                <input type="time" value={gridPlacementPicker.timeStart}
+                  onChange={e => setGridPlacementPicker(p => ({ ...p, timeStart: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>End</label>
+                <input type="time" value={gridPlacementPicker.timeEnd}
+                  onChange={e => setGridPlacementPicker(p => ({ ...p, timeEnd: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)' }} />
+              </div>
+            </div>
+            {/* Crew preview */}
+            {placementMode.crew?.length > 0 && (
+              <div style={{ padding: '0 20px 12px', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {placementMode.crew.map(c => (
+                  <span key={c.employee_id} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)', color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)', border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none' }}>
+                    {c.display_name || c.full_name}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setGridPlacementPicker(null)}
+                style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
+              <button onClick={() => {
+                handlePlacementClick(gridPlacementPicker.dateKey, gridPlacementPicker.timeStart, gridPlacementPicker.timeEnd);
+                setGridPlacementPicker(null);
+              }}
+                style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                Create appointment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {jobPickerModal && (() => {
         const fpd = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
