@@ -78,30 +78,48 @@ function fmtTime(t) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// JOB SELECTOR PANEL
+// JOB PANEL — Two-state: Job List ↔ Job Detail
 // ═══════════════════════════════════════════════════════════════
 
 const MITIGATION_DIVS = ['water', 'mold', 'fire', 'contents'];
 const RECON_DIVS = ['reconstruction'];
 
-function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase }) {
+function fmtShortDate(d) {
+  if (!d) return '';
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onSelectJob, selectedJobId, refreshKey }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
   const [divFilter, setDivFilter] = useState('all');
-  const [expandedJobId, setExpandedJobId] = useState(null);
-  const [jobTaskPool, setJobTaskPool] = useState(null); // phases for expanded job
-  const [poolLoading, setPoolLoading] = useState(false); // 'all' | 'mitigation' | 'reconstruction'
 
-  // Counts for filter buttons (based on full list, not filtered)
+  // Detail view state
+  const [activeJob, setActiveJob] = useState(null);
+  const [taskPool, setTaskPool] = useState([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [expandedPhase, setExpandedPhase] = useState(null);
+
+  // Refresh pool when appointment is created/saved
+  useEffect(() => {
+    if (refreshKey > 0 && activeJob) {
+      (async () => {
+        try {
+          const data = await db.rpc('get_job_task_pool', { p_job_id: activeJob.id });
+          const parsed = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
+          setTaskPool(parsed);
+        } catch {}
+      })();
+    }
+  }, [refreshKey]);
+
   const mitigationCount = jobs.filter(j => MITIGATION_DIVS.includes(j.division)).length;
   const reconCount = jobs.filter(j => RECON_DIVS.includes(j.division)).length;
 
   const filtered = useMemo(() => {
     let list = jobs;
-    // Division filter
     if (divFilter === 'mitigation') list = list.filter(j => MITIGATION_DIVS.includes(j.division));
     else if (divFilter === 'reconstruction') list = list.filter(j => RECON_DIVS.includes(j.division));
-    // Search filter
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(j =>
@@ -116,18 +134,6 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const onBoard = filtered.filter(j => j.on_board);
   const offBoard = filtered.filter(j => !j.on_board);
 
-  // Expand a job to show its phases
-  const expandJob = async (jobId) => {
-    if (expandedJobId === jobId) { setExpandedJobId(null); setJobTaskPool(null); return; }
-    setExpandedJobId(jobId);
-    setPoolLoading(true);
-    try {
-      const data = await db.rpc('get_job_task_pool', { p_job_id: jobId });
-      setJobTaskPool(Array.isArray(data) ? data : []);
-    } catch (e) { console.error('Task pool:', e); setJobTaskPool([]); }
-    finally { setPoolLoading(false); }
-  };
-
   const grouped = useMemo(() => {
     const g = { active: [], ready: [], waiting: [], other: [] };
     for (const j of offBoard) g[classifyPhase(j.phase)].push(j);
@@ -141,7 +147,39 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
     { key: 'other', label: 'Other', color: '#6b7280', items: grouped.other },
   ].filter(g => g.items.length > 0);
 
-  // Collapsed state
+  // Open job detail
+  const openJob = async (job) => {
+    setActiveJob(job);
+    setExpandedPhase(null);
+    setPoolLoading(true);
+    onSelectJob?.(job.id);
+    try {
+      const data = await db.rpc('get_job_task_pool', { p_job_id: job.id });
+      const parsed = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
+      setTaskPool(parsed);
+    } catch (e) { console.error('Task pool:', e); setTaskPool([]); }
+    finally { setPoolLoading(false); }
+  };
+
+  // Back to list
+  const goBack = () => {
+    setActiveJob(null);
+    setTaskPool([]);
+    setExpandedPhase(null);
+    onSelectJob?.(null);
+  };
+
+  // Refresh task pool (after creating appointment)
+  const refreshPool = async () => {
+    if (!activeJob) return;
+    try {
+      const data = await db.rpc('get_job_task_pool', { p_job_id: activeJob.id });
+      const parsed = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
+      setTaskPool(parsed);
+    } catch {}
+  };
+
+  // ── Collapsed state ──
   if (!panelOpen) {
     return (
       <div style={P.collapsed} onClick={onTogglePanel}>
@@ -152,6 +190,261 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
     );
   }
 
+  // ═════════════════════════════════════════════
+  // STATE 2: Job Detail View
+  // ═════════════════════════════════════════════
+  if (activeJob) {
+    const dc = DIV_COLORS[activeJob.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
+    const isOn = activeJob.on_board;
+    const today = fmtDate(new Date());
+
+    // Schedule stats
+    const totalTasks = taskPool.reduce((s, p) => s + (p.total || 0), 0);
+    const completedTasks = taskPool.reduce((s, p) => s + (p.completed || 0), 0);
+    const assignedTasks = taskPool.reduce((s, p) => s + (p.assigned || 0), 0);
+    const unassignedTasks = totalTasks - assignedTasks;
+    const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    const allStarts = taskPool.filter(p => p.target_start).map(p => p.target_start);
+    const allEnds = taskPool.filter(p => p.target_end).map(p => p.target_end);
+    const projectStart = allStarts.length > 0 ? allStarts.sort()[0] : null;
+    const projectEnd = allEnds.length > 0 ? allEnds.sort().reverse()[0] : null;
+
+    // Days remaining
+    let daysRemaining = null;
+    if (projectEnd) {
+      const end = new Date(projectEnd + 'T00:00:00');
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      daysRemaining = Math.ceil((end - now) / 86400000);
+    }
+
+    return (
+      <div style={P.panel}>
+        {/* Back header */}
+        <div style={P.header}>
+          <button onClick={goBack} style={{
+            display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
+            cursor: 'pointer', color: 'var(--accent)', fontSize: 13, fontWeight: 600,
+            fontFamily: 'var(--font-sans)', padding: 0,
+          }}>
+            ← Jobs
+          </button>
+          <button style={P.closeBtn} onClick={onTogglePanel}>✕</button>
+        </div>
+
+        <div style={P.body}>
+          {/* ── Job header ── */}
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: dc.bg, color: dc.text }}>
+                {dc.label}
+              </span>
+              {activeJob.job_number && (
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>#{activeJob.job_number}</span>
+              )}
+              {/* Board toggle */}
+              <div onClick={() => onToggleJob(activeJob.id, !isOn)}
+                style={{
+                  marginLeft: 'auto', width: 18, height: 18, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                  border: isOn ? 'none' : '1.5px solid var(--border-color)',
+                  background: isOn ? 'var(--accent)' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                {isOn && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
+              </div>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{activeJob.insured_name}</div>
+            {activeJob.address && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {activeJob.address}
+              </div>
+            )}
+          </div>
+
+          {/* ── Schedule summary ── */}
+          {poolLoading ? (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--text-tertiary)' }}>Loading schedule...</div>
+          ) : taskPool.length === 0 ? (
+            <div style={{ padding: '24px 14px', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4 }}>No schedule plan</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Open the job page to apply a template</div>
+            </div>
+          ) : (
+            <>
+              {/* Stats row */}
+              <div style={{ display: 'flex', padding: '10px 14px', gap: 6, borderBottom: '1px solid var(--border-light)' }}>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: pct === 100 ? '#10b981' : 'var(--accent)' }}>{pct}%</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.03em' }}>Done</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: unassignedTasks > 0 ? '#f59e0b' : '#10b981' }}>{unassignedTasks}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.03em' }}>Unsched.</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: daysRemaining !== null && daysRemaining < 0 ? '#ef4444' : 'var(--text-primary)' }}>
+                    {daysRemaining !== null ? (daysRemaining < 0 ? `${Math.abs(daysRemaining)}` : daysRemaining) : '—'}
+                  </div>
+                  <div style={{ fontSize: 9, color: daysRemaining !== null && daysRemaining < 0 ? '#ef4444' : 'var(--text-tertiary)',
+                    textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.03em' }}>
+                    {daysRemaining !== null && daysRemaining < 0 ? 'Overdue' : 'Days left'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Date range + progress bar */}
+              {projectStart && (
+                <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                    {fmtShortDate(projectStart)} – {fmtShortDate(projectEnd)}
+                  </div>
+                  <div style={{ height: 5, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10b981' : 'var(--accent)', borderRadius: 3, transition: 'width 300ms ease' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Phase list ── */}
+              <div style={{ padding: '4px 0' }}>
+                {taskPool.map(phase => {
+                  const total = phase.total || 0;
+                  const completed = phase.completed || 0;
+                  const assigned = phase.assigned || 0;
+                  const unassigned = total - assigned;
+                  const isDone = completed === total && total > 0;
+                  const isExpanded = expandedPhase === phase.phase_name;
+                  const tasks = phase.tasks || [];
+                  const phasePct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                  // Behind schedule?
+                  const isBehind = !isDone && phase.target_end && phase.target_end < today;
+
+                  return (
+                    <div key={phase.phase_name}>
+                      {/* Phase header */}
+                      <div
+                        onClick={() => tasks.length > 0 && setExpandedPhase(isExpanded ? null : phase.phase_name)}
+                        style={{
+                          padding: '8px 14px', cursor: tasks.length > 0 ? 'pointer' : 'default',
+                          borderBottom: '1px solid var(--border-light)',
+                          background: isExpanded ? 'var(--bg-secondary)' : 'transparent',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0 }} />
+                          <span style={{
+                            fontSize: 12, fontWeight: 600, flex: 1,
+                            color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                            textDecoration: isDone ? 'line-through' : 'none',
+                          }}>
+                            {phase.phase_name}
+                          </span>
+                          {isDone && <span style={{ fontSize: 9, fontWeight: 600, color: '#10b981' }}>✓</span>}
+                          {isBehind && (
+                            <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#fef2f2', color: '#ef4444' }}>
+                              Behind
+                            </span>
+                          )}
+                          {!isDone && unassigned > 0 && !isBehind && (
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: '#fef3c7', color: '#92400e' }}>
+                              {unassigned}
+                            </span>
+                          )}
+                          {/* Create appointment button */}
+                          {unassigned > 0 && (
+                            <button onClick={e => {
+                              e.stopPropagation();
+                              onSchedulePhase?.(activeJob.id, activeJob.insured_name, phase);
+                            }}
+                              style={{
+                                width: 20, height: 20, borderRadius: 'var(--radius-md)', flexShrink: 0,
+                                border: '1px solid var(--accent)', background: 'var(--accent-light)',
+                                cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontFamily: 'var(--font-sans)',
+                              }}
+                              title={`Create appointment for ${unassigned} unassigned tasks`}
+                            >+</button>
+                          )}
+                          {tasks.length > 0 && (
+                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)',
+                              transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
+                          )}
+                        </div>
+
+                        {/* Dates + progress */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, paddingLeft: 12 }}>
+                          {phase.target_start && (
+                            <span style={{ fontSize: 10, color: isBehind ? '#ef4444' : 'var(--text-tertiary)' }}>
+                              {fmtShortDate(phase.target_start)}
+                              {phase.target_end && phase.target_end !== phase.target_start && ` – ${fmtShortDate(phase.target_end)}`}
+                            </span>
+                          )}
+                          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{completed}/{total}</span>
+                        </div>
+                        {total > 0 && (
+                          <div style={{ height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 4, marginLeft: 12 }}>
+                            <div style={{ width: `${phasePct}%`, height: '100%',
+                              background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Expanded tasks */}
+                      {isExpanded && tasks.length > 0 && (
+                        <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-light)' }}>
+                          {tasks.map(task => (
+                            <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px 5px 32px' }}>
+                              <span style={{
+                                width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
+                                background: task.is_completed ? '#10b981' : (task.appointment_id ? 'var(--accent-light)' : 'transparent'),
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                              </span>
+                              <span style={{ fontSize: 11, flex: 1, color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                                {task.title}
+                              </span>
+                              {task.appointment_id ? (
+                                <span style={{ fontSize: 8, fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '1px 4px', borderRadius: 3 }}>SCHED</span>
+                              ) : (
+                                <span style={{ fontSize: 8, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 4px', borderRadius: 3 }}>OPEN</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Quick action */}
+              <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border-color)' }}>
+                <button onClick={() => {
+                  onSchedulePhase?.(activeJob.id, activeJob.insured_name, { phase_name: null, target_start: null });
+                }}
+                  style={{
+                    width: '100%', padding: '8px', fontSize: 12, fontWeight: 600,
+                    background: 'var(--accent)', color: '#fff', border: 'none',
+                    borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                  }}>
+                  + Create appointment
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ═════════════════════════════════════════════
+  // STATE 1: Job List
+  // ═════════════════════════════════════════════
   return (
     <div style={P.panel}>
       <div style={P.header}>
@@ -198,14 +491,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
               On board ({onBoard.length})
             </div>
             {onBoard.map(j => (
-              <div key={j.id}>
-                <JobRow job={j} onToggle={onToggleJob} isOn onExpand={() => expandJob(j.id)}
-                  isExpanded={expandedJobId === j.id} />
-                {expandedJobId === j.id && (
-                  <JobPhaseList phases={jobTaskPool} loading={poolLoading}
-                    jobId={j.id} jobName={j.insured_name} onSchedulePhase={onSchedulePhase} />
-                )}
-              </div>
+              <JobRow key={j.id} job={j} onToggle={onToggleJob} isOn onOpen={() => openJob(j)} />
             ))}
           </div>
         )}
@@ -227,14 +513,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
               }}>▾</span>
             </div>
             {expandedGroup === g.key && g.items.map(j => (
-              <div key={j.id}>
-                <JobRow job={j} onToggle={onToggleJob} isOn={false} onExpand={() => expandJob(j.id)}
-                  isExpanded={expandedJobId === j.id} />
-                {expandedJobId === j.id && (
-                  <JobPhaseList phases={jobTaskPool} loading={poolLoading}
-                    jobId={j.id} jobName={j.insured_name} onSchedulePhase={onSchedulePhase} />
-                )}
-              </div>
+              <JobRow key={j.id} job={j} onToggle={onToggleJob} isOn={false} onOpen={() => openJob(j)} />
             ))}
           </div>
         ))}
@@ -249,18 +528,16 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   );
 }
 
-function JobRow({ job, onToggle, isOn, onExpand, isExpanded }) {
+function JobRow({ job, onToggle, isOn, onOpen }) {
   const dc = DIV_COLORS[job.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
   return (
     <div style={{ ...P.jobRow, background: isOn ? 'var(--accent-light)' : 'transparent' }}>
-      {/* Name area — click to expand */}
-      <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onExpand?.()}>
+      {/* Name area — click to open detail */}
+      <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onOpen?.()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', transform: isExpanded ? 'rotate(90deg)' : 'none',
-            transition: '120ms ease', display: 'inline-block' }}>▶</span>
           <span style={P.jobName}>{job.insured_name}</span>
         </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 2, paddingLeft: 14 }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 2 }}>
           <span style={{ fontSize: 9, fontWeight: 600, padding: '0 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>
             {dc.label}
           </span>
@@ -286,142 +563,6 @@ function JobRow({ job, onToggle, isOn, onExpand, isExpanded }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// JOB PHASE LIST (inside expanded job in the panel)
-// ═══════════════════════════════════════════════════════════════
-
-function fmtShortDate(d) {
-  if (!d) return '';
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function JobPhaseList({ phases, loading, jobId, jobName, onSchedulePhase }) {
-  const [expandedPhase, setExpandedPhase] = useState(null);
-
-  if (loading) return <div style={PP.wrap}><div style={PP.loading}>Loading phases...</div></div>;
-  if (!phases || phases.length === 0) {
-    return (
-      <div style={PP.wrap}>
-        <div style={PP.empty}>No schedule plan applied</div>
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '0 14px 8px' }}>
-          Open the job and apply a schedule template first
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={PP.wrap}>
-      {phases.map(phase => {
-        const total = phase.total || phase.tasks?.length || 0;
-        const assigned = phase.assigned || 0;
-        const completed = phase.completed || 0;
-        const unassigned = total - assigned;
-        const isDone = completed === total && total > 0;
-        const isExpanded = expandedPhase === phase.phase_name;
-        const tasks = phase.tasks || [];
-        const hasTargetDates = phase.target_start || phase.target_end;
-
-        return (
-          <div key={phase.phase_name}>
-            <div style={PP.phaseRow}>
-              <span style={{ width: 6, height: 6, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0, marginTop: 5 }} />
-              <div style={{ flex: 1, minWidth: 0, cursor: tasks.length > 0 ? 'pointer' : 'default' }}
-                onClick={() => tasks.length > 0 && setExpandedPhase(isExpanded ? null : phase.phase_name)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {tasks.length > 0 && (
-                    <span style={{ fontSize: 9, color: 'var(--text-tertiary)', transform: isExpanded ? 'rotate(90deg)' : 'none',
-                      transition: '120ms ease', display: 'inline-block', flexShrink: 0 }}>▶</span>
-                  )}
-                  <span style={{ fontSize: 11, fontWeight: 600, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                    textDecoration: isDone ? 'line-through' : 'none' }}>
-                    {phase.phase_name}
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                    {completed}/{total}
-                  </span>
-                  {unassigned > 0 && (
-                    <span style={{ fontSize: 9, fontWeight: 600, padding: '0 4px', borderRadius: 3,
-                      background: '#fef3c7', color: '#92400e' }}>
-                      {unassigned} unscheduled
-                    </span>
-                  )}
-                </div>
-                {/* Target dates */}
-                {hasTargetDates && (
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1, paddingLeft: tasks.length > 0 ? 13 : 0 }}>
-                    {fmtShortDate(phase.target_start)}
-                    {phase.target_end && phase.target_end !== phase.target_start && ` – ${fmtShortDate(phase.target_end)}`}
-                    {phase.duration_days && <span style={{ marginLeft: 4 }}>({phase.duration_days}d)</span>}
-                  </div>
-                )}
-                {/* Mini progress bar */}
-                {total > 0 && (
-                  <div style={{ height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 3, width: '100%',
-                    paddingLeft: tasks.length > 0 ? 13 : 0 }}>
-                    <div style={{ width: `${(completed / total) * 100}%`, height: '100%',
-                      background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
-                  </div>
-                )}
-              </div>
-              {/* Schedule button — always show if there are unassigned tasks */}
-              {unassigned > 0 && (
-                <button onClick={() => onSchedulePhase?.(jobId, jobName, phase)}
-                  style={PP.schedBtn} title={`Create appointment for ${unassigned} unassigned tasks`}>
-                  +
-                </button>
-              )}
-            </div>
-
-            {/* Expanded tasks */}
-            {isExpanded && tasks.length > 0 && (
-              <div style={PP.taskList}>
-                {tasks.map(task => (
-                  <div key={task.id} style={PP.taskRow}>
-                    <span style={{
-                      width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                      border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
-                      background: task.is_completed ? '#10b981' : (task.appointment_id ? 'var(--accent-light)' : 'transparent'),
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                    </span>
-                    <span style={{ fontSize: 11, flex: 1, color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                      textDecoration: task.is_completed ? 'line-through' : 'none' }}>
-                      {task.title}
-                    </span>
-                    {task.appointment_id ? (
-                      <span style={{ fontSize: 9, color: '#2563eb', background: '#eff6ff', padding: '0 4px', borderRadius: 3, fontWeight: 500 }}>Scheduled</span>
-                    ) : (
-                      <span style={{ fontSize: 9, color: '#92400e', background: '#fef3c7', padding: '0 4px', borderRadius: 3, fontWeight: 500 }}>Unscheduled</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-const PP = {
-  wrap: { background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', padding: '4px 0' },
-  loading: { fontSize: 11, color: 'var(--text-tertiary)', padding: '8px 14px' },
-  empty: { fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '8px 14px 2px' },
-  phaseRow: { display: 'flex', alignItems: 'flex-start', gap: 6, padding: '5px 14px 5px 24px' },
-  schedBtn: {
-    width: 22, height: 22, borderRadius: 'var(--radius-md)', flexShrink: 0,
-    border: '1px solid var(--accent)', background: 'var(--accent-light)',
-    cursor: 'pointer', fontSize: 13, color: 'var(--accent)', fontWeight: 700,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: 'var(--font-sans)', marginTop: 2,
-  },
-  taskList: { padding: '2px 0 6px', background: 'var(--bg-tertiary)' },
-  taskRow: { display: 'flex', alignItems: 'center', gap: 6, padding: '3px 14px 3px 38px', fontSize: 11 },
-};
-
 const P = {
   collapsed: {
     width: 40, background: 'var(--bg-primary)', borderRight: '1px solid var(--border-color)',
@@ -437,7 +578,7 @@ const P = {
     background: 'var(--accent-light)', padding: '2px 6px', borderRadius: 99,
   },
   panel: {
-    width: 280, background: 'var(--bg-primary)', borderRight: '1px solid var(--border-color)',
+    width: 300, background: 'var(--bg-primary)', borderRight: '1px solid var(--border-color)',
     display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
   },
   header: {
@@ -451,7 +592,7 @@ const P = {
     borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)',
     outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)',
   },
-  body: { flex: 1, overflowY: 'auto', padding: '8px 0' },
+  body: { flex: 1, overflowY: 'auto', padding: '0' },
   groupHead: {
     display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
     fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
@@ -725,12 +866,12 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, db, employees, onClos
             </div>
             <div style={M.field}>
               <label style={M.label}>Start</label>
-              <input type="time" style={{ ...M.input, width: 110 }} value={timeStart}
+              <input type="time" style={{ ...M.input, width: 150 }} value={timeStart}
                 onChange={e => setTimeStart(e.target.value)} />
             </div>
             <div style={M.field}>
               <label style={M.label}>End</label>
-              <input type="time" style={{ ...M.input, width: 110 }} value={timeEnd}
+              <input type="time" style={{ ...M.input, width: 150 }} value={timeEnd}
                 onChange={e => setTimeEnd(e.target.value)} />
             </div>
           </div>
@@ -1124,6 +1265,7 @@ export default function Schedule() {
   const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true); // auto-include jobs with appts this week
+  const [panelRefreshKey, setPanelRefreshKey] = useState(0);
 
   // ── Week days ──
   const days = useMemo(() => {
@@ -1278,9 +1420,14 @@ export default function Schedule() {
         onTogglePanel={() => setPanelOpen(!panelOpen)}
         onToggleJob={toggleJob} loading={panelLoading}
         db={db}
+        refreshKey={panelRefreshKey}
         onSchedulePhase={(jobId, jobName, phase) => {
-          // Open create appointment modal pre-filled with this phase
-          setCreateModal({ jobId, jobName, dateKey: fmtDate(new Date()), prefillPhase: phase.phase_name });
+          // Pre-fill date with phase's target_start, or today if no dates
+          const dateKey = phase?.target_start || fmtDate(new Date());
+          setCreateModal({ jobId, jobName, dateKey, prefillPhase: phase?.phase_name || null });
+        }}
+        onSelectJob={(jobId) => {
+          // Could be used to highlight this job's appointments on the board
         }}
       />
 
@@ -1476,7 +1623,7 @@ export default function Schedule() {
           db={db}
           employees={allEmployees}
           onClose={() => setCreateModal(null)}
-          onSaved={() => { setCreateModal(null); loadBoard(); }}
+          onSaved={() => { setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }}
         />
       )}
     </div>
