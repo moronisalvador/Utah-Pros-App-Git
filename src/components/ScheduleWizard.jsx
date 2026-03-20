@@ -52,51 +52,45 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
     if (!selectedTemplate || !startDate) return;
     setPreviewLoading(true); setError(null);
     try {
-      const [prev, tasks] = await Promise.all([
-        db.rpc('preview_schedule', { p_template_id: selectedTemplate, p_start_date: startDate, p_skip_weekends: skipWeekends }),
-        db.select('template_tasks', `template_phase_id=in.(${
-          // We need to fetch task list — get all phase IDs first from the template
-          '00000000-0000-0000-0000-000000000000'
-        })&order=display_order.asc`).catch(() => []),
-      ]);
-
-      // Fetch tasks by template_id via a different approach
-      const allTasks = await db.select('template_tasks', `order=display_order.asc`).catch(() => []);
-
-      // Group tasks by phase_id
-      const taskMap = {};
-      const phaseIds = new Set((prev?.phases || []).map(p => p.phase_id));
-      for (const t of allTasks) {
-        if (!phaseIds.has(t.template_phase_id)) continue;
-        if (!taskMap[t.template_phase_id]) taskMap[t.template_phase_id] = [];
-        taskMap[t.template_phase_id].push(t);
-      }
-      setTemplateTasks(taskMap);
-
-      // Initialize: all phases enabled, all tasks enabled
-      const phaseSet = new Set((prev?.phases || []).map(p => p.phase_id));
-      setEnabledPhases(phaseSet);
-      const taskSet = new Set(allTasks.filter(t => phaseIds.has(t.template_phase_id)).map(t => t.id));
-      setEnabledTasks(taskSet);
-      setCustomTasks({});
-      setCustomPhases([]);
-
+      const prev = await db.rpc('preview_schedule', {
+        p_template_id: selectedTemplate,
+        p_start_date: startDate,
+        p_skip_weekends: skipWeekends,
+        p_duration_overrides: durationOverrides,
+      });
       setPreview(prev);
+
+      // Load tasks for each phase
+      const tasks = {};
+      const allTaskIds = new Set();
+      const allPhaseIds = new Set();
+      for (const phase of (prev?.phases || [])) {
+        allPhaseIds.add(phase.phase_id);
+        const phaseTasks = await db.select(
+          'template_tasks',
+          `phase_id=eq.${phase.phase_id}&order=sort_order.asc&select=id,title,is_required,sort_order`
+        );
+        tasks[phase.phase_id] = phaseTasks || [];
+        for (const t of (phaseTasks || [])) allTaskIds.add(t.id);
+      }
+      setTemplateTasks(tasks);
+      setEnabledPhases(allPhaseIds);
+      setEnabledTasks(allTaskIds);
       setStep('preview');
-    } catch (e) { setError('Failed to generate preview: ' + e.message); }
+    } catch (e) { setError('Failed to preview: ' + e.message); }
     finally { setPreviewLoading(false); }
   };
 
-  // Re-preview with current overrides (called when start date or durations change)
-  const rePreview = async (newStartDate, newDurOverrides) => {
-    const sd = newStartDate || startDate;
-    const overrides = Object.entries(newDurOverrides || durationOverrides).map(([id, days]) => ({
-      phase_id: id, duration_days: days,
-    }));
+  // Re-preview when dates/durations change
+  const rePreview = async (newStart, newOverrides) => {
+    const sd = newStart || startDate;
+    const ov = newOverrides || durationOverrides;
     try {
       const prev = await db.rpc('preview_schedule', {
-        p_template_id: selectedTemplate, p_start_date: sd,
-        p_skip_weekends: skipWeekends, p_duration_overrides: overrides,
+        p_template_id: selectedTemplate,
+        p_start_date: sd,
+        p_skip_weekends: skipWeekends,
+        p_duration_overrides: ov,
       });
       setPreview(prev);
     } catch (e) { console.error('Re-preview:', e); }
@@ -120,12 +114,10 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
       const next = new Set(prev);
       if (next.has(phaseId)) {
         next.delete(phaseId);
-        // Also disable all tasks in this phase
         const phaseTasks = templateTasks[phaseId] || [];
         setEnabledTasks(et => { const n = new Set(et); phaseTasks.forEach(t => n.delete(t.id)); return n; });
       } else {
         next.add(phaseId);
-        // Re-enable all tasks in this phase
         const phaseTasks = templateTasks[phaseId] || [];
         setEnabledTasks(et => { const n = new Set(et); phaseTasks.forEach(t => n.add(t.id)); return n; });
       }
@@ -193,49 +185,41 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
     + Object.values(customTasks).reduce((s, arr) => s + arr.length, 0)
     + customPhases.reduce((s, p) => s + p.tasks.length, 0);
 
-  // Generate
-  const generateSchedule = async () => {
+  // ═══════════════════════════════════════════════════════════════
+  // APPLY PLAN — creates task pool + target dates, NO appointments
+  // ═══════════════════════════════════════════════════════════════
+  const applyPlan = async () => {
     setStep('generating'); setError(null);
     try {
-      // Build phase overrides — skip disabled phases + duration changes
+      // Build skip overrides
       const overrides = [];
       for (const p of (preview?.phases || [])) {
-        const entry = {};
-        let hasOverride = false;
         if (!enabledPhases.has(p.phase_id)) {
-          entry.phase_id = p.phase_id;
-          entry.skip = true;
-          hasOverride = true;
-        } else if (durationOverrides[p.phase_id]) {
-          entry.phase_id = p.phase_id;
-          entry.start_date = p.start_date;
-          entry.end_date = p.end_date;
-          hasOverride = true;
+          overrides.push({ phase_id: p.phase_id, skip: true });
         }
-        if (hasOverride) overrides.push(entry);
       }
 
-      // 1. Generate the main schedule
-      const data = await db.rpc('generate_full_schedule', {
+      // 1. Apply the schedule plan (creates phases + task pool with dates, NO appointments)
+      const data = await db.rpc('apply_schedule_plan', {
         p_job_id: jobId,
         p_template_id: selectedTemplate,
         p_start_date: startDate,
         p_skip_weekends: skipWeekends,
         p_phase_overrides: overrides,
+        p_duration_overrides: durationOverrides,
         p_created_by: employee?.id || null,
       });
 
       // 2. Delete excluded tasks (tasks from enabled phases that were individually unchecked)
       const excludedTaskIds = [];
       for (const [phaseId, tasks] of Object.entries(templateTasks)) {
-        if (!enabledPhases.has(phaseId)) continue; // whole phase skipped, already handled
+        if (!enabledPhases.has(phaseId)) continue;
         for (const t of tasks) {
           if (!enabledTasks.has(t.id)) excludedTaskIds.push(t.id);
         }
       }
 
       if (excludedTaskIds.length > 0) {
-        // Delete job_tasks that were created from excluded template tasks
         for (const ttId of excludedTaskIds) {
           await db.delete('job_tasks', `job_id=eq.${jobId}&template_task_id=eq.${ttId}`);
         }
@@ -251,32 +235,53 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             p_title: t.title,
             p_phase_name: phase?.name || 'General',
             p_phase_color: phase?.color || '#6b7280',
+            p_target_date: phase?.start_date || null,
           });
         }
       }
 
-      // 4. Create custom phases as appointments + tasks
+      // 4. Create custom phases (as schedule phases + tasks, NO appointments)
       for (const cp of customPhases) {
-        // Create appointment
-        const [appt] = await db.insert('appointments', {
-          job_id: jobId,
-          title: cp.name,
-          date: startDate, // PM can adjust on the dispatch board
-          time_start: '07:00',
-          time_end: '15:30',
-          duration_days: cp.duration,
-          type: 'reconstruction',
-          status: 'scheduled',
-          color: cp.color,
+        // Calculate target dates for custom phase (append after last phase)
+        const lastPhase = preview?.phases?.filter(p => enabledPhases.has(p.phase_id)).slice(-1)[0];
+        const cpStart = lastPhase?.end_date || startDate;
+        // Simple: start day after last phase end
+        const startD = new Date(cpStart + 'T00:00:00');
+        startD.setDate(startD.getDate() + 1);
+        // Skip weekends
+        if (skipWeekends) {
+          while (startD.getDay() === 0 || startD.getDay() === 6) startD.setDate(startD.getDate() + 1);
+        }
+        const cpStartStr = startD.toISOString().split('T')[0];
+        const endD = new Date(startD);
+        let remaining = cp.duration - 1;
+        while (remaining > 0) {
+          endD.setDate(endD.getDate() + 1);
+          if (skipWeekends && (endD.getDay() === 0 || endD.getDay() === 6)) continue;
+          remaining--;
+        }
+        const cpEndStr = endD.toISOString().split('T')[0];
+
+        // Create the phase record
+        const phaseId = await db.rpc('add_custom_schedule_phase', {
+          p_job_id: jobId,
+          p_phase_name: cp.name,
+          p_phase_color: cp.color,
+          p_target_start: cpStartStr,
+          p_target_end: cpEndStr,
+          p_duration_days: cp.duration,
+          p_sort_order: 900 + customPhases.indexOf(cp),
         });
-        // Create tasks
+
+        // Create tasks for this custom phase
         for (const t of cp.tasks) {
           await db.rpc('add_adhoc_job_task', {
             p_job_id: jobId,
             p_title: t.title,
             p_phase_name: cp.name,
             p_phase_color: cp.color,
-            p_appointment_id: appt?.id || null,
+            p_target_date: cpStartStr,
+            p_job_schedule_phase_id: phaseId || null,
           });
         }
       }
@@ -288,7 +293,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
       });
       setStep('done');
     } catch (e) {
-      setError('Failed to generate schedule: ' + e.message);
+      setError('Failed to apply plan: ' + e.message);
       setStep('preview');
     }
   };
@@ -299,7 +304,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
         {/* Header */}
         <div style={W.header}>
           <div>
-            <div style={W.title}>{step === 'done' ? 'Schedule created' : 'Generate schedule'}</div>
+            <div style={W.title}>{step === 'done' ? 'Plan applied' : 'Schedule plan'}</div>
             <div style={W.subtitle}>{jobName}</div>
           </div>
           <button style={W.closeBtn} onClick={onClose}>✕</button>
@@ -332,7 +337,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
                 </div>
               </div>
               {selectedTemplate && (
-                <div style={W.hint}>Preview the schedule first, then customize phases and tasks before generating.</div>
+                <div style={W.hint}>Preview the timeline first, then customize phases and tasks before applying.</div>
               )}
             </>
           )}
@@ -356,7 +361,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
                 </div>
                 <div style={W.summaryItem}>
                   <div style={W.summaryValue}>{fmtDate(preview.project_end).split(',').pop().trim()}</div>
-                  <div style={W.summaryLabel}>End date</div>
+                  <div style={W.summaryLabel}>Target end</div>
                 </div>
               </div>
 
@@ -543,8 +548,8 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
               )}
 
               <div style={W.hint}>
-                Uncheck phases or tasks that don't apply to this job.
-                Crew can be assigned after generating on the dispatch board.
+                This creates a task pool with target dates for each phase.
+                Marcelo will then create appointments on the dispatch board and assign tasks manually.
               </div>
             </>
           )}
@@ -553,7 +558,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
           {step === 'generating' && (
             <div style={W.center}>
               <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-                Creating {enabledPhaseCount} appointments and {enabledTaskCount} tasks...
+                Creating {enabledPhaseCount} phases and {enabledTaskCount} tasks...
               </div>
             </div>
           )}
@@ -563,16 +568,19 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             <div style={{ padding: '20px 0' }}>
               <div style={W.successBox}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#065f46', marginBottom: 8 }}>
-                  Schedule generated successfully
+                  Schedule plan applied
                 </div>
                 <div style={{ fontSize: 13, color: '#047857', lineHeight: 1.6 }}>
-                  {result.appointments_created} appointments created
-                  {result.custom_phases > 0 && ` + ${result.custom_phases} custom`}.
-                  {' '}{result.tasks_created - (result.excluded_tasks || 0)} tasks assigned.
+                  {result.phases_created} phases with target dates.
+                  {' '}{result.tasks_created - (result.excluded_tasks || 0)} tasks in the pool.
                   {result.excluded_tasks > 0 && ` ${result.excluded_tasks} excluded.`}
+                  {result.custom_phases > 0 && ` ${result.custom_phases} custom phases added.`}
                 </div>
               </div>
-              <div style={W.hint}>Open the dispatch board to see this job's full schedule and assign crew.</div>
+              <div style={W.hint}>
+                Open the dispatch board to see phases with target dates.
+                Create appointments and assign tasks from the task pool.
+              </div>
             </div>
           )}
         </div>
@@ -584,15 +592,15 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
               <button style={W.cancelBtn} onClick={onClose}>Cancel</button>
               <button style={W.primaryBtn} onClick={loadPreview}
                 disabled={!selectedTemplate || !startDate || previewLoading}>
-                {previewLoading ? 'Calculating...' : 'Preview schedule'}
+                {previewLoading ? 'Calculating...' : 'Preview timeline'}
               </button>
             </>
           )}
           {step === 'preview' && (
             <>
               <button style={W.cancelBtn} onClick={() => setStep('pick')}>Back</button>
-              <button style={W.primaryBtn} onClick={generateSchedule} disabled={enabledPhaseCount === 0}>
-                Generate {enabledPhaseCount} appointment{enabledPhaseCount !== 1 ? 's' : ''}
+              <button style={W.primaryBtn} onClick={applyPlan} disabled={enabledPhaseCount === 0}>
+                Apply plan — {enabledPhaseCount} phase{enabledPhaseCount !== 1 ? 's' : ''}, {enabledTaskCount} task{enabledTaskCount !== 1 ? 's' : ''}
               </button>
             </>
           )}

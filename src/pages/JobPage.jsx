@@ -44,14 +44,15 @@ export default function JobPage() {
   const [notes, setNotes] = useState([]);
   const [history, setHistory] = useState([]);
 
+  // Schedule
+  const [scheduleData, setScheduleData] = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+
   // Inline editing
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // Schedule
-  const [showWizard, setShowWizard] = useState(false);
-  const [taskSummary, setTaskSummary] = useState(null);
 
   useEffect(() => { loadJob(); }, [jobId]);
 
@@ -73,10 +74,6 @@ export default function JobPage() {
       setDocuments(docsData);
       setNotes(notesData);
       setHistory(histData);
-      // Load task summary for schedule tab
-      db.rpc('get_job_task_summary', { p_job_id: jobId })
-        .then(data => setTaskSummary(data))
-        .catch(() => setTaskSummary(null));
     } catch (err) {
       console.error('Job load error:', err);
     } finally {
@@ -89,6 +86,18 @@ export default function JobPage() {
     for (const p of phases) m[p.key] = p;
     return m;
   }, [phases]);
+
+  // ── Load schedule data ──
+  const loadSchedule = useCallback(async () => {
+    setScheduleLoading(true);
+    try {
+      const data = await db.rpc('get_job_task_pool', { p_job_id: jobId });
+      setScheduleData(Array.isArray(data) ? data : (data ? [data] : []));
+    } catch { setScheduleData([]); }
+    finally { setScheduleLoading(false); }
+  }, [db, jobId]);
+
+  useEffect(() => { if (activeTab === 'schedule') loadSchedule(); }, [activeTab, loadSchedule]);
 
   // ── Save a single field ──
   const saveField = async (field, value) => {
@@ -178,7 +187,7 @@ export default function JobPage() {
 
   const TABS = [
     { key: 'overview', label: 'Overview' },
-    { key: 'schedule', label: 'Schedule', count: taskSummary?.total || 0 },
+    { key: 'schedule', label: 'Schedule' },
     { key: 'files', label: 'Files', count: documents.length },
     { key: 'financial', label: 'Financial' },
     { key: 'activity', label: 'Activity', count: notes.length + history.length },
@@ -241,7 +250,13 @@ export default function JobPage() {
           <OverviewTab job={job} employees={employees} phases={phases} editProps={editProps} saveFieldDirect={saveFieldDirect} fmtDate={fmtDate} />
         )}
         {activeTab === 'schedule' && (
-          <ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={() => setShowWizard(true)} navigate={navigate} />
+          <ScheduleTab
+            scheduleData={scheduleData}
+            loading={scheduleLoading}
+            onOpenWizard={() => setShowWizard(true)}
+            onNavigateSchedule={() => navigate('/schedule')}
+            fmtDate={fmtDate}
+          />
         )}
         {activeTab === 'files' && (
           <FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} />
@@ -259,15 +274,200 @@ export default function JobPage() {
       {showWizard && (
         <ScheduleWizard
           jobId={job.id}
-          jobName={job.insured_name || job.job_number || 'Job'}
+          jobName={job.insured_name || 'Job'}
           onClose={() => setShowWizard(false)}
-          onGenerated={() => {
-            setShowWizard(false);
-            loadJob(); // Refresh task summary
-          }}
+          onGenerated={() => { loadSchedule(); }}
         />
       )}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   SCHEDULE TAB — task pool with phase progress + target dates
+   ═══════════════════════════════════════════════════ */
+function ScheduleTab({ scheduleData, loading, onOpenWizard, onNavigateSchedule, fmtDate }) {
+  const [expandedPhase, setExpandedPhase] = useState(null);
+
+  if (loading) return <div style={{ padding: 20, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading schedule...</div>;
+
+  // No schedule applied
+  if (!scheduleData || scheduleData.length === 0) {
+    return (
+      <div className="job-page-section" style={{ textAlign: 'center', padding: '40px 20px' }}>
+        <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}>📋</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No schedule plan yet</div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16, maxWidth: 320, margin: '0 auto 16px' }}>
+          Apply a schedule template to create a task pool with target dates for each phase.
+        </div>
+        <button className="btn btn-primary" onClick={onOpenWizard} style={{ fontWeight: 600 }}>
+          Apply schedule plan
+        </button>
+      </div>
+    );
+  }
+
+  // Calculate totals
+  const totalTasks = scheduleData.reduce((s, p) => s + (p.total || 0), 0);
+  const completedTasks = scheduleData.reduce((s, p) => s + (p.completed || 0), 0);
+  const assignedTasks = scheduleData.reduce((s, p) => s + (p.assigned || 0), 0);
+  const unassignedTasks = totalTasks - assignedTasks;
+  const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  // Date range
+  const allStarts = scheduleData.filter(p => p.target_start).map(p => p.target_start);
+  const allEnds = scheduleData.filter(p => p.target_end).map(p => p.target_end);
+  const projectStart = allStarts.length > 0 ? allStarts.sort()[0] : null;
+  const projectEnd = allEnds.length > 0 ? allEnds.sort().reverse()[0] : null;
+
+  return (
+    <>
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div className="job-page-section" style={{ padding: '12px 14px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)' }}>{pct}%</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Complete</div>
+        </div>
+        <div className="job-page-section" style={{ padding: '12px 14px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{completedTasks}/{totalTasks}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Tasks done</div>
+        </div>
+        <div className="job-page-section" style={{ padding: '12px 14px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: assignedTasks > 0 ? '#2563eb' : 'var(--text-tertiary)' }}>{assignedTasks}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Scheduled</div>
+        </div>
+        <div className="job-page-section" style={{ padding: '12px 14px', textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: unassignedTasks > 0 ? '#f59e0b' : '#10b981' }}>{unassignedTasks}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Unscheduled</div>
+        </div>
+      </div>
+
+      {/* Overall progress bar */}
+      <div className="job-page-section" style={{ padding: '12px 14px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Overall progress</span>
+          {projectStart && projectEnd && (
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+              {fmtDate(projectStart)} – {fmtDate(projectEnd)}
+            </span>
+          )}
+        </div>
+        <div style={{ height: 8, background: 'var(--bg-tertiary)', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? '#10b981' : 'var(--accent)',
+            borderRadius: 4, transition: 'width 300ms ease' }} />
+        </div>
+      </div>
+
+      {/* Phase breakdown */}
+      <div className="job-page-section" style={{ padding: '0', overflow: 'hidden' }}>
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Phases</span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{scheduleData.length} phases</span>
+        </div>
+        {scheduleData.map(phase => {
+          const total = phase.total || 0;
+          const completed = phase.completed || 0;
+          const assigned = phase.assigned || 0;
+          const unassigned = total - assigned;
+          const isDone = completed === total && total > 0;
+          const isExpanded = expandedPhase === phase.phase_name;
+          const tasks = phase.tasks || [];
+          const phasePct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+          return (
+            <div key={phase.phase_name}>
+              <div
+                onClick={() => tasks.length > 0 && setExpandedPhase(isExpanded ? null : phase.phase_name)}
+                style={{
+                  padding: '10px 14px', borderBottom: '1px solid var(--border-light)',
+                  cursor: tasks.length > 0 ? 'pointer' : 'default',
+                  background: isExpanded ? 'var(--bg-secondary)' : 'transparent',
+                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                    textDecoration: isDone ? 'line-through' : 'none' }}>
+                    {phase.phase_name}
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: isDone ? '#10b981' : 'var(--text-secondary)' }}>{phasePct}%</span>
+                  {tasks.length > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)',
+                      transform: isExpanded ? 'rotate(180deg)' : 'none', transition: '150ms' }}>▾</span>
+                  )}
+                </div>
+                {/* Target dates + counts */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, paddingLeft: 16 }}>
+                  {phase.target_start && (
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                      {fmtDate(phase.target_start)}
+                      {phase.target_end && phase.target_end !== phase.target_start && ` – ${fmtDate(phase.target_end)}`}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+                    {completed}/{total} done
+                  </span>
+                  {unassigned > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3,
+                      background: '#fef3c7', color: '#92400e' }}>
+                      {unassigned} unscheduled
+                    </span>
+                  )}
+                </div>
+                {/* Phase progress bar */}
+                <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 6, marginLeft: 16 }}>
+                  <div style={{ width: `${phasePct}%`, height: '100%',
+                    background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
+                </div>
+              </div>
+
+              {/* Expanded task list */}
+              {isExpanded && tasks.length > 0 && (
+                <div style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-light)' }}>
+                  {tasks.map(task => (
+                    <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px 6px 38px',
+                      borderBottom: '1px solid var(--border-light)' }}>
+                      <span style={{
+                        width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                        border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
+                        background: task.is_completed ? '#10b981' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {task.is_completed && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
+                      </span>
+                      <span style={{ fontSize: 12, flex: 1, color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                        textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                        {task.title}
+                      </span>
+                      {task.is_required && <span style={{ fontSize: 9, fontWeight: 600, color: '#ef4444', background: '#fef2f2', padding: '1px 4px', borderRadius: 3 }}>REQ</span>}
+                      {task.appointment_id ? (
+                        <span style={{ fontSize: 10, color: '#2563eb', background: '#eff6ff', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>Scheduled</span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: '#92400e', background: '#fef3c7', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>Unscheduled</span>
+                      )}
+                      {task.completed_at && (
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                          {fmtDate(task.completed_at)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <button className="btn btn-outline" onClick={onNavigateSchedule} style={{ flex: 1 }}>
+          Open dispatch board
+        </button>
+        <button className="btn btn-ghost" onClick={onOpenWizard} style={{ fontSize: 12 }}>
+          Re-apply template
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -711,119 +911,6 @@ function ActivityTab({ job, notes, setNotes, history, employees, phaseMap, db, c
     </div>
   );
 }
-
-/* ═══════════════════════════════════════════════════
-   SCHEDULE TAB — phase progress + generate button
-   ═══════════════════════════════════════════════════ */
-function ScheduleTab({ jobId, taskSummary, onGenerateClick, navigate }) {
-  const hasSchedule = taskSummary && taskSummary.total > 0;
-
-  if (!hasSchedule) {
-    return (
-      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: 36, opacity: 0.15, marginBottom: 12 }}>📅</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-          No schedule created yet
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20, maxWidth: 320, margin: '0 auto 20px' }}>
-          Apply a template to auto-generate appointments and tasks for this job. The entire reconstruction schedule gets created in one click.
-        </div>
-        <button className="btn btn-primary" onClick={onGenerateClick}
-          style={{ padding: '10px 24px', fontSize: 14 }}>
-          Generate schedule
-        </button>
-      </div>
-    );
-  }
-
-  const byPhase = taskSummary.by_phase || [];
-  const pctComplete = taskSummary.total > 0 ? Math.round((taskSummary.completed / taskSummary.total) * 100) : 0;
-
-  return (
-    <div style={{ padding: '16px 0' }}>
-      {/* Summary cards */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 8, padding: '0 16px' }}>
-        <div style={schedStyles.card}>
-          <div style={schedStyles.cardValue}>{pctComplete}%</div>
-          <div style={schedStyles.cardLabel}>Complete</div>
-        </div>
-        <div style={schedStyles.card}>
-          <div style={schedStyles.cardValue}>{taskSummary.completed}/{taskSummary.total}</div>
-          <div style={schedStyles.cardLabel}>Tasks done</div>
-        </div>
-        <div style={schedStyles.card}>
-          <div style={schedStyles.cardValue}>{taskSummary.assigned}</div>
-          <div style={schedStyles.cardLabel}>On calendar</div>
-        </div>
-        <div style={schedStyles.card}>
-          <div style={schedStyles.cardValue}>{taskSummary.unassigned}</div>
-          <div style={schedStyles.cardLabel}>Need scheduling</div>
-        </div>
-      </div>
-      {taskSummary.unassigned === 0 && taskSummary.completed === 0 && (
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '0 16px 8px', lineHeight: 1.4 }}>
-          All tasks are on the calendar. Open the dispatch board and navigate to the start week to see appointments. Assign crew from there.
-        </div>
-      )}
-
-      {/* Overall progress bar */}
-      <div style={{ padding: '0 16px', marginBottom: 20 }}>
-        <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{ width: `${pctComplete}%`, height: '100%', background: pctComplete === 100 ? '#10b981' : 'var(--accent)', borderRadius: 3, transition: 'width 300ms ease' }} />
-        </div>
-      </div>
-
-      {/* Phase breakdown */}
-      <div style={{ padding: '0 16px' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 10 }}>
-          Phase progress
-        </div>
-        {byPhase.map(phase => {
-          const phasePct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
-          const isDone = phase.completed === phase.total;
-          return (
-            <div key={phase.phase_name} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)', textDecoration: isDone ? 'line-through' : 'none' }}>
-                    {phase.phase_name}
-                  </span>
-                </div>
-                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                  {phase.completed}/{phase.total}{phase.assigned < phase.total && !isDone ? ` (${phase.total - phase.assigned} unscheduled)` : ''}
-                </span>
-              </div>
-              <div style={{ height: 4, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ width: `${phasePct}%`, height: '100%', background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Actions */}
-      <div style={{ padding: '16px', borderTop: '1px solid var(--border-light)', marginTop: 8, display: 'flex', gap: 8 }}>
-        <button className="btn btn-sm btn-secondary" onClick={() => navigate('/schedule')}>
-          Open dispatch board
-        </button>
-        {taskSummary.unassigned > 0 && (
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', alignSelf: 'center' }}>
-            {taskSummary.unassigned} tasks still need to be scheduled
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const schedStyles = {
-  card: {
-    flex: 1, padding: '10px 8px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center',
-  },
-  cardValue: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
-  cardLabel: { fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' },
-};
 
 /* ── Helpers ── */
 function phaseClass(phase) {

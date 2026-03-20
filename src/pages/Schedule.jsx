@@ -290,12 +290,19 @@ function JobRow({ job, onToggle, isOn, onExpand, isExpanded }) {
 // JOB PHASE LIST (inside expanded job in the panel)
 // ═══════════════════════════════════════════════════════════════
 
+function fmtShortDate(d) {
+  if (!d) return '';
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function JobPhaseList({ phases, loading, jobId, jobName, onSchedulePhase }) {
+  const [expandedPhase, setExpandedPhase] = useState(null);
+
   if (loading) return <div style={PP.wrap}><div style={PP.loading}>Loading phases...</div></div>;
   if (!phases || phases.length === 0) {
     return (
       <div style={PP.wrap}>
-        <div style={PP.empty}>No template applied</div>
+        <div style={PP.empty}>No schedule plan applied</div>
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '0 14px 8px' }}>
           Open the job and apply a schedule template first
         </div>
@@ -311,33 +318,86 @@ function JobPhaseList({ phases, loading, jobId, jobName, onSchedulePhase }) {
         const completed = phase.completed || 0;
         const unassigned = total - assigned;
         const isDone = completed === total && total > 0;
+        const isExpanded = expandedPhase === phase.phase_name;
+        const tasks = phase.tasks || [];
+        const hasTargetDates = phase.target_start || phase.target_end;
 
         return (
-          <div key={phase.phase_name} style={PP.phaseRow}>
-            <span style={{ width: 6, height: 6, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0, marginTop: 4 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                  textDecoration: isDone ? 'line-through' : 'none' }}>
-                  {phase.phase_name}
-                </span>
-                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                  {completed}/{total}
-                </span>
-              </div>
-              {/* Mini progress bar */}
-              {total > 0 && (
-                <div style={{ height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 3, width: '100%' }}>
-                  <div style={{ width: `${total > 0 ? (completed / total) * 100 : 0}%`, height: '100%',
-                    background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
+          <div key={phase.phase_name}>
+            <div style={PP.phaseRow}>
+              <span style={{ width: 6, height: 6, borderRadius: 2, background: phase.phase_color || '#6b7280', flexShrink: 0, marginTop: 5 }} />
+              <div style={{ flex: 1, minWidth: 0, cursor: tasks.length > 0 ? 'pointer' : 'default' }}
+                onClick={() => tasks.length > 0 && setExpandedPhase(isExpanded ? null : phase.phase_name)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {tasks.length > 0 && (
+                    <span style={{ fontSize: 9, color: 'var(--text-tertiary)', transform: isExpanded ? 'rotate(90deg)' : 'none',
+                      transition: '120ms ease', display: 'inline-block', flexShrink: 0 }}>▶</span>
+                  )}
+                  <span style={{ fontSize: 11, fontWeight: 600, color: isDone ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                    textDecoration: isDone ? 'line-through' : 'none' }}>
+                    {phase.phase_name}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                    {completed}/{total}
+                  </span>
+                  {unassigned > 0 && (
+                    <span style={{ fontSize: 9, fontWeight: 600, padding: '0 4px', borderRadius: 3,
+                      background: '#fef3c7', color: '#92400e' }}>
+                      {unassigned} unscheduled
+                    </span>
+                  )}
                 </div>
+                {/* Target dates */}
+                {hasTargetDates && (
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1, paddingLeft: tasks.length > 0 ? 13 : 0 }}>
+                    {fmtShortDate(phase.target_start)}
+                    {phase.target_end && phase.target_end !== phase.target_start && ` – ${fmtShortDate(phase.target_end)}`}
+                    {phase.duration_days && <span style={{ marginLeft: 4 }}>({phase.duration_days}d)</span>}
+                  </div>
+                )}
+                {/* Mini progress bar */}
+                {total > 0 && (
+                  <div style={{ height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 3, width: '100%',
+                    paddingLeft: tasks.length > 0 ? 13 : 0 }}>
+                    <div style={{ width: `${(completed / total) * 100}%`, height: '100%',
+                      background: isDone ? '#10b981' : (phase.phase_color || 'var(--accent)'), borderRadius: 2 }} />
+                  </div>
+                )}
+              </div>
+              {/* Schedule button — always show if there are unassigned tasks */}
+              {unassigned > 0 && (
+                <button onClick={() => onSchedulePhase?.(jobId, jobName, phase)}
+                  style={PP.schedBtn} title={`Create appointment for ${unassigned} unassigned tasks`}>
+                  +
+                </button>
               )}
             </div>
-            {unassigned > 0 && (
-              <button onClick={() => onSchedulePhase?.(jobId, jobName, phase)}
-                style={PP.schedBtn} title={`Schedule ${unassigned} unassigned tasks`}>
-                +
-              </button>
+
+            {/* Expanded tasks */}
+            {isExpanded && tasks.length > 0 && (
+              <div style={PP.taskList}>
+                {tasks.map(task => (
+                  <div key={task.id} style={PP.taskRow}>
+                    <span style={{
+                      width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                      border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
+                      background: task.is_completed ? '#10b981' : (task.appointment_id ? 'var(--accent-light)' : 'transparent'),
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {task.is_completed && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                    </span>
+                    <span style={{ fontSize: 11, flex: 1, color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                      textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                      {task.title}
+                    </span>
+                    {task.appointment_id ? (
+                      <span style={{ fontSize: 9, color: '#2563eb', background: '#eff6ff', padding: '0 4px', borderRadius: 3, fontWeight: 500 }}>Scheduled</span>
+                    ) : (
+                      <span style={{ fontSize: 9, color: '#92400e', background: '#fef3c7', padding: '0 4px', borderRadius: 3, fontWeight: 500 }}>Unscheduled</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         );
@@ -352,12 +412,14 @@ const PP = {
   empty: { fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '8px 14px 2px' },
   phaseRow: { display: 'flex', alignItems: 'flex-start', gap: 6, padding: '5px 14px 5px 24px' },
   schedBtn: {
-    width: 20, height: 20, borderRadius: 'var(--radius-md)', flexShrink: 0,
-    border: '1px dashed var(--border-color)', background: 'transparent',
-    cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 700,
+    width: 22, height: 22, borderRadius: 'var(--radius-md)', flexShrink: 0,
+    border: '1px solid var(--accent)', background: 'var(--accent-light)',
+    cursor: 'pointer', fontSize: 13, color: 'var(--accent)', fontWeight: 700,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: 'var(--font-sans)',
+    fontFamily: 'var(--font-sans)', marginTop: 2,
   },
+  taskList: { padding: '2px 0 6px', background: 'var(--bg-tertiary)' },
+  taskRow: { display: 'flex', alignItems: 'center', gap: 6, padding: '3px 14px 3px 38px', fontSize: 11 },
 };
 
 const P = {
