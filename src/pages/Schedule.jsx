@@ -70,7 +70,12 @@ function getMonday(d) {
   return date;
 }
 
-function fmtDate(d) { return d.toISOString().split('T')[0]; }
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function fmtShort(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function fmtTime(t) {
   if (!t) return '';
@@ -331,15 +336,22 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
               {activeJob.job_number && (
                 <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>#{activeJob.job_number}</span>
               )}
-              <div onClick={() => onToggleJob(activeJob.id, !isOn)}
-                style={{
-                  marginLeft: 'auto', width: 18, height: 18, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
-                  border: isOn ? 'none' : '1.5px solid var(--border-color)',
-                  background: isOn ? 'var(--accent)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                {isOn && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
-              </div>
+              {activeJob.in_production ? (
+                <span title="In production — always on schedule" style={{
+                  marginLeft: 'auto', fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
+                  background: '#ecfdf5', color: '#10b981',
+                }}>In Production</span>
+              ) : (
+                <div onClick={() => onToggleJob(activeJob.id, !isOn)}
+                  style={{
+                    marginLeft: 'auto', width: 18, height: 18, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                    border: isOn ? 'none' : '1.5px solid var(--border-color)',
+                    background: isOn ? 'var(--accent)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  {isOn && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>✓</span>}
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{activeJob.insured_name}</div>
             {activeJob.address && (
@@ -683,7 +695,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
             fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
             background: 'var(--accent-light)', color: 'var(--accent)',
           }}>
-            {onBoard.length} on board
+            {onBoard.length} on schedule
           </span>
         </div>
         <button style={P.closeBtn} onClick={onTogglePanel}>✕</button>
@@ -712,12 +724,12 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
       <div style={P.body}>
         {loading && <div style={{ padding: 16, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading jobs...</div>}
 
-        {/* On Board */}
+        {/* On Schedule (production + pinned) */}
         {onBoard.length > 0 && (
           <div style={{ marginBottom: 8 }}>
             <div style={P.groupHead}>
-              <span style={{ ...P.dot, background: 'var(--accent)' }} />
-              On board ({onBoard.length})
+              <span style={{ ...P.dot, background: '#10b981' }} />
+              On Schedule ({onBoard.length})
             </div>
             {onBoard.map(j => (
               <JobRow key={j.id} job={j} onToggle={onToggleJob} isOn onOpen={() => openJob(j)} />
@@ -759,6 +771,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
 
 function JobRow({ job, onToggle, isOn, onOpen }) {
   const dc = DIV_COLORS[job.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
+  const isProduction = job.in_production;
   return (
     <div style={{ ...P.jobRow, background: isOn ? 'var(--accent-light)' : 'transparent' }}>
       {/* Name area — click to open detail */}
@@ -778,16 +791,26 @@ function JobRow({ job, onToggle, isOn, onOpen }) {
           )}
         </div>
       </div>
-      {/* Checkbox — click to toggle on/off board */}
-      <div onClick={e => { e.stopPropagation(); onToggle(job.id, !isOn); }}
-        style={{
-          width: 20, height: 20, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
-          border: isOn ? 'none' : '1.5px solid var(--border-color)',
-          background: isOn ? 'var(--accent)' : 'transparent',
+      {/* Production jobs: auto indicator (no toggle). Others: checkbox toggle */}
+      {isProduction ? (
+        <div title="In production — always on schedule" style={{
+          width: 20, height: 20, borderRadius: 4, flexShrink: 0,
+          background: '#10b981',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-        {isOn && <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>}
-      </div>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>
+        </div>
+      ) : (
+        <div onClick={e => { e.stopPropagation(); onToggle(job.id, !isOn); }}
+          style={{
+            width: 20, height: 20, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+            border: isOn ? 'none' : '1.5px solid var(--border-color)',
+            background: isOn ? 'var(--accent)' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          {isOn && <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1400,9 +1423,12 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
         {/* Time labels column */}
         <div style={CV.timeCol}>
           <div style={CV.timeHeader} />
-          {hours.map(h => (
+          {hours.map((h, i) => (
             <div key={h} style={CV.timeLabel}>
-              <span style={CV.timeTxt}>{h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`}</span>
+              <span style={{
+                position: 'absolute', right: 6, fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 500,
+                top: i === 0 ? 4 : -7,
+              }}>{h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`}</span>
             </div>
           ))}
         </div>
@@ -1498,9 +1524,6 @@ const CV = {
   timeCol: { width: 52, flexShrink: 0, borderRight: '1px solid var(--border-color)' },
   timeHeader: { height: 44, borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' },
   timeLabel: { height: CAL_HOUR_HEIGHT, position: 'relative' },
-  timeTxt: {
-    position: 'absolute', top: -7, right: 6, fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 500,
-  },
   dayCol: { flex: 1, minWidth: 120, borderRight: '1px solid var(--border-light)' },
   dayHeader: {
     height: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -1782,12 +1805,10 @@ export default function Schedule() {
         ) : filteredBoardData.length === 0 && !crewFilter ? (
           <div style={S.center}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
-              No jobs on the board
+              No jobs in production
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4, maxWidth: 280, textAlign: 'center' }}>
-              {panelOpen
-                ? 'Click jobs in the panel to add them to the dispatch board'
-                : 'Open the Jobs panel to select which jobs to show'}
+              Jobs move here automatically when a schedule plan is applied
             </div>
           </div>
         ) : filteredBoardData.length === 0 && crewFilter ? (
