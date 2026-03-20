@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import ScheduleWizard from '@/components/ScheduleWizard';
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -96,7 +97,7 @@ function fmtShortDate(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onCreateAppointment, onSelectJob, selectedJobId, refreshKey }) {
+function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onCreateAppointment, onSelectJob, selectedJobId, refreshKey, onRefreshPanel }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
   const [divFilter, setDivFilter] = useState(() => {
@@ -122,6 +123,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showAddPhase, setShowAddPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
+  const [showWizard, setShowWizard] = useState(false);
 
   // Refresh pool when appointment is created/saved
   useEffect(() => {
@@ -313,6 +315,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
     };
 
     return (
+    <>
       <div style={P.panel}>
         {/* Back header */}
         <div style={P.header}>
@@ -367,10 +370,17 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
           ) : taskPool.length === 0 ? (
             <div style={{ padding: '24px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4 }}>No schedule generated</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>Apply a template from the job page, or add phases manually</div>
-              {/* Allow adding phases even without a template */}
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 14 }}>Generate a schedule from a template, or add phases manually</div>
+              <button onClick={() => setShowWizard(true)} style={{
+                width: '100%', padding: '9px', fontSize: 12, fontWeight: 600,
+                background: 'var(--accent)', color: '#fff', border: 'none',
+                borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                marginBottom: 8,
+              }}>
+                Generate schedule & tasks
+              </button>
               {showAddPhase ? (
-                <div style={{ display: 'flex', gap: 6, padding: '0 8px' }}>
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                   <input style={{ flex: 1, padding: '6px 8px', fontSize: 12, border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none' }}
                     placeholder="Phase name..." value={newPhaseName} onChange={e => setNewPhaseName(e.target.value)}
@@ -383,9 +393,9 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                 </div>
               ) : (
                 <button onClick={() => setShowAddPhase(true)} style={{
-                  fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none',
+                  fontSize: 12, fontWeight: 500, color: 'var(--text-tertiary)', background: 'none', border: 'none',
                   cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                }}>+ Add phase</button>
+                }}>or add phases manually</button>
               )}
             </div>
           ) : (
@@ -680,6 +690,17 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
           )}
         </div>
       </div>
+
+      {/* Schedule Wizard */}
+      {showWizard && activeJob && (
+        <ScheduleWizard
+          jobId={activeJob.id}
+          jobName={activeJob.insured_name || 'Job'}
+          onClose={() => setShowWizard(false)}
+          onGenerated={() => { setShowWizard(false); openJob(activeJob); onRefreshPanel?.(); }}
+        />
+      )}
+    </>
     );
   }
 
@@ -1731,6 +1752,7 @@ export default function Schedule() {
           setCreateModal({ jobId, jobName, dateKey, prefillTaskIds: taskIds || [] });
         }}
         onSelectJob={(jobId) => {}}
+        onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
       />
 
       {/* Main board */}
