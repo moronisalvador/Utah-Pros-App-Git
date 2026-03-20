@@ -6,6 +6,16 @@ import CreateAppointmentModal from '@/components/CreateAppointmentModal';
 import EditAppointmentModal from '@/components/EditAppointmentModal';
 import CalendarView from '@/components/CalendarView';
 
+const SPAN_OPTIONS = [
+  { value: 'day', label: 'Day' },
+  { value: '3day', label: '3 Day' },
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+];
+
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
 // ═══════════════════════════════════════════════════════════════
 // APPOINTMENT CARDS (used in Jobs/Crew grid views)
 // ═══════════════════════════════════════════════════════════════
@@ -131,13 +141,128 @@ function CrewApptCard({ appt, onClick }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MONTH VIEW — traditional calendar grid
+// ═══════════════════════════════════════════════════════════════
+
+function MonthView({ anchor, boardData, onApptClick, onDayClick }) {
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const lastOfMonth = new Date(year, month + 1, 0);
+  const startDow = firstOfMonth.getDay(); // 0=Sun
+  const daysInMonth = lastOfMonth.getDate();
+  const todayKey = fmtDate(new Date());
+
+  // Build appointment lookup by date
+  const byDate = {};
+  for (const job of boardData) {
+    for (const appt of (job.appointments || [])) {
+      if (!byDate[appt.date]) byDate[appt.date] = [];
+      const crew = appt.crew || [];
+      const leadCrew = crew.find(c => c.role === 'lead');
+      byDate[appt.date].push({
+        ...appt,
+        _jobName: job.insured_name,
+        _color: leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280',
+      });
+    }
+  }
+
+  // Build 6-week grid (always 6 rows for consistent height)
+  const weeks = [];
+  let day = 1 - startDow;
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(year, month, day);
+      const inMonth = day >= 1 && day <= daysInMonth;
+      week.push({ day, date, inMonth, key: fmtDate(date) });
+      day++;
+    }
+    weeks.push(week);
+  }
+
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '0 0 8px' }}>
+      {/* Weekday headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--border-color)' }}>
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} style={{
+            fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
+            textAlign: 'center', padding: '8px 0', background: 'var(--bg-secondary)',
+          }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Week rows */}
+      {weeks.map((week, wi) => (
+        <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: 90 }}>
+          {week.map((cell, di) => {
+            const appts = byDate[cell.key] || [];
+            const isToday = cell.key === todayKey;
+            return (
+              <div key={di}
+                onClick={() => cell.inMonth && onDayClick(cell.key)}
+                style={{
+                  borderBottom: '1px solid var(--border-light)',
+                  borderRight: di < 6 ? '1px solid var(--border-light)' : 'none',
+                  padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default',
+                  background: isToday ? '#f8fbff' : 'transparent',
+                  opacity: cell.inMonth ? 1 : 0.35,
+                  minHeight: 90,
+                }}
+                onMouseEnter={e => { if (cell.inMonth) e.currentTarget.style.background = isToday ? '#f0f7ff' : 'var(--bg-secondary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#f8fbff' : 'transparent'; }}
+              >
+                {/* Day number */}
+                <div style={{
+                  fontSize: 12, fontWeight: isToday ? 700 : 400,
+                  color: isToday ? '#fff' : cell.inMonth ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                  width: isToday ? 22 : 'auto', height: isToday ? 22 : 'auto',
+                  borderRadius: 11, background: isToday ? 'var(--accent)' : 'transparent',
+                  display: isToday ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 3,
+                }}>{cell.date.getDate()}</div>
+
+                {/* Appointment strips */}
+                {appts.slice(0, 3).map(a => (
+                  <div key={a.id}
+                    onClick={e => { e.stopPropagation(); onApptClick(a); }}
+                    style={{
+                      fontSize: 10, fontWeight: 500, lineHeight: 1.2,
+                      padding: '2px 4px', marginBottom: 2, borderRadius: 3,
+                      background: a._color, color: '#fff',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.15)'}
+                    onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                  >
+                    {a.time_start ? fmtTime(a.time_start) + ' ' : ''}{a._jobName}
+                  </div>
+                ))}
+                {appts.length > 3 && (
+                  <div style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 500, paddingLeft: 4 }}>
+                    +{appts.length - 3} more
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN: SCHEDULE PAGE
 // ═══════════════════════════════════════════════════════════════
 
 export default function Schedule() {
   const { db, employee } = useAuth();
 
-  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const [anchor, setAnchor] = useState(() => new Date()); // reference date for all views
   const [boardData, setBoardData] = useState([]);
   const [panelJobs, setPanelJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -151,25 +276,104 @@ export default function Schedule() {
     setViewMode(mode);
     try { localStorage.setItem('upr_schedule_view', mode); } catch {}
   };
-  const [crewFilter, setCrewFilter] = useState(null); // employee_id or null = all
-  const [createModal, setCreateModal] = useState(null); // { jobId, jobName, dateKey }
-  const [editModal, setEditModal] = useState(null);    // appointment object
-  const [selectedPanelJob, setSelectedPanelJob] = useState(null); // { id, insured_name } from panel
+  const [calSpan, setCalSpan] = useState(() => {
+    try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
+  });
+  const changeCalSpan = (span) => {
+    setCalSpan(span);
+    try { localStorage.setItem('upr_schedule_span', span); } catch {}
+  };
+
+  const [crewFilter, setCrewFilter] = useState(null);
+  const [createModal, setCreateModal] = useState(null);
+  const [editModal, setEditModal] = useState(null);
+  const [selectedPanelJob, setSelectedPanelJob] = useState(null);
   const [allEmployees, setAllEmployees] = useState([]);
-  const [autoShow, setAutoShow] = useState(true); // auto-include jobs with appts this week
+  const [autoShow, setAutoShow] = useState(true);
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
 
-  // ── Week days ──
+  // ── Compute days array based on calSpan ──
   const days = useMemo(() => {
+    const todayStr = fmtDate(new Date());
+
+    if (calSpan === 'day') {
+      const d = new Date(anchor);
+      const key = fmtDate(d);
+      return [{ date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr }];
+    }
+
+    if (calSpan === '3day') {
+      return Array.from({ length: 3 }, (_, i) => {
+        const d = new Date(anchor);
+        d.setDate(anchor.getDate() + i);
+        const key = fmtDate(d);
+        return { date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr };
+      });
+    }
+
+    if (calSpan === 'month') {
+      const y = anchor.getFullYear(), m = anchor.getMonth();
+      const first = new Date(y, m, 1);
+      const last = new Date(y, m + 1, 0);
+      const startDay = new Date(first); startDay.setDate(1 - first.getDay()); // back to Sunday
+      const endDay = new Date(last); endDay.setDate(last.getDate() + (6 - last.getDay())); // forward to Saturday
+      const result = [];
+      const cursor = new Date(startDay);
+      while (cursor <= endDay) {
+        const key = fmtDate(cursor);
+        result.push({ date: new Date(cursor), key, label: WEEKDAYS_FULL[cursor.getDay()], shortDate: fmtShort(cursor), isToday: key === todayStr });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return result;
+    }
+
+    // week (default)
+    const monday = getMonday(anchor);
     const count = showWeekend ? 7 : 5;
-    const start = showWeekend ? new Date(weekStart.getTime() - 86400000) : weekStart;
+    const start = showWeekend ? new Date(monday.getTime() - 86400000) : monday;
     return Array.from({ length: count }, (_, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const key = fmtDate(d);
-      return { date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === fmtDate(new Date()) };
+      return { date: d, key, label: WEEKDAYS_FULL[d.getDay()], shortDate: fmtShort(d), isToday: key === todayStr };
     });
-  }, [weekStart, showWeekend]);
+  }, [anchor, calSpan, showWeekend]);
+
+  // ── Navigation ──
+  const goToday = () => setAnchor(new Date());
+  const goPrev = () => {
+    setAnchor(d => {
+      const n = new Date(d);
+      if (calSpan === 'day') n.setDate(n.getDate() - 1);
+      else if (calSpan === '3day') n.setDate(n.getDate() - 3);
+      else if (calSpan === 'month') n.setMonth(n.getMonth() - 1);
+      else n.setDate(n.getDate() - 7);
+      return n;
+    });
+  };
+  const goNext = () => {
+    setAnchor(d => {
+      const n = new Date(d);
+      if (calSpan === 'day') n.setDate(n.getDate() + 1);
+      else if (calSpan === '3day') n.setDate(n.getDate() + 3);
+      else if (calSpan === 'month') n.setMonth(n.getMonth() + 1);
+      else n.setDate(n.getDate() + 7);
+      return n;
+    });
+  };
+
+  const todayLabel = calSpan === 'month' ? 'This month' : calSpan === 'week' ? 'This week' : 'Today';
+
+  // ── Subtitle ──
+  const subtitleText = useMemo(() => {
+    if (calSpan === 'month') {
+      return `${MONTHS_FULL[anchor.getMonth()]} ${anchor.getFullYear()}`;
+    }
+    if (calSpan === 'day') {
+      return days[0]?.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) || '';
+    }
+    return `${fmtShort(days[0]?.date)} – ${fmtShort(days[days.length - 1]?.date)}`;
+  }, [days, calSpan, anchor]);
 
   // ── Load ──
   const loadPanelJobs = useCallback(async () => {
@@ -192,6 +396,17 @@ export default function Schedule() {
       setBoardData(Array.isArray(r) ? r : []);
     } catch (e) { console.error('Board:', e); }
     finally { setLoading(false); }
+  }, [db, days, autoShow]);
+
+  const silentReloadBoard = useCallback(async () => {
+    try {
+      const r = await db.rpc('get_dispatch_board', {
+        p_start_date: days[0].key,
+        p_end_date: days[days.length - 1].key,
+        p_auto_show: autoShow,
+      });
+      setBoardData(Array.isArray(r) ? r : []);
+    } catch (e) { console.error('Silent reload:', e); }
   }, [db, days, autoShow]);
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
@@ -232,35 +447,26 @@ export default function Schedule() {
 
   // ── Crew view: pivot by employee × date ──
   const { crewList, crewCellMap } = useMemo(() => {
-    const empMap = {};  // employee_id → { id, display_name, full_name, role }
-    const cells = {};   // employeeId_date → [{ appt, jobName, division }]
-
+    const empMap = {};
+    const cells = {};
     for (const job of boardData) {
       for (const appt of (job.appointments || [])) {
         for (const crew of (appt.crew || [])) {
-          // Track employee
           if (!empMap[crew.employee_id]) {
             empMap[crew.employee_id] = {
-              id: crew.employee_id,
-              display_name: crew.display_name,
-              full_name: crew.full_name,
-              role: crew.role, // crew role on this appt, not employee.role
+              id: crew.employee_id, display_name: crew.display_name,
+              full_name: crew.full_name, role: crew.role,
             };
           }
-          // Add to cell
           const k = `${crew.employee_id}_${appt.date}`;
           if (!cells[k]) cells[k] = [];
           cells[k].push({
-            ...appt,
-            _jobName: job.insured_name,
-            _jobNumber: job.job_number,
-            _division: job.division,
-            _jobId: job.job_id,
+            ...appt, _jobName: job.insured_name, _jobNumber: job.job_number,
+            _division: job.division, _jobId: job.job_id,
           });
         }
       }
     }
-
     const list = Object.values(empMap).sort((a, b) =>
       (a.display_name || a.full_name || '').localeCompare(b.display_name || b.full_name || '')
     );
@@ -290,51 +496,51 @@ export default function Schedule() {
     return crewList.filter(e => e.id === crewFilter);
   }, [crewList, crewFilter]);
 
-  const goThisWeek = () => setWeekStart(getMonday(new Date()));
-  const goPrev = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d); };
-  const goNext = () => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d); };
-
   const totalAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.length || 0), 0);
   const todayKey = fmtDate(new Date());
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
   const handleApptClick = (appt) => { setEditModal(appt); };
 
-  // ── Drag-and-drop: MOVE appointment to new day/time ──
+  // ── Drag-and-drop: MOVE appointment (optimistic) ──
   const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {
+    const prev = boardData;
+    setBoardData(data => data.map(job => ({
+      ...job,
+      appointments: (job.appointments || []).map(a =>
+        a.id === apptId ? { ...a, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : a
+      ),
+    })));
     try {
       await db.rpc('update_appointment', {
-        p_appointment_id: apptId,
-        p_title: null,
-        p_date: newDate,
-        p_time_start: newTimeStart,
-        p_time_end: newTimeEnd,
-        p_type: null,
-        p_status: null,
-        p_notes: null,
+        p_appointment_id: apptId, p_title: null, p_date: newDate,
+        p_time_start: newTimeStart, p_time_end: newTimeEnd,
+        p_type: null, p_status: null, p_notes: null,
       });
-      loadBoard();
-    } catch (e) { console.error('Drop move failed:', e); }
+      silentReloadBoard();
+    } catch (e) { console.error('Drop move failed:', e); setBoardData(prev); }
   };
 
-  // ── Drag resize: change appointment end time ──
+  // ── Drag resize: change end time (optimistic) ──
   const handleApptResize = async (apptId, newTimeEnd) => {
+    const prev = boardData;
+    setBoardData(data => data.map(job => ({
+      ...job,
+      appointments: (job.appointments || []).map(a =>
+        a.id === apptId ? { ...a, time_end: newTimeEnd } : a
+      ),
+    })));
     try {
       await db.rpc('update_appointment', {
-        p_appointment_id: apptId,
-        p_title: null,
-        p_date: null,
-        p_time_start: null,
-        p_time_end: newTimeEnd,
-        p_type: null,
-        p_status: null,
-        p_notes: null,
+        p_appointment_id: apptId, p_title: null, p_date: null,
+        p_time_start: null, p_time_end: newTimeEnd,
+        p_type: null, p_status: null, p_notes: null,
       });
-      loadBoard();
-    } catch (e) { console.error('Resize failed:', e); }
+      silentReloadBoard();
+    } catch (e) { console.error('Resize failed:', e); setBoardData(prev); }
   };
 
-  const [jobPickerModal, setJobPickerModal] = useState(null); // { dateKey, hour }
+  const [jobPickerModal, setJobPickerModal] = useState(null);
   const [jobPickerSearch, setJobPickerSearch] = useState('');
 
   const handleCellClick = (dateKey, hour) => {
@@ -343,12 +549,8 @@ export default function Schedule() {
       const endHour = Math.min(hour + 2, 18);
       const endStr = `${String(endHour).padStart(2, '0')}:00`;
       setCreateModal({
-        jobId: selectedPanelJob.id,
-        jobName: selectedPanelJob.insured_name,
-        dateKey,
-        prefillTaskIds: [],
-        prefillTimeStart: timeStr,
-        prefillTimeEnd: endStr,
+        jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name,
+        dateKey, prefillTaskIds: [], prefillTimeStart: timeStr, prefillTimeEnd: endStr,
       });
     } else {
       setJobPickerModal({ dateKey, hour });
@@ -363,13 +565,16 @@ export default function Schedule() {
     const endStr = `${String(endHour).padStart(2, '0')}:00`;
     setJobPickerModal(null);
     setCreateModal({
-      jobId: job.job_id || job.id,
-      jobName: job.insured_name,
-      dateKey,
-      prefillTaskIds: [],
-      prefillTimeStart: timeStr,
-      prefillTimeEnd: endStr,
+      jobId: job.job_id || job.id, jobName: job.insured_name,
+      dateKey, prefillTaskIds: [], prefillTimeStart: timeStr, prefillTimeEnd: endStr,
     });
+  };
+
+  // Month view: click day → switch to day view
+  const handleMonthDayClick = (dateKey) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    setAnchor(d);
+    changeCalSpan('day');
   };
 
   return (
@@ -406,14 +611,14 @@ export default function Schedule() {
           <div>
             <h1 style={S.title}>Schedule</h1>
             <div style={S.subtitle}>
-              {fmtShort(days[0].date)} – {fmtShort(days[days.length - 1].date)}
+              {subtitleText}
               <span style={S.pill}>{filteredBoardData.length} jobs</span>
               <span style={S.pill}>{totalAppts} appts</span>
               {todayAppts > 0 && <span style={{ ...S.pill, background: '#eff6ff', color: '#2563eb' }}>{todayAppts} today</span>}
             </div>
           </div>
           <div style={S.controls}>
-            {/* View toggle */}
+            {/* View toggle (Calendar/Jobs/Crew) */}
             <div style={S.viewToggle}>
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }}
                 onClick={() => changeViewMode('calendar')}>Calendar</button>
@@ -423,13 +628,15 @@ export default function Schedule() {
                 onClick={() => changeViewMode('crew')}>Crew</button>
             </div>
             {!panelOpen && <button style={S.btn} onClick={() => setPanelOpen(true)}>Jobs</button>}
-            <button style={S.btn} onClick={goThisWeek}>This week</button>
+            <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
-            <label style={S.checkLabel}>
-              <input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} />
-              <span>Wknd</span>
-            </label>
+            {calSpan === 'week' && (
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} />
+                <span>Wknd</span>
+              </label>
+            )}
             <label style={S.checkLabel}>
               <input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} />
               <span>Auto-show</span>
@@ -437,32 +644,40 @@ export default function Schedule() {
           </div>
         </div>
 
+        {/* Span toggle bar (Day / 3 Day / Week / Month) — only in calendar mode */}
+        {viewMode === 'calendar' && (
+          <div style={S.spanBar}>
+            {SPAN_OPTIONS.map((opt, i) => (
+              <button key={opt.value}
+                onClick={() => changeCalSpan(opt.value)}
+                style={{
+                  ...S.spanBtn,
+                  ...(calSpan === opt.value ? S.spanBtnActive : {}),
+                  ...(i === 0 ? { borderRadius: 'var(--radius-md) 0 0 var(--radius-md)' } : {}),
+                  ...(i === SPAN_OPTIONS.length - 1 ? { borderRadius: '0 var(--radius-md) var(--radius-md) 0', borderRight: '1px solid var(--border-color)' } : {}),
+                  ...(i === SPAN_OPTIONS.length - 1 && calSpan === opt.value ? { borderRightColor: 'var(--accent)' } : {}),
+                }}
+              >{opt.label}</button>
+            ))}
+          </div>
+        )}
+
         {/* Crew filter bar */}
         {crewList.length > 0 && (
           <div style={S.filterBar}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
-            <button
-              onClick={() => setCrewFilter(null)}
-              style={{
-                ...S.crewPill,
-                ...(crewFilter === null ? S.crewPillActive : {}),
-              }}
-            >All</button>
+            <button onClick={() => setCrewFilter(null)}
+              style={{ ...S.crewPill, ...(crewFilter === null ? S.crewPillActive : {}) }}>All</button>
             {crewList.map(emp => (
-              <button
-                key={emp.id}
+              <button key={emp.id}
                 onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)}
-                style={{
-                  ...S.crewPill,
-                  ...(crewFilter === emp.id ? S.crewPillActive : {}),
-                }}
-              >{emp.display_name || emp.full_name}</button>
+                style={{ ...S.crewPill, ...(crewFilter === emp.id ? S.crewPillActive : {}) }}>
+                {emp.display_name || emp.full_name}
+              </button>
             ))}
             {crewFilter && (
-              <button
-                onClick={() => setCrewFilter(null)}
-                style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}
-              >Clear</button>
+              <button onClick={() => setCrewFilter(null)}
+                style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>
             )}
           </div>
         )}
@@ -470,6 +685,8 @@ export default function Schedule() {
         {/* Board */}
         {loading ? (
           <div style={S.center}>Loading...</div>
+        ) : viewMode === 'calendar' && calSpan === 'month' ? (
+          <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} />
         ) : viewMode === 'calendar' ? (
           <CalendarView
             days={days}
@@ -547,10 +764,8 @@ export default function Schedule() {
                         style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}) }}
                         onClick={() => {
                           setCreateModal({
-                            jobId: job.job_id,
-                            jobName: job.insured_name,
-                            dateKey: day.key,
-                            prefillTaskIds: [],
+                            jobId: job.job_id, jobName: job.insured_name,
+                            dateKey: day.key, prefillTaskIds: [],
                           });
                         }}
                         onMouseEnter={e => { const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1'; }}
@@ -572,7 +787,6 @@ export default function Schedule() {
                   <div key={`emp-${emp.id}`} style={S.jobCell}>
                     <div style={S.jobCellName}>{emp.display_name || emp.full_name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize', marginTop: 2 }}>
-                      {/* Count total appointments this week */}
                       {days.reduce((c, d) => c + (crewCellMap[`${emp.id}_${d.key}`]?.length || 0), 0)} appts this week
                     </div>
                   </div>,
@@ -607,8 +821,7 @@ export default function Schedule() {
           employees={allEmployees}
           onClose={() => setCreateModal(null)}
           onSaved={(savedDate) => {
-            // Navigate to the week containing the appointment
-            if (savedDate) setWeekStart(getMonday(new Date(savedDate + 'T00:00:00')));
+            if (savedDate) setAnchor(new Date(savedDate + 'T00:00:00'));
             setCreateModal(null);
             loadBoard();
             setPanelRefreshKey(k => k + 1);
@@ -628,7 +841,7 @@ export default function Schedule() {
         />
       )}
 
-      {/* Job picker modal — shows when clicking empty calendar cell with no job selected */}
+      {/* Job picker modal */}
       {jobPickerModal && (() => {
         const fmtPickerDate = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', {
           weekday: 'short', month: 'short', day: 'numeric',
@@ -648,12 +861,10 @@ export default function Schedule() {
               width: '100%', maxWidth: 400, maxHeight: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column',
               boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}
               onClick={e => e.stopPropagation()}>
-              {/* Header */}
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Select job</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{fmtPickerDate} at {fmtPickerTime}</div>
               </div>
-              {/* Search */}
               <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-light)' }}>
                 <input style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)',
@@ -661,7 +872,6 @@ export default function Schedule() {
                   placeholder="Search jobs..." value={jobPickerSearch}
                   onChange={e => setJobPickerSearch(e.target.value)} autoFocus />
               </div>
-              {/* Job list */}
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 {productionJobs.length > 0 && (
                   <>
@@ -742,6 +952,24 @@ const S = {
     background: 'var(--bg-primary)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
   },
   checkLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' },
+
+  // Span bar
+  spanBar: {
+    display: 'flex', alignItems: 'center', gap: 0, padding: '6px 20px',
+    background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)',
+    flexShrink: 0,
+  },
+  spanBtn: {
+    fontSize: 12, fontWeight: 500, padding: '4px 14px',
+    border: '1px solid var(--border-color)', borderRight: 'none',
+    background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-sans)', transition: 'all 120ms ease',
+  },
+  spanBtnActive: {
+    background: 'var(--accent-light)', color: 'var(--accent)', fontWeight: 600,
+    borderColor: 'var(--accent)',
+  },
+
   filterBar: {
     display: 'flex', alignItems: 'center', gap: 5, padding: '6px 20px',
     background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)',
