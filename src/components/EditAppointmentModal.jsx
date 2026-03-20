@@ -28,6 +28,10 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [crewSearch, setCrewSearch] = useState('');
   const [nextVisitPrompt, setNextVisitPrompt] = useState(null); // null | 'asking' | 'pick_date'
   const [nextVisitDate, setNextVisitDate] = useState('');
+  const [showAddTasks, setShowAddTasks] = useState(false);
+  const [unassignedTasks, setUnassignedTasks] = useState([]);
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
 
   const isMitigationType = ['mitigation', 'monitoring'].includes(appointment.type) ||
     ['water', 'mold', 'fire', 'contents'].includes(appointment._division);
@@ -107,6 +111,52 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
       ));
       setDirty(true);
     } catch (e) { console.error('Toggle task:', e); }
+  };
+
+  // Load unassigned tasks from the job's task pool
+  const loadUnassignedTasks = async () => {
+    setUnassignedLoading(true);
+    try {
+      const jobId = appointment._jobId || appointment.job_id;
+      const result = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
+      setUnassignedTasks(Array.isArray(result) ? result : []);
+    } catch (e) { console.error('Load unassigned:', e); setUnassignedTasks([]); }
+    finally { setUnassignedLoading(false); }
+  };
+
+  const handleOpenAddTasks = () => {
+    setShowAddTasks(true);
+    loadUnassignedTasks();
+  };
+
+  // Assign a task from the pool to this appointment
+  const handleAssignTask = async (taskId) => {
+    try {
+      await db.rpc('assign_tasks_to_appointment', { p_appointment_id: appointment.id, p_task_ids: [taskId] });
+      setUnassignedTasks(prev => prev.filter(t => t.id !== taskId));
+      // Reload tasks for this appointment
+      const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
+      setTasks(Array.isArray(refreshed) ? refreshed : []);
+      setDirty(true);
+    } catch (e) { console.error('Assign task:', e); }
+  };
+
+  // Create ad-hoc task and assign to this appointment
+  const handleCreateAdhocTask = async () => {
+    if (!newTaskTitle.trim()) return;
+    try {
+      const jobId = appointment._jobId || appointment.job_id;
+      await db.rpc('add_adhoc_job_task', {
+        p_job_id: jobId,
+        p_title: newTaskTitle.trim(),
+        p_phase_name: null,
+        p_appointment_id: appointment.id,
+      });
+      setNewTaskTitle('');
+      const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
+      setTasks(Array.isArray(refreshed) ? refreshed : []);
+      setDirty(true);
+    } catch (e) { console.error('Adhoc task:', e); }
   };
 
   // Save changes
@@ -422,6 +472,62 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                 )}
               </div>
             ))}
+
+            {/* Add tasks */}
+            {!isCompleted && !showAddTasks && (
+              <button onClick={handleOpenAddTasks}
+                style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0', fontFamily: 'var(--font-sans)' }}>
+                + Add tasks
+              </button>
+            )}
+
+            {showAddTasks && (
+              <div style={{ marginTop: 8, padding: '10px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                {/* Ad-hoc task creation */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <input style={{ flex: 1, padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                    placeholder="New task name..."
+                    value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleCreateAdhocTask()} />
+                  <button onClick={handleCreateAdhocTask} disabled={!newTaskTitle.trim()}
+                    style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 'var(--radius-md)', border: 'none', background: newTaskTitle.trim() ? 'var(--accent)' : 'var(--bg-tertiary)', color: newTaskTitle.trim() ? '#fff' : 'var(--text-tertiary)', cursor: newTaskTitle.trim() ? 'pointer' : 'default', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap' }}>
+                    Add
+                  </button>
+                </div>
+
+                {/* Unassigned tasks from pool */}
+                {unassignedLoading && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>Loading pool...</div>}
+                {!unassignedLoading && unassignedTasks.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                      Unassigned tasks ({unassignedTasks.length})
+                    </div>
+                    <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                      {unassignedTasks.map(ut => (
+                        <div key={ut.id} onClick={() => handleAssignTask(ut.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 6px', cursor: 'pointer', borderRadius: 'var(--radius-sm)', marginBottom: 2 }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, flexShrink: 0 }}>+</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{ut.title}</span>
+                          {ut.phase_name && (
+                            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{ut.phase_name}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {!unassignedLoading && unassignedTasks.length === 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>No unassigned tasks in the pool</div>
+                )}
+
+                <button onClick={() => setShowAddTasks(false)}
+                  style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 6, fontFamily: 'var(--font-sans)' }}>
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
