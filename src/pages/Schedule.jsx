@@ -164,6 +164,11 @@ function GridPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
 // ENHANCED APPOINTMENT CARD (Jobs view — draggable, colored, hoverable)
 // ═══════════════════════════════════════════════════════════════
 
+function hexToTint(hex, opacity = 0.08) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+}
+
 function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
   const crew = appt.crew || [];
   const leadCrew = crew.find(c => c.role === 'lead');
@@ -172,6 +177,8 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const isDone = appt.status === 'completed';
   const hasTasks = appt.tasks_total > 0;
+  const taskNames = appt.task_names || [];
+  const bgTint = isDone ? 'var(--bg-tertiary)' : hexToTint(color, 0.07);
 
   return (
     <div
@@ -188,35 +195,63 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
       onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
       onMouseLeave={() => onHoverLeave?.()}
       style={{
-        borderLeft: `3px solid ${color}`, borderRadius: 0,
-        background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-        padding: '5px 7px', marginBottom: 3, cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+        borderLeft: `3px solid ${color}`, borderRadius: 4,
+        background: bgTint, padding: '6px 8px', marginBottom: 4,
+        cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+        transition: 'box-shadow 120ms ease',
       }}
-      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.08)'; }}
       onMouseOut={e => { e.currentTarget.style.boxShadow = 'none'; }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2 }}>{appt.title}</div>
-      {appt.time_start && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 3 }}>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</div>}
-      {crew.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: hasTasks ? 3 : 0 }}>
-          {crew.map(c => (
-            <span key={c.id} style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 99,
-              background: c.role === 'lead' ? '#fffbeb' : 'var(--bg-tertiary)',
-              color: c.role === 'lead' ? '#92400e' : 'var(--text-secondary)',
-              border: c.role === 'lead' ? '1px solid #f59e0b40' : 'none',
-            }}>{c.display_name || c.full_name?.split(' ')[0]}</span>
-          ))}
+      {/* Title + status dot */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+        {isActive && <span style={{ width: 6, height: 6, borderRadius: 3, background: status.color, flexShrink: 0 }} />}
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
+      </div>
+
+      {/* Time */}
+      {appt.time_start && (
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+          {fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}
         </div>
       )}
+
+      {/* Crew circles */}
+      {crew.length > 0 && (
+        <div style={{ display: 'flex', gap: 3, marginBottom: hasTasks || taskNames.length > 0 ? 5 : 0, alignItems: 'center' }}>
+          {crew.slice(0, 5).map(c => (
+            <span key={c.id} title={c.display_name || c.full_name} style={{
+              width: 20, height: 20, borderRadius: 10, fontSize: 8, fontWeight: 700,
+              background: c.color || 'var(--bg-tertiary)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: c.role === 'lead' ? `2px solid ${c.color || 'var(--accent)'}` : '1px solid rgba(0,0,0,0.1)',
+            }}>{getInitials(c.full_name || c.display_name)}</span>
+          ))}
+          {crew.length > 5 && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>+{crew.length - 5}</span>}
+        </div>
+      )}
+
+      {/* Task progress bar */}
       {hasTasks && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ flex: 1, height: 3, background: 'var(--bg-tertiary)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: taskNames.length > 0 ? 4 : 0 }}>
+          <div style={{ flex: 1, height: 3, background: isDone ? 'rgba(0,0,0,0.06)' : hexToTint(color, 0.15), borderRadius: 2, overflow: 'hidden' }}>
             <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} />
           </div>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
         </div>
       )}
-      {isActive && <div style={{ fontSize: 10, fontWeight: 600, color: status.color, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: status.color }} />{status.label}</div>}
+
+      {/* Task name previews (max 2) */}
+      {taskNames.length > 0 && (
+        <div>
+          {taskNames.slice(0, 2).map((name, i) => (
+            <div key={i} style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.4, paddingLeft: 8, position: 'relative', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ position: 'absolute', left: 0, top: 3, width: 3, height: 3, borderRadius: 2, background: 'var(--text-tertiary)' }} />{name}
+            </div>
+          ))}
+          {taskNames.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', paddingLeft: 8, opacity: 0.7 }}>+{taskNames.length - 2} more</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -233,6 +268,9 @@ function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }
   const isDone = appt.status === 'completed';
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
+  const hasTasks = appt.tasks_total > 0;
+  const taskNames = appt.task_names || [];
+  const bgTint = isDone ? 'var(--bg-tertiary)' : hexToTint(color, 0.07);
 
   return (
     <div
@@ -249,19 +287,51 @@ function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }
       onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
       onMouseLeave={() => onHoverLeave?.()}
       style={{
-        borderLeft: `3px solid ${color}`, borderRadius: 0,
-        background: isDone ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-        padding: '5px 7px', marginBottom: 3, cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+        borderLeft: `3px solid ${color}`, borderRadius: 4,
+        background: bgTint, padding: '6px 8px', marginBottom: 4,
+        cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
+        transition: 'box-shadow 120ms ease',
       }}
-      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+      onMouseOver={e => { if (!isDone) e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.08)'; }}
       onMouseOut={e => { e.currentTarget.style.boxShadow = 'none'; }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: dc.bg, color: dc.text }}>{appt._jobName}</span>
+      {/* Job name badge */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: dc.bg, color: dc.text }}>{appt._jobName}</span>
+        {isActive && <span style={{ width: 6, height: 6, borderRadius: 3, background: status.color, flexShrink: 0 }} />}
       </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2 }}>{appt.title}</div>
-      {appt.time_start && <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 2 }}>{fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}</div>}
-      {isActive && <div style={{ fontSize: 10, fontWeight: 600, color: status.color, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: status.color }} />{status.label}</div>}
+
+      {/* Title */}
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
+
+      {/* Time */}
+      {appt.time_start && (
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+          {fmtTime(appt.time_start)}{appt.time_end ? ` – ${fmtTime(appt.time_end)}` : ''}
+        </div>
+      )}
+
+      {/* Task progress bar */}
+      {hasTasks && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: taskNames.length > 0 ? 4 : 0 }}>
+          <div style={{ flex: 1, height: 3, background: isDone ? 'rgba(0,0,0,0.06)' : hexToTint(color, 0.15), borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
+        </div>
+      )}
+
+      {/* Task name previews */}
+      {taskNames.length > 0 && (
+        <div>
+          {taskNames.slice(0, 2).map((name, i) => (
+            <div key={i} style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.4, paddingLeft: 8, position: 'relative', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ position: 'absolute', left: 0, top: 3, width: 3, height: 3, borderRadius: 2, background: 'var(--text-tertiary)' }} />{name}
+            </div>
+          ))}
+          {taskNames.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', paddingLeft: 8, opacity: 0.7 }}>+{taskNames.length - 2} more</div>}
+        </div>
+      )}
     </div>
   );
 }
