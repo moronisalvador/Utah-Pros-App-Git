@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import DatePicker from '@/components/DatePicker';
 
 const DIVISION_OPTIONS = [
   { value: 'water', label: 'Water Mitigation' },
@@ -201,11 +202,11 @@ export default function CreateJob() {
           <div className="create-job-row">
             <div className="create-job-field">
               <label className="label">Date of Loss</label>
-              <input className="input" type="date" value={form.date_of_loss} onChange={e => set('date_of_loss', e.target.value)} />
+              <DatePicker value={form.date_of_loss} onChange={v => set('date_of_loss', v)} />
             </div>
             <div className="create-job-field">
               <label className="label">Target Completion</label>
-              <input className="input" type="date" value={form.target_completion} onChange={e => set('target_completion', e.target.value)} />
+              <DatePicker value={form.target_completion} onChange={v => set('target_completion', v)} />
             </div>
           </div>
         </div>

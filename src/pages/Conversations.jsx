@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, subscribeToConversations } from '@/lib/realtime';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';
+import DatePicker from '@/components/DatePicker';
 
 // ═══════════════════════════════════════════════════════════════════
 // INLINE ICONS
@@ -684,7 +685,7 @@ export default function Conversations() {
                   <button className="conv-detail-close-btn" onClick={() => { setShowSchedule(false); setScheduleDate(''); setScheduleTime(''); }}><IconX style={{ width: 16, height: 16 }} /></button>
                 </div>
                 <div style={{ padding: 'var(--space-3) var(--space-4)', display: 'flex', gap: 'var(--space-2)' }}>
-                  <input type="date" className="input" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} style={{ flex: 1 }} min={new Date().toISOString().split('T')[0]} />
+                  <DatePicker value={scheduleDate} onChange={v => setScheduleDate(v)} min={new Date().toISOString().split('T')[0]} style={{ flex: 1 }} />
                   <input type="time" className="input" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} style={{ width: 120 }} />
                 </div>
                 {scheduleDate && scheduleTime && (

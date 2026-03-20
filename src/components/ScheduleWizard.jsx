@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import DatePicker from '@/components/DatePicker';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PHASE_COLORS = ['#6b7280','#1D9E75','#378ADD','#f59e0b','#92400e','#D85A30','#10b981','#059669','#8b5cf6','#E24B4A'];
@@ -326,7 +327,7 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ ...W.field, flex: 1 }}>
                   <label style={W.label}>Start date</label>
-                  <input type="date" style={W.input} value={startDate} onChange={e => setStartDate(e.target.value)} />
+                  <DatePicker value={startDate} onChange={v => setStartDate(v)} />
                 </div>
                 <div style={{ ...W.field, flex: 1 }}>
                   <label style={W.label}>&nbsp;</label>
@@ -347,12 +348,8 @@ export default function ScheduleWizard({ jobId, jobName, onClose, onGenerated })
             <>
               {/* Summary bar with editable start date */}
               <div style={W.summaryBar}>
-                <div style={W.summaryItem} onClick={() => document.getElementById('wiz-start-date')?.showPicker?.()}>
-                  <input type="date" id="wiz-start-date" value={startDate} onChange={e => changeStartDate(e.target.value)}
-                    style={{ border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                      fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)',
-                      borderRadius: 'var(--radius-md)', padding: '4px 8px',
-                      cursor: 'pointer', outline: 'none', width: '100%' }} />
+                <div style={W.summaryItem}>
+                  <DatePicker value={startDate} onChange={v => changeStartDate(v)} />
                   <div style={W.summaryLabel}>Start date</div>
                 </div>
                 <div style={W.summaryItem}>

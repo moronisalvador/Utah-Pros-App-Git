@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
+import DatePicker from '@/components/DatePicker';
 
 function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
   const [title, setTitle] = useState(appointment.title || '');
@@ -205,8 +206,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
           <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
             <div style={{ ...S.field, flex: 1 }}>
               <label style={S.label}>Date</label>
-              <input type="date" style={S.input} value={date}
-                onChange={e => { setDate(e.target.value); setDirty(true); }} />
+              <DatePicker value={date} onChange={v => { setDate(v); setDirty(true); }} />
             </div>
             <div style={{ ...S.field, flex: 1 }}>
               <label style={S.label}>Start</label>
