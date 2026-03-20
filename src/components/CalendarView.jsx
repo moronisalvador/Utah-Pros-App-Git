@@ -129,7 +129,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick }) {
                                 background: c.color || 'rgba(255,255,255,0.3)', color: '#fff',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 border: c.role === 'lead' ? '2px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.3)',
-                              }}>{getInitials(c.display_name || c.full_name)}</span>
+                              }}>{getInitials(c.full_name || c.display_name)}</span>
                             ))}
                             {crew.length > 3 && (
                               <span style={{ fontSize: 8, fontWeight: 600, color: 'rgba(255,255,255,0.7)', alignSelf: 'center' }}>+{crew.length - 3}</span>
