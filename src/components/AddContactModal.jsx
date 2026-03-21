@@ -15,7 +15,6 @@ const ROLE_CARDS=[
   {value:'tenant',emoji:'\u{1F6CF}\uFE0F',label:'Tenant',desc:'Occupant of property'},
   {value:'other',emoji:'\u{1F464}',label:'Other',desc:'Mortgage co, insurance rep'},
 ];
-const CMO=[{value:'sms',label:'SMS'},{value:'call',label:'Phone Call'},{value:'email',label:'Email'}];
 const PTO=[{value:'due_on_receipt',label:'Due on Receipt'},{value:'net_15',label:'Net 15'},{value:'net_30',label:'Net 30'},{value:'net_45',label:'Net 45'},{value:'net_60',label:'Net 60'}];
 
 /* ═══ LOOKUP SELECT ═══ */
@@ -82,7 +81,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
       let deskPh=(form.desk_phone||'').replace(/\D/g,'');if(deskPh&&deskPh.length===10)deskPh='1'+deskPh;if(deskPh&&!deskPh.startsWith('+'))deskPh='+'+deskPh;
       const tags=(form.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
       const data={name:form.name.trim(),phone,role:form.role,email:form.email?.trim()||null,company:form.company?.trim()||null,
-        preferred_contact_method:form.preferred_contact_method,referral_source:form.referral_source?.trim()||null,
+        referral_source:form.referral_source?.trim()||null,
         tags:JSON.stringify(tags),notes:form.notes?.trim()||null,opt_in_status:false};
       if(form.role==='homeowner'||form.role==='tenant')Object.assign(data,{billing_address:form.billing_address?.trim()||null,billing_city:form.billing_city?.trim()||null,billing_state:form.billing_state?.trim()||null,billing_zip:form.billing_zip?.trim()||null,insurance_carrier:form.insurance_carrier?.trim()||null,policy_number:form.policy_number?.trim()||null});
       if(form.role==='adjuster')Object.assign(data,{insurance_carrier:form.insurance_carrier?.trim()||null,desk_phone:deskPh||null,desk_extension:form.desk_extension?.trim()||null,territory:form.territory?.trim()||null,relationship_notes:form.relationship_notes?.trim()||null});
@@ -108,7 +107,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
 
   return(
     <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:560,height:step==='form'?'min(88vh, 720px)':'auto',display:'flex',flexDirection:'column'}}>
+      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:560,height:step==='form'?'min(85vh, 680px)':'auto',display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* Header */}
         <div className="conv-modal-header" style={{flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
@@ -140,7 +139,6 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
               <SectionLabel>Basic Info</SectionLabel>
               <div style={{display:'flex',gap:8}}><F label="Name" field="name" placeholder="Full name" required/><F label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required inputRef={phoneRef}/></div>
               <div style={{display:'flex',gap:8}}><F label="Email" field="email" type="email" placeholder="email@example.com"/><F label="Company" field="company" placeholder={role==='adjuster'?'Carrier name':role==='vendor'?'Company name':'Company (optional)'}/></div>
-              <Sel label="Preferred Contact" field="preferred_contact_method" options={CMO}/>
 
               {(role==='homeowner'||role==='tenant')&&(<>
                 <SectionLabel>Billing Address</SectionLabel>
@@ -170,7 +168,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
                 <div style={{display:'flex',gap:8}}><F label="COI Expiration" field="coi_expiration" type="date"/><F label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file"/></div>
               </>)}
 
-              <SectionLabel>Other</SectionLabel>
+              <SectionLabel>Referral Source *</SectionLabel>
               <div style={{display:'flex',gap:8,marginBottom:6}}>
                 <LookupSelect label="Referral Source" value={form.referral_source} onChange={v=>set('referral_source',v)} items={referralSources||[]} placeholder="Search sources..."/>
                 <F label="Tags" field="tags" placeholder="VIP, repeat, priority"/>
@@ -179,9 +177,9 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
             </div>
 
             {/* Fixed footer */}
-            <div className="add-contact-footer" style={{flexShrink:0}}>
+            <div style={{flexShrink:0,display:'flex',justifyContent:'flex-end',gap:'var(--space-2)',padding:'var(--space-3) var(--space-4)',borderTop:'1px solid var(--border-color)',background:'var(--bg-primary)'}}>
               <button className="btn btn-secondary" onClick={handleBack}>{defaultRole?'Cancel':'Back'}</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>{saving?'Saving...':'Add Contact'}</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()||!form.referral_source?.trim()}>{saving?'Saving...':'Add Contact'}</button>
             </div>
           </>
         )}
@@ -191,7 +189,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
 }
 
 function initForm(r){
-  const base={name:'',phone:'',email:'',company:'',role:r,preferred_contact_method:'sms',referral_source:'',tags:'',notes:''};
+  const base={name:'',phone:'',email:'',company:'',role:r,referral_source:'',tags:'',notes:''};
   if(r==='homeowner')return{...base,billing_address:'',billing_city:'',billing_state:'',billing_zip:'',insurance_carrier:'',policy_number:''};
   if(r==='adjuster')return{...base,company:'',desk_phone:'',desk_extension:'',territory:'',relationship_notes:'',insurance_carrier:''};
   if(r==='vendor')return{...base,trade_specialty:'',payment_terms:'net_30',w9_on_file:false};
