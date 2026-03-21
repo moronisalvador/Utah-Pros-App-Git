@@ -231,7 +231,7 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
         </div>
       </div>
 
-      {showAddContact&&<AddContactModal onClose={()=>setShowAddContact(false)} onSave={handleNewContact} carriers={carriers} referralSources={[]} defaultRole="homeowner"/>}
+      {showAddContact&&<AddContactModal onClose={()=>setShowAddContact(false)} onSave={handleNewContact} carriers={carriers} referralSources={[]} defaultRole="homeowner" prefillName={search.trim()}/>}
     </div>
   );
 }

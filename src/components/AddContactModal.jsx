@@ -1,10 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 
-/* ═══ ICONS ═══ */
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
 
-/* ═══ CONSTANTS ═══ */
 const ROLE_LABELS={homeowner:'Homeowner',adjuster:'Adjuster',subcontractor:'Subcontractor',property_manager:'Property Manager',agent:'Agent / Broker',mortgage_co:'Mortgage Co',tenant:'Tenant',other:'Other',vendor:'Vendor',referral_partner:'Referral Partner',insurance_rep:'Insurance Rep',broker:'Broker'};
 const ROLE_CARDS=[
   {value:'homeowner',emoji:'\u{1F3E0}',label:'Homeowner',desc:'Property owner, policyholder, client'},
@@ -21,10 +19,7 @@ const CMO=[{value:'sms',label:'SMS'},{value:'call',label:'Phone Call'},{value:'e
 const PTO=[{value:'due_on_receipt',label:'Due on Receipt'},{value:'net_15',label:'Net 15'},{value:'net_30',label:'Net 30'},{value:'net_45',label:'Net 45'},{value:'net_60',label:'Net 60'}];
 const LANG=[{value:'en',label:'English'},{value:'es',label:'Spanish'},{value:'pt',label:'Portuguese'}];
 
-/* ═══════════════════════════════════════════════════════════════════
-   LOOKUP SELECT — generic searchable dropdown for any lookup table
-   Used for insurance carriers, referral sources, etc.
-   ═══════════════════════════════════════════════════════════════════ */
+/* ═══ LOOKUP SELECT ═══ */
 export function LookupSelect({label,value,onChange,items,placeholder='Search...',nameKey='name'}){
   const[open,setOpen]=useState(false);const[search,setSearch]=useState('');const wr=useRef(null);
   useEffect(()=>{const h=(e)=>{if(wr.current&&!wr.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
@@ -36,27 +31,43 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
   </div></div>);
 }
 
-// Backward compat exports
 export const CarrierSelect = ({value,onChange,carriers,...rest}) => <LookupSelect label="Insurance Carrier" value={value} onChange={onChange} items={carriers} placeholder="Search carriers..." {...rest} />;
 
-/* ═══ ADD CONTACT MODAL ═══ */
-// defaultRole: if provided, skips role picker and goes straight to form
-export default function AddContactModal({onClose,onSave,carriers,referralSources,defaultRole}){
-  const hasDefault = !!defaultRole;
-  const[step,setStep]=useState(hasDefault ? 'form' : 'pick');
-  const[role,setRole]=useState(hasDefault ? defaultRole : null);
-  const[form,setForm]=useState(hasDefault ? initFormStatic(defaultRole) : {});
+/**
+ * AddContactModal
+ * Props:
+ *   onClose, onSave(data), carriers, referralSources
+ *   defaultRole — optional, skips role picker (e.g. 'homeowner')
+ *   prefillName — optional, pre-fills the name field (e.g. from search bar text)
+ */
+export default function AddContactModal({onClose,onSave,carriers,referralSources,defaultRole,prefillName}){
+  const[step,setStep]=useState(defaultRole?'form':'pick');
+  const[role,setRole]=useState(defaultRole||null);
+  const[form,setForm]=useState(()=>{
+    if(defaultRole){
+      const f=initFormStatic(defaultRole);
+      if(prefillName)f.name=prefillName;
+      return f;
+    }
+    return {};
+  });
   const[saving,setSaving]=useState(false);
   const nameRef=useRef(null);
 
-  // Auto-focus name field when starting with defaultRole
-  useEffect(() => { if (hasDefault) setTimeout(() => nameRef.current?.focus(), 50); }, []);
+  // Focus name field when form opens
+  useEffect(()=>{if(step==='form')setTimeout(()=>nameRef.current?.focus(),50);},[step]);
 
-  const selectRole=(r)=>{setRole(r);setForm(initFormStatic(r));setStep('form');setTimeout(()=>nameRef.current?.focus(),50);};
+  const selectRole=(r)=>{
+    setRole(r);
+    const f=initFormStatic(r);
+    if(prefillName)f.name=prefillName;
+    setForm(f);
+    setStep('form');
+  };
   const set=(f,v)=>setForm(prev=>({...prev,[f]:v}));
 
-  const handleBack = () => {
-    if (hasDefault) { onClose(); return; }
+  const handleBack=()=>{
+    if(defaultRole){onClose();return;}
     setStep('pick');
   };
 
@@ -117,7 +128,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
               </div>
               <F label="Notes" field="notes" type="textarea" placeholder="Internal notes..."/>
             </div>
-            <div className="add-contact-footer"><button className="btn btn-secondary" onClick={handleBack}>{hasDefault ? 'Cancel' : 'Back'}</button><button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>{saving?'Saving...':'Add Contact'}</button></div>
+            <div className="add-contact-footer"><button className="btn btn-secondary" onClick={handleBack}>{defaultRole?'Cancel':'Back'}</button><button className="btn btn-primary" onClick={handleSave} disabled={saving||!form.name?.trim()||!form.phone?.trim()}>{saving?'Saving...':'Add Contact'}</button></div>
           </>
         )}
       </div>
@@ -125,7 +136,6 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
   );
 }
 
-/* ═══ Helper ═══ */
 function initFormStatic(r){
   const base={name:'',phone:'',email:'',company:'',role:r,preferred_contact_method:'sms',preferred_language:'en',referral_source:'',tags:'',notes:''};
   if(r==='homeowner')return{...base,billing_address:'',billing_city:'',billing_state:'',billing_zip:'',insurance_carrier:'',policy_number:''};
