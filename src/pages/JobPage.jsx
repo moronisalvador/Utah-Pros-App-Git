@@ -138,7 +138,7 @@ export default function JobPage(){
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser}/>}
-        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch}/>}
+        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
@@ -341,7 +341,7 @@ function FlagToggle({label,value,onClick}){
 /* ═══════════════════════════════════════════════════
    FINANCIAL TAB — per-tile editing
    ═══════════════════════════════════════════════════ */
-function FinancialTab({job,fmt,saveBatch}){
+function FinancialTab({job,fmt}){
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
   const deductible=Number(job.deductible||0);const deprecHeld=Number(job.depreciation_held||0);
@@ -354,9 +354,9 @@ function FinancialTab({job,fmt,saveBatch}){
 
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch}/>
-      <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch}/>
-      <CostsTile job={job} fmt={fmt} saveBatch={saveBatch} totalCost={totalCost}/>
+      <RevenueTile job={job} fmt={fmt}/>
+      <InsFinTile job={job} fmt={fmt}/>
+      <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       {/* Profitability — always read-only */}
       <div className="job-page-section">
         <div className="job-page-section-title">Profitability</div>
@@ -371,39 +371,25 @@ function FinancialTab({job,fmt,saveBatch}){
   );
 }
 
-function RevenueTile({job,fmt,saveBatch}){
-  const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||'',collected_value:job.collected_value||''});setEd(true);};
-  const save=async()=>{setSv(true);try{const u={};for(const k of['estimated_value','approved_value','invoiced_value','collected_value'])u[k]=f[k]===''?null:parseFloat(f[k]);await saveBatch(u);setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
-  const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
+function RevenueTile({job,fmt}){
   return(<div className="job-page-section">
-    <TileHeader title="Revenue" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
-    {ed?(<>{['estimated_value','approved_value','invoiced_value','collected_value'].map(k=><EF key={k} label={k.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase()).replace(' Value','')} value={f[k]} onChange={v=>s(k,v)} type="number"/>)}</>
-    ):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/></>)}
+    <div className="job-page-section-title">Revenue</div>
+    <FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/>
   </div>);
 }
 
-function InsFinTile({job,fmt,saveBatch}){
-  const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||'',supplement_value:job.supplement_value||''});setEd(true);};
-  const save=async()=>{setSv(true);try{const u={};for(const k of['deductible','depreciation_held','depreciation_released','supplement_value'])u[k]=f[k]===''?null:parseFloat(f[k]);await saveBatch(u);setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
-  const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
+function InsFinTile({job,fmt}){
   return(<div className="job-page-section">
-    <TileHeader title="Insurance Financials" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
-    {ed?(<><EF label="Deductible" value={f.deductible} onChange={v=>s('deductible',v)} type="number"/><EF label="Depreciation Held" value={f.depreciation_held} onChange={v=>s('depreciation_held',v)} type="number"/><EF label="Depreciation Released" value={f.depreciation_released} onChange={v=>s('depreciation_released',v)} type="number"/><EF label="Supplement" value={f.supplement_value} onChange={v=>s('supplement_value',v)} type="number"/></>
-    ):(<><FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/></>)}
+    <div className="job-page-section-title">Insurance Financials</div>
+    <FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/>
   </div>);
 }
 
-function CostsTile({job,fmt,saveBatch,totalCost}){
-  const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({total_labor_cost:job.total_labor_cost||'',total_material_cost:job.total_material_cost||'',total_equipment_cost:job.total_equipment_cost||'',total_sub_cost:job.total_sub_cost||'',total_other_cost:job.total_other_cost||''});setEd(true);};
-  const save=async()=>{setSv(true);try{const u={};for(const k of['total_labor_cost','total_material_cost','total_equipment_cost','total_sub_cost','total_other_cost'])u[k]=f[k]===''?null:parseFloat(f[k]);await saveBatch(u);setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
-  const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
+function CostsTile({job,fmt,totalCost}){
   return(<div className="job-page-section">
-    <TileHeader title="Cost Breakdown" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
-    {ed?(<><EF label="Labor" value={f.total_labor_cost} onChange={v=>s('total_labor_cost',v)} type="number"/><EF label="Materials" value={f.total_material_cost} onChange={v=>s('total_material_cost',v)} type="number"/><EF label="Equipment" value={f.total_equipment_cost} onChange={v=>s('total_equipment_cost',v)} type="number"/><EF label="Subcontractors" value={f.total_sub_cost} onChange={v=>s('total_sub_cost',v)} type="number"/><EF label="Other" value={f.total_other_cost} onChange={v=>s('total_other_cost',v)} type="number"/></>
-    ):(<><FR label="Labor" value={fmt(job.total_labor_cost)}/><FR label="Materials" value={fmt(job.total_material_cost)}/><FR label="Equipment" value={fmt(job.total_equipment_cost)}/><FR label="Subcontractors" value={fmt(job.total_sub_cost)}/><FR label="Other" value={fmt(job.total_other_cost)}/><div className="job-page-fin-divider"/><FR label="Total Cost" value={fmt(totalCost)} bold/></>)}
+    <div className="job-page-section-title">Cost Breakdown</div>
+    <FR label="Labor" value={fmt(job.total_labor_cost)}/><FR label="Materials" value={fmt(job.total_material_cost)}/><FR label="Equipment" value={fmt(job.total_equipment_cost)}/><FR label="Subcontractors" value={fmt(job.total_sub_cost)}/><FR label="Other" value={fmt(job.total_other_cost)}/>
+    <div className="job-page-fin-divider"/><FR label="Total Cost" value={fmt(totalCost)} bold/>
   </div>);
 }
 
