@@ -103,7 +103,7 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
 
   return(
     <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600,height:'min(88vh, 720px)',display:'flex',flexDirection:'column'}}>
+      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600,height:'min(85vh, 680px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {/* Header */}
         <div className="conv-modal-header" style={{flexShrink:0}}>
           <span style={{fontSize:'var(--text-lg)',fontWeight:700}}>New Job</span>
@@ -113,7 +113,7 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
         </div>
 
         {/* Scrollable body */}
-        <div style={{flex:1,overflowY:'auto',padding:'var(--space-3) var(--space-4)'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'var(--space-3) var(--space-4) var(--space-4)'}}>
           {error&&<div style={{padding:'var(--space-2) var(--space-3)',background:'#fef2f2',color:'#dc2626',borderRadius:'var(--radius-md)',fontSize:13,marginBottom:'var(--space-3)',border:'1px solid #fecaca'}}>{error}</div>}
 
           {/* ═══ CLIENT ═══ */}
@@ -222,8 +222,8 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="add-contact-footer" style={{flexShrink:0}}>
+        {/* Footer - always visible */}
+        <div style={{flexShrink:0,display:'flex',justifyContent:'flex-end',gap:'var(--space-2)',padding:'var(--space-3) var(--space-4)',borderTop:'1px solid var(--border-color)',background:'var(--bg-primary)'}}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||!contact}>
             {saving?'Creating...':'Create Job'}
