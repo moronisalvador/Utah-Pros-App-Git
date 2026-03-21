@@ -4,13 +4,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { LookupSelect } from '@/components/AddContactModal';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
+import CreateJobModal from '@/components/CreateJobModal';
 
 function IconPhone(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>);}
 function IconMail(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>);}
 function IconMsg(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);}
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
-function IconDots(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>);}
+function IconJob(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>);}function IconDots(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>);}
 
 const DIVISION_EMOJI={water:'\u{1F4A7}',mold:'\u{1F9A0}',reconstruction:'\u{1F3D7}\uFE0F',fire:'\u{1F525}',contents:'\u{1F4E6}'};
 const DIVISION_COLORS={water:'#2563eb',mold:'#9d174d',reconstruction:'#d97706',fire:'#dc2626',contents:'#059669'};
@@ -56,6 +57,7 @@ export default function CustomerPage(){
   const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
   const[activeTab,setActiveTab]=useState('overview');const[carriers,setCarriers]=useState([]);const[employees,setEmployees]=useState([]);
   const[addRelatedSource,setAddRelatedSource]=useState(null);
+  const[showCreateJob,setShowCreateJob]=useState(false);
 
   useEffect(()=>{loadData();},[contactId]);
   const loadData=async()=>{
@@ -101,6 +103,7 @@ export default function CustomerPage(){
           {c.phone&&<a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{width:16,height:16}}/>Call</a>}
           {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations')}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
+          <button className="customer-action-btn" onClick={()=>setShowCreateJob(true)}><IconJob style={{width:16,height:16}}/>New Job</button>
         </div>
       </div>
       <div className="job-page-tabs">{TABS.map(tab=>(
@@ -116,6 +119,7 @@ export default function CustomerPage(){
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
       </PullToRefresh>
       {addRelatedSource&&<AddRelatedJobModal sourceJob={addRelatedSource.job} claimData={addRelatedSource.claimData} siblingJobs={addRelatedSource.siblings} employees={employees} db={db} onClose={()=>setAddRelatedSource(null)} onCreated={r=>{setAddRelatedSource(null);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
+      {showCreateJob&&<CreateJobModal db={db} onClose={()=>setShowCreateJob(false)} prefillContact={c} onCreated={r=>{setShowCreateJob(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);else loadData();}}/>}
     </div>
   );
 }
