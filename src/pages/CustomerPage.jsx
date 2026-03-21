@@ -123,26 +123,31 @@ export default function CustomerPage(){
           {c.phone&&<a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{width:16,height:16}}/>Call</a>}
           {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations')}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
+        </div>
+      </div>
+
+      <div className="job-page-tabs" style={{display:'flex',alignItems:'center'}}>
+        <div style={{display:'flex',flex:1}}>
+          {TABS.map(tab=>(
+            <button key={tab.key} className={`job-page-tab${activeTab===tab.key?' active':''}`} onClick={()=>setActiveTab(tab.key)}>
+              {tab.label}{tab.count>0&&<span className="job-page-tab-count">{tab.count}</span>}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:'var(--space-2)',paddingRight:'var(--space-3)'}}>
           {!editing?(
-            <button className="customer-action-btn" onClick={startEditing}><IconEdit style={{width:16,height:16}}/>Edit</button>
+            <button className="btn btn-secondary btn-sm" onClick={startEditing} style={{gap:4}}>
+              <IconEdit style={{width:13,height:13}}/>Edit
+            </button>
           ):(
             <>
-              <button className="customer-action-btn" onClick={cancelEditing} style={{color:'var(--text-tertiary)'}}>Cancel</button>
-              <button className="customer-action-btn" onClick={handleSave} disabled={saving}
-                style={{background:'var(--brand-primary)',color:'#fff',borderColor:'var(--brand-primary)'}}>
-                {saving?'...':'Save'}
+              <button className="btn btn-ghost btn-sm" onClick={cancelEditing}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+                {saving?'Saving...':'Save Changes'}
               </button>
             </>
           )}
         </div>
-      </div>
-
-      <div className="job-page-tabs">
-        {TABS.map(tab=>(
-          <button key={tab.key} className={`job-page-tab${activeTab===tab.key?' active':''}`} onClick={()=>setActiveTab(tab.key)}>
-            {tab.label}{tab.count>0&&<span className="job-page-tab-count">{tab.count}</span>}
-          </button>
-        ))}
       </div>
 
       <PullToRefresh onRefresh={loadData} className="job-page-content">
