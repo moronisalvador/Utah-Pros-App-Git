@@ -258,6 +258,7 @@ function AddressSection({addresses,db,contactId,onReload}){
               <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)',marginBottom:2}}>
                 <span style={{fontSize:'var(--text-sm)',fontWeight:500,color:'var(--text-primary)'}}>{addr.address}</span>
                 {addr.is_billing&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:4,background:'var(--brand-primary)',color:'#fff'}}>Billing</span>}
+                <span style={{fontSize:9,fontWeight:600,padding:'1px 6px',borderRadius:4,background:'var(--bg-tertiary)',color:'var(--text-tertiary)',textTransform:'capitalize'}}>{addr.label||'service'}</span>
               </div>
               <div style={{fontSize:12,color:'var(--text-tertiary)'}}>{[addr.city,addr.state,addr.zip].filter(Boolean).join(', ')}</div>
             </div>
