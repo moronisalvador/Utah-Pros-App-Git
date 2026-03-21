@@ -3,9 +3,10 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
+import CreateJobModal from './CreateJobModal';
+import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
-// Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
@@ -14,7 +15,7 @@ const BOTTOM_TABS = [
 ];
 
 // Pages that show the Create FAB
-const CREATE_MENU_PATHS = ['/', '/jobs', '/production'];
+const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule', '/customers', '/leads'];
 
 function IconMore(props) {
   return (
@@ -29,6 +30,8 @@ function IconMore(props) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showCreateJob, setShowCreateJob] = useState(false);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -48,7 +51,6 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
-  // Refetch on navigation (catches mark-as-read when leaving conversations)
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
   const handleNavClick = () => setSidebarOpen(false);
@@ -64,6 +66,37 @@ export default function Layout() {
     return location.pathname === p;
   });
 
+  // ── CreateMenu action handler ──
+  const handleCreateAction = (key) => {
+    switch (key) {
+      case 'job':
+        setShowCreateJob(true);
+        break;
+      case 'customer':
+        setShowCreateCustomer(true);
+        break;
+      case 'estimate':
+        navigate('/estimates/new');
+        break;
+    }
+  };
+
+  const handleJobCreated = (result) => {
+    setShowCreateJob(false);
+    if (result?.job?.id) navigate(`/jobs/${result.job.id}`);
+  };
+
+  const handleCustomerCreated = async (contactData) => {
+    try {
+      const result = await db.insert('contacts', contactData);
+      setShowCreateCustomer(false);
+      if (result?.length > 0) navigate(`/customers/${result[0].id}`);
+    } catch (err) {
+      alert('Failed: ' + err.message);
+      throw err;
+    }
+  };
+
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -76,7 +109,27 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu />}
+      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
+
+      {/* ── Create Job Modal ── */}
+      {showCreateJob && (
+        <CreateJobModal
+          db={db}
+          onClose={() => setShowCreateJob(false)}
+          onCreated={handleJobCreated}
+        />
+      )}
+
+      {/* ── Create Customer Modal ── */}
+      {showCreateCustomer && (
+        <AddContactModal
+          onClose={() => setShowCreateCustomer(false)}
+          onSave={handleCustomerCreated}
+          carriers={[]}
+          referralSources={[]}
+          defaultRole="homeowner"
+        />
+      )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">

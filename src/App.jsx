@@ -8,18 +8,17 @@ import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
-import CreateJob from '@/pages/CreateJob';
 import JobPage from '@/pages/JobPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
+import CustomerPage from '@/pages/CustomerPage';
 import Schedule from '@/pages/Schedule';
 import ScheduleTemplates from '@/pages/ScheduleTemplates';
 import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
-import CustomerPage from '@/pages/CustomerPage';
 
 export default function App() {
   return (
@@ -40,7 +39,6 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="conversations" element={<Conversations />} />
             <Route path="jobs" element={<Jobs />} />
-            <Route path="jobs/new" element={<CreateJob />} />
             <Route path="jobs/:jobId" element={<JobPage />} />
             <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
