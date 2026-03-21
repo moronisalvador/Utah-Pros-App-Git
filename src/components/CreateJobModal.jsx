@@ -103,7 +103,7 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
 
   return(
     <div className="conv-modal-backdrop" onClick={onClose}>
-      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:640,maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
+      <div className="conv-modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600,height:'min(88vh, 720px)',display:'flex',flexDirection:'column'}}>
         {/* Header */}
         <div className="conv-modal-header" style={{flexShrink:0}}>
           <span style={{fontSize:'var(--text-lg)',fontWeight:700}}>New Job</span>
@@ -113,12 +113,12 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
         </div>
 
         {/* Scrollable body */}
-        <div style={{flex:1,overflowY:'auto',padding:'var(--space-4)'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'var(--space-3) var(--space-4)'}}>
           {error&&<div style={{padding:'var(--space-2) var(--space-3)',background:'#fef2f2',color:'#dc2626',borderRadius:'var(--radius-md)',fontSize:13,marginBottom:'var(--space-3)',border:'1px solid #fecaca'}}>{error}</div>}
 
           {/* ═══ CLIENT ═══ */}
-          <div style={{marginBottom:'var(--space-4)'}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'var(--space-2)'}}>Client *</div>
+          <div style={{marginBottom:'var(--space-3)'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Client *</div>
             {!contact?(
               <div ref={searchRef} style={{position:'relative'}}>
                 <div style={{display:'flex',gap:'var(--space-2)'}}>
@@ -163,44 +163,44 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
           </div>
 
           {/* ═══ DIVISION ═══ */}
-          <div style={{marginBottom:'var(--space-4)'}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'var(--space-2)'}}>Division *</div>
-            <div style={{display:'flex',gap:8}}>
+          <div style={{marginBottom:'var(--space-3)'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Division *</div>
+            <div style={{display:'flex',gap:6}}>
               {DIVISIONS.map(d=>(
                 <button key={d.value} onClick={()=>setDivision(d.value)}
-                  style={{flex:'1 1 0',padding:'10px 4px',borderRadius:'var(--radius-md)',
+                  style={{flex:'1 1 0',padding:'8px 4px',borderRadius:'var(--radius-md)',
                     border:division===d.value?`2px solid ${d.color}`:'2px solid var(--border-light)',
                     background:division===d.value?`${d.color}10`:'var(--bg-primary)',
                     cursor:'pointer',textAlign:'center',transition:'all 0.15s',fontFamily:'var(--font-sans)'}}>
-                  <div style={{fontSize:20}}>{d.emoji}</div>
-                  <div style={{fontSize:10,fontWeight:division===d.value?700:500,color:division===d.value?d.color:'var(--text-secondary)',marginTop:2}}>{d.label}</div>
+                  <div style={{fontSize:18}}>{d.emoji}</div>
+                  <div style={{fontSize:10,fontWeight:division===d.value?700:500,color:division===d.value?d.color:'var(--text-secondary)',marginTop:1}}>{d.label}</div>
                 </button>
               ))}
             </div>
           </div>
 
           {/* ═══ ADDRESS ═══ */}
-          <div style={{marginBottom:'var(--space-4)'}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'var(--space-2)'}}>Loss / Service Address</div>
-            <input className="input" value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address" style={{height:36,fontSize:13,marginBottom:8}}/>
-            <div style={{display:'flex',gap:8}}>
-              <input className="input" value={city} onChange={e=>setCity(e.target.value)} placeholder="City" style={{flex:1,height:36,fontSize:13}}/>
-              <input className="input" value={state} onChange={e=>setState(e.target.value)} placeholder="UT" style={{width:60,height:36,fontSize:13}}/>
-              <input className="input" value={zip} onChange={e=>setZip(e.target.value)} placeholder="ZIP" style={{width:80,height:36,fontSize:13}}/>
+          <div style={{marginBottom:'var(--space-3)'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Loss / Service Address</div>
+            <input className="input" value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address" style={{height:34,fontSize:13,marginBottom:6}}/>
+            <div style={{display:'flex',gap:6}}>
+              <input className="input" value={city} onChange={e=>setCity(e.target.value)} placeholder="City" style={{flex:1,height:34,fontSize:13}}/>
+              <input className="input" value={state} onChange={e=>setState(e.target.value)} placeholder="UT" style={{width:56,height:34,fontSize:13}}/>
+              <input className="input" value={zip} onChange={e=>setZip(e.target.value)} placeholder="ZIP" style={{width:76,height:34,fontSize:13}}/>
             </div>
           </div>
 
           {/* ═══ CLAIM DETAILS ═══ */}
-          <div style={{marginBottom:'var(--space-4)'}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'var(--space-2)'}}>Claim Details</div>
-            <div style={{display:'flex',gap:8,marginBottom:8}}>
+          <div style={{marginBottom:'var(--space-3)'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Claim Details</div>
+            <div style={{display:'flex',gap:8,marginBottom:6}}>
               <div style={{flex:1}}>
                 <label className="label" style={{fontSize:11,marginBottom:2}}>Date of Loss</label>
                 <DatePicker value={dateOfLoss} onChange={setDateOfLoss}/>
               </div>
               <div style={{flex:1}}>
                 <label className="label" style={{fontSize:11,marginBottom:2}}>Type of Loss</label>
-                <select className="input" value={typeOfLoss} onChange={e=>setTypeOfLoss(e.target.value)} style={{height:36,fontSize:13,cursor:'pointer'}}>
+                <select className="input" value={typeOfLoss} onChange={e=>setTypeOfLoss(e.target.value)} style={{height:34,fontSize:13,cursor:'pointer'}}>
                   <option value="">Select...</option>
                   {LOSS_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>
@@ -210,15 +210,15 @@ export default function CreateJobModal({db,onClose,onCreated,prefillContact}){
               <div style={{flex:1}}><LookupSelect label="Insurance Company" value={insuranceCompany} onChange={setInsuranceCompany} items={carriers} placeholder="Search carriers..."/></div>
               <div style={{flex:1}}>
                 <label className="label" style={{fontSize:11,marginBottom:2}}>Claim #</label>
-                <input className="input" value={claimNumber} onChange={e=>setClaimNumber(e.target.value)} placeholder="Insurance claim #" style={{height:36,fontSize:13}}/>
+                <input className="input" value={claimNumber} onChange={e=>setClaimNumber(e.target.value)} placeholder="Insurance claim #" style={{height:34,fontSize:13}}/>
               </div>
             </div>
           </div>
 
-          {/* ═══ NOTES (optional) ═══ */}
+          {/* ═══ NOTES ═══ */}
           <div>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'var(--space-2)'}}>Notes (optional)</div>
-            <textarea className="input textarea" value={internalNotes} onChange={e=>setInternalNotes(e.target.value)} rows={2} placeholder="Loss details, special instructions..." style={{width:'100%',fontSize:13}}/>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Notes (optional)</div>
+            <textarea className="input textarea" value={internalNotes} onChange={e=>setInternalNotes(e.target.value)} rows={2} placeholder="Loss details, special instructions..." style={{width:'100%',fontSize:13,resize:'vertical'}}/>
           </div>
         </div>
 
