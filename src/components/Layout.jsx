@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
-import CreateMenu from './CreateMenu';
 import CreateJobModal from './CreateJobModal';
 import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
@@ -13,9 +12,6 @@ const BOTTOM_TABS = [
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
-
-// Pages that show the Create FAB
-const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule', '/customers', '/leads'];
 
 function IconMore(props) {
   return (
@@ -36,7 +32,6 @@ export default function Layout() {
   const navigate = useNavigate();
   const { db } = useAuth();
 
-  // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
       const convs = await db.select('conversations', 'select=unread_count');
@@ -61,23 +56,11 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
-  const showCreateMenu = CREATE_MENU_PATHS.some(p => {
-    if (p === '/') return location.pathname === '/';
-    return location.pathname === p;
-  });
-
-  // ── CreateMenu action handler ──
-  const handleCreateAction = (key) => {
+  // Sidebar action handler (New Job, New Customer)
+  const handleSidebarAction = (key) => {
     switch (key) {
-      case 'job':
-        setShowCreateJob(true);
-        break;
-      case 'customer':
-        setShowCreateCustomer(true);
-        break;
-      case 'estimate':
-        navigate('/estimates/new');
-        break;
+      case 'job': setShowCreateJob(true); break;
+      case 'customer': setShowCreateCustomer(true); break;
     }
   };
 
@@ -103,35 +86,24 @@ export default function Layout() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} />
+      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleSidebarAction} />
 
       <main className="app-content">
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
-
-      {/* ── Create Job Modal ── */}
+      {/* Create Job Modal */}
       {showCreateJob && (
-        <CreateJobModal
-          db={db}
-          onClose={() => setShowCreateJob(false)}
-          onCreated={handleJobCreated}
-        />
+        <CreateJobModal db={db} onClose={() => setShowCreateJob(false)} onCreated={handleJobCreated} />
       )}
 
-      {/* ── Create Customer Modal ── */}
+      {/* Create Customer Modal */}
       {showCreateCustomer && (
-        <AddContactModal
-          onClose={() => setShowCreateCustomer(false)}
-          onSave={handleCustomerCreated}
-          carriers={[]}
-          referralSources={[]}
-          defaultRole="homeowner"
-        />
+        <AddContactModal onClose={() => setShowCreateCustomer(false)} onSave={handleCustomerCreated}
+          carriers={[]} referralSources={[]} defaultRole="homeowner" />
       )}
 
-      {/* ── Bottom Tab Bar (mobile only) ── */}
+      {/* Bottom Tab Bar (mobile only) */}
       <nav className="bottom-bar">
         {BOTTOM_TABS.map(tab => (
           <button

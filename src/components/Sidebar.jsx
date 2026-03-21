@@ -6,34 +6,39 @@ import {
   IconAdmin, IconSettings, IconLogout, IconProduction,
 } from './Icons';
 
+function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
+
 const NAV_ITEMS = [
   { section: 'Main' },
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Conversations', path: '/conversations', icon: IconConversations, badge: true },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
-  { key: 'leads', label: 'Leads', path: '/leads', icon: IconLeads, hidden: true },
   { key: 'customers', label: 'Customers', path: '/customers', icon: IconCustomers },
 
   { section: 'Operations' },
-  { key: 'production', label: 'Production', path: '/production', icon: IconProduction, hidden: true },
-  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule, end: true },
+  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
+  { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
 
-  { section: 'Growth', hidden: true },
-  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing, hidden: true },
+  { section: 'Growth' },
+  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing },
 
   { section: 'System' },
-  { key: 'schedule_templates', label: 'Templates', path: '/schedule/templates', icon: IconSchedule },
   { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
   { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings },
 ];
 
-export default function Sidebar({ isOpen, onNavClick }) {
+export default function Sidebar({ isOpen, onNavClick, onAction }) {
   const { employee, canAccess, logout } = useAuth();
 
   const initials = employee?.full_name
     ? employee.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
     : '?';
+
+  const handleAction = (key) => {
+    onNavClick?.();
+    onAction?.(key);
+  };
 
   return (
     <aside className={`sidebar${isOpen ? ' sidebar-open' : ''}`}>
@@ -42,12 +47,20 @@ export default function Sidebar({ isOpen, onNavClick }) {
         <span className="sidebar-title">UPR Platform</span>
       </div>
 
+      {/* Quick create buttons */}
+      <div style={{ padding: '0 var(--space-3)', marginBottom: 'var(--space-2)', display: 'flex', gap: 'var(--space-2)' }}>
+        <button className="btn btn-primary btn-sm" onClick={() => handleAction('job')}
+          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+          <IconPlus style={{ width: 13, height: 13 }} /> New Job
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={() => handleAction('customer')}
+          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+          <IconPlus style={{ width: 13, height: 13 }} /> Customer
+        </button>
+      </div>
+
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item, i) => {
-          // Hidden items
-          if (item.hidden) return null;
-
-          // Section header
           if (item.section) {
             return (
               <div key={`section-${i}`} className="sidebar-section-label">
@@ -56,14 +69,13 @@ export default function Sidebar({ isOpen, onNavClick }) {
             );
           }
 
-          // Check role-based access
           if (!canAccess(item.key)) return null;
 
           return (
             <NavLink
               key={item.key}
               to={item.path}
-              end={item.path === '/' || item.end}
+              end={item.path === '/'}
               className={({ isActive }) =>
                 `sidebar-link${isActive ? ' active' : ''}`
               }
