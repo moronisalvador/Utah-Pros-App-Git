@@ -396,7 +396,7 @@ function CostsTile({job,fmt,totalCost}){
   </div>);
 }
 
-/* ═══ FILES TAB ═══ */
+/* ═══ FILES TAB (unchanged) ═══ */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
   const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);

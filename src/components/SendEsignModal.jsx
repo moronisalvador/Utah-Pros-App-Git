@@ -87,8 +87,10 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           doc_type:     docType,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to send');
+      let json;
+      const rawText = await res.text();
+      try { json = JSON.parse(rawText); } catch { throw new Error(`Server error: ${rawText.slice(0, 200)}`); }
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}: ${rawText.slice(0, 200)}`);
       setSigningUrl(json.signing_url || '');
       setDone(true);
       if (onSent) onSent(json);
