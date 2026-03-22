@@ -21,15 +21,15 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  // ── Resolve Supabase credentials (handles both VITE_ and non-VITE_ var names) ──
+  // Resolves SUPABASE_URL / SUPABASE_ANON_KEY set in CF Pages dashboard (without VITE_ prefix)
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const SUPABASE_KEY = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return jsonResponse({ error: `Missing Supabase env vars. URL=${!!SUPABASE_URL} KEY=${!!SUPABASE_KEY} Available keys: ${Object.keys(env).join(',')}` }, 500, request, env);
+    return jsonResponse({ error: `Supabase env vars missing. Add SUPABASE_URL and SUPABASE_ANON_KEY in Cloudflare Pages → Settings → Variables and Secrets` }, 500, request, env);
   }
   if (!env.SENDGRID_API_KEY) {
-    return jsonResponse({ error: 'Missing SENDGRID_API_KEY env var' }, 500, request, env);
+    return jsonResponse({ error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);
   }
 
   const sbHeaders = {
@@ -109,12 +109,13 @@ export async function onRequestPost(context) {
     if (!emailRes.ok) {
       const errBody = await emailRes.text();
       console.error('SendGrid error:', errBody);
+      // Treat as partial success — sign request exists, copy link manually
       return jsonResponse({
-        success: false, email_error: true,
+        success: true, email_error: true,
         sign_request_id, token,
-        message: 'Sign request created but email failed. Use the signing link below.',
+        message: 'Sign request created but email failed to send. Copy the signing link below and send it manually.',
         signing_url: signingUrl,
-      }, 500, request, env);
+      }, 200, request, env);
     }
 
     return jsonResponse({ success: true, sign_request_id, token, signing_url: signingUrl }, 200, request, env);
