@@ -25,6 +25,13 @@ export async function onRequestPost(context) {
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const SUPABASE_KEY = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return jsonResponse({ error: `Missing Supabase env vars. URL=${!!SUPABASE_URL} KEY=${!!SUPABASE_KEY} Available keys: ${Object.keys(env).join(',')}` }, 500, request, env);
+  }
+  if (!env.SENDGRID_API_KEY) {
+    return jsonResponse({ error: 'Missing SENDGRID_API_KEY env var' }, 500, request, env);
+  }
+
   const sbHeaders = {
     'apikey':        SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,
