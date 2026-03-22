@@ -108,9 +108,22 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
       if (mode === 'collect') {
         // Open sign page directly — hand iPad to client
         window.open(json.signing_url, '_blank');
+        window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
+          type: 'success',
+          title: 'Signature page opened',
+          message: 'Hand the device to the client to sign.',
+        }}));
         onClose();
         if (onSent) onSent(json);
       } else {
+        // Email mode — show success state in modal + toast
+        window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
+          type:    'success',
+          title:   json.email_error ? 'Sign request created' : 'Signing link sent',
+          message: json.email_error
+            ? `Email failed — copy the link below to send manually.`
+            : `Signing link sent to ${signerEmail.trim()}.`,
+        }}));
         setSigningUrl(json.signing_url || '');
         setDone(true);
         if (onSent) onSent(json);

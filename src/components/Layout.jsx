@@ -2,16 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
-import CreateJobModal from './CreateJobModal';
-import AddContactModal from './AddContactModal';
+import CreateMenu from './CreateMenu';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
+// Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Messages', path: '/conversations', icon: IconConversations },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
+
+// Pages that show the Create FAB
+const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule'];
 
 function IconMore(props) {
   return (
@@ -26,12 +29,26 @@ function IconMore(props) {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [showCreateJob, setShowCreateJob] = useState(false);
-  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [toasts, setToasts] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
 
+  // ── Global toast system — fire from anywhere with:
+  //    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type, title } }))
+  useEffect(() => {
+    const handler = (e) => {
+      const { message, type = 'success', title } = e.detail || {};
+      if (!message) return;
+      const id = Date.now() + Math.random();
+      setToasts(prev => [...prev, { id, message, type, title }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+    };
+    window.addEventListener('upr:toast', handler);
+    return () => window.removeEventListener('upr:toast', handler);
+  }, []);
+
+  // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
       const convs = await db.select('conversations', 'select=unread_count');
@@ -46,6 +63,7 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
+  // Refetch on navigation (catches mark-as-read when leaving conversations)
   useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
 
   const handleNavClick = () => setSidebarOpen(false);
@@ -56,29 +74,10 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
-  // Sidebar action handler (New Job, New Customer)
-  const handleSidebarAction = (key) => {
-    switch (key) {
-      case 'job': setShowCreateJob(true); break;
-      case 'customer': setShowCreateCustomer(true); break;
-    }
-  };
-
-  const handleJobCreated = (result) => {
-    setShowCreateJob(false);
-    if (result?.job?.id) navigate(`/jobs/${result.job.id}`);
-  };
-
-  const handleCustomerCreated = async (contactData) => {
-    try {
-      const result = await db.insert('contacts', contactData);
-      setShowCreateCustomer(false);
-      if (result?.length > 0) navigate(`/customers/${result[0].id}`);
-    } catch (err) {
-      alert('Failed: ' + err.message);
-      throw err;
-    }
-  };
+  const showCreateMenu = CREATE_MENU_PATHS.some(p => {
+    if (p === '/') return location.pathname === '/';
+    return location.pathname === p;
+  });
 
   return (
     <div className="app-layout">
@@ -86,24 +85,15 @@ export default function Layout() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleSidebarAction} />
+      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} />
 
       <main className="app-content">
         <Outlet />
       </main>
 
-      {/* Create Job Modal */}
-      {showCreateJob && (
-        <CreateJobModal db={db} onClose={() => setShowCreateJob(false)} onCreated={handleJobCreated} />
-      )}
+      {showCreateMenu && <CreateMenu />}
 
-      {/* Create Customer Modal */}
-      {showCreateCustomer && (
-        <AddContactModal onClose={() => setShowCreateCustomer(false)} onSave={handleCustomerCreated}
-          carriers={[]} referralSources={[]} defaultRole="homeowner" />
-      )}
-
-      {/* Bottom Tab Bar (mobile only) */}
+      {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">
         {BOTTOM_TABS.map(tab => (
           <button
@@ -130,6 +120,33 @@ export default function Layout() {
           <span className="bottom-tab-label">More</span>
         </button>
       </nav>
+      {/* ── Toast Notifications ── */}
+      <div style={{position:'fixed',bottom:'84px',left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
+        {toasts.map(toast => (
+          <div key={toast.id}
+            style={{
+              background: toast.type==='error' ? '#fef2f2' : toast.type==='warning' ? '#fffbeb' : '#f0fdf4',
+              border: `1px solid ${toast.type==='error' ? '#fecaca' : toast.type==='warning' ? '#fde68a' : '#bbf7d0'}`,
+              borderLeft: `4px solid ${toast.type==='error' ? '#ef4444' : toast.type==='warning' ? '#f59e0b' : '#22c55e'}`,
+              borderRadius:12,padding:'14px 18px',boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
+              pointerEvents:'all',width:'100%',
+              animation:'slideUp 0.25s ease',
+            }}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
+              <span style={{fontSize:20,flexShrink:0,lineHeight:1.2}}>
+                {toast.type==='error' ? '❌' : toast.type==='warning' ? '⚠️' : '✅'}
+              </span>
+              <div style={{flex:1,minWidth:0}}>
+                {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
+                <div style={{fontSize:13,color:'#334155',lineHeight:1.5}}>{toast.message}</div>
+              </div>
+              <button onClick={()=>setToasts(prev=>prev.filter(t=>t.id!==toast.id))}
+                style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',padding:0,flexShrink:0,lineHeight:1}}>✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }
