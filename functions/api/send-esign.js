@@ -54,7 +54,7 @@ export async function onRequestPost(context) {
 
   try {
     const {
-      job_id, contact_id, signer_name, signer_email, sent_by, doc_type = 'coc',
+      job_id, contact_id, signer_name, signer_email, sent_by, doc_type = 'coc', mode = 'email',
     } = await request.json();
 
     if (!job_id)       return jsonResponse({ error: 'job_id is required' },       400, request, env);
@@ -86,6 +86,11 @@ export async function onRequestPost(context) {
     const signingUrl  = `${APP_URL}/sign/${token}`;
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
+
+    // ── Skip email for on-site collection mode ──
+    if (mode === 'collect') {
+      return jsonResponse({ success: true, sign_request_id, token, signing_url: signingUrl, mode: 'collect' }, 200, request, env);
+    }
 
     // ── Send email via SendGrid ──
     const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {

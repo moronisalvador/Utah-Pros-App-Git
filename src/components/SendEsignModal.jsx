@@ -74,14 +74,17 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
     fetchPrimaryContact();
   }, [job?.id]);
 
-  const handleSend = async () => {
+  const handleSend = async (mode = 'email') => {
     if (docType === 'coc' && divisions.length === 0) { setError('Select at least one scope of work.'); return; }
-    if (!signerName.trim())  { setError('Signer name is required.');  return; }
-    if (!signerEmail.trim()) { setError('Signer email is required.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) { setError('Enter a valid email address.'); return; }
+    if (!signerName.trim()) { setError('Signer name is required.'); return; }
+    // Email required only for email mode
+    if (mode === 'email') {
+      if (!signerEmail.trim()) { setError('Signer email is required.'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) { setError('Enter a valid email address.'); return; }
+    }
 
     setError('');
-    setSending(true);
+    setSending(mode); // store mode so buttons show correct spinner
     try {
       const res = await fetch('/api/send-esign', {
         method:  'POST',
@@ -90,19 +93,28 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           job_id:       job.id,
           contact_id:   contactId || null,
           signer_name:  signerName.trim(),
-          signer_email: signerEmail.trim(),
+          signer_email: signerEmail.trim() || `collect-${Date.now()}@noemail.local`,
           sent_by:      currentUser?.id,
           doc_type:     docType,
           divisions:    docType === 'coc' ? divisions : undefined,
+          mode,
         }),
       });
       let json;
       const rawText = await res.text();
       try { json = JSON.parse(rawText); } catch { throw new Error(`Server error: ${rawText.slice(0, 200)}`); }
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}: ${rawText.slice(0, 200)}`);
-      setSigningUrl(json.signing_url || '');
-      setDone(true);
-      if (onSent) onSent(json);
+
+      if (mode === 'collect') {
+        // Open sign page directly — hand iPad to client
+        window.open(json.signing_url, '_blank');
+        onClose();
+        if (onSent) onSent(json);
+      } else {
+        setSigningUrl(json.signing_url || '');
+        setDone(true);
+        if (onSent) onSent(json);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -212,10 +224,27 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-ghost" onClick={onClose} disabled={sending} style={{ flex: 1 }}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSend} disabled={sending || loadingContact} style={{ flex: 2 }}>
-                {sending ? 'Sending…' : 'Send Signing Link'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Primary: collect on-site */}
+              <button className="btn btn-primary" onClick={() => handleSend('collect')}
+                disabled={!!sending || loadingContact}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                {sending === 'collect'
+                  ? 'Opening…'
+                  : <><span style={{fontSize:16}}>✍️</span> Collect Signature Now</>}
+              </button>
+
+              {/* Secondary: send link via email */}
+              <button className="btn btn-secondary" onClick={() => handleSend('email')}
+                disabled={!!sending || loadingContact}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                {sending === 'email'
+                  ? 'Sending…'
+                  : <><span style={{fontSize:15}}>✉️</span> Send Link via Email</>}
+              </button>
+
+              <button className="btn btn-ghost" onClick={onClose} disabled={!!sending} style={{ width: '100%' }}>
+                Cancel
               </button>
             </div>
 

@@ -461,7 +461,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
                       </>
                     )}
                     {sr.status==='signed'&&sr.signed_file_path&&(
-                      <a href={`${window.location.origin}/api/job-files/${sr.signed_file_path}`}
+                      <a href={`${db.baseUrl}/storage/v1/object/public/job-files/${sr.signed_file_path}`}
                         className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}
                         target="_blank" rel="noopener noreferrer">View PDF</a>
                     )}
