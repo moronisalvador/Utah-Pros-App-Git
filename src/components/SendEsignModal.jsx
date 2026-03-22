@@ -45,7 +45,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
         }
 
         const cRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/contacts?id=eq.${cid}&select=id,full_name,email`,
+          `${SUPABASE_URL}/rest/v1/contacts?id=eq.${cid}&select=id,name,email`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         const contacts = await cRes.json();
@@ -53,7 +53,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
         if (!c) return;
 
         setContactId(c.id);
-        if (c.full_name) setSignerName(c.full_name);
+        if (c.name) setSignerName(c.name);
         if (c.email)     setSignerEmail(c.email);
 
       } catch (err) {
