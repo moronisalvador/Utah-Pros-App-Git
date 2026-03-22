@@ -490,6 +490,17 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
       .then(d=>setSignRequests(d||[])).catch(()=>{});
   };
+  // Reload docs + sign requests when user returns to this tab (e.g. after signing in another tab)
+  useEffect(()=>{
+    const onVisible=()=>{
+      if(document.visibilityState==='visible'){
+        reloadSignRequests();
+        db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});
+      }
+    };
+    document.addEventListener('visibilitychange',onVisible);
+    return()=>document.removeEventListener('visibilitychange',onVisible);
+  },[job.id]);
   const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);

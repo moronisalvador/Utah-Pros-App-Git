@@ -124,6 +124,7 @@ export default function SignPage() {
           token,
           signer_name:   signerName.trim(),
           signature_png: sigPng,
+          divisions:     data?.divisions || (data?.job?.division ? [data.job.division] : []),
         }),
       });
 
@@ -179,17 +180,22 @@ export default function SignPage() {
 
   if (status === 'done') return (
     <Screen>
-      <Card>
-        <StatusIcon>🎉</StatusIcon>
-        <h2 style={styles.heading}>Document Signed</h2>
-        <p style={styles.sub}>
-          Thank you, <strong>{signerName}</strong>. Your signed{' '}
-          {data?.doc_type === 'coc' ? 'Certificate of Completion' : 'document'} has been saved.
-        </p>
-        <p style={{ ...styles.sub, marginTop: 8 }}>
-          You'll receive a copy via email shortly. Thank you for choosing Utah Pros Restoration.
-        </p>
-      </Card>
+      <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 20px',background:'#f1f5f9'}}>
+        <div style={{background:'#fff',borderRadius:16,padding:'48px 36px',maxWidth:460,width:'100%',textAlign:'center',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
+          <div style={{width:72,height:72,borderRadius:'50%',background:'#ecfdf5',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:36}}>✅</div>
+          <h1 style={{margin:'0 0 12px',fontSize:24,fontWeight:800,color:'#0f172a'}}>You're all set!</h1>
+          <p style={{margin:'0 0 8px',fontSize:16,color:'#334155',lineHeight:1.6}}>
+            Your <strong>{data?.doc_type === 'coc' ? 'Certificate of Completion' : 'document'}</strong> has been signed and saved successfully.
+          </p>
+          <p style={{margin:'0 0 28px',fontSize:14,color:'#64748b',lineHeight:1.6}}>
+            Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. You may close this window.
+          </p>
+          <div style={{background:'#f8fafc',borderRadius:10,padding:'14px 18px',border:'1px solid #e2e8f0'}}>
+            <p style={{margin:'0 0 4px',fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em'}}>Signed on</p>
+            <p style={{margin:0,fontSize:14,fontWeight:600,color:'#1e293b'}}>{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+          </div>
+        </div>
+      </div>
     </Screen>
   );
 
@@ -233,7 +239,7 @@ export default function SignPage() {
           <Divider />
 
           {/* Section text */}
-          {buildSectionText(job.division, data?.doc_type).map((s, i) => (
+          {buildSectionText(data?.divisions || (job.division ? [job.division] : []), data?.doc_type).map((s, i) => (
             <div key={i} style={styles.section}>
               <p style={styles.sectionHeading}>{s.heading}</p>
               <p style={styles.sectionBody}>{s.body}</p>
@@ -322,7 +328,12 @@ export default function SignPage() {
             onClick={handleSubmit}
             disabled={status === 'submitting'}
           >
-            {status === 'submitting' ? 'Submitting…' : 'Submit Signature'}
+            {status === 'submitting' ? (
+              <span style={{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
+                <span style={{width:16,height:16,border:'2px solid rgba(255,255,255,0.4)',borderTop:'2px solid white',borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}/>
+                Generating signed document…
+              </span>
+            ) : 'Submit Signature'}
           </button>
 
           <p style={styles.footer}>
@@ -371,16 +382,20 @@ function Spinner() {
 }
 
 // ── Section text (mirrors worker) ──
-function buildSectionText(division, doc_type) {
+function buildSectionText(divisions, doc_type) {
   if (doc_type !== 'coc') return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
-  const divMap = {
-    water:          [{ heading: 'Mitigation',             body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns regarding the mitigation work.' }],
-    mold:           [{ heading: 'Mold Remediation',       body: 'I confirm that all mold remediation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' }],
-    reconstruction: [{ heading: 'Repairs & Reconstruction', body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' }],
-    fire:           [{ heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }],
-    contents:       [{ heading: 'Contents Restoration',   body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items removed from the property in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' }],
+  const map = {
+    water:          { heading: 'Water Damage Mitigation',  body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
+    mold:           { heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    reconstruction: { heading: 'Repairs & Reconstruction', body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    fire:           { heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
+    contents:       { heading: 'Contents Restoration',     body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
   };
-  return divMap[division] || [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
+  const ORDER = ['water','mold','reconstruction','fire','contents'];
+  const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
+  const sorted = [...divArr].sort((a,b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  const results = sorted.map(d => map[d]).filter(Boolean);
+  return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
 
 const DOC_LABELS = {

@@ -16,10 +16,17 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
   const [signerEmail,    setSignerEmail]    = useState('');
   const [contactId,      setContactId]      = useState(null);
   const [sending,        setSending]        = useState(false);
+  const [divisions,      setDivisions]      = useState([]);
   const [error,          setError]          = useState('');
   const [done,           setDone]           = useState(false);
   const [signingUrl,     setSigningUrl]     = useState('');
   const [loadingContact, setLoadingContact] = useState(true);
+
+  // ── Pre-check job division when coc selected ──
+  useEffect(() => {
+    if (docType === 'coc' && job?.division) setDivisions([job.division]);
+    else setDivisions([]);
+  }, [docType, job?.division]);
 
   // ── Auto-fetch primary contact on mount ──
   useEffect(() => {
@@ -68,6 +75,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
   }, [job?.id]);
 
   const handleSend = async () => {
+    if (docType === 'coc' && divisions.length === 0) { setError('Select at least one scope of work.'); return; }
     if (!signerName.trim())  { setError('Signer name is required.');  return; }
     if (!signerEmail.trim()) { setError('Signer email is required.'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) { setError('Enter a valid email address.'); return; }
@@ -85,6 +93,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           signer_email: signerEmail.trim(),
           sent_by:      currentUser?.id,
           doc_type:     docType,
+          divisions:    docType === 'coc' ? divisions : undefined,
         }),
       });
       let json;
@@ -138,6 +147,34 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
                 {DOC_TYPES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
               </select>
             </div>
+
+            {/* Division checkboxes — only for CoC */}
+            {docType === 'coc' && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}>Scope of Work <span style={{ color: '#ef4444' }}>*</span></label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
+                  {[
+                    { key: 'water',          label: '💧 Water Damage Mitigation' },
+                    { key: 'mold',           label: '🧫 Mold Remediation' },
+                    { key: 'reconstruction', label: '🏗️ Repairs & Reconstruction' },
+                    { key: 'fire',           label: '🔥 Fire & Smoke Restoration' },
+                    { key: 'contents',       label: '📦 Contents Restoration' },
+                  ].map(d => (
+                    <label key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', fontWeight: divisions.includes(d.key) ? 600 : 400 }}>
+                      <input type="checkbox"
+                        checked={divisions.includes(d.key)}
+                        onChange={e => setDivisions(prev => e.target.checked ? [...prev, d.key] : prev.filter(x => x !== d.key))}
+                        style={{ width: 15, height: 15, cursor: 'pointer' }}
+                      />
+                      {d.label}
+                    </label>
+                  ))}
+                </div>
+                {docType === 'coc' && divisions.length === 0 && (
+                  <p style={{ margin: '4px 0 0', fontSize: 11, color: '#ef4444' }}>Select at least one scope of work.</p>
+                )}
+              </div>
+            )}
 
             <div style={{ marginBottom: 16 }}>
               <label style={lbl}>Signer Full Name <span style={{ color: '#ef4444' }}>*</span></label>

@@ -16,7 +16,7 @@ export async function onRequestPost(context) {
   const { request, env } = context;
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const SUPABASE_KEY = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
   const sbHeaders = {
     'apikey':        SUPABASE_KEY,
@@ -33,7 +33,7 @@ export async function onRequestPost(context) {
   };
 
   try {
-    const { token, signer_name, signature_png } = await request.json();
+    const { token, signer_name, signature_png, divisions } = await request.json();
 
     if (!token)         return jsonResponse({ error: 'token is required' },         400, request, env);
     if (!signer_name)   return jsonResponse({ error: 'signer_name is required' },   400, request, env);
@@ -50,7 +50,7 @@ export async function onRequestPost(context) {
     const signedAt  = new Date();
 
     // ── 2. Generate PDF ──
-    const pdfBytes = await buildCocPdf({ job, signer_name, signature_png, signed_at: signedAt, doc_type: signReq.doc_type });
+    const pdfBytes = await buildCocPdf({ job, signer_name, signature_png, signed_at: signedAt, doc_type: signReq.doc_type, divisions });
 
     // ── 3. Upload to Supabase Storage ──
     const storagePath = `${job.id}/esign/coc-signed-${Date.now()}.pdf`;
@@ -93,7 +93,7 @@ export async function onRequestPost(context) {
 // ════════════════════════════════════════════════════════
 //  PDF BUILDER — UPR Certificate of Completion
 // ════════════════════════════════════════════════════════
-async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_type }) {
+async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions }) {
   const pdfDoc   = await PDFDocument.create();
   const page     = pdfDoc.addPage([612, 792]);
   const { width, height } = page.getSize();
@@ -163,7 +163,7 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
   ln(margin, y, width - margin); y -= 20;
 
   // Section body
-  const sections = buildSections(job.division, doc_type);
+  const sections = buildSections(divisions?.length ? divisions : [job.division], doc_type);
   for (const s of sections) {
     txt(s.heading, margin, y, { font: fontBold, size: 11 }); y -= 16;
     y = wrap(s.body, margin, y, width - margin * 2, { lh: 15 }); y -= 16;
@@ -203,16 +203,20 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
   return pdfDoc.save();
 }
 
-function buildSections(division, doc_type) {
+function buildSections(divisions, doc_type) {
   if (doc_type !== 'coc') return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
   const map = {
-    water:          [{ heading: 'Mitigation',               body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }],
-    mold:           [{ heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' }],
-    reconstruction: [{ heading: 'Repairs & Reconstruction', body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' }],
-    fire:           [{ heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }],
-    contents:       [{ heading: 'Contents Restoration',     body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' }],
+    water:          { heading: 'Water Damage Mitigation',   body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
+    mold:           { heading: 'Mold Remediation',          body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    reconstruction: { heading: 'Repairs & Reconstruction',  body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    fire:           { heading: 'Fire & Smoke Restoration',  body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
+    contents:       { heading: 'Contents Restoration',      body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
   };
-  return map[division] || [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
+  const divArr = Array.isArray(divisions) ? divisions : [divisions];
+  const ORDER = ['water','mold','reconstruction','fire','contents'];
+  const sorted = divArr.sort((a,b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  const results = sorted.map(d => map[d]).filter(Boolean);
+  return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
 
 const DOC_TITLES = {
