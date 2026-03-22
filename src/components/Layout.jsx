@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
+import CreateJobModal from './CreateJobModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -30,6 +31,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const [showCreateJob, setShowCreateJob] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -48,6 +50,14 @@ export default function Layout() {
     return () => window.removeEventListener('upr:toast', handler);
   }, []);
 
+  // ── Listen for new-job event from Sidebar or anywhere else ──
+  // Sidebar's "+ New Job" button should dispatch: window.dispatchEvent(new CustomEvent('upr:new-job'))
+  useEffect(() => {
+    const handler = () => setShowCreateJob(true);
+    window.addEventListener('upr:new-job', handler);
+    return () => window.removeEventListener('upr:new-job', handler);
+  }, []);
+
   // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
@@ -57,14 +67,19 @@ export default function Layout() {
     } catch { /* silent */ }
   }, [db]);
 
+  // Mount + interval — single source of truth
+  const mountedRef = useRef(false);
   useEffect(() => {
     fetchUnread();
     const interval = setInterval(fetchUnread, 30000);
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
-  // Refetch on navigation (catches mark-as-read when leaving conversations)
-  useEffect(() => { fetchUnread(); }, [location.pathname, fetchUnread]);
+  // Refetch on navigation but skip the very first render (already fetched above)
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    fetchUnread();
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNavClick = () => setSidebarOpen(false);
   const handleBottomTab = (path) => navigate(path);
@@ -79,6 +94,25 @@ export default function Layout() {
     return location.pathname === p;
   });
 
+  // ── CreateMenu action handler ──
+  const handleCreateAction = (key) => {
+    if (key === 'job') { setShowCreateJob(true); return; }
+    if (key === 'customer') { navigate('/customers/new'); return; }
+    if (key === 'estimate') { navigate('/estimates/new'); return; }
+  };
+
+  // ── After job created — navigate to new job page ──
+  const handleJobCreated = (result) => {
+    setShowCreateJob(false);
+    const jobId = result?.job?.id || result?.id;
+    if (jobId) {
+      navigate(`/jobs/${jobId}`);
+      window.dispatchEvent(new CustomEvent('upr:toast', {
+        detail: { message: `Job created successfully`, type: 'success' }
+      }));
+    }
+  };
+
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -91,7 +125,16 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu />}
+      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
+
+      {/* ── Create Job Modal ── */}
+      {showCreateJob && (
+        <CreateJobModal
+          db={db}
+          onClose={() => setShowCreateJob(false)}
+          onCreated={handleJobCreated}
+        />
+      )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
       <nav className="bottom-bar">
@@ -120,6 +163,7 @@ export default function Layout() {
           <span className="bottom-tab-label">More</span>
         </button>
       </nav>
+
       {/* ── Toast Notifications ── */}
       <div style={{position:'fixed',bottom:'84px',left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
         {toasts.map(toast => (

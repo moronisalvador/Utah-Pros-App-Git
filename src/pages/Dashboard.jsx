@@ -21,7 +21,8 @@ export default function Dashboard() {
       const [jobs, conversations, contacts] = await Promise.all([
         db.select('jobs', 'select=id,job_number,insured_name,phase,division,source,created_at&order=created_at.desc&limit=10'),
         db.select('conversations', 'select=id,status&status=eq.needs_response').catch(() => []),
-        db.select('contacts', 'select=id,role').catch(() => []),
+        // limit=1000 prevents full table scan — for stat counts this is sufficient
+        db.select('contacts', 'select=id,role&limit=1000').catch(() => []),
       ]);
 
       const terminalPhases = ['completed', 'closed', 'cancelled'];

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
@@ -21,6 +21,14 @@ import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
 
+// Admin-only route guard — belt-and-suspenders on top of Admin.jsx's own check
+function AdminRoute({ children }) {
+  const { employee } = useAuth();
+  if (!employee) return <Navigate to="/" replace />;
+  if (employee.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -28,6 +36,7 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/login" element={<Login />} />
+          <Route path="/sign/:token" element={<SignPage />} />
 
           {/* Protected — all wrapped in Layout */}
           <Route
@@ -39,22 +48,26 @@ export default function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="conversations" element={<Conversations />} />
-            <Route path="jobs" element={<Jobs />} />
-            <Route path="jobs/:jobId" element={<JobPage />} />
+
+            {/* Nested job routes — prevents /jobs/new from matching :jobId */}
+            <Route path="jobs">
+              <Route index element={<Jobs />} />
+              {/* /jobs/new: redirect to /jobs — CreateJobModal opens via Layout */}
+              <Route path="new" element={<Navigate to="/jobs" replace />} />
+              <Route path=":jobId" element={<JobPage />} />
+            </Route>
+
             <Route path="production" element={<Production />} />
             <Route path="leads" element={<Leads />} />
-            <Route path="customers/:contactId" element={<CustomerPage />} />
             <Route path="customers" element={<Customers />} />
+            <Route path="customers/:contactId" element={<CustomerPage />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="schedule/templates" element={<ScheduleTemplates />} />
             <Route path="time-tracking" element={<TimeTracking />} />
             <Route path="marketing" element={<Marketing />} />
-            <Route path="admin" element={<Admin />} />
+            <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="settings" element={<Settings />} />
           </Route>
-
-          {/* Public — no auth */}
-          <Route path="/sign/:token" element={<SignPage />} />
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
