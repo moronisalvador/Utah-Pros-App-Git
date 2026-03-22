@@ -19,6 +19,7 @@ import TimeTracking from '@/pages/TimeTracking';
 import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
+import SignPage from '@/pages/SignPage';
 
 export default function App() {
   return (
@@ -51,6 +52,9 @@ export default function App() {
             <Route path="admin" element={<Admin />} />
             <Route path="settings" element={<Settings />} />
           </Route>
+
+          {/* Public — no auth */}
+          <Route path="/sign/:token" element={<SignPage />} />
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />

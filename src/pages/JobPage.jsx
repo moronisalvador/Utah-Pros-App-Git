@@ -5,6 +5,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import ScheduleWizard from '@/components/ScheduleWizard';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
+import SendEsignModal from '@/components/SendEsignModal';
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
@@ -393,9 +394,10 @@ function CostsTile({job,fmt,totalCost}){
   </div>);
 }
 
-/* ═══ FILES TAB (unchanged) ═══ */
+/* ═══ FILES TAB ═══ */
 function FilesTab({job,documents,setDocuments,db,currentUser}){
   const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
+  const[showEsign,setShowEsign]=useState(false);
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);
   const handleUpload=async(e)=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);
@@ -412,9 +414,10 @@ function FilesTab({job,documents,setDocuments,db,currentUser}){
   const isImage=doc=>doc.mime_type?.startsWith('image/');
   return(
     <div className="job-page-files">
-      <div className="job-page-files-toolbar"><div style={{display:'flex',gap:8,alignItems:'center',flex:1}}>
+      <div className="job-page-files-toolbar"><div style={{display:'flex',gap:8,alignItems:'center',flex:1,flexWrap:'wrap'}}>
         <select className="input" value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} style={{width:'auto',minWidth:130,height:32}}>{FILE_CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}</select>
         <button className="btn btn-primary btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>{uploading?'Uploading...':'Upload Files'}</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setShowEsign(true)} style={{gap:4}}>✉️ Send for Signature</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
       <div className="job-page-files-cats">
@@ -430,6 +433,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser}){
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
           <button className="btn btn-ghost btn-sm" onClick={()=>handleDelete(doc)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
         </div>))}</div>)}
+      {showEsign&&<SendEsignModal job={job} contacts={[]} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});}}/>}
     </div>);
 }
 
