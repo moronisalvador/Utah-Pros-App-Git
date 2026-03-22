@@ -399,82 +399,142 @@ function CostsTile({job,fmt,totalCost}){
 
 /* ═══ SIGN REQUESTS SECTION ═══ */
 const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
-const SR_STATUS={
-  pending:{label:'Pending Signature',color:'#d97706',bg:'#fffbeb',border:'#fde68a'},
-  signed:{label:'Signed',color:'#059669',bg:'#ecfdf5',border:'#a7f3d0'},
-  expired:{label:'Expired',color:'#6b7280',bg:'#f9fafb',border:'#e5e7eb'},
-  cancelled:{label:'Cancelled',color:'#6b7280',bg:'#f9fafb',border:'#e5e7eb'},
-};
+
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
   const[copied,setCopied]=useState(null);
+  const[showCancelled,setShowCancelled]=useState(false);
+
   const copyLink=(token)=>{
-    const url=`https://dev.utahpros.app/sign/${token}`;
-    navigator.clipboard.writeText(url).then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
+    navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
+      .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
+
   const cancelReq=async(id)=>{
     if(!confirm('Cancel this sign request?'))return;
     try{await db.update('sign_requests',`id=eq.${id}`,{status:'cancelled',updated_at:new Date().toISOString()});onRefresh();}
     catch(e){alert('Failed: '+e.message);}
   };
+
   const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
-  if(loading)return null;
+  const pdfUrl=path=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
+
+  if(loading) return null;
+
+  const signed    = signRequests.filter(r=>r.status==='signed');
+  const pending   = signRequests.filter(r=>r.status==='pending');
+  const cancelled = signRequests.filter(r=>r.status==='cancelled'||r.status==='expired');
+
+  if(signRequests.length===0) return null;
+
   return(
-    <div style={{marginBottom:signRequests.length?20:0}}>
-      {signRequests.length>0&&(
-        <div style={{marginBottom:16}}>
+    <div style={{marginBottom:24}}>
+
+      {/* ── SIGNED DOCUMENTS ── */}
+      {signed.length>0&&(
+        <div style={{marginBottom:20}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-            <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',color:'var(--text-tertiary)'}}>Signature Requests</span>
-            <button className="btn btn-ghost btn-sm" onClick={onNew} style={{fontSize:11,height:24,padding:'0 8px'}}>+ New</button>
+            <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',color:'var(--text-tertiary)'}}>
+              Signed Documents
+            </span>
+            <span style={{fontSize:11,color:'#059669',fontWeight:600}}>{signed.length} signed</span>
           </div>
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {signRequests.map(sr=>{
-              const st=SR_STATUS[sr.status]||SR_STATUS.pending;
-              const docUrl=`https://dev.utahpros.app/sign/${sr.token}`;
-              return(
-                <div key={sr.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-light)',borderRadius:'var(--radius-md)',fontSize:'var(--text-sm)'}}>
-                  {/* Status dot */}
-                  <div style={{width:8,height:8,borderRadius:'50%',background:st.color,flexShrink:0}}/>
-                  {/* Info */}
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {signed.map(sr=>(
+              <div key={sr.id} style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderLeft:'4px solid #22c55e',borderRadius:10,padding:'14px 16px'}}>
+                <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                      <span style={{fontWeight:600,color:'var(--text-primary)',fontSize:13}}>{DOC_TYPE_LABELS[sr.doc_type]||sr.doc_type}</span>
-                      <span style={{fontSize:11,fontWeight:600,padding:'2px 7px',borderRadius:9999,background:st.bg,color:st.color,border:`1px solid ${st.border}`}}>{st.label}</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                      <span style={{fontSize:16}}>📄</span>
+                      <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>{DOC_TYPE_LABELS[sr.doc_type]||sr.doc_type}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 8px',borderRadius:9999,background:'#dcfce7',color:'#059669',border:'1px solid #bbf7d0'}}>✓ Signed</span>
                     </div>
-                    <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:2}}>
-                      {sr.signer_name} · {sr.signer_email}
+                    <div style={{fontSize:12,color:'#374151',marginBottom:2}}>
+                      <strong>{sr.signer_name}</strong> · {sr.signer_email}
                     </div>
-                    <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:1}}>
-                      {sr.status==='signed'?`Signed ${fmtDate(sr.signed_at)}`:`Sent ${fmtDate(sr.sent_at)}`}
-                      {sr.status==='signed'&&sr.signer_ip&&<span> · IP {sr.signer_ip}</span>}
+                    <div style={{fontSize:11,color:'#6b7280'}}>
+                      Signed {fmtDate(sr.signed_at)}
+                      {sr.signer_ip&&<span style={{marginLeft:8,padding:'1px 6px',background:'#f3f4f6',borderRadius:4,fontFamily:'monospace',fontSize:10}}>{sr.signer_ip}</span>}
                     </div>
                   </div>
-                  {/* Actions */}
-                  <div style={{display:'flex',gap:6,flexShrink:0}}>
-                    {sr.status==='pending'&&(
-                      <>
-                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
-                          onClick={()=>copyLink(sr.token)} title="Copy signing link">
-                          {copied===sr.token?'Copied!':'Copy Link'}
-                        </button>
-                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}}
-                          onClick={()=>cancelReq(sr.id)} title="Cancel">✕</button>
-                      </>
-                    )}
-                    {sr.status==='signed'&&sr.signed_file_path&&(
-                      <a href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${sr.signed_file_path}`}
-                        className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}
-                        target="_blank" rel="noopener noreferrer">View PDF</a>
-                    )}
-                  </div>
+                  {sr.signed_file_path&&(
+                    <a href={pdfUrl(sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
+                      style={{flexShrink:0,display:'inline-flex',alignItems:'center',gap:5,padding:'7px 14px',background:'#fff',border:'1px solid #bbf7d0',borderRadius:8,fontSize:13,fontWeight:600,color:'#059669',textDecoration:'none',whiteSpace:'nowrap'}}>
+                      📥 View PDF
+                    </a>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* ── PENDING SIGNATURES ── */}
+      {pending.length>0&&(
+        <div style={{marginBottom:cancelled.length?12:0}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+            <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',color:'var(--text-tertiary)'}}>
+              Awaiting Signature
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={onNew} style={{fontSize:11,height:24,padding:'0 8px'}}>+ New</button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {pending.map(sr=>(
+              <div key={sr.id} style={{background:'#fffbeb',border:'1px solid #fde68a',borderLeft:'4px solid #f59e0b',borderRadius:10,padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                      <span style={{fontWeight:700,fontSize:13,color:'#0f172a'}}>{DOC_TYPE_LABELS[sr.doc_type]||sr.doc_type}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 7px',borderRadius:9999,background:'#fef9c3',color:'#d97706',border:'1px solid #fde68a'}}>⏳ Pending</span>
+                    </div>
+                    <div style={{fontSize:11,color:'#6b7280'}}>
+                      {sr.signer_name} · Sent {fmtDate(sr.sent_at)}
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:6,flexShrink:0}}>
+                    <button className="btn btn-ghost btn-sm"
+                      style={{fontSize:11,height:28,padding:'0 10px',background:'#fff',border:'1px solid #fde68a'}}
+                      onClick={()=>copyLink(sr.token)}>
+                      {copied===sr.token?'✓ Copied':'Copy Link'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm"
+                      style={{fontSize:11,height:28,width:28,padding:0,color:'#9ca3af'}}
+                      onClick={()=>cancelReq(sr.id)} title="Cancel">✕</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCELLED — collapsed by default ── */}
+      {cancelled.length>0&&(
+        <div>
+          <button className="btn btn-ghost btn-sm"
+            onClick={()=>setShowCancelled(p=>!p)}
+            style={{fontSize:11,color:'var(--text-tertiary)',height:24,padding:'0 4px',gap:4}}>
+            {showCancelled?'▾':'▸'} {cancelled.length} cancelled request{cancelled.length>1?'s':''}
+          </button>
+          {showCancelled&&(
+            <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:6}}>
+              {cancelled.map(sr=>(
+                <div key={sr.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'var(--bg-secondary)',borderRadius:8,opacity:0.65}}>
+                  <div style={{width:6,height:6,borderRadius:'50%',background:'#9ca3af',flexShrink:0}}/>
+                  <div style={{flex:1,fontSize:12,color:'var(--text-secondary)'}}>
+                    {DOC_TYPE_LABELS[sr.doc_type]} · {sr.signer_name} · {fmtDate(sr.sent_at)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
+
 
 /* ═══ FILES TAB ═══ */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
