@@ -396,8 +396,100 @@ function CostsTile({job,fmt,totalCost}){
   </div>);
 }
 
-/* ═══ FILES TAB (unchanged) ═══ */
+
+/* ═══ SIGN REQUESTS SECTION ═══ */
+const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
+const SR_STATUS={
+  pending:{label:'Pending Signature',color:'#d97706',bg:'#fffbeb',border:'#fde68a'},
+  signed:{label:'Signed',color:'#059669',bg:'#ecfdf5',border:'#a7f3d0'},
+  expired:{label:'Expired',color:'#6b7280',bg:'#f9fafb',border:'#e5e7eb'},
+  cancelled:{label:'Cancelled',color:'#6b7280',bg:'#f9fafb',border:'#e5e7eb'},
+};
+function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
+  const[copied,setCopied]=useState(null);
+  const copyLink=(token)=>{
+    const url=`https://dev.utahpros.app/sign/${token}`;
+    navigator.clipboard.writeText(url).then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
+  };
+  const cancelReq=async(id)=>{
+    if(!confirm('Cancel this sign request?'))return;
+    try{await db.update('sign_requests',`id=eq.${id}`,{status:'cancelled',updated_at:new Date().toISOString()});onRefresh();}
+    catch(e){alert('Failed: '+e.message);}
+  };
+  const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
+  if(loading)return null;
+  return(
+    <div style={{marginBottom:signRequests.length?20:0}}>
+      {signRequests.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+            <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',color:'var(--text-tertiary)'}}>Signature Requests</span>
+            <button className="btn btn-ghost btn-sm" onClick={onNew} style={{fontSize:11,height:24,padding:'0 8px'}}>+ New</button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {signRequests.map(sr=>{
+              const st=SR_STATUS[sr.status]||SR_STATUS.pending;
+              const docUrl=`https://dev.utahpros.app/sign/${sr.token}`;
+              return(
+                <div key={sr.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-light)',borderRadius:'var(--radius-md)',fontSize:'var(--text-sm)'}}>
+                  {/* Status dot */}
+                  <div style={{width:8,height:8,borderRadius:'50%',background:st.color,flexShrink:0}}/>
+                  {/* Info */}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <span style={{fontWeight:600,color:'var(--text-primary)',fontSize:13}}>{DOC_TYPE_LABELS[sr.doc_type]||sr.doc_type}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'2px 7px',borderRadius:9999,background:st.bg,color:st.color,border:`1px solid ${st.border}`}}>{st.label}</span>
+                    </div>
+                    <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:2}}>
+                      {sr.signer_name} · {sr.signer_email}
+                    </div>
+                    <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:1}}>
+                      {sr.status==='signed'?`Signed ${fmtDate(sr.signed_at)}`:`Sent ${fmtDate(sr.sent_at)}`}
+                      {sr.status==='signed'&&sr.signer_ip&&<span> · IP {sr.signer_ip}</span>}
+                    </div>
+                  </div>
+                  {/* Actions */}
+                  <div style={{display:'flex',gap:6,flexShrink:0}}>
+                    {sr.status==='pending'&&(
+                      <>
+                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
+                          onClick={()=>copyLink(sr.token)} title="Copy signing link">
+                          {copied===sr.token?'Copied!':'Copy Link'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}}
+                          onClick={()=>cancelReq(sr.id)} title="Cancel">✕</button>
+                      </>
+                    )}
+                    {sr.status==='signed'&&sr.signed_file_path&&(
+                      <a href={`${window.location.origin}/api/job-files/${sr.signed_file_path}`}
+                        className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}
+                        target="_blank" rel="noopener noreferrer">View PDF</a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ FILES TAB ═══ */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
+  const[signRequests,setSignRequests]=useState([]);
+  const[loadingSR,setLoadingSR]=useState(true);
+  useEffect(()=>{
+    db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
+      .then(d=>setSignRequests(d||[]))
+      .catch(()=>setSignRequests([]))
+      .finally(()=>setLoadingSR(false));
+  },[job.id]);
+  const reloadSignRequests=()=>{
+    db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
+      .then(d=>setSignRequests(d||[])).catch(()=>{});
+  };
   const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);
@@ -421,6 +513,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
         <button className="btn btn-secondary btn-sm" onClick={()=>onSignRequest()}>Sign Request</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
+      {/* ── Signature Requests ── */}
+      <SignRequestsSection signRequests={signRequests} loading={loadingSR} onNew={()=>onSignRequest()} onRefresh={reloadSignRequests} db={db} job={job} setDocuments={setDocuments}/>
       <div className="job-page-files-cats">
         <button className={`job-page-files-cat${filterCat==='all'?' active':''}`} onClick={()=>setFilterCat('all')}>All ({catCounts.all||0})</button>
         {FILE_CATEGORIES.map(c=>{const cnt=catCounts[c.key]||0;if(cnt===0&&filterCat!==c.key)return null;return<button key={c.key} className={`job-page-files-cat${filterCat===c.key?' active':''}`} onClick={()=>setFilterCat(c.key)}>{c.label} ({cnt})</button>;})}
