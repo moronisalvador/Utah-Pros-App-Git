@@ -417,7 +417,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser}){
       <div className="job-page-files-toolbar"><div style={{display:'flex',gap:8,alignItems:'center',flex:1,flexWrap:'wrap'}}>
         <select className="input" value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} style={{width:'auto',minWidth:130,height:32}}>{FILE_CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}</select>
         <button className="btn btn-primary btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>{uploading?'Uploading...':'Upload Files'}</button>
-        <button className="btn btn-ghost btn-sm" onClick={()=>setShowEsign(true)} style={{gap:4}}>✉️ Send for Signature</button>
+        <button className="btn btn-secondary btn-sm" onClick={()=>setShowEsign(true)}>Sign Request</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
       <div className="job-page-files-cats">
@@ -433,7 +433,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser}){
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
           <button className="btn btn-ghost btn-sm" onClick={()=>handleDelete(doc)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
         </div>))}</div>)}
-      {showEsign&&<SendEsignModal job={job} contacts={[]} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});}}/>}
+      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});}}/>}
     </div>);
 }
 
