@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
 import CreateJobModal from './CreateJobModal';
-import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
+
+// Lazy load to avoid circular dependency (CreateJobModal also imports AddContactModal)
+const AddContactModal = lazy(() => import('./AddContactModal'));
 
 // Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
@@ -170,13 +172,15 @@ export default function Layout() {
 
       {/* ── Create Customer Modal ── */}
       {showCreateCustomer && (
-        <AddContactModal
-          onClose={() => setShowCreateCustomer(false)}
-          onSave={handleCustomerCreated}
-          carriers={carriers}
-          referralSources={referralSources}
-          defaultRole="homeowner"
-        />
+        <Suspense fallback={null}>
+          <AddContactModal
+            onClose={() => setShowCreateCustomer(false)}
+            onSave={handleCustomerCreated}
+            carriers={carriers}
+            referralSources={referralSources}
+            defaultRole="homeowner"
+          />
+        </Suspense>
       )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
