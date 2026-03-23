@@ -121,7 +121,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   // ── Collapsed state ──
   if (!panelOpen) {
     return (
-      <div style={P.collapsed} onClick={onTogglePanel}>
+      <div style={P.collapsed} className="schedule-job-panel-collapsed" onClick={onTogglePanel}>
         <div style={{ fontSize: 16, color: 'var(--text-secondary)' }}>☰</div>
         <div style={P.collapsedLabel}>Jobs</div>
         <div style={P.collapsedBadge}>{jobs.filter(j => j.on_board).length}</div>
@@ -254,7 +254,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
 
     return (
     <>
-      <div style={P.panel}>
+      <div style={P.panel} className="schedule-job-panel">
         {/* Back header */}
         <div style={P.header}>
           <button onClick={goBack} style={{
@@ -699,7 +699,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   // STATE 1: Job List
   // ═════════════════════════════════════════════
   return (
-    <div style={P.panel}>
+    <div style={P.panel} className="schedule-job-panel">
       <div style={P.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Jobs</span>

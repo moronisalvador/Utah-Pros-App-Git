@@ -1055,6 +1055,11 @@ tr:hover td { background: var(--bg-secondary); }
    Optimized for iPhone field use
    ═══════════════════════════════════════════════════ */
 
+/* Schedule Jobs button — desktop hidden, mobile shown via media query */
+.schedule-mobile-jobs-btn { display: none; }
+/* Schedule panel backdrop — only visible/interactive on mobile */
+.schedule-panel-backdrop { display: none; }
+
 /* ── Bottom Tab Bar ── */
 .bottom-bar {
   display: none;
@@ -1346,6 +1351,64 @@ tr:hover td { background: var(--bg-secondary); }
   .schedule-controls {
     flex-wrap: wrap !important;
     gap: 4px !important;
+  }
+
+  /* ── Schedule Jobs panel — mobile overlay ── */
+
+  /* Collapsed 40px strip: useless on mobile, hide it */
+  .schedule-job-panel-collapsed { display: none !important; }
+
+  /* Panel wrapper: always fixed on mobile so it's out of flex flow */
+  .schedule-panel-wrap {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 200;
+    width: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .schedule-panel-wrap.panel-is-open {
+    pointer-events: all;
+  }
+
+  /* Backdrop shown behind the panel */
+  .schedule-panel-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 0;
+  }
+
+  /* The panel itself slides in from left */
+  .schedule-job-panel {
+    position: relative; z-index: 1;
+    width: min(85vw, 320px) !important;
+    height: 100dvh !important;
+    transform: translateX(-100%);
+    transition: transform 250ms ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+    padding-top: var(--safe-top);
+  }
+  .schedule-panel-wrap.panel-is-open .schedule-job-panel {
+    transform: translateX(0);
+  }
+
+  /* Mobile Jobs button: shown in stacked controls, hidden on desktop */
+  .schedule-mobile-jobs-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 36px;
   }
 
   /* ── Dashboard table: hide low-priority columns ── */

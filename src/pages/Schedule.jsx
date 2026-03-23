@@ -415,7 +415,11 @@ export default function Schedule() {
     // Month only available in calendar view
     if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
   };
-  const [calSpan, setCalSpan] = useState(() => { try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; } });
+  const [calSpan, setCalSpan] = useState(() => {
+    // Always default to Day view on mobile — week/3day are unreadable on a phone
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) return 'day';
+    try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
+  });
   const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch {} };
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
@@ -594,12 +598,15 @@ export default function Schedule() {
 
   return (
     <div style={S.page}>
-      <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
+      <div className={`schedule-panel-wrap${panelOpen ? ' panel-is-open' : ''}`}>
+        {panelOpen && <div className="schedule-panel-backdrop" onClick={() => setPanelOpen(false)} />}
+        <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
         onSchedulePhase={(jid, jn, ph) => setCreateModal({ jobId: jid, jobName: jn, dateKey: ph?.target_start || fmtDate(new Date()), prefillPhase: ph?.phase_name || null, prefillTaskIds: [] })}
         onCreateAppointment={(jid, jn, dk, tids) => setCreateModal({ jobId: jid, jobName: jn, dateKey: dk, prefillTaskIds: tids || [] })}
         onSelectJob={(jid) => { if (jid) { const j = panelJobs.find(x => x.id === jid); setSelectedPanelJob(j ? { id: j.id, insured_name: j.insured_name } : null); } else setSelectedPanelJob(null); }}
         onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
-      />
+        />
+      </div>
 
       <div style={S.main}>
         <div style={S.header} className="schedule-header">
@@ -613,6 +620,10 @@ export default function Schedule() {
             </div>
           </div>
           <div style={S.controls} className="schedule-controls">
+            {/* Mobile-only Jobs panel button */}
+            <button className="schedule-mobile-jobs-btn" onClick={() => setPanelOpen(true)}>
+              📋 Jobs ({panelJobs.filter(j => j.on_board).length} on schedule)
+            </button>
             <div style={S.viewToggle}>
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('calendar')}>Calendar</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
