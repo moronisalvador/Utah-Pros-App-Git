@@ -66,6 +66,7 @@ export function createSupabaseClient(token) {
         const text = await res.text();
         throw new Error(`UPDATE ${table}: ${res.status} ${text}`);
       }
+      if (res.status === 204) return null;
       return res.json();
     },
 
@@ -93,6 +94,8 @@ export function createSupabaseClient(token) {
         const text = await res.text();
         throw new Error(`RPC ${fn}: ${res.status} ${text}`);
       }
+      // Some RPCs (e.g. delete functions) return 204 No Content — no body to parse
+      if (res.status === 204) return null;
       return res.json();
     },
 

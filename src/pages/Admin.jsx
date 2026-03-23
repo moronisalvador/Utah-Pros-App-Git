@@ -85,6 +85,7 @@ export default function Admin() {
 // EMPLOYEES TAB
 // ══════════════════════════════════════════════════════════════
 function EmployeesTab() {
+  const { db } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -711,6 +712,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
 // PERMISSIONS TAB — Role × Nav Key matrix
 // ══════════════════════════════════════════════════════════════
 function PermissionsTab() {
+  const { db } = useAuth();
   const [permissions, setPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null); // "role:nav_key:field"
