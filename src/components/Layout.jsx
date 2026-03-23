@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
-import CreateMenu from './CreateMenu';
 import CreateJobModal from './CreateJobModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
@@ -13,9 +12,6 @@ const BOTTOM_TABS = [
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
 ];
-
-// Pages that show the Create FAB
-const CREATE_MENU_PATHS = ['/', '/jobs', '/production', '/schedule'];
 
 function IconMore(props) {
   return (
@@ -81,16 +77,22 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
-  const showCreateMenu = CREATE_MENU_PATHS.some(p => {
-    if (p === '/') return location.pathname === '/';
-    return location.pathname === p;
-  });
-
-  // ── CreateMenu action handler ──
+  // ── CreateMenu / Sidebar action handler ──
   const handleCreateAction = (key) => {
+    setSidebarOpen(false);
     if (key === 'job') { setShowCreateJob(true); return; }
-    if (key === 'customer') { navigate('/customers?new=1'); setSidebarOpen(false); return; }
-    if (key === 'estimate') { navigate('/estimates/new'); return; }
+    if (key === 'customer') {
+      // If already on /customers, fire the event directly
+      // Otherwise navigate there first — Customers.jsx listens for this event on mount
+      if (location.pathname === '/customers') {
+        window.dispatchEvent(new CustomEvent('upr:new-customer'));
+      } else {
+        navigate('/customers');
+        // Small delay to let the page mount before firing
+        setTimeout(() => window.dispatchEvent(new CustomEvent('upr:new-customer')), 150);
+      }
+      return;
+    }
   };
 
   // ── After job created — navigate to new job page ──
@@ -117,9 +119,6 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {showCreateMenu && <CreateMenu onAction={handleCreateAction} />}
-
-      {/* ── Create Job Modal ── */}
       {showCreateJob && (
         <CreateJobModal
           db={db}
