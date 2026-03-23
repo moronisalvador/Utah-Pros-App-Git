@@ -44,6 +44,7 @@ export default function JobPage(){
   const[documents,setDocuments]=useState([]);const[notes,setNotes]=useState([]);const[history,setHistory]=useState([]);
   const[saving,setSaving]=useState(false);const[showWizard,setShowWizard]=useState(false);const[taskSummary,setTaskSummary]=useState(null);
   const[showEsign,setShowEsign]=useState(false);
+  const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
 
   useEffect(()=>{loadJob();},[jobId]);
@@ -151,12 +152,12 @@ export default function JobPage(){
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
-        {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)}/>}
+        {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
-      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});}} />}
+      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
     </div>
@@ -598,7 +599,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   );}
 
 /* === FILES TAB === */
-function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
+function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refreshKey=0}){
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
   useEffect(()=>{
@@ -611,6 +612,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
       .then(d=>setSignRequests(d||[])).catch(()=>{});
   };
+  // Reload sign requests whenever a new request is sent (refreshKey incremented by parent)
+  useEffect(()=>{ if(refreshKey>0) reloadSignRequests(); },[refreshKey]);
   useEffect(()=>{
     const onVisible=()=>{
       if(document.visibilityState==='visible'){

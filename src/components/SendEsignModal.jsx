@@ -51,26 +51,33 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
     if (!job?.id) { setLoadingContact(false); return; }
     const fetch_ = async () => {
       try {
+        const noCache = { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Cache-Control': 'no-store' }, cache: 'no-store' };
         let cid = null;
         for (const filter of [`is_primary=eq.true&`, ``]) {
           const res = await fetch(
             `${SUPABASE_URL}/rest/v1/contact_jobs?job_id=eq.${job.id}&${filter}limit=1&select=contact_id`,
-            { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+            noCache
           );
           const rows = await res.json();
           cid = rows?.[0]?.contact_id;
           if (cid) break;
         }
-        if (!cid) { if (job.insured_name) setSignerName(job.insured_name); return; }
+        if (!cid) {
+          if (job.insured_name) setSignerName(job.insured_name);
+          if (job.client_email) setSignerEmail(job.client_email);
+          return;
+        }
         const cRes = await fetch(
           `${SUPABASE_URL}/rest/v1/contacts?id=eq.${cid}&select=id,name,email`,
-          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+          noCache
         );
         const c = (await cRes.json())?.[0];
         if (!c) return;
         setContactId(c.id);
         if (c.name)  setSignerName(c.name);
+        // Prefer contact email, fall back to job.client_email if contact has none
         if (c.email) setSignerEmail(c.email);
+        else if (job?.client_email) setSignerEmail(job.client_email);
       } catch {
         if (job.insured_name) setSignerName(job.insured_name);
       } finally {
