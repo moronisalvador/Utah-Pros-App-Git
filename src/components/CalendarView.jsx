@@ -216,7 +216,7 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
 // Detect touch device once — used to skip hover popovers and resize handles
 const isTouchDevice = typeof window !== 'undefined' && (window.innerWidth <= 768 || navigator.maxTouchPoints > 0);
 
-function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, onApptResize, placementMode, onPlacementClick, onCancelPlacement, onRescheduleRemaining }) {
+function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, onApptResize, placementMode, onPlacementClick, onCancelPlacement, onRescheduleRemaining, onSwipePrev, onSwipeNext }) {
   const isMobile = isTouchDevice;
   const timeColW = isMobile ? 36 : 52; // #1: narrower time column on mobile
   const [dragOver, setDragOver] = useState(null);
@@ -225,6 +225,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
   const [ghostPos, setGhostPos] = useState(null);
   const dayBodyRefs = useRef({});
   const wrapRef = useRef(null);
+  const touchStartRef = useRef(null);
   const didResizeRef = useRef(false);
   const resizingRef = useRef(null);
   const hoverShowRef = useRef(null);
@@ -242,6 +243,30 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
   useEffect(() => {
     if (!placementMode) setGhostPos(null);
   }, [placementMode]);
+
+  // #5: Swipe left/right to navigate days (mobile only)
+  useEffect(() => {
+    if (!isMobile || !wrapRef.current) return;
+    const el = wrapRef.current;
+    const onTouchStart = (e) => {
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const onTouchEnd = (e) => {
+      if (!touchStartRef.current) return;
+      const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+      const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+      touchStartRef.current = null;
+      // Only fire if horizontal > 40px and dominates vertical (not a scroll)
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+      if (dx < 0) onSwipeNext?.(); else onSwipePrev?.();
+    };
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [isMobile, onSwipeNext, onSwipePrev]);
 
   // #8: Auto-scroll to current time on mount
   useEffect(() => {
@@ -425,10 +450,13 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
 
           return (
             <div key={day.key} style={CV.dayCol}>
-              <div style={{ ...CV.dayHeader, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}>
+            {/* #10: Hide day column header on mobile single-day view — subtitle already shows the date */}
+            {!(isMobile && days.length === 1) && (
+            <div style={{ ...CV.dayHeader, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div>
-                <div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div>
-              </div>
+                  <div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div>
+                </div>
+              )}
 
               <div
                 ref={el => { dayBodyRefs.current[day.key] = el; }}
@@ -540,7 +568,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           dismissHover(); onApptClick(appt);
                         }}
                         style={{
-                          position: 'absolute', top, height: Math.max(height - 2, 26),
+                          position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26), // #7: 44px min tap target on mobile
                           left: `calc(${leftPct}% + 1px)`, width: `calc(${colWidth}% - 2px)`,
                           background: color, borderLeft: `3px solid ${color}`, borderRadius: 4,
                           padding: '4px 6px', overflow: 'visible',

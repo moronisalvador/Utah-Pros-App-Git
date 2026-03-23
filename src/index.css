@@ -1060,6 +1060,8 @@ tr:hover td { background: var(--bg-secondary); }
 .schedule-panel-backdrop { display: none; }
 .schedule-gear-btn { display: none; }
 .schedule-mobile-fab { display: none; }
+/* schedule-view-toggle: visible on desktop, hidden on mobile */
+.schedule-view-toggle { display: flex; }
 /* schedule-extra-controls: always visible on desktop */
 .schedule-extra-controls { display: flex; align-items: center; gap: 6px; }
 /* schedule-crew-filter-wrap: always visible on desktop */
@@ -1389,6 +1391,9 @@ tr:hover td { background: var(--bg-secondary); }
 
   /* #3: crew filter hidden on mobile — too many pills, not field-relevant */
   .schedule-crew-filter-wrap { display: none !important; }
+
+  /* #6: Calendar/Jobs/Crew view toggle hidden on mobile — always Calendar */
+  .schedule-view-toggle { display: none !important; }
 
   /* #9: + FAB for creating appointments */
   .schedule-mobile-fab {

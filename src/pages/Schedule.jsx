@@ -629,7 +629,8 @@ export default function Schedule() {
             <button className="schedule-gear-btn" onClick={() => setShowExtraControls(p => !p)} title="Settings">
               {showExtraControls ? '✕' : '⚙️'}
             </button>
-            <div style={S.viewToggle}>
+            {/* #6: view toggle hidden on mobile — Calendar is the only useful mobile view */}
+            <div style={S.viewToggle} className="schedule-view-toggle">
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('calendar')}>Calendar</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }} onClick={() => changeViewMode('crew')}>Crew</button>
@@ -680,7 +681,7 @@ export default function Schedule() {
         ) : viewMode === 'calendar' && calSpan === 'month' ? (
           <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
-          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} />
+          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} onSwipePrev={goPrev} onSwipeNext={goNext} />
         ) : filteredBoardData.length === 0 && !crewFilter && divFilter === 'all' ? (
           <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>Jobs move here automatically when a schedule is generated</div></div>
         ) : filteredBoardData.length === 0 ? (
