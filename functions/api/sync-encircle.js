@@ -20,13 +20,34 @@ function normalizePhone(phone) {
   return null;
 }
 
+// Attempt to parse city/state/zip from a single address string
+// e.g. "1234 Main St, Salt Lake City, UT 84101"
+function parseAddressParts(fullAddress) {
+  if (!fullAddress) return { address: null, city: null, state: null, zip: null };
+  // Try "street, city, ST zip" pattern
+  const parts = fullAddress.split(',').map(s => s.trim());
+  if (parts.length >= 3) {
+    const street = parts[0];
+    const city   = parts[1];
+    const last   = parts[parts.length - 1]; // "UT 84101" or "UT"
+    const stateZip = last.split(/\s+/);
+    const state  = stateZip[0] || null;
+    const zip    = stateZip[1] || null;
+    return { address: street, city, state, zip };
+  }
+  if (parts.length === 2) {
+    return { address: parts[0], city: parts[1], state: null, zip: null };
+  }
+  return { address: fullAddress, city: null, state: null, zip: null };
+}
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
 async function doSync(request, env) {
   const sbUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const sbKey = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
   const encircleKey = env.ENCIRCLE_API_KEY;
 
   if (!sbUrl || !sbKey) {
@@ -112,10 +133,9 @@ async function doSync(request, env) {
     if (!job.insured_name) continue;
     const phone = normalizePhone(job.client_phone);
 
-    // Skip if no identifying info at all
     if (!phone && !job.client_email) continue;
 
-    // If we have a phone, check for existing contact to avoid duplicates
+    // Check for existing contact to avoid duplicates
     if (phone) {
       const checkRes = await fetch(
         `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1`,
@@ -124,11 +144,6 @@ async function doSync(request, env) {
       const existing = checkRes.ok ? await checkRes.json() : [];
       if (existing.length > 0) continue;
     }
-
-    // Bug fix: contacts table has no 'address' column — addresses go in contact_addresses.
-    // Bug fix: never use 'no-phone' as a phone value — it has a unique constraint.
-    //          If no phone, only create if there's an email to identify the contact.
-    if (!phone && !job.client_email) continue;
 
     const contactRes = await fetch(`${sbUrl}/rest/v1/contacts`, {
       method: 'POST',
@@ -139,11 +154,11 @@ async function doSync(request, env) {
         'Prefer': 'return=representation',
       },
       body: JSON.stringify({
-        name: job.insured_name,
-        phone: phone || null,          // null if no phone — never 'no-phone'
+        name:  job.insured_name,
+        phone: phone || null,
         email: job.client_email || null,
-        role: 'homeowner',
-        // address intentionally omitted — not a column on contacts
+        role:  'homeowner',
+        // No address column on contacts — goes into contact_addresses below
       }),
     });
 
@@ -151,8 +166,9 @@ async function doSync(request, env) {
       const [newContact] = await contactRes.json();
       contactsCreated++;
 
-      // Insert address into contact_addresses if the job has one
+      // Insert address into contact_addresses — parse city/state/zip from Encircle's full_address string
       if (newContact?.id && job.address) {
+        const parsed = parseAddressParts(job.address);
         await fetch(`${sbUrl}/rest/v1/contact_addresses`, {
           method: 'POST',
           headers: {
@@ -163,11 +179,11 @@ async function doSync(request, env) {
           },
           body: JSON.stringify({
             contact_id: newContact.id,
-            label: 'service',
-            address: job.address,
-            city: job.city || null,
-            state: job.state || null,
-            zip: job.zip || null,
+            label:      'service',
+            address:    parsed.address || job.address,
+            city:       parsed.city    || null,
+            state:      parsed.state   || null,
+            zip:        parsed.zip     || null,
             is_billing: true,
           }),
         });
@@ -179,16 +195,15 @@ async function doSync(request, env) {
     synced: upsertedJobs.length,
     contacts_created: contactsCreated,
     jobs: upsertedJobs.map(j => ({
-      id: j.id,
+      id:           j.id,
       insured_name: j.insured_name,
-      address: j.address,
-      division: j.division,
-      job_number: j.job_number,
+      address:      j.address,
+      division:     j.division,
+      job_number:   j.job_number,
     })),
   }, 200, request, env);
 }
 
-// Support both POST and GET for easy testing
 export async function onRequestPost(context) {
   try {
     return await doSync(context.request, context.env);

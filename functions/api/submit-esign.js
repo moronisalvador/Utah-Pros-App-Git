@@ -4,6 +4,7 @@
 // calls complete_sign_request to mark signed + insert into job_documents.
 //
 // Body: { token, signer_name, signature_png }
+// NOTE: divisions are read from the sign_request row in DB, not from the request body.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -16,7 +17,12 @@ export async function onRequestPost(context) {
   const { request, env } = context;
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  // Use service role key for server-side operations — bypasses RLS safely
+  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
+  }
 
   const sbHeaders = {
     'apikey':        SUPABASE_KEY,
@@ -33,27 +39,38 @@ export async function onRequestPost(context) {
   };
 
   try {
-    const { token, signer_name, signature_png, divisions } = await request.json();
+    const { token, signer_name, signature_png } = await request.json();
 
     if (!token)         return jsonResponse({ error: 'token is required' },         400, request, env);
     if (!signer_name)   return jsonResponse({ error: 'signer_name is required' },   400, request, env);
     if (!signature_png) return jsonResponse({ error: 'signature_png is required' }, 400, request, env);
 
-    // ── 1. Fetch sign request + job ──
+    // ── 1. Fetch sign request + job (divisions come from DB — authoritative) ──
     const signReq = await rpc('get_sign_request_by_token', { p_token: token });
-    if (!signReq)                        return jsonResponse({ error: 'Signing link not found' },          404, request, env);
-    if (signReq.status === 'signed')     return jsonResponse({ error: 'Document already signed' },         409, request, env);
-    if (signReq.status !== 'pending')    return jsonResponse({ error: 'Signing link is no longer valid' }, 410, request, env);
-    if (new Date(signReq.expires_at) < new Date()) return jsonResponse({ error: 'Signing link has expired' }, 410, request, env);
+    if (!signReq)                                          return jsonResponse({ error: 'Signing link not found' },          404, request, env);
+    if (signReq.status === 'signed')                       return jsonResponse({ error: 'Document already signed' },         409, request, env);
+    if (signReq.status !== 'pending')                      return jsonResponse({ error: 'Signing link is no longer valid' }, 410, request, env);
+    if (new Date(signReq.expires_at) < new Date())         return jsonResponse({ error: 'Signing link has expired' },       410, request, env);
 
-    const job       = signReq.job;
-    const signedAt  = new Date();
+    const job      = signReq.job;
+    const signedAt = new Date();
+
+    // Divisions: use what was stored on the sign request at creation time
+    // Fall back to job's single division only if divisions array is empty/missing
+    const divisions = (Array.isArray(signReq.divisions) && signReq.divisions.length > 0)
+      ? signReq.divisions
+      : (job.division ? [job.division] : []);
 
     // ── 2. Generate PDF ──
-    const pdfBytes = await buildCocPdf({ job, signer_name, signature_png, signed_at: signedAt, doc_type: signReq.doc_type, divisions });
+    const pdfBytes = await buildCocPdf({
+      job, signer_name, signature_png,
+      signed_at: signedAt,
+      doc_type: signReq.doc_type,
+      divisions,
+    });
 
     // ── 3. Upload to Supabase Storage ──
-    const storagePath = `${job.id}/esign/coc-signed-${Date.now()}.pdf`;
+    const storagePath = `${job.id}/esign/${signReq.doc_type}-signed-${Date.now()}.pdf`;
     const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/job-files/${storagePath}`, {
       method:  'POST',
       headers: {
@@ -91,7 +108,7 @@ export async function onRequestPost(context) {
 }
 
 // ════════════════════════════════════════════════════════
-//  PDF BUILDER — UPR Certificate of Completion
+//  PDF BUILDER
 // ════════════════════════════════════════════════════════
 async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions }) {
   const pdfDoc   = await PDFDocument.create();
@@ -130,7 +147,7 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
 
   let y = height - 48;
 
-  // Header bar
+  // Header
   page.drawRectangle({ x: 0, y: height - 80, width, height: 80, color: rgb(0.118, 0.161, 0.231) });
   txt('Utah Pros Restoration', margin, height - 32, { font: fontBold, size: 18, color: white });
   txt('Licensed · Insured · Utah', margin, height - 50, { font: fontReg, size: 10, color: rgb(0.58, 0.65, 0.75) });
@@ -148,29 +165,29 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
   // Job info grid
   const c1 = margin, c2 = margin + 260;
   const infoRow = (label, val, col, yp) => {
-    txt(label, col, yp,      { font: fontBold, size: 9,  color: gray });
+    txt(label, col, yp,       { font: fontBold, size: 9,  color: gray });
     txt(val||'—', col, yp-13, { font: fontReg,  size: 10, color: black });
   };
-  infoRow('CLIENT NAME',     job.insured_name,   c1, y);
-  infoRow('JOB NUMBER',      job.job_number,     c2, y); y -= 32;
+  infoRow('CLIENT NAME',      job.insured_name,        c1, y);
+  infoRow('JOB NUMBER',       job.job_number,          c2, y); y -= 32;
   const addr = [job.address, job.city, job.state].filter(Boolean).join(', ');
-  infoRow('PROPERTY ADDRESS', addr,              c1, y);
+  infoRow('PROPERTY ADDRESS', addr,                    c1, y);
   infoRow('DATE OF LOSS', job.date_of_loss
     ? new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : null, c2, y); y -= 32;
-  infoRow('INSURANCE COMPANY', job.insurance_company, c1, y);
-  infoRow('CLAIM NUMBER',       job.claim_number,     c2, y); y -= 22;
+    : null,                                            c2, y); y -= 32;
+  infoRow('INSURANCE COMPANY', job.insurance_company,  c1, y);
+  infoRow('CLAIM NUMBER',      job.claim_number,       c2, y); y -= 22;
   ln(margin, y, width - margin); y -= 20;
 
-  // Section body
-  const sections = buildSections(divisions?.length ? divisions : [job.division], doc_type);
+  // Document sections
+  const sections = buildSections(divisions, doc_type);
   for (const s of sections) {
     txt(s.heading, margin, y, { font: fontBold, size: 11 }); y -= 16;
     y = wrap(s.body, margin, y, width - margin * 2, { lh: 15 }); y -= 16;
   }
   ln(margin, y + 8, width - margin); y -= 20;
 
-  // Authorization
+  // Authorization text
   y = wrap(
     'By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties, and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive payment directly for all work performed under this agreement.',
     margin, y, width - margin * 2, { font: fontReg, size: 9.5, color: gray, lh: 14 }
@@ -180,7 +197,7 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
   page.drawRectangle({ x: margin - 8, y: y - 90, width: width - (margin - 8) * 2, height: 100, color: rgb(0.975, 0.978, 0.984), borderColor: lgray, borderWidth: 0.5 });
 
   try {
-    const b64  = signature_png.replace(/^data:image\/png;base64,/, '');
+    const b64   = signature_png.replace(/^data:image\/png;base64,/, '');
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     const img   = await pdfDoc.embedPng(bytes);
     const dims  = img.scale(1);
@@ -189,9 +206,9 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
   } catch (e) { console.warn('Sig embed failed:', e.message); }
 
   const rx = margin + (width - margin * 2) / 2 + 12;
-  txt('PRINTED NAME', rx, y - 8,  { font: fontBold, size: 8, color: gray });
-  txt(signer_name,    rx, y - 22, { font: fontBold, size: 11 });
-  txt('DATE SIGNED',  rx, y - 44, { font: fontBold, size: 8, color: gray });
+  txt('PRINTED NAME',  rx, y - 8,  { font: fontBold, size: 8, color: gray });
+  txt(signer_name,     rx, y - 22, { font: fontBold, size: 11 });
+  txt('DATE SIGNED',   rx, y - 44, { font: fontBold, size: 8, color: gray });
   txt(signed_at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), rx, y - 58, { font: fontReg, size: 10 });
   ln(margin, y - 82, margin + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
   txt('Authorized Signature', margin, y - 94, { font: fontReg, size: 8, color: gray });
@@ -206,17 +223,17 @@ async function buildCocPdf({ job, signer_name, signature_png, signed_at, doc_typ
 function buildSections(divisions, doc_type) {
   if (doc_type !== 'coc') return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
   const map = {
-    water:          { heading: 'Water Damage Mitigation',   body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
-    mold:           { heading: 'Mold Remediation',          body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    water:          { heading: 'Water Damage Mitigation',   body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner consistent with IICRC S500 standards and is 100% complete. I have no outstanding complaints or concerns.' },
+    mold:           { heading: 'Mold Remediation',          body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared in accordance with IICRC S520 standards. The work is 100% complete and I have no outstanding complaints or concerns.' },
     reconstruction: { heading: 'Repairs & Reconstruction',  body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
     fire:           { heading: 'Fire & Smoke Restoration',  body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     contents:       { heading: 'Contents Restoration',      body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
   };
-  const divArr = Array.isArray(divisions) ? divisions : [divisions];
-  const ORDER = ['water','mold','reconstruction','fire','contents'];
-  const sorted = divArr.sort((a,b) => ORDER.indexOf(a) - ORDER.indexOf(b));
-  const results = sorted.map(d => map[d]).filter(Boolean);
-  return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
+  const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
+  const ORDER  = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
+  const sorted = [...divArr].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  const result = sorted.map(d => map[d]).filter(Boolean);
+  return result.length ? result : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
 
 const DOC_TITLES = {

@@ -1,7 +1,7 @@
 // POST /api/send-esign
 // Creates a sign request and emails the client a signing link.
 //
-// Body: { job_id, contact_id, signer_name, signer_email, sent_by, doc_type? }
+// Body: { job_id, contact_id, signer_name, signer_email, sent_by, doc_type?, divisions?, mode? }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
@@ -21,7 +21,6 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  // Resolves SUPABASE_URL / SUPABASE_ANON_KEY set in CF Pages dashboard (without VITE_ prefix)
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const SUPABASE_KEY = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
@@ -54,7 +53,10 @@ export async function onRequestPost(context) {
 
   try {
     const {
-      job_id, contact_id, signer_name, signer_email, sent_by, doc_type = 'coc', mode = 'email',
+      job_id, contact_id, signer_name, signer_email, sent_by,
+      doc_type = 'coc',
+      divisions,   // text[] — which divisions to include for CoC; stored on sign_request
+      mode = 'email',
     } = await request.json();
 
     if (!job_id)       return jsonResponse({ error: 'job_id is required' },       400, request, env);
@@ -66,11 +68,16 @@ export async function onRequestPost(context) {
     }
 
     // ── Fetch job ──
-    const jobs = await select('jobs', `id=eq.${job_id}&select=id,job_number,insured_name,address,city,state`);
+    const jobs = await select('jobs', `id=eq.${job_id}&select=id,job_number,insured_name,address,city,state,division`);
     if (!jobs?.length) return jsonResponse({ error: 'Job not found' }, 404, request, env);
     const job = jobs[0];
 
-    // ── Create sign request ──
+    // Resolve divisions: use what was passed, fall back to job's single division
+    const resolvedDivisions = (Array.isArray(divisions) && divisions.length > 0)
+      ? divisions
+      : (job.division ? [job.division] : null);
+
+    // ── Create sign request (stores divisions for later retrieval at sign time) ──
     const signReq = await rpc('create_sign_request', {
       p_job_id:       job_id,
       p_contact_id:   contact_id || null,
@@ -78,6 +85,7 @@ export async function onRequestPost(context) {
       p_signer_name:  signer_name,
       p_signer_email: signer_email,
       p_sent_by:      sent_by,
+      p_divisions:    resolvedDivisions,
     });
 
     if (!signReq || signReq.error) throw new Error(signReq?.error || 'Failed to create sign request');
@@ -114,7 +122,6 @@ export async function onRequestPost(context) {
     if (!emailRes.ok) {
       const errBody = await emailRes.text();
       console.error('SendGrid error:', errBody);
-      // Treat as partial success — sign request exists, copy link manually
       return jsonResponse({
         success: true, email_error: true,
         sign_request_id, token,
@@ -147,8 +154,8 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
         <tr><td style="padding:32px;">
           <p style="margin:0 0 16px;font-size:16px;color:#0f172a;">Hi ${first},</p>
           <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.6;">
-            The work at <strong>${location_str}</strong> is complete. We just need your signature on the
-            <strong>${doc_label}</strong>${job_number ? ` (Job #${job_number})` : ''} to wrap things up.
+            We need your signature on the <strong>${doc_label}</strong>${job_number ? ` (Job #${job_number})` : ''}
+            for the work at <strong>${location_str}</strong>.
           </p>
           <p style="margin:0 0 28px;font-size:14px;color:#64748b;line-height:1.6;">
             It takes less than a minute — review the document, type your name, and sign with your finger or mouse.
@@ -175,5 +182,5 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
 
 function buildEmailText({ signer_name, doc_label, job_number, location_str, signing_url }) {
   const first = signer_name.split(' ')[0];
-  return `Hi ${first},\n\nThe work at ${location_str} is complete. Please sign the ${doc_label}${job_number ? ` (Job #${job_number})` : ''} at the link below:\n\n${signing_url}\n\nIt takes less than a minute. The link expires in 30 days.\n\nQuestions? Email restoration@utah-pros.com\n\n— Utah Pros Restoration`;
+  return `Hi ${first},\n\nPlease sign the ${doc_label}${job_number ? ` (Job #${job_number})` : ''} for the work at ${location_str}:\n\n${signing_url}\n\nIt takes less than a minute. The link expires in 30 days.\n\nQuestions? Email restoration@utah-pros.com\n\n— Utah Pros Restoration`;
 }
