@@ -183,6 +183,7 @@ function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAd
 
 /* === CLIENT INFO TILE === */
 function ClientTile({job,saveBatch,onNavigateCustomer}){
+  const{db}=useAuth();
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);
   const[f,sF]=useState({});
   const start=()=>{sF({insured_name:job.insured_name||'',client_phone:fmtPh(job.client_phone),client_email:job.client_email||'',address:job.address||'',city:job.city||'',state:job.state||'',zip:job.zip||''});setEd(true);};
@@ -191,6 +192,16 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
     if(ph.length===10)ph='1'+ph;
     if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
     await saveBatch({insured_name:f.insured_name?.trim()||null,client_phone:ph||null,client_email:f.client_email?.trim()||null,address:f.address?.trim()||null,city:f.city?.trim()||null,state:f.state?.trim()||null,zip:f.zip?.trim()||null});
+    // Sync contact record so email/phone stay consistent across the app
+    if(job.primary_contact_id){
+      const contactUpdate={};
+      if(f.client_email?.trim()!==job.client_email)contactUpdate.email=f.client_email?.trim()||null;
+      if(ph!==(job.client_phone||''))contactUpdate.phone=ph||null;
+      if(f.insured_name?.trim()!==job.insured_name)contactUpdate.name=f.insured_name?.trim()||null;
+      if(Object.keys(contactUpdate).length>0){
+        await db.update('contacts',`id=eq.${job.primary_contact_id}`,contactUpdate).catch(e=>console.warn('Contact sync failed:',e.message));
+      }
+    }
     setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
