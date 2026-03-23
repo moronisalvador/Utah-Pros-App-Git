@@ -77,12 +77,14 @@ export async function onRequestPost(context) {
     }
 
     // ── 3. Generate PDF ──
+    const signerIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || null;
     const pdfBytes = await buildPdf({
       job, signer_name, signature_png,
       signed_at: signedAt,
       doc_type:  signReq.doc_type,
       divisions,
       templateSections,
+      signer_ip: signerIp,
     });
 
     // ── 4. Upload to Supabase Storage ──
@@ -100,7 +102,6 @@ export async function onRequestPost(context) {
     if (!uploadRes.ok) throw new Error(`Storage upload failed: ${await uploadRes.text()}`);
 
     // ── 5. Complete sign request ──
-    const signerIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
     const result = await rpc('complete_sign_request', {
       p_token:            token,
       p_signer_name:      signer_name,
@@ -199,7 +200,7 @@ function parseMarkdownSections(body) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  PDF BUILDER — clean cursor-based approach, no shared mutable state issues
 // ─────────────────────────────────────────────────────────────────────────────
-async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections }) {
+async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections, signer_ip }) {
   const pdfDoc = await PDFDocument.create();
   const fBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -392,12 +393,14 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   drawText('Authorized Signature', M, curY - 94, { font: fReg, size: 8, color: gray });
 
   // ── FOOTER on every page ──
+  const footerParts = [
+    `Electronically signed · ${signed_at.toISOString()}`,
+    signer_ip ? `IP: ${signer_ip}` : null,
+    'Utah Pros Restoration · utah-pros.com',
+  ].filter(Boolean).join(' · ');
   for (const p of pdfDoc.getPages()) {
     p.drawLine({ start: { x: M, y: 50 }, end: { x: PW - M, y: 50 }, thickness: 0.5, color: lgray });
-    p.drawText(
-      `Electronically signed · ${signed_at.toISOString()} · Utah Pros Restoration · utah-pros.com`,
-      { x: M, y: 36, font: fReg, size: 7.5, color: rgb(0.6, 0.6, 0.6) }
-    );
+    p.drawText(footerParts, { x: M, y: 36, font: fReg, size: 7.5, color: rgb(0.6, 0.6, 0.6) });
   }
 
   return pdfDoc.save();
