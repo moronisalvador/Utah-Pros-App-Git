@@ -1478,6 +1478,151 @@ tr:hover td { background: var(--bg-secondary); }
   /* ── Dashboard table: hide low-priority columns ── */
   .dashboard-tbl-ins,
   .dashboard-tbl-date { display: none !important; }
+
+  /* ────────────────────────────────────────────────────
+     BATCH C — REMAINING PAGES
+     ──────────────────────────────────────────────────── */
+
+  /* ── Settings ── */
+  /* Stack nav + content vertically on mobile */
+  .settings-body {
+    flex-direction: column !important;
+  }
+  /* Nav becomes a horizontal scrolling tab strip */
+  .settings-nav {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-color);
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px !important;
+    gap: 4px;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .settings-nav-label { display: none !important; }
+  .settings-nav-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+    border-radius: var(--radius-md) !important;
+    padding: 6px 14px !important;
+    min-height: 36px;
+  }
+  .settings-content {
+    padding: 16px 12px !important;
+  }
+
+  /* ── Admin modals — bottom sheet ── */
+  .admin-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .admin-modal,
+  .admin-modal-sm {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .admin-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Admin table: horizontal scroll on mobile */
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Time Tracking ── */
+  /* Stack title + view tabs */
+  .tt-topbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding-bottom: 10px !important;
+  }
+  .tt-view-tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0;
+  }
+  /* Period tabs: scroll horizontally instead of wrapping */
+  .tt-period-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 2px;
+  }
+  .tt-period-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* Filters: wrap neatly */
+  .tt-filters {
+    flex-wrap: wrap;
+    gap: 6px !important;
+  }
+  /* Tables: horizontal scroll */
+  .tt-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Modal: bottom sheet */
+  .tt-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .tt-modal {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .tt-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Appointment modals (Create + Edit) — bottom sheet ── */
+  .appt-modal-overlay {
+    align-items: flex-end !important;
+    padding-top: 0 !important;
+  }
+  .appt-modal {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .appt-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Prevent iOS auto-zoom on inputs (font-size < 16px triggers zoom) */
+  .appt-modal-overlay input:not([type='checkbox']),
+  .appt-modal-overlay select,
+  .appt-modal-overlay textarea {
+    font-size: 16px !important;
+  }
+  /* Edit appointment: status bar wraps gracefully */
+  .appt-modal .status-bar-row {
+    flex-wrap: wrap;
+  }
+
+  /* ── Jobs page: division tabs scroll horizontally ── */
+  .division-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 2px;
+  }
+  .division-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }
 
 /* ── Small phones: < 400px ── */

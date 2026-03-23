@@ -177,8 +177,8 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
   };
 
   return (
-    <div style={M.overlay}>
-      <div style={M.modal} onClick={e => e.stopPropagation()}>
+    <div style={M.overlay} className="appt-modal-overlay">
+      <div style={M.modal} className="appt-modal" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={M.header}>
           <div>
@@ -404,7 +404,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
         </div>
 
         {/* Footer */}
-        <div style={M.footer}>
+        <div style={M.footer} className="appt-modal-footer">
           <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
           <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
             {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
