@@ -213,12 +213,18 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
 // CALENDAR VIEW
 // ═══════════════════════════════════════════════════════════════
 
+// Detect touch device once — used to skip hover popovers and resize handles
+const isTouchDevice = typeof window !== 'undefined' && (window.innerWidth <= 768 || navigator.maxTouchPoints > 0);
+
 function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, onApptResize, placementMode, onPlacementClick, onCancelPlacement, onRescheduleRemaining }) {
+  const isMobile = isTouchDevice;
+  const timeColW = isMobile ? 36 : 52; // #1: narrower time column on mobile
   const [dragOver, setDragOver] = useState(null);
   const [resizing, setResizing] = useState(null);
   const [hoveredAppt, setHoveredAppt] = useState(null);
-  const [ghostPos, setGhostPos] = useState(null); // { dayKey, minutes } for placement preview
+  const [ghostPos, setGhostPos] = useState(null);
   const dayBodyRefs = useRef({});
+  const wrapRef = useRef(null);
   const didResizeRef = useRef(false);
   const resizingRef = useRef(null);
   const hoverShowRef = useRef(null);
@@ -237,6 +243,16 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
     if (!placementMode) setGhostPos(null);
   }, [placementMode]);
 
+  // #8: Auto-scroll to current time on mount
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const now = new Date();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const topPx = ((mins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
+    const scrollTo = Math.max(0, topPx - 80); // 80px above current time
+    requestAnimationFrame(() => { if (wrapRef.current) wrapRef.current.scrollTop = scrollTo; });
+  }, []); // mount only
+
   // Flatten appointments
   const allAppts = [];
   for (const job of boardData) {
@@ -251,7 +267,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
 
   // ── Hover handlers ──
   const scheduleShowHover = useCallback((appt, blockEl) => {
-    if (placementMode) return; // no popover during placement
+    if (placementMode || isMobile) return; // no popover during placement or on touch
     clearTimeout(hoverHideRef.current);
     clearTimeout(hoverShowRef.current);
     hoverShowRef.current = setTimeout(() => {
@@ -362,7 +378,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
     : '#2563eb';
 
   return (
-    <div style={CV.wrap}>
+    <div ref={wrapRef} style={CV.wrap}>
       {/* Placement mode banner */}
       {placementMode && (
         <div style={{
@@ -385,9 +401,9 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
         </div>
       )}
 
-      <div style={{ ...CV.grid, minWidth: days.length * 120 + 52 }}>
+      <div style={{ ...CV.grid, minWidth: days.length * 120 + timeColW }}>
         {/* Time labels */}
-        <div style={CV.timeCol}>
+        <div style={{ ...CV.timeCol, width: timeColW }}>
           <div style={CV.timeHeader} />
           {hours.map((h, i) => (
             <div key={h} style={CV.timeLabel}>
@@ -569,7 +585,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                             </div>
                           )}
                           {height > 60 && shortAddr && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
-                          {height > 80 && appt._jobNumber && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
+                          {height > 80 && appt._jobNumber && !isMobile && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
                           {height > 100 && appt.tasks_total > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                               <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden' }}>
@@ -595,7 +611,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           )}
                         </div>
 
-                        {canInteract && !placementMode && (
+                        {canInteract && !placementMode && !isMobile && (
                           <div data-resize onMouseDown={e => handleResizeStart(e, appt)}
                             style={{
                               position: 'absolute', bottom: 0, left: 0, right: 0, height: RESIZE_HANDLE_HEIGHT,

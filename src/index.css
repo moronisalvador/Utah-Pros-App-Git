@@ -1055,10 +1055,15 @@ tr:hover td { background: var(--bg-secondary); }
    Optimized for iPhone field use
    ═══════════════════════════════════════════════════ */
 
-/* Schedule Jobs button — desktop hidden, mobile shown via media query */
+/* Schedule — desktop defaults (hidden on mobile, shown via media query) */
 .schedule-mobile-jobs-btn { display: none; }
-/* Schedule panel backdrop — only visible/interactive on mobile */
 .schedule-panel-backdrop { display: none; }
+.schedule-gear-btn { display: none; }
+.schedule-mobile-fab { display: none; }
+/* schedule-extra-controls: always visible on desktop */
+.schedule-extra-controls { display: flex; align-items: center; gap: 6px; }
+/* schedule-crew-filter-wrap: always visible on desktop */
+.schedule-crew-filter-wrap { display: contents; }
 
 /* ── Bottom Tab Bar ── */
 .bottom-bar {
@@ -1351,6 +1356,60 @@ tr:hover td { background: var(--bg-secondary); }
   .schedule-controls {
     flex-wrap: wrap !important;
     gap: 4px !important;
+  }
+
+  /* ── Schedule Batch A improvements ── */
+
+  /* #2: ⚙ gear button — shown on mobile */
+  .schedule-gear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* #2: secondary controls hidden by default, shown when .open */
+  .schedule-extra-controls {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    padding-top: 4px;
+  }
+  .schedule-extra-controls.open {
+    display: flex;
+  }
+
+  /* #3: crew filter hidden on mobile — too many pills, not field-relevant */
+  .schedule-crew-filter-wrap { display: none !important; }
+
+  /* #9: + FAB for creating appointments */
+  .schedule-mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 16px);
+    right: 16px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 28px;
+    font-weight: 300;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.4);
+    z-index: 50;
+    line-height: 1;
   }
 
   /* ── Schedule Jobs panel — mobile overlay ── */
