@@ -90,14 +90,39 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-user" onClick={logout} title="Click to sign out">
+        {/* User identity — not clickable */}
+        <div className="sidebar-user" style={{ cursor: 'default' }}>
           <div className="sidebar-avatar">{initials}</div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div className="sidebar-user-name">{employee?.full_name || 'User'}</div>
             <div className="sidebar-user-role">{employee?.role || ''}</div>
           </div>
-          <IconLogout className="nav-icon" style={{ marginLeft: 'auto', width: 16, height: 16 }} />
         </div>
+        {/* Explicit sign-out button */}
+        <button
+          onClick={logout}
+          style={{
+            width: '100%',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px',
+            background: 'none',
+            border: '1px solid var(--border-light)',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--text-secondary)',
+            marginTop: 6,
+            transition: 'background 0.12s, color 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#fecaca'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-light)'; }}
+          title="Sign out"
+        >
+          <IconLogout style={{ width: 15, height: 15, flexShrink: 0 }} />
+          Sign Out
+        </button>
       </div>
     </aside>
   );
