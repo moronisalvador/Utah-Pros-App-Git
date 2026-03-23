@@ -105,6 +105,15 @@ export default function JobPage(){
       <div className="job-page-topbar">
         <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1);else navigate('/jobs');}} style={{gap:4}}>{'\u2190'} Back</button>
         <div className="job-page-topbar-actions">
+          {job.client_phone&&(
+            <a href={`tel:${job.client_phone}`}
+              className="btn btn-secondary btn-sm"
+              style={{gap:6,height:32,textDecoration:'none',display:'inline-flex',alignItems:'center'}}
+              title={`Call ${job.insured_name||'client'}: ${fmtPh(job.client_phone)}`}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              {fmtPh(job.client_phone)}
+            </a>
+          )}
           <select className="input" value={job.phase} onChange={e=>handlePhaseChange(e.target.value)} disabled={saving} style={{width:'auto',minWidth:160,fontWeight:600,height:32}}>
             {phases.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
@@ -550,28 +559,42 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     document.addEventListener('visibilitychange',onVisible);
     return()=>document.removeEventListener('visibilitychange',onVisible);
   },[job.id]);
-  const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
+  const[uploadProgress,setUploadProgress]=useState(null); // null | {done, total}
+  const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null); // doc id pending delete confirm
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);
-  const handleUpload=async(e)=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);
-    try{for(const file of files){const sp=`${job.id}/${Date.now()}-${file.name}`;const fd=new FormData();fd.append('file',file);
+  const handleUpload=async(e)=>{const files=Array.from(e.target.files);if(!files.length)return;
+    setUploadProgress({done:0,total:files.length});
+    try{for(let i=0;i<files.length;i++){const file=files[i];const sp=`${job.id}/${Date.now()}-${file.name}`;const fd=new FormData();fd.append('file',file);
       const r=await fetch(`${db.baseUrl}/storage/v1/object/job-files/${sp}`,{method:'POST',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey},body:fd});
       if(!r.ok)throw new Error(`Upload failed: ${await r.text()}`);
       const doc={job_id:job.id,name:file.name,file_path:sp,file_size:file.size,mime_type:file.type,category:uploadCategory,uploaded_by:currentUser?.id||null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       const ins=await db.insert('job_documents',doc);if(ins?.length>0)setDocuments(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`);setDocuments(d);}
-    }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploading(false);if(fileInputRef.current)fileInputRef.current.value='';}};
+      setUploadProgress({done:i+1,total:files.length});
+    }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
   const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
   const getFileUrl=doc=>`${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}`;
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   const isImage=doc=>doc.mime_type?.startsWith('image/');
+  const uploading=uploadProgress!==null;
   return(
     <div className="job-page-files">
       <div className="job-page-files-toolbar"><div style={{display:'flex',gap:8,alignItems:'center',flex:1,flexWrap:'wrap'}}>
         <select className="input" value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} style={{width:'auto',minWidth:130,height:32}}>{FILE_CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}</select>
-        <button className="btn btn-primary btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>{uploading?'Uploading...':'Upload Files'}</button>
-        <button className="btn btn-secondary btn-sm" onClick={()=>onSignRequest()}>Sign Request</button>
+        <button className="btn btn-primary btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>
+          {uploadProgress ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…` : 'Upload Files'}
+        </button>
+        {uploadProgress&&(
+          <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:120}}>
+            <div style={{flex:1,height:4,background:'var(--border-color)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{width:`${(uploadProgress.done/uploadProgress.total)*100}%`,height:'100%',background:'var(--accent)',borderRadius:2,transition:'width 200ms ease'}}/>
+            </div>
+            <span style={{fontSize:11,color:'var(--text-tertiary)',whiteSpace:'nowrap'}}>{Math.round((uploadProgress.done/uploadProgress.total)*100)}%</span>
+          </div>
+        )}
+        <button className="btn btn-secondary btn-sm" onClick={()=>onSignRequest()} disabled={uploading}>Sign Request</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
       {/* ── Signature Requests ── */}

@@ -30,12 +30,29 @@ function fetchWithTimeout(url, options) {
     });
 }
 
+// Retries a fetch once on network failure or timeout (not on 4xx/5xx).
+// Gives field techs on weak signal a transparent second chance.
+async function fetchWithRetry(url, options) {
+  try {
+    return await fetchWithTimeout(url, options);
+  } catch (err) {
+    // Only retry on network/timeout errors, not on bad responses
+    const isRetryable = err.message?.includes('timed out') ||
+      err.message?.includes('Failed to fetch') ||
+      err.name === 'NetworkError';
+    if (!isRetryable) throw err;
+    // Wait 1.5s then try once more
+    await new Promise(r => setTimeout(r, 1500));
+    return fetchWithTimeout(url, options);
+  }
+}
+
 export function createSupabaseClient(token) {
   const headers = getHeaders(token);
 
   return {
     async select(table, query = '') {
-      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
+      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`SELECT ${table}: ${res.status} ${text}`);
@@ -44,7 +61,7 @@ export function createSupabaseClient(token) {
     },
 
     async insert(table, data) {
-      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
+      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
@@ -57,7 +74,7 @@ export function createSupabaseClient(token) {
     },
 
     async update(table, filter, data) {
-      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(data),
@@ -71,7 +88,7 @@ export function createSupabaseClient(token) {
     },
 
     async delete(table, filter) {
-      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'DELETE',
         headers,
       });
@@ -85,7 +102,7 @@ export function createSupabaseClient(token) {
     },
 
     async rpc(fn, params = {}) {
-      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(params),
