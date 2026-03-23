@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AddContactModal from '@/components/AddContactModal';
 import DatePicker from '@/components/DatePicker';
+import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
@@ -18,19 +20,7 @@ const DIVISIONS=[
 ];
 const LOSS_TYPES=['Pipe Burst','Sewer Backup','Storm / Wind','Appliance Failure','Roof Leak','Sprinkler','Flood','Toilet Overflow','Fire','Smoke','Mold','Vandalism','Other'];
 
-/* Sentinel — never stored in DB, converted to null before RPC */
-const OOP = '__oop__';
-
-/**
- * CreateJobModal
- * Props:
- *   db — Supabase REST client
- *   onClose() — close modal
- *   onCreated(result) — called after job created
- *   prefillContact — optional contact object to pre-select
- */
 export default function CreateJobModal({ db, onClose, onCreated, prefillContact }) {
-  // Client
   const [contact,        setContact]        = useState(prefillContact || null);
   const [search,         setSearch]         = useState('');
   const [results,        setResults]        = useState([]);
@@ -40,28 +30,33 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
   const searchRef = useRef(null);
   const timer     = useRef(null);
 
-  // Form
-  const [division,          setDivision]          = useState('water');
-  const [address,           setAddress]           = useState(prefillContact?.billing_address || '');
-  const [city,              setCity]              = useState(prefillContact?.billing_city    || '');
-  const [state,             setState]             = useState(prefillContact?.billing_state   || 'UT');
-  const [zip,               setZip]               = useState(prefillContact?.billing_zip     || '');
-  const [dateOfLoss,        setDateOfLoss]        = useState('');
-  const [typeOfLoss,        setTypeOfLoss]        = useState('');
-  const [insuranceCompany,  setInsuranceCompany]  = useState('');  // '' = not selected, OOP = out of pocket
-  const [claimNumber,       setClaimNumber]       = useState('');
-  const [internalNotes,     setInternalNotes]     = useState('');
+  const [division,         setDivision]         = useState('water');
+  const [address,          setAddress]          = useState(prefillContact?.billing_address || '');
+  const [city,             setCity]             = useState(prefillContact?.billing_city    || '');
+  const [state,            setState]            = useState(prefillContact?.billing_state   || 'UT');
+  const [zip,              setZip]              = useState(prefillContact?.billing_zip     || '');
+  const [dateOfLoss,       setDateOfLoss]       = useState('');
+  const [typeOfLoss,       setTypeOfLoss]       = useState('');
+  const [insuranceCompany, setInsuranceCompany] = useState('');
+  const [claimNumber,      setClaimNumber]      = useState('');
+  const [internalNotes,    setInternalNotes]    = useState('');
 
   const [carriers, setCarriers] = useState([]);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
 
-  // Load carriers via RPC (avoids PostgREST schema cache issue)
   useEffect(() => {
     db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
   }, []);
 
-  // Contact search
+  // Add new carrier
+  const handleAddCarrier = async (name) => {
+    await db.rpc('upsert_insurance_carrier', { p_name: name, p_sort_order: 999 });
+    const updated = await db.rpc('get_insurance_carriers').catch(() => carriers);
+    setCarriers(updated);
+    okToast(`"${name}" added to carriers`);
+  };
+
   const doSearch = useCallback(async q => {
     if (q.trim().length < 2) { setResults([]); setShowDrop(false); return; }
     setSearching(true);
@@ -113,15 +108,12 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
     return phone;
   };
 
-  // Submit
   const handleSubmit = async () => {
-    if (!contact)           { setError('Select or create a client first.'); return; }
-    if (!insuranceCompany)  { setError('Select an insurance carrier or "Out of pocket / No insurance".'); return; }
+    if (!contact)          { setError('Select or create a client first.'); return; }
+    if (!insuranceCompany) { setError('Select an insurance carrier or "Out of pocket / No insurance".'); return; }
     setSaving(true); setError(null);
     try {
-      // Convert OOP sentinel to null — WA routing sees null → renders private-pay version
       const insCompany = insuranceCompany === OOP ? null : insuranceCompany;
-
       const result = await db.rpc('create_job_with_contact', {
         p_contact_id:      contact.id,
         p_contact_name:    contact.name,
@@ -158,7 +150,6 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
       <div className="conv-modal" onClick={e => e.stopPropagation()}
         style={{ maxWidth: 600, height: 'min(90vh, 720px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* Header */}
         <div className="conv-modal-header" style={{ flexShrink: 0 }}>
           <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>New Job</span>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
@@ -166,7 +157,6 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>
           {error && (
             <div style={{ padding: 'var(--space-2) var(--space-3)', background: '#fef2f2', color: '#dc2626', borderRadius: 'var(--radius-md)', fontSize: 13, marginBottom: 'var(--space-3)', border: '1px solid #fecaca' }}>
@@ -174,7 +164,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             </div>
           )}
 
-          {/* ═══ CLIENT ═══ */}
+          {/* CLIENT */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Client *</div>
             {!contact ? (
@@ -194,9 +184,8 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
                     {results.length === 0 ? (
                       <div style={{ padding: 'var(--space-3)', fontSize: 13, color: 'var(--text-tertiary)' }}>
                         {search.trim().length >= 2
-                          ? <></>
+                          ? <>No clients found. <button style={{ color: 'var(--brand-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', fontSize: 13 }} onClick={() => setShowAddContact(true)}>Create new</button></>
                           : 'Type 2+ characters'}
-                        {search.trim().length >= 2 && <>No clients found. <button style={{ color: 'var(--brand-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', fontSize: 13 }} onClick={() => setShowAddContact(true)}>Create new</button></>}
                       </div>
                     ) : results.map(c => (
                       <button key={c.id} onClick={() => selectContact(c)}
@@ -228,7 +217,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             )}
           </div>
 
-          {/* ═══ DIVISION ═══ */}
+          {/* DIVISION */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Division *</div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -245,7 +234,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             </div>
           </div>
 
-          {/* ═══ ADDRESS ═══ */}
+          {/* ADDRESS */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Loss / Service Address</div>
             <input className="input" value={address} onChange={e => setAddress(e.target.value)} placeholder="Street address" style={{ height: 34, fontSize: 13, marginBottom: 6 }} />
@@ -256,11 +245,10 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             </div>
           </div>
 
-          {/* ═══ CLAIM DETAILS ═══ */}
+          {/* CLAIM DETAILS */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Claim Details</div>
 
-            {/* Date + Type of Loss */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <div style={{ flex: 1 }}>
                 <label className="label" style={{ fontSize: 11, marginBottom: 2 }}>Date of Loss</label>
@@ -275,31 +263,24 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
               </div>
             </div>
 
-            {/* Insurance carrier — required */}
+            {/* Insurance carrier — required, searchable */}
             <div style={{ marginBottom: 8 }}>
-              <label className="label" style={{ fontSize: 11, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <label className="label" style={{ fontSize: 11, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                 Insurance Carrier <span style={{ color: '#ef4444' }}>*</span>
                 {!insuranceCompany && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 400, marginLeft: 2 }}>(required)</span>}
               </label>
-              <select
-                className="input"
+              <CarrierSelect
                 value={insuranceCompany}
-                onChange={e => setInsuranceCompany(e.target.value)}
-                style={{
-                  height: 34, fontSize: 13, cursor: 'pointer', width: '100%',
-                  borderColor: !insuranceCompany ? '#fca5a5' : undefined,
-                  color: insuranceCompany ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                }}
-              >
-                <option value="" disabled>Select carrier...</option>
-                <option value={OOP}>💵 Out of pocket / No insurance</option>
-                <option disabled>──────────────────</option>
-                {carriers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+                onChange={setInsuranceCompany}
+                carriers={carriers}
+                onAdd={handleAddCarrier}
+                required={!insuranceCompany}
+                height={34}
+              />
             </div>
 
-            {/* Claim # — only shown for insurance jobs */}
-            {!isOop && (
+            {/* Claim # — insurance only */}
+            {!isOop && insuranceCompany && (
               <div>
                 <label className="label" style={{ fontSize: 11, marginBottom: 2 }}>Claim #</label>
                 <input className="input" value={claimNumber} onChange={e => setClaimNumber(e.target.value)} placeholder="Insurance claim #" style={{ height: 34, fontSize: 13 }} />
@@ -314,14 +295,13 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
             )}
           </div>
 
-          {/* ═══ NOTES ═══ */}
+          {/* NOTES */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Notes (optional)</div>
             <textarea className="input textarea" value={internalNotes} onChange={e => setInternalNotes(e.target.value)} rows={2} placeholder="Loss details, special instructions..." style={{ width: '100%', fontSize: 13, resize: 'vertical' }} />
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !contact}>

@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AddContactModal from '@/components/AddContactModal';
 import DatePicker from '@/components/DatePicker';
+import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
@@ -21,9 +23,6 @@ const DIVISIONS=[
 const SOURCES=[{value:'insurance',label:'Insurance'},{value:'retail',label:'Retail / Cash'},{value:'hoa',label:'HOA'},{value:'commercial',label:'Commercial'},{value:'tpa',label:'TPA'}];
 const PRIORITIES=[{value:1,label:'Urgent'},{value:2,label:'High'},{value:3,label:'Normal'},{value:4,label:'Low'}];
 
-/* Sentinel value for "Out of pocket" — never stored in DB, converted to null before RPC */
-const OOP = '__oop__';
-
 export default function CreateJob(){
   const navigate=useNavigate();const{db,employee:currentUser}=useAuth();
   const[contact,setContact]=useState(null);
@@ -37,7 +36,7 @@ export default function CreateJob(){
   const[f,sF]=useState({
     division:'water',source:'insurance',priority:3,type_of_loss:'',
     address:'',city:'',state:'UT',zip:'',
-    insurance_company:'',  // '' = not yet selected (required), OOP = out of pocket, anything else = carrier name
+    insurance_company:'',
     claim_number:'',policy_number:'',
     adjuster_name:'',adjuster_phone:'',adjuster_email:'',cat_code:'',
     date_of_loss:'',target_completion:'',
@@ -50,6 +49,14 @@ export default function CreateJob(){
     db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
     db.rpc('get_insurance_carriers').catch(()=>[])]);
     setEmployees(e);setCarriers(c);}catch(err){console.error(err);}})();},[]);
+
+  // Add new carrier to DB + refresh list
+  const handleAddCarrier = async (name) => {
+    await db.rpc('upsert_insurance_carrier', { p_name: name, p_sort_order: 999 });
+    const updated = await db.rpc('get_insurance_carriers').catch(() => carriers);
+    setCarriers(updated);
+    okToast(`"${name}" added to carriers`);
+  };
 
   // ── Contact search ──
   const doSearch=useCallback(async(q)=>{
@@ -87,9 +94,7 @@ export default function CreateJob(){
     if(!f.insurance_company){setError('Select an insurance carrier or "Out of pocket / No insurance".');return;}
     setSaving(true);setError(null);
     try{
-      // Convert OOP sentinel to null for DB — WA routing logic uses null to render private-pay version
       const insuranceCompany = f.insurance_company === OOP ? null : f.insurance_company;
-
       const result=await db.rpc('create_job_with_contact',{
         p_contact_id:contact.id,p_contact_name:contact.name,p_contact_phone:contact.phone,
         p_contact_email:contact.email||null,p_contact_role:contact.role||'homeowner',
@@ -113,7 +118,6 @@ export default function CreateJob(){
 
   return(
     <div className="create-job-page">
-      {/* Header */}
       <div className="job-page-topbar">
         <button className="btn btn-ghost btn-sm" onClick={()=>navigate(-1)} style={{gap:4}}>{'\u2190'} Back</button>
         <div style={{display:'flex',gap:'var(--space-2)'}}>
@@ -179,11 +183,9 @@ export default function CreateJob(){
           )}
         </div>
 
-        {/* ═══ EVERYTHING ELSE — only after client selected ═══ */}
         {contact&&(
           <div className="job-page-grid" style={{animation:'fadeIn 0.15s ease'}}>
-
-            {/* Division cards */}
+            {/* Division */}
             <div className="job-page-section job-page-section-full">
               <div className="job-page-section-title">Division *</div>
               <div style={{display:'flex',gap:'var(--space-2)',flexWrap:'wrap'}}>
@@ -225,51 +227,32 @@ export default function CreateJob(){
               </div>
             </div>
 
-            {/* Insurance — required field */}
+            {/* Insurance */}
             <div className="job-page-section">
               <div className="job-page-section-title">Insurance</div>
 
-              {/* Insurance carrier — required */}
               <div style={{marginBottom:'var(--space-2)'}}>
                 <label className="label" style={{fontSize:11,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
                   Insurance Carrier <span style={{color:'#ef4444'}}>*</span>
                   {!f.insurance_company&&<span style={{fontSize:10,color:'#ef4444',fontWeight:400,marginLeft:2}}>(required)</span>}
                 </label>
-                <select
-                  className="input"
+                <CarrierSelect
                   value={f.insurance_company}
-                  onChange={e=>s('insurance_company',e.target.value)}
-                  style={{
-                    height:34,fontSize:13,cursor:'pointer',
-                    borderColor: !f.insurance_company ? '#fca5a5' : undefined,
-                    color: f.insurance_company ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  }}
-                >
-                  {/* Prompt — disabled placeholder */}
-                  <option value="" disabled>Select carrier...</option>
-
-                  {/* OOP option — always at top, visually distinct */}
-                  <option value={OOP}>💵 Out of pocket / No insurance</option>
-
-                  {/* Divider */}
-                  <option disabled>──────────────────</option>
-
-                  {/* DB carriers */}
-                  {carriers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
+                  onChange={v=>s('insurance_company',v)}
+                  carriers={carriers}
+                  onAdd={handleAddCarrier}
+                  required={!f.insurance_company}
+                  height={34}
+                />
               </div>
 
-              {/* Insurance-only fields — hidden when OOP selected */}
-              {!isOop&&(
-                <>
-                  <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)} placeholder="Claim number"/><F label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)} placeholder="Policy number"/></div>
-                  <F label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)} placeholder="Adjuster name"/>
-                  <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel" placeholder="(801) 555-0000"/><F label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email" placeholder="adj@email.com"/></div>
-                  <F label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)} placeholder="CAT code (if applicable)"/>
-                </>
-              )}
+              {!isOop&&(<>
+                <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)} placeholder="Claim number"/><F label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)} placeholder="Policy number"/></div>
+                <F label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)} placeholder="Adjuster name"/>
+                <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel" placeholder="(801) 555-0000"/><F label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email" placeholder="adj@email.com"/></div>
+                <F label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)} placeholder="CAT code (if applicable)"/>
+              </>)}
 
-              {/* OOP confirmation note */}
               {isOop&&(
                 <div style={{padding:'8px 12px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'var(--radius-md)',fontSize:12,color:'#92400e',lineHeight:1.5}}>
                   💡 Work authorization will include a <strong>private pay + conditional assignment</strong> clause — protects UPR if the client files an insurance claim later.
@@ -292,7 +275,6 @@ export default function CreateJob(){
               <textarea className="input textarea" value={f.internal_notes} onChange={e=>s('internal_notes',e.target.value)} rows={3} placeholder="Initial notes about the job..." style={{width:'100%'}}/>
             </div>
 
-            {/* Bottom submit */}
             <div className="job-page-section-full" style={{display:'flex',justifyContent:'flex-end',gap:'var(--space-2)',paddingTop:'var(--space-3)',borderTop:'1px solid var(--border-light)'}}>
               <button className="btn btn-secondary" onClick={()=>navigate(-1)} disabled={saving}>Cancel</button>
               <button className="btn btn-primary btn-lg" onClick={handleSubmit} disabled={saving}>
@@ -308,7 +290,6 @@ export default function CreateJob(){
   );
 }
 
-/* ═══ Form helpers ═══ */
 function F({label,value,onChange,type='text',placeholder,style}){
   return(<div style={{flex:1,marginBottom:'var(--space-2)',...style}}>
     <label className="label" style={{fontSize:11,marginBottom:2}}>{label}</label>
