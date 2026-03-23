@@ -82,8 +82,7 @@ export default function Layout() {
     setSidebarOpen(false);
     if (key === 'job') { setShowCreateJob(true); return; }
     if (key === 'customer') {
-      // Pass state so Customers.jsx can open modal on mount — no timing assumptions
-      navigate('/customers', { state: { openNew: true } });
+      navigate('/customers?new=1');
       return;
     }
   };

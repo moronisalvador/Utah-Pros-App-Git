@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import AddContactModal from '@/components/AddContactModal';
@@ -12,7 +12,7 @@ const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager
 
 export default function Customers() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { db } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,21 +43,13 @@ export default function Customers() {
     db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
   }, []);
 
-  // Listen for upr:new-customer event fired by sidebar "+ Customer" button
+  // Open modal when ?new=1 is in the URL — works whether component is already mounted or freshly navigated to
   useEffect(() => {
-    const handler = () => setShowAddContact(true);
-    window.addEventListener('upr:new-customer', handler);
-    return () => window.removeEventListener('upr:new-customer', handler);
-  }, []);
-
-  // Open modal if navigated here with state { openNew: true }
-  useEffect(() => {
-    if (location.state?.openNew) {
+    if (searchParams.get('new') === '1') {
       setShowAddContact(true);
-      // Clear state so refresh doesn't re-open the modal
-      navigate('/customers', { replace: true, state: {} });
+      setSearchParams({}, { replace: true }); // clean the URL immediately
     }
-  }, []);
+  }, [searchParams]);
 
   const fmtPhone = (phone) => {
     if (!phone) return '';
