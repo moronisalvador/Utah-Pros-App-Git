@@ -22,10 +22,11 @@ export async function onRequestPost(context) {
   const { request, env } = context;
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  // Use service role key for server-side operations — bypasses RLS safely
+  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return jsonResponse({ error: `Supabase env vars missing. Add SUPABASE_URL and SUPABASE_ANON_KEY in Cloudflare Pages → Settings → Variables and Secrets` }, 500, request, env);
+    return jsonResponse({ error: `Supabase env vars missing. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Cloudflare Pages → Settings → Variables and Secrets` }, 500, request, env);
   }
   if (!env.SENDGRID_API_KEY) {
     return jsonResponse({ error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);

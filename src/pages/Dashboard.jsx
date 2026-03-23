@@ -17,11 +17,7 @@ export default function Dashboard() {
     try {
       const [statsData, jobs] = await Promise.all([
         db.rpc('get_dashboard_stats'),
-        db.rpc('get_dashboard_stats')  // reuse for now — replace with a real recent jobs RPC when needed
-          .then(() => db.select(
-            'jobs',
-            'status=eq.active&order=created_at.desc&limit=5&select=id,job_number,insured_name,phase,division,insurance_company,created_at'
-          )),
+        db.select('jobs', 'status=eq.active&order=created_at.desc&limit=5&select=id,job_number,insured_name,phase,division,insurance_company,created_at'),
       ]);
       if (statsData) setStats(statsData);
       setRecentJobs(jobs || []);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
 import PullToRefresh from '@/components/PullToRefresh';
 import ScheduleWizard from '@/components/ScheduleWizard';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -18,7 +19,7 @@ const DIVISION_COLORS={water:'#2563eb',mold:'#9d174d',reconstruction:'#d97706',f
 
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
 
-/* ═══ TILE HEADER — pencil / Save / Cancel per section ═══ */
+/* === TILE HEADER === */
 function TileHeader({title,editing,onEdit,onSave,onCancel,saving,children}){
   return(<div className="job-page-section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
     <span>{title}</span>
@@ -81,7 +82,6 @@ export default function JobPage(){
     }catch(err){errToast('Failed to update phase: '+err.message);}finally{setSaving(false);}
   };
 
-  // Batch save utility for tiles
   const saveBatch=async(fields)=>{
     const update={...fields,updated_at:new Date().toISOString()};
     await db.update('jobs',`id=eq.${job.id}`,update);
@@ -163,9 +163,9 @@ export default function JobPage(){
   );
 }
 
-/* ═══════════════════════════════════════════════════
-   OVERVIEW TAB — per-tile editing
-   ═══════════════════════════════════════════════════ */
+/* ===========================================
+   OVERVIEW TAB
+   =========================================== */
 function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer}){
   return(
     <div className="job-page-grid">
@@ -180,7 +180,7 @@ function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAd
   );
 }
 
-/* ═══ CLIENT INFO TILE ═══ */
+/* === CLIENT INFO TILE === */
 function ClientTile({job,saveBatch,onNavigateCustomer}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);
   const[f,sF]=useState({});
@@ -222,34 +222,61 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
     </div>);
 }
 
-/* ═══ INSURANCE TILE ═══ */
+/* === INSURANCE TILE — uses CarrierSelect === */
 function InsuranceTile({job,saveBatch}){
+  const{db}=useAuth();
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({insurance_company:job.insurance_company||'',claim_number:job.claim_number||'',policy_number:job.policy_number||'',adjuster_name:job.adjuster_name||job.adjuster||'',adjuster_phone:fmtPh(job.adjuster_phone),adjuster_email:job.adjuster_email||'',cat_code:job.cat_code||''});setEd(true);};
+  const[carriers,setCarriers]=useState([]);
+  const start=()=>{
+    db.rpc('get_insurance_carriers').then(setCarriers).catch(()=>{});
+    sF({
+      insurance_company:job.insurance_company||OOP_VALUE,
+      claim_number:job.claim_number||'',
+      policy_number:job.policy_number||'',
+      adjuster_name:job.adjuster_name||job.adjuster||'',
+      adjuster_phone:fmtPh(job.adjuster_phone),
+      adjuster_email:job.adjuster_email||'',
+      cat_code:job.cat_code||'',
+    });
+    setEd(true);
+  };
+  const handleAddCarrier=async(name)=>{
+    await db.rpc('upsert_insurance_carrier',{p_name:name});
+    const updated=await db.rpc('get_insurance_carriers');
+    setCarriers(updated);
+    window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Carrier "${name}" added`,type:'success'}}));
+  };
   const save=async()=>{setSv(true);try{
-    await saveBatch({insurance_company:f.insurance_company?.trim()||null,claim_number:f.claim_number?.trim()||null,policy_number:f.policy_number?.trim()||null,adjuster_name:f.adjuster_name?.trim()||null,adjuster_phone:f.adjuster_phone?.trim()||null,adjuster_email:f.adjuster_email?.trim()||null,cat_code:f.cat_code?.trim()||null});
+    const company=f.insurance_company===OOP_VALUE?null:f.insurance_company?.trim()||null;
+    await saveBatch({insurance_company:company,claim_number:f.claim_number?.trim()||null,policy_number:f.policy_number?.trim()||null,adjuster_name:f.adjuster_name?.trim()||null,adjuster_phone:f.adjuster_phone?.trim()||null,adjuster_email:f.adjuster_email?.trim()||null,cat_code:f.cat_code?.trim()||null});
     setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
+  const hasInsurance=f.insurance_company&&f.insurance_company!==OOP_VALUE;
   return(
     <div className="job-page-section">
       <TileHeader title="Insurance" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
       {ed?(<>
-        <EF label="Company" value={f.insurance_company} onChange={v=>s('insurance_company',v)}/>
-        <div style={{display:'flex',gap:'var(--space-2)'}}><EF label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)}/><EF label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)}/></div>
-        <EF label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)}/>
-        <div style={{display:'flex',gap:'var(--space-2)'}}><EF label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel"/><EF label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email"/></div>
-        <EF label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)}/>
+        <div className="job-page-info-row" style={{flexDirection:'column',alignItems:'stretch',gap:2,padding:'var(--space-2) 0'}}>
+          <span className="job-page-info-label" style={{marginBottom:2}}>Company</span>
+          <CarrierSelect value={f.insurance_company} onChange={v=>s('insurance_company',v)} carriers={carriers} onAdd={handleAddCarrier} height={34}/>
+        </div>
+        {hasInsurance&&<>
+          <div style={{display:'flex',gap:'var(--space-2)'}}><EF label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)}/><EF label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)}/></div>
+          <EF label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)}/>
+          <div style={{display:'flex',gap:'var(--space-2)'}}><EF label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel"/><EF label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email"/></div>
+          <EF label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)}/>
+        </>}
+        {!hasInsurance&&<div style={{marginTop:6,padding:'8px 10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'var(--radius-md)',fontSize:12,color:'#92400e'}}>Out-of-pocket — adjuster and claim fields hidden.</div>}
       </>):(<>
-        <IR label="Company" value={job.insurance_company}/><IR label="Claim #" value={job.claim_number}/><IR label="Policy #" value={job.policy_number}/>
+        <IR label="Company" value={job.insurance_company||'Out of pocket'}/><IR label="Claim #" value={job.claim_number}/><IR label="Policy #" value={job.policy_number}/>
         <IR label="Adjuster" value={job.adjuster_name||job.adjuster}/>
         <IR label="Adj. Phone" value={fmtPh(job.adjuster_phone)} href={job.adjuster_phone?`tel:${job.adjuster_phone}`:null}/>
         <IR label="Adj. Email" value={job.adjuster_email} href={job.adjuster_email?`mailto:${job.adjuster_email}`:null}/>
         <IR label="CAT Code" value={job.cat_code}/>
       </>)}
-    </div>);
-}
+    </div>);}
 
-/* ═══ JOB DETAILS TILE ═══ */
+/* === JOB DETAILS TILE === */
 function JobDetailsTile({job,saveBatch,fmtDate}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const start=()=>{sF({job_number:job.job_number||'',division:job.division||'water',priority:job.priority||3,source:job.source||'',type_of_loss:job.type_of_loss||'',date_of_loss:job.date_of_loss?job.date_of_loss.split('T')[0]:'',received_date:job.received_date?job.received_date.split('T')[0]:'',target_completion:job.target_completion?job.target_completion.split('T')[0]:'',encircle_claim_id:job.encircle_claim_id||''});setEd(true);};
@@ -280,10 +307,9 @@ function JobDetailsTile({job,saveBatch,fmtDate}){
         <IR label="Target Complete" value={fmtDate(job.target_completion)}/>
         {job.encircle_claim_id&&<IR label="Encircle ID" value={job.encircle_claim_id}/>}
       </>)}
-    </div>);
-}
+    </div>);}
 
-/* ═══ TEAM TILE ═══ */
+/* === TEAM TILE === */
 function TeamTile({job,employees,saveBatch}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const start=()=>{sF({project_manager_id:job.project_manager_id||'',lead_tech_id:job.lead_tech_id||'',broker_agent:job.broker_agent||''});setEd(true);};
@@ -293,10 +319,7 @@ function TeamTile({job,employees,saveBatch}){
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const pmName=employees.find(e=>e.id===job.project_manager_id)?.full_name;
   const ltName=employees.find(e=>e.id===job.lead_tech_id)?.full_name;
-
-  // Flags always save immediately (not part of tile edit mode)
   const toggleFlag=async(field,val)=>{try{await saveBatch({[field]:!val});}catch(err){errToast('Failed: '+err.message);}};
-
   return(
     <div className="job-page-section">
       <TileHeader title="Team" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
@@ -307,17 +330,15 @@ function TeamTile({job,employees,saveBatch}){
       </>):(<>
         <IR label="Project Manager" value={pmName}/><IR label="Lead Tech" value={ltName}/><IR label="Broker/Agent" value={job.broker_agent}/>
       </>)}
-      {/* Flags — always active, not part of edit mode */}
       <div style={{marginTop:12,display:'flex',flexWrap:'wrap',gap:8}}>
         <FlagToggle label="CAT Loss" value={job.is_cat_loss} onClick={()=>toggleFlag('is_cat_loss',job.is_cat_loss)}/>
         <FlagToggle label="Asbestos" value={job.has_asbestos} onClick={()=>toggleFlag('has_asbestos',job.has_asbestos)}/>
         <FlagToggle label="Lead" value={job.has_lead} onClick={()=>toggleFlag('has_lead',job.has_lead)}/>
         <FlagToggle label="Permit Req." value={job.requires_permit} onClick={()=>toggleFlag('requires_permit',job.requires_permit)}/>
       </div>
-    </div>);
-}
+    </div>);}
 
-/* ═══ NOTES TILE ═══ */
+/* === NOTES TILE === */
 function NotesTile({job,saveBatch}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[val,setVal]=useState('');
   const start=()=>{setVal(job.internal_notes||'');setEd(true);};
@@ -327,10 +348,9 @@ function NotesTile({job,saveBatch}){
       <TileHeader title="Internal Notes" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
       {ed?(<textarea className="input textarea" value={val} onChange={e=>setVal(e.target.value)} rows={5} placeholder="Internal notes..." style={{width:'100%'}} autoFocus/>
       ):(<div style={{fontSize:'var(--text-sm)',color:job.internal_notes?'var(--text-secondary)':'var(--text-tertiary)',lineHeight:1.5,whiteSpace:'pre-wrap',fontStyle:job.internal_notes?'normal':'italic'}}>{job.internal_notes||'No notes'}</div>)}
-    </div>);
-}
+    </div>);}
 
-/* ═══ RELATED JOBS SECTION ═══ */
+/* === RELATED JOBS SECTION === */
 function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob}){
   return(
     <div className="job-page-section job-page-section-full">
@@ -349,16 +369,14 @@ function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob
         </div>
       ):(<div style={{fontSize:'var(--text-sm)',color:'var(--text-tertiary)',padding:'var(--space-2) 0'}}>No other jobs under this claim yet</div>)}
       <button className="btn btn-secondary btn-sm" onClick={onAddRelatedJob} style={{marginTop:'var(--space-3)',gap:4,width:'100%',justifyContent:'center'}}>+ Add Related Job</button>
-    </div>);
-}
+    </div>);}
 
 function FlagToggle({label,value,onClick}){
-  return(<button className={`job-page-flag-toggle${value?' active':''}`} onClick={onClick}>{value?'\u2713 ':''}{label}</button>);
-}
+  return(<button className={`job-page-flag-toggle${value?' active':''}`} onClick={onClick}>{value?'\u2713 ':''}{label}</button>);}
 
-/* ═══════════════════════════════════════════════════
-   FINANCIAL TAB — per-tile editing
-   ═══════════════════════════════════════════════════ */
+/* ===========================================
+   FINANCIAL TAB
+   =========================================== */
 function FinancialTab({job,fmt}){
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
@@ -369,13 +387,11 @@ function FinancialTab({job,fmt}){
   const otherCost=Number(job.total_other_cost||0);const totalCost=laborCost+materialCost+equipCost+subCost+otherCost;
   const revenueBase=approved>0?approved:estimated;const grossProfit=revenueBase-totalCost;
   const margin=revenueBase>0?((grossProfit/revenueBase)*100).toFixed(1):'0.0';const outstanding=invoiced-collected;
-
   return(
     <div className="job-page-financial">
       <RevenueTile job={job} fmt={fmt}/>
       <InsFinTile job={job} fmt={fmt}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
-      {/* Profitability — always read-only */}
       <div className="job-page-section">
         <div className="job-page-section-title">Profitability</div>
         <FR label={approved>0?'Approved Rev.':'Estimated Rev.'} value={fmt(revenueBase)}/>
@@ -386,40 +402,34 @@ function FinancialTab({job,fmt}){
         {outstanding>0&&<FR label="Outstanding" value={fmt(outstanding)} color="#d97706" bold/>}
       </div>
     </div>
-  );
-}
+  );}
 
 function RevenueTile({job,fmt}){
   return(<div className="job-page-section">
     <div className="job-page-section-title">Revenue</div>
     <FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/>
-  </div>);
-}
+  </div>);}
 
 function InsFinTile({job,fmt}){
   return(<div className="job-page-section">
     <div className="job-page-section-title">Insurance Financials</div>
     <FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/>
-  </div>);
-}
+  </div>);}
 
 function CostsTile({job,fmt,totalCost}){
   return(<div className="job-page-section">
     <div className="job-page-section-title">Cost Breakdown</div>
     <FR label="Labor" value={fmt(job.total_labor_cost)}/><FR label="Materials" value={fmt(job.total_material_cost)}/><FR label="Equipment" value={fmt(job.total_equipment_cost)}/><FR label="Subcontractors" value={fmt(job.total_sub_cost)}/><FR label="Other" value={fmt(job.total_other_cost)}/>
     <div className="job-page-fin-divider"/><FR label="Total Cost" value={fmt(totalCost)} bold/>
-  </div>);
-}
+  </div>);}
 
-
-/* ═══ SIGN REQUESTS SECTION ═══ */
+/* === SIGN REQUESTS SECTION === */
 const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
 
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
   const[copied,setCopied]=useState(null);
   const[showCancelled,setShowCancelled]=useState(false);
-  const[confirmCancel,setConfirmCancel]=useState(null); // id of sr pending cancel confirm
-
+  const[confirmCancel,setConfirmCancel]=useState(null);
   const copyLink=(token)=>{
     navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
@@ -430,13 +440,10 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   };
   const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
   const pdfUrl=path=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
-
   if(loading||signRequests.length===0) return null;
-
   const signed    = signRequests.filter(r=>r.status==='signed');
   const pending   = signRequests.filter(r=>r.status==='pending');
   const cancelled = signRequests.filter(r=>r.status==='cancelled'||r.status==='expired');
-
   const SRRow=({sr,actions})=>(
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-primary)',border:'1px solid var(--border-light)',borderRadius:'var(--radius-md)'}}>
       <div style={{width:8,height:8,borderRadius:'50%',background:sr.status==='signed'?'#059669':sr.status==='pending'?'#d97706':'#9ca3af',flexShrink:0}}/>
@@ -450,9 +457,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
             {sr.status==='signed'?'Signed':sr.status==='pending'?'Pending Signature':'Cancelled'}
           </span>
         </div>
-        <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:2}}>
-          {sr.signer_name} · {sr.signer_email}
-        </div>
+        <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:2}}>{sr.signer_name} · {sr.signer_email}</div>
         <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:1}}>
           {sr.status==='signed'?`Signed ${fmtDate(sr.signed_at)}`:sr.status==='pending'?`Sent ${fmtDate(sr.sent_at)}`:fmtDate(sr.sent_at)}
           {sr.status==='signed'&&sr.signer_ip&&<span style={{marginLeft:6}}>· IP {sr.signer_ip}</span>}
@@ -461,11 +466,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
       <div style={{display:'flex',gap:6,flexShrink:0}}>{actions}</div>
     </div>
   );
-
   return(
     <div style={{marginBottom:20}}>
-
-      {/* Signed */}
       {signed.length>0&&(
         <div style={{marginBottom:16}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
@@ -485,8 +487,6 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           </div>
         </div>
       )}
-
-      {/* Pending */}
       {pending.length>0&&(
         <div style={{marginBottom:cancelled.length?12:0}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
@@ -513,8 +513,6 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           </div>
         </div>
       )}
-
-      {/* Cancelled — collapsed */}
       {cancelled.length>0&&(
         <div>
           <button className="btn btn-ghost btn-sm" onClick={()=>setShowCancelled(p=>!p)}
@@ -528,13 +526,10 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           )}
         </div>
       )}
-
     </div>
-  );
-}
+  );}
 
-
-/* ═══ FILES TAB ═══ */
+/* === FILES TAB === */
 function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
@@ -548,7 +543,6 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
       .then(d=>setSignRequests(d||[])).catch(()=>{});
   };
-  // Reload docs + sign requests when user returns to this tab (e.g. after signing in another tab)
   useEffect(()=>{
     const onVisible=()=>{
       if(document.visibilityState==='visible'){
@@ -559,9 +553,9 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     document.addEventListener('visibilitychange',onVisible);
     return()=>document.removeEventListener('visibilitychange',onVisible);
   },[job.id]);
-  const[uploadProgress,setUploadProgress]=useState(null); // null | {done, total}
+  const[uploadProgress,setUploadProgress]=useState(null);
   const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
-  const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null); // doc id pending delete confirm
+  const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null);
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);
   const handleUpload=async(e)=>{const files=Array.from(e.target.files);if(!files.length)return;
@@ -597,7 +591,6 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
         <button className="btn btn-secondary btn-sm" onClick={()=>onSignRequest()} disabled={uploading}>Sign Request</button>
         <input ref={fileInputRef} type="file" multiple onChange={handleUpload} style={{display:'none'}} accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv"/>
       </div></div>
-      {/* ── Signature Requests ── */}
       <SignRequestsSection signRequests={signRequests} loading={loadingSR} onNew={()=>onSignRequest()} onRefresh={reloadSignRequests} db={db} job={job} setDocuments={setDocuments}/>
       <div className="job-page-files-cats">
         <button className={`job-page-files-cat${filterCat==='all'?' active':''}`} onClick={()=>setFilterCat('all')}>All ({catCounts.all||0})</button>
@@ -619,13 +612,12 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
             <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteDoc(doc.id)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
           )}
         </div>))}</div>)}
-    </div>);
-}
+    </div>);}
 
-/* ═══ ACTIVITY TAB (unchanged) ═══ */
+/* === ACTIVITY TAB === */
 function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUser,fmtDateTime}){
   const[newNote,setNewNote]=useState('');const[savingNote,setSavingNote]=useState(false);
-  const[confirmDeleteNote,setConfirmDeleteNote]=useState(null); // note id pending delete
+  const[confirmDeleteNote,setConfirmDeleteNote]=useState(null);
   const empMap=useMemo(()=>{const m={};for(const e of employees)m[e.id]=e;return m;},[employees]);
   const handleAddNote=async()=>{if(!newNote.trim())return;setSavingNote(true);
     try{const note={job_id:job.id,author_id:currentUser?.id||null,author_name:currentUser?.full_name||null,body:newNote.trim()};
@@ -662,10 +654,9 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
               )
             )}
           </div></div>))}</div>)}
-    </div>);
-}
+    </div>);}
 
-/* ═══ SCHEDULE TAB (unchanged) ═══ */
+/* === SCHEDULE TAB === */
 function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
   const hasSchedule=taskSummary&&taskSummary.total>0;
   if(!hasSchedule)return(<div style={{padding:'40px 20px',textAlign:'center'}}><div style={{fontSize:36,opacity:0.15,marginBottom:12}}>{'\u{1F4C5}'}</div><div style={{fontSize:15,fontWeight:600,color:'var(--text-secondary)',marginBottom:6}}>No schedule created yet</div><div style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20,maxWidth:320,margin:'0 auto 20px'}}>Apply a template to auto-generate appointments and tasks for this job.</div><button className="btn btn-primary" onClick={onGenerateClick} style={{padding:'10px 24px',fontSize:14}}>Generate schedule</button></div>);
@@ -694,8 +685,7 @@ function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
       <button className="btn btn-sm btn-secondary" onClick={()=>navigate('/schedule')}>Open dispatch board</button>
       {taskSummary.unassigned>0&&<span style={{fontSize:12,color:'var(--text-tertiary)',alignSelf:'center'}}>{taskSummary.unassigned} tasks still need to be scheduled</span>}
     </div>
-  </div>);
-}
+  </div>);}
 const ss={c:{flex:1,padding:'10px 8px',background:'var(--bg-tertiary)',borderRadius:'var(--radius-md)',textAlign:'center'},v:{fontSize:16,fontWeight:700,color:'var(--text-primary)'},l:{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',marginTop:2,textTransform:'uppercase',letterSpacing:'0.03em'}};
 
 function phaseClass(phase){
