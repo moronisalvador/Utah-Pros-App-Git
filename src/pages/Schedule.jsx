@@ -602,7 +602,7 @@ export default function Schedule() {
       />
 
       <div style={S.main}>
-        <div style={S.header}>
+        <div style={S.header} className="schedule-header">
           <div>
             <h1 style={S.title}>Schedule</h1>
             <div style={S.subtitle}>
@@ -612,7 +612,7 @@ export default function Schedule() {
               {todayAppts > 0 && <span style={{ ...S.pill, background: '#eff6ff', color: '#2563eb' }}>{todayAppts} today</span>}
             </div>
           </div>
-          <div style={S.controls}>
+          <div style={S.controls} className="schedule-controls">
             <div style={S.viewToggle}>
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('calendar')}>Calendar</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
@@ -863,7 +863,7 @@ export default function Schedule() {
               )}
 
               {/* Footer */}
-              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setGridPlacementPicker(null)}
                   style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', fontFamily: 'var(--font-sans)' }}>Cancel</button>
                 <button onClick={() => {
@@ -888,7 +888,7 @@ export default function Schedule() {
         const oj = panelJobs.filter(j => !boardData.some(b => b.job_id === j.id) && (q ? j.insured_name.toLowerCase().includes(q) : true));
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 80 }} onClick={() => setJobPickerModal(null)}>
-            <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 400, maxHeight: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 400, maxHeight: 'calc(100dvh - 160px - env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)' }}><div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Select job</div><div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{fpd} at {fpt}</div></div>
               <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-light)' }}><input style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)' }} placeholder="Search jobs..." value={jobPickerSearch} onChange={e => setJobPickerSearch(e.target.value)} autoFocus /></div>
               <div style={{ flex: 1, overflowY: 'auto' }}>

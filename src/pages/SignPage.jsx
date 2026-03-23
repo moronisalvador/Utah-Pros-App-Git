@@ -28,20 +28,39 @@ function loadSignatureFont() {
 function renderTypedSig(canvas, name) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Use CSS (logical) dimensions — context is already DPR-scaled by initCanvas
+  const w = canvas.clientWidth || 500;
+  const h = canvas.clientHeight || 140;
+  ctx.clearRect(0, 0, w, h);
   if (!name?.trim()) return;
   ctx.font = '48px "Dancing Script", cursive';
   ctx.fillStyle = '#1e293b';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  // Scale down if text is too wide
   const measured = ctx.measureText(name);
-  const maxW = canvas.width - 40;
+  const maxW = w - 40;
   if (measured.width > maxW) {
     const scale = maxW / measured.width;
     ctx.font = `${Math.floor(48 * scale)}px "Dancing Script", cursive`;
   }
-  ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+  ctx.fillText(name, w / 2, h / 2);
+}
+
+/* ── Scale canvas buffer to device pixel ratio for crisp retina rendering ── */
+function initCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 500;
+  const cssH = canvas.clientHeight || 140;
+  // Setting canvas.width always clears the buffer, even if value is unchanged
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // scale all drawing ops to DPR
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  return ctx;
 }
 
 /* ── Detect if device is primarily pointer/mouse (desktop) ── */
@@ -132,7 +151,6 @@ export default function SignPage() {
   // Load cursive font once
   useEffect(() => {
     loadSignatureFont();
-    // Wait for font to be ready before first render
     if (document.fonts) {
       document.fonts.load('600 48px "Dancing Script"').then(() => setFontLoaded(true));
     } else {
@@ -148,11 +166,11 @@ export default function SignPage() {
     }
   }, [typedSig, sigMode, fontLoaded]);
 
-  // When switching modes, clear the canvas
+  // When switching modes: re-init canvas (restores DPR scale + clears) then re-render typed sig if needed
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    initCanvas(canvas); // setting canvas.width always clears the buffer
     setHasSig(false);
     if (sigMode === 'type' && typedSig.trim() && fontLoaded) {
       renderTypedSig(canvas, typedSig);
@@ -169,7 +187,6 @@ export default function SignPage() {
         if (d.status !== 'pending') { setStatus('expired'); return; }
         if (new Date(d.expires_at) < new Date()) { setStatus('expired'); return; }
         setSignerName(d.signer_name || '');
-        // Pre-fill typed sig from signer name
         setTypedSig(d.signer_name || '');
         setData(d);
         setStatus('ready');
@@ -186,18 +203,19 @@ export default function SignPage() {
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);
 
+  // Scale canvas to DPR when ready
   useEffect(() => {
     if (status !== 'ready') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    initCanvas(canvas);
   }, [status]);
 
   const getPos = (e, canvas) => {
     const rect = canvas.getBoundingClientRect();
     const src  = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - rect.left) * (canvas.width / rect.width), y: (src.clientY - rect.top) * (canvas.height / rect.height) };
+    // Return CSS pixel coordinates — the DPR transform in initCanvas handles the rest
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
   };
 
   const startDraw = useCallback((e) => {
@@ -225,7 +243,7 @@ export default function SignPage() {
 
   const clearSig = () => {
     const canvas = canvasRef.current; if (!canvas) return;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    initCanvas(canvas); // re-scales + clears in one shot
     setHasSig(false);
     if (sigMode === 'type') setTypedSig('');
   };
@@ -338,11 +356,9 @@ export default function SignPage() {
 
           {/* Signature box */}
           <div style={styles.fieldGroup}>
-            {/* Header row: label + mode toggle + clear */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <label style={styles.fieldLabel}>SIGNATURE <span style={{ color: '#ef4444' }}>*</span></label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* Mode toggle */}
                 <div style={{ display: 'flex' }}>
                   <button className={`sig-mode-btn${sigMode === 'type' ? ' active' : ''}`}
                     onClick={() => setSigMode('type')} disabled={status === 'submitting'}>
@@ -359,7 +375,6 @@ export default function SignPage() {
               </div>
             </div>
 
-            {/* Type mode: text input that renders to canvas */}
             {sigMode === 'type' && (
               <div style={{ marginBottom: 10 }}>
                 <input
@@ -385,10 +400,8 @@ export default function SignPage() {
               </div>
             )}
 
-            {/* Canvas — always present; hidden in type mode (but still used for PNG export) */}
             <div style={{
               ...styles.canvasWrap,
-              // In type mode show it as a preview (read-only); in draw mode it's interactive
               background: sigMode === 'type' ? '#fafbfc' : '#fff',
               borderStyle: sigMode === 'type' ? 'dashed' : 'solid',
             }}>

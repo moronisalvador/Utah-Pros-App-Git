@@ -8,17 +8,17 @@ export default function Login() {
   const { login, devLogin, isAuthenticated, isDev, error: authError } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [email,        setEmail]        = useState('');
+  const [password,     setPassword]     = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [forgotMode, setForgotMode] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState('');
+  const [forgotMode,   setForgotMode]   = useState(false);
+  const [resetSent,    setResetSent]    = useState(false);
 
   // Dev mode: list employees for quick select
   const [employees, setEmployees] = useState([]);
-  const [devMode, setDevMode] = useState(false);
+  const [devMode,   setDevMode]   = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
@@ -47,10 +47,7 @@ export default function Login() {
 
   const handleForgotPassword = async (e) => {
     e.preventDefault();
-    if (!email.trim()) {
-      setError('Enter your email address above first.');
-      return;
-    }
+    if (!email.trim()) { setError('Enter your email address above first.'); return; }
     setError('');
     setLoading(true);
     try {
@@ -110,16 +107,10 @@ export default function Login() {
                 </button>
               ))}
               {employees.length === 0 && (
-                <p style={{ fontSize: 13, color: '#8b929e' }}>
-                  No employees found. Check Supabase connection.
-                </p>
+                <p style={{ fontSize: 13, color: '#8b929e' }}>No employees found. Check Supabase connection.</p>
               )}
             </div>
-            <button
-              className="btn btn-ghost"
-              style={{ width: '100%', marginTop: 12 }}
-              onClick={() => setDevMode(false)}
-            >
+            <button className="btn btn-ghost" style={{ width: '100%', marginTop: 12 }} onClick={() => setDevMode(false)}>
               Use email login instead
             </button>
           </div>
@@ -130,16 +121,13 @@ export default function Login() {
           <div>
             <div className="login-reset-sent">
               <span style={{ fontSize: 24 }}>✉️</span>
-              <p style={{ fontWeight: 600, fontSize: 'var(--text-base)', marginTop: 'var(--space-3)' }}>
-                Check your email
-              </p>
+              <p style={{ fontWeight: 600, fontSize: 'var(--text-base)', marginTop: 'var(--space-3)' }}>Check your email</p>
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 'var(--space-1)' }}>
                 We sent a password reset link to <strong>{email}</strong>. Click the link in the email to set a new password.
               </p>
             </div>
             <button
-              type="button"
-              className="btn btn-ghost"
+              type="button" className="btn btn-ghost"
               style={{ width: '100%', marginTop: 'var(--space-4)' }}
               onClick={() => { setResetSent(false); setForgotMode(false); }}
             >
@@ -157,31 +145,18 @@ export default function Login() {
             <div className="form-group">
               <label className="label" htmlFor="email">Email</label>
               <input
-                id="email"
-                type="email"
-                className="input"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@utahpros.com"
-                required
-                autoComplete="email"
-                autoFocus
+                id="email" type="email" className="input"
+                value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="you@utahpros.com" required autoComplete="email" autoFocus
               />
             </div>
-            <button
-              type="submit"
-              className="btn btn-primary btn-lg"
-              style={{ width: '100%' }}
-              disabled={loading || !email.trim()}
-            >
+            <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }}
+              disabled={loading || !email.trim()}>
               {loading ? 'Sending...' : 'Send Reset Link'}
             </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
+            <button type="button" className="btn btn-ghost"
               style={{ width: '100%', marginTop: 'var(--space-3)' }}
-              onClick={() => { setForgotMode(false); setError(''); }}
-            >
+              onClick={() => { setForgotMode(false); setError(''); }}>
               Back to Sign In
             </button>
           </form>
@@ -193,16 +168,12 @@ export default function Login() {
             <div className="form-group">
               <label className="label" htmlFor="email">Email</label>
               <input
-                id="email"
-                type="email"
-                className="input"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@utahpros.com"
-                required
-                autoComplete="email"
+                id="email" type="email" className="input"
+                value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="you@utahpros.com" required autoComplete="email"
               />
             </div>
+
             <div className="form-group">
               <label className="label" htmlFor="password">Password</label>
               <div style={{ position: 'relative' }}>
@@ -221,12 +192,12 @@ export default function Login() {
                   type="button"
                   onClick={() => setShowPassword(p => !p)}
                   tabIndex={-1}
+                  title={showPassword ? 'Hide password' : 'Show password'}
                   style={{
                     position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
                     background: 'none', border: 'none', cursor: 'pointer', padding: 0,
                     color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center',
                   }}
-                  title={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -243,30 +214,19 @@ export default function Login() {
                 </button>
               </div>
             </div>
-            <button
-              type="submit"
-              className="btn btn-primary btn-lg"
-              style={{ width: '100%' }}
-              disabled={loading}
-            >
+
+            <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
 
-            <button
-              type="button"
-              className="login-forgot-link"
-              onClick={() => { setForgotMode(true); setError(''); }}
-            >
+            <button type="button" className="login-forgot-link" onClick={() => { setForgotMode(true); setError(''); }}>
               Forgot password?
             </button>
 
             {isDev && (
-              <button
-                type="button"
-                className="btn btn-ghost"
+              <button type="button" className="btn btn-ghost"
                 style={{ width: '100%', marginTop: 'var(--space-2)' }}
-                onClick={() => setDevMode(true)}
-              >
+                onClick={() => setDevMode(true)}>
                 Dev Mode: Select Employee
               </button>
             )}
