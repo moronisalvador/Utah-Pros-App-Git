@@ -31,10 +31,6 @@ export default function Customers() {
   }, [db, searchDebounced]);
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
-  useEffect(() => {
-    db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {});
-    db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
-  }, []);
 
   // Reload list when Layout's AddContactModal saves a new contact
   useEffect(() => {
