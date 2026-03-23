@@ -235,20 +235,24 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           <div style={{ marginBottom: 18 }}>
             <div style={sectionLabel}>Document Type</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {DOC_TYPES.map(d => (
-                <button key={d.key} onClick={() => setDocType(d.key)}
-                  style={{
-                    padding: '9px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-                    border: docType === d.key ? '2px solid var(--brand-primary)' : '2px solid var(--border-light)',
-                    background: docType === d.key ? 'var(--brand-primary)15' : 'var(--bg-primary)',
-                    fontFamily: 'var(--font-sans)', fontSize: 12,
-                    fontWeight: docType === d.key ? 700 : 500,
-                    color: docType === d.key ? 'var(--brand-primary)' : 'var(--text-secondary)',
-                    textAlign: 'left', transition: 'all 0.12s',
-                  }}>
-                  {d.label}
-                </button>
-              ))}
+              {DOC_TYPES.map(d => {
+                const active = docType === d.key;
+                return (
+                  <button key={d.key} onClick={() => setDocType(d.key)}
+                    style={{
+                      padding: '9px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                      border: `2px solid ${active ? 'var(--brand-primary)' : 'var(--border-light)'}`,
+                      background: active ? '#2563eb' : 'var(--bg-primary)',
+                      fontFamily: 'var(--font-sans)', fontSize: 12,
+                      fontWeight: active ? 700 : 500,
+                      color: active ? '#ffffff' : 'var(--text-secondary)',
+                      textAlign: 'left', transition: 'all 0.12s',
+                      boxShadow: active ? '0 1px 4px rgba(37,99,235,0.25)' : 'none',
+                    }}>
+                    {d.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -338,7 +342,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
 
         {/* Footer actions */}
         <div style={{
-          padding: '14px 24px', borderTop: '1px solid var(--border-color)',
+          padding: '14px 24px env(safe-area-inset-bottom, 16px)', borderTop: '1px solid var(--border-color)',
           background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8,
         }}>
           {/* Primary: collect on-site */}
