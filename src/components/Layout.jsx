@@ -147,7 +147,7 @@ export default function Layout() {
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10001,
           background: '#1c1917', color: '#fef3c7',
-          padding: '10px 16px', textAlign: 'center',
+          padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px', textAlign: 'center',
           fontSize: 13, fontWeight: 600, letterSpacing: '0.01em',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         }}>
@@ -211,7 +211,7 @@ export default function Layout() {
       </nav>
 
       {/* ── Toast Notifications ── */}
-      <div style={{position:'fixed',bottom:'84px',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
+      <div style={{position:'fixed',bottom:'calc(var(--bottom-bar-h) + var(--safe-bottom) + 12px)',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
         {toasts.map(toast => (
           <div key={toast.id}
             style={{

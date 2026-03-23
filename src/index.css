@@ -96,10 +96,14 @@ a:hover { text-decoration: underline; }
 button, a, input, select, textarea, [role="button"] {
   -webkit-tap-highlight-color: transparent;
 }
+/* Prevent 300ms tap delay on iOS (safe on all platforms) */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
 
 /* Prevent iOS auto-zoom on inputs (must be >= 16px) */
 @media (max-width: 768px) {
-  input, select, textarea {
+  input, select, textarea, [contenteditable] {
     font-size: 16px !important;
   }
 }
@@ -1260,8 +1264,13 @@ tr:hover td { background: var(--bg-secondary); }
     height: calc(100vh - var(--bottom-bar-h) - var(--safe-bottom));
     height: calc(100dvh - var(--bottom-bar-h) - var(--safe-bottom));
   }
-  .job-page-topbar { padding: var(--space-2) var(--space-3); }
+  .job-page-topbar { padding: var(--space-2) var(--space-3); flex-wrap: wrap; gap: var(--space-2); }
   .job-page-topbar .btn-ghost { font-size: var(--text-xs); height: 32px; }
+  /* Phase select + call button fit on narrow phones */
+  .job-page-topbar-actions { gap: var(--space-1); flex-wrap: wrap; }
+  .job-page-topbar-actions select.input { min-width: 120px !important; flex: 1; }
+  /* Conv-toast: clear bottom bar on mobile */
+  .conv-toast { bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 8px); }
   .job-page-header {
     padding: var(--space-3) var(--space-4); flex-direction: column;
     gap: var(--space-2); border-bottom: 1px solid var(--border-color);

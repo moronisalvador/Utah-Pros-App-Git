@@ -94,6 +94,13 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) { setError('Enter a valid email address.'); return; }
     }
 
+    // iOS Safari blocks window.open() after any await — must open synchronously
+    // in the user-gesture context, before the first await
+    let collectWin = null;
+    if (mode === 'collect') {
+      collectWin = window.open('about:blank', '_blank');
+    }
+
     setSending(mode);
     try {
       const res = await fetch('/api/send-esign', {
@@ -116,7 +123,11 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
 
       if (mode === 'collect') {
-        window.open(json.signing_url, '_blank');
+        if (collectWin) {
+          collectWin.location.href = json.signing_url;
+        } else {
+          window.open(json.signing_url, '_blank'); // fallback (non-Safari)
+        }
         window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
           type: 'success', message: 'Signature page opened — hand device to client.',
         }}));
@@ -134,6 +145,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
         onSent?.(json);
       }
     } catch (err) {
+      if (collectWin) collectWin.close(); // close blank tab on error
       setError(err.message);
     } finally {
       setSending(false);

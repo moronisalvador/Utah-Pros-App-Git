@@ -841,7 +841,7 @@ export default function Conversations() {
 
       {/* Context menu */}
       {contextMenu && (
-        <div className="conv-context-menu" style={{ top: contextMenu.y, left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
+        <div className="conv-context-menu" style={{ top: Math.min(contextMenu.y, window.innerHeight - 100), left: Math.min(contextMenu.x, window.innerWidth - 180) }}>
           {conversations.find(c => c.id === contextMenu.convId)?.unread_count > 0
             ? <button className="conv-context-item" onClick={() => markAsRead(contextMenu.convId)}><IconCheck style={{ width: 14, height: 14 }} /> Mark as read</button>
             : <button className="conv-context-item" onClick={() => markAsUnread(contextMenu.convId)}><span className="conv-ctx-unread-dot" /> Mark as unread</button>
