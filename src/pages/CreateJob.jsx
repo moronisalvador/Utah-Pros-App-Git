@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import AddContactModal, { LookupSelect } from '@/components/AddContactModal';
+import AddContactModal from '@/components/AddContactModal';
 import DatePicker from '@/components/DatePicker';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
@@ -21,6 +21,9 @@ const DIVISIONS=[
 const SOURCES=[{value:'insurance',label:'Insurance'},{value:'retail',label:'Retail / Cash'},{value:'hoa',label:'HOA'},{value:'commercial',label:'Commercial'},{value:'tpa',label:'TPA'}];
 const PRIORITIES=[{value:1,label:'Urgent'},{value:2,label:'High'},{value:3,label:'Normal'},{value:4,label:'Low'}];
 
+/* Sentinel value for "Out of pocket" — never stored in DB, converted to null before RPC */
+const OOP = '__oop__';
+
 export default function CreateJob(){
   const navigate=useNavigate();const{db,employee:currentUser}=useAuth();
   const[contact,setContact]=useState(null);
@@ -34,7 +37,8 @@ export default function CreateJob(){
   const[f,sF]=useState({
     division:'water',source:'insurance',priority:3,type_of_loss:'',
     address:'',city:'',state:'UT',zip:'',
-    insurance_company:'',claim_number:'',policy_number:'',
+    insurance_company:'',  // '' = not yet selected (required), OOP = out of pocket, anything else = carrier name
+    claim_number:'',policy_number:'',
     adjuster_name:'',adjuster_phone:'',adjuster_email:'',cat_code:'',
     date_of_loss:'',target_completion:'',
     project_manager_id:currentUser?.role==='project_manager'?currentUser?.id:'',
@@ -44,7 +48,7 @@ export default function CreateJob(){
 
   useEffect(()=>{(async()=>{try{const[e,c]=await Promise.all([
     db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
-    db.select('insurance_carriers','order=name.asc&select=id,name,short_name').catch(()=>[])]);
+    db.rpc('get_insurance_carriers').catch(()=>[])]);
     setEmployees(e);setCarriers(c);}catch(err){console.error(err);}})();},[]);
 
   // ── Contact search ──
@@ -60,7 +64,6 @@ export default function CreateJob(){
     else{setResults([]);setShowDrop(false);}};
 
   const selectContact=c=>{setContact(c);setContactSearch('');setShowDrop(false);
-    // Auto-fill address from contact billing
     if(c.billing_address||c.billing_city)sF(prev=>({...prev,address:c.billing_address||'',city:c.billing_city||'',state:c.billing_state||'UT',zip:c.billing_zip||''}));
   };
 
@@ -72,7 +75,6 @@ export default function CreateJob(){
 
   const clearContact=()=>{setContact(null);sF(prev=>({...prev,address:'',city:'',state:'UT',zip:''}));};
 
-  // Close dropdown on outside click
   useEffect(()=>{const h=e=>{if(searchRef.current&&!searchRef.current.contains(e.target))setShowDrop(false);};
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
 
@@ -82,8 +84,12 @@ export default function CreateJob(){
   const handleSubmit=async()=>{
     if(!contact){setError('Select or create a client first.');return;}
     if(!f.address?.trim()&&!f.city?.trim()){setError('Enter a loss/service address.');return;}
+    if(!f.insurance_company){setError('Select an insurance carrier or "Out of pocket / No insurance".');return;}
     setSaving(true);setError(null);
     try{
+      // Convert OOP sentinel to null for DB — WA routing logic uses null to render private-pay version
+      const insuranceCompany = f.insurance_company === OOP ? null : f.insurance_company;
+
       const result=await db.rpc('create_job_with_contact',{
         p_contact_id:contact.id,p_contact_name:contact.name,p_contact_phone:contact.phone,
         p_contact_email:contact.email||null,p_contact_role:contact.role||'homeowner',
@@ -92,7 +98,7 @@ export default function CreateJob(){
         p_division:f.division,p_source:f.source,p_priority:f.priority,
         p_type_of_loss:f.type_of_loss||null,p_date_of_loss:f.date_of_loss||null,p_target_completion:f.target_completion||null,
         p_address:f.address||null,p_city:f.city||null,p_state:f.state||null,p_zip:f.zip||null,
-        p_insurance_company:f.insurance_company||null,p_claim_number:f.claim_number||null,
+        p_insurance_company:insuranceCompany,p_claim_number:f.claim_number||null,
         p_job_policy_number:f.policy_number||null,p_adjuster_name:f.adjuster_name||null,
         p_adjuster_phone:f.adjuster_phone||null,p_adjuster_email:f.adjuster_email||null,
         p_cat_code:f.cat_code||null,p_project_manager_id:f.project_manager_id||null,
@@ -102,6 +108,8 @@ export default function CreateJob(){
       else navigate('/jobs',{replace:true});
     }catch(err){console.error(err);setError('Failed: '+err.message);}finally{setSaving(false);}
   };
+
+  const isOop = f.insurance_company === OOP;
 
   return(
     <div className="create-job-page">
@@ -174,6 +182,7 @@ export default function CreateJob(){
         {/* ═══ EVERYTHING ELSE — only after client selected ═══ */}
         {contact&&(
           <div className="job-page-grid" style={{animation:'fadeIn 0.15s ease'}}>
+
             {/* Division cards */}
             <div className="job-page-section job-page-section-full">
               <div className="job-page-section-title">Division *</div>
@@ -216,14 +225,56 @@ export default function CreateJob(){
               </div>
             </div>
 
-            {/* Insurance */}
+            {/* Insurance — required field */}
             <div className="job-page-section">
               <div className="job-page-section-title">Insurance</div>
-              <div style={{marginBottom:'var(--space-2)'}}><LookupSelect label="Insurance Company" value={f.insurance_company} onChange={v=>s('insurance_company',v)} items={carriers} placeholder="Search carriers..."/></div>
-              <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)} placeholder="Claim number"/><F label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)} placeholder="Policy number"/></div>
-              <F label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)} placeholder="Adjuster name"/>
-              <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel" placeholder="(801) 555-0000"/><F label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email" placeholder="adj@email.com"/></div>
-              <F label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)} placeholder="CAT code (if applicable)"/>
+
+              {/* Insurance carrier — required */}
+              <div style={{marginBottom:'var(--space-2)'}}>
+                <label className="label" style={{fontSize:11,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
+                  Insurance Carrier <span style={{color:'#ef4444'}}>*</span>
+                  {!f.insurance_company&&<span style={{fontSize:10,color:'#ef4444',fontWeight:400,marginLeft:2}}>(required)</span>}
+                </label>
+                <select
+                  className="input"
+                  value={f.insurance_company}
+                  onChange={e=>s('insurance_company',e.target.value)}
+                  style={{
+                    height:34,fontSize:13,cursor:'pointer',
+                    borderColor: !f.insurance_company ? '#fca5a5' : undefined,
+                    color: f.insurance_company ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                  }}
+                >
+                  {/* Prompt — disabled placeholder */}
+                  <option value="" disabled>Select carrier...</option>
+
+                  {/* OOP option — always at top, visually distinct */}
+                  <option value={OOP}>💵 Out of pocket / No insurance</option>
+
+                  {/* Divider */}
+                  <option disabled>──────────────────</option>
+
+                  {/* DB carriers */}
+                  {carriers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
+
+              {/* Insurance-only fields — hidden when OOP selected */}
+              {!isOop&&(
+                <>
+                  <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Claim #" value={f.claim_number} onChange={v=>s('claim_number',v)} placeholder="Claim number"/><F label="Policy #" value={f.policy_number} onChange={v=>s('policy_number',v)} placeholder="Policy number"/></div>
+                  <F label="Adjuster" value={f.adjuster_name} onChange={v=>s('adjuster_name',v)} placeholder="Adjuster name"/>
+                  <div style={{display:'flex',gap:'var(--space-2)'}}><F label="Adj. Phone" value={f.adjuster_phone} onChange={v=>s('adjuster_phone',v)} type="tel" placeholder="(801) 555-0000"/><F label="Adj. Email" value={f.adjuster_email} onChange={v=>s('adjuster_email',v)} type="email" placeholder="adj@email.com"/></div>
+                  <F label="CAT Code" value={f.cat_code} onChange={v=>s('cat_code',v)} placeholder="CAT code (if applicable)"/>
+                </>
+              )}
+
+              {/* OOP confirmation note */}
+              {isOop&&(
+                <div style={{padding:'8px 12px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'var(--radius-md)',fontSize:12,color:'#92400e',lineHeight:1.5}}>
+                  💡 Work authorization will include a <strong>private pay + conditional assignment</strong> clause — protects UPR if the client files an insurance claim later.
+                </div>
+              )}
             </div>
 
             {/* Team */}
