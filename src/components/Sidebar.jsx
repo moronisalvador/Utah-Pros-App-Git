@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  IconDashboard, IconConversations, IconJobs, IconLeads,
-  IconCustomers, IconSchedule, IconTimeTracking, IconMarketing,
-  IconAdmin, IconSettings, IconLogout, IconProduction,
+  IconDashboard, IconConversations, IconJobs,
+  IconCustomers, IconSchedule, IconTimeTracking,
+  IconAdmin, IconSettings, IconLogout,
 } from './Icons';
 
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
+function IconTemplates(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17.5 14v7"/></svg>);}
 
 const NAV_ITEMS = [
   { section: 'Main' },
@@ -16,12 +17,9 @@ const NAV_ITEMS = [
   { key: 'customers', label: 'Customers', path: '/customers', icon: IconCustomers },
 
   { section: 'Operations' },
-  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
+  { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
-
-  { section: 'Growth' },
-  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing },
 
   { section: 'System' },
   { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
