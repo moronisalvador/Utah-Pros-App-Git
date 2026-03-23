@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /* ═══ ICONS ═══ */
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
@@ -23,17 +24,32 @@ const PTO=[{value:'due_on_receipt',label:'Due on Receipt'},{value:'net_15',label
    LOOKUP SELECT — searchable dropdown, consistent with app UI
    ═══════════════════════════════════════════════════════════════════ */
 export function LookupSelect({label,value,onChange,items,placeholder='Search...',nameKey='name',required=false}){
-  const[open,setOpen]=useState(false);const[search,setSearch]=useState('');const wr=useRef(null);
+  const[open,setOpen]=useState(false);
+  const[search,setSearch]=useState('');
+  const[dropPos,setDropPos]=useState({top:0,left:0,width:0});
+  const wr=useRef(null);
+  const inputRef=useRef(null);
+
   useEffect(()=>{const h=(e)=>{if(wr.current&&!wr.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+
+  const openDropdown=()=>{
+    if(inputRef.current){
+      const r=inputRef.current.getBoundingClientRect();
+      setDropPos({top:r.bottom+4,left:r.left,width:r.width});
+    }
+    setOpen(true);setSearch('');
+  };
+
   const fil=useMemo(()=>{if(!search.trim())return items||[];const q=search.toLowerCase();return(items||[]).filter(c=>{const n=c[nameKey]||'';const s=c.short_name||'';return n.toLowerCase().includes(q)||s.toLowerCase().includes(q);});},[items,search,nameKey]);
   const sel=(n)=>{onChange(n);setSearch('');setOpen(false);};
+
   return(
     <div className="form-group" style={{flex:1,marginBottom:0}} ref={wr}>
       <label className="label">{label}{required&&<span style={{color:'#ef4444',marginLeft:2}}>*</span>}</label>
       <div className="lookup-select-wrap">
-        <input className="input" value={open?search:value||''} onChange={e=>{setSearch(e.target.value);if(!open)setOpen(true);}} onFocus={()=>{setOpen(true);setSearch('');}} placeholder={value||placeholder}/>
-        {open&&(
-          <div className="lookup-select-dropdown">
+        <input ref={inputRef} className="input" value={open?search:value||''} onChange={e=>{setSearch(e.target.value);if(!open)openDropdown();}} onFocus={openDropdown} placeholder={value||placeholder}/>
+        {open&&typeof document!=='undefined'&&createPortal(
+          <div className="lookup-select-dropdown" style={{position:'fixed',top:dropPos.top,left:dropPos.left,width:dropPos.width,zIndex:9999}}>
             {fil.length===0?(
               search.trim()
                 ?<button className="lookup-select-item" onClick={()=>sel(search.trim())}>Use "<strong>{search.trim()}</strong>"</button>
@@ -51,7 +67,8 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
                 )}
               </>
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </div>

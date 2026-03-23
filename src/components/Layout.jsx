@@ -73,9 +73,9 @@ export default function Layout() {
     fetchUnread();
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load lookup data for AddContactModal
+  // Load lookup data for AddContactModal — use rpc to bypass PostgREST schema cache
   useEffect(() => {
-    db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {});
+    db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
     db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
   }, []);
 

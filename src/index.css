@@ -2841,15 +2841,11 @@ tr:hover td { background: var(--bg-secondary); }
 /* ── Lookup Select (searchable dropdown — Insurance Carrier, Referral Source, etc.) ── */
 .lookup-select-wrap { position: relative; }
 .lookup-select-dropdown {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0; right: 0;
-  z-index: 400;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  max-height: 200px;
+  max-height: 220px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }

@@ -67,6 +67,8 @@ export function createSupabaseClient(token) {
         const text = await res.text();
         throw new Error(`DELETE ${table}: ${res.status} ${text}`);
       }
+      // 204 No Content — no body to parse
+      if (res.status === 204) return null;
       return res.json();
     },
 
