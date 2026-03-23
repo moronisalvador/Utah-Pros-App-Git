@@ -385,7 +385,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
         </div>
       )}
 
-      <div style={CV.grid}>
+      <div style={{ ...CV.grid, minWidth: days.length * 120 + 52 }}>
         {/* Time labels */}
         <div style={CV.timeCol}>
           <div style={CV.timeHeader} />
