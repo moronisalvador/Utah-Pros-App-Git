@@ -124,9 +124,9 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
         onSent?.(json);
       } else {
         window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
-          type:    'success',
+          type:    json.email_error ? 'error' : 'success',
           message: json.email_error
-            ? 'Sign request created — copy link to send manually.'
+            ? `Email failed (${json.sendgrid_status || '?'}): ${json.sendgrid_error || 'unknown error'}`
             : `Signing link sent to ${signerEmail.trim()}.`,
         }}));
         setSigningUrl(json.signing_url || '');

@@ -123,9 +123,12 @@ export async function onRequestPost(context) {
     if (!emailRes.ok) {
       const errBody = await emailRes.text();
       console.error('SendGrid error:', errBody);
+      // Surface the actual error so we can diagnose — remove after fix
       return jsonResponse({
         success: true, email_error: true,
         sign_request_id, token,
+        sendgrid_status: emailRes.status,
+        sendgrid_error: errBody,
         message: 'Sign request created but email failed to send. Copy the signing link below and send it manually.',
         signing_url: signingUrl,
       }, 200, request, env);
