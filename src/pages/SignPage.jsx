@@ -14,7 +14,42 @@ async function rpc(fn, params) {
   return res.json();
 }
 
-/* ── Markdown renderer — ## Heading, **bold**, blank lines ── */
+/* ── Load cursive font for typed signatures ── */
+function loadSignatureFont() {
+  if (document.getElementById('sig-font')) return;
+  const link = document.createElement('link');
+  link.id   = 'sig-font';
+  link.rel  = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap';
+  document.head.appendChild(link);
+}
+
+/* ── Render typed name onto canvas in cursive ── */
+function renderTypedSig(canvas, name) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!name?.trim()) return;
+  ctx.font = '48px "Dancing Script", cursive';
+  ctx.fillStyle = '#1e293b';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  // Scale down if text is too wide
+  const measured = ctx.measureText(name);
+  const maxW = canvas.width - 40;
+  if (measured.width > maxW) {
+    const scale = maxW / measured.width;
+    ctx.font = `${Math.floor(48 * scale)}px "Dancing Script", cursive`;
+  }
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+}
+
+/* ── Detect if device is primarily pointer/mouse (desktop) ── */
+function isDesktop() {
+  return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
+/* ── Markdown renderer ── */
 function renderMarkdown(text) {
   if (!text) return null;
   return text.split('\n').map((line, i) => {
@@ -28,21 +63,13 @@ function renderMarkdown(text) {
   });
 }
 
-/* ── Variable substitution — {{placeholders}} → real job data ──
-   {{insurance_section}} is a smart computed variable:
-   - Insurance job  → "INSURANCE & DIRECTION TO PAY" paragraph with carrier/claim data
-   - Out-of-pocket  → "PRIVATE PAY & CONDITIONAL ASSIGNMENT" paragraph that still
-                      pre-assigns benefits if a claim is filed later               */
 function substituteVars(text, job) {
   if (!text) return '';
   const co = 'Utah Pros Restoration';
-
   const hasInsurance = !!(job.insurance_company);
-
   const insuranceSection = hasInsurance
     ? `## INSURANCE & DIRECTION TO PAY\nI authorize ${co} as the designated payee for all insurance proceeds related to the restoration of this Property. I authorize and direct ${job.insurance_company}${job.claim_number ? ` (Claim No. ${job.claim_number})` : ''} to issue payment jointly or directly to ${co}. I agree to promptly endorse and forward any insurance checks that include the Company's name. I remain responsible for my deductible and any amounts not covered by my carrier.`
     : `## PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\nAt the time of signing, no insurance claim has been filed for the loss that is the subject of this Agreement. I agree to pay ${co} directly for all services rendered. All invoices are payable within 30 days of issuance.\n\n**SUBSEQUENT INSURANCE CLAIM:** If I file, or cause to be filed, an insurance claim related to the damage or loss described herein at any time — before, during, or after completion of the work — I hereby irrevocably pre-assign to ${co} all insurance proceeds attributable to the restoration, mitigation, and repair services performed under this Agreement. This pre-assignment is effective retroactively from the date of this Agreement. I agree to: (a) notify ${co} in writing within three (3) business days of filing any such claim; (b) execute a Direction to Pay and/or Assignment of Benefits in favor of ${co} immediately upon request; and (c) direct my insurance carrier to issue all applicable payments jointly or directly to ${co}. My obligation to pay ${co} in full for all authorized services is not contingent upon the filing, approval, or payment of any insurance claim.`;
-
   const m = {
     '{{insurance_section}}': insuranceSection,
     '{{client_name}}':       job.insured_name      || '',
@@ -64,12 +91,8 @@ function substituteVars(text, job) {
   return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), text);
 }
 
-/* ── Build sections from DB templates with variable substitution ──
-   Falls back to hardcoded buildSectionText() if no templates exist. */
 function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
-  if (!templates || templates.length === 0) {
-    return buildSectionText(divisions, doc_type);
-  }
+  if (!templates || templates.length === 0) return buildSectionText(divisions, doc_type);
   const ORDER = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
   if (doc_type === 'coc') {
     const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
@@ -97,9 +120,45 @@ export default function SignPage() {
   const [hasSig,     setHasSig]     = useState(false);
   const [agreed,     setAgreed]     = useState(false);
 
+  // ── Signature mode: 'type' | 'draw' ──
+  const [sigMode,    setSigMode]    = useState(() => isDesktop() ? 'type' : 'draw');
+  const [typedSig,   setTypedSig]   = useState('');
+  const [fontLoaded, setFontLoaded] = useState(false);
+
   const canvasRef   = useRef(null);
   const isDrawing   = useRef(false);
   const lastPos     = useRef({ x: 0, y: 0 });
+
+  // Load cursive font once
+  useEffect(() => {
+    loadSignatureFont();
+    // Wait for font to be ready before first render
+    if (document.fonts) {
+      document.fonts.load('600 48px "Dancing Script"').then(() => setFontLoaded(true));
+    } else {
+      setTimeout(() => setFontLoaded(true), 1000);
+    }
+  }, []);
+
+  // Re-render typed sig when font loads or name changes
+  useEffect(() => {
+    if (sigMode === 'type' && fontLoaded) {
+      renderTypedSig(canvasRef.current, typedSig);
+      setHasSig(!!typedSig.trim());
+    }
+  }, [typedSig, sigMode, fontLoaded]);
+
+  // When switching modes, clear the canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    setHasSig(false);
+    if (sigMode === 'type' && typedSig.trim() && fontLoaded) {
+      renderTypedSig(canvas, typedSig);
+      setHasSig(true);
+    }
+  }, [sigMode]);
 
   useEffect(() => {
     if (!token) { setStatus('error'); setErrorMsg('Invalid link.'); return; }
@@ -110,6 +169,8 @@ export default function SignPage() {
         if (d.status !== 'pending') { setStatus('expired'); return; }
         if (new Date(d.expires_at) < new Date()) { setStatus('expired'); return; }
         setSignerName(d.signer_name || '');
+        // Pre-fill typed sig from signer name
+        setTypedSig(d.signer_name || '');
         setData(d);
         setStatus('ready');
         if (d.doc_type) {
@@ -140,12 +201,14 @@ export default function SignPage() {
   };
 
   const startDraw = useCallback((e) => {
+    if (sigMode !== 'draw') return;
     e.preventDefault();
     const canvas = canvasRef.current; if (!canvas) return;
     isDrawing.current = true; lastPos.current = getPos(e, canvas);
-  }, []);
+  }, [sigMode]);
 
   const draw = useCallback((e) => {
+    if (sigMode !== 'draw') return;
     e.preventDefault();
     if (!isDrawing.current) return;
     const canvas = canvasRef.current; if (!canvas) return;
@@ -153,18 +216,23 @@ export default function SignPage() {
     const pos = getPos(e, canvas);
     ctx.beginPath(); ctx.moveTo(lastPos.current.x, lastPos.current.y); ctx.lineTo(pos.x, pos.y); ctx.stroke();
     lastPos.current = pos; setHasSig(true);
-  }, []);
+  }, [sigMode]);
 
-  const endDraw = useCallback((e) => { e.preventDefault(); isDrawing.current = false; }, []);
+  const endDraw = useCallback((e) => {
+    if (sigMode !== 'draw') return;
+    e.preventDefault(); isDrawing.current = false;
+  }, [sigMode]);
 
   const clearSig = () => {
     const canvas = canvasRef.current; if (!canvas) return;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); setHasSig(false);
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    setHasSig(false);
+    if (sigMode === 'type') setTypedSig('');
   };
 
   const handleSubmit = async () => {
     if (!signerName.trim()) { setNameError('Please enter your full name.'); return; }
-    if (!hasSig)             { setNameError('Please provide your signature.'); return; }
+    if (!hasSig)             { setNameError(sigMode === 'type' ? 'Please type your name in the signature box.' : 'Please provide your signature.'); return; }
     if (!agreed)             { setNameError('Please confirm the checkbox above.'); return; }
     setNameError(''); setStatus('submitting');
     try {
@@ -181,36 +249,9 @@ export default function SignPage() {
   };
 
   if (status === 'loading') return <Screen><Spinner /></Screen>;
-
-  if (status === 'error') return (
-    <Screen><Card>
-      <StatusIcon>⚠️</StatusIcon>
-      <h2 style={styles.heading}>Link Not Found</h2>
-      <p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p>
-      <p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p>
-    </Card></Screen>
-  );
-
-  if (status === 'expired') return (
-    <Screen><Card>
-      <StatusIcon>🔒</StatusIcon>
-      <h2 style={styles.heading}>Link Expired</h2>
-      <p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p>
-      <p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p>
-    </Card></Screen>
-  );
-
-  if (status === 'signed') return (
-    <Screen><Card>
-      <StatusIcon>✅</StatusIcon>
-      <h2 style={styles.heading}>Already Signed</h2>
-      <p style={styles.sub}>
-        This document was signed on{' '}
-        {data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.
-      </p>
-      <p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p>
-    </Card></Screen>
-  );
+  if (status === 'error')   return <Screen><Card><StatusIcon>⚠️</StatusIcon><h2 style={styles.heading}>Link Not Found</h2><p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p><p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'expired') return <Screen><Card><StatusIcon>🔒</StatusIcon><h2 style={styles.heading}>Link Expired</h2><p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p><p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'signed')  return <Screen><Card><StatusIcon>✅</StatusIcon><h2 style={styles.heading}>Already Signed</h2><p style={styles.sub}>This document was signed on{' '}{data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.</p><p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
 
   if (status === 'done') return (
     <Screen>
@@ -232,16 +273,18 @@ export default function SignPage() {
   const job      = data?.job || {};
   const address  = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const docLabel = DOC_LABELS[data?.doc_type] || 'Document';
-
-  const sectionText = buildSectionsFromTemplates(
-    templates,
-    data?.divisions || (job.division ? [job.division] : []),
-    data?.doc_type,
-    job
-  );
+  const sectionText = buildSectionsFromTemplates(templates, data?.divisions || (job.division ? [job.division] : []), data?.doc_type, job);
 
   return (
     <Screen>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .sig-mode-btn { padding: 7px 16px; border: 1.5px solid #cbd5e1; background: #fff; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 500; color: #64748b; transition: all 0.12s; }
+        .sig-mode-btn:first-child { border-radius: 8px 0 0 8px; border-right: none; }
+        .sig-mode-btn:last-child  { border-radius: 0 8px 8px 0; }
+        .sig-mode-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 700; z-index: 1; }
+      `}</style>
+
       <div style={styles.page}>
         <div style={styles.header}>
           <div style={styles.headerInner}>
@@ -262,9 +305,7 @@ export default function SignPage() {
             <InfoRow label="Job #"    value={job.job_number} />
             {job.insurance_company && <InfoRow label="Insurance"    value={job.insurance_company} />}
             {job.claim_number      && <InfoRow label="Claim #"      value={job.claim_number} />}
-            {job.date_of_loss      && <InfoRow label="Date of Loss" value={
-              new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            } />}
+            {job.date_of_loss      && <InfoRow label="Date of Loss" value={new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} />}
           </div>
 
           <Divider />
@@ -286,6 +327,7 @@ export default function SignPage() {
 
           <Divider />
 
+          {/* Full name */}
           <div style={styles.fieldGroup}>
             <label style={styles.fieldLabel}>FULL NAME <span style={{ color: '#ef4444' }}>*</span></label>
             <input style={styles.input} type="text" value={signerName}
@@ -294,19 +336,84 @@ export default function SignPage() {
               disabled={status === 'submitting'} />
           </div>
 
+          {/* Signature box */}
           <div style={styles.fieldGroup}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            {/* Header row: label + mode toggle + clear */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <label style={styles.fieldLabel}>SIGNATURE <span style={{ color: '#ef4444' }}>*</span></label>
-              {hasSig && <button style={styles.clearBtn} onClick={clearSig} disabled={status === 'submitting'}>Clear</button>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {/* Mode toggle */}
+                <div style={{ display: 'flex' }}>
+                  <button className={`sig-mode-btn${sigMode === 'type' ? ' active' : ''}`}
+                    onClick={() => setSigMode('type')} disabled={status === 'submitting'}>
+                    ✍️ Type
+                  </button>
+                  <button className={`sig-mode-btn${sigMode === 'draw' ? ' active' : ''}`}
+                    onClick={() => setSigMode('draw')} disabled={status === 'submitting'}>
+                    ✏️ Draw
+                  </button>
+                </div>
+                {hasSig && (
+                  <button style={styles.clearBtn} onClick={clearSig} disabled={status === 'submitting'}>Clear</button>
+                )}
+              </div>
             </div>
-            <div style={styles.canvasWrap}>
-              <canvas ref={canvasRef} width={500} height={140} style={styles.canvas}
+
+            {/* Type mode: text input that renders to canvas */}
+            {sigMode === 'type' && (
+              <div style={{ marginBottom: 10 }}>
+                <input
+                  style={{
+                    ...styles.input,
+                    fontFamily: '"Dancing Script", cursive',
+                    fontSize: 28,
+                    letterSpacing: '0.5px',
+                    color: '#1e293b',
+                    paddingTop: 10,
+                    paddingBottom: 10,
+                  }}
+                  type="text"
+                  value={typedSig}
+                  onChange={e => { setTypedSig(e.target.value); setNameError(''); }}
+                  placeholder="Type your name to sign"
+                  disabled={status === 'submitting'}
+                  autoComplete="off"
+                />
+                <p style={{ margin: '5px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                  Your typed name will appear as a signature above.
+                </p>
+              </div>
+            )}
+
+            {/* Canvas — always present; hidden in type mode (but still used for PNG export) */}
+            <div style={{
+              ...styles.canvasWrap,
+              // In type mode show it as a preview (read-only); in draw mode it's interactive
+              background: sigMode === 'type' ? '#fafbfc' : '#fff',
+              borderStyle: sigMode === 'type' ? 'dashed' : 'solid',
+            }}>
+              <canvas ref={canvasRef} width={500} height={140} style={{
+                ...styles.canvas,
+                cursor: sigMode === 'draw' ? 'crosshair' : 'default',
+                touchAction: sigMode === 'draw' ? 'none' : 'auto',
+              }}
                 onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
-                onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw} />
-              {!hasSig && <p style={styles.canvasHint}>Sign here with your finger or mouse</p>}
+                onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+              />
+              {!hasSig && (
+                <p style={styles.canvasHint}>
+                  {sigMode === 'type' ? 'Signature preview will appear here' : 'Sign here with your finger or mouse'}
+                </p>
+              )}
+              {sigMode === 'type' && hasSig && (
+                <p style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', margin: 0, fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                  Signature preview
+                </p>
+              )}
             </div>
           </div>
 
+          {/* Agreement checkbox */}
           <label style={styles.checkLabel}>
             <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); setNameError(''); }}
               disabled={status === 'submitting'} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0 }} />
