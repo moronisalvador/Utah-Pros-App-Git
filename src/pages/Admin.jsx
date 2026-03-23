@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { db } from '@/lib/supabase';
 import { realtimeClient } from '@/lib/realtime';
 import PullToRefresh from '@/components/PullToRefresh';
 
@@ -37,7 +36,7 @@ function roleLabel(role) {
 // MAIN ADMIN PAGE
 // ══════════════════════════════════════════════════════════════
 export default function Admin() {
-  const { employee: currentUser } = useAuth();
+  const { employee: currentUser, db } = useAuth();
   const [activeTab, setActiveTab] = useState('employees');
 
   // Block non-admin access

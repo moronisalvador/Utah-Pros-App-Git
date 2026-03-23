@@ -32,9 +32,22 @@ export default function Layout() {
   const [showAddContact, setShowAddContact] = useState(false);
   const [carriers, setCarriers] = useState([]);
   const [referralSources, setReferralSources] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
+
+  // ── Offline detection ──
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   // ── Global toast system — fire from anywhere with:
   //    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type, title } }))
@@ -129,6 +142,19 @@ export default function Layout() {
 
   return (
     <div className="app-layout">
+      {/* ── Offline Banner ── */}
+      {!isOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10001,
+          background: '#1c1917', color: '#fef3c7',
+          padding: '10px 16px', textAlign: 'center',
+          fontSize: 13, fontWeight: 600, letterSpacing: '0.01em',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          <span>⚠️</span>
+          <span>You're offline — changes can't be saved right now</span>
+        </div>
+      )}
       {sidebarOpen && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}

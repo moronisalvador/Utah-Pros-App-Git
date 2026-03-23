@@ -106,13 +106,16 @@ async function doSync(request, env) {
 
   const upsertedJobs = await upsertRes.json();
 
-  // 4. Create contacts for each job with a phone or email
+  // 4. Create contacts for each job with a name + phone or email
   let contactsCreated = 0;
   for (const job of upsertedJobs) {
     if (!job.insured_name) continue;
     const phone = normalizePhone(job.client_phone);
+
+    // Skip if no identifying info at all
     if (!phone && !job.client_email) continue;
 
+    // If we have a phone, check for existing contact to avoid duplicates
     if (phone) {
       const checkRes = await fetch(
         `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1`,
@@ -121,6 +124,11 @@ async function doSync(request, env) {
       const existing = checkRes.ok ? await checkRes.json() : [];
       if (existing.length > 0) continue;
     }
+
+    // Bug fix: contacts table has no 'address' column — addresses go in contact_addresses.
+    // Bug fix: never use 'no-phone' as a phone value — it has a unique constraint.
+    //          If no phone, only create if there's an email to identify the contact.
+    if (!phone && !job.client_email) continue;
 
     const contactRes = await fetch(`${sbUrl}/rest/v1/contacts`, {
       method: 'POST',
@@ -132,14 +140,39 @@ async function doSync(request, env) {
       },
       body: JSON.stringify({
         name: job.insured_name,
-        phone: phone || 'no-phone',
+        phone: phone || null,          // null if no phone — never 'no-phone'
         email: job.client_email || null,
         role: 'homeowner',
-        address: job.address || null,
+        // address intentionally omitted — not a column on contacts
       }),
     });
 
-    if (contactRes.ok) contactsCreated++;
+    if (contactRes.ok) {
+      const [newContact] = await contactRes.json();
+      contactsCreated++;
+
+      // Insert address into contact_addresses if the job has one
+      if (newContact?.id && job.address) {
+        await fetch(`${sbUrl}/rest/v1/contact_addresses`, {
+          method: 'POST',
+          headers: {
+            'apikey': sbKey,
+            'Authorization': `Bearer ${sbKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            contact_id: newContact.id,
+            label: 'service',
+            address: job.address,
+            city: job.city || null,
+            state: job.state || null,
+            zip: job.zip || null,
+            is_billing: true,
+          }),
+        });
+      }
+    }
   }
 
   return jsonResponse({

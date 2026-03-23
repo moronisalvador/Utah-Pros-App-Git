@@ -7,10 +7,61 @@
 // DELETE — Hard delete user (auth + employee row)
 // PUT    — Toggle active status (ban/unban auth + is_active flag)
 //
-// All operations require the calling user to be admin role.
-// For now (dev mode), we trust the caller — auth check can be added later.
+// All operations require a valid admin JWT in Authorization header.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+
+// ── JWT verification: extract caller's JWT, verify with Supabase, check admin role ──
+async function requireAdmin(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return { error: 'Missing Authorization header', status: 401 };
+  }
+
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Verify JWT by fetching the caller's user record from Supabase Auth
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!userRes.ok) {
+    return { error: 'Invalid or expired token', status: 401 };
+  }
+
+  const authUser = await userRes.json();
+
+  // Look up employee record and verify admin role
+  const empRes = await fetch(
+    `${url}/rest/v1/employees?auth_user_id=eq.${authUser.id}&limit=1`,
+    {
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  if (!empRes.ok) {
+    return { error: 'Failed to verify employee role', status: 500 };
+  }
+
+  const employees = await empRes.json();
+  const employee = employees[0];
+
+  if (!employee || employee.role !== 'admin') {
+    return { error: 'Admin role required', status: 403 };
+  }
+
+  return { ok: true, employee };
+}
 
 function supabaseAdmin(env) {
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
@@ -114,6 +165,10 @@ export async function onRequestOptions(context) {
 // ═══════════════════════════════════════════════════
 export async function onRequestPost(context) {
   const { request, env } = context;
+
+  const auth = await requireAdmin(request, env);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const db = supabaseAdmin(env);
 
   try {
@@ -170,6 +225,10 @@ export async function onRequestPost(context) {
 // ═══════════════════════════════════════════════════
 export async function onRequestPatch(context) {
   const { request, env } = context;
+
+  const auth = await requireAdmin(request, env);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const db = supabaseAdmin(env);
 
   try {
@@ -249,6 +308,10 @@ export async function onRequestPatch(context) {
 // ═══════════════════════════════════════════════════
 export async function onRequestPut(context) {
   const { request, env } = context;
+
+  const auth = await requireAdmin(request, env);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const db = supabaseAdmin(env);
 
   try {
@@ -285,6 +348,10 @@ export async function onRequestPut(context) {
 // ═══════════════════════════════════════════════════
 export async function onRequestDelete(context) {
   const { request, env } = context;
+
+  const auth = await requireAdmin(request, env);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const db = supabaseAdmin(env);
 
   try {

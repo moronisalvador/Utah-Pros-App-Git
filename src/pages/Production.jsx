@@ -55,6 +55,7 @@ export default function Production() {
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [view, setView] = useState('pipeline');
 
   const [activeGroup, setActiveGroup] = useState(null);
@@ -77,6 +78,7 @@ export default function Production() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
+    setLoadError(null);
     try {
       const [jobsData, phasesData, empsData] = await Promise.all([
         db.select('jobs', 'order=created_at.desc&select=id,job_number,insured_name,phase,division,source,status,address,city,state,zip,client_email,client_phone,insurance_company,claim_number,adjuster_name,adjuster_phone,adjuster_email,policy_number,cat_code,loss_date,date_of_loss,received_date,target_completion,actual_completion,type_of_loss,adjuster,project_manager,broker_agent,encircle_claim_id,encircle_summary,project_manager_id,lead_tech_id,estimated_value,approved_value,invoiced_value,collected_value,deductible,depreciation_held,depreciation_released,supplement_value,priority,internal_notes,tags,is_cat_loss,has_asbestos,has_lead,requires_permit,phase_entered_at,total_labor_cost,total_material_cost,total_equipment_cost,total_sub_cost,total_other_cost,lead_source,created_at,updated_at'),
@@ -87,7 +89,8 @@ export default function Production() {
       setPhases(phasesData);
       setEmployees(empsData);
     } catch (err) {
-      console.error('Jobs load error:', err);
+      console.error('Production load error:', err);
+      setLoadError(err.message);
     } finally {
       setLoading(false);
     }
@@ -222,6 +225,17 @@ export default function Production() {
   const getPhaseLabel = (key) => phaseMap[key]?.label || key;
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+
+  if (loadError) return (
+    <div className="page">
+      <div className="page-header"><h1 className="page-title">Production</h1></div>
+      <div style={{ padding: '24px 16px', textAlign: 'center' }}>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12 }}>Failed to load production board</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16 }}>{loadError}</div>
+        <button className="btn btn-primary btn-sm" onClick={loadData}>Retry</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="jobs-page">
