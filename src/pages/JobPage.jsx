@@ -582,13 +582,13 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
   const[newNote,setNewNote]=useState('');const[savingNote,setSavingNote]=useState(false);
   const empMap=useMemo(()=>{const m={};for(const e of employees)m[e.id]=e;return m;},[employees]);
   const handleAddNote=async()=>{if(!newNote.trim())return;setSavingNote(true);
-    try{const note={job_id:job.id,author_id:currentUser?.id||null,content:newNote.trim(),created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+    try{const note={job_id:job.id,author_id:currentUser?.id||null,author_name:currentUser?.full_name||null,body:newNote.trim()};
       const ins=await db.insert('job_notes',note);if(ins?.length>0)setNotes(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_notes',`job_id=eq.${job.id}&order=created_at.desc`);setNotes(d);}setNewNote('');
     }catch(err){alert('Failed: '+err.message);}finally{setSavingNote(false);}};
   const handleDeleteNote=async(id)=>{if(!confirm('Delete this note?'))return;try{await db.delete('job_notes',`id=eq.${id}`);setNotes(prev=>prev.filter(n=>n.id!==id));}catch(err){alert('Failed: '+err.message);}};
   const timeline=useMemo(()=>{const items=[];
-    for(const n of notes)items.push({type:'note',id:n.id,date:n.created_at,content:n.content,author:empMap[n.author_id]?.full_name||'Unknown',raw:n});
+    for(const n of notes)items.push({type:'note',id:n.id,date:n.created_at,content:n.body,author:n.author_name||empMap[n.author_id]?.full_name||'Unknown',raw:n});
     for(const h of history){const fl=phaseMap[h.from_phase]?.label||h.from_phase;const tl=phaseMap[h.to_phase]?.label||h.to_phase;
       items.push({type:'phase_change',id:h.id,date:h.changed_at,content:`Phase changed: ${fl} \u2192 ${tl}`,author:empMap[h.changed_by]?.full_name||'System'});}
     items.sort((a,b)=>new Date(b.date)-new Date(a.date));return items;},[notes,history,empMap,phaseMap]);
