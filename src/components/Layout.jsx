@@ -185,7 +185,7 @@ export default function Layout() {
       </nav>
 
       {/* ── Toast Notifications ── */}
-      <div style={{position:'fixed',bottom:'84px',left:'50%',transform:'translateX(-50%)',zIndex:9999,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
+      <div style={{position:'fixed',bottom:'84px',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
         {toasts.map(toast => (
           <div key={toast.id}
             style={{

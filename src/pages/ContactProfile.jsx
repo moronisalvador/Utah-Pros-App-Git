@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { LookupSelect } from '@/components/AddContactModal';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 /* ═══ ICONS ═══ */
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
 function IconPhone(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.88.36 1.72.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c1.09.34 1.93.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>);}
@@ -79,15 +81,15 @@ export default function ContactProfile(){
   useEffect(()=>{load();},[load]);
 
   const save=async()=>{setSaving(true);try{
-    let ph=ef.phone.replace(/\D/g,'');if(ph.length===10)ph='1'+ph;if(!ph.startsWith('+'))ph='+'+ph;
-    let ps=(ef.phone_secondary||'').replace(/\D/g,'');if(ps&&ps.length===10)ps='1'+ps;if(ps&&!ps.startsWith('+'))ps='+'+ps;
-    let dp=(ef.desk_phone||'').replace(/\D/g,'');if(dp&&dp.length===10)dp='1'+dp;if(dp&&!dp.startsWith('+'))dp='+'+dp;
+    let ph=ef.phone.replace(/\D/g,'');if(ph.length===10)ph='1'+ph;if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
+    let ps=(ef.phone_secondary||'').replace(/\D/g,'');if(ps&&ps.length===10)ps='1'+ps;if(ps&&ps.length>0&&!ps.startsWith('+'))ps='+'+ps;
+    let dp=(ef.desk_phone||'').replace(/\D/g,'');if(dp&&dp.length===10)dp='1'+dp;if(dp&&dp.length>0&&!dp.startsWith('+'))dp='+'+dp;
     const tags=ef.tags.split(',').map(t=>t.trim()).filter(Boolean);
     const u={name:ef.name.trim()||null,phone:ph,phone_secondary:ps||null,email:ef.email.trim()||null,company:ef.company.trim()||null,role:ef.role,preferred_contact_method:ef.preferred_contact_method,preferred_language:ef.preferred_language||'en',billing_address:ef.billing_address.trim()||null,billing_city:ef.billing_city.trim()||null,billing_state:ef.billing_state.trim()||null,billing_zip:ef.billing_zip.trim()||null,insurance_carrier:ef.insurance_carrier.trim()||null,policy_number:ef.policy_number.trim()||null,referral_source:ef.referral_source.trim()||null,notes:ef.notes.trim()||null,tags:JSON.stringify(tags),desk_phone:dp||null,desk_extension:ef.desk_extension?.trim()||null,territory:ef.territory?.trim()||null,relationship_notes:ef.relationship_notes?.trim()||null,trade_specialty:ef.trade_specialty?.trim()||null,payment_terms:ef.payment_terms||'net_30',coi_expiration:ef.coi_expiration||null,w9_on_file:ef.w9_on_file||false,updated_at:new Date().toISOString()};
     const r=await db.update('contacts',`id=eq.${id}`,u);if(r?.length>0){setC(r[0]);rEf(r[0]);}setEditing(false);
-  }catch(err){alert('Save failed: '+err.message);}finally{setSaving(false);}};
+  }catch(err){errToast('Save failed: '+err.message);}finally{setSaving(false);}};
 
-  const tDnd=async()=>{const nd=!c.dnd;try{const u={dnd:nd,dnd_at:nd?new Date().toISOString():null,updated_at:new Date().toISOString()};await db.update('contacts',`id=eq.${id}`,u);setC(p=>({...p,...u}));}catch(err){alert('DND failed: '+err.message);}};
+  const tDnd=async()=>{const nd=!c.dnd;try{const u={dnd:nd,dnd_at:nd?new Date().toISOString():null,updated_at:new Date().toISOString()};await db.update('contacts',`id=eq.${id}`,u);setC(p=>({...p,...u}));}catch(err){errToast('DND failed: '+err.message);}};
 
   const ltv=useMemo(()=>pays.reduce((s,p)=>s+Number(p.amount||0),0),[pays]);
   const out=useMemo(()=>invs.reduce((s,i)=>s+Number(i.balance_due||0),0),[invs]);

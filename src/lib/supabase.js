@@ -4,27 +4,38 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+const TIMEOUT_MS = 30000; // 30 seconds — field techs on weak signal need time, but not forever
+
 function getHeaders(token) {
   const h = {
     'apikey': SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
     'Prefer': 'return=representation',
   };
-  // Use user JWT if available, fall back to anon key
   h['Authorization'] = `Bearer ${token || SUPABASE_ANON_KEY}`;
   return h;
+}
+
+// Wraps fetch with an AbortController timeout.
+// Throws a clear "Request timed out" error instead of hanging forever.
+function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal })
+    .then(res => { clearTimeout(timer); return res; })
+    .catch(err => {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') throw new Error('Request timed out. Check your connection and try again.');
+      throw err;
+    });
 }
 
 export function createSupabaseClient(token) {
   const headers = getHeaders(token);
 
   return {
-    // Expose base URL and key for direct Storage API calls (file uploads)
-    baseUrl: SUPABASE_URL,
-    apiKey: token || SUPABASE_ANON_KEY,
-
     async select(table, query = '') {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`SELECT ${table}: ${res.status} ${text}`);
@@ -33,7 +44,7 @@ export function createSupabaseClient(token) {
     },
 
     async insert(table, data) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
@@ -46,7 +57,7 @@ export function createSupabaseClient(token) {
     },
 
     async update(table, filter, data) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(data),
@@ -59,7 +70,7 @@ export function createSupabaseClient(token) {
     },
 
     async delete(table, filter) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'DELETE',
         headers,
       });
@@ -67,13 +78,13 @@ export function createSupabaseClient(token) {
         const text = await res.text();
         throw new Error(`DELETE ${table}: ${res.status} ${text}`);
       }
-      // 204 No Content — no body to parse
+      // 204 No Content is a valid success response — no body to parse
       if (res.status === 204) return null;
       return res.json();
     },
 
     async rpc(fn, params = {}) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(params),
@@ -84,6 +95,10 @@ export function createSupabaseClient(token) {
       }
       return res.json();
     },
+
+    // Expose for direct storage fetches (file upload/delete in JobPage)
+    baseUrl: SUPABASE_URL,
+    apiKey: token || SUPABASE_ANON_KEY,
   };
 }
 

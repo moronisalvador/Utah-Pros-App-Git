@@ -7,6 +7,9 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
+
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
 const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estimates'},{key:'invoice',label:'Invoices'},{key:'moisture_log',label:'Moisture Logs'},{key:'receipt',label:'Receipts'},{key:'contract',label:'Contracts'},{key:'other',label:'Other'}];
@@ -75,7 +78,7 @@ export default function JobPage(){
       await db.insert('job_phase_history',{job_id:job.id,from_phase:job.phase,to_phase:newPhase,changed_by:currentUser?.id||null,changed_at:new Date().toISOString()});
       setJob(prev=>({...prev,phase:newPhase,phase_entered_at:new Date().toISOString()}));
       const h=await db.select('job_phase_history',`job_id=eq.${job.id}&order=changed_at.desc&limit=50`).catch(()=>[]);setHistory(h);
-    }catch(err){alert('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errToast('Failed to update phase: '+err.message);}finally{setSaving(false);}
   };
 
   // Batch save utility for tiles
@@ -100,7 +103,7 @@ export default function JobPage(){
   return(
     <div className="job-page">
       <div className="job-page-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={()=>navigate(-1)} style={{gap:4}}>{'\u2190'} Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1);else navigate('/jobs');}} style={{gap:4}}>{'\u2190'} Back</button>
         <div className="job-page-topbar-actions">
           <select className="input" value={job.phase} onChange={e=>handlePhaseChange(e.target.value)} disabled={saving} style={{width:'auto',minWidth:160,fontWeight:600,height:32}}>
             {phases.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
@@ -173,9 +176,12 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);
   const[f,sF]=useState({});
   const start=()=>{sF({insured_name:job.insured_name||'',client_phone:fmtPh(job.client_phone),client_email:job.client_email||'',address:job.address||'',city:job.city||'',state:job.state||'',zip:job.zip||''});setEd(true);};
-  const save=async()=>{setSv(true);try{let ph=f.client_phone.replace(/\D/g,'');if(ph.length===10)ph='1'+ph;if(!ph.startsWith('+'))ph='+'+ph;
+  const save=async()=>{setSv(true);try{
+    let ph=f.client_phone.replace(/\D/g,'');
+    if(ph.length===10)ph='1'+ph;
+    if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
     await saveBatch({insured_name:f.insured_name?.trim()||null,client_phone:ph||null,client_email:f.client_email?.trim()||null,address:f.address?.trim()||null,city:f.city?.trim()||null,state:f.state?.trim()||null,zip:f.zip?.trim()||null});
-    setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
     <div className="job-page-section">
@@ -213,7 +219,7 @@ function InsuranceTile({job,saveBatch}){
   const start=()=>{sF({insurance_company:job.insurance_company||'',claim_number:job.claim_number||'',policy_number:job.policy_number||'',adjuster_name:job.adjuster_name||job.adjuster||'',adjuster_phone:fmtPh(job.adjuster_phone),adjuster_email:job.adjuster_email||'',cat_code:job.cat_code||''});setEd(true);};
   const save=async()=>{setSv(true);try{
     await saveBatch({insurance_company:f.insurance_company?.trim()||null,claim_number:f.claim_number?.trim()||null,policy_number:f.policy_number?.trim()||null,adjuster_name:f.adjuster_name?.trim()||null,adjuster_phone:f.adjuster_phone?.trim()||null,adjuster_email:f.adjuster_email?.trim()||null,cat_code:f.cat_code?.trim()||null});
-    setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
     <div className="job-page-section">
@@ -240,7 +246,7 @@ function JobDetailsTile({job,saveBatch,fmtDate}){
   const start=()=>{sF({job_number:job.job_number||'',division:job.division||'water',priority:job.priority||3,source:job.source||'',type_of_loss:job.type_of_loss||'',date_of_loss:job.date_of_loss?job.date_of_loss.split('T')[0]:'',received_date:job.received_date?job.received_date.split('T')[0]:'',target_completion:job.target_completion?job.target_completion.split('T')[0]:'',encircle_claim_id:job.encircle_claim_id||''});setEd(true);};
   const save=async()=>{setSv(true);try{
     await saveBatch({job_number:f.job_number?.trim()||null,division:f.division,priority:parseInt(f.priority)||3,source:f.source?.trim()||null,type_of_loss:f.type_of_loss?.trim()||null,date_of_loss:f.date_of_loss||null,received_date:f.received_date||null,target_completion:f.target_completion||null,encircle_claim_id:f.encircle_claim_id?.trim()||null});
-    setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const divLabel=DIVISION_OPTIONS.find(d=>d.value===job.division)?.label||job.division;
   const priLabel=PRIORITY_OPTIONS.find(p=>p.value===job.priority)?.label||'Normal';
@@ -274,13 +280,13 @@ function TeamTile({job,employees,saveBatch}){
   const start=()=>{sF({project_manager_id:job.project_manager_id||'',lead_tech_id:job.lead_tech_id||'',broker_agent:job.broker_agent||''});setEd(true);};
   const save=async()=>{setSv(true);try{
     await saveBatch({project_manager_id:f.project_manager_id||null,lead_tech_id:f.lead_tech_id||null,broker_agent:f.broker_agent?.trim()||null});
-    setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
+    setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   const pmName=employees.find(e=>e.id===job.project_manager_id)?.full_name;
   const ltName=employees.find(e=>e.id===job.lead_tech_id)?.full_name;
 
   // Flags always save immediately (not part of tile edit mode)
-  const toggleFlag=async(field,val)=>{try{await saveBatch({[field]:!val});}catch(err){alert('Failed: '+err.message);}};
+  const toggleFlag=async(field,val)=>{try{await saveBatch({[field]:!val});}catch(err){errToast('Failed: '+err.message);}};
 
   return(
     <div className="job-page-section">
@@ -306,7 +312,7 @@ function TeamTile({job,employees,saveBatch}){
 function NotesTile({job,saveBatch}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[val,setVal]=useState('');
   const start=()=>{setVal(job.internal_notes||'');setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({internal_notes:val?.trim()||null});setEd(false);}catch(err){alert('Failed: '+err.message);}finally{setSv(false);}};
+  const save=async()=>{setSv(true);try{await saveBatch({internal_notes:val?.trim()||null});setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   return(
     <div className="job-page-section job-page-section-full">
       <TileHeader title="Internal Notes" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>
@@ -403,15 +409,15 @@ const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Autho
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
   const[copied,setCopied]=useState(null);
   const[showCancelled,setShowCancelled]=useState(false);
+  const[confirmCancel,setConfirmCancel]=useState(null); // id of sr pending cancel confirm
 
   const copyLink=(token)=>{
     navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
   const cancelReq=async(id)=>{
-    if(!confirm('Cancel this sign request?'))return;
-    try{await db.update('sign_requests',`id=eq.${id}`,{status:'cancelled',updated_at:new Date().toISOString()});onRefresh();}
-    catch(e){alert('Failed: '+e.message);}
+    try{await db.update('sign_requests',`id=eq.${id}`,{status:'cancelled',updated_at:new Date().toISOString()});setConfirmCancel(null);onRefresh();}
+    catch(e){errToast('Failed: '+e.message);setConfirmCancel(null);}
   };
   const fmtDate=v=>v?new Date(v).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
   const pdfUrl=path=>`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
@@ -483,8 +489,16 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
               <SRRow key={sr.id} sr={sr} actions={<>
                 <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
                   onClick={()=>copyLink(sr.token)}>{copied===sr.token?'Copied!':'Copy Link'}</button>
-                <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}}
-                  onClick={()=>cancelReq(sr.id)} title="Cancel">✕</button>
+                {confirmCancel===sr.id?(
+                  <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                    <span style={{fontSize:11,color:'var(--text-secondary)'}}>Cancel?</span>
+                    <button className="btn btn-sm" onClick={()=>cancelReq(sr.id)} style={{fontSize:11,height:26,padding:'0 8px',background:'#fef2f2',color:'#ef4444',border:'1px solid #fecaca'}}>Yes</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmCancel(null)} style={{fontSize:11,height:26,padding:'0 6px'}}>No</button>
+                  </div>
+                ):(
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}}
+                    onClick={()=>setConfirmCancel(sr.id)} title="Cancel">✕</button>
+                )}
               </>}/>
             ))}
           </div>
@@ -537,6 +551,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     return()=>document.removeEventListener('visibilitychange',onVisible);
   },[job.id]);
   const[uploading,setUploading]=useState(false);const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
+  const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null); // doc id pending delete confirm
   const filtered=filterCat==='all'?documents:documents.filter(d=>d.category===filterCat);
   const catCounts=useMemo(()=>{const c={all:documents.length};for(const d of documents)c[d.category]=(c[d.category]||0)+1;return c;},[documents]);
   const handleUpload=async(e)=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);
@@ -546,8 +561,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
       const doc={job_id:job.id,name:file.name,file_path:sp,file_size:file.size,mime_type:file.type,category:uploadCategory,uploaded_by:currentUser?.id||null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       const ins=await db.insert('job_documents',doc);if(ins?.length>0)setDocuments(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`);setDocuments(d);}
-    }}catch(err){alert('Upload failed: '+err.message);}finally{setUploading(false);if(fileInputRef.current)fileInputRef.current.value='';}};
-  const handleDelete=async(doc)=>{if(!confirm(`Delete "${doc.name}"?`))return;try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));}catch(err){alert('Delete failed: '+err.message);}};
+    }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploading(false);if(fileInputRef.current)fileInputRef.current.value='';}};
+  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
   const getFileUrl=doc=>`${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}`;
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   const isImage=doc=>doc.mime_type?.startsWith('image/');
@@ -572,7 +587,14 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
             :<a href={getFileUrl(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-preview job-page-file-icon-preview">{doc.mime_type?.includes('pdf')?'\u{1F4C4}':'\u{1F4CE}'}</a>}
           <div className="job-page-file-info"><a href={getFileUrl(doc)} target="_blank" rel="noopener noreferrer" className="job-page-file-name">{doc.name}</a>
             <div className="job-page-file-meta"><span className="job-page-file-cat-badge">{doc.category}</span>{doc.file_size&&<span>{fmtSize(doc.file_size)}</span>}</div></div>
-          <button className="btn btn-ghost btn-sm" onClick={()=>handleDelete(doc)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
+          {confirmDeleteDoc===doc.id?(
+            <div style={{display:'flex',gap:4,alignItems:'center',flexShrink:0}}>
+              <button className="btn btn-sm" onClick={()=>handleDelete(doc)} style={{fontSize:11,height:26,padding:'0 8px',background:'#fef2f2',color:'#ef4444',border:'1px solid #fecaca'}}>Delete</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteDoc(null)} style={{fontSize:11,height:26,padding:'0 6px'}}>Keep</button>
+            </div>
+          ):(
+            <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteDoc(doc.id)} title="Delete" style={{flexShrink:0,padding:'2px 6px',fontSize:14}}>{'\u2715'}</button>
+          )}
         </div>))}</div>)}
     </div>);
 }
@@ -580,13 +602,14 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
 /* ═══ ACTIVITY TAB (unchanged) ═══ */
 function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUser,fmtDateTime}){
   const[newNote,setNewNote]=useState('');const[savingNote,setSavingNote]=useState(false);
+  const[confirmDeleteNote,setConfirmDeleteNote]=useState(null); // note id pending delete
   const empMap=useMemo(()=>{const m={};for(const e of employees)m[e.id]=e;return m;},[employees]);
   const handleAddNote=async()=>{if(!newNote.trim())return;setSavingNote(true);
     try{const note={job_id:job.id,author_id:currentUser?.id||null,author_name:currentUser?.full_name||null,body:newNote.trim()};
       const ins=await db.insert('job_notes',note);if(ins?.length>0)setNotes(prev=>[ins[0],...prev]);
       else{const d=await db.select('job_notes',`job_id=eq.${job.id}&order=created_at.desc`);setNotes(d);}setNewNote('');
-    }catch(err){alert('Failed: '+err.message);}finally{setSavingNote(false);}};
-  const handleDeleteNote=async(id)=>{if(!confirm('Delete this note?'))return;try{await db.delete('job_notes',`id=eq.${id}`);setNotes(prev=>prev.filter(n=>n.id!==id));}catch(err){alert('Failed: '+err.message);}};
+    }catch(err){errToast('Failed to add note: '+err.message);}finally{setSavingNote(false);}};
+  const handleDeleteNote=async(id)=>{try{await db.delete('job_notes',`id=eq.${id}`);setNotes(prev=>prev.filter(n=>n.id!==id));setConfirmDeleteNote(null);}catch(err){errToast('Failed to delete note: '+err.message);setConfirmDeleteNote(null);}};
   const timeline=useMemo(()=>{const items=[];
     for(const n of notes)items.push({type:'note',id:n.id,date:n.created_at,content:n.body,author:n.author_name||empMap[n.author_id]?.full_name||'Unknown',raw:n});
     for(const h of history){const fl=phaseMap[h.from_phase]?.label||h.from_phase;const tl=phaseMap[h.to_phase]?.label||h.to_phase;
@@ -604,7 +627,17 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
           <div className="job-page-timeline-dot"/><div className="job-page-timeline-content">
             <div className="job-page-timeline-header"><span className="job-page-timeline-author">{item.author}</span><span className="job-page-timeline-time">{fmtDateTime(item.date)}</span></div>
             <div className="job-page-timeline-text">{item.content}</div>
-            {item.type==='note'&&<button className="btn btn-ghost btn-sm" onClick={()=>handleDeleteNote(item.id)} style={{padding:'0 4px',fontSize:11,marginTop:4,height:20}}>Delete</button>}
+            {item.type==='note'&&(
+              confirmDeleteNote===item.id?(
+                <div style={{display:'flex',gap:6,alignItems:'center',marginTop:4}}>
+                  <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete note?</span>
+                  <button className="btn btn-sm" onClick={()=>handleDeleteNote(item.id)} style={{fontSize:11,height:20,padding:'0 8px',background:'#fef2f2',color:'#ef4444',border:'1px solid #fecaca'}}>Yes</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteNote(null)} style={{fontSize:11,height:20,padding:'0 6px'}}>No</button>
+                </div>
+              ):(
+                <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteNote(item.id)} style={{padding:'0 4px',fontSize:11,marginTop:4,height:20}}>Delete</button>
+              )
+            )}
           </div></div>))}</div>)}
     </div>);
 }

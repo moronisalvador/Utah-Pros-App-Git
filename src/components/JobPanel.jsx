@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import ScheduleWizard from '@/components/ScheduleWizard';
 import { DIV_COLORS, MITIGATION_DIVS, RECON_DIVS, classifyPhase, fmtDate, fmtShortDate } from '@/lib/scheduleUtils';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onCreateAppointment, onSelectJob, selectedJobId, refreshKey, onRefreshPanel }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
@@ -29,6 +31,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   const [showAddPhase, setShowAddPhase] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [showWizard, setShowWizard] = useState(false);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState(null); // task id pending delete
 
   // Refresh pool when appointment is created/saved
   useEffect(() => {
@@ -203,14 +206,11 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
 
     // Delete a task
     const handleDeleteTask = async (task) => {
-      const msg = task.appointment_id
-        ? `"${task.title}" is scheduled on an appointment. Delete anyway?`
-        : `Delete "${task.title}"?`;
-      if (!confirm(msg)) return;
       try {
         await db.delete('job_tasks', `id=eq.${task.id}`);
+        setConfirmDeleteTask(null);
         await refreshPool();
-      } catch (e) { console.error('Delete task:', e); }
+      } catch (e) { console.error('Delete task:', e); errToast('Failed to delete task'); }
     };
 
     // Toggle task completion (un-complete also unassigns)
@@ -495,12 +495,20 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                     cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
                                   onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                                   onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>⧉</button>
-                                <button onClick={e => { e.stopPropagation(); handleDeleteTask(task); }}
-                                  title="Delete task"
-                                  style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
-                                    cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
-                                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
-                                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
+                                {confirmDeleteTask === task.id ? (
+                                  <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                    {task.appointment_id && <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 600 }}>Scheduled!</span>}
+                                    <button onClick={() => handleDeleteTask(task)} style={{ fontSize: 10, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: '0 2px', fontFamily: 'var(--font-sans)' }}>Del</button>
+                                    <button onClick={() => setConfirmDeleteTask(null)} style={{ fontSize: 10, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: 'var(--font-sans)' }}>✕</button>
+                                  </div>
+                                ) : (
+                                  <button onClick={e => { e.stopPropagation(); setConfirmDeleteTask(task.id); }}
+                                    title="Delete task"
+                                    style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                      cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
+                                )}
                               </div>
                             );
                           })}
@@ -580,12 +588,20 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                                       cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
                                     onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                                     onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>⧉</button>
-                                  <button onClick={e => { e.stopPropagation(); handleDeleteTask(task); }}
-                                    title="Delete task"
-                                    style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
-                                      cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
-                                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
+                                  {confirmDeleteTask === task.id ? (
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                                      {task.appointment_id && <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 600 }}>Scheduled!</span>}
+                                      <button onClick={() => handleDeleteTask(task)} style={{ fontSize: 10, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: '0 2px', fontFamily: 'var(--font-sans)' }}>Del</button>
+                                      <button onClick={() => setConfirmDeleteTask(null)} style={{ fontSize: 10, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: 'var(--font-sans)' }}>✕</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={e => { e.stopPropagation(); setConfirmDeleteTask(task.id); }}
+                                      title="Delete task"
+                                      style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none',
+                                        cursor: 'pointer', padding: '0 3px', opacity: 0.4, flexShrink: 0, lineHeight: 1 }}
+                                      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#ef4444'; }}
+                                      onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}>✕</button>
+                                  )}
                                   {task.is_completed ? (
                                     <span style={{ fontSize: 8, fontWeight: 600, color: '#10b981' }}>DONE</span>
                                   ) : (

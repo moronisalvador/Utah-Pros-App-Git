@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 /* ═══ ICONS ═══ */
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconTrash(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>);}
@@ -65,7 +67,7 @@ export default function Settings() {
       await load();
       return true;
     } catch (err) {
-      alert('Failed to save: ' + err.message);
+      errToast('Failed to save: ' + err.message);
       return false;
     }
   };
@@ -76,7 +78,7 @@ export default function Settings() {
       setCarriers(prev => prev.filter(c => c.id !== id));
       return true;
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      errToast('Failed to delete: ' + err.message);
       return false;
     }
   };
@@ -90,7 +92,7 @@ export default function Settings() {
       await load();
       return true;
     } catch (err) {
-      alert('Failed to save: ' + err.message);
+      errToast('Failed to save: ' + err.message);
       return false;
     }
   };
@@ -101,7 +103,7 @@ export default function Settings() {
       setReferrals(prev => prev.filter(r => r.id !== id));
       return true;
     } catch (err) {
-      alert('Failed to delete: ' + err.message);
+      errToast('Failed to delete: ' + err.message);
       return false;
     }
   };
@@ -174,9 +176,11 @@ export default function Settings() {
    ═══════════════════════════════════════════════════════════════════ */
 function LookupTable({ title, subtitle, items, onSave, onDelete, columns, newItemDefaults }) {
   const [search, setSearch] = useState('');
-  const [editingId, setEditingId] = useState(null); // id of row being edited, or 'new' for adding
+  const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const nameRef = useRef(null);
 
   const filtered = search.trim()
@@ -210,23 +214,23 @@ function LookupTable({ title, subtitle, items, onSave, onDelete, columns, newIte
     const required = columns.filter(c => c.required);
     for (const col of required) {
       if (!editForm[col.key]?.toString().trim()) {
-        alert(`${col.label} is required`);
+        setValidationError(`${col.label} is required`);
         return;
       }
     }
+    setValidationError('');
     setSaving(true);
     const item = { ...editForm };
     if (editingId === 'new') delete item.id;
-    // Convert sort_order to number
     if (item.sort_order !== undefined) item.sort_order = parseInt(item.sort_order) || 999;
     const ok = await onSave(item);
     setSaving(false);
     if (ok) cancelEdit();
   };
 
-  const handleDelete = async (id, name) => {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const handleDelete = async (id) => {
     await onDelete(id);
+    setConfirmDeleteId(null);
   };
 
   const handleKeyDown = (e) => {
@@ -274,35 +278,42 @@ function LookupTable({ title, subtitle, items, onSave, onDelete, columns, newIte
 
         {/* Add new row (if active) */}
         {editingId === 'new' && (
-          <div className="lookup-row lookup-row-editing">
-            {columns.map(col => (
-              <div key={col.key} className="lookup-cell" style={{ flex: col.flex || 1 }}>
-                {col.type === 'select' ? (
-                  <select className="input lookup-input" value={editForm[col.key] || ''} onChange={e => set(col.key, e.target.value)} style={{ cursor: 'pointer' }}>
-                    {col.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    ref={col.required ? nameRef : undefined}
-                    className="input lookup-input"
-                    type={col.type || 'text'}
-                    value={editForm[col.key] ?? ''}
-                    onChange={e => set(col.key, e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={col.placeholder || col.label}
-                  />
-                )}
+          <>
+            <div className="lookup-row lookup-row-editing">
+              {columns.map(col => (
+                <div key={col.key} className="lookup-cell" style={{ flex: col.flex || 1 }}>
+                  {col.type === 'select' ? (
+                    <select className="input lookup-input" value={editForm[col.key] || ''} onChange={e => set(col.key, e.target.value)} style={{ cursor: 'pointer' }}>
+                      {col.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      ref={col.required ? nameRef : undefined}
+                      className="input lookup-input"
+                      type={col.type || 'text'}
+                      value={editForm[col.key] ?? ''}
+                      onChange={e => { set(col.key, e.target.value); setValidationError(''); }}
+                      onKeyDown={handleKeyDown}
+                      placeholder={col.placeholder || col.label}
+                    />
+                  )}
+                </div>
+              ))}
+              <div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}>
+                <button className="lookup-action-btn save" onClick={handleSave} disabled={saving} title="Save">
+                  <IconCheck style={{ width: 14, height: 14 }} />
+                </button>
+                <button className="lookup-action-btn cancel" onClick={cancelEdit} title="Cancel">
+                  <IconX style={{ width: 14, height: 14 }} />
+                </button>
               </div>
-            ))}
-            <div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}>
-              <button className="lookup-action-btn save" onClick={handleSave} disabled={saving} title="Save">
-                <IconCheck style={{ width: 14, height: 14 }} />
-              </button>
-              <button className="lookup-action-btn cancel" onClick={cancelEdit} title="Cancel">
-                <IconX style={{ width: 14, height: 14 }} />
-              </button>
             </div>
-          </div>
+            {validationError && (
+              <div style={{ padding: '6px 12px', fontSize: 12, color: '#ef4444', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                {validationError}
+              </div>
+            )}
+          </>
         )}
 
         {/* Data rows */}
@@ -314,35 +325,42 @@ function LookupTable({ title, subtitle, items, onSave, onDelete, columns, newIte
           filtered.map(item => (
             editingId === item.id ? (
               /* Editing row */
-              <div key={item.id} className="lookup-row lookup-row-editing">
-                {columns.map(col => (
-                  <div key={col.key} className="lookup-cell" style={{ flex: col.flex || 1 }}>
-                    {col.type === 'select' ? (
-                      <select className="input lookup-input" value={editForm[col.key] || ''} onChange={e => set(col.key, e.target.value)} style={{ cursor: 'pointer' }}>
-                        {col.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    ) : (
-                      <input
-                        ref={col.required ? nameRef : undefined}
-                        className="input lookup-input"
-                        type={col.type || 'text'}
-                        value={editForm[col.key] ?? ''}
-                        onChange={e => set(col.key, e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder={col.placeholder || col.label}
-                      />
-                    )}
+              <>
+                <div key={item.id} className="lookup-row lookup-row-editing">
+                  {columns.map(col => (
+                    <div key={col.key} className="lookup-cell" style={{ flex: col.flex || 1 }}>
+                      {col.type === 'select' ? (
+                        <select className="input lookup-input" value={editForm[col.key] || ''} onChange={e => set(col.key, e.target.value)} style={{ cursor: 'pointer' }}>
+                          {col.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          ref={col.required ? nameRef : undefined}
+                          className="input lookup-input"
+                          type={col.type || 'text'}
+                          value={editForm[col.key] ?? ''}
+                          onChange={e => { set(col.key, e.target.value); setValidationError(''); }}
+                          onKeyDown={handleKeyDown}
+                          placeholder={col.placeholder || col.label}
+                        />
+                      )}
+                    </div>
+                  ))}
+                  <div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}>
+                    <button className="lookup-action-btn save" onClick={handleSave} disabled={saving} title="Save">
+                      <IconCheck style={{ width: 14, height: 14 }} />
+                    </button>
+                    <button className="lookup-action-btn cancel" onClick={cancelEdit} title="Cancel">
+                      <IconX style={{ width: 14, height: 14 }} />
+                    </button>
                   </div>
-                ))}
-                <div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}>
-                  <button className="lookup-action-btn save" onClick={handleSave} disabled={saving} title="Save">
-                    <IconCheck style={{ width: 14, height: 14 }} />
-                  </button>
-                  <button className="lookup-action-btn cancel" onClick={cancelEdit} title="Cancel">
-                    <IconX style={{ width: 14, height: 14 }} />
-                  </button>
                 </div>
-              </div>
+                {validationError && (
+                  <div style={{ padding: '6px 12px', fontSize: 12, color: '#ef4444', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                    {validationError}
+                  </div>
+                )}
+              </>
             ) : (
               /* Display row */
               <div key={item.id} className="lookup-row">
@@ -354,13 +372,27 @@ function LookupTable({ title, subtitle, items, onSave, onDelete, columns, newIte
                     }
                   </div>
                 ))}
-                <div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}>
-                  <button className="lookup-action-btn edit" onClick={() => startEdit(item)} title="Edit">
-                    <IconEdit style={{ width: 14, height: 14 }} />
-                  </button>
-                  <button className="lookup-action-btn delete" onClick={() => handleDelete(item.id, item.name)} title="Delete">
-                    <IconTrash style={{ width: 14, height: 14 }} />
-                  </button>
+                <div className="lookup-cell lookup-cell-actions" style={{ width: confirmDeleteId === item.id ? 140 : 80 }}>
+                  {confirmDeleteId === item.id ? (
+                    <>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginRight: 4 }}>Delete?</span>
+                      <button className="lookup-action-btn save" onClick={() => handleDelete(item.id)} title="Confirm delete" style={{ background: '#fef2f2', color: '#ef4444' }}>
+                        <IconCheck style={{ width: 14, height: 14 }} />
+                      </button>
+                      <button className="lookup-action-btn cancel" onClick={() => setConfirmDeleteId(null)} title="Cancel">
+                        <IconX style={{ width: 14, height: 14 }} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="lookup-action-btn edit" onClick={() => startEdit(item)} title="Edit">
+                        <IconEdit style={{ width: 14, height: 14 }} />
+                      </button>
+                      <button className="lookup-action-btn delete" onClick={() => setConfirmDeleteId(item.id)} title="Delete">
+                        <IconTrash style={{ width: 14, height: 14 }} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )

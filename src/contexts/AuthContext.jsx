@@ -59,6 +59,10 @@ export function AuthProvider({ children }) {
             return;
           }
           await handleAuthUser(session.user, session.access_token);
+        } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
+          // Supabase silently refreshed the JWT — rebuild our fetch client with the new token
+          // Without this, all db calls return 401 after ~1 hour
+          setAuthDb(createSupabaseClient(session.access_token));
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setEmployee(null);
@@ -176,8 +180,9 @@ export function AuthProvider({ children }) {
     if (!employee) return false;
     // Admins always see everything
     if (employee.role === 'admin') return true;
-    // Check permissions table
-    if (permissions.length === 0) return true; // No permissions loaded = show all (fallback)
+    // No permissions loaded — deny by default for non-admins
+    // (prevents accidental access if nav_permissions table is empty or failed to load)
+    if (permissions.length === 0) return false;
     const perm = permissions.find(p => p.nav_key === navKey);
     return perm ? perm.can_view : false;
   }, [employee, permissions]);

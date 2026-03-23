@@ -307,7 +307,9 @@ export default function Conversations() {
     const unread = conversations.filter(c => c.unread_count > 0);
     if (!unread.length) return;
     try {
-      await Promise.all(unread.map(c => db.update('conversations', `id=eq.${c.id}`, { unread_count: 0 })));
+      // Single PATCH via PostgREST in() filter — one request instead of N
+      const ids = unread.map(c => c.id).join(',');
+      await db.update('conversations', `id=in.(${ids})`, { unread_count: 0 });
       setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 })));
       showToast(`${unread.length} conversations marked as read`);
     } catch (err) { console.error('Read all error:', err); }
@@ -352,9 +354,13 @@ export default function Conversations() {
 
     // ── Scheduled message path ──
     if (showSchedule && scheduleDate && scheduleTime) {
+      const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+      if (new Date(sendAt) <= new Date()) {
+        showToast('Scheduled time must be in the future');
+        return;
+      }
       setSending(true);
       try {
-        const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
         await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
         clearCompose(); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
         showToast('Message scheduled');

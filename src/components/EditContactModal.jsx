@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { LookupSelect } from './AddContactModal';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
 
 const CMO = [{value:'sms',label:'SMS'},{value:'call',label:'Phone Call'},{value:'email',label:'Email'}];
@@ -40,10 +42,10 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
     if (!form.name?.trim()) return;
     setSaving(true);
     try {
-      // Normalize phone
+      // Normalize phone — only prepend '+' if there are actual digits
       let phone = form.phone.replace(/\D/g, '');
       if (phone.length === 10) phone = '1' + phone;
-      if (!phone.startsWith('+')) phone = '+' + phone;
+      if (phone.length > 0 && !phone.startsWith('+')) phone = '+' + phone;
 
       const data = {
         name: form.name.trim(),
@@ -65,7 +67,7 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
 
       await onSave(data);
     } catch (err) {
-      alert('Failed to save: ' + err.message);
+      errToast('Failed to save: ' + err.message);
     } finally {
       setSaving(false);
     }

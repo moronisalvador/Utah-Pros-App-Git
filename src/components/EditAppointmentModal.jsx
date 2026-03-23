@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 const TIME_OPTIONS = (() => {
   const opts = [];
   for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
@@ -25,6 +27,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [crewSearch, setCrewSearch] = useState('');
   const [nextVisitPrompt, setNextVisitPrompt] = useState(null); // null | 'asking' | 'pick_date'
   const [nextVisitDate, setNextVisitDate] = useState('');
@@ -219,17 +222,13 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
       onSaved();
     } catch (e) {
       console.error('Save appointment:', e);
-      alert('Failed to save: ' + e.message);
+      errToast('Failed to save: ' + e.message);
     } finally { setSaving(false); }
   };
 
   // Finish appointment — complete it, release incomplete tasks
   const handleFinish = async () => {
-    const incompleteTasks = tasks.filter(t => !t.is_completed);
-    const msg = incompleteTasks.length > 0
-      ? `${incompleteTasks.length} task${incompleteTasks.length !== 1 ? 's' : ''} incomplete — they'll be released back to the task pool. Finish appointment?`
-      : 'Mark this appointment as completed?';
-    if (!confirm(msg)) return;
+    setShowFinishConfirm(false);
     setSaving(true);
     try {
       await db.rpc('finish_appointment', { p_appointment_id: appointment.id });
@@ -240,7 +239,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
       } else {
         onSaved();
       }
-    } catch (e) { console.error('Finish:', e); alert('Failed: ' + e.message); }
+    } catch (e) { console.error('Finish:', e); errToast('Failed: ' + e.message); }
     finally { if (!isMitigationType) setSaving(false); }
   };
 
@@ -279,7 +278,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
         }
       }
       onSaved();
-    } catch (e) { console.error('Clone visit:', e); alert('Failed: ' + e.message); }
+    } catch (e) { console.error('Clone visit:', e); errToast('Failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
@@ -297,7 +296,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     try {
       await db.rpc('delete_appointment', { p_appointment_id: appointment.id });
       onDeleted?.();
-    } catch (e) { console.error('Delete:', e); alert('Failed: ' + e.message); }
+    } catch (e) { console.error('Delete:', e); errToast('Failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
@@ -675,12 +674,27 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
               )}
             </div>
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-              {!isCompleted && (
-                <button onClick={handleFinish} disabled={saving}
+            {!isCompleted && (
+              showFinishConfirm ? (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {tasks.filter(t => !t.is_completed).length > 0
+                      ? `${tasks.filter(t => !t.is_completed).length} task(s) incomplete — release to pool?`
+                      : 'Mark as completed?'}
+                  </span>
+                  <button onClick={handleFinish} disabled={saving}
+                    style={{ ...S.primaryBtn, background: '#10b981', padding: '6px 14px' }}>
+                    {saving ? '...' : 'Finish'}
+                  </button>
+                  <button onClick={() => setShowFinishConfirm(false)} style={S.ghostBtn}>Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowFinishConfirm(true)} disabled={saving}
                   style={{ ...S.outlineBtn, color: '#10b981', borderColor: '#10b981' }}>
                   Finish
                 </button>
-              )}
+              )
+            )}
               <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
                 style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>
                 {saving ? 'Saving...' : 'Save changes'}

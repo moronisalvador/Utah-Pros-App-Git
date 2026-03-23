@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import AddContactModal, { LookupSelect } from '@/components/AddContactModal';
 import DatePicker from '@/components/DatePicker';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconUser(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);}
@@ -65,7 +67,7 @@ export default function CreateJob(){
   const handleNewContact=async(data)=>{
     try{const r=await db.insert('contacts',data);if(r?.length>0){const c=r[0];setContact(c);setShowAddContact(false);
       if(c.billing_address||c.billing_city)sF(prev=>({...prev,address:c.billing_address||'',city:c.billing_city||'',state:c.billing_state||'UT',zip:c.billing_zip||''}));
-    }}catch(err){alert('Failed: '+err.message);throw err;}
+    }}catch(err){errToast('Failed: '+err.message);throw err;}
   };
 
   const clearContact=()=>{setContact(null);sF(prev=>({...prev,address:'',city:'',state:'UT',zip:''}));};

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 const TIME_OPTIONS = (() => {
   const opts = [];
   for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
@@ -116,7 +118,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
       }
       setNewTaskTitle('');
       setCreatingTask(false);
-    } catch (e) { console.error('Create task:', e); alert('Failed: ' + e.message); }
+    } catch (e) { console.error('Create task:', e); errToast('Failed: ' + e.message); }
   };
 
   const getInitials = (name) => {
@@ -168,7 +170,7 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
       onSaved(date);
     } catch (e) {
       console.error('Save appointment:', e);
-      alert('Failed to save: ' + e.message);
+      errToast('Failed to save: ' + e.message);
     } finally {
       setSaving(false);
     }

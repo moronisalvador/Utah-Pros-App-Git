@@ -6,6 +6,8 @@ import { LookupSelect } from '@/components/AddContactModal';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import CreateJobModal from '@/components/CreateJobModal';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 function IconPhone(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>);}
 function IconMail(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>);}
 function IconMsg(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);}
@@ -151,10 +153,13 @@ function ContactInfoTile({contact,db,contactId,onReload}){
   const startEdit=()=>{sF({name:c.name||'',phone:fmtPh(c.phone),email:c.email||'',company:c.company||'',preferred_contact_method:c.preferred_contact_method||'sms',referral_source:c.referral_source||''});setEd(true);};
   const save=async()=>{
     if(!f.name?.trim())return;setSaving(true);
-    try{let ph=f.phone.replace(/\D/g,'');if(ph.length===10)ph='1'+ph;if(!ph.startsWith('+'))ph='+'+ph;
-      await db.update('contacts',`id=eq.${contactId}`,{name:f.name.trim(),phone:ph,email:f.email?.trim()||null,company:f.company?.trim()||null,preferred_contact_method:f.preferred_contact_method,referral_source:f.referral_source?.trim()||null,updated_at:new Date().toISOString()});
+    try{
+      let ph=f.phone.replace(/\D/g,'');
+      if(ph.length===10)ph='1'+ph;
+      if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
+      await db.update('contacts',`id=eq.${contactId}`,{name:f.name.trim(),phone:ph||null,email:f.email?.trim()||null,company:f.company?.trim()||null,preferred_contact_method:f.preferred_contact_method,referral_source:f.referral_source?.trim()||null,updated_at:new Date().toISOString()});
       setEd(false);onReload();
-    }catch(err){alert('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
 
@@ -193,7 +198,7 @@ function InsuranceTile({contact,db,contactId,carriers,onReload}){
     setSaving(true);
     try{await db.update('contacts',`id=eq.${contactId}`,{insurance_carrier:f.insurance_carrier?.trim()||null,policy_number:f.policy_number?.trim()||null,updated_at:new Date().toISOString()});
       setEd(false);onReload();
-    }catch(err){alert('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
@@ -218,7 +223,7 @@ function NotesTile({contact,db,contactId,onReload}){
   const save=async()=>{
     setSaving(true);
     try{await db.update('contacts',`id=eq.${contactId}`,{notes:val?.trim()||null,updated_at:new Date().toISOString()});setEd(false);onReload();}
-    catch(err){alert('Failed: '+err.message);}finally{setSaving(false);}
+    catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
   };
   return(
     <div className="job-page-section job-page-section-full">
@@ -237,16 +242,17 @@ function AddressSection({addresses,db,contactId,onReload}){
   const[showAdd,setShowAdd]=useState(false);const[editingAddr,setEditingAddr]=useState(null);
   const[form,setForm]=useState({label:'service',address:'',city:'',state:'UT',zip:'',is_billing:false,notes:''});
   const[saving,setSaving]=useState(false);const[menuOpen,setMenuOpen]=useState(null);
+  const[confirmDeleteAddr,setConfirmDeleteAddr]=useState(null);
   const resetForm=()=>{setForm({label:'service',address:'',city:'',state:'UT',zip:'',is_billing:false,notes:''});setShowAdd(false);setEditingAddr(null);};
   const startEdit=(addr)=>{setEditingAddr(addr.id);setShowAdd(false);setMenuOpen(null);setForm({label:addr.label||'service',address:addr.address||'',city:addr.city||'',state:addr.state||'',zip:addr.zip||'',is_billing:addr.is_billing||false,notes:addr.notes||''});};
   const handleSave=async()=>{
     if(!form.address?.trim())return;setSaving(true);
     try{await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:editingAddr||null,p_label:form.label,p_address:form.address.trim(),p_city:form.city?.trim()||null,p_state:form.state?.trim()||null,p_zip:form.zip?.trim()||null,p_is_billing:form.is_billing,p_notes:form.notes?.trim()||null});
       resetForm();onReload();
-    }catch(err){alert('Failed: '+err.message);}finally{setSaving(false);}
+    }catch(err){errToast('Failed: '+err.message);}finally{setSaving(false);}
   };
-  const handleSetBilling=async(id)=>{setMenuOpen(null);try{const a=addresses.find(x=>x.id===id);if(!a)return;await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:id,p_label:a.label,p_address:a.address,p_city:a.city,p_state:a.state,p_zip:a.zip,p_is_billing:true,p_notes:a.notes});onReload();}catch(err){alert('Failed: '+err.message);}};
-  const handleDelete=async(id)=>{setMenuOpen(null);if(!confirm('Delete this address?'))return;try{await db.rpc('delete_contact_address',{p_address_id:id,p_contact_id:contactId});onReload();}catch(err){alert('Failed: '+err.message);}};
+  const handleSetBilling=async(id)=>{setMenuOpen(null);try{const a=addresses.find(x=>x.id===id);if(!a)return;await db.rpc('upsert_contact_address',{p_contact_id:contactId,p_address_id:id,p_label:a.label,p_address:a.address,p_city:a.city,p_state:a.state,p_zip:a.zip,p_is_billing:true,p_notes:a.notes});onReload();}catch(err){errToast('Failed: '+err.message);}};
+  const handleDelete=async(id)=>{setMenuOpen(null);try{await db.rpc('delete_contact_address',{p_address_id:id,p_contact_id:contactId});setConfirmDeleteAddr(null);onReload();}catch(err){errToast('Failed: '+err.message);setConfirmDeleteAddr(null);}};
   const isEditing=showAdd||editingAddr;
   return(
     <div className="job-page-section">
@@ -271,7 +277,15 @@ function AddressSection({addresses,db,contactId,onReload}){
               {menuOpen===addr.id&&<div style={{position:'absolute',right:0,top:'100%',zIndex:20,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-lg)',minWidth:150,overflow:'hidden'}}>
                 {!addr.is_billing&&<button onClick={()=>handleSetBilling(addr.id)} style={mi}>Set as Billing</button>}
                 <button onClick={()=>startEdit(addr)} style={mi}>Edit</button>
-                <button onClick={()=>handleDelete(addr.id)} style={{...mi,color:'#ef4444'}}>Delete</button>
+                {confirmDeleteAddr===addr.id?(
+                  <div style={{padding:'6px 14px',borderTop:'1px solid var(--border-light)',display:'flex',gap:8,alignItems:'center'}}>
+                    <span style={{fontSize:12,color:'var(--text-secondary)',flex:1}}>Delete?</span>
+                    <button onClick={()=>handleDelete(addr.id)} style={{fontSize:12,color:'#ef4444',background:'none',border:'none',cursor:'pointer',fontFamily:'var(--font-sans)',fontWeight:600}}>Yes</button>
+                    <button onClick={()=>setConfirmDeleteAddr(null)} style={{fontSize:12,color:'var(--text-tertiary)',background:'none',border:'none',cursor:'pointer',fontFamily:'var(--font-sans)'}}>No</button>
+                  </div>
+                ):(
+                  <button onClick={()=>setConfirmDeleteAddr(addr.id)} style={{...mi,color:'#ef4444'}}>Delete</button>
+                )}
               </div>}
             </div>
           </div>);

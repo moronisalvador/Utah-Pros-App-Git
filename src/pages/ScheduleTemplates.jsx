@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -493,6 +495,7 @@ function PhaseCard({ phase, isExpanded, onToggle, onEdit, onDelete, allPhases, d
   const color = phase.color || '#6b7280';
   const taskCount = phase.tasks?.length || 0;
   const requiredCount = phase.tasks?.filter(t => t.is_required).length || 0;
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <div style={{
@@ -544,9 +547,17 @@ function PhaseCard({ phase, isExpanded, onToggle, onEdit, onDelete, allPhases, d
       {isExpanded && (
         <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border-light)' }}>
           {/* Phase actions */}
-          <div style={{ display: 'flex', gap: 8, padding: '10px 0 6px' }}>
+          <div style={{ display: 'flex', gap: 8, padding: '10px 0 6px', alignItems: 'center' }}>
             <button style={phaseActionBtn} onClick={onEdit}>Edit phase</button>
-            <button style={{ ...phaseActionBtn, color: '#ef4444' }} onClick={onDelete}>Delete</button>
+            {confirmDelete ? (
+              <>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Delete phase + tasks?</span>
+                <button onClick={onDelete} style={{ ...phaseActionBtn, color: '#fff', background: '#ef4444', border: 'none' }}>Yes, delete</button>
+                <button onClick={() => setConfirmDelete(false)} style={phaseActionBtn}>Cancel</button>
+              </>
+            ) : (
+              <button style={{ ...phaseActionBtn, color: '#ef4444' }} onClick={() => setConfirmDelete(true)}>Delete</button>
+            )}
           </div>
 
           {/* Tasks */}
@@ -656,6 +667,7 @@ export default function ScheduleTemplates() {
   // Phase modal
   const [phaseModal, setPhaseModal] = useState(null); // null | { mode: 'add' } | { mode: 'edit', phase }
   const [expandedPhase, setExpandedPhase] = useState(null);
+  const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState(false);
 
   // Template header editing
   const [editingName, setEditingName] = useState(false);
@@ -718,13 +730,13 @@ export default function ScheduleTemplates() {
   // ── Delete template ──
   const deleteTemplate = async () => {
     if (!template?.id) return;
-    if (!confirm(`Delete "${template.name}"? This cannot be undone.`)) return;
     try {
       await db.delete('schedule_templates', `id=eq.${template.id}`);
       setSelectedId(null);
       setTemplate(null);
+      setConfirmDeleteTemplate(false);
       loadTemplates();
-    } catch (e) { console.error('Delete template:', e); }
+    } catch (e) { console.error('Delete template:', e); errToast('Failed to delete template'); }
   };
 
   // ── Duplicate template ──
@@ -803,12 +815,11 @@ export default function ScheduleTemplates() {
 
   // ── Delete phase ──
   const deletePhase = async (phaseId) => {
-    if (!confirm('Delete this phase and all its tasks?')) return;
     try {
       await db.delete('template_phases', `id=eq.${phaseId}`);
       setExpandedPhase(null);
       refresh();
-    } catch (e) { console.error('Delete phase:', e); }
+    } catch (e) { console.error('Delete phase:', e); errToast('Failed to delete phase'); }
   };
 
   // ── Sorted phases by display_order ──
@@ -883,9 +894,17 @@ export default function ScheduleTemplates() {
                   </span>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button style={pageStyles.actionBtn} onClick={duplicateTemplate}>Duplicate</button>
-                <button style={{ ...pageStyles.actionBtn, color: '#ef4444' }} onClick={deleteTemplate}>Delete</button>
+                {confirmDeleteTemplate ? (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Delete "{template.name}"?</span>
+                    <button onClick={deleteTemplate} style={{ ...pageStyles.actionBtn, color: '#fff', background: '#ef4444', border: 'none' }}>Yes, delete</button>
+                    <button onClick={() => setConfirmDeleteTemplate(false)} style={pageStyles.actionBtn}>Cancel</button>
+                  </>
+                ) : (
+                  <button style={{ ...pageStyles.actionBtn, color: '#ef4444' }} onClick={() => setConfirmDeleteTemplate(true)}>Delete</button>
+                )}
               </div>
             </div>
 

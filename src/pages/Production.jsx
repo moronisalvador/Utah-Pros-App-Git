@@ -5,6 +5,8 @@ import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 import PullToRefresh from '@/components/PullToRefresh';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 // ── Macro group definitions ──
 const MACRO_GROUPS = [
   {
@@ -175,7 +177,7 @@ export default function Production() {
       if (selectedJob?.id === job.id) setSelectedJob(updated);
     } catch (err) {
       console.error('Phase change error:', err);
-      alert('Failed: ' + err.message);
+      errToast('Failed: ' + err.message);
     }
   }, [db, selectedJob]);
 

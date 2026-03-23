@@ -3,6 +3,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_COLORS, TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
+
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 import EditAppointmentModal from '@/components/EditAppointmentModal';
 import CalendarView from '@/components/CalendarView';
 
@@ -540,7 +542,7 @@ export default function Schedule() {
   const handleRescheduleRemaining = async (appt) => {
     try {
       const tasks = await db.select('job_tasks', `appointment_id=eq.${appt.id}&is_completed=eq.false&select=id,title,phase_name`);
-      if (!tasks || tasks.length === 0) { alert('No incomplete tasks on this appointment.'); return; }
+      if (!tasks || tasks.length === 0) { errToast('No incomplete tasks on this appointment.'); return; }
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
       const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 120;
       setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id, timeStart: appt.time_start || '09:00', timeEnd: appt.time_end || '11:00' });
@@ -571,7 +573,7 @@ export default function Schedule() {
         if (pm.taskIds.length > 0) await db.rpc('assign_tasks_to_appointment', { p_appointment_id: nid, p_task_ids: pm.taskIds });
       }
       loadBoard(); setPanelRefreshKey(k => k + 1);
-    } catch (e) { console.error('Placement create failed:', e); alert('Failed: ' + e.message); }
+    } catch (e) { console.error('Placement create failed:', e); errToast('Failed: ' + e.message); }
   };
 
   const [jobPickerModal, setJobPickerModal] = useState(null);
