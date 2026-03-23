@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 const PRIORITY_LABELS = { 1: 'Urgent', 2: 'High', 3: 'Normal', 4: 'Low' };
 const PRIORITY_COLORS = { 1: 'var(--status-needs-response)', 2: '#f59e0b', 3: 'var(--accent)', 4: 'var(--text-tertiary)' };
 
@@ -44,7 +46,7 @@ export default function JobDetailPanel({ job, phases, employees, onClose, onUpda
       onUpdate({ ...job, phase: newPhase, phase_entered_at: new Date().toISOString() });
     } catch (err) {
       console.error('Phase change error:', err);
-      alert('Failed to update phase: ' + err.message);
+      errToast('Failed to update phase: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -59,7 +61,7 @@ export default function JobDetailPanel({ job, phases, employees, onClose, onUpda
       setEditing(null);
     } catch (err) {
       console.error('Field save error:', err);
-      alert('Failed to save: ' + err.message);
+      errToast('Failed to save: ' + err.message);
     } finally {
       setSaving(false);
     }

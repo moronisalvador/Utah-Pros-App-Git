@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Leads() {
   const { db } = useAuth();
+  const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    db.select('contacts', 'role=eq.lead&order=created_at.desc&select=id,name,phone,email,opt_in_source,created_at')
+    // Leads = jobs in the 'lead' phase — not a contacts role
+    db.select(
+      'jobs',
+      'phase=eq.lead&status=eq.active&order=created_at.desc&select=id,job_number,insured_name,address,city,state,division,type_of_loss,insurance_company,created_at,priority,lead_source'
+    )
       .then(setLeads)
       .catch(err => console.error('Leads load error:', err))
       .finally(() => setLoading(false));
@@ -20,9 +26,8 @@ export default function Leads() {
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h1 className="page-title">Leads</h1>
-          <p className="page-subtitle">{leads.length} leads in pipeline</p>
+          <p className="page-subtitle">{leads.length} lead{leads.length !== 1 ? 's' : ''} in pipeline</p>
         </div>
-        <button className="btn btn-primary">+ New Lead</button>
       </div>
 
       <div className="card">
@@ -30,27 +35,33 @@ export default function Leads() {
           {leads.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No leads yet</p>
-              <p className="empty-state-text">Leads from campaigns, referrals, and inbound texts will appear here.</p>
+              <p className="empty-state-text">Jobs in the Lead phase will appear here.</p>
             </div>
           ) : (
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Email</th>
-                  <th>Source</th>
-                  <th>Created</th>
+                  <th>Job #</th>
+                  <th>Client</th>
+                  <th>Address</th>
+                  <th>Division</th>
+                  <th>Insurance</th>
+                  <th>Received</th>
                 </tr>
               </thead>
               <tbody>
                 {leads.map(lead => (
-                  <tr key={lead.id}>
-                    <td style={{ fontWeight: 600 }}>{lead.name || 'Unknown'}</td>
-                    <td>{lead.phone || '—'}</td>
-                    <td>{lead.email || '—'}</td>
-                    <td>{lead.opt_in_source || '—'}</td>
-                    <td style={{ color: 'var(--text-tertiary)' }}>{new Date(lead.created_at).toLocaleDateString()}</td>
+                  <tr key={lead.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/jobs/${lead.id}`)}>
+                    <td style={{ fontWeight: 600 }}>{lead.job_number || '—'}</td>
+                    <td>{lead.insured_name || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>
+                      {[lead.address, lead.city].filter(Boolean).join(', ') || '—'}
+                    </td>
+                    <td>{lead.division || '—'}</td>
+                    <td>{lead.insurance_company || 'Out of pocket'}</td>
+                    <td style={{ color: 'var(--text-tertiary)' }}>
+                      {new Date(lead.created_at).toLocaleDateString()}
+                    </td>
                   </tr>
                 ))}
               </tbody>

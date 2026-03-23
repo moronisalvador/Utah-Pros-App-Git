@@ -1,0 +1,772 @@
+import { useState, useEffect } from 'react';
+import { APPT_TYPES } from '@/lib/scheduleUtils';
+import DatePicker from '@/components/DatePicker';
+
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
+const TIME_OPTIONS = (() => {
+  const opts = [];
+  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+    const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const hr = h % 12 || 12;
+    opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
+  }
+  return opts;
+})();
+
+function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
+  const [title, setTitle] = useState(appointment.title || '');
+  const [date, setDate] = useState(appointment.date || '');
+  const [timeStart, setTimeStart] = useState(appointment.time_start?.slice(0, 5) || '');
+  const [timeEnd, setTimeEnd] = useState(appointment.time_end?.slice(0, 5) || '');
+  const [type, setType] = useState(appointment.type || 'reconstruction');
+  const [notes, setNotes] = useState(appointment.notes || '');
+  const [status, setStatus] = useState(appointment.status || 'scheduled');
+  const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [crewSearch, setCrewSearch] = useState('');
+  const [nextVisitPrompt, setNextVisitPrompt] = useState(null); // null | 'asking' | 'pick_date'
+  const [nextVisitDate, setNextVisitDate] = useState('');
+  const [showAddTasks, setShowAddTasks] = useState(false);
+  const [unassignedTasks, setUnassignedTasks] = useState([]);
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+
+  const isMitigationType = ['mitigation', 'monitoring'].includes(appointment.type) ||
+    ['water', 'mold', 'fire', 'contents'].includes(appointment._division);
+
+  // Initialize crew from appointment data
+  const initialCrew = (appointment.crew || []).map(c => ({
+    employee_id: c.employee_id,
+    role: c.role,
+    display_name: c.display_name,
+    full_name: c.full_name,
+    color: c.color,
+  }));
+  const [selectedCrew, setSelectedCrew] = useState(initialCrew);
+
+  const toggleCrew = (emp) => {
+    setSelectedCrew(prev => {
+      const exists = prev.find(c => c.employee_id === emp.id);
+      if (exists) return prev.filter(c => c.employee_id !== emp.id);
+      return [...prev, {
+        employee_id: emp.id,
+        role: prev.length === 0 ? 'lead' : 'tech',
+        display_name: emp.display_name,
+        full_name: emp.full_name,
+        color: emp.color,
+      }];
+    });
+    setDirty(true);
+  };
+
+  // Escape to close
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  // Load tasks for this appointment
+  useEffect(() => {
+    if (!db || !appointment.id) return;
+    (async () => {
+      try {
+        const data = await db.select('job_tasks',
+          `appointment_id=eq.${appointment.id}&order=created_at.asc&select=id,title,is_completed,is_required,phase_name,phase_color,completed_at`
+        );
+        setTasks(data || []);
+      } catch (e) { console.error('Load tasks:', e); }
+      finally { setTasksLoading(false); }
+    })();
+  }, [db, appointment.id]);
+
+  const getInitials = (name) => {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
+  };
+
+  const fmtTime = (t) => {
+    if (!t) return '';
+    const [h, m] = t.split(':');
+    const hr = parseInt(h, 10);
+    return `${hr % 12 || 12}:${m}${hr >= 12 ? 'p' : 'a'}`;
+  };
+
+  const fmtApptDate = (d) => {
+    if (!d) return '';
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
+    });
+  };
+
+  // Toggle task completion
+  const handleToggleTask = async (taskId) => {
+    try {
+      await db.rpc('toggle_job_task', { p_task_id: taskId, p_employee_id: null });
+      setTasks(prev => prev.map(t =>
+        t.id === taskId ? { ...t, is_completed: !t.is_completed, completed_at: !t.is_completed ? new Date().toISOString() : null } : t
+      ));
+      setDirty(true);
+    } catch (e) { console.error('Toggle task:', e); }
+  };
+
+  // Load unassigned tasks from the job's task pool
+  const loadUnassignedTasks = async () => {
+    setUnassignedLoading(true);
+    try {
+      const jobId = appointment._jobId || appointment.job_id;
+      const result = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
+      // RPC returns grouped by phase: [{ phase_name, phase_color, tasks: [...] }]
+      // Flatten into a single array with phase info on each task
+      const flat = [];
+      for (const group of (Array.isArray(result) ? result : [])) {
+        for (const task of (group.tasks || [])) {
+          flat.push({ ...task, phase_name: group.phase_name, phase_color: group.phase_color });
+        }
+      }
+      setUnassignedTasks(flat);
+    } catch (e) { console.error('Load unassigned:', e); setUnassignedTasks([]); }
+    finally { setUnassignedLoading(false); }
+  };
+
+  const handleOpenAddTasks = () => {
+    setShowAddTasks(true);
+    setSelectedTaskIds(new Set());
+    loadUnassignedTasks();
+  };
+
+  // Toggle task selection for batch assign
+  const toggleTaskSelection = (taskId) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  };
+
+  // Select all tasks in a phase group
+  const togglePhaseGroup = (phaseTasks) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      const allSelected = phaseTasks.every(t => next.has(t.id));
+      for (const t of phaseTasks) {
+        if (allSelected) next.delete(t.id); else next.add(t.id);
+      }
+      return next;
+    });
+  };
+
+  // Batch assign selected tasks to this appointment
+  const handleAssignSelected = async () => {
+    if (selectedTaskIds.size === 0) return;
+    try {
+      await db.rpc('assign_tasks_to_appointment', { p_appointment_id: appointment.id, p_task_ids: [...selectedTaskIds] });
+      setUnassignedTasks(prev => prev.filter(t => !selectedTaskIds.has(t.id)));
+      setSelectedTaskIds(new Set());
+      const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
+      setTasks(Array.isArray(refreshed) ? refreshed : []);
+      setDirty(true);
+    } catch (e) { console.error('Assign tasks:', e); }
+  };
+
+  // Create ad-hoc task and assign to this appointment
+  const handleCreateAdhocTask = async () => {
+    if (!newTaskTitle.trim()) return;
+    try {
+      const jobId = appointment._jobId || appointment.job_id;
+      await db.rpc('add_adhoc_job_task', {
+        p_job_id: jobId,
+        p_title: newTaskTitle.trim(),
+        p_phase_name: null,
+        p_appointment_id: appointment.id,
+      });
+      setNewTaskTitle('');
+      const refreshed = await db.rpc('get_tasks_for_appointment', { p_appointment_id: appointment.id });
+      setTasks(Array.isArray(refreshed) ? refreshed : []);
+      setDirty(true);
+    } catch (e) { console.error('Adhoc task:', e); }
+  };
+
+  // Save changes
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await db.rpc('update_appointment', {
+        p_appointment_id: appointment.id,
+        p_title: title.trim() || null,
+        p_date: date || null,
+        p_time_start: timeStart || null,
+        p_time_end: timeEnd || null,
+        p_type: type || null,
+        p_status: status || null,
+        p_notes: notes.trim() || null,
+      });
+
+      // Save crew changes — delete all and re-insert
+      await db.delete('appointment_crew', `appointment_id=eq.${appointment.id}`);
+      for (const c of selectedCrew) {
+        await db.insert('appointment_crew', {
+          appointment_id: appointment.id,
+          employee_id: c.employee_id,
+          role: c.role,
+        });
+      }
+
+      onSaved();
+    } catch (e) {
+      console.error('Save appointment:', e);
+      errToast('Failed to save: ' + e.message);
+    } finally { setSaving(false); }
+  };
+
+  // Finish appointment — complete it, release incomplete tasks
+  const handleFinish = async () => {
+    setShowFinishConfirm(false);
+    setSaving(true);
+    try {
+      await db.rpc('finish_appointment', { p_appointment_id: appointment.id });
+      // For mitigation appointments, ask about next visit
+      if (isMitigationType) {
+        setSaving(false);
+        setNextVisitPrompt('asking');
+      } else {
+        onSaved();
+      }
+    } catch (e) { console.error('Finish:', e); errToast('Failed: ' + e.message); }
+    finally { if (!isMitigationType) setSaving(false); }
+  };
+
+  // Clone appointment to a specific date (for "schedule next visit")
+  const handleCloneVisit = async (targetDate) => {
+    setSaving(true);
+    try {
+      const result = await db.insert('appointments', {
+        job_id: appointment._jobId || appointment.job_id,
+        title: title || appointment.title,
+        date: targetDate,
+        time_start: timeStart || appointment.time_start,
+        time_end: timeEnd || appointment.time_end,
+        type: type || appointment.type,
+        status: 'scheduled',
+        notes: null,
+      });
+      if (result && result.length > 0) {
+        const newId = result[0].id;
+        // Copy crew
+        for (const c of selectedCrew) {
+          await db.insert('appointment_crew', { appointment_id: newId, employee_id: c.employee_id, role: c.role });
+        }
+        // Clone the same task set (monitoring tasks)
+        const taskTemplates = tasks.map(t => t.title);
+        if (taskTemplates.length > 0) {
+          for (const taskTitle of taskTemplates) {
+            await db.insert('job_tasks', {
+              job_id: appointment._jobId || appointment.job_id,
+              appointment_id: newId,
+              title: taskTitle,
+              phase_name: tasks[0]?.phase_name || 'Monitoring',
+              is_completed: false,
+            });
+          }
+        }
+      }
+      onSaved();
+    } catch (e) { console.error('Clone visit:', e); errToast('Failed: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const getNextBusinessDay = (fromDate) => {
+    const d = new Date(fromDate + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
+  // Delete appointment
+  const handleDelete = async () => {
+    setSaving(true);
+    try {
+      await db.rpc('delete_appointment', { p_appointment_id: appointment.id });
+      onDeleted?.();
+    } catch (e) { console.error('Delete:', e); errToast('Failed: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const completedCount = tasks.filter(t => t.is_completed).length;
+  const totalTasks = tasks.length;
+  const pct = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
+  const isCompleted = status === 'completed';
+
+  const STATUS_OPTIONS = [
+    { value: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
+    { value: 'en_route', label: 'En Route', color: '#f59e0b' },
+    { value: 'in_progress', label: 'In Progress', color: '#10b981' },
+    { value: 'paused', label: 'Paused', color: '#ef4444' },
+    { value: 'completed', label: 'Completed', color: '#6b7280' },
+  ];
+
+  const currentStatus = STATUS_OPTIONS.find(s => s.value === status) || STATUS_OPTIONS[0];
+
+  return (
+    <div style={S.overlay}>
+      <div style={S.modal} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={S.header}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{
+                width: 10, height: 10, borderRadius: 5, background: currentStatus.color, flexShrink: 0,
+              }} />
+              <input style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', border: 'none',
+                outline: 'none', background: 'transparent', flex: 1, padding: 0, fontFamily: 'var(--font-sans)' }}
+                value={title} onChange={e => { setTitle(e.target.value); setDirty(true); }} />
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', paddingLeft: 18 }}>
+              {appointment._jobName || 'Job'} · {fmtApptDate(date)}
+            </div>
+          </div>
+          <button onClick={onClose} style={S.closeBtn}>✕</button>
+        </div>
+
+        <div style={S.body}>
+          {/* Status bar */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+            {STATUS_OPTIONS.map(s => (
+              <button key={s.value} onClick={() => { setStatus(s.value); setDirty(true); }}
+                style={{
+                  flex: 1, fontSize: 11, fontWeight: 600, padding: '6px 0', border: 'none',
+                  borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                  background: status === s.value ? s.color : 'var(--bg-tertiary)',
+                  color: status === s.value ? '#fff' : 'var(--text-tertiary)',
+                  transition: 'all 100ms ease',
+                }}>{s.label}</button>
+            ))}
+          </div>
+
+          {/* Date + Time */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 4 }}>
+            <div style={{ ...S.field, flex: 1 }}>
+              <label style={S.label}>Date</label>
+              <DatePicker value={date} onChange={v => { setDate(v); setDirty(true); }} />
+            </div>
+            <div style={{ ...S.field, flex: 1 }}>
+              <label style={S.label}>Start</label>
+              <select style={S.input} value={timeStart}
+                onChange={e => { setTimeStart(e.target.value); setDirty(true); }}>
+                <option value="">—</option>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
+            </div>
+            <div style={{ ...S.field, flex: 1 }}>
+              <label style={S.label}>End</label>
+              <select style={S.input} value={timeEnd}
+                onChange={e => { setTimeEnd(e.target.value); setDirty(true); }}>
+                <option value="">—</option>
+                {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          {timeStart && timeEnd && timeEnd <= timeStart && (
+            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 500, marginBottom: 8 }}>End time must be after start time</div>
+          )}
+
+          {/* Type */}
+          <div style={{ ...S.field, marginBottom: 12 }}>
+            <label style={S.label}>Type</label>
+            <select style={S.input} value={type} onChange={e => { setType(e.target.value); setDirty(true); }}>
+              {APPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div style={{ ...S.field, marginBottom: 16 }}>
+            <label style={S.label}>Notes</label>
+            <textarea style={{ ...S.input, minHeight: 48, resize: 'vertical' }} value={notes}
+              onChange={e => { setNotes(e.target.value); setDirty(true); }} placeholder="Instructions for the crew..." />
+          </div>
+
+          {/* ── Crew ── */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>
+              Crew
+              <span style={S.sectionBadge}>{selectedCrew.length}</span>
+            </div>
+            {employees.length > 5 && (
+              <input style={{ ...S.input, marginBottom: 8, padding: '6px 10px', fontSize: 12 }}
+                placeholder="Search crew..." value={crewSearch}
+                onChange={e => setCrewSearch(e.target.value)} />
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {employees
+                .filter(emp => {
+                  if (selectedCrew.find(c => c.employee_id === emp.id)) return true;
+                  if (!crewSearch.trim()) return true;
+                  const q = crewSearch.toLowerCase();
+                  return (emp.display_name || '').toLowerCase().includes(q) || (emp.full_name || '').toLowerCase().includes(q);
+                })
+                .map(emp => {
+                  const sel = selectedCrew.find(c => c.employee_id === emp.id);
+                  return (
+                    <button key={emp.id} onClick={() => toggleCrew(emp)} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      border: sel ? `1.5px solid ${emp.color || 'var(--accent)'}` : '1px solid var(--border-color)',
+                      background: sel ? `${emp.color || 'var(--accent)'}15` : 'var(--bg-primary)',
+                      transition: 'all 100ms ease',
+                    }}>
+                      <span style={{
+                        width: 24, height: 24, borderRadius: 12, fontSize: 9, fontWeight: 700,
+                        background: sel ? (emp.color || 'var(--accent)') : 'var(--bg-tertiary)',
+                        color: sel ? '#fff' : 'var(--text-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>{getInitials(emp.full_name || emp.display_name)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600,
+                        color: sel ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {emp.display_name || emp.full_name}
+                      </span>
+                      {sel && (
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '0 4px', borderRadius: 3,
+                          background: sel.role === 'lead' ? '#fffbeb' : 'transparent',
+                          color: sel.role === 'lead' ? '#92400e' : 'var(--text-tertiary)',
+                        }}>{sel.role === 'lead' ? 'LEAD' : 'TECH'}</span>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* ── Tasks ── */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>
+              Tasks
+              {totalTasks > 0 && (
+                <span style={S.sectionBadge}>{completedCount}/{totalTasks}</span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {totalTasks > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1, height: 6, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%',
+                    background: pct === 100 ? '#10b981' : 'var(--accent)', borderRadius: 3, transition: 'width 200ms ease' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: pct === 100 ? '#10b981' : 'var(--text-secondary)' }}>{pct}%</span>
+              </div>
+            )}
+
+            {tasksLoading && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>Loading tasks...</div>}
+
+            {!tasksLoading && tasks.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>No tasks assigned to this appointment</div>
+            )}
+
+            {tasks.map(task => (
+              <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
+                borderBottom: '1px solid var(--border-light)' }}>
+                <span onClick={() => handleToggleTask(task.id)} style={{
+                  width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+                  border: task.is_completed ? 'none' : '1.5px solid var(--border-color)',
+                  background: task.is_completed ? '#10b981' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 100ms ease',
+                }}
+                  onMouseEnter={e => { if (!task.is_completed) e.currentTarget.style.borderColor = '#10b981'; }}
+                  onMouseLeave={e => { if (!task.is_completed) e.currentTarget.style.borderColor = 'var(--border-color)'; }}>
+                  {task.is_completed && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: task.is_completed ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                    textDecoration: task.is_completed ? 'line-through' : 'none' }}>
+                    {task.title}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 1 }}>
+                    {task.phase_name && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--text-tertiary)' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 2, background: task.phase_color || '#6b7280' }} />
+                        {task.phase_name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {task.is_required && (
+                  <span style={{ fontSize: 9, fontWeight: 600, color: '#ef4444', background: '#fef2f2', padding: '1px 5px', borderRadius: 3 }}>REQ</span>
+                )}
+              </div>
+            ))}
+
+            {/* Add tasks */}
+            {!isCompleted && !showAddTasks && (
+              <button onClick={handleOpenAddTasks}
+                style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0', fontFamily: 'var(--font-sans)' }}>
+                + Add tasks
+              </button>
+            )}
+
+            {showAddTasks && (
+              <div style={{ marginTop: 8, padding: '10px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                {/* Ad-hoc task creation */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <input style={{ flex: 1, padding: '6px 8px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                    placeholder="New task name..."
+                    value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleCreateAdhocTask()} />
+                  <button onClick={handleCreateAdhocTask} disabled={!newTaskTitle.trim()}
+                    style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 'var(--radius-md)', border: 'none', background: newTaskTitle.trim() ? 'var(--accent)' : 'var(--bg-tertiary)', color: newTaskTitle.trim() ? '#fff' : 'var(--text-tertiary)', cursor: newTaskTitle.trim() ? 'pointer' : 'default', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap' }}>
+                    Add
+                  </button>
+                </div>
+
+                {/* Unassigned tasks grouped by phase */}
+                {unassignedLoading && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>Loading pool...</div>}
+                {!unassignedLoading && unassignedTasks.length > 0 && (() => {
+                  // Group by phase
+                  const groups = {};
+                  for (const t of unassignedTasks) {
+                    const key = t.phase_name || 'Other';
+                    if (!groups[key]) groups[key] = { color: t.phase_color || '#6b7280', tasks: [] };
+                    groups[key].tasks.push(t);
+                  }
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>
+                          Unassigned tasks ({unassignedTasks.length})
+                        </span>
+                        {selectedTaskIds.size > 0 && (
+                          <button onClick={handleAssignSelected}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                            Assign {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                        {Object.entries(groups).map(([phaseName, group]) => {
+                          const allSelected = group.tasks.every(t => selectedTaskIds.has(t.id));
+                          const someSelected = group.tasks.some(t => selectedTaskIds.has(t.id));
+                          return (
+                            <div key={phaseName} style={{ marginBottom: 8 }}>
+                              {/* Phase header — click to toggle all */}
+                              <div onClick={() => togglePhaseGroup(group.tasks)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', cursor: 'pointer', userSelect: 'none' }}>
+                                <span style={{
+                                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                  border: allSelected ? 'none' : someSelected ? '2px solid var(--accent)' : '1.5px solid var(--border-color)',
+                                  background: allSelected ? 'var(--accent)' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {allSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                  {someSelected && !allSelected && <span style={{ width: 6, height: 2, background: 'var(--accent)', borderRadius: 1 }} />}
+                                </span>
+                                <span style={{ width: 6, height: 6, borderRadius: 2, background: group.color, flexShrink: 0 }} />
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{phaseName}</span>
+                                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>({group.tasks.length})</span>
+                              </div>
+                              {/* Tasks in this phase */}
+                              {group.tasks.map(ut => {
+                                const sel = selectedTaskIds.has(ut.id);
+                                return (
+                                  <div key={ut.id} onClick={() => toggleTaskSelection(ut.id)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px 4px 20px', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <span style={{
+                                      width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                                      border: sel ? 'none' : '1.5px solid var(--border-color)',
+                                      background: sel ? 'var(--accent)' : 'transparent',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                      {sel && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                                    </span>
+                                    <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{ut.title}</span>
+                                    {ut.is_required && <span style={{ fontSize: 8, fontWeight: 700, color: '#ef4444', background: '#fef2f2', padding: '0 3px', borderRadius: 2 }}>REQ</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+                {!unassignedLoading && unassignedTasks.length === 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '4px 0' }}>No unassigned tasks in the pool</div>
+                )}
+
+                <button onClick={() => { setShowAddTasks(false); setSelectedTaskIds(new Set()); }}
+                  style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 6, fontFamily: 'var(--font-sans)' }}>
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer / Next Visit Prompt */}
+        {nextVisitPrompt ? (
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', background: '#f8fffe', flexShrink: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              ✅ Appointment completed
+            </div>
+            {nextVisitPrompt === 'asking' && (
+              <>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                  Schedule another visit for this job?
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => handleCloneVisit(getNextBusinessDay(date))} disabled={saving}
+                    style={{ ...S.primaryBtn, background: '#10b981', flex: 1 }}>
+                    {saving ? 'Creating...' : `Tomorrow (${new Date(getNextBusinessDay(date) + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })})`}
+                  </button>
+                  <button onClick={() => { setNextVisitPrompt('pick_date'); setNextVisitDate(''); }}
+                    style={{ ...S.outlineBtn, flex: 1 }}>
+                    Pick a day
+                  </button>
+                  <button onClick={() => onSaved()}
+                    style={{ ...S.ghostBtn, color: 'var(--text-tertiary)' }}>
+                    No — done with this job
+                  </button>
+                </div>
+              </>
+            )}
+            {nextVisitPrompt === 'pick_date' && (
+              <>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  Pick the date for the next visit:
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <DatePicker value={nextVisitDate} onChange={setNextVisitDate} min={date} />
+                  </div>
+                  <button onClick={() => nextVisitDate && handleCloneVisit(nextVisitDate)}
+                    disabled={saving || !nextVisitDate}
+                    style={{ ...S.primaryBtn, background: '#10b981', opacity: (!nextVisitDate || saving) ? 0.5 : 1 }}>
+                    {saving ? 'Creating...' : 'Schedule'}
+                  </button>
+                  <button onClick={() => setNextVisitPrompt('asking')} style={S.ghostBtn}>Back</button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div style={S.footer}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!showDeleteConfirm ? (
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  style={{ ...S.ghostBtn, color: '#ef4444' }}>Delete</button>
+              ) : (
+                <>
+                  <button onClick={handleDelete} disabled={saving}
+                    style={{ ...S.ghostBtn, color: '#fff', background: '#ef4444' }}>Confirm delete</button>
+                  <button onClick={() => setShowDeleteConfirm(false)}
+                    style={S.ghostBtn}>Cancel</button>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            {!isCompleted && (
+              showFinishConfirm ? (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {tasks.filter(t => !t.is_completed).length > 0
+                      ? `${tasks.filter(t => !t.is_completed).length} task(s) incomplete — release to pool?`
+                      : 'Mark as completed?'}
+                  </span>
+                  <button onClick={handleFinish} disabled={saving}
+                    style={{ ...S.primaryBtn, background: '#10b981', padding: '6px 14px' }}>
+                    {saving ? '...' : 'Finish'}
+                  </button>
+                  <button onClick={() => setShowFinishConfirm(false)} style={S.ghostBtn}>Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowFinishConfirm(true)} disabled={saving}
+                  style={{ ...S.outlineBtn, color: '#10b981', borderColor: '#10b981' }}>
+                  Finish
+                </button>
+              )
+            )}
+              <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
+                style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>
+                {saving ? 'Saving...' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const S = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    zIndex: 1000, paddingTop: 40, overflow: 'auto',
+  },
+  modal: {
+    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+    width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 80px)',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  closeBtn: {
+    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 4, flexShrink: 0,
+  },
+  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
+  field: {},
+  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
+    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
+  },
+  section: {
+    marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)',
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: 'var(--text-tertiary)', marginBottom: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  sectionBadge: {
+    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none',
+    letterSpacing: 0,
+  },
+  footer: {
+    display: 'flex', alignItems: 'center',
+    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  ghostBtn: {
+    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'none',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 14px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+  outlineBtn: {
+    fontSize: 13, fontWeight: 600, background: 'none',
+    border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+    padding: '8px 16px', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+  },
+  primaryBtn: {
+    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+};
+
+export default EditAppointmentModal;

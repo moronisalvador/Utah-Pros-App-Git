@@ -5,13 +5,16 @@
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',        // Vite dev server
   'http://localhost:4173',        // Vite preview
+  'https://dev.utahpros.app',     // Production domain
+  'https://utah-pros-app-git.pages.dev', // Cloudflare Pages direct URL
 ];
 
 export function corsHeaders(request, env) {
   const origin = request.headers.get('Origin') || '';
-  // In production, allow the Pages domain
+  // Allow explicit list only — never wildcard *.pages.dev
+  // PAGES_URL env var can add one more origin via Cloudflare dashboard
   const pagesUrl = env.PAGES_URL || '';
-  const allowed = ALLOWED_ORIGINS.includes(origin) || origin === pagesUrl || origin.endsWith('.pages.dev');
+  const allowed = ALLOWED_ORIGINS.includes(origin) || (pagesUrl && origin === pagesUrl);
 
   return {
     'Access-Control-Allow-Origin': allowed ? origin : '',

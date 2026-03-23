@@ -1,38 +1,44 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  IconDashboard, IconConversations, IconJobs, IconLeads,
-  IconCustomers, IconSchedule, IconTimeTracking, IconMarketing,
-  IconAdmin, IconSettings, IconLogout, IconProduction,
+  IconDashboard, IconConversations, IconJobs,
+  IconCustomers, IconSchedule, IconTimeTracking,
+  IconAdmin, IconSettings, IconLogout,
 } from './Icons';
+
+function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
+function IconTemplates(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17.5 14v7"/></svg>);}
+function IconProduction(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="4" height="18" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="5" width="4" height="16" rx="1"/></svg>);}
 
 const NAV_ITEMS = [
   { section: 'Main' },
   { key: 'dashboard', label: 'Dashboard', path: '/', icon: IconDashboard },
   { key: 'conversations', label: 'Conversations', path: '/conversations', icon: IconConversations, badge: true },
   { key: 'jobs', label: 'Jobs', path: '/jobs', icon: IconJobs },
-  { key: 'leads', label: 'Leads', path: '/leads', icon: IconLeads },
+  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
   { key: 'customers', label: 'Customers', path: '/customers', icon: IconCustomers },
 
   { section: 'Operations' },
-  { key: 'production', label: 'Production', path: '/production', icon: IconProduction },
   { key: 'schedule', label: 'Schedule', path: '/schedule', icon: IconSchedule },
+  { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'time_tracking', label: 'Time Tracking', path: '/time-tracking', icon: IconTimeTracking },
-
-  { section: 'Growth' },
-  { key: 'marketing', label: 'Marketing', path: '/marketing', icon: IconMarketing },
 
   { section: 'System' },
   { key: 'admin_panel', label: 'Admin', path: '/admin', icon: IconAdmin },
   { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings },
 ];
 
-export default function Sidebar({ isOpen, onNavClick }) {
+export default function Sidebar({ isOpen, onNavClick, onAction }) {
   const { employee, canAccess, logout } = useAuth();
 
   const initials = employee?.full_name
     ? employee.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
     : '?';
+
+  const handleAction = (key) => {
+    onNavClick?.();
+    onAction?.(key);
+  };
 
   return (
     <aside className={`sidebar${isOpen ? ' sidebar-open' : ''}`}>
@@ -41,9 +47,20 @@ export default function Sidebar({ isOpen, onNavClick }) {
         <span className="sidebar-title">UPR Platform</span>
       </div>
 
+      {/* Quick create buttons */}
+      <div style={{ padding: '0 var(--space-3)', marginBottom: 'var(--space-2)', display: 'flex', gap: 'var(--space-2)' }}>
+        <button className="btn btn-primary btn-sm" onClick={() => handleAction('job')}
+          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+          <IconPlus style={{ width: 13, height: 13 }} /> New Job
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={() => handleAction('customer')}
+          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+          <IconPlus style={{ width: 13, height: 13 }} /> Customer
+        </button>
+      </div>
+
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item, i) => {
-          // Section header
           if (item.section) {
             return (
               <div key={`section-${i}`} className="sidebar-section-label">
@@ -52,7 +69,6 @@ export default function Sidebar({ isOpen, onNavClick }) {
             );
           }
 
-          // Check role-based access
           if (!canAccess(item.key)) return null;
 
           return (
@@ -74,14 +90,39 @@ export default function Sidebar({ isOpen, onNavClick }) {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-user" onClick={logout} title="Click to sign out">
+        {/* User identity — not clickable */}
+        <div className="sidebar-user" style={{ cursor: 'default' }}>
           <div className="sidebar-avatar">{initials}</div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div className="sidebar-user-name">{employee?.full_name || 'User'}</div>
             <div className="sidebar-user-role">{employee?.role || ''}</div>
           </div>
-          <IconLogout className="nav-icon" style={{ marginLeft: 'auto', width: 16, height: 16 }} />
         </div>
+        {/* Explicit sign-out button */}
+        <button
+          onClick={logout}
+          style={{
+            width: '100%',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px',
+            background: 'none',
+            border: '1px solid var(--border-light)',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--text-secondary)',
+            marginTop: 6,
+            transition: 'background 0.12s, color 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#fecaca'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-light)'; }}
+          title="Sign out"
+        >
+          <IconLogout style={{ width: 15, height: 15, flexShrink: 0 }} />
+          Sign Out
+        </button>
       </div>
     </aside>
   );

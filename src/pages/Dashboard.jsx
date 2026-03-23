@@ -1,51 +1,35 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Dashboard() {
   const { db, employee } = useAuth();
-  const [stats, setStats] = useState({
-    activeJobs: 0,
-    needsResponse: 0,
-    totalContacts: 0,
-    openLeads: 0,
-  });
+  const navigate = useNavigate();
+  const [stats,      setStats]      = useState({ active_jobs: 0, needs_response: 0, total_contacts: 0, open_leads: 0 });
   const [recentJobs, setRecentJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+  useEffect(() => { loadDashboard(); }, []);
 
   const loadDashboard = async () => {
+    setError(null);
     try {
-      const [jobs, conversations, contacts] = await Promise.all([
-        db.select('jobs', 'select=id,job_number,insured_name,phase,division,source,created_at&order=created_at.desc&limit=10'),
-        db.select('conversations', 'select=id,status&status=eq.needs_response').catch(() => []),
-        db.select('contacts', 'select=id,role').catch(() => []),
+      const [statsData, jobs] = await Promise.all([
+        db.rpc('get_dashboard_stats'),
+        db.select('jobs', 'status=eq.active&order=created_at.desc&limit=5&select=id,job_number,insured_name,phase,division,insurance_company,created_at'),
       ]);
-
-      const terminalPhases = ['completed', 'closed', 'cancelled'];
-      const activeJobs = jobs.filter(j => !terminalPhases.includes(j.phase));
-      const leads = contacts.filter(c => c.role === 'lead');
-
-      setStats({
-        activeJobs: activeJobs.length,
-        needsResponse: conversations.length,
-        totalContacts: contacts.length,
-        openLeads: leads.length,
-      });
-
-      setRecentJobs(jobs.slice(0, 5));
+      if (statsData) setStats(statsData);
+      setRecentJobs(jobs || []);
     } catch (err) {
       console.error('Dashboard load error:', err);
+      setError('Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
-    return <div className="loading-page"><div className="spinner" /></div>;
-  }
+  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   return (
     <div className="page">
@@ -56,11 +40,18 @@ export default function Dashboard() {
         <p className="page-subtitle">Here's what's happening at UPR today.</p>
       </div>
 
+      {error && (
+        <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', fontSize: 13, color: '#dc2626', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{error}</span>
+          <button onClick={loadDashboard} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#dc2626', fontWeight: 600, fontFamily: 'var(--font-sans)' }}>Retry</button>
+        </div>
+      )}
+
       <div className="stats-grid">
-        <StatCard label="Active Jobs" value={stats.activeJobs} />
-        <StatCard label="Needs Response" value={stats.needsResponse} alert={stats.needsResponse > 0} />
-        <StatCard label="Total Contacts" value={stats.totalContacts} />
-        <StatCard label="Open Leads" value={stats.openLeads} />
+        <StatCard label="Active Jobs"      value={stats.active_jobs} />
+        <StatCard label="Needs Response"   value={stats.needs_response} alert={stats.needs_response > 0} />
+        <StatCard label="Total Contacts"   value={stats.total_contacts} />
+        <StatCard label="Open Leads"       value={stats.open_leads} />
       </div>
 
       <div className="card">
@@ -81,12 +72,13 @@ export default function Dashboard() {
                   <th>Client</th>
                   <th>Phase</th>
                   <th>Division</th>
+                  <th>Insurance</th>
                   <th>Created</th>
                 </tr>
               </thead>
               <tbody>
                 {recentJobs.map(job => (
-                  <tr key={job.id}>
+                  <tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/jobs/${job.id}`)}>
                     <td style={{ fontWeight: 600 }}>{job.job_number || '—'}</td>
                     <td>{job.insured_name || '—'}</td>
                     <td>
@@ -95,6 +87,7 @@ export default function Dashboard() {
                       </span>
                     </td>
                     <td>{job.division || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{job.insurance_company || 'Out of pocket'}</td>
                     <td style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(job.created_at).toLocaleDateString()}
                     </td>
@@ -114,7 +107,7 @@ function StatCard({ label, value, alert }) {
     <div className="stat-card">
       <div className="stat-label">{label}</div>
       <div className="stat-value" style={alert ? { color: 'var(--status-needs-response)' } : undefined}>
-        {value}
+        {value ?? '—'}
       </div>
     </div>
   );

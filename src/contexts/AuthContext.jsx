@@ -16,6 +16,15 @@ export function AuthProvider({ children }) {
 
   // ── Bootstrap: check existing session ──
   useEffect(() => {
+    // Intercept recovery links — if URL hash contains type=recovery,
+    // redirect to /set-password before anything else loads
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery') && !window.location.pathname.startsWith('/set-password')) {
+      // Preserve the hash (contains the tokens Supabase needs)
+      window.location.replace('/set-password' + hash);
+      return;
+    }
+
     const init = async () => {
       try {
         const { data: { session } } = await realtimeClient.auth.getSession();
@@ -34,8 +43,26 @@ export function AuthProvider({ children }) {
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = realtimeClient.auth.onAuthStateChange(
       async (event, session) => {
+        // Recovery event — redirect to set-password page
+        if (event === 'PASSWORD_RECOVERY') {
+          if (!window.location.pathname.startsWith('/set-password')) {
+            window.location.replace('/set-password');
+          }
+          return;
+        }
+
         if (event === 'SIGNED_IN' && session?.user) {
+          // Skip full auth flow if we're on the set-password page (recovery in progress)
+          if (window.location.pathname.startsWith('/set-password')) {
+            setUser(session.user);
+            setLoading(false);
+            return;
+          }
           await handleAuthUser(session.user, session.access_token);
+        } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
+          // Supabase silently refreshed the JWT — rebuild our fetch client with the new token
+          // Without this, all db calls return 401 after ~1 hour
+          setAuthDb(createSupabaseClient(session.access_token));
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setEmployee(null);
@@ -119,9 +146,12 @@ export function AuthProvider({ children }) {
     setAuthDb(null);
   }, []);
 
-  // ── Dev login: bypass auth for local development ──
-  // Uses employee email directly without Supabase Auth
+  // ── Dev login: bypass auth for local development ONLY ──
+  // Disabled entirely in production builds
   const devLogin = useCallback(async (employeeEmail) => {
+    if (!import.meta.env.DEV) {
+      throw new Error('Dev login is not available in production.');
+    }
     setError(null);
     setLoading(true);
     try {
@@ -148,10 +178,11 @@ export function AuthProvider({ children }) {
   // ── Permission check helper ──
   const canAccess = useCallback((navKey) => {
     if (!employee) return false;
-    // Admins see everything
-    if (employee.role === 'admin' || employee.role === 'project_manager') return true;
-    // Check permissions table
-    if (permissions.length === 0) return true; // No permissions loaded = show all (fallback)
+    // Admins always see everything
+    if (employee.role === 'admin') return true;
+    // No permissions loaded — deny by default for non-admins
+    // (prevents accidental access if nav_permissions table is empty or failed to load)
+    if (permissions.length === 0) return false;
     const perm = permissions.find(p => p.nav_key === navKey);
     return perm ? perm.can_view : false;
   }, [employee, permissions]);
@@ -165,7 +196,8 @@ export function AuthProvider({ children }) {
     db: authDb || db, // Use authenticated client when available
     login,
     logout,
-    devLogin,
+    // devLogin only exposed in dev builds — null in production so it can't be called
+    devLogin: import.meta.env.DEV ? devLogin : null,
     canAccess,
     isAuthenticated: !!employee,
     isDev: import.meta.env.DEV,

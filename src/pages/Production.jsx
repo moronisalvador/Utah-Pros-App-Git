@@ -5,6 +5,8 @@ import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 import PullToRefresh from '@/components/PullToRefresh';
 
+const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+
 // ── Macro group definitions ──
 const MACRO_GROUPS = [
   {
@@ -53,6 +55,7 @@ export default function Production() {
   const [phases, setPhases] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [view, setView] = useState('pipeline');
 
   const [activeGroup, setActiveGroup] = useState(null);
@@ -75,9 +78,10 @@ export default function Production() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
+    setLoadError(null);
     try {
       const [jobsData, phasesData, empsData] = await Promise.all([
-        db.select('jobs', 'order=created_at.desc&select=id,job_number,insured_name,phase,division,source,status,address,city,state,zip,client_email,client_phone,insurance_company,claim_number,adjuster_name,adjuster_phone,adjuster_email,policy_number,cat_code,loss_date,date_of_loss,received_date,target_completion,actual_completion,type_of_loss,adjuster,project_manager,broker_agent,encircle_claim_id,encircle_summary,project_manager_id,lead_tech_id,estimated_value,approved_value,invoiced_value,collected_value,deductible,depreciation_held,depreciation_released,supplement_value,priority,internal_notes,tags,is_cat_loss,has_asbestos,has_lead,requires_permit,phase_entered_at,total_labor_cost,total_material_cost,total_equipment_cost,total_sub_cost,total_other_cost,lead_source,created_at,updated_at'),
+        db.select('jobs', 'order=created_at.desc&select=id,job_number,insured_name,phase,division,source,status,address,city,state,zip,client_email,client_phone,insurance_company,claim_number,adjuster_name,adjuster_phone,adjuster_email,policy_number,cat_code,date_of_loss,received_date,target_completion,actual_completion,type_of_loss,adjuster,project_manager,broker_agent,encircle_claim_id,encircle_summary,project_manager_id,lead_tech_id,estimated_value,approved_value,invoiced_value,collected_value,deductible,depreciation_held,depreciation_released,supplement_value,priority,internal_notes,tags,is_cat_loss,has_asbestos,has_lead,requires_permit,phase_entered_at,total_labor_cost,total_material_cost,total_equipment_cost,total_sub_cost,total_other_cost,lead_source,created_at,updated_at'),
         db.select('job_phases', 'is_active=eq.true&order=display_order.asc'),
         db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
       ]);
@@ -85,7 +89,8 @@ export default function Production() {
       setPhases(phasesData);
       setEmployees(empsData);
     } catch (err) {
-      console.error('Jobs load error:', err);
+      console.error('Production load error:', err);
+      setLoadError(err.message);
     } finally {
       setLoading(false);
     }
@@ -155,9 +160,13 @@ export default function Production() {
     return grouped;
   }, [activeGroupPhases, baseFilteredJobs]);
 
-  // ── Phase change ──
+  // ── Phase change — optimistic update ──
   const changeJobPhase = useCallback(async (job, newPhase) => {
     if (newPhase === job.phase) return;
+    // Move the card immediately — don't wait for the DB
+    const updated = { ...job, phase: newPhase, phase_entered_at: new Date().toISOString() };
+    setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
+    if (selectedJob?.id === job.id) setSelectedJob(updated);
     try {
       await db.update('jobs', `id=eq.${job.id}`, {
         phase: newPhase,
@@ -170,12 +179,12 @@ export default function Production() {
         to_phase: newPhase,
         changed_at: new Date().toISOString(),
       });
-      const updated = { ...job, phase: newPhase, phase_entered_at: new Date().toISOString() };
-      setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
-      if (selectedJob?.id === job.id) setSelectedJob(updated);
     } catch (err) {
+      // Roll back to original phase on failure
       console.error('Phase change error:', err);
-      alert('Failed: ' + err.message);
+      setJobs(prev => prev.map(j => j.id === job.id ? job : j));
+      if (selectedJob?.id === job.id) setSelectedJob(job);
+      errToast('Failed to move job — reverted. Check your connection.');
     }
   }, [db, selectedJob]);
 
@@ -220,6 +229,17 @@ export default function Production() {
   const getPhaseLabel = (key) => phaseMap[key]?.label || key;
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+
+  if (loadError) return (
+    <div className="page">
+      <div className="page-header"><h1 className="page-title">Production</h1></div>
+      <div style={{ padding: '24px 16px', textAlign: 'center' }}>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12 }}>Failed to load production board</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16 }}>{loadError}</div>
+        <button className="btn btn-primary btn-sm" onClick={loadData}>Retry</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="jobs-page">
@@ -315,7 +335,8 @@ export default function Production() {
             })}
           </div>
         ) : (
-          <PullToRefresh onRefresh={loadData} className="macro-grid">
+        <PullToRefresh onRefresh={loadData} style={{ flex: 1, overflow: 'auto' }}>
+            <div className="macro-grid">
             {MACRO_GROUPS.map(group => (
               <button
                 key={group.key}
@@ -348,7 +369,8 @@ export default function Production() {
                 </span>
               </div>
             )}
-          </PullToRefresh>
+            </div>
+        </PullToRefresh>
         )
       ) : (
         <div className="card" style={{ flex: 1, overflow: 'auto' }}>
