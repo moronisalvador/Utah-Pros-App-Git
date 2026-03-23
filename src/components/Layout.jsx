@@ -6,8 +6,9 @@ import CreateMenu from './CreateMenu';
 import CreateJobModal from './CreateJobModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
-// Lazy load to avoid circular dependency (CreateJobModal also imports AddContactModal)
-const AddContactModal = lazy(() => import('./AddContactModal'));
+// Lazy-loaded to avoid circular dep: CreateJobModal already imports AddContactModal,
+// so we can't import it here directly. This wrapper lives in its own file.
+const CreateCustomerModal = lazy(() => import('./CreateCustomerModal'));
 
 // Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
@@ -173,12 +174,11 @@ export default function Layout() {
       {/* ── Create Customer Modal ── */}
       {showCreateCustomer && (
         <Suspense fallback={null}>
-          <AddContactModal
+          <CreateCustomerModal
             onClose={() => setShowCreateCustomer(false)}
             onSave={handleCustomerCreated}
             carriers={carriers}
             referralSources={referralSources}
-            defaultRole="homeowner"
           />
         </Suspense>
       )}
