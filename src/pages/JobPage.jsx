@@ -427,9 +427,35 @@ function CostsTile({job,fmt,totalCost}){
 const DOC_TYPE_LABELS={'coc':'Certificate of Completion','work_auth':'Work Authorization','direction_pay':'Direction of Pay','change_order':'Change Order'};
 
 function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDocuments}){
+  const{employee}=useAuth();
+  const isAdmin=employee?.role==='admin'||employee?.role==='office'||employee?.role==='project_manager';
   const[copied,setCopied]=useState(null);
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
+  const[confirmDeleteSigned,setConfirmDeleteSigned]=useState(null);
+  const deleteSignedDoc=async(sr)=>{
+    try{
+      // 1. Delete PDF from storage
+      if(sr.signed_file_path){
+        await fetch(`${db.baseUrl}/storage/v1/object/job-files/${sr.signed_file_path}`,{
+          method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey},
+        });
+      }
+      // 2. Delete the job_documents record for this file
+      if(sr.signed_file_path){
+        const docs=await db.select('job_documents',`job_id=eq.${job.id}&file_path=eq.${encodeURIComponent(sr.signed_file_path)}`);
+        for(const doc of docs) await db.delete('job_documents',`id=eq.${doc.id}`);
+        setDocuments(prev=>prev.filter(d=>d.file_path!==sr.signed_file_path));
+      }
+      // 3. Void the sign request (keeps audit trail, clears file path)
+      await db.update('sign_requests',`id=eq.${sr.id}`,{
+        status:'cancelled',signed_file_path:null,updated_at:new Date().toISOString(),
+      });
+      setConfirmDeleteSigned(null);
+      onRefresh();
+      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:'Signed document deleted',type:'success'}}));
+    }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
+  };
   const copyLink=(token)=>{
     navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
@@ -475,14 +501,24 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {signed.map(sr=>(
-              <SRRow key={sr.id} sr={sr} actions={
-                sr.signed_file_path&&(
+              <SRRow key={sr.id} sr={sr} actions={<>
+                {sr.signed_file_path&&(
                   <a href={pdfUrl(sr.signed_file_path)} target="_blank" rel="noopener noreferrer"
                     className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px',textDecoration:'none'}}>
                     View PDF
                   </a>
-                )
-              }/>
+                )}
+                {isAdmin&&(confirmDeleteSigned===sr.id?(
+                  <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                    <span style={{fontSize:11,color:'var(--text-secondary)'}}>Delete?</span>
+                    <button className="btn btn-sm" onClick={()=>deleteSignedDoc(sr)} style={{fontSize:11,height:26,padding:'0 8px',background:'#fef2f2',color:'#ef4444',border:'1px solid #fecaca'}}>Yes</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteSigned(null)} style={{fontSize:11,height:26,padding:'0 6px'}}>No</button>
+                  </div>
+                ):(
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setConfirmDeleteSigned(sr.id)}
+                    style={{fontSize:11,height:26,padding:'0 6px',color:'var(--text-tertiary)'}} title="Delete signed document">✕</button>
+                ))}
+              </>}/>
             ))}
           </div>
         </div>
@@ -568,7 +604,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
       else{const d=await db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`);setDocuments(d);}
       setUploadProgress({done:i+1,total:files.length});
     }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
-  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
+  const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
   const getFileUrl=doc=>`${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}`;
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   const isImage=doc=>doc.mime_type?.startsWith('image/');
