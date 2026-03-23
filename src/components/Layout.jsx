@@ -50,14 +50,6 @@ export default function Layout() {
     return () => window.removeEventListener('upr:toast', handler);
   }, []);
 
-  // ── Listen for new-job event from Sidebar or anywhere else ──
-  // Sidebar's "+ New Job" button should dispatch: window.dispatchEvent(new CustomEvent('upr:new-job'))
-  useEffect(() => {
-    const handler = () => setShowCreateJob(true);
-    window.addEventListener('upr:new-job', handler);
-    return () => window.removeEventListener('upr:new-job', handler);
-  }, []);
-
   // ── Poll unread count for badge ──
   const fetchUnread = useCallback(async () => {
     try {
@@ -119,7 +111,7 @@ export default function Layout() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} />
+      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleCreateAction} />
 
       <main className="app-content">
         <Outlet />
