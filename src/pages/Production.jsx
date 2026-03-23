@@ -160,9 +160,13 @@ export default function Production() {
     return grouped;
   }, [activeGroupPhases, baseFilteredJobs]);
 
-  // ── Phase change ──
+  // ── Phase change — optimistic update ──
   const changeJobPhase = useCallback(async (job, newPhase) => {
     if (newPhase === job.phase) return;
+    // Move the card immediately — don't wait for the DB
+    const updated = { ...job, phase: newPhase, phase_entered_at: new Date().toISOString() };
+    setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
+    if (selectedJob?.id === job.id) setSelectedJob(updated);
     try {
       await db.update('jobs', `id=eq.${job.id}`, {
         phase: newPhase,
@@ -175,12 +179,12 @@ export default function Production() {
         to_phase: newPhase,
         changed_at: new Date().toISOString(),
       });
-      const updated = { ...job, phase: newPhase, phase_entered_at: new Date().toISOString() };
-      setJobs(prev => prev.map(j => j.id === job.id ? updated : j));
-      if (selectedJob?.id === job.id) setSelectedJob(updated);
     } catch (err) {
+      // Roll back to original phase on failure
       console.error('Phase change error:', err);
-      errToast('Failed: ' + err.message);
+      setJobs(prev => prev.map(j => j.id === job.id ? job : j));
+      if (selectedJob?.id === job.id) setSelectedJob(job);
+      errToast('Failed to move job — reverted. Check your connection.');
     }
   }, [db, selectedJob]);
 
