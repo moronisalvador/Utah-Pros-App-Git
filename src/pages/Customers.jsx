@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import AddContactModal from '@/components/AddContactModal';
@@ -12,6 +12,7 @@ const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager
 
 export default function Customers() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { db } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,7 @@ export default function Customers() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [showAddContact, setShowAddContact] = useState(false);
   const [carriers, setCarriers] = useState([]);
+  const [referralSources, setReferralSources] = useState([]);
 
   useEffect(() => { const t = setTimeout(() => setSearchDebounced(search), 300); return () => clearTimeout(t); }, [search]);
 
@@ -36,13 +38,25 @@ export default function Customers() {
   }, [db, searchDebounced]);
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
-  useEffect(() => { db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {}); }, []);
+  useEffect(() => {
+    db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {});
+    db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
+  }, []);
 
   // Listen for upr:new-customer event fired by sidebar "+ Customer" button
   useEffect(() => {
     const handler = () => setShowAddContact(true);
     window.addEventListener('upr:new-customer', handler);
     return () => window.removeEventListener('upr:new-customer', handler);
+  }, []);
+
+  // Open modal if navigated here with state { openNew: true }
+  useEffect(() => {
+    if (location.state?.openNew) {
+      setShowAddContact(true);
+      // Clear state so refresh doesn't re-open the modal
+      navigate('/customers', { replace: true, state: {} });
+    }
   }, []);
 
   const fmtPhone = (phone) => {
@@ -129,7 +143,7 @@ export default function Customers() {
 
       {showAddContact && (
         <AddContactModal onClose={() => setShowAddContact(false)} onSave={handleNewContact}
-          carriers={carriers} referralSources={[]} defaultRole="homeowner" />
+          carriers={carriers} referralSources={referralSources} defaultRole="homeowner" />
       )}
     </div>
   );

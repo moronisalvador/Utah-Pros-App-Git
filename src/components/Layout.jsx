@@ -82,15 +82,8 @@ export default function Layout() {
     setSidebarOpen(false);
     if (key === 'job') { setShowCreateJob(true); return; }
     if (key === 'customer') {
-      // If already on /customers, fire the event directly
-      // Otherwise navigate there first — Customers.jsx listens for this event on mount
-      if (location.pathname === '/customers') {
-        window.dispatchEvent(new CustomEvent('upr:new-customer'));
-      } else {
-        navigate('/customers');
-        // Small delay to let the page mount before firing
-        setTimeout(() => window.dispatchEvent(new CustomEvent('upr:new-customer')), 150);
-      }
+      // Pass state so Customers.jsx can open modal on mount — no timing assumptions
+      navigate('/customers', { state: { openNew: true } });
       return;
     }
   };

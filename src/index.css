@@ -2775,3 +2775,75 @@ tr:hover td { background: var(--bg-secondary); }
     padding: var(--space-3);
   }
 }
+/* ═══════════════════════════════════════════════════════
+   ADD CONTACT MODAL — wider modal + two-column form layout
+   ═══════════════════════════════════════════════════════ */
+
+/* Override base conv-modal width for the contact form */
+.add-contact-modal {
+  max-width: 620px !important;
+  max-height: 85vh !important;
+}
+
+/* Scrollable body */
+.add-contact-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Footer with buttons */
+.add-contact-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+/* Two-column row — wraps to single column on mobile */
+.add-contact-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.add-contact-row > * { flex: 1; min-width: 0; }
+
+/* Role picker grid */
+.role-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+.role-picker-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: border-color 0.15s, background 0.15s;
+}
+.role-picker-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.role-picker-emoji { font-size: 20px; flex-shrink: 0; }
+.role-picker-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.role-picker-desc { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
+
+/* Mobile: single column */
+@media (max-width: 640px) {
+  .add-contact-modal { max-width: 100% !important; max-height: 95vh !important; }
+  .add-contact-row { flex-direction: column; }
+  .role-picker-grid { grid-template-columns: 1fr 1fr; }
+}
