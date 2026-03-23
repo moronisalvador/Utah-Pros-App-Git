@@ -331,7 +331,8 @@ export default function Production() {
             })}
           </div>
         ) : (
-          <PullToRefresh onRefresh={loadData} className="macro-grid">
+        <PullToRefresh onRefresh={loadData} style={{ flex: 1, overflow: 'auto' }}>
+            <div className="macro-grid">
             {MACRO_GROUPS.map(group => (
               <button
                 key={group.key}
@@ -364,7 +365,8 @@ export default function Production() {
                 </span>
               </div>
             )}
-          </PullToRefresh>
+            </div>
+        </PullToRefresh>
         )
       ) : (
         <div className="card" style={{ flex: 1, overflow: 'auto' }}>

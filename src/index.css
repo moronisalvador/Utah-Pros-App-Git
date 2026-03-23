@@ -1502,7 +1502,69 @@ tr:hover td { background: var(--bg-secondary); }
   display: flex;
   gap: var(--space-1);
   justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
 }
+
+/* ── Action buttons — icon + label, no emoji ── */
+.admin-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 100ms ease;
+  line-height: 1;
+}
+.admin-action-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+.admin-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.admin-action-btn svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.admin-action-btn-warning {
+  color: #92400e;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+.admin-action-btn-warning:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+.admin-action-btn-success {
+  color: #065f46;
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+.admin-action-btn-success:hover {
+  background: #d1fae5;
+  border-color: #10b981;
+}
+.admin-action-btn-danger {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+.admin-action-btn-danger:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
 
 /* ── Employee name cell ── */
 .admin-emp-name {
