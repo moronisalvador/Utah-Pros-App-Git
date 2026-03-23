@@ -117,7 +117,7 @@ export async function onRequestPost(context) {
         reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
         content: [
           { type: 'text/plain', value: buildEmailText({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
-          { type: 'text/html',  value: buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
+          { type: 'text/html',  value: buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token }) },
         ],
       }),
     });
@@ -144,7 +144,7 @@ export async function onRequestPost(context) {
   }
 }
 
-function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url }) {
+function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token }) {
   const first = signer_name.split(' ')[0];
   return `<!DOCTYPE html>
 <html>
