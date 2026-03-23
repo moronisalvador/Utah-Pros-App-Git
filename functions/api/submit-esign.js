@@ -110,6 +110,51 @@ export async function onRequestPost(context) {
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
 
+    // ── 6. Send confirmation email with PDF attached ──
+    const docLabel = {
+      coc:           'Certificate of Completion',
+      work_auth:     'Work Authorization',
+      direction_pay: 'Direction of Pay',
+      change_order:  'Change Order',
+    }[signReq.doc_type] || 'Signed Document';
+
+    const firstName = signer_name.split(' ')[0];
+    const pdfB64    = btoa(String.fromCharCode(...new Uint8Array(pdfBytes)));
+    const fileName  = `${signReq.doc_type}-signed-${signedAt.toISOString().slice(0,10)}.pdf`;
+
+    await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        personalizations: [{
+          to:      [{ email: signReq.signer_email, name: signer_name }],
+          subject: `Your signed ${docLabel} – Utah Pros Restoration`,
+        }],
+        from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
+        reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
+        content: [
+          {
+            type:  'text/plain',
+            value: `Hi ${firstName},\n\nThank you for signing. Your ${docLabel} is attached to this email for your records.\n\nDocument: ${docLabel}\nProperty: ${[job.address, job.city, job.state].filter(Boolean).join(', ')}\nSigned: ${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}\n\nIf you have any questions, reply to this email or call us at (801) 427-0582.\n\n— Utah Pros Restoration`,
+          },
+          {
+            type:  'text/html',
+            value: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#1e293b;padding:28px 32px;text-align:center;"><p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Utah Pros Restoration</p><p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">Licensed &amp; Insured &middot; Utah</p></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 20px;font-size:16px;color:#0f172a;">Hi ${firstName},</p><p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">Thank you for signing. Your <strong>${docLabel}</strong> is attached to this email for your records.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><p style="margin:0 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;">Document Details</p><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:100px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${docLabel}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${[job.address, job.city, job.state].filter(Boolean).join(', ')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr></table></td></tr></table><p style="margin:0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached. Please save it for your records.</p></td></tr><tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">Questions? Reply to this email or call <strong>(801) 427-0582</strong>.</p></td></tr></table></td></tr></table></body></html>`,
+          },
+        ],
+        attachments: [{
+          content:     pdfB64,
+          filename:    fileName,
+          type:        'application/pdf',
+          disposition: 'attachment',
+        }],
+      }),
+    }).catch(e => console.error('Confirmation email failed:', e.message));
+    // Non-fatal — don't throw if email fails, the document is already signed and stored
+
     return jsonResponse({
       success:         true,
       job_document_id: result.job_document_id,
