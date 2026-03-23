@@ -488,6 +488,14 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           {sr.status==='signed'?`Signed ${fmtDate(sr.signed_at)}`:sr.status==='pending'?`Sent ${fmtDate(sr.sent_at)}`:fmtDate(sr.sent_at)}
           {sr.status==='signed'&&sr.signer_ip&&<span style={{marginLeft:6}}>· IP {sr.signer_ip}</span>}
         </div>
+        {sr.status==='pending'&&(
+          <div style={{marginTop:3,display:'flex',alignItems:'center',gap:4}}>
+            {sr.email_opened_at
+              ?<><span style={{width:6,height:6,borderRadius:'50%',background:'#2563eb',display:'inline-block',flexShrink:0}}/><span style={{fontSize:11,color:'#2563eb',fontWeight:600}}>Opened {fmtDate(sr.email_opened_at)}{sr.email_open_count>1?` · ${sr.email_open_count}×`:''}</span></>
+              :<><span style={{width:6,height:6,borderRadius:'50%',background:'#d1d5db',display:'inline-block',flexShrink:0}}/><span style={{fontSize:11,color:'var(--text-tertiary)'}}>Not opened yet</span></>
+            }
+          </div>
+        )}
       </div>
       <div style={{display:'flex',gap:6,flexShrink:0}}>{actions}</div>
     </div>
