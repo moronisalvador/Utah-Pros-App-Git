@@ -72,8 +72,8 @@ export default function Dashboard() {
                   <th>Client</th>
                   <th>Phase</th>
                   <th>Division</th>
-                  <th>Insurance</th>
-                  <th>Created</th>
+                  <th className="dashboard-tbl-ins">Insurance</th>
+                  <th className="dashboard-tbl-date">Created</th>
                 </tr>
               </thead>
               <tbody>
@@ -87,8 +87,8 @@ export default function Dashboard() {
                       </span>
                     </td>
                     <td>{job.division || '—'}</td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{job.insurance_company || 'Out of pocket'}</td>
-                    <td style={{ color: 'var(--text-tertiary)' }}>
+                    <td className="dashboard-tbl-ins" style={{ color: 'var(--text-secondary)' }}>{job.insurance_company || 'Out of pocket'}</td>
+                    <td className="dashboard-tbl-date" style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(job.created_at).toLocaleDateString()}
                     </td>
                   </tr>

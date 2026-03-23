@@ -1335,6 +1335,22 @@ tr:hover td { background: var(--bg-secondary); }
   /* ── Login: no bottom bar ── */
   .login-page { padding-bottom: 0; }
   .login-card { padding: var(--space-6); margin: var(--space-4); }
+
+  /* ── Schedule header: stack vertically so controls don't overflow ── */
+  .schedule-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: var(--space-2) !important;
+    padding: var(--space-3) var(--space-4) !important;
+  }
+  .schedule-controls {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  /* ── Dashboard table: hide low-priority columns ── */
+  .dashboard-tbl-ins,
+  .dashboard-tbl-date { display: none !important; }
 }
 
 /* ── Small phones: < 400px ── */
