@@ -18,10 +18,65 @@ async function rpc(fn, params) {
   return res.json();
 }
 
+/* ── Variable substitution — replaces {{placeholders}} with real job data ── */
+function substituteVars(text, job) {
+  if (!text) return '';
+  const m = {
+    '{{client_name}}':       job.insured_name       || '',
+    '{{job_number}}':        job.job_number         || '',
+    '{{address}}':           job.address            || '',
+    '{{city}}':              job.city               || '',
+    '{{state}}':             job.state              || '',
+    '{{zip}}':               job.zip                || '',
+    '{{date_of_loss}}':      job.date_of_loss
+      ? new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : '',
+    '{{insurance_company}}': job.insurance_company  || '',
+    '{{claim_number}}':      job.claim_number       || '',
+    '{{policy_number}}':     job.policy_number      || '',
+    '{{adjuster_name}}':     job.adjuster_name      || job.adjuster || '',
+    '{{company_name}}':      'Utah Pros Restoration',
+    '{{date}}':              new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+  };
+  return Object.entries(m).reduce((t, [k, v]) => t.replaceAll(k, v), text);
+}
+
+/* ── Build sections from DB templates with variable substitution ──
+   Falls back to hardcoded buildSectionText() if no templates exist. */
+function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
+  if (!templates || templates.length === 0) {
+    return buildSectionText(divisions, doc_type);
+  }
+
+  const ORDER = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
+
+  if (doc_type === 'coc') {
+    const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
+    const sorted = [...divArr].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+    return sorted.map(div => {
+      const tpl = templates.find(t => t.division === div);
+      if (!tpl) return null;
+      return {
+        heading: substituteVars(tpl.heading, job),
+        body:    substituteVars(tpl.body, job),
+      };
+    }).filter(Boolean);
+  }
+
+  // Non-CoC: return all sections ordered
+  return [...templates]
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(tpl => ({
+      heading: substituteVars(tpl.heading, job),
+      body:    substituteVars(tpl.body, job),
+    }));
+}
+
 export default function SignPage() {
   const { token } = useParams();
 
-  const [data,        setData]        = useState(null);   // sign request + job
+  const [data,        setData]        = useState(null);
+  const [templates,   setTemplates]   = useState([]);
   const [status,      setStatus]      = useState('loading'); // loading|ready|signed|expired|error|submitting|done
   const [errorMsg,    setErrorMsg]    = useState('');
   const [signerName,  setSignerName]  = useState('');
@@ -45,6 +100,17 @@ export default function SignPage() {
         setSignerName(d.signer_name || '');
         setData(d);
         setStatus('ready');
+
+        // Fetch templates for this doc type — non-blocking, falls back to hardcoded if unavailable
+        if (d.doc_type) {
+          fetch(
+            `${SUPABASE_URL}/rest/v1/document_templates?doc_type=eq.${encodeURIComponent(d.doc_type)}&order=sort_order.asc`,
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+          )
+            .then(r => r.json())
+            .then(rows => { if (Array.isArray(rows) && rows.length > 0) setTemplates(rows); })
+            .catch(() => {}); // silent — hardcoded fallback handles it
+        }
       })
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);
@@ -83,8 +149,8 @@ export default function SignPage() {
     if (!isDrawing.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx    = canvas.getContext('2d');
-    const pos    = getPos(e, canvas);
+    const ctx = canvas.getContext('2d');
+    const pos = getPos(e, canvas);
     ctx.beginPath();
     ctx.moveTo(lastPos.current.x, lastPos.current.y);
     ctx.lineTo(pos.x, pos.y);
@@ -137,7 +203,7 @@ export default function SignPage() {
     }
   };
 
-  // ── Renders ──
+  // ── Status screens ──
   if (status === 'loading') return <Screen><Spinner /></Screen>;
 
   if (status === 'error') return (
@@ -180,19 +246,19 @@ export default function SignPage() {
 
   if (status === 'done') return (
     <Screen>
-      <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 20px',background:'#f1f5f9'}}>
-        <div style={{background:'#fff',borderRadius:16,padding:'48px 36px',maxWidth:460,width:'100%',textAlign:'center',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
-          <div style={{width:72,height:72,borderRadius:'50%',background:'#ecfdf5',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:36}}>✅</div>
-          <h1 style={{margin:'0 0 12px',fontSize:24,fontWeight:800,color:'#0f172a'}}>You're all set!</h1>
-          <p style={{margin:'0 0 8px',fontSize:16,color:'#334155',lineHeight:1.6}}>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', background: '#f1f5f9' }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: '48px 36px', maxWidth: 460, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 36 }}>✅</div>
+          <h1 style={{ margin: '0 0 12px', fontSize: 24, fontWeight: 800, color: '#0f172a' }}>You're all set!</h1>
+          <p style={{ margin: '0 0 8px', fontSize: 16, color: '#334155', lineHeight: 1.6 }}>
             Your <strong>{data?.doc_type === 'coc' ? 'Certificate of Completion' : 'document'}</strong> has been signed and saved successfully.
           </p>
-          <p style={{margin:'0 0 28px',fontSize:14,color:'#64748b',lineHeight:1.6}}>
+          <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>
             Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. You may close this window.
           </p>
-          <div style={{background:'#f8fafc',borderRadius:10,padding:'14px 18px',border:'1px solid #e2e8f0'}}>
-            <p style={{margin:'0 0 4px',fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em'}}>Signed on</p>
-            <p style={{margin:0,fontSize:14,fontWeight:600,color:'#1e293b'}}>{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+          <div style={{ background: '#f8fafc', borderRadius: 10, padding: '14px 18px', border: '1px solid #e2e8f0' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Signed on</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
           </div>
         </div>
       </div>
@@ -201,8 +267,16 @@ export default function SignPage() {
 
   // ── Ready + Submitting ──
   const job = data?.job || {};
-  const address = [job.address, job.city, job.state].filter(Boolean).join(', ');
+  const address  = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const docLabel = DOC_LABELS[data?.doc_type] || 'Document';
+
+  // Build section text from DB templates (with variable substitution) or hardcoded fallback
+  const sectionText = buildSectionsFromTemplates(
+    templates,
+    data?.divisions || (job.division ? [job.division] : []),
+    data?.doc_type,
+    job
+  );
 
   return (
     <Screen>
@@ -224,22 +298,22 @@ export default function SignPage() {
             <div style={styles.titleLine} />
           </div>
 
-          {/* Job info */}
+          {/* Job info grid */}
           <div style={styles.infoGrid}>
             <InfoRow label="Client"   value={job.insured_name} />
             <InfoRow label="Property" value={address} />
             <InfoRow label="Job #"    value={job.job_number} />
-            {job.insurance_company && <InfoRow label="Insurance" value={job.insurance_company} />}
-            {job.claim_number      && <InfoRow label="Claim #"   value={job.claim_number} />}
+            {job.insurance_company && <InfoRow label="Insurance"   value={job.insurance_company} />}
+            {job.claim_number      && <InfoRow label="Claim #"     value={job.claim_number} />}
             {job.date_of_loss      && <InfoRow label="Date of Loss" value={
-              new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+              new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
             } />}
           </div>
 
           <Divider />
 
-          {/* Section text */}
-          {buildSectionText(data?.divisions || (job.division ? [job.division] : []), data?.doc_type).map((s, i) => (
+          {/* Document body — from templates or hardcoded fallback */}
+          {sectionText.map((s, i) => (
             <div key={i} style={styles.section}>
               <p style={styles.sectionHeading}>{s.heading}</p>
               <p style={styles.sectionBody}>{s.body}</p>
@@ -248,7 +322,7 @@ export default function SignPage() {
 
           <Divider />
 
-          {/* Auth paragraph */}
+          {/* Authorization paragraph */}
           <p style={styles.authText}>
             By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties,
             and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive
@@ -315,7 +389,6 @@ export default function SignPage() {
             </span>
           </label>
 
-          {/* Error */}
           {nameError && <p style={styles.errorMsg}>⚠ {nameError}</p>}
 
           {/* Submit */}
@@ -329,8 +402,8 @@ export default function SignPage() {
             disabled={status === 'submitting'}
           >
             {status === 'submitting' ? (
-              <span style={{display:'flex',alignItems:'center',gap:8,justifyContent:'center'}}>
-                <span style={{width:16,height:16,border:'2px solid rgba(255,255,255,0.4)',borderTop:'2px solid white',borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}/>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                <span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid white', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} />
                 Generating signed document…
               </span>
             ) : 'Submit Signature'}
@@ -351,11 +424,7 @@ function Screen({ children }) {
   return <div style={{ minHeight: '100vh', background: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>{children}</div>;
 }
 function Card({ children }) {
-  return (
-    <div style={{ maxWidth: 420, margin: '80px auto', padding: '40px 32px', background: '#fff', borderRadius: 16, boxShadow: '0 2px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-      {children}
-    </div>
-  );
+  return <div style={{ maxWidth: 420, margin: '80px auto', padding: '40px 32px', background: '#fff', borderRadius: 16, boxShadow: '0 2px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>{children}</div>;
 }
 function StatusIcon({ children }) {
   return <div style={{ fontSize: 48, marginBottom: 16 }}>{children}</div>;
@@ -381,9 +450,11 @@ function Spinner() {
   );
 }
 
-// ── Section text (mirrors worker) ──
+// ── Hardcoded fallback (used when no DB templates exist) ──
 function buildSectionText(divisions, doc_type) {
-  if (doc_type !== 'coc') return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
+  if (doc_type !== 'coc') {
+    return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
+  }
   const map = {
     water:          { heading: 'Water Damage Mitigation',  body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     mold:           { heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' },
@@ -391,9 +462,9 @@ function buildSectionText(divisions, doc_type) {
     fire:           { heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     contents:       { heading: 'Contents Restoration',     body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
   };
-  const ORDER = ['water','mold','reconstruction','fire','contents'];
+  const ORDER = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
   const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
-  const sorted = [...divArr].sort((a,b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+  const sorted = [...divArr].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   const results = sorted.map(d => map[d]).filter(Boolean);
   return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
@@ -419,7 +490,7 @@ const styles = {
   infoGrid:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: 4 },
   section:       { marginBottom: 16 },
   sectionHeading:{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  sectionBody:   { margin: 0, fontSize: 14, color: '#334155', lineHeight: 1.65 },
+  sectionBody:   { margin: 0, fontSize: 14, color: '#334155', lineHeight: 1.65, whiteSpace: 'pre-wrap' },
   authText:      { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.65 },
   fieldGroup:    { marginBottom: 20 },
   fieldLabel:    { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 },
