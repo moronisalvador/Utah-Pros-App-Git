@@ -4,7 +4,7 @@
 // calls complete_sign_request to mark signed + insert into job_documents.
 //
 // Body: { token, signer_name, signature_png }
-// NOTE: divisions and template content come from the DB — not the request body.
+// Divisions and template content come from the DB — not the request body.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -59,14 +59,11 @@ export async function onRequestPost(context) {
 
     const job      = signReq.job;
     const signedAt = new Date();
-
     const divisions = (Array.isArray(signReq.divisions) && signReq.divisions.length > 0)
       ? signReq.divisions
       : (job.division ? [job.division] : []);
 
-    // ── 2. Fetch document template from DB ──
-    // For CoC: use hardcoded per-division completion text (divisions array drives content)
-    // For all other doc types: fetch from document_templates table and substitute variables
+    // ── 2. Fetch template from DB for non-CoC docs ──
     let templateSections = null;
     if (signReq.doc_type !== 'coc') {
       const templates = await select(
@@ -74,25 +71,24 @@ export async function onRequestPost(context) {
         `doc_type=eq.${encodeURIComponent(signReq.doc_type)}&order=sort_order.asc`
       );
       if (templates.length > 0) {
-        const tmpl = templates[0];
-        const substituted = substituteVars(tmpl.body, job);
-        templateSections = parseMarkdownSections(substituted);
+        const body = substituteVars(templates[0].body, job);
+        templateSections = parseMarkdownSections(body);
       }
     }
 
     // ── 3. Generate PDF ──
     const pdfBytes = await buildPdf({
       job, signer_name, signature_png,
-      signed_at:        signedAt,
-      doc_type:         signReq.doc_type,
+      signed_at: signedAt,
+      doc_type:  signReq.doc_type,
       divisions,
-      templateSections, // null for CoC — uses hardcoded completion text
+      templateSections,
     });
 
     // ── 4. Upload to Supabase Storage ──
     const storagePath = `${job.id}/esign/${signReq.doc_type}-signed-${Date.now()}.pdf`;
     const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/job-files/${storagePath}`, {
-      method:  'POST',
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'apikey':        SUPABASE_KEY,
@@ -111,7 +107,6 @@ export async function onRequestPost(context) {
       p_signer_ip:        signerIp,
       p_signed_file_path: storagePath,
     });
-
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
 
     return jsonResponse({
@@ -129,18 +124,16 @@ export async function onRequestPost(context) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  VARIABLE SUBSTITUTION
-//  Replaces {{placeholders}} in template body with actual job data
 // ─────────────────────────────────────────────────────────────────────────────
 function substituteVars(body, job) {
   const hasInsurance = !!job.insurance_company;
+  const dolFormatted = job.date_of_loss
+    ? new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
 
   const insuranceSection = hasInsurance
     ? `DIRECTION OF PAYMENT\n\nI hereby direct ${job.insurance_company} to pay Utah Pros Restoration directly for all restoration services performed at the above property under Claim No. ${job.claim_number || '[Pending]'}. I authorize Utah Pros Restoration to negotiate, supplement, and finalize my claim on my behalf.`
     : `PRIVATE PAY & CONDITIONAL ASSIGNMENT OF BENEFITS\n\nI acknowledge that no insurance claim has been filed as of the date of this Agreement. Should I subsequently file an insurance claim for damage addressed by this Agreement, I hereby IRREVOCABLY PRE-ASSIGN to Utah Pros Restoration all insurance proceeds attributable to the work performed hereunder. This pre-assignment is retroactive to the date of this Agreement. I will notify Utah Pros Restoration within 3 business days of filing any claim and will immediately execute a Direction to Pay/Assignment of Benefits upon request. My payment obligation is unconditional and not contingent on any insurance filing, approval, or payment.`;
-
-  const dolFormatted = job.date_of_loss
-    ? new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : '';
 
   return body
     .replace(/\{\{client_name\}\}/g,       job.insured_name      || '')
@@ -160,8 +153,7 @@ function substituteVars(body, job) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MARKDOWN SECTION PARSER
-//  Splits template body on ## headings into [{heading, body}] pairs
-//  Also handles ### sub-headings as bold inline text
+//  Splits on ## headings → [{heading, body}]
 // ─────────────────────────────────────────────────────────────────────────────
 function parseMarkdownSections(body) {
   const lines = body.split('\n');
@@ -171,202 +163,236 @@ function parseMarkdownSections(body) {
   for (const line of lines) {
     if (line.startsWith('## ')) {
       if (current) sections.push(current);
-      current = { heading: line.slice(3).trim(), body: '' };
+      current = { heading: line.slice(3).trim(), paragraphs: [] };
     } else {
-      if (!current) current = { heading: null, body: '' };
-      current.body += (current.body ? '\n' : '') + line;
+      if (!current) current = { heading: null, paragraphs: [] };
+      // Accumulate lines into paragraphs (blank line = paragraph break)
+      if (line.trim() === '') {
+        if (current.paragraphs.length > 0 && current.paragraphs[current.paragraphs.length - 1] !== null) {
+          current.paragraphs.push(null); // null = paragraph separator
+        }
+      } else {
+        current.paragraphs.push(line);
+      }
     }
   }
   if (current) sections.push(current);
 
-  // Clean up leading/trailing blank lines in each body
-  return sections.map(s => ({ ...s, body: s.body.trim() })).filter(s => s.heading || s.body);
+  // Convert paragraphs array to text blocks
+  return sections
+    .map(s => {
+      const blocks = [];
+      let block = [];
+      for (const p of (s.paragraphs || [])) {
+        if (p === null) {
+          if (block.length) { blocks.push(block.join(' ')); block = []; }
+        } else {
+          block.push(p.trim());
+        }
+      }
+      if (block.length) blocks.push(block.join(' '));
+      return { heading: s.heading, blocks };
+    })
+    .filter(s => s.heading || s.blocks.length > 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PDF BUILDER
-//  Supports multi-page documents with automatic page breaks
+//  PDF BUILDER — clean cursor-based approach, no shared mutable state issues
 // ─────────────────────────────────────────────────────────────────────────────
 async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections }) {
-  const pdfDoc  = await PDFDocument.create();
-  const fBold   = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fReg    = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const pdfDoc = await PDFDocument.create();
+  const fBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const PW = 612, PH = 792, M = 56, CW = PW - M * 2;
+  const SIG_BLOCK_H = 130; // height reserved for signature block
+  const FOOTER_H    = 60;  // height reserved for footer
+  const MIN_Y       = SIG_BLOCK_H + FOOTER_H;
+
   const black = rgb(0.05, 0.05, 0.05);
   const gray  = rgb(0.40, 0.40, 0.40);
   const lgray = rgb(0.85, 0.85, 0.85);
   const blue  = rgb(0.145, 0.388, 0.922);
   const white = rgb(1, 1, 1);
 
-  // Minimum Y before triggering page break (leaves room for sig block on last page)
-  const MIN_Y = 130;
+  // ── Cursor: single source of truth for current page and Y ──
+  let curPage = null;
+  let curY    = 0;
 
-  // ── Page state ──
-  let page = null;
-  let y    = 0;
-
-  const addPage = () => {
-    page = pdfDoc.addPage([PW, PH]);
-    y    = PH - 40;
+  const newPage = () => {
+    curPage = pdfDoc.addPage([PW, PH]);
+    curY    = PH - 40;
   };
 
-  const ensureY = (needed) => {
-    if (y < needed) addPage();
+  // Ensure there's at least `needed` px before adding a new page
+  const needY = (needed) => {
+    if (curY < needed) newPage();
   };
 
-  // ── Primitives ──
-  const txt = (str, x, yy, { font = fReg, size = 10, color = black } = {}) => {
+  // ── Draw helpers (all use curPage / curY) ──
+  const drawText = (str, x, y, { font = fReg, size = 10, color = black } = {}) => {
     if (!str) return;
-    page.drawText(String(str), { x, y: yy, font, size, color });
+    curPage.drawText(String(str), { x, y, font, size, color });
   };
 
-  const line = (x1, yy, x2, { thickness = 0.5, color = lgray } = {}) => {
-    page.drawLine({ start: { x: x1, y: yy }, end: { x: x2, y: yy }, thickness, color });
+  const drawLine = (x1, y, x2, opts = {}) => {
+    curPage.drawLine({
+      start: { x: x1, y },
+      end:   { x: x2, y },
+      thickness: opts.thickness || 0.5,
+      color:     opts.color     || lgray,
+    });
   };
 
-  // Wrap a single paragraph (no embedded newlines), respecting page breaks
-  const wrapText = (str, x, startY, maxW, { font = fReg, size = 10, color = black, lh = 14 } = {}) => {
-    if (!str?.trim()) return startY;
-    const words = str.split(' ');
-    let lineStr = '', cy = startY;
-    for (const w of words) {
-      const test = lineStr ? `${lineStr} ${w}` : w;
-      if (font.widthOfTextAtSize(test, size) > maxW && lineStr) {
-        ensureY(MIN_Y);
-        txt(lineStr, x, y < startY ? y : cy, { font, size, color });
-        if (y !== cy) cy = y; // page was added mid-paragraph
-        cy -= lh;
-        lineStr = w;
+  // Wrap and draw a single line of text (no embedded newlines).
+  // Returns new curY after drawing.
+  const drawWrapped = (str, x, maxW, { font = fReg, size = 9.5, color = black, lh = 14 } = {}) => {
+    if (!str?.trim()) return curY;
+
+    const words = str.trim().split(/\s+/);
+    let current = '';
+
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(test, size) > maxW && current) {
+        // Flush current line
+        needY(MIN_Y);
+        drawText(current, x, curY, { font, size, color });
+        curY -= lh;
+        current = word;
       } else {
-        lineStr = test;
+        current = test;
       }
     }
-    if (lineStr) {
-      ensureY(MIN_Y);
-      txt(lineStr, x, y < cy ? y : cy, { font, size, color });
-      if (y !== cy) cy = y;
-      cy -= lh;
+    // Flush last line
+    if (current) {
+      needY(MIN_Y);
+      drawText(current, x, curY, { font, size, color });
+      curY -= lh;
     }
-    return cy;
+
+    return curY;
   };
 
-  // Render a block of text that may contain \n line breaks and \n\n paragraph breaks
-  const renderBody = (body, x, startY, maxW, opts = {}) => {
-    const { lh = 14, paraGap = 8 } = opts;
-    const paragraphs = body.split(/\n\n+/);
-    let cy = startY;
+  // Draw a multi-paragraph block (paragraphs separated by blank line).
+  // Each paragraph is a single string (pre-joined lines).
+  const drawParagraphs = (paragraphs, x, maxW, opts = {}) => {
+    const { paraGap = 8, ...textOpts } = opts;
     for (const para of paragraphs) {
-      const trimmed = para.trim();
-      if (!trimmed) { cy -= paraGap; continue; }
-      // Handle single \n within a paragraph as forced line breaks
-      const subLines = trimmed.split('\n');
-      for (const subLine of subLines) {
-        if (!subLine.trim()) { cy -= lh * 0.5; continue; }
-        cy = wrapText(subLine, x, cy, maxW, { ...opts, lh });
-      }
-      cy -= paraGap; // paragraph gap
+      if (!para?.trim()) { curY -= paraGap; continue; }
+      drawWrapped(para, x, maxW, textOpts);
+      curY -= paraGap;
     }
-    return cy;
   };
 
-  // ── FIRST PAGE: header + job info ──
-  addPage();
-  y = PH - 48;
+  // ── PAGE 1: header ──
+  newPage();
+  curY = PH - 48;
 
   // Header bar
-  page.drawRectangle({ x: 0, y: PH - 80, width: PW, height: 80, color: rgb(0.118, 0.161, 0.231) });
-  txt('Utah Pros Restoration', M,    PH - 32, { font: fBold, size: 18, color: white });
-  txt('Licensed · Insured · Utah',   M, PH - 50, { font: fReg,  size: 10, color: rgb(0.58, 0.65, 0.75) });
-  txt('(801) 427-0582  ·  restoration@utah-pros.com', M, PH - 65, { font: fReg, size: 9, color: rgb(0.58, 0.65, 0.75) });
-  y = PH - 80 - 28;
+  curPage.drawRectangle({ x: 0, y: PH - 80, width: PW, height: 80, color: rgb(0.118, 0.161, 0.231) });
+  drawText('Utah Pros Restoration',                        M, PH - 32, { font: fBold, size: 18, color: white });
+  drawText('Licensed · Insured · Utah',                    M, PH - 50, { font: fReg,  size: 10, color: rgb(0.58, 0.65, 0.75) });
+  drawText('(801) 427-0582  ·  restoration@utah-pros.com', M, PH - 65, { font: fReg,  size: 9,  color: rgb(0.58, 0.65, 0.75) });
+  curY = PH - 80 - 28;
 
   // Title
   const titleLabel = DOC_TITLES[doc_type] || 'Document';
   const titleW = fBold.widthOfTextAtSize(titleLabel, 18);
-  txt(titleLabel, (PW - titleW) / 2, y, { font: fBold, size: 18 });
-  y -= 8;
-  page.drawLine({ start: { x: (PW - 160) / 2, y }, end: { x: (PW + 160) / 2, y }, thickness: 2, color: blue });
-  y -= 24;
+  drawText(titleLabel, (PW - titleW) / 2, curY, { font: fBold, size: 18 });
+  curY -= 8;
+  curPage.drawLine({
+    start: { x: (PW - 160) / 2, y: curY }, end: { x: (PW + 160) / 2, y: curY },
+    thickness: 2, color: blue,
+  });
+  curY -= 24;
 
   // Job info grid
   const c1 = M, c2 = M + 260;
-  const infoRow = (label, val, col, yp) => {
-    txt(label,      col, yp,      { font: fBold, size: 9,  color: gray });
-    txt(val || '—', col, yp - 13, { font: fReg,  size: 10, color: black });
+  const infoRow = (label, val, col, y) => {
+    drawText(label,     col, y,      { font: fBold, size: 9,  color: gray });
+    drawText(val || '—', col, y - 13, { font: fReg,  size: 10, color: black });
   };
-  infoRow('CLIENT NAME',      job.insured_name,       c1, y);
-  infoRow('JOB NUMBER',       job.job_number,         c2, y); y -= 32;
   const addr = [job.address, job.city, job.state].filter(Boolean).join(', ');
-  infoRow('PROPERTY ADDRESS', addr,                   c1, y);
-  infoRow('DATE OF LOSS', job.date_of_loss
+  const dolStr = job.date_of_loss
     ? new Date(job.date_of_loss).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    : null,                                           c2, y); y -= 32;
-  infoRow('INSURANCE COMPANY', job.insurance_company, c1, y);
-  infoRow('CLAIM NUMBER',      job.claim_number,      c2, y); y -= 22;
-  line(M, y, PW - M); y -= 20;
+    : null;
+  infoRow('CLIENT NAME',       job.insured_name,      c1, curY);
+  infoRow('JOB NUMBER',        job.job_number,        c2, curY); curY -= 32;
+  infoRow('PROPERTY ADDRESS',  addr,                  c1, curY);
+  infoRow('DATE OF LOSS',      dolStr,                c2, curY); curY -= 32;
+  infoRow('INSURANCE COMPANY', job.insurance_company, c1, curY);
+  infoRow('CLAIM NUMBER',      job.claim_number,      c2, curY); curY -= 22;
+  drawLine(M, curY, PW - M); curY -= 20;
 
-  // ── DOCUMENT SECTIONS ──
+  // ── DOCUMENT BODY ──
   const sections = templateSections || buildCocSections(divisions);
 
   for (const s of sections) {
-    // Section heading
     if (s.heading) {
-      ensureY(MIN_Y + 40);
-      txt(s.heading, M, y, { font: fBold, size: 11 });
-      y -= 18;
+      needY(MIN_Y + 50);
+      drawText(s.heading, M, curY, { font: fBold, size: 11 });
+      curY -= 18;
     }
-    // Section body
+
+    // CoC uses {heading, body} string; template sections use {heading, blocks} array
     if (s.body) {
-      y = renderBody(s.body, M, y, CW, { font: fReg, size: 9.5, color: black, lh: 14, paraGap: 8 });
-      y -= 8;
+      // Single body string (CoC) — treat as one paragraph
+      drawParagraphs([s.body], M, CW, { font: fReg, size: 9.5, color: black, lh: 14, paraGap: 6 });
+      curY -= 4;
+    } else if (s.blocks?.length) {
+      // Template sections — array of paragraph strings
+      drawParagraphs(s.blocks, M, CW, { font: fReg, size: 9.5, color: black, lh: 14, paraGap: 8 });
     }
+
+    curY -= 4;
   }
 
-  line(M, y + 6, PW - M); y -= 20;
+  drawLine(M, curY + 4, PW - M); curY -= 18;
 
-  // ── AUTHORIZATION BLURB ──
-  ensureY(MIN_Y + 30);
-  y = renderBody(
-    'By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties, and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive payment directly for all work performed under this agreement.',
-    M, y, CW, { font: fReg, size: 9.5, color: gray, lh: 14 }
+  // ── AUTHORIZATION TEXT ──
+  needY(MIN_Y + 60);
+  drawParagraphs(
+    ['By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties, and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive payment directly for all work performed under this agreement.'],
+    M, CW, { font: fReg, size: 9.5, color: gray, lh: 14, paraGap: 0 }
   );
-  y -= 24;
+  curY -= 22;
 
-  // ── SIGNATURE BLOCK (always needs ~110px — create new page if necessary) ──
-  ensureY(150);
-  page.drawRectangle({
-    x: M - 8, y: y - 90,
+  // ── SIGNATURE BLOCK — always on enough space ──
+  needY(SIG_BLOCK_H + FOOTER_H + 20);
+  curPage.drawRectangle({
+    x: M - 8, y: curY - 90,
     width: PW - (M - 8) * 2, height: 100,
     color: rgb(0.975, 0.978, 0.984),
     borderColor: lgray, borderWidth: 0.5,
   });
 
-  // Signature image
   try {
     const b64   = signature_png.replace(/^data:image\/png;base64,/, '');
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     const img   = await pdfDoc.embedPng(bytes);
     const dims  = img.scale(1);
     const scale = Math.min(220 / dims.width, 70 / dims.height, 1);
-    page.drawImage(img, {
-      x: M, y: y - 76,
+    curPage.drawImage(img, {
+      x: M, y: curY - 76,
       width: dims.width * scale, height: dims.height * scale,
       opacity: 0.9,
     });
   } catch (e) { console.warn('Sig embed failed:', e.message); }
 
   const rx = M + CW / 2 + 12;
-  txt('PRINTED NAME', rx, y - 8,  { font: fBold, size: 8, color: gray });
-  txt(signer_name,    rx, y - 22, { font: fBold, size: 11 });
-  txt('DATE SIGNED',  rx, y - 44, { font: fBold, size: 8, color: gray });
-  txt(signed_at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), rx, y - 58, { font: fReg, size: 10 });
-  line(M, y - 82, M + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
-  txt('Authorized Signature', M, y - 94, { font: fReg, size: 8, color: gray });
+  drawText('PRINTED NAME',  rx, curY - 8,  { font: fBold, size: 8, color: gray });
+  drawText(signer_name,     rx, curY - 22, { font: fBold, size: 11 });
+  drawText('DATE SIGNED',   rx, curY - 44, { font: fBold, size: 8, color: gray });
+  drawText(
+    signed_at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    rx, curY - 58, { font: fReg, size: 10 }
+  );
+  drawLine(M, curY - 82, M + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
+  drawText('Authorized Signature', M, curY - 94, { font: fReg, size: 8, color: gray });
 
-  // ── FOOTER AUDIT TRAIL (all pages) ──
-  const allPages = pdfDoc.getPages();
-  for (const p of allPages) {
+  // ── FOOTER on every page ──
+  for (const p of pdfDoc.getPages()) {
     p.drawLine({ start: { x: M, y: 50 }, end: { x: PW - M, y: 50 }, thickness: 0.5, color: lgray });
     p.drawText(
       `Electronically signed · ${signed_at.toISOString()} · Utah Pros Restoration · utah-pros.com`,
@@ -378,7 +404,7 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CoC SECTIONS (hardcoded per-division completion text — not from DB)
+//  CoC — hardcoded per-division completion text
 // ─────────────────────────────────────────────────────────────────────────────
 function buildCocSections(divisions) {
   const map = {
