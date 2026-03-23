@@ -1,26 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
-import AddContactModal from '@/components/AddContactModal';
 import PullToRefresh from '@/components/PullToRefresh';
-
-function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 
 const DIVISION_COLORS = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669' };
 const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager: 'Prop. Manager' };
 
 export default function Customers() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const { db } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [carriers, setCarriers] = useState([]);
-  const [referralSources, setReferralSources] = useState([]);
 
   useEffect(() => { const t = setTimeout(() => setSearchDebounced(search), 300); return () => clearTimeout(t); }, [search]);
 
@@ -43,13 +36,12 @@ export default function Customers() {
     db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
   }, []);
 
-  // Open modal when ?new=1 is in the URL — works whether component is already mounted or freshly navigated to
+  // Reload list when Layout's AddContactModal saves a new contact
   useEffect(() => {
-    if (searchParams.get('new') === '1') {
-      setShowAddContact(true);
-      setSearchParams({}, { replace: true }); // clean the URL immediately
-    }
-  }, [searchParams]);
+    const handler = () => loadCustomers();
+    window.addEventListener('upr:contact-created', handler);
+    return () => window.removeEventListener('upr:contact-created', handler);
+  }, [loadCustomers]);
 
   const fmtPhone = (phone) => {
     if (!phone) return '';
@@ -60,19 +52,6 @@ export default function Customers() {
   };
   const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?';
 
-  const handleNewContact = async (data) => {
-    try {
-      const result = await db.insert('contacts', data);
-      setShowAddContact(false);
-      if (result?.length > 0) navigate(`/customers/${result[0].id}`);
-      else loadCustomers();
-    } catch (err) {
-      console.error('Create contact:', err);
-      alert('Failed: ' + err.message);
-      throw err;
-    }
-  };
-
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   return (
@@ -82,9 +61,6 @@ export default function Customers() {
           <h1 className="page-title">Customers</h1>
           <p className="page-subtitle">{customers.length} client{customers.length !== 1 ? 's' : ''}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAddContact(true)} style={{ gap: 4 }}>
-          <IconPlus style={{ width: 14, height: 14 }} /> New Customer
-        </button>
       </div>
 
       <div className="customers-filters">
@@ -132,11 +108,6 @@ export default function Customers() {
           </div>
         ))}
       </PullToRefresh>
-
-      {showAddContact && (
-        <AddContactModal onClose={() => setShowAddContact(false)} onSave={handleNewContact}
-          carriers={carriers} referralSources={referralSources} defaultRole="homeowner" />
-      )}
     </div>
   );
 }

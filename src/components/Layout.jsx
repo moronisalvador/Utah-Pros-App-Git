@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateJobModal from './CreateJobModal';
+import AddContactModal from './AddContactModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -28,6 +29,9 @@ export default function Layout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [carriers, setCarriers] = useState([]);
+  const [referralSources, setReferralSources] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -69,6 +73,12 @@ export default function Layout() {
     fetchUnread();
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load lookup data for AddContactModal
+  useEffect(() => {
+    db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {});
+    db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
+  }, []);
+
   const handleNavClick = () => setSidebarOpen(false);
   const handleBottomTab = (path) => navigate(path);
 
@@ -81,9 +91,27 @@ export default function Layout() {
   const handleCreateAction = (key) => {
     setSidebarOpen(false);
     if (key === 'job') { setShowCreateJob(true); return; }
-    if (key === 'customer') {
-      navigate('/customers?new=1');
-      return;
+    if (key === 'customer') { setShowAddContact(true); return; }
+  };
+
+  // After contact saved — navigate to new contact, reload customers list if on that page
+  const handleContactSaved = async (data) => {
+    try {
+      const result = await db.insert('contacts', data);
+      setShowAddContact(false);
+      if (result?.length > 0) {
+        // Fire event so Customers.jsx can reload its list if mounted
+        window.dispatchEvent(new CustomEvent('upr:contact-created'));
+        navigate(`/customers/${result[0].id}`);
+        window.dispatchEvent(new CustomEvent('upr:toast', {
+          detail: { message: `${data.name} added successfully`, type: 'success' }
+        }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('upr:toast', {
+        detail: { message: 'Failed to save contact: ' + err.message, type: 'error' }
+      }));
+      throw err;
     }
   };
 
@@ -116,6 +144,15 @@ export default function Layout() {
           db={db}
           onClose={() => setShowCreateJob(false)}
           onCreated={handleJobCreated}
+        />
+      )}
+
+      {showAddContact && (
+        <AddContactModal
+          onClose={() => setShowAddContact(false)}
+          onSave={handleContactSaved}
+          carriers={carriers}
+          referralSources={referralSources}
         />
       )}
 
