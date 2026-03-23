@@ -38,6 +38,13 @@ export default function Customers() {
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
   useEffect(() => { db.select('insurance_carriers', 'order=name.asc&select=id,name,short_name').then(setCarriers).catch(() => {}); }, []);
 
+  // Listen for upr:new-customer event fired by sidebar "+ Customer" button
+  useEffect(() => {
+    const handler = () => setShowAddContact(true);
+    window.addEventListener('upr:new-customer', handler);
+    return () => window.removeEventListener('upr:new-customer', handler);
+  }, []);
+
   const fmtPhone = (phone) => {
     if (!phone) return '';
     const d = phone.replace(/\D/g, '');
