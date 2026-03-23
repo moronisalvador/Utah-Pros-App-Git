@@ -1,14 +1,10 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import CreateMenu from './CreateMenu';
 import CreateJobModal from './CreateJobModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
-
-// Lazy-loaded to avoid circular dep: CreateJobModal already imports AddContactModal,
-// so we can't import it here directly. This wrapper lives in its own file.
-const CreateCustomerModal = lazy(() => import('./CreateCustomerModal'));
 
 // Bottom bar items — the 4 most-used + More
 const BOTTOM_TABS = [
@@ -36,24 +32,6 @@ export default function Layout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [showCreateJob, setShowCreateJob] = useState(false);
-  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
-  const [carriers, setCarriers] = useState([]);
-  const [referralSources, setReferralSources] = useState([]);
-
-  // Load lookup data for modals (lazy — only once)
-  const lookupsLoaded = useRef(false);
-  const loadLookups = useCallback(async () => {
-    if (lookupsLoaded.current) return;
-    lookupsLoaded.current = true;
-    try {
-      const [c, r] = await Promise.all([
-        db.rpc('get_insurance_carriers').catch(() => []),
-        db.rpc('get_referral_sources').catch(() => []),
-      ]);
-      setCarriers(c || []);
-      setReferralSources(r || []);
-    } catch { /* silent */ }
-  }, [db]);
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -111,7 +89,7 @@ export default function Layout() {
   // ── CreateMenu action handler ──
   const handleCreateAction = (key) => {
     if (key === 'job') { setShowCreateJob(true); return; }
-    if (key === 'customer') { loadLookups(); setShowCreateCustomer(true); return; }
+    if (key === 'customer') { navigate('/customers?new=1'); setSidebarOpen(false); return; }
     if (key === 'estimate') { navigate('/estimates/new'); return; }
   };
 
@@ -123,27 +101,6 @@ export default function Layout() {
       navigate(`/jobs/${jobId}`);
       window.dispatchEvent(new CustomEvent('upr:toast', {
         detail: { message: `Job created successfully`, type: 'success' }
-      }));
-    }
-  };
-
-  // ── After customer created — do insert then navigate to their page ──
-  const handleCustomerCreated = async (contactData) => {
-    try {
-      const result = await db.insert('contacts', contactData);
-      setShowCreateCustomer(false);
-      const contactId = result?.[0]?.id;
-      if (contactId) {
-        navigate(`/customers/${contactId}`);
-        window.dispatchEvent(new CustomEvent('upr:toast', {
-          detail: { message: `Customer created successfully`, type: 'success' }
-        }));
-      } else {
-        navigate('/customers');
-      }
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: 'Failed to create customer: ' + err.message, type: 'error' }
       }));
     }
   };
@@ -169,18 +126,6 @@ export default function Layout() {
           onClose={() => setShowCreateJob(false)}
           onCreated={handleJobCreated}
         />
-      )}
-
-      {/* ── Create Customer Modal ── */}
-      {showCreateCustomer && (
-        <Suspense fallback={null}>
-          <CreateCustomerModal
-            onClose={() => setShowCreateCustomer(false)}
-            onSave={handleCustomerCreated}
-            carriers={carriers}
-            referralSources={referralSources}
-          />
-        </Suspense>
       )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
