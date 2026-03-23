@@ -109,10 +109,12 @@ export async function onRequestPost(context) {
         'Content-Type':  'application/json',
       },
       body: JSON.stringify({
+        personalizations: [{
+          to: [{ email: signer_email, name: signer_name }],
+          subject: `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
+        }],
         from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
         reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-        to:       [{ email: signer_email, name: signer_name }],
-        subject:  `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
         content: [
           { type: 'text/plain', value: buildEmailText({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
           { type: 'text/html',  value: buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
