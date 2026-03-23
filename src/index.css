@@ -2806,7 +2806,7 @@ tr:hover td { background: var(--bg-secondary); }
   flex-shrink: 0;
 }
 
-/* Two-column row — wraps to single column on mobile */
+/* Two-column row */
 .add-contact-row {
   display: flex;
   gap: var(--space-3);
@@ -2833,17 +2833,80 @@ tr:hover td { background: var(--bg-secondary); }
   font-family: var(--font-sans);
   transition: border-color 0.15s, background 0.15s;
 }
-.role-picker-card:hover {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
+.role-picker-card:hover { border-color: var(--accent); background: var(--accent-light); }
 .role-picker-emoji { font-size: 20px; flex-shrink: 0; }
 .role-picker-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .role-picker-desc { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
 
-/* Mobile: single column */
-@media (max-width: 640px) {
-  .add-contact-modal { max-width: 100% !important; max-height: 95vh !important; }
-  .add-contact-row { flex-direction: column; }
+/* ── Lookup Select (searchable dropdown — Insurance Carrier, Referral Source, etc.) ── */
+.lookup-select-wrap { position: relative; }
+.lookup-select-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0; right: 0;
+  z-index: 400;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-height: 200px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.lookup-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+.lookup-select-item:last-child { border-bottom: none; }
+.lookup-select-item:hover { background: var(--bg-secondary); }
+.lookup-select-item.active { background: var(--accent-light); color: var(--accent); }
+.lookup-select-custom { color: var(--accent); }
+.lookup-select-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lookup-select-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.lookup-select-empty {
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── Mobile — full-screen sheet on iPhone ── */
+@media (max-width: 768px) {
+  /* Modal fills screen as bottom sheet */
+  .add-contact-modal {
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    max-height: 92vh !important; /* fallback for older Safari */
+  }
+  .add-contact-body { padding: var(--space-3) var(--space-4); }
+  .add-contact-footer { padding: var(--space-2) var(--space-4); }
+  .add-contact-row { flex-direction: column; gap: var(--space-2); }
   .role-picker-grid { grid-template-columns: 1fr 1fr; }
+
+  /* CreateJobModal mobile */
+  .conv-modal {
+    max-height: 92dvh !important;
+    max-height: 92vh !important;
+  }
 }

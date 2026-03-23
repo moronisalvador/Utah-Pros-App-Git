@@ -19,6 +19,10 @@ export function createSupabaseClient(token) {
   const headers = getHeaders(token);
 
   return {
+    // Expose base URL and key for direct Storage API calls (file uploads)
+    baseUrl: SUPABASE_URL,
+    apiKey: token || SUPABASE_ANON_KEY,
+
     async select(table, query = '') {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
       if (!res.ok) {
