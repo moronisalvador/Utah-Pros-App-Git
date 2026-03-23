@@ -432,6 +432,26 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   const[copied,setCopied]=useState(null);
   const[showCancelled,setShowCancelled]=useState(false);
   const[confirmCancel,setConfirmCancel]=useState(null);
+  const[resending,setResending]=useState(null);
+  const handleResend=async(sr)=>{
+    setResending(sr.id);
+    try{
+      const res=await fetch('/api/resend-esign',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sign_request_id:sr.id}),
+      });
+      const json=await res.json();
+      if(!res.ok)throw new Error(json.error||'Failed to resend');
+      if(json.email_error){
+        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'error',message:`Email failed: ${json.sendgrid_error||'unknown error'}`}}));
+      }else{
+        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'success',message:`Reminder sent to ${sr.signer_email}`}}));
+      }
+      onRefresh();
+    }catch(e){errToast('Resend failed: '+e.message);}
+    finally{setResending(null);}
+  };
   const[confirmDeleteSigned,setConfirmDeleteSigned]=useState(null);
   const deleteSignedDoc=async(sr)=>{
     try{
@@ -540,6 +560,10 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {pending.map(sr=>(
               <SRRow key={sr.id} sr={sr} actions={<>
+                <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
+                  onClick={()=>handleResend(sr)} disabled={resending===sr.id}>
+                  {resending===sr.id?'Sending…':'Resend'}
+                </button>
                 <button className="btn btn-ghost btn-sm" style={{fontSize:11,height:26,padding:'0 8px'}}
                   onClick={()=>copyLink(sr.token)}>{copied===sr.token?'Copied!':'Copy Link'}</button>
                 {confirmCancel===sr.id?(
