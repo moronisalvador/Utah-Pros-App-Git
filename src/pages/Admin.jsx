@@ -84,6 +84,13 @@ export default function Admin() {
 // ══════════════════════════════════════════════════════════════
 // EMPLOYEES TAB
 // ══════════════════════════════════════════════════════════════
+// Helper: get current session token for admin-users worker calls
+async function getAuthHeader() {
+  const { data: { session } } = await realtimeClient.auth.getSession();
+  const token = session?.access_token;
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
 function EmployeesTab() {
   const { db } = useAuth();
   const [employees, setEmployees] = useState([]);
@@ -121,7 +128,7 @@ function EmployeesTab() {
     try {
       const res = await fetch('/api/admin-users', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({ employee_id: emp.id, is_active: !emp.is_active }),
       });
       const data = await res.json();
@@ -139,7 +146,7 @@ function EmployeesTab() {
     try {
       const res = await fetch('/api/admin-users', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
         body: JSON.stringify({ employee_id: emp.id }),
       });
       const data = await res.json();
@@ -164,7 +171,7 @@ function EmployeesTab() {
         const tempPw = crypto.randomUUID();
         const res = await fetch('/api/admin-users', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify({ employee_id: emp.id, password: tempPw }),
         });
         const data = await res.json();
@@ -471,7 +478,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
 
         const res = await fetch('/api/admin-users', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify(payload),
         });
         const data = await res.json();
@@ -482,7 +489,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
 
         const res = await fetch('/api/admin-users', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...await getAuthHeader() },
           body: JSON.stringify({
             email: form.email,
             password,
