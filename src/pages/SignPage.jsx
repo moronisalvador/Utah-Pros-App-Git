@@ -138,6 +138,7 @@ export default function SignPage() {
   const [nameError,  setNameError]  = useState('');
   const [hasSig,     setHasSig]     = useState(false);
   const [agreed,     setAgreed]     = useState(false);
+  const [smsConsent, setSmsConsent] = useState(false);
 
   // ── Signature mode: 'type' | 'draw' ──
   const [sigMode,    setSigMode]    = useState(() => isDesktop() ? 'type' : 'draw');
@@ -203,12 +204,17 @@ export default function SignPage() {
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);
 
-  // Scale canvas to DPR when ready
+  // Scale canvas to DPR when ready, then re-render typed sig if already populated
   useEffect(() => {
     if (status !== 'ready') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     initCanvas(canvas);
+    // initCanvas clears the buffer — re-render typed sig if font is loaded
+    if (sigMode === 'type' && typedSig.trim() && fontLoaded) {
+      renderTypedSig(canvas, typedSig);
+      setHasSig(true);
+    }
   }, [status]);
 
   const getPos = (e, canvas) => {
@@ -252,6 +258,7 @@ export default function SignPage() {
     if (!signerName.trim()) { setNameError('Please enter your full name.'); return; }
     if (!hasSig)             { setNameError(sigMode === 'type' ? 'Please type your name in the signature box.' : 'Please provide your signature.'); return; }
     if (!agreed)             { setNameError('Please confirm the checkbox above.'); return; }
+    if (data?.doc_type === 'work_auth' && !smsConsent) { setNameError('Please confirm your SMS consent to proceed.'); return; }
     setNameError(''); setStatus('submitting');
     try {
       const canvas = canvasRef.current;
@@ -427,6 +434,17 @@ export default function SignPage() {
           </div>
 
           {/* Agreement checkbox */}
+          {/* SMS consent — Work Auth only, required for 10DLC compliance */}
+          {data?.doc_type === 'work_auth' && (
+            <label style={{ ...styles.checkLabel, marginBottom: 12, padding: '12px 14px', background: '#f0f7ff', border: '1px solid #bfdbfe', borderRadius: 8 }}>
+              <input type="checkbox" checked={smsConsent} onChange={e => { setSmsConsent(e.target.checked); setNameError(''); }}
+                disabled={status === 'submitting'} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: '#2563eb' }} />
+              <span style={{ fontSize: 13, color: '#1e40af', lineHeight: 1.5 }}>
+                <strong>SMS Communications:</strong> I consent to receive text messages from Utah Pros Restoration regarding my restoration project, including appointment reminders, status updates, and important notices. Message &amp; data rates may apply. Reply STOP to opt out at any time.
+              </span>
+            </label>
+          )}
+
           <label style={styles.checkLabel}>
             <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); setNameError(''); }}
               disabled={status === 'submitting'} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0 }} />

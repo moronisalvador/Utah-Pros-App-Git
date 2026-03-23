@@ -251,7 +251,8 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const PW = 612, PH = 792, M = 56, CW = PW - M * 2;
-  const SIG_BLOCK_H = 130; // height reserved for signature block
+  const needsCoSig  = doc_type === 'work_auth' || doc_type === 'change_order';
+  const SIG_BLOCK_H = needsCoSig ? 210 : 130; // extra height for company block
   const FOOTER_H    = 60;  // height reserved for footer
   const MIN_Y       = SIG_BLOCK_H + FOOTER_H;
 
@@ -436,6 +437,32 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   );
   drawLine(M, curY - 82, M + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
   drawText('Authorized Signature', M, curY - 94, { font: fReg, size: 8, color: gray });
+
+  // ── COMPANY PRE-AUTHORIZATION BLOCK (Work Auth + Change Order only) ──
+  if (needsCoSig) {
+    const cy = curY - 110; // start below client sig box
+    drawLine(M, cy + 8, PW - M, { thickness: 0.5, color: lgray });
+    curPage.drawRectangle({
+      x: M - 8, y: cy - 64,
+      width: PW - (M - 8) * 2, height: 72,
+      color: rgb(0.965, 0.972, 0.984),
+      borderColor: lgray, borderWidth: 0.5,
+    });
+    // Left: company info
+    drawText('AUTHORIZED BY UTAH PROS RESTORATION', M, cy - 6,  { font: fBold, size: 8, color: gray });
+    drawText('Moroni Salvador',                       M, cy - 20, { font: fBold, size: 11, color: black });
+    drawText('Director of Operations',                M, cy - 34, { font: fReg,  size: 9,  color: gray });
+    drawLine(M, cy - 46, M + 200, { thickness: 0.75, color: rgb(0.7, 0.7, 0.7) });
+    drawText('Authorized Company Representative',     M, cy - 58, { font: fReg, size: 8, color: gray });
+    // Right: date pre-authorized
+    drawText('DATE PRE-AUTHORIZED', rx, cy - 6,  { font: fBold, size: 8, color: gray });
+    drawText(
+      signed_at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      rx, cy - 20, { font: fReg, size: 10 }
+    );
+    drawText('Electronically pre-signed on behalf', rx, cy - 36, { font: fReg, size: 8, color: gray });
+    drawText('of Utah Pros Restoration',             rx, cy - 48, { font: fReg, size: 8, color: gray });
+  }
 
   // ── FOOTER on every page ──
   const footerParts = [
