@@ -142,9 +142,12 @@ export function AuthProvider({ children }) {
     setAuthDb(null);
   }, []);
 
-  // ── Dev login: bypass auth for local development ──
-  // Uses employee email directly without Supabase Auth
+  // ── Dev login: bypass auth for local development ONLY ──
+  // Disabled entirely in production builds
   const devLogin = useCallback(async (employeeEmail) => {
+    if (!import.meta.env.DEV) {
+      throw new Error('Dev login is not available in production.');
+    }
     setError(null);
     setLoading(true);
     try {
@@ -188,7 +191,8 @@ export function AuthProvider({ children }) {
     db: authDb || db, // Use authenticated client when available
     login,
     logout,
-    devLogin,
+    // devLogin only exposed in dev builds — null in production so it can't be called
+    devLogin: import.meta.env.DEV ? devLogin : null,
     canAccess,
     isAuthenticated: !!employee,
     isDev: import.meta.env.DEV,
