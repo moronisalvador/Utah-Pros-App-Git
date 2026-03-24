@@ -10,6 +10,7 @@ import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
 import JobPage from '@/pages/JobPage';
+import ClaimsList from '@/pages/ClaimsList';
 import ClaimPage from '@/pages/ClaimPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
@@ -58,13 +59,16 @@ export default function App() {
             <Route index element={<ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>} />
             <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
 
+            <Route path="claims">
+              <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
+              <Route path=":claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+            </Route>
+
             <Route path="jobs">
               <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
               <Route path="new" element={<Navigate to="/jobs" replace />} />
               <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
             </Route>
-
-            <Route path="claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
 
             <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
             <Route path="leads" element={<ErrorBoundary section="Leads"><Leads /></ErrorBoundary>} />
