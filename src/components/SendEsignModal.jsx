@@ -351,7 +351,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
 
         {/* Footer actions */}
         <div style={{
-          padding: '14px 24px env(safe-area-inset-bottom, 16px)', borderTop: '1px solid var(--border-color)',
+          padding: '14px 24px 16px', borderTop: '1px solid var(--border-color)',
           background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8,
         }}>
           {/* Primary: collect on-site */}
