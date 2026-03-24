@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 const DOC_TYPES = [
   { key: 'coc',           label: 'Certificate of Completion' },
@@ -158,7 +159,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
 
   // ── Success state ──
   if (done) {
-    return (
+    return createPortal(
       <div className="conv-modal-backdrop" onClick={onClose}>
         <div className="conv-modal" onClick={e => e.stopPropagation()}
           style={{ maxWidth: 440, display: 'flex', flexDirection: 'column' }}>
@@ -200,12 +201,13 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             <button className="btn btn-primary" onClick={onClose} style={{ width: '100%' }}>Done</button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // ── Form state ──
-  return (
+  return createPortal(
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal" onClick={e => e.stopPropagation()}
         style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -351,7 +353,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
 
         {/* Footer actions */}
         <div style={{
-          padding: '14px 24px 16px', borderTop: '1px solid var(--border-color)',
+          padding: '14px 24px env(safe-area-inset-bottom, 16px)', borderTop: '1px solid var(--border-color)',
           background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8,
         }}>
           {/* Primary: collect on-site */}
@@ -378,7 +380,8 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

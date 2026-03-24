@@ -1259,15 +1259,12 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-template-picker { max-height: 45vh; }
   .conv-schedule-picker { max-height: 200px; }
 
-  /* Modal: bottom sheet on mobile — sits above bottom tab bar */
+  /* Modal: bottom sheet on mobile */
   .conv-modal-backdrop { padding-top: 0; align-items: flex-end; }
   .conv-modal {
-    max-width: 100%;
-    /* Clear the fixed bottom tab bar so footer buttons are never hidden under it */
-    margin-bottom: calc(var(--bottom-bar-h) + var(--safe-bottom));
-    max-height: calc(85dvh - var(--bottom-bar-h) - var(--safe-bottom));
+    max-width: 100%; max-height: 85vh;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    padding-bottom: 0;
+    padding-bottom: var(--safe-bottom);
   }
 
   /* ── Tables ── */
@@ -3254,7 +3251,8 @@ tr:hover td { background: var(--bg-secondary); }
   /* Modal fills screen as bottom sheet */
   .add-contact-modal {
     max-width: 100% !important;
-    max-height: calc(92dvh - var(--bottom-bar-h) - var(--safe-bottom)) !important;
+    max-height: 92dvh !important;
+    max-height: 92vh !important; /* fallback for older Safari */
   }
   .add-contact-body { padding: var(--space-3) var(--space-4); }
   .add-contact-footer { padding: var(--space-2) var(--space-4); }
@@ -3263,7 +3261,8 @@ tr:hover td { background: var(--bg-secondary); }
 
   /* CreateJobModal mobile */
   .conv-modal {
-    max-height: calc(92dvh - var(--bottom-bar-h) - var(--safe-bottom)) !important;
+    max-height: 92dvh !important;
+    max-height: 92vh !important;
   }
 }
 
