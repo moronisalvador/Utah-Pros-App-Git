@@ -2861,6 +2861,8 @@ tr:hover td { background: var(--bg-secondary); }
 .customer-card {
   -webkit-tap-highlight-color: transparent;
   outline: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
