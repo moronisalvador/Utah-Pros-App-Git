@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════
-   Claim Page
+   Claim Page (detail)
    ═══════════════════════════════════════════════════ */
 
 .claim-page {
@@ -103,33 +103,6 @@
   border-radius: var(--radius-sm);
 }
 
-/* ═══════════════════════════════════════════════════
-   Claims List Page
-   ═══════════════════════════════════════════════════ */
-
-.claims-desktop-table {
-  width: 100%;
-  overflow-x: auto;
-}
-.claims-desktop-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-.claims-desktop-table thead th {
-  padding: 8px 14px;
-  text-align: left;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-tertiary);
-  background: var(--bg-secondary);
-  border-bottom: 2px solid var(--border-color);
-  white-space: nowrap;
-}
-.claims-mobile-cards { display: none; }
-
 /* ── Mobile overrides ── */
 @media (max-width: 768px) {
   .claim-topbar  { padding: 8px 14px; }
@@ -139,8 +112,4 @@
   .claim-body    { overflow-x: hidden; }
   .claim-body table { min-width: 640px; }
   .claim-coll-card { padding: 12px; }
-
-  /* Claims list: hide table, show cards */
-  .claims-desktop-table { display: none; }
-  .claims-mobile-cards  { display: block; }
 }
