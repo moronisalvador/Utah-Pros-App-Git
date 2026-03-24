@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch, IconOpenPage } from '@/components/Icons';

@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
+import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
 
-const DIVISION_COLORS = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669' };
+
 const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager: 'Prop. Manager' };
 
 export default function Customers() {

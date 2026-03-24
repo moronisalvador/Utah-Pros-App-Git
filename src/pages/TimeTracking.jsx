@@ -47,7 +47,8 @@ function fmtMoney(v) {
   return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
 }
 
-const DIVISION_COLORS = {
+// DIVISION_COLORS imported
+const _DIVISION_COLORS_UNUSED = {
   water:'#2563eb', mold:'#9d174d', reconstruction:'#d97706',
   fire:'#dc2626', contents:'#059669',
 };

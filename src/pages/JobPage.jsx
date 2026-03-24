@@ -7,6 +7,7 @@ import ScheduleWizard from '@/components/ScheduleWizard';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
+import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -14,8 +15,8 @@ const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
 const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estimates'},{key:'invoice',label:'Invoices'},{key:'moisture_log',label:'Moisture Logs'},{key:'receipt',label:'Receipts'},{key:'contract',label:'Contracts'},{key:'other',label:'Other'}];
-const DIVISION_EMOJI={water:'\u{1F4A7}',mold:'\u{1F9A0}',reconstruction:'\u{1F3D7}\uFE0F',fire:'\u{1F525}',contents:'\u{1F4E6}'};
-const DIVISION_COLORS={water:'#2563eb',mold:'#9d174d',reconstruction:'#d97706',fire:'#dc2626',contents:'#059669'};
+
+
 
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
 
@@ -97,7 +98,7 @@ export default function JobPage(){
   if(!job)return null;
 
   const phaseLabel=phaseMap[job.phase]?.label||job.phase;
-  const divEmoji=DIVISION_EMOJI[job.division]||'\u{1F4C1}';
+  // divEmoji replaced by DivisionIcon component
   const priorityObj=PRIORITY_OPTIONS.find(p=>p.value===job.priority)||PRIORITY_OPTIONS[2];
   const TABS=[{key:'overview',label:'Overview'},{key:'schedule',label:'Schedule',count:taskSummary?.total||0},{key:'files',label:'Files',count:documents.length},{key:'financial',label:'Financial'},{key:'activity',label:'Activity',count:notes.length+history.length}];
 
@@ -123,7 +124,7 @@ export default function JobPage(){
 
       <div className="job-page-header">
         <div className="job-page-header-left">
-          <div className="job-page-division-icon">{divEmoji}</div>
+          <div className="job-page-division-icon"><DivisionIcon type={job.division} size={28} /></div>
           <div>
             <div className="job-page-jobnumber">{job.job_number||'No Job #'}</div>
             <div className="job-page-client" style={{cursor:job.primary_contact_id?'pointer':undefined}} onClick={()=>{if(job.primary_contact_id)navigate(`/customers/${job.primary_contact_id}`);}}>{job.insured_name||'Unknown Client'}{job.primary_contact_id&&<span style={{fontSize:11,color:'var(--brand-primary)',marginLeft:6}}>{'\u2192'}</span>}</div>
@@ -372,9 +373,9 @@ function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob
       </div>
       {siblingJobs&&siblingJobs.length>0?(
         <div style={{display:'flex',flexDirection:'column',gap:'var(--space-2)'}}>
-          {siblingJobs.map(sj=>{const dc=DIVISION_COLORS[sj.division]||'#6b7280';const de=DIVISION_EMOJI[sj.division]||'\u{1F4C1}';
+          {siblingJobs.map(sj=>{const dc=DIVISION_COLORS[sj.division]||'#6b7280';
             return(<div key={sj.id} onClick={()=>onNavigateJob?.(sj.id)} style={{display:'flex',alignItems:'center',gap:'var(--space-3)',padding:'var(--space-2) var(--space-3)',background:'var(--bg-secondary)',borderRadius:'var(--radius-md)',border:'1px solid var(--border-light)',borderLeft:`3px solid ${dc}`,cursor:'pointer'}}>
-              <span style={{fontSize:16}}>{de}</span>
+              <DivisionIcon type={sj.division} size={18} />
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:'var(--text-primary)'}}>{sj.job_number||'New Job'} — {sj.division?.replace(/_/g,' ')}</div><div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:1}}>{sj.phase?.replace(/_/g,' ')}</div></div>
               <span style={{fontSize:11,color:'var(--brand-primary)',fontWeight:600}}>{'\u2192'}</span>
             </div>);})}

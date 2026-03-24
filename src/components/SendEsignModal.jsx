@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { createPortal } from 'react-dom';
 
 const DOC_TYPES = [

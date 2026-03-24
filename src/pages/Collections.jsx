@@ -2,13 +2,14 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 
 const toast = (msg, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
 const errToast = (msg) => toast(msg, 'error');
 
-const DIV_COLOR = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669' };
-const DIV_EMOJI = { water: '💧', mold: '🧬', reconstruction: '🏗️', fire: '🔥', contents: '📦' };
+
+
 
 const AR_STATUSES = [
   { value: 'open',        label: 'Open',        color: '#6b7280', bg: '#f9fafb' },
@@ -580,7 +581,7 @@ function ARRow({ job, isSaving, onView, onPay, onNotes, onMarkDedPaid, onStatusC
       {/* Job / Client */}
       <td>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <span style={{ fontSize: 18, lineHeight: 1.2, flexShrink: 0 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+          <DivisionIcon type={job.division} size={20} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginBottom: 1 }}>
               {job.job_number || '—'}
@@ -758,7 +759,7 @@ function ARCard({ job, isSaving, onView, onPay, onNotes, onMarkDedPaid }) {
       {/* Top row: identity + balance */}
       <div className="ar-mobile-card-top">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 22, lineHeight: 1.1, flexShrink: 0 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+          <DivisionIcon type={job.division} size={24} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{job.job_number}</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

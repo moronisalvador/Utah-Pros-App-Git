@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, subscribeToConversations } from '@/lib/realtime';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';

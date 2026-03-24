@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
@@ -7,14 +8,15 @@ import PullToRefresh from '@/components/PullToRefresh';
 
 const DIVISION_TABS = [
   { key: 'all', label: 'All', emoji: '' },
-  { key: 'water', label: 'Water', emoji: '💧' },
+  { key: 'water', label: 'Water', emoji: null /* use DivisionIcon */ },
   { key: 'mold', label: 'Mold', emoji: '🦠' },
   { key: 'reconstruction', label: 'Recon', emoji: '🏗️' },
   { key: 'fire', label: 'Fire', emoji: '🔥' },
   { key: 'contents', label: 'Contents', emoji: '📦' },
 ];
 
-const DIVISION_COLORS = {
+// DIVISION_COLORS imported
+const _DIVISION_COLORS_UNUSED = {
   water: '#2563eb',
   mold: '#9d174d',
   reconstruction: '#d97706',

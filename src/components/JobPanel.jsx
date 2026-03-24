@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import ScheduleWizard from '@/components/ScheduleWizard';
 import { DIV_COLORS, MITIGATION_DIVS, RECON_DIVS, classifyPhase, fmtDate, fmtShortDate } from '@/lib/scheduleUtils';
 

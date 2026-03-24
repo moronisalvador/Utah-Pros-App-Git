@@ -2,14 +2,15 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-page.css';
+import { LossIcon, LOSS_CONFIG, DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 
 // ── Toasts ────────────────────────────────────────────────────────────────────
 const toast  = (msg, type = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
 const errToast = (msg) => toast(msg, 'error');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DIV_EMOJI  = { water: '💧', mold: '🧬', reconstruction: '🏗️', fire: '🔥', contents: '📦', general: '📁' };
-const DIV_COLOR  = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669', general: '#6b7280' };
+
+
 const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Reconstruction', fire: 'Fire', contents: 'Contents', general: 'General' };
 const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
 const CLAIM_STATUSES = ['open', 'in_progress', 'closed', 'denied', 'settled', 'supplementing'];
@@ -454,12 +455,12 @@ function JobsOverviewSection({ jobs, navigate }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {jobs.map(job => {
           const b = getBalances(job);
-          const color = DIV_COLOR[job.division] || '#6b7280';
+          const color = DIVISION_COLORS[job.division] || '#6b7280';
           return (
             <div key={job.id}
               onClick={() => navigate(`/jobs/${job.id}`)}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)', borderLeft: `4px solid ${color}`, cursor: 'pointer' }}>
-              <span style={{ fontSize: 20 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+              <DivisionIcon type={job.division} size={20} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>{job.job_number}</span>
@@ -530,7 +531,7 @@ function FinancialTab({ jobs, totals, isInsurance, navigate }) {
                   onMouseLeave={e => e.currentTarget.style.background = ''}>
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+                      <DivisionIcon type={job.division} size={16} />
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{job.job_number}</div>
                         <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{DIV_LABEL[job.division]}</div>
@@ -635,7 +636,7 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
           <div key={job.id} className="claim-coll-card">
             <div className="claim-coll-card-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+                <DivisionIcon type={job.division} size={20} />
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>{job.job_number}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{DIV_LABEL[job.division]} · {job.phase?.replace(/_/g, ' ')}</div>
@@ -749,11 +750,11 @@ function DocumentsTab({ jobs, documents, docsLoaded, db, navigate }) {
       {jobs.map(job => {
         const docs = grouped[job.id] || [];
         if (docs.length === 0) return null;
-        const color = DIV_COLOR[job.division] || '#6b7280';
+        const color = DIVISION_COLORS[job.division] || '#6b7280';
         return (
           <div key={job.id} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: `2px solid ${color}` }}>
-              <span style={{ fontSize: 16 }}>{DIV_EMOJI[job.division] || '📁'}</span>
+              <DivisionIcon type={job.division} size={16} />
               <span style={{ fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>{job.job_number}</span>
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{docs.length} file{docs.length !== 1 ? 's' : ''}</span>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${job.id}`)} style={{ marginLeft: 'auto', fontSize: 11 }}>View in Job →</button>
