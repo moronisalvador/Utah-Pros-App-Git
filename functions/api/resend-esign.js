@@ -7,7 +7,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
-const APP_URL = 'https://dev.utahpros.app';
+const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
 
 const DOC_LABELS = {
   coc:           'Certificate of Completion',
@@ -60,6 +60,7 @@ export async function onRequestPost(context) {
 
     const job        = sr.job || {};
     const token      = sr.token;
+    const APP_URL    = getAppUrl(env);
     const signingUrl = `${APP_URL}/sign/${token}`;
     const docLabel   = DOC_LABELS[sr.doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';

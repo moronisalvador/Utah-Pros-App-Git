@@ -90,7 +90,7 @@ export default function Layout() {
   useEffect(() => {
     db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
     db.rpc('get_referral_sources').then(setReferralSources).catch(() => {});
-  }, []);
+  }, [db]); // db reference changes when auth token refreshes; reload to get fresh data
 
   const handleNavClick = () => setSidebarOpen(false);
   const handleBottomTab = (path) => navigate(path);

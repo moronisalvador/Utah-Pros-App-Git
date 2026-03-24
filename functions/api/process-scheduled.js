@@ -129,7 +129,7 @@ async function processQueue(db, env, request) {
 
         const clientBody = senderPrefix + scheduled.body.trim();
 
-        const baseUrl = env.PAGES_URL || 'https://utah-pros-app-git.pages.dev';
+        const baseUrl = env.PAGES_URL || env.APP_URL || 'https://dev.utahpros.app';
         const statusCallback = `${baseUrl}/api/twilio-status`;
 
         const twilioResult = await sendMessage(env, {

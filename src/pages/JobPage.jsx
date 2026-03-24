@@ -157,7 +157,7 @@ export default function JobPage(){
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
-      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
+      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
     </div>
@@ -489,7 +489,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
     }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
   const copyLink=(token)=>{
-    navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
+    // window.location.origin = https://dev.utahpros.app in dev, https://utahpros.app in prod
+    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
   const cancelReq=async(id)=>{

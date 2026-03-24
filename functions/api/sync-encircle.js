@@ -208,7 +208,8 @@ export async function onRequestPost(context) {
   try {
     return await doSync(context.request, context.env);
   } catch (e) {
-    return jsonResponse({ error: e.message, stack: e.stack?.slice(0, 300) }, 500, context.request, context.env);
+    console.error('sync-encircle error:', e);
+    return jsonResponse({ error: e.message }, 500, context.request, context.env);
   }
 }
 
@@ -216,6 +217,7 @@ export async function onRequestGet(context) {
   try {
     return await doSync(context.request, context.env);
   } catch (e) {
-    return jsonResponse({ error: e.message, stack: e.stack?.slice(0, 300) }, 500, context.request, context.env);
+    console.error('sync-encircle error:', e);
+    return jsonResponse({ error: e.message }, 500, context.request, context.env);
   }
 }

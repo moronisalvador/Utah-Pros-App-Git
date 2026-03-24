@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
 const DOC_TYPES = [
   { key: 'coc',           label: 'Certificate of Completion' },
   { key: 'work_auth',     label: 'Work Authorization'        },
@@ -27,7 +24,7 @@ function IconX(p) {
   );
 }
 
-export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
+export default function SendEsignModal({ job, currentUser, db, onClose, onSent }) {
   const [docType,        setDocType]        = useState('coc');
   const [signerName,     setSignerName]     = useState('');
   const [signerEmail,    setSignerEmail]    = useState('');
@@ -46,19 +43,15 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
     else setDivisions([]);
   }, [docType, job?.division]);
 
-  // Auto-fetch primary contact
+  // Auto-fetch primary contact — uses authenticated db client passed from JobPage
   useEffect(() => {
     if (!job?.id) { setLoadingContact(false); return; }
-    const fetch_ = async () => {
+    const loadContact = async () => {
       try {
-        const noCache = { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Cache-Control': 'no-store' }, cache: 'no-store' };
         let cid = null;
-        for (const filter of [`is_primary=eq.true&`, ``]) {
-          const res = await fetch(
-            `${SUPABASE_URL}/rest/v1/contact_jobs?job_id=eq.${job.id}&${filter}limit=1&select=contact_id`,
-            noCache
-          );
-          const rows = await res.json();
+        // Try primary contact first, then any contact on the job
+        for (const filter of ['is_primary=eq.true&', '']) {
+          const rows = await db.select('contact_jobs', `job_id=eq.${job.id}&${filter}limit=1&select=contact_id`);
           cid = rows?.[0]?.contact_id;
           if (cid) break;
         }
@@ -67,11 +60,8 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           if (job.client_email) setSignerEmail(job.client_email);
           return;
         }
-        const cRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/contacts?id=eq.${cid}&select=id,name,email`,
-          noCache
-        );
-        const c = (await cRes.json())?.[0];
+        const contacts = await db.select('contacts', `id=eq.${cid}&select=id,name,email`);
+        const c = contacts?.[0];
         if (!c) return;
         setContactId(c.id);
         if (c.name)  setSignerName(c.name);
@@ -84,8 +74,8 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
         setLoadingContact(false);
       }
     };
-    fetch_();
-  }, [job?.id]);
+    loadContact();
+  }, [job?.id, db]);
 
   const toggleDivision = (key) =>
     setDivisions(prev =>

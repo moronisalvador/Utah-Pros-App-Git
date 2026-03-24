@@ -119,7 +119,15 @@ export async function onRequestPost(context) {
     }[signReq.doc_type] || 'Signed Document';
 
     const firstName = signer_name.split(' ')[0];
-    const pdfB64    = btoa(String.fromCharCode(...new Uint8Array(pdfBytes)));
+    // Chunk-encode to avoid V8 call stack overflow on large PDFs (btoa spread crashes at ~100KB+)
+    const pdfB64 = (() => {
+      const bytes = new Uint8Array(pdfBytes);
+      let b64 = '';
+      for (let i = 0; i < bytes.length; i += 8192) {
+        b64 += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      }
+      return btoa(b64);
+    })();
     const fileName  = `${signReq.doc_type}-signed-${signedAt.toISOString().slice(0,10)}.pdf`;
 
     await fetch('https://api.sendgrid.com/v3/mail/send', {

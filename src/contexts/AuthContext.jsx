@@ -79,20 +79,20 @@ export function AuthProvider({ children }) {
   const handleAuthUser = async (authUser, token) => {
     setUser(authUser);
 
-    // Create authenticated client
+    // Create authenticated client with the session token
     const authenticatedDb = createSupabaseClient(token);
     setAuthDb(authenticatedDb);
 
     try {
-      // Bridge: look up employee by email (until auth_user_id is populated)
-      const employees = await db.select(
+      // Use the authenticated client — anon client breaks if RLS tightens
+      const employees = await authenticatedDb.select(
         'employees',
         `email=eq.${encodeURIComponent(authUser.email)}&limit=1`
       );
 
       if (employees.length > 0) {
         setEmployee(employees[0]);
-        await loadPermissions(employees[0].role);
+        await loadPermissions(employees[0].role, authenticatedDb);
       } else {
         // Auth user exists but no matching employee — could be new user
         setError('No employee record found for this email. Contact admin.');
@@ -104,9 +104,10 @@ export function AuthProvider({ children }) {
   };
 
   // ── Load role-based nav permissions ──
-  const loadPermissions = async (role) => {
+  // Accepts an optional dbClient so we can use the authenticated client immediately after login
+  const loadPermissions = async (role, dbClient = db) => {
     try {
-      const perms = await db.select(
+      const perms = await dbClient.select(
         'nav_permissions',
         `role=eq.${encodeURIComponent(role)}&can_view=eq.true&select=nav_key,can_view,can_edit`
       );
