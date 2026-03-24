@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import '@/claim-page.css';
 
 // ── Toasts ────────────────────────────────────────────────────────────────────
 const toast  = (msg, type = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
@@ -536,7 +537,7 @@ function FinancialTab({ jobs, totals, isInsurance, navigate }) {
                       </div>
                     </div>
                   </td>
-                  <td style={NUM_TD}>{fmt$(b.invoiced === 0 ? job.estimated_value : null)}{b.invoiced === 0 ? '' : ''}{job.estimated_value > 0 ? fmt$(job.estimated_value) : '—'}</td>
+                  <td style={NUM_TD}>{job.estimated_value > 0 ? fmt$(job.estimated_value) : '—'}</td>
                   <td style={NUM_TD}>{job.approved_value > 0 ? fmt$(job.approved_value) : '—'}</td>
                   <td style={{ ...NUM_TD, fontWeight: 700 }}>{fmt$(b.invoiced)}</td>
                   <td style={{ ...NUM_TD, color: '#059669' }}>{fmt$(b.collected)}</td>
@@ -563,7 +564,6 @@ function FinancialTab({ jobs, totals, isInsurance, navigate }) {
               );
             })}
           </tbody>
-          {/* Totals row */}
           <tfoot>
             <tr style={{ background: 'var(--bg-secondary)', borderTop: '2px solid var(--border-color)', fontWeight: 700 }}>
               <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-secondary)' }}>TOTAL ({jobs.length} jobs)</td>
@@ -581,7 +581,6 @@ function FinancialTab({ jobs, totals, isInsurance, navigate }) {
         </table>
       </div>
 
-      {/* Insurance breakdown note */}
       {isInsurance && (
         <div style={{ margin: '16px 20px', padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
           <strong>Insurance breakdown:</strong> Balance = <span style={{ color: '#dc2626' }}>{fmt$(totals.balance)}</span>
@@ -613,7 +612,6 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
 
   return (
     <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Claim-level summary */}
       <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 4 }}>
         <div style={{ flex: 1, padding: '10px 14px', background: 'var(--bg-primary)' }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)' }}>Total Invoiced</div>
@@ -629,7 +627,6 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
         </div>
       </div>
 
-      {/* Per-job collection cards */}
       {jobs.map(job => {
         const b = getBalances(job);
         const arObj = AR_STATUSES.find(s => s.value === (job.ar_status || 'open')) || AR_STATUSES[0];
@@ -707,7 +704,7 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
               <button className="btn btn-ghost btn-sm" onClick={() => onNotes(job)} style={{ fontSize: 12 }}>
                 📝 Notes
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate ? navigate(`/jobs/${job.id}`) : null} style={{ fontSize: 12, marginLeft: 'auto' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${job.id}`)} style={{ fontSize: 12, marginLeft: 'auto' }}>
                 View Job →
               </button>
             </div>
@@ -722,12 +719,6 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
 // DOCUMENTS TAB
 // ═══════════════════════════════════════════════════════════════════════
 function DocumentsTab({ jobs, documents, docsLoaded, db, navigate }) {
-  const jobMap = useMemo(() => {
-    const m = {};
-    for (const j of jobs) m[j.id] = j;
-    return m;
-  }, [jobs]);
-
   const grouped = useMemo(() => {
     const g = {};
     for (const doc of documents) {
@@ -765,7 +756,7 @@ function DocumentsTab({ jobs, documents, docsLoaded, db, navigate }) {
               <span style={{ fontSize: 16 }}>{DIV_EMOJI[job.division] || '📁'}</span>
               <span style={{ fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>{job.job_number}</span>
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{docs.length} file{docs.length !== 1 ? 's' : ''}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${job.id}?tab=files`)} style={{ marginLeft: 'auto', fontSize: 11 }}>View in Job →</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${job.id}`)} style={{ marginLeft: 'auto', fontSize: 11 }}>View in Job →</button>
             </div>
             <div className="job-page-files-grid">
               {docs.map(doc => (
@@ -791,7 +782,7 @@ function DocumentsTab({ jobs, documents, docsLoaded, db, navigate }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// PAYMENT MODAL (reused from Collections)
+// PAYMENT MODAL
 // ═══════════════════════════════════════════════════════════════════════
 function PaymentModal({ job, onClose, onSubmit }) {
   const b = getBalances(job);
@@ -817,7 +808,10 @@ function PaymentModal({ job, onClose, onSubmit }) {
         <div className="ar-modal-body">
           <div className="ar-pay-summary">
             <div className="ar-pay-summary-item"><div className="ar-pay-summary-label">Balance Due</div><div className="ar-pay-summary-value" style={{ color: b.balance > 0 ? '#dc2626' : '#059669' }}>{fmt$(b.balance)}</div></div>
-            {job.insurance_company && b.deductible > 0 && <><div className="ar-pay-summary-item"><div className="ar-pay-summary-label">Deductible</div><div className="ar-pay-summary-value" style={{ color: job.deductible_collected ? '#059669' : '#d97706' }}>{job.deductible_collected ? '✓' : fmt$(b.deductible)}</div></div><div className="ar-pay-summary-item"><div className="ar-pay-summary-label">Ins. A/R</div><div className="ar-pay-summary-value" style={{ color: '#2563eb' }}>{fmt$(b.ins_balance)}</div></div></>}
+            {job.insurance_company && b.deductible > 0 && <>
+              <div className="ar-pay-summary-item"><div className="ar-pay-summary-label">Deductible</div><div className="ar-pay-summary-value" style={{ color: job.deductible_collected ? '#059669' : '#d97706' }}>{job.deductible_collected ? '✓' : fmt$(b.deductible)}</div></div>
+              <div className="ar-pay-summary-item"><div className="ar-pay-summary-label">Ins. A/R</div><div className="ar-pay-summary-value" style={{ color: '#2563eb' }}>{fmt$(b.ins_balance)}</div></div>
+            </>}
           </div>
           <div className="form-group"><label className="label">Amount Received *</label><input className="input" type="number" step="0.01" min="0.01" value={amount} onChange={e => setAmount(e.target.value)} autoFocus /></div>
           <div className="form-group"><label className="label">Payment Source</label>
