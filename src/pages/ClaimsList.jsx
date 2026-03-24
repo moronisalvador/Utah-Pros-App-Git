@@ -148,8 +148,8 @@ export default function ClaimsList() {
           return (
             <div key={c.id} className="customer-card" onClick={() => navigate(`/claims/${c.id}`)}>
 
-              {/* Avatar — loss emoji on colored background */}
-              <div className="customer-card-avatar" style={{ background: avatarColor(c.claim_number), fontSize: 18 }}>
+              {/* Avatar — emoji plain, initials get color */}
+              <div className="customer-card-avatar" style={{ background: c.loss_type ? 'var(--bg-tertiary)' : avatarColor(c.claim_number), fontSize: c.loss_type ? 20 : 14, color: c.loss_type ? 'unset' : '#fff' }}>
                 {c.loss_type ? (LOSS_EMOJI[c.loss_type] || '📋') : initials(c.insured_name)}
               </div>
 
