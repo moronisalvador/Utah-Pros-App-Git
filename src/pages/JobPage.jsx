@@ -150,7 +150,7 @@ export default function JobPage(){
       ))}</div>
 
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
-        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)}/>}
+        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt}/>}
@@ -167,7 +167,7 @@ export default function JobPage(){
 /* ===========================================
    OVERVIEW TAB
    =========================================== */
-function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer}){
+function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer,onNavigateClaim}){
   return(
     <div className="job-page-grid">
       <ClientTile job={job} saveBatch={saveBatch} onNavigateCustomer={onNavigateCustomer}/>
@@ -176,7 +176,7 @@ function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAd
       <TeamTile job={job} employees={employees} saveBatch={saveBatch}/>
       <NotesTile job={job} saveBatch={saveBatch}/>
       {job.encircle_summary&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">Encircle Summary</div><div style={{fontSize:'var(--text-sm)',whiteSpace:'pre-wrap',color:'var(--text-secondary)'}}>{job.encircle_summary}</div></div>)}
-      {claimData&&<RelatedJobsSection claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={onAddRelatedJob} onNavigateJob={onNavigateJob}/>}
+      {claimData&&<RelatedJobsSection claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={onAddRelatedJob} onNavigateJob={onNavigateJob} onNavigateClaim={onNavigateClaim}/>}
     </div>
   );
 }
@@ -363,12 +363,12 @@ function NotesTile({job,saveBatch}){
     </div>);}
 
 /* === RELATED JOBS SECTION === */
-function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob}){
+function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateClaim}){
   return(
     <div className="job-page-section job-page-section-full">
       <div className="job-page-section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <span>Related Jobs</span>
-        <span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',fontStyle:'normal',textTransform:'none',letterSpacing:0}}>{claimData.claim_number}</span>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>{claimData?.id&&<button className="btn btn-ghost btn-sm" onClick={()=>onNavigateClaim?.(claimData.id)} style={{fontSize:11,height:22,padding:'0 8px',color:'var(--brand-primary)'}}>📋 View Claim</button>}<span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',fontStyle:'normal',textTransform:'none',letterSpacing:0}}>{claimData.claim_number}</span></div>
       </div>
       {siblingJobs&&siblingJobs.length>0?(
         <div style={{display:'flex',flexDirection:'column',gap:'var(--space-2)'}}>

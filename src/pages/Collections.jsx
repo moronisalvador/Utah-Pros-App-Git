@@ -729,6 +729,11 @@ function ARRow({ job, isSaving, onView, onPay, onNotes, onMarkDedPaid, onStatusC
                     ✓ Mark Deductible Received
                   </button>
                 )}
+                {job.claim_id && (
+                  <button className="ar-action-item" onClick={() => { navigate(`/claims/${job.claim_id}`); setMenuOpen(false); }}>
+                    📋 View Claim
+                  </button>
+                )}
               </div>
             )}
           </div>
