@@ -176,7 +176,7 @@ export default function ClaimsList() {
                   <span style={{ color: c.insurance_carrier ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
                     {c.insurance_carrier || 'Out of pocket'}
                   </span>
-                  {(c.loss_city || c.loss_state) && (
+                  {c.loss_city && (
                     <span>{c.loss_city}{c.loss_state ? ', ' + c.loss_state : ''}</span>
                   )}
                   {c.date_of_loss && <span>Loss: {fmtDate(c.date_of_loss)}</span>}
