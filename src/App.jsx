@@ -22,6 +22,7 @@ import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
+import Collections from '@/pages/Collections';
 
 // Admin-only route guard — belt-and-suspenders on top of Admin.jsx's own check
 function AdminRoute({ children }) {
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
             <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
             <Route path="time-tracking" element={<ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>} />
+            <Route path="collections" element={<ErrorBoundary section="Collections"><Collections /></ErrorBoundary>} />
             <Route path="marketing" element={<ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>} />
             <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
             <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
