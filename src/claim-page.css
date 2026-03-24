@@ -1,0 +1,120 @@
+/* ═══════════════════════════════════════════════════
+   Claim Page
+   ═══════════════════════════════════════════════════ */
+
+.claim-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* ── Top bar ── */
+.claim-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Claim header ── */
+.claim-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.claim-header-left { min-width: 0; flex: 1; }
+.claim-header-right { flex-shrink: 0; text-align: right; }
+
+.claim-number {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+.claim-client {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claim-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.claim-meta-sep {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+/* ── KPI strip (reuses ar-kpi-* classes) ── */
+
+/* ── Body scroll ── */
+.claim-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Collections cards ── */
+.claim-coll-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.claim-coll-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.claim-coll-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 768px) {
+  .claim-topbar  { padding: 8px 14px; }
+  .claim-header  { padding: 12px 14px 10px; }
+  .claim-client  { font-size: 17px; }
+  .claim-meta    { font-size: 11px; }
+  .claim-body    { overflow-x: hidden; }
+
+  /* Financial table: scroll horizontally */
+  .claim-body table { min-width: 640px; }
+
+  /* Stack topbar actions vertically on very small screens */
+  .claim-topbar > div:last-child { flex-wrap: wrap; gap: 6px; }
+
+  /* Collections cards already stack naturally */
+  .claim-coll-card { padding: 12px; }
+}

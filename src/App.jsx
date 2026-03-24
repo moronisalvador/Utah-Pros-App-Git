@@ -10,6 +10,7 @@ import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
 import JobPage from '@/pages/JobPage';
+import ClaimPage from '@/pages/ClaimPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
@@ -24,7 +25,6 @@ import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 
-// Admin-only route guard — belt-and-suspenders on top of Admin.jsx's own check
 function AdminRoute({ children }) {
   const { employee } = useAuth();
   if (!employee) return <Navigate to="/" replace />;
@@ -32,7 +32,6 @@ function AdminRoute({ children }) {
   return children;
 }
 
-// Simple 404 page
 function NotFound() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: 24, textAlign: 'center' }}>
@@ -55,13 +54,7 @@ export default function App() {
           <Route path="/set-password" element={<SetPassword />} />
 
           {/* Protected — all wrapped in Layout */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>} />
             <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
 
@@ -70,6 +63,8 @@ export default function App() {
               <Route path="new" element={<Navigate to="/jobs" replace />} />
               <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
             </Route>
+
+            <Route path="claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
 
             <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
             <Route path="leads" element={<ErrorBoundary section="Leads"><Leads /></ErrorBoundary>} />
@@ -84,7 +79,6 @@ export default function App() {
             <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
           </Route>
 
-          {/* 404 — explicit not-found page instead of silent redirect */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>
