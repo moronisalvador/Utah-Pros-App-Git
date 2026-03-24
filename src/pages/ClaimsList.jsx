@@ -12,9 +12,80 @@ const STATUS_MAP = {
   settled:       { label: 'Settled',       color: '#059669', bg: '#ecfdf5' },
   supplementing: { label: 'Supplementing', color: '#7c3aed', bg: '#f5f3ff' },
 };
-const LOSS_EMOJI  = { water: '💧', fire: '🔥', mold: '🧬', storm: '⛈️', sewer: '🚽', vandalism: '🔨', other: '📋' };
-const LOSS_TYPES  = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
-const DIV_COLORS  = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669', general: '#6b7280' };
+const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
+const DIV_COLORS = { water: '#2563eb', mold: '#9d174d', reconstruction: '#d97706', fire: '#dc2626', contents: '#059669', general: '#6b7280' };
+
+// ── Loss type config: color + SVG icon ────────────────────────────────────────
+const LOSS_CONFIG = {
+  water:     { bg: '#dbeafe', color: '#1d4ed8', label: 'Water' },
+  fire:      { bg: '#fee2e2', color: '#b91c1c', label: 'Fire' },
+  mold:      { bg: '#f3e8ff', color: '#7e22ce', label: 'Mold' },
+  storm:     { bg: '#fef9c3', color: '#a16207', label: 'Storm' },
+  sewer:     { bg: '#d1fae5', color: '#065f46', label: 'Sewer' },
+  vandalism: { bg: '#ffe4e6', color: '#be123c', label: 'Vandalism' },
+  other:     { bg: '#f1f5f9', color: '#475569', label: 'Other' },
+};
+
+function LossIcon({ type, size = 20 }) {
+  const s = { width: size, height: size, display: 'block' };
+  const color = LOSS_CONFIG[type]?.color || '#475569';
+  switch (type) {
+    case 'water': return (
+      <svg style={s} viewBox="0 0 24 24" fill={color}>
+        <path d="M12 2C12 2 5 10.5 5 15a7 7 0 0 0 14 0C19 10.5 12 2 12 2z"/>
+      </svg>
+    );
+    case 'fire': return (
+      <svg style={s} viewBox="0 0 24 24" fill={color}>
+        <path d="M12 2c0 0-1 3-3 5C7 9.5 6 11 6 13a6 6 0 0 0 12 0c0-4-4-7-4-9-1 1.5-1 3-1 3s-1-1-1-5z"/>
+        <path d="M12 15a2 2 0 0 1-2-2c0-1.5 2-4 2-4s2 2.5 2 4a2 2 0 0 1-2 2z" fill="white" opacity="0.5"/>
+      </svg>
+    );
+    case 'mold': return (
+      <svg style={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round">
+        <circle cx="12" cy="12" r="3"/>
+        <circle cx="12" cy="5"  r="1.8"/>
+        <circle cx="12" cy="19" r="1.8"/>
+        <circle cx="5"  cy="12" r="1.8"/>
+        <circle cx="19" cy="12" r="1.8"/>
+        <circle cx="7"  cy="7"  r="1.4"/>
+        <circle cx="17" cy="7"  r="1.4"/>
+        <circle cx="7"  cy="17" r="1.4"/>
+        <circle cx="17" cy="17" r="1.4"/>
+      </svg>
+    );
+    case 'storm': return (
+      <svg style={s} viewBox="0 0 24 24" fill={color}>
+        <path d="M13 2L4 14h7l-2 8 11-12h-7l2-8z"/>
+      </svg>
+    );
+    case 'sewer': return (
+      <svg style={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="6" width="16" height="4" rx="2"/>
+        <path d="M8 10v2M12 10v4M16 10v2"/>
+        <path d="M6 14h12"/>
+        <path d="M8 14v4M16 14v4"/>
+        <path d="M12 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" fill={color} opacity="0.3"/>
+      </svg>
+    );
+    case 'vandalism': return (
+      <svg style={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 21l9-9"/>
+        <path d="M12.5 7.5l2-2a2.12 2.12 0 0 1 3 3l-2 2"/>
+        <path d="M3 21h4l9.5-9.5-4-4L3 21z" fill={color} opacity="0.2"/>
+        <line x1="16" y1="8" x2="18" y2="6"/>
+      </svg>
+    );
+    default: return (
+      <svg style={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="9" y1="13" x2="15" y2="13"/>
+        <line x1="9" y1="17" x2="13" y2="17"/>
+      </svg>
+    );
+  }
+}
 
 const fmtDate = (v) => v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : null;
 const fmtPh   = (ph) => { if (!ph) return null; const d = ph.replace(/\D/g,''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0,3)}) ${n.slice(3,6)}-${n.slice(6)}` : ph; };
@@ -117,7 +188,7 @@ export default function ClaimsList() {
 
         <select className="input" style={{ height: 36, width: 'auto', minWidth: 120, fontSize: 16 }} value={lossF} onChange={e => setLossF(e.target.value)}>
           <option value="all">All Loss Types</option>
-          {LOSS_TYPES.map(t => <option key={t} value={t}>{LOSS_EMOJI[t]} {t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+          {LOSS_TYPES.map(t => <option key={t} value={t}>{LOSS_CONFIG[t]?.label || t}</option>)}
         </select>
 
         <select className="input" style={{ height: 36, width: 'auto', minWidth: 130, fontSize: 16 }} value={sortBy} onChange={e => setSortBy(e.target.value)}>
@@ -142,20 +213,33 @@ export default function ClaimsList() {
             <div className="empty-state-sub">Try adjusting your filters</div>
           </div>
         ) : filtered.map(c => {
-          const st   = STATUS_MAP[c.status] || STATUS_MAP.open;
-          const jobs = Array.isArray(c.jobs_summary) ? c.jobs_summary : [];
+          const st      = STATUS_MAP[c.status] || STATUS_MAP.open;
+          const lossConf = LOSS_CONFIG[c.loss_type];
+          const jobs    = Array.isArray(c.jobs_summary) ? c.jobs_summary : [];
 
           return (
             <div key={c.id} className="customer-card" onClick={() => navigate(`/claims/${c.id}`)}>
 
-              {/* Avatar — emoji plain, initials get color */}
-              <div className="customer-card-avatar" style={{ background: c.loss_type ? 'var(--bg-tertiary)' : avatarColor(c.claim_number), fontSize: c.loss_type ? 20 : 14, color: c.loss_type ? 'unset' : '#fff' }}>
-                {c.loss_type ? (LOSS_EMOJI[c.loss_type] || '📋') : initials(c.insured_name)}
+              {/* Avatar — SVG icon on type-colored bg, or initials on hashed color */}
+              <div
+                className="customer-card-avatar"
+                style={{
+                  background:     lossConf ? lossConf.bg : avatarColor(c.claim_number),
+                  color:          lossConf ? lossConf.color : '#fff',
+                  display:        'flex',
+                  alignItems:     'center',
+                  justifyContent: 'center',
+                  fontSize:       lossConf ? undefined : 14,
+                }}
+              >
+                {lossConf
+                  ? <LossIcon type={c.loss_type} size={22} />
+                  : initials(c.insured_name)
+                }
               </div>
 
               {/* Body */}
               <div className="customer-card-body">
-                {/* Claim number + insurance claim # */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.06em' }}>
                     {c.claim_number}
@@ -167,10 +251,8 @@ export default function ClaimsList() {
                   )}
                 </div>
 
-                {/* Insured name — big like customer name */}
                 <div className="customer-card-name">{c.insured_name || 'Unknown'}</div>
 
-                {/* Meta row */}
                 <div className="customer-card-meta">
                   {c.client_phone && <span>{fmtPh(c.client_phone)}</span>}
                   <span style={{ color: c.insurance_carrier ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
@@ -182,7 +264,6 @@ export default function ClaimsList() {
                   {c.date_of_loss && <span>Loss: {fmtDate(c.date_of_loss)}</span>}
                 </div>
 
-                {/* Job pills — same pattern as customer-card-jobs */}
                 {jobs.length > 0 && (
                   <div className="customer-card-jobs" style={{ marginTop: 5 }}>
                     {jobs.slice(0, 4).map(j => (
