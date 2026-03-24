@@ -193,8 +193,12 @@ export default function Collections() {
         case 'invoiced':   av = a.invoiced_value || 0;   bv = b.invoiced_value || 0; break;
         case 'days':       av = ageDays(a) ?? -1;        bv = ageDays(b) ?? -1; break;
         case 'deductible': av = a.deductible || 0;       bv = b.deductible || 0; break;
-        case 'client':     av = a.insured_name || '';    bv = b.insured_name || ''; break;
-        default:           av = getBalances(a).balance;  bv = getBalances(b).balance;
+        case 'client':     av = a.insured_name || '';      bv = b.insured_name || '';      break;
+        case 'insurance':  av = a.insurance_company || ''; bv = b.insurance_company || ''; break;
+        case 'phase':      av = a.phase || '';             bv = b.phase || '';             break;
+        case 'collected':  av = a.collected_value || 0;   bv = b.collected_value || 0;   break;
+        case 'status':     av = a.ar_status || '';         bv = b.ar_status || '';         break;
+        default:           av = getBalances(a).balance;   bv = getBalances(b).balance;
       }
       if (typeof av === 'string')
         return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -418,12 +422,12 @@ export default function Collections() {
                     <th className="ar-th-job">
                       <SortBtn label="Job / Client" col="client" current={sortBy} dir={sortDir} onSort={toggleSort} />
                     </th>
-                    <th>Insurance / Carrier</th>
-                    <th>Phase</th>
+                    <th><SortBtn label="Insurance" col="insurance" current={sortBy} dir={sortDir} onSort={toggleSort} /></th>
+                    <th><SortBtn label="Phase" col="phase" current={sortBy} dir={sortDir} onSort={toggleSort} /></th>
                     <th className="ar-th-num">
                       <SortBtn label="Invoiced" col="invoiced" current={sortBy} dir={sortDir} onSort={toggleSort} />
                     </th>
-                    <th className="ar-th-num">Collected</th>
+                    <th className="ar-th-num"><SortBtn label="Collected" col="collected" current={sortBy} dir={sortDir} onSort={toggleSort} /></th>
                     <th className="ar-th-num">
                       <SortBtn label="Balance" col="balance" current={sortBy} dir={sortDir} onSort={toggleSort} />
                     </th>
@@ -433,7 +437,7 @@ export default function Collections() {
                     <th className="ar-th-num">
                       <SortBtn label="Days" col="days" current={sortBy} dir={sortDir} onSort={toggleSort} />
                     </th>
-                    <th style={{ width: 120 }}>Status</th>
+                    <th style={{ width: 120 }}><SortBtn label="Status" col="status" current={sortBy} dir={sortDir} onSort={toggleSort} /></th>
                     <th style={{ width: 90 }} />
                   </tr>
                 </thead>
