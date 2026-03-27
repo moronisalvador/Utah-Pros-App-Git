@@ -90,12 +90,15 @@ function AppointmentCard({ appt, employee, db, expanded, onReload }) {
   const totalCount = tasks.length;
   const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
 
+  const relTime = getRelativeTime(appt);
+
   // Collapsed card for future appointments
   if (!expanded) {
     return (
-      <div className="tech-appt-card" style={{ opacity: 0.75, cursor: 'pointer' }} onClick={goToDetail}>
+      <div className="tech-appt-card" data-status={appt.status} style={{ opacity: 0.75 }} onClick={goToDetail}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className="tech-appt-time" style={{ marginBottom: 0 }}>{timeStr}</span>
+          {relTime && <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{relTime}</span>}
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{appt.title || 'Appointment'}</span>
         </div>
         {address && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{address}</div>}
@@ -104,7 +107,7 @@ function AppointmentCard({ appt, employee, db, expanded, onReload }) {
   }
 
   return (
-    <div className="tech-appt-card" style={{ cursor: 'pointer' }} onClick={goToDetail}>
+    <div className="tech-appt-card" data-status={appt.status} onClick={goToDetail}>
       <div className="tech-appt-time">{timeStr}</div>
       <div className="tech-appt-title">{appt.title || job?.division || 'Appointment'}</div>
 
@@ -205,7 +208,24 @@ export default function TechDash() {
   const completed = appointments.filter(a => a.status === 'completed');
 
   if (loading) {
-    return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
+    return (
+      <div className="tech-page">
+        <div className="tech-page-header">
+          <div className="tech-skeleton-line short" style={{ height: 14 }} />
+          <div className="tech-skeleton-line medium" style={{ height: 20 }} />
+        </div>
+        {[1, 2].map(i => (
+          <div key={i} className="tech-skeleton-card">
+            <div className="tech-skeleton-line short" />
+            <div className="tech-skeleton-line tall medium" />
+            <div className="tech-skeleton-line long" />
+            <div style={{ height: 16 }} />
+            <div className="tech-skeleton-line long" />
+            <div className="tech-skeleton-line medium" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   if (appointments.length === 0) {
@@ -253,4 +273,18 @@ export default function TechDash() {
       </div>
     </PullToRefresh>
   );
+}
+
+/* ── Helpers ── */
+
+function getRelativeTime(appt) {
+  const apptDate = new Date(`${appt.date}T${appt.time_start || '00:00'}`);
+  const diffMs = apptDate - Date.now();
+  if (diffMs < 0) return null;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 60) return `in ${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  const remMin = diffMin % 60;
+  if (remMin === 0) return `in ${diffHr}h`;
+  return `in ${diffHr}h ${remMin}m`;
 }

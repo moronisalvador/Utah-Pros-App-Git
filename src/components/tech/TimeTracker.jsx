@@ -24,6 +24,9 @@ export function formatTimeStr(timeStr) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+const HAPTIC = { omw: 50, start: 50, pause: 30, resume: 50, finish: [50, 30, 50] };
+const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
+
 export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       if (!confirmFinish) { setConfirmFinish(true); return; }
       setConfirmFinish(false);
     }
+    haptic(HAPTIC[action] || 50);
     setActing(true);
     try {
       await db.rpc('clock_appointment_action', {
