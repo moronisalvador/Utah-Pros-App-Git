@@ -33,6 +33,7 @@ import TechDash from '@/pages/tech/TechDash';
 import TechSchedule from '@/pages/tech/TechSchedule';
 import TechTasks from '@/pages/tech/TechTasks';
 import TechClaims from '@/pages/tech/TechClaims';
+import TechAppointment from '@/pages/tech/TechAppointment';
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ export default function App() {
             <Route path="tech/schedule" element={<ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>} />
             <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
             <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
+            <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
             <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
           </Route>
 
