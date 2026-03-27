@@ -4016,3 +4016,161 @@ tr:hover td { background: var(--bg-secondary); }
   width: 22px;
   height: 22px;
 }
+
+/* Tech page shared */
+.tech-page {
+  padding: var(--space-4);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.tech-page-header {
+  margin-bottom: var(--space-4);
+}
+
+.tech-page-date {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.tech-page-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tech-page-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Appointment cards */
+.tech-appt-card {
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+}
+
+.tech-appt-time {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.tech-appt-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.tech-appt-address {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--accent-light);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-sans);
+}
+
+.tech-tasks-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-light);
+  padding: 10px 0 0;
+  margin-top: var(--space-3);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tech-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+}
+
+.tech-task-row:last-child {
+  border-bottom: none;
+}
+
+.tech-task-check {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-color);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.tech-task-check.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tech-task-name {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.tech-task-name.done {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+.tech-appt-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Time tracker */
+.tech-tracker {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.tech-tracker-timer {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--space-2);
+}
+
+.tech-tracker-actions {
+  display: flex;
+  gap: var(--space-2);
+}
