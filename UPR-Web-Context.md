@@ -77,12 +77,14 @@ src/
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
   pages/tech/
-    TechDash.jsx                  — Field tech dashboard: today's appointments, time tracker, tasks, photo upload
-    TechSchedule.jsx              — Field tech 14-day schedule view
-    TechTasks.jsx                 — Field tech tasks: Today/All tabs, grouped by job
-    TechClaims.jsx                — Field tech claims list with search
+    TechDash.jsx                  — Field tech dashboard: skeleton loading, sticky header, relative time, status borders
+    TechSchedule.jsx              — Field tech 14-day schedule: type icons, jump-to-today FAB
+    TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups
+    TechClaims.jsx                — Field tech claims: 200ms debounced instant search
+    TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox
   components/
-    TechLayout.jsx                — Field tech app shell: full-viewport, bottom nav, PWA install banner
+    TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot
+    tech/TimeTracker.jsx          — Shared time tracker widget with haptic feedback (OMW/Start/Pause/Resume/Finish)
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner
     Sidebar.jsx                   — Desktop nav + sign out button
     AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
@@ -440,7 +442,8 @@ get_dashboard_stats()           — Dashboard stat counts
 - **TOKEN_REFRESHED** event rebuilds `authDb` so calls don't 401 after ~1 hour
 - **Dev mode:** bypasses auth by selecting employee directly (`import.meta.env.DEV` only)
 - **Recovery links:** hash with `type=recovery` → redirect `/set-password` before init
-- **field_tech routing:** `employee.role === 'field_tech'` → `/` redirects to `/tech` (TechLayout, bottom nav, no sidebar). `/tech/*` routes: Dash, Schedule, Tasks, Claims. `/conversations` shared with all roles.
+- **field_tech routing:** `employee.role === 'field_tech'` → `/` redirects to `/tech` (TechLayout, bottom nav, no sidebar). `/tech/*` routes: Dash, Schedule, Tasks, Claims, Appointment detail. `/conversations` shared with all roles.
+- **Tech mobile polish (Mar 27 2026):** Press states, status-colored card borders, skeleton loading, haptic feedback on time tracker, frosted glass tab bar, active tab pill indicator, swipe-to-complete tasks, collapsible job groups, task badge dot, page slide-in animation, collapsing hero header, jump-to-today FAB, appointment type icons, 200ms debounced search, sticky section headers.
 
 ---
 
