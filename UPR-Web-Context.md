@@ -72,7 +72,7 @@ src/
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking)
     Marketing.jsx                 — Marketing tools (feature-flagged: page:marketing)
-    Admin.jsx                     — Employee management + roles/permissions matrix
+    Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
@@ -215,7 +215,8 @@ sub_confirmations       — Subcontractor job confirmations
 ```
 employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
-feature_flags           — 8 rows — Feature flag controls
+feature_flags           — 8 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins)
+employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 automation_rules        — Workflow automation rules
 insurance_carriers      — 29 rows — Carrier lookup table
 referral_sources        — 49 rows — Referral source lookup table
@@ -309,6 +310,9 @@ calc_time_entry_cost(...)       — Calculate cost from hours/rate
 ```
 get_all_permissions()           — Full nav_permissions matrix
 upsert_permission(...)          — Save role/nav_key permission
+get_employee_page_access(p_employee_id) — All page overrides for an employee
+upsert_employee_page_access(p_employee_id, p_nav_key, p_can_view, p_updated_by) — Set override
+delete_employee_page_access(p_employee_id, p_nav_key) — Remove override (revert to role default)
 ```
 
 ### Documents & Esign
@@ -334,7 +338,7 @@ delete_referral_source(p_id)
 ### Feature Flags (Phase 1A — complete)
 ```
 get_feature_flags()             — Returns all flag rows ordered by category, label
-upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by)
+upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by, p_force_disabled)
 delete_feature_flag(p_key)
 ```
 
@@ -383,11 +387,17 @@ get_dashboard_stats()           — Dashboard stat counts
 | `feature:pwa` | feature | PWA |
 | `feature:twilio_live` | feature | Twilio Live SMS |
 
-**AuthContext integration (Phase 1B — complete as of Mar 27 2026):**
-- `featureFlags` — keyed object `{ 'page:marketing': { enabled, dev_only_user_id, ... } }`
+**AuthContext integration (Phase 1B — complete, access control updated Mar 27 2026):**
+- `featureFlags` — keyed object `{ 'page:marketing': { enabled, dev_only_user_id, force_disabled, ... } }`
+- `employeePageAccess` — keyed object `{ dashboard: true, conversations: false, ... }` — empty = no overrides
 - `isFeatureEnabled(key)` — no row = `true` (backwards compat), `flag.enabled` = `true`, `dev_only_user_id === employee.id` = `true`, else `false`
-- Both fetched at login via `get_feature_flags()` RPC (parallel with `loadPermissions`)
-- Both reset on logout
+- `canAccess(navKey)` — 4-layer priority:
+  1. `force_disabled` on feature flag → `false` (no exceptions, even admins)
+  2. `employeePageAccess[navKey]` exists → use that value
+  3. `employee.role === 'admin'` → `true`
+  4. `nav_permissions` by role (existing logic)
+- All three (permissions, flags, page access) fetched in parallel at login
+- All reset on logout
 
 **Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 7 tabs (Moroni-only route)
 
