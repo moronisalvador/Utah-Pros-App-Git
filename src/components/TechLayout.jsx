@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconDashboard, IconSchedule, IconConversations, IconNote } from '@/components/Icons';
@@ -83,6 +84,89 @@ const TABS = [
   { key: 'claims', label: 'Claims', path: '/tech/claims', Icon: IconFolder },
 ];
 
+/* ── PWA Install Banner ── */
+
+function InstallBanner() {
+  const { employee } = useAuth();
+  const [dismissed, setDismissed] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
+    if (sessionStorage.getItem('pwa-dismissed')) setDismissed(true);
+  }, []);
+
+  // Android/Chrome: listen for install prompt
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  if (employee?.role !== 'field_tech') return null;
+  if (isStandalone || dismissed) return null;
+
+  const isIOS = /iPhone|iPad/.test(navigator.userAgent) && !window.navigator.standalone;
+  const showAndroid = !!deferredPrompt;
+
+  if (!isIOS && !showAndroid) return null;
+
+  const dismiss = () => {
+    sessionStorage.setItem('pwa-dismissed', '1');
+    setDismissed(true);
+  };
+
+  const install = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      setDeferredPrompt(null);
+      dismiss();
+    }
+  };
+
+  return (
+    <div style={{
+      background: 'var(--accent)', color: '#fff',
+      padding: '10px var(--space-4)',
+      display: 'flex', alignItems: 'center', gap: 8,
+      fontSize: 13, fontWeight: 500,
+      fontFamily: 'var(--font-sans)',
+    }}>
+      <div style={{ flex: 1 }}>
+        {isIOS
+          ? <>Tap <strong>Share</strong> → <strong>Add to Home Screen</strong> to install UPR</>
+          : 'Install UPR for the best experience'
+        }
+      </div>
+      {showAndroid && (
+        <button
+          onClick={install}
+          style={{
+            background: '#fff', color: 'var(--accent)',
+            border: 'none', borderRadius: 'var(--radius-md)',
+            padding: '5px 12px', fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'var(--font-sans)', flexShrink: 0,
+          }}
+        >
+          Install App
+        </button>
+      )}
+      <button
+        onClick={dismiss}
+        style={{
+          background: 'none', border: 'none', color: '#fff',
+          cursor: 'pointer', padding: 4, fontSize: 18, lineHeight: 1,
+          opacity: 0.8, flexShrink: 0,
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 /* ── TechLayout ── */
 
 export default function TechLayout() {
@@ -98,6 +182,7 @@ export default function TechLayout() {
       <div className="tech-content">
         <Outlet />
       </div>
+      <InstallBanner />
       <nav className="tech-nav">
         {TABS.map(tab => {
           const active = isActive(tab);
