@@ -76,6 +76,7 @@ function FlagsTab() {
         p_label:           flag.label,
         p_description:     flag.description,
         p_updated_by:      employee?.id,
+        p_force_disabled:  flag.force_disabled || false,
       });
       setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, enabled: !f.enabled } : f));
       ok(`${flag.label} ${!flag.enabled ? 'enabled' : 'disabled'}`);
@@ -87,7 +88,6 @@ function FlagsTab() {
   };
 
   const toggleDevOnly = async (flag) => {
-    // If dev_only_user_id is already set to this user → clear it. Otherwise → set to this user.
     const newVal = flag.dev_only_user_id === employee?.id ? null : employee?.id;
     setSaving(flag.key + '_dev');
     try {
@@ -99,11 +99,34 @@ function FlagsTab() {
         p_label:           flag.label,
         p_description:     flag.description,
         p_updated_by:      employee?.id,
+        p_force_disabled:  flag.force_disabled || false,
       });
       setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, dev_only_user_id: newVal } : f));
       ok(newVal ? 'Dev-only mode on (only you see this)' : 'Dev-only mode cleared');
     } catch (e) {
       err('Failed to update dev-only');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const toggleForceDisabled = async (flag) => {
+    setSaving(flag.key + '_force');
+    try {
+      await db.rpc('upsert_feature_flag', {
+        p_key:             flag.key,
+        p_enabled:         flag.enabled,
+        p_dev_only_user_id: flag.dev_only_user_id,
+        p_category:        flag.category,
+        p_label:           flag.label,
+        p_description:     flag.description,
+        p_updated_by:      employee?.id,
+        p_force_disabled:  !flag.force_disabled,
+      });
+      setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, force_disabled: !f.force_disabled } : f));
+      ok(!flag.force_disabled ? '⚠️ Force disabled — hidden for everyone including admins' : 'Force disable cleared');
+    } catch (e) {
+      err('Failed to update force disable');
     } finally {
       setSaving(null);
     }
@@ -137,6 +160,7 @@ function FlagsTab() {
         p_label:           newFlag.label.trim(),
         p_description:     newFlag.description.trim() || null,
         p_updated_by:      employee?.id,
+        p_force_disabled:  false,
       });
       ok(`Flag "${newFlag.key}" created`);
       setNewFlag({ key: '', label: '', category: 'page', description: '' });
@@ -296,6 +320,13 @@ function FlagsTab() {
                             background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a',
                           }}>DEV ONLY</span>
                         )}
+                        {flag.force_disabled && (
+                          <span style={{
+                            fontSize: 11, fontWeight: 700, padding: '1px 7px',
+                            borderRadius: 'var(--radius-full)',
+                            background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                          }}>FORCE DISABLED — ALL USERS</span>
+                        )}
                       </div>
                       {flag.description && (
                         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
@@ -323,6 +354,23 @@ function FlagsTab() {
                       >
                         <IconUser style={{ width: 11, height: 11, display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
                         {isDevOnly ? 'Dev Only' : 'Set Dev'}
+                      </button>
+                      {/* Force disable — kills for everyone including admins */}
+                      <button
+                        onClick={() => toggleForceDisabled(flag)}
+                        disabled={!!saving}
+                        title={flag.force_disabled ? 'Clear force disable (page returns to normal flag behavior)' : 'Force disable for EVERYONE including admins (bug fix kill switch)'}
+                        style={{
+                          padding: '4px 10px', borderRadius: 'var(--radius-md)', border: '1px solid',
+                          fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+                          background: flag.force_disabled ? '#fef2f2' : 'var(--bg-tertiary)',
+                          color:      flag.force_disabled ? '#dc2626' : 'var(--text-tertiary)',
+                          borderColor: flag.force_disabled ? '#fecaca' : 'var(--border-light)',
+                          opacity: saving === flag.key + '_force' ? 0.5 : 1,
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        {flag.force_disabled ? '🔴 FORCE OFF' : 'Force Off'}
                       </button>
                       {/* Delete — requires two clicks (confirm pattern) */}
                       <button

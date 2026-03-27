@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [employee, setEmployee] = useState(null); // Matched employee row
   const [permissions, setPermissions] = useState([]);
   const [featureFlags, setFeatureFlags] = useState({}); // key → flag row
+  const [employeePageAccess, setEmployeePageAccess] = useState({}); // nav_key → boolean
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -69,6 +70,7 @@ export function AuthProvider({ children }) {
           setEmployee(null);
           setPermissions([]);
           setFeatureFlags({});
+          setEmployeePageAccess({});
           setAuthDb(null);
         }
       }
@@ -91,6 +93,19 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // ── Load per-employee page access overrides ──
+  const loadEmployeePageAccess = async (employeeId, dbClient = db) => {
+    try {
+      const rows = await dbClient.rpc('get_employee_page_access', { p_employee_id: employeeId });
+      const map = {};
+      (rows || []).forEach(r => { map[r.nav_key] = r.can_view; });
+      setEmployeePageAccess(map);
+    } catch (err) {
+      console.error('Employee page access load error:', err);
+      setEmployeePageAccess({}); // Fail open — empty = no overrides = use role defaults
+    }
+  };
+
   // ── Match auth user → employee row ──
   const handleAuthUser = async (authUser, token) => {
     setUser(authUser);
@@ -108,10 +123,11 @@ export function AuthProvider({ children }) {
 
       if (employees.length > 0) {
         setEmployee(employees[0]);
-        // Load permissions and feature flags in parallel
+        // Load permissions, feature flags, and page access overrides in parallel
         await Promise.all([
           loadPermissions(employees[0].role, authenticatedDb),
           loadFeatureFlags(authenticatedDb),
+          loadEmployeePageAccess(employees[0].id, authenticatedDb),
         ]);
       } else {
         // Auth user exists but no matching employee — could be new user
@@ -165,6 +181,7 @@ export function AuthProvider({ children }) {
     setEmployee(null);
     setPermissions([]);
     setFeatureFlags({});
+    setEmployeePageAccess({});
     setAuthDb(null);
   }, []);
 
@@ -191,6 +208,7 @@ export function AuthProvider({ children }) {
       await Promise.all([
         loadPermissions(emp.role),
         loadFeatureFlags(),
+        loadEmployeePageAccess(emp.id),
       ]);
     } catch (err) {
       setError(err.message);
@@ -200,17 +218,27 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // ── Permission check helper ──
+  // ── Permission check helper (4-layer priority) ──
   const canAccess = useCallback((navKey) => {
     if (!employee) return false;
-    // Admins always see everything
+
+    // Layer 1: Force-disabled kills the page for everyone, no exceptions
+    const flag = featureFlags[`page:${navKey}`];
+    if (flag?.force_disabled) return false;
+
+    // Layer 2: Per-employee override — if a row exists, it wins over role
+    if (employeePageAccess.hasOwnProperty(navKey)) {
+      return employeePageAccess[navKey];
+    }
+
+    // Layer 3: Admins see everything (unless force_disabled above)
     if (employee.role === 'admin') return true;
-    // No permissions loaded — deny by default for non-admins
-    // (prevents accidental access if nav_permissions table is empty or failed to load)
+
+    // Layer 4: Role-based nav_permissions (existing logic)
     if (permissions.length === 0) return false;
     const perm = permissions.find(p => p.nav_key === navKey);
     return perm ? perm.can_view : false;
-  }, [employee, permissions]);
+  }, [employee, permissions, featureFlags, employeePageAccess]);
 
   // ── Feature flag check helper ──
   // No flag row = unrestricted (backwards compatible — existing pages keep working)
@@ -229,6 +257,7 @@ export function AuthProvider({ children }) {
     employee,
     permissions,
     featureFlags,         // Raw flags map — { 'page:marketing': { enabled, ... } }
+    employeePageAccess,   // { dashboard: true, conversations: false, ... } — empty = no overrides
     loading,
     error,
     db: authDb || db, // Use authenticated client when available
