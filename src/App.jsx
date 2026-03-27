@@ -25,13 +25,35 @@ import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
+import DevTools from '@/pages/DevTools';
 
+// ── Route guards ──────────────────────────────────────────────────────────────
+
+// Admin-only pages (role check)
 function AdminRoute({ children }) {
   const { employee } = useAuth();
   if (!employee) return <Navigate to="/" replace />;
   if (employee.role !== 'admin') return <Navigate to="/" replace />;
   return children;
 }
+
+// Feature-flagged pages — redirects to / when flag is disabled
+// No flag row in DB = unrestricted (isFeatureEnabled returns true)
+function FeatureRoute({ flag, children }) {
+  const { isFeatureEnabled } = useAuth();
+  if (!isFeatureEnabled(flag)) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Dev Tools — hardcoded to Moroni only, not role-based
+// Even other admins can't access this via direct URL
+function DevRoute({ children }) {
+  const { employee } = useAuth();
+  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  return children;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function NotFound() {
   return (
@@ -71,16 +93,41 @@ export default function App() {
             </Route>
 
             <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
-            <Route path="leads" element={<ErrorBoundary section="Leads"><Leads /></ErrorBoundary>} />
             <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
             <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
             <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
             <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
-            <Route path="time-tracking" element={<ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>} />
-            <Route path="collections" element={<ErrorBoundary section="Collections"><Collections /></ErrorBoundary>} />
-            <Route path="marketing" element={<ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>} />
+
+            {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
+            <Route path="leads" element={
+              <FeatureRoute flag="page:leads">
+                <ErrorBoundary section="Leads"><Leads /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="time-tracking" element={
+              <FeatureRoute flag="page:time_tracking">
+                <ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="collections" element={
+              <FeatureRoute flag="page:collections">
+                <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="marketing" element={
+              <FeatureRoute flag="page:marketing">
+                <ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+
+            {/* Admin-only */}
             <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
             <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
+
+            {/* Dev Tools — Moroni only, not role-based */}
+            <Route path="dev-tools" element={
+              <DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>
+            } />
           </Route>
 
           <Route path="*" element={<NotFound />} />

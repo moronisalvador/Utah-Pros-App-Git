@@ -11,7 +11,10 @@ function IconTemplates(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="cu
 function IconProduction(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="4" height="18" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="5" width="4" height="16" rx="1"/></svg>);}
 function IconCollections(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 3.5C10 3.2 11 3 12 3"/><path d="M3.5 9C3.2 10 3 11 3 12"/></svg>);}
 function IconClaim(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>);}
+function IconDevTools(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>);}
 
+// featureFlag: if set, this nav item is hidden when that flag is disabled
+// No featureFlag = always show (existing pages are unrestricted)
 const NAV_ITEMS = [
   { section: 'Main' },
   { key: 'dashboard',    label: 'Dashboard',    path: '/',             icon: IconDashboard },
@@ -24,8 +27,9 @@ const NAV_ITEMS = [
   { section: 'Operations' },
   { key: 'schedule',           label: 'Schedule',           path: '/schedule',           icon: IconSchedule },
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
-  { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking },
-  { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections },
+  { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking, featureFlag: 'page:time_tracking' },
+  { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections,  featureFlag: 'page:collections' },
+  { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,         featureFlag: 'page:leads' },
 
   { section: 'System' },
   { key: 'admin_panel', label: 'Admin',    path: '/admin',    icon: IconAdmin },
@@ -33,7 +37,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar({ isOpen, onNavClick, onAction }) {
-  const { employee, canAccess, logout } = useAuth();
+  const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
 
   const initials = employee?.full_name
     ? employee.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
@@ -43,6 +47,8 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
     onNavClick?.();
     onAction?.(key);
   };
+
+  const isMoroni = employee?.email === 'moroni@utah-pros.com';
 
   return (
     <aside className={`sidebar${isOpen ? ' sidebar-open' : ''}`}>
@@ -73,7 +79,11 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             );
           }
 
+          // Role-based nav permission check
           if (!canAccess(item.key)) return null;
+
+          // Feature flag check — hides item when flag is disabled
+          if (item.featureFlag && !isFeatureEnabled(item.featureFlag)) return null;
 
           return (
             <NavLink
@@ -91,6 +101,18 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             </NavLink>
           );
         })}
+
+        {/* Dev Tools — only visible to Moroni, not in NAV_ITEMS so never role-gated */}
+        {isMoroni && (
+          <NavLink
+            to="/dev-tools"
+            className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+            onClick={onNavClick}
+          >
+            <IconDevTools className="nav-icon" />
+            Dev Tools
+          </NavLink>
+        )}
       </nav>
 
       <div className="sidebar-footer">
