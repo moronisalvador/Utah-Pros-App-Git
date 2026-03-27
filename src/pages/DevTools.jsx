@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
 /* ── Toast helpers ── */
@@ -28,6 +29,7 @@ const TABS = [
   { key: 'workers',    label: 'Workers',       icon: IconZap    },
   { key: 'integrity',  label: 'Integrity',     icon: IconShield },
   { key: 'messaging',  label: 'Messaging',     icon: IconMsg    },
+  { key: 'advanced',   label: 'Advanced',      icon: IconCode   },
 ];
 
 const CATEGORY_COLOR = {
@@ -805,17 +807,968 @@ function WorkersTab() {
 }
 
 /* ════════════════════════════════════════════════════
-   INTEGRITY TAB (stub — Phase 4)
+   INTEGRITY TAB — Phase 4
    ════════════════════════════════════════════════════ */
+const DIVISION_ICON = { water: '\u{1F4A7}', mold: '\u{1F9EB}', reconstruction: '\u{1F3D7}\uFE0F', fire: '\u{1F525}', contents: '\u{1F4E6}' };
+
 function IntegrityTab() {
-  return <ComingSoon phase="4" label="Data Integrity Tools" description="Orphan checker, claim/job tree viewer, and duplicate contact detector." />;
+  const [subTab, setSubTab] = useState('orphans');
+  const subs = [
+    { key: 'orphans', label: 'Orphans' },
+    { key: 'tree', label: 'Claim Tree' },
+    { key: 'duplicates', label: 'Duplicates' },
+  ];
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Data Integrity Tools</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Orphan checker, claim/job tree viewer, and duplicate contact detector.</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        {subs.map(s => (
+          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
+            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
+            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
+            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
+            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
+          }}>{s.label}</button>
+        ))}
+      </div>
+      {subTab === 'orphans' && <OrphanChecker />}
+      {subTab === 'tree' && <ClaimTreeViewer />}
+      {subTab === 'duplicates' && <DuplicateDetector />}
+    </div>
+  );
+}
+
+/* ── 4A: Orphan Checker ── */
+const ORPHAN_CHECKS = [
+  { id: 'jobs_no_claim', label: 'Jobs with no claim', rpc: 'get_orphan_jobs_no_claim', display: r => r.job_number || r.id },
+  { id: 'jobs_no_contact', label: 'Jobs with no primary contact', rpc: 'get_orphan_jobs_no_contact', display: r => r.job_number || r.id },
+  { id: 'contacts_no_job', label: 'Contacts with no job links', rpc: 'get_orphan_contacts', display: r => r.name || r.phone || r.id },
+  { id: 'conversations_no_participant', label: 'Conversations with no participants', rpc: 'get_orphan_conversations', display: r => r.id },
+  { id: 'claims_no_jobs', label: 'Claims with no jobs', rpc: 'get_orphan_claims', display: r => r.claim_number || r.id },
+];
+
+function OrphanChecker() {
+  const { db } = useAuth();
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+
+  const runChecks = async () => {
+    setLoading(true);
+    try {
+      const all = await Promise.all(ORPHAN_CHECKS.map(async (chk) => {
+        try {
+          const rows = await db.rpc(chk.rpc);
+          return { ...chk, rows: rows || [], error: null };
+        } catch (e) {
+          return { ...chk, rows: [], error: e.message };
+        }
+      }));
+      setResults(all);
+      ok('Orphan checks complete');
+    } catch (e) {
+      err('Failed to run orphan checks');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <button className="btn btn-primary btn-sm" onClick={runChecks} disabled={loading}>
+          <IconShield style={{ width: 13, height: 13 }} /> {loading ? 'Running…' : 'Run Checks'}
+        </button>
+      </div>
+      {!results && !loading && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          Click "Run Checks" to scan for orphaned records.
+        </div>
+      )}
+      {loading && <TabLoading label="Running orphan checks…" />}
+      {results && !loading && (
+        <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+          {results.map((r, i) => {
+            const count = r.rows.length;
+            const isGood = count === 0 && !r.error;
+            const isExpanded = expanded === r.id;
+            return (
+              <div key={r.id} style={{ borderBottom: i < results.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+                  background: 'var(--bg-primary)', cursor: count > 0 ? 'pointer' : 'default',
+                }} onClick={() => count > 0 && setExpanded(isExpanded ? null : r.id)}>
+                  <span style={{ fontSize: 14 }}>{r.error ? '⚠️' : isGood ? '✅' : '❌'}</span>
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{r.label}</div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 'var(--radius-full)',
+                    background: r.error ? '#fef3c7' : isGood ? '#f0fdf4' : '#fef2f2',
+                    color: r.error ? '#d97706' : isGood ? '#16a34a' : '#dc2626',
+                    border: `1px solid ${r.error ? '#fde68a' : isGood ? '#bbf7d0' : '#fecaca'}`,
+                  }}>{r.error ? 'err' : count}</span>
+                  {count > 0 && <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{isExpanded ? '▲' : '▼'}</span>}
+                </div>
+                {isExpanded && (
+                  <div style={{ padding: '0 16px 12px 44px' }}>
+                    {r.rows.slice(0, 20).map((row, j) => (
+                      <div key={j} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '3px 0', fontFamily: 'var(--font-mono)' }}>
+                        {r.display(row)}
+                        {row.division && <span style={{ marginLeft: 8, color: 'var(--text-tertiary)' }}>[{row.division}]</span>}
+                        {row.status && <span style={{ marginLeft: 8, color: 'var(--text-tertiary)' }}>[{row.status}]</span>}
+                      </div>
+                    ))}
+                    {r.rows.length > 20 && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>…and {r.rows.length - 20} more</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 4B: Claim/Job Tree Viewer ── */
+function ClaimTreeViewer() {
+  const { db } = useAuth();
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [tree, setTree] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const search = useCallback(async (q) => {
+    if (q.length < 2) { setSuggestions([]); return; }
+    try {
+      const rows = await db.select('claims', `claim_number=ilike.*${q}*&select=id,claim_number,status&limit=10`);
+      setSuggestions(rows || []);
+    } catch { setSuggestions([]); }
+  }, [db]);
+
+  useEffect(() => { const t = setTimeout(() => search(query), 300); return () => clearTimeout(t); }, [query, search]);
+
+  const loadTree = async (claim) => {
+    setQuery(claim.claim_number);
+    setSuggestions([]);
+    setLoading(true);
+    try {
+      const data = await db.rpc('get_claim_jobs', { p_claim_id: claim.id });
+      const claimData = { ...claim, jobs: data?.jobs || data || [] };
+      // Load contacts and tasks for each job
+      const jobsWithDetails = await Promise.all((claimData.jobs || []).map(async (job) => {
+        const [contacts, tasks] = await Promise.all([
+          db.rpc('get_job_contacts', { p_job_id: job.id }).catch(() => []),
+          db.rpc('get_job_task_summary', { p_job_id: job.id }).catch(() => null),
+        ]);
+        return { ...job, contacts: contacts || [], tasks: tasks || {} };
+      }));
+      claimData.jobs = jobsWithDetails;
+      setTree(claimData);
+    } catch (e) {
+      err('Failed to load claim tree: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ position: 'relative', marginBottom: 20 }}>
+        <input style={inputStyle} placeholder="Search by claim number…" value={query}
+          onChange={e => setQuery(e.target.value)} />
+        {suggestions.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+            background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            maxHeight: 200, overflowY: 'auto',
+          }}>
+            {suggestions.map(s => (
+              <div key={s.id} onClick={() => loadTree(s)} style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                borderBottom: '1px solid var(--border-light)',
+              }}>
+                <span style={{ fontWeight: 600 }}>{s.claim_number}</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>{s.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {loading && <TabLoading label="Loading claim tree…" />}
+      {tree && !loading && (
+        <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', padding: 20, background: 'var(--bg-primary)' }}>
+          {/* Claim header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{tree.claim_number}</span>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)',
+              background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe',
+            }}>{tree.status}</span>
+          </div>
+          {/* Contacts from all jobs */}
+          {tree.jobs?.map(job => (job.contacts || []).filter(c => c.role === 'homeowner' || c.role === 'adjuster' || c.is_primary).map(c => (
+            <div key={c.id || c.contact_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0 4px 20px' }}>
+              <span style={{ color: 'var(--text-tertiary)' }}>├──</span>
+              <span style={{ fontSize: 13 }}>{'\u{1F464}'}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {c.role ? `${c.role.charAt(0).toUpperCase() + c.role.slice(1)}: ` : ''}{c.name || c.phone || 'Unknown'}
+              </span>
+            </div>
+          )))}
+          {/* Jobs */}
+          {(tree.jobs || []).length === 0 && (
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', paddingLeft: 20 }}>No jobs linked to this claim.</div>
+          )}
+          {(tree.jobs || []).map((job, i) => {
+            const isLast = i === tree.jobs.length - 1;
+            const icon = DIVISION_ICON[job.division] || '\u{1F4C1}';
+            const tasksComplete = job.tasks?.completed || job.tasks?.complete || 0;
+            const tasksTotal = job.tasks?.total || 0;
+            const contactCount = (job.contacts || []).length;
+            return (
+              <div key={job.id} style={{ padding: '6px 0 6px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{isLast ? '└──' : '├──'}</span>
+                  <span style={{ fontSize: 14 }}>{icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Job: {job.division ? job.division.charAt(0).toUpperCase() + job.division.slice(1) : 'Unknown'}
+                  </span>
+                  <code style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 3 }}>
+                    {job.job_number || job.id?.slice(0, 8)}
+                  </code>
+                  {job.current_phase && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                      background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
+                    }}>{job.current_phase}</span>
+                  )}
+                </div>
+                <div style={{ paddingLeft: 52, fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  Tasks: {tasksComplete}/{tasksTotal} complete &nbsp;&nbsp; Contacts: {contactCount}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!tree && !loading && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          Search for a claim number above to view its job tree.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 4C: Duplicate Contact Detector ── */
+function DuplicateDetector() {
+  const { db } = useAuth();
+  const [groups, setGroups] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_duplicate_contacts');
+      setGroups(rows || []);
+      ok(`Found ${(rows || []).length} duplicate group(s)`);
+    } catch (e) {
+      err('Failed to check duplicates: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatPhone = (p) => {
+    if (!p || p.length < 10) return p;
+    return `(${p.slice(-10, -7)}) ${p.slice(-7, -4)}-${p.slice(-4)}`;
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <button className="btn btn-primary btn-sm" onClick={run} disabled={loading}>
+          <IconUsers style={{ width: 13, height: 13 }} /> {loading ? 'Scanning…' : 'Scan for Duplicates'}
+        </button>
+      </div>
+      {!groups && !loading && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          Click "Scan for Duplicates" to find contacts sharing the same phone number.
+        </div>
+      )}
+      {loading && <TabLoading label="Scanning for duplicates…" />}
+      {groups && !loading && groups.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          No duplicate contacts found. All clear!
+        </div>
+      )}
+      {groups && groups.length > 0 && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {groups.map((g, i) => (
+            <div key={i} style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', padding: 16, background: 'var(--bg-primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                  {formatPhone(g.phone_normalized)}
+                </span>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                  background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                }}>{g.count} contacts</span>
+              </div>
+              {(g.names || []).map((name, j) => (
+                <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                  <IconUser style={{ width: 12, height: 12, color: 'var(--text-tertiary)' }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>{name}</span>
+                  {g.contact_ids?.[j] && (
+                    <NavLink to={`/customers/${g.contact_ids[j]}`} style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
+                      View →
+                    </NavLink>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ════════════════════════════════════════════════════
-   MESSAGING TAB (stub — Phase 5)
+   MESSAGING TAB — Phase 5
    ════════════════════════════════════════════════════ */
 function MessagingTab() {
-  return <ComingSoon phase="5" label="Messaging Tools" description="Template preview, Twilio message log, and scheduled message queue." />;
+  const [subTab, setSubTab] = useState('templates');
+  const subs = [
+    { key: 'templates', label: 'Template Preview' },
+    { key: 'log', label: 'Message Log' },
+    { key: 'queue', label: 'Scheduled Queue' },
+  ];
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Messaging Tools</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Template preview, message log, and scheduled queue.</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        {subs.map(s => (
+          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
+            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
+            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
+            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
+            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
+          }}>{s.label}</button>
+        ))}
+      </div>
+      {subTab === 'templates' && <TemplatePreview />}
+      {subTab === 'log' && <MessageLog />}
+      {subTab === 'queue' && <ScheduledQueue />}
+    </div>
+  );
+}
+
+/* ── 5A: Template Preview/Test ── */
+function TemplatePreview() {
+  const { db } = useAuth();
+  const [templates, setTemplates] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [vars, setVars] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const rows = await db.select('message_templates', 'select=id,title,body,category,variables&order=title&is_active=eq.true');
+        setTemplates(rows || []);
+      } catch (e) {
+        err('Failed to load templates');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [db]);
+
+  const detectVars = (body) => {
+    const matches = body?.match(/\{\{(\w+)\}\}/g) || [];
+    return [...new Set(matches.map(m => m.replace(/[{}]/g, '')))];
+  };
+
+  const handleSelect = (tpl) => {
+    setSelected(tpl);
+    const detected = detectVars(tpl.body);
+    const initial = {};
+    detected.forEach(v => { initial[v] = ''; });
+    setVars(initial);
+  };
+
+  const preview = selected ? selected.body.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || `{{${key}}}`) : '';
+  const charCount = preview.length;
+  const segments = charCount > 0 ? Math.ceil(charCount / 160) : 0;
+
+  if (loading) return <TabLoading />;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={labelStyle}>Select Template</label>
+        <select style={inputStyle} value={selected?.id || ''} onChange={e => {
+          const tpl = templates.find(t => t.id === e.target.value);
+          if (tpl) handleSelect(tpl);
+        }}>
+          <option value="">— Choose a template —</option>
+          {templates.map(t => <option key={t.id} value={t.id}>{t.title} {t.category ? `[${t.category}]` : ''}</option>)}
+        </select>
+      </div>
+      {selected && (
+        <>
+          {detectVars(selected.body).length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
+              {detectVars(selected.body).map(v => (
+                <div key={v}>
+                  <label style={labelStyle}>{`{{${v}}}`}</label>
+                  <input style={inputStyle} placeholder={v} value={vars[v] || ''}
+                    onChange={e => setVars(prev => ({ ...prev, [v]: e.target.value }))} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{
+            padding: 16, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)',
+            background: 'var(--bg-secondary)', marginBottom: 10,
+          }}>
+            <label style={{ ...labelStyle, marginBottom: 8 }}>Preview</label>
+            <div style={{ fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+              {preview || '(empty template)'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-tertiary)' }}>
+            <span>{charCount} character{charCount !== 1 ? 's' : ''}</span>
+            <span>{segments} SMS segment{segments !== 1 ? 's' : ''}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── 5B: Message Log Viewer ── */
+function MessageLog() {
+  const { db } = useAuth();
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [direction, setDirection] = useState('');
+  const [status, setStatus] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [expanded, setExpanded] = useState(null);
+  const LIMIT = 50;
+
+  const load = useCallback(async (off = 0, append = false) => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_message_log', {
+        p_limit: LIMIT, p_offset: off,
+        p_direction: direction || null,
+        p_status: status || null,
+      });
+      setMessages(prev => append ? [...prev, ...(rows || [])] : (rows || []));
+      setOffset(off);
+    } catch (e) {
+      err('Failed to load messages: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [db, direction, status]);
+
+  useEffect(() => { load(0); }, [load]);
+
+  const fmt = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const DIR_STYLE = {
+    inbound:  { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+    outbound: { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+  };
+  const STAT_STYLE = {
+    delivered:   { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+    sent:        { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+    failed:      { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+    undelivered: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+    queued:      { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <label style={labelStyle}>Direction</label>
+          <select style={{ ...inputStyle, width: 140 }} value={direction} onChange={e => setDirection(e.target.value)}>
+            <option value="">All</option>
+            <option value="inbound">Inbound</option>
+            <option value="outbound">Outbound</option>
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Status</label>
+          <select style={{ ...inputStyle, width: 140 }} value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="">All</option>
+            <option value="delivered">Delivered</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="undelivered">Undelivered</option>
+            <option value="queued">Queued</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => load(0)}>
+            <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
+          </button>
+        </div>
+      </div>
+      {loading && messages.length === 0 && <TabLoading label="Loading messages…" />}
+      {!loading && messages.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          No messages found with the current filters.
+        </div>
+      )}
+      {messages.length > 0 && (
+        <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 1.5fr 100px',
+            padding: '8px 16px', background: 'var(--bg-secondary)',
+            borderBottom: '1px solid var(--border-color)',
+            fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            <span>Contact</span><span>Phone</span><span>Dir</span><span>Status</span><span>Body</span><span>Time</span>
+          </div>
+          {messages.map((m, i) => {
+            const dir = DIR_STYLE[m.direction] || DIR_STYLE.outbound;
+            const st = STAT_STYLE[m.status] || STAT_STYLE.queued;
+            const isExp = expanded === m.id;
+            return (
+              <div key={m.id + '-' + i}>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 1.5fr 100px',
+                  alignItems: 'center', padding: '9px 16px',
+                  borderBottom: i < messages.length - 1 ? '1px solid var(--border-light)' : 'none',
+                  background: 'var(--bg-primary)', cursor: 'pointer',
+                }} onClick={() => setExpanded(isExp ? null : m.id)}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {m.contact_name || 'Unknown'}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    {m.contact_phone ? m.contact_phone.slice(-4) : '—'}
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--radius-full)',
+                    background: dir.bg, color: dir.color, border: `1px solid ${dir.border}`,
+                    textTransform: 'uppercase', display: 'inline-block', width: 'fit-content',
+                  }}>{m.direction === 'inbound' ? 'IN' : 'OUT'}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--radius-full)',
+                    background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                    textTransform: 'uppercase', display: 'inline-block', width: 'fit-content',
+                  }}>{m.status || '—'}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(m.body || '').slice(0, 60)}{(m.body || '').length > 60 ? '…' : ''}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{fmt(m.created_at)}</span>
+                </div>
+                {isExp && (
+                  <div style={{ padding: '10px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)', fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                    {m.body || '(empty)'}
+                    {m.media_url && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>Media: {m.media_url}</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {messages.length > 0 && messages.length >= LIMIT && (
+        <button className="btn btn-secondary btn-sm" style={{ marginTop: 10, width: '100%' }}
+          onClick={() => load(offset + LIMIT, true)} disabled={loading}>
+          {loading ? 'Loading…' : 'Load More'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── 5C: Scheduled Message Queue ── */
+function ScheduledQueue() {
+  const { db } = useAuth();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_scheduled_queue', { p_limit: 50 });
+      setItems(rows || []);
+    } catch (e) {
+      err('Failed to load scheduled queue');
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const cancelMsg = async (item) => {
+    if (confirmCancel !== item.id) { setConfirmCancel(item.id); return; }
+    setConfirmCancel(null);
+    try {
+      await db.update('scheduled_messages', 'id=eq.' + item.id, { status: 'cancelled' });
+      ok('Message cancelled');
+      load();
+    } catch (e) {
+      err('Failed to cancel: ' + e.message);
+    }
+  };
+
+  const fmt = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const filtered = showAll ? items : items.filter(i => i.status === 'pending');
+
+  if (loading) return <TabLoading />;
+
+  const QUEUE_STATUS = {
+    pending:   { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+    sent:      { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+    cancelled: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+    failed:    { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Show all statuses
+        </label>
+        <button className="btn btn-secondary btn-sm" onClick={load}>
+          <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
+        </button>
+      </div>
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+          {showAll ? 'No scheduled messages found.' : 'No pending scheduled messages.'}
+        </div>
+      )}
+      {filtered.length > 0 && (
+        <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 100px 120px 100px 1.5fr 80px',
+            padding: '8px 16px', background: 'var(--bg-secondary)',
+            borderBottom: '1px solid var(--border-color)',
+            fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            <span>Contact</span><span>Phone</span><span>Send At</span><span>Status</span><span>Body</span><span></span>
+          </div>
+          {filtered.map((item, i) => {
+            const st = QUEUE_STATUS[item.status] || QUEUE_STATUS.pending;
+            return (
+              <div key={item.id} style={{
+                display: 'grid', gridTemplateColumns: '1fr 100px 120px 100px 1.5fr 80px',
+                alignItems: 'center', padding: '9px 16px',
+                borderBottom: i < filtered.length - 1 ? '1px solid var(--border-light)' : 'none',
+                background: 'var(--bg-primary)',
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.contact_name || 'Unknown'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  {item.contact_phone ? item.contact_phone.slice(-4) : '—'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{fmt(item.send_at)}</span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--radius-full)',
+                  background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+                  textTransform: 'uppercase', display: 'inline-block', width: 'fit-content',
+                }}>{item.status}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.template_name && <span style={{ fontWeight: 600, marginRight: 4 }}>[{item.template_name}]</span>}
+                  {(item.body || '').slice(0, 50)}{(item.body || '').length > 50 ? '…' : ''}
+                </span>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  {item.status === 'pending' && (
+                    <button
+                      onClick={() => cancelMsg(item)}
+                      onBlur={() => setConfirmCancel(null)}
+                      style={{
+                        padding: '3px 8px', borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                        background: confirmCancel === item.id ? '#fef2f2' : 'var(--bg-tertiary)',
+                        color: confirmCancel === item.id ? '#dc2626' : 'var(--text-tertiary)',
+                        border: `1px solid ${confirmCancel === item.id ? '#fecaca' : 'var(--border-light)'}`,
+                      }}
+                    >{confirmCancel === item.id ? 'Confirm' : 'Cancel'}</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
+   ADVANCED TAB — Phase 6
+   ════════════════════════════════════════════════════ */
+const RPC_LIST = [
+  { name: 'get_dashboard_stats',      params: [] },
+  { name: 'get_all_employees',        params: [] },
+  { name: 'get_feature_flags',        params: [] },
+  { name: 'get_worker_runs',          params: [{ key: 'p_limit', type: 'number', default: 10 }] },
+  { name: 'get_orphan_jobs_no_claim',  params: [] },
+  { name: 'get_orphan_contacts',      params: [] },
+  { name: 'get_orphan_claims',        params: [] },
+  { name: 'get_customers_list',       params: [] },
+  { name: 'get_claims_list',          params: [] },
+  { name: 'bust_postgrest_cache',     params: [] },
+  { name: 'get_claim_jobs',           params: [{ key: 'p_claim_id', type: 'text', default: '' }] },
+  { name: 'get_job_task_summary',     params: [{ key: 'p_job_id',   type: 'text', default: '' }] },
+  { name: 'get_message_log',          params: [{ key: 'p_limit', type: 'number', default: 20 }] },
+  { name: 'get_scheduled_queue',      params: [{ key: 'p_limit', type: 'number', default: 20 }] },
+];
+
+const TABLE_LIST = [
+  'jobs', 'contacts', 'claims', 'conversations', 'messages',
+  'scheduled_messages', 'employees', 'feature_flags', 'worker_runs',
+  'sign_requests', 'job_tasks', 'appointments', 'job_documents',
+  'system_events', 'sms_consent_log',
+];
+
+function AdvancedTab() {
+  const [subTab, setSubTab] = useState('rpc');
+  const subs = [
+    { key: 'rpc', label: 'RPC Runner' },
+    { key: 'tables', label: 'Tables' },
+    { key: 'cache', label: 'Cache' },
+  ];
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Advanced Dev Tools</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>RPC test runner, table inspector, and cache tools.</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        {subs.map(s => (
+          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
+            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
+            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
+            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
+            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
+          }}>{s.label}</button>
+        ))}
+      </div>
+      {subTab === 'rpc' && <RpcRunner />}
+      {subTab === 'tables' && <TableInspector />}
+      {subTab === 'cache' && (
+        <div style={{
+          padding: '24px 20px', borderRadius: 'var(--radius-lg)',
+          background: '#fffbeb', border: '1px solid #fde68a',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#d97706', marginBottom: 6 }}>PostgREST Cache Buster</div>
+          <div style={{ fontSize: 13, color: '#92400e' }}>
+            The "Bust Schema Cache" button is available in the <strong>Health</strong> tab.
+            Switch to the Health tab and click "Bust Schema Cache" to reload PostgREST's schema after creating new tables or columns.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 6A: RPC Test Runner ── */
+function RpcRunner() {
+  const { db } = useAuth();
+  const [selected, setSelected] = useState(RPC_LIST[0].name);
+  const [paramVals, setParamVals] = useState({});
+  const [result, setResult] = useState(null);
+  const [elapsed, setElapsed] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState(null);
+
+  const rpc = RPC_LIST.find(r => r.name === selected);
+
+  const handleSelect = (name) => {
+    setSelected(name);
+    setResult(null);
+    setError(null);
+    setElapsed(null);
+    const r = RPC_LIST.find(x => x.name === name);
+    const vals = {};
+    (r?.params || []).forEach(p => { vals[p.key] = p.default; });
+    setParamVals(vals);
+  };
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    const params = {};
+    (rpc?.params || []).forEach(p => {
+      const val = paramVals[p.key];
+      if (p.type === 'number') params[p.key] = Number(val) || p.default;
+      else if (val) params[p.key] = val;
+    });
+    const start = Date.now();
+    try {
+      const res = await db.rpc(selected, Object.keys(params).length > 0 ? params : undefined);
+      setResult(res);
+      setElapsed(Date.now() - start);
+    } catch (e) {
+      setError(e.message);
+      setElapsed(Date.now() - start);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <label style={labelStyle}>RPC Function</label>
+          <select style={inputStyle} value={selected} onChange={e => handleSelect(e.target.value)}>
+            {RPC_LIST.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+          </select>
+        </div>
+        {(rpc?.params || []).map(p => (
+          <div key={p.key} style={{ minWidth: 120 }}>
+            <label style={labelStyle}>{p.key}</label>
+            <input style={inputStyle} type={p.type === 'number' ? 'number' : 'text'}
+              value={paramVals[p.key] ?? p.default}
+              onChange={e => setParamVals(prev => ({ ...prev, [p.key]: e.target.value }))} />
+          </div>
+        ))}
+        <button className="btn btn-primary btn-sm" onClick={run} disabled={running}>
+          <IconZap style={{ width: 13, height: 13 }} /> {running ? 'Running…' : 'Run'}
+        </button>
+      </div>
+      {elapsed !== null && (
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+          Response time: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{elapsed}ms</span>
+          {result && Array.isArray(result) && <span> · {result.length} row(s)</span>}
+        </div>
+      )}
+      {error && (
+        <div style={{
+          padding: 12, borderRadius: 'var(--radius-md)', background: '#fef2f2',
+          border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontFamily: 'var(--font-mono)',
+          marginBottom: 8,
+        }}>{error}</div>
+      )}
+      {result !== null && !error && (
+        <pre style={{
+          padding: 16, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)',
+          background: 'var(--bg-secondary)', fontSize: 11, fontFamily: 'var(--font-mono)',
+          maxHeight: 400, overflowX: 'auto', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          color: 'var(--text-primary)',
+        }}>{JSON.stringify(result, null, 2)}</pre>
+      )}
+    </div>
+  );
+}
+
+/* ── 6B: Table Inspector ── */
+function TableInspector() {
+  const { db } = useAuth();
+  const [selected, setSelected] = useState(TABLE_LIST[0]);
+  const [stats, setStats] = useState(null);
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const inspect = useCallback(async (table) => {
+    setLoading(true);
+    setStats(null);
+    setRows(null);
+    try {
+      const [statsResult, recentRows] = await Promise.all([
+        db.rpc('get_table_stats', { p_table: table }),
+        db.select(table, 'select=*&order=created_at.desc&limit=5').catch(() => []),
+      ]);
+      const s = Array.isArray(statsResult) ? statsResult[0] : statsResult;
+      setStats(s || { row_count: '?', latest_created_at: null });
+      setRows(recentRows || []);
+    } catch (e) {
+      err('Failed to inspect table: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { inspect(selected); }, [selected, inspect]);
+
+  const fmt = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>Table</label>
+          <select style={inputStyle} value={selected} onChange={e => { setSelected(e.target.value); }}>
+            {TABLE_LIST.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => inspect(selected)} disabled={loading}>
+          <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
+        </button>
+      </div>
+      {loading && <TabLoading label="Inspecting table…" />}
+      {stats && !loading && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+          <StatPill label="Rows" value={stats.row_count ?? '?'} color="var(--text-secondary)" />
+          <StatPill label="Last Insert" value={fmt(stats.latest_created_at)} color="var(--text-secondary)" />
+        </div>
+      )}
+      {rows && rows.length > 0 && !loading && (
+        <>
+          <label style={{ ...labelStyle, marginBottom: 8 }}>Last {rows.length} row(s)</label>
+          <pre style={{
+            padding: 16, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)',
+            background: 'var(--bg-secondary)', fontSize: 11, fontFamily: 'var(--font-mono)',
+            maxHeight: 400, overflowX: 'auto', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            color: 'var(--text-primary)',
+          }}>{JSON.stringify(rows, null, 2)}</pre>
+        </>
+      )}
+      {rows && rows.length === 0 && !loading && (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)', fontSize: 13 }}>
+          Table is empty or not accessible via REST.
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ════════════════════════════════════════════════════
@@ -879,6 +1832,7 @@ const TAB_COMPONENTS = {
   workers:   WorkersTab,
   integrity: IntegrityTab,
   messaging: MessagingTab,
+  advanced:  AdvancedTab,
 };
 
 export default function DevTools() {
