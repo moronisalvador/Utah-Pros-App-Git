@@ -76,7 +76,13 @@ src/
     Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
+  pages/tech/
+    TechDash.jsx                  — Field tech dashboard: today's appointments, time tracker, tasks, photo upload
+    TechSchedule.jsx              — Field tech 14-day schedule view
+    TechTasks.jsx                 — Field tech tasks: Today/All tabs, grouped by job
+    TechClaims.jsx                — Field tech claims list with search
   components/
+    TechLayout.jsx                — Field tech app shell: full-viewport, bottom nav, PWA install banner
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner
     Sidebar.jsx                   — Desktop nav + sign out button
     AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
@@ -297,6 +303,8 @@ finish_appointment(...)         — Release incomplete tasks
 
 ### Employees & Time
 ```
+clock_appointment_action(p_appointment_id, p_employee_id, p_action) — Atomic time tracking (omw/start/pause/resume/finish)
+get_assigned_tasks(p_employee_id) — Incomplete tasks for employee with job context
 get_all_employees()             — All employees with auth status
 get_payroll_summary(...)        — Payroll summary
 get_timesheet_entries(...)      — Time entries for payroll
@@ -432,6 +440,16 @@ get_dashboard_stats()           — Dashboard stat counts
 - **TOKEN_REFRESHED** event rebuilds `authDb` so calls don't 401 after ~1 hour
 - **Dev mode:** bypasses auth by selecting employee directly (`import.meta.env.DEV` only)
 - **Recovery links:** hash with `type=recovery` → redirect `/set-password` before init
+- **field_tech routing:** `employee.role === 'field_tech'` → `/` redirects to `/tech` (TechLayout, bottom nav, no sidebar). `/tech/*` routes: Dash, Schedule, Tasks, Claims. `/conversations` shared with all roles.
+
+---
+
+## PWA (complete as of Mar 27 2026)
+- **Manifest:** `public/manifest.json` — standalone display, portrait orientation
+- **Service worker:** `public/sw.js` — cache-first for app shell, network-only for REST/API
+- **Icons:** SVG icons at `/icon-192.svg` and `/icon-512.svg`
+- **Install prompt:** TechLayout shows banner for field_tech when not in standalone mode (iOS: share instructions, Android: beforeinstallprompt)
+- **Feature flag:** `feature:pwa` — enabled
 
 ---
 
@@ -532,6 +550,5 @@ TWILIO_*                        — 7 vars (pending go-live)
 1. **Twilio go-live** — blocked on ID verification; 7 env vars need setting in Cloudflare
 2. **Auth linking** — 8 employees have no `auth_user_id`; need emails added via Admin → Send Invite
 3. **Search + export** — `tool:search_export` feature flag ready, page not built
-4. **PWA** — `feature:pwa` flag ready, not implemented
-5. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
-7. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile` at `F:\APPS\Restoration APP\UPR-Mobile`
+4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
+5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile` at `F:\APPS\Restoration APP\UPR-Mobile`
