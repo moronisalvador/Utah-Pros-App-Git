@@ -458,3 +458,58 @@ Add new icons as needed following the same inline SVG pattern.
 - **0 worker_runs** — workers haven't been updated to log yet; UI will show empty state
 - **10 message_templates** seeded — template preview will work immediately
 - **`scheduled_messages`** — may be empty; queue UI will show empty state gracefully
+
+---
+
+## ✅ Task Completion Checklist
+
+When ALL phases are implemented and committed, do the following before closing the PR:
+
+### 1. Update `UPR-Web-Context.md`
+
+Update the Dev Tools Roadmap Status table — change all 🔲 to ✅ for completed phases:
+
+```
+| 1C  | Sidebar guards + FeatureRoute in App.jsx         | ✅ Done |
+| 2A  | DevRoute + /dev-tools route in App.jsx            | ✅ Done |
+| 2B  | DevTools.jsx page shell + Flags tab               | ✅ Done |
+| 3A  | Health check dashboard                            | ✅ Done |
+| 3B  | Employee auth status tab                          | ✅ Done |
+| 3C  | Worker execution log tab                          | ✅ Done |
+| 4A  | Orphan checker                                    | ✅ Done |
+| 4B  | Claim/job tree viewer                             | ✅ Done |
+| 4C  | Duplicate contact detector                        | ✅ Done |
+| 5A  | Template preview/test                             | ✅ Done |
+| 5B  | Twilio message log viewer                         | ✅ Done |
+| 5C  | Scheduled message queue                           | ✅ Done |
+| 6A  | RPC test runner                                   | ✅ Done |
+| 6B  | Table inspector                                   | ✅ Done |
+| 6C  | bust_postgrest_cache() RPC + button               | ✅ Done |
+```
+
+Also add all new RPCs created during this task to the **Key RPCs** section of `UPR-Web-Context.md`:
+- `get_orphan_jobs_no_claim`
+- `get_orphan_jobs_no_contact`
+- `get_orphan_contacts`
+- `get_orphan_conversations`
+- `get_orphan_claims`
+- `get_duplicate_contacts`
+- `get_message_log(p_limit, p_offset, p_direction, p_status)`
+- `get_scheduled_queue(p_limit)`
+- `get_table_stats(p_table)`
+
+### 2. Delete `DEVTOOLS-TASK.md`
+
+This task is complete — the file is no longer needed and should not clutter the repo.
+
+```bash
+git rm DEVTOOLS-TASK.md
+```
+
+### 3. Final commit message
+
+```
+docs: update UPR-Web-Context.md, remove completed DEVTOOLS-TASK.md
+```
+
+Then open/update the PR to merge into `dev`.

@@ -364,4 +364,19 @@ CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 
 ---
 
-*For the current active task, see `DEVTOOLS-TASK.md` in this repo.*
+*For the current active task, see `DEVTOOLS-TASK.md` in this repo (if it exists).*
+
+---
+
+## Task File Protocol
+
+When a `*-TASK.md` file exists in the repo root, it defines the active build task. Follow this protocol:
+
+1. **Read the task file first** before touching any code.
+2. **Follow the build order exactly** as specified in the task file.
+3. **On completion** of all phases in the task file:
+   - Update `UPR-Web-Context.md` with any new tables, RPCs, components, or status changes described in the task file’s completion checklist
+   - Delete the task file from the repo: `git rm <TASKFILE>.md`
+   - Commit with message: `docs: update UPR-Web-Context.md, remove completed <TASKFILE>.md`
+4. **Never leave a completed task file in the repo** — it becomes stale and misleads future sessions.
+5. **`UPR-Web-Context.md` is the permanent source of truth** — always up to date, never deleted.
