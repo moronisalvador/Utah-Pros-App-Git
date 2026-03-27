@@ -36,6 +36,7 @@ export default function TechAppointment() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -342,24 +343,66 @@ export default function TechAppointment() {
           {photos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No photos yet</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-              {photos.map(p => (
-                <div key={p.id} style={{
-                  aspectRatio: '1', borderRadius: 'var(--radius-md)',
-                  background: 'var(--bg-tertiary)', overflow: 'hidden',
-                  border: '1px solid var(--border-light)',
-                }}>
-                  <img
-                    src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
-                    alt={p.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
+            groupPhotosByDate(photos).map(group => (
+              <div key={group.label} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                  {group.label}
                 </div>
-              ))}
-            </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                  {group.items.map(p => (
+                    <div
+                      key={p.id}
+                      onClick={() => setLightboxPhoto(p)}
+                      style={{
+                        aspectRatio: '1', borderRadius: 'var(--radius-md)',
+                        background: 'var(--bg-tertiary)', overflow: 'hidden',
+                        border: '1px solid var(--border-light)', cursor: 'pointer',
+                      }}
+                    >
+                      <img
+                        src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
+                        alt={p.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </div>
+
+        {/* Lightbox */}
+        {lightboxPhoto && (
+          <div
+            onClick={() => setLightboxPhoto(null)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(0,0,0,0.9)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 'var(--space-4)',
+            }}
+          >
+            <button
+              onClick={() => setLightboxPhoto(null)}
+              style={{
+                position: 'absolute', top: 16, right: 16,
+                background: 'none', border: 'none', color: '#fff',
+                fontSize: 28, lineHeight: 1, cursor: 'pointer', padding: 8,
+                zIndex: 1001,
+              }}
+            >
+              ✕
+            </button>
+            <img
+              src={`${db.baseUrl}/storage/v1/object/public/${lightboxPhoto.file_path}`}
+              alt={lightboxPhoto.name}
+              onClick={e => e.stopPropagation()}
+              style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
+            />
+          </div>
+        )}
 
         {/* Notes section */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
@@ -428,4 +471,39 @@ export default function TechAppointment() {
       </PullToRefresh>
     </div>
   );
+}
+
+/* ── Helpers ── */
+
+function groupPhotosByDate(photos) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const groups = {};
+  photos.forEach(p => {
+    const d = new Date(p.created_at);
+    d.setHours(0, 0, 0, 0);
+    const key = d.toISOString().split('T')[0];
+    if (!groups[key]) groups[key] = { date: d, items: [] };
+    groups[key].items.push(p);
+  });
+
+  return Object.entries(groups)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([, g]) => {
+      const d = g.date;
+      let label;
+      if (d.getTime() === today.getTime()) {
+        label = 'Today';
+      } else if (d.getTime() === yesterday.getTime()) {
+        label = 'Yesterday';
+      } else if (today.getTime() - d.getTime() < 7 * 86400000) {
+        label = d.toLocaleDateString('en-US', { weekday: 'long' });
+      } else {
+        label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+      return { label, items: g.items };
+    });
 }
