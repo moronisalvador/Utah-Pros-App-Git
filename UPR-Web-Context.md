@@ -338,10 +338,27 @@ upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p
 delete_feature_flag(p_key)
 ```
 
+### Data Integrity (Phase 4 — complete)
+```
+get_orphan_jobs_no_claim()      — Jobs with no claim_id
+get_orphan_jobs_no_contact()    — Jobs with no primary_contact_id
+get_orphan_contacts()           — Contacts with no contact_jobs links
+get_orphan_conversations()      — Conversations with no participants
+get_orphan_claims()             — Claims with no linked jobs
+get_duplicate_contacts()        — Contacts sharing same normalized phone (groups)
+```
+
+### Messaging Tools (Phase 5 — complete)
+```
+get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
+get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+```
+
 ### Workers & Dev
 ```
 get_worker_runs(p_limit INT)    — Last N worker_runs rows (default 10)
 bust_postgrest_cache()          — NOTIFY pgrst 'reload schema' — forces schema reload
+get_table_stats(p_table TEXT)   — Row count + latest created_at for any table (Phase 6)
 ```
 
 ### Dashboard
@@ -372,7 +389,7 @@ get_dashboard_stats()           — Dashboard stat counts
 - Both fetched at login via `get_feature_flags()` RPC (parallel with `loadPermissions`)
 - Both reset on logout
 
-**Phases 1C + 2A+2B (next):** Sidebar guards + DevTools.jsx page (Moroni-only route)
+**Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 7 tabs (Moroni-only route)
 
 ---
 
@@ -479,22 +496,23 @@ TWILIO_*                        — 7 vars (pending go-live)
 |-------|------|--------|
 | 1A | `feature_flags` table + RPCs + 8 seed rows | ✅ Done |
 | 1B | AuthContext: `featureFlags` + `isFeatureEnabled()` | ✅ Done |
-| 1C | Sidebar guards + `FeatureRoute` in App.jsx | 🔲 Next |
-| 2A | `DevRoute` + `/dev-tools` route in App.jsx | 🔲 Next |
-| 2B | DevTools.jsx page shell + Flags tab | 🔲 Next |
-| 3A | Health check dashboard | 🔲 Pending |
-| 3B | Employee auth status tab | 🔲 Pending |
-| 3C | Worker execution log tab | 🔲 Pending |
-| 3C | `worker_runs` table + `get_worker_runs` RPC | ✅ Done |
-| 4A | Orphan checker | 🔲 Pending |
-| 4B | Claim/job tree viewer | 🔲 Pending |
-| 4C | Duplicate contact detector | 🔲 Pending |
-| 5A | Template preview/test | 🔲 Pending |
-| 5B | Twilio message log viewer | 🔲 Post-Twilio |
-| 5C | Scheduled message queue | 🔲 Pending |
-| 6A | RPC test runner | 🔲 Pending |
-| 6B | Table inspector | 🔲 Pending |
+| 1C | Sidebar guards + `FeatureRoute` in App.jsx | ✅ Done |
+| 2A | `DevRoute` + `/dev-tools` route in App.jsx | ✅ Done |
+| 2B | DevTools.jsx page shell + Flags tab | ✅ Done |
+| 3A | Health check dashboard | ✅ Done |
+| 3B | Employee auth status tab | ✅ Done |
+| 3C | Worker execution log tab + `worker_runs` table + RPC | ✅ Done |
+| 4A | Orphan checker (5 parallel checks, expandable results) | ✅ Done |
+| 4B | Claim/job tree viewer (typeahead search, contacts + tasks) | ✅ Done |
+| 4C | Duplicate contact detector (by normalized phone) | ✅ Done |
+| 5A | Template preview/test (variable substitution, SMS segments) | ✅ Done |
+| 5B | Message log viewer (direction/status filters, pagination) | ✅ Done |
+| 5C | Scheduled message queue (two-click cancel) | ✅ Done |
+| 6A | RPC test runner (14 RPCs, dynamic params, JSON output) | ✅ Done |
+| 6B | Table inspector (15 tables, row count, recent rows) | ✅ Done |
 | 6C | `bust_postgrest_cache()` RPC + button | ✅ Done |
+
+**All DevTools phases complete.** 7 tabs: Flags, Health, Employees, Workers, Integrity, Messaging, Advanced.
 
 **DevRoute access:** `employee?.email === 'moroni@utah-pros.com'` — hardcoded, not role-based
 
@@ -503,8 +521,7 @@ TWILIO_*                        — 7 vars (pending go-live)
 ## Known Pending Items
 1. **Twilio go-live** — blocked on ID verification; 7 env vars need setting in Cloudflare
 2. **Auth linking** — 8 employees have no `auth_user_id`; need emails added via Admin → Send Invite
-3. **Dev Tools page** — Phase 1C + 2A + 2B next (Sidebar guards + DevTools.jsx)
-4. **Search + export** — `tool:search_export` feature flag ready, page not built
-5. **PWA** — `feature:pwa` flag ready, not implemented
-6. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
+3. **Search + export** — `tool:search_export` feature flag ready, page not built
+4. **PWA** — `feature:pwa` flag ready, not implemented
+5. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
 7. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile` at `F:\APPS\Restoration APP\UPR-Mobile`
