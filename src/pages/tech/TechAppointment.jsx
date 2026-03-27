@@ -264,9 +264,7 @@ export default function TechAppointment() {
         {/* Crew section */}
         {crew.length > 0 && (
           <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 10 }}>
-              Crew
-            </div>
+            <div className="tech-section-header-sticky">Crew</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {crew.map(c => {
                 const emp = c.employees;
@@ -304,12 +302,10 @@ export default function TechAppointment() {
 
         {/* Tasks section */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
-              Tasks
-            </div>
+          <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Tasks</span>
             {tasks.length > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{doneCount}/{tasks.length} complete</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 400, letterSpacing: 'normal', textTransform: 'none' }}>{doneCount}/{tasks.length}</span>
             )}
           </div>
           {tasks.length === 0 ? (
@@ -330,10 +326,8 @@ export default function TechAppointment() {
 
         {/* Photo upload + gallery */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
-              Photos
-            </div>
+          <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Photos</span>
             <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
             <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -406,10 +400,8 @@ export default function TechAppointment() {
 
         {/* Notes section */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
-              Notes
-            </div>
+          <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Notes</span>
             {!noteOpen && (
               <button className="btn btn-secondary btn-sm" onClick={() => setNoteOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

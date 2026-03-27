@@ -171,6 +171,21 @@ function InstallBanner() {
 
 export default function TechLayout() {
   const location = useLocation();
+  const { employee, db } = useAuth();
+  const [taskCount, setTaskCount] = useState(0);
+
+  useEffect(() => {
+    if (!employee?.id || !db) return;
+    const load = async () => {
+      try {
+        const tasks = await db.rpc('get_assigned_tasks', { p_employee_id: employee.id });
+        setTaskCount((tasks || []).filter(t => t.is_today).length);
+      } catch { /* ignore */ }
+    };
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, [db, employee]);
 
   const isActive = (tab) => {
     if (tab.exact) return location.pathname === tab.path;
@@ -186,13 +201,22 @@ export default function TechLayout() {
       <nav className="tech-nav">
         {TABS.map(tab => {
           const active = isActive(tab);
+          const showDot = tab.key === 'tasks' && taskCount > 0;
           return (
             <Link
               key={tab.key}
               to={tab.path}
               className={`tech-nav-tab${active ? ' active' : ''}`}
+              style={{ position: 'relative' }}
             >
               <tab.Icon filled={active} />
+              {showDot && (
+                <span style={{
+                  position: 'absolute', top: 6, right: '50%', marginRight: -14,
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: '#ef4444', border: '1.5px solid var(--bg-primary)',
+                }} />
+              )}
               <span>{tab.label}</span>
             </Link>
           );

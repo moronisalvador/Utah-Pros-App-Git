@@ -253,7 +253,7 @@ export default function TechDash() {
   return (
     <PullToRefresh onRefresh={load}>
       <div className="tech-page">
-        <div className="tech-page-header">
+        <div className="tech-page-header-sticky">
           <div className="tech-page-date">{dateStr}</div>
           <div className="tech-page-title">{firstName}</div>
           <div className="tech-page-subtitle">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today</div>

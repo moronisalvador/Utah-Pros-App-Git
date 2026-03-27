@@ -4260,4 +4260,113 @@ tr:hover td { background: var(--bg-secondary); }
     color: var(--text-tertiary);
     text-decoration: line-through;
   }
+
+  /* iOS global fixes */
+  .tech-content,
+  .tech-page,
+  .tech-appt-detail-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  .tech-nav-tab:focus,
+  .tech-appt-card:focus {
+    outline: none;
+  }
+
+  .tech-nav,
+  .tech-appt-card,
+  .tech-tracker {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .tech-nav-tab,
+  .tech-appt-card,
+  .tech-task-row {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Sticky header on TechDash */
+  .tech-page-header-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(248, 249, 251, 0.9);
+    padding: var(--space-3) var(--space-4);
+    margin: 0 calc(-1 * var(--space-4));
+    border-bottom: 1px solid var(--border-light);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Sticky section headers in TechAppointment */
+  .tech-section-header-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(248, 249, 251, 0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    padding: 10px var(--space-4) 6px;
+    margin: 0 calc(-1 * var(--space-4));
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  /* Tab bar blur */
+  .tech-nav {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.85);
+    border-top: 1px solid rgba(226, 229, 233, 0.8);
+  }
+
+  /* Active tab pill indicator */
+  .tech-nav-tab.active {
+    color: var(--accent);
+    position: relative;
+  }
+
+  .tech-nav-tab.active::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 28px;
+    background: var(--accent-light);
+    border-radius: var(--radius-full);
+    z-index: -1;
+  }
+
+  /* Swipe-to-complete tasks */
+  .tech-task-swipe-wrap {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+  }
+
+  .tech-task-swipe-bg {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 80px;
+    background: #10b981;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+  }
+
+  .tech-task-row {
+    position: relative;
+    background: var(--bg-primary);
+    transition: transform 0.1s ease-out;
+    will-change: transform;
+  }
 }

@@ -1,20 +1,82 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
 
+const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
+
 const TABS = [
   { key: 'today', label: 'Today' },
   { key: 'all', label: 'All' },
 ];
+
+/* ── Swipeable Task Row ── */
+
+function SwipeTaskRow({ task, onToggle }) {
+  const [swipeX, setSwipeX] = useState(0);
+  const startX = useRef(null);
+
+  const handlePointerDown = (e) => { startX.current = e.clientX; };
+  const handlePointerMove = (e) => {
+    if (startX.current === null) return;
+    const dx = e.clientX - startX.current;
+    if (dx > 0) setSwipeX(Math.min(dx, 80));
+  };
+  const handlePointerUp = () => {
+    if (swipeX > 60) {
+      haptic(50);
+      onToggle(task);
+    }
+    setSwipeX(0);
+    startX.current = null;
+  };
+
+  return (
+    <div className="tech-task-swipe-wrap">
+      {swipeX > 0 && (
+        <div className="tech-task-swipe-bg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+        </div>
+      )}
+      <div
+        className="tech-task-row"
+        onClick={() => onToggle(task)}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => { setSwipeX(0); startX.current = null; }}
+        style={{
+          padding: '10px var(--space-4)',
+          borderBottom: '1px solid var(--border-light)',
+          transform: swipeX > 0 ? `translateX(${swipeX}px)` : 'none',
+        }}
+      >
+        <div className={`tech-task-check${task.is_complete ? ' done' : ''}`}>
+          {task.is_complete && (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+          )}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div className={`tech-task-name${task.is_complete ? ' done' : ''}`}>{task.task_name}</div>
+          {task.phase_name && (
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{task.phase_name}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── TechTasks Page ── */
 
 export default function TechTasks() {
   const { employee, db } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('today');
+  const [collapsed, setCollapsed] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -30,7 +92,6 @@ export default function TechTasks() {
   useEffect(() => { load(); }, [load]);
 
   const toggleTask = async (task) => {
-    // Optimistic update
     setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.task_id, p_employee_id: employee.id });
@@ -40,6 +101,8 @@ export default function TechTasks() {
       setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     }
   };
+
+  const toggleCollapse = (jobId) => setCollapsed(prev => ({ ...prev, [jobId]: !prev[jobId] }));
 
   const filtered = tab === 'today' ? tasks.filter(t => t.is_today) : tasks;
 
@@ -75,7 +138,7 @@ export default function TechTasks() {
                 background: tab === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
                 color: tab === t.key ? '#fff' : 'var(--text-secondary)',
                 borderColor: tab === t.key ? 'var(--accent)' : 'var(--border-color)',
-                fontFamily: 'var(--font-sans)',
+                fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
               }}
             >
               {t.label}
@@ -107,47 +170,48 @@ export default function TechTasks() {
             )}
           </div>
         ) : (
-          groups.map(([jobId, group]) => (
-            <div key={jobId}>
-              {/* Job group header */}
-              <div style={{
-                padding: '8px var(--space-4)',
-                background: 'var(--bg-secondary)',
-                borderBottom: '1px solid var(--border-light)',
-              }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {group.job_number || 'Job'}
-                </span>
-                {group.insured_name && (
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>
-                    {group.insured_name}
-                  </span>
-                )}
-              </div>
-
-              {/* Task rows */}
-              {group.tasks.map(task => (
+          groups.map(([jobId, group]) => {
+            const isCollapsed = collapsed[jobId];
+            return (
+              <div key={jobId}>
+                {/* Collapsible job group header */}
                 <div
-                  key={task.task_id}
-                  className="tech-task-row"
-                  onClick={() => toggleTask(task)}
-                  style={{ padding: '10px var(--space-4)', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-primary)' }}
+                  onClick={() => toggleCollapse(jobId)}
+                  style={{
+                    padding: '8px var(--space-4)',
+                    background: 'var(--bg-secondary)',
+                    borderBottom: '1px solid var(--border-light)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    cursor: 'pointer', touchAction: 'manipulation',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
                 >
-                  <div className={`tech-task-check${task.is_complete ? ' done' : ''}`}>
-                    {task.is_complete && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {group.job_number || 'Job'}
+                    </span>
+                    {group.insured_name && (
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>
+                        {group.insured_name}
+                      </span>
                     )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div className={`tech-task-name${task.is_complete ? ' done' : ''}`}>{task.task_name}</div>
-                    {task.phase_name && (
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{task.phase_name}</div>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"
+                      style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s' }}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
                   </div>
                 </div>
-              ))}
-            </div>
-          ))
+
+                {/* Task rows — hidden when collapsed */}
+                {!isCollapsed && group.tasks.map(task => (
+                  <SwipeTaskRow key={task.task_id} task={task} onToggle={toggleTask} />
+                ))}
+              </div>
+            );
+          })
         )}
       </PullToRefresh>
     </div>
