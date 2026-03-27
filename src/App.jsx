@@ -27,6 +27,13 @@ import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 import DevTools from '@/pages/DevTools';
 
+// Tech pages (field_tech role)
+import TechLayout from '@/components/TechLayout';
+import TechDash from '@/pages/tech/TechDash';
+import TechSchedule from '@/pages/tech/TechSchedule';
+import TechTasks from '@/pages/tech/TechTasks';
+import TechClaims from '@/pages/tech/TechClaims';
+
 // ── Route guards ──────────────────────────────────────────────────────────────
 
 // Admin-only pages (role check)
@@ -53,6 +60,13 @@ function DevRoute({ children }) {
   return children;
 }
 
+// Redirect field_tech users from / to /tech
+function HomeRedirect() {
+  const { employee } = useAuth();
+  if (employee?.role === 'field_tech') return <Navigate to="/tech" replace />;
+  return <ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function NotFound() {
@@ -76,9 +90,17 @@ export default function App() {
           <Route path="/sign/:token" element={<SignPage />} />
           <Route path="/set-password" element={<SetPassword />} />
 
+          {/* Tech layout — field_tech role, no sidebar */}
+          <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
+            <Route path="tech" element={<ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>} />
+            <Route path="tech/schedule" element={<ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>} />
+            <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
+            <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
+          </Route>
+
           {/* Protected — all wrapped in Layout */}
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>} />
+            <Route index element={<HomeRedirect />} />
             <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
 
             <Route path="claims">
