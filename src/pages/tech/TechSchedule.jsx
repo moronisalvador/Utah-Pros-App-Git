@@ -127,12 +127,12 @@ export default function TechSchedule() {
                 return (
                   <div
                     key={appt.id}
-                    onClick={() => isToday ? navigate('/tech') : null}
+                    onClick={() => navigate(`/tech/appointment/${appt.id}`)}
                     style={{
                       padding: '12px var(--space-4)',
                       borderBottom: '1px solid var(--border-light)',
                       background: 'var(--bg-primary)',
-                      cursor: isToday ? 'pointer' : 'default',
+                      cursor: 'pointer',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>

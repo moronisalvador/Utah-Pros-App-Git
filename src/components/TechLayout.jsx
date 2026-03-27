@@ -80,7 +80,7 @@ const TABS = [
   { key: 'dash', label: 'Dash', path: '/tech', Icon: IconHome, exact: true },
   { key: 'schedule', label: 'Schedule', path: '/tech/schedule', Icon: IconCalendar },
   { key: 'tasks', label: 'Tasks', path: '/tech/tasks', Icon: IconChecklist },
-  { key: 'messages', label: 'Messages', path: '/conversations', Icon: IconChat },
+  { key: 'messages', label: 'Messages', path: '/tech/conversations', Icon: IconChat },
   { key: 'claims', label: 'Claims', path: '/tech/claims', Icon: IconFolder },
 ];
 
