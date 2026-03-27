@@ -10,6 +10,8 @@ import Dashboard from '@/pages/Dashboard';
 import Conversations from '@/pages/Conversations';
 import Jobs from '@/pages/Jobs';
 import JobPage from '@/pages/JobPage';
+import ClaimsList from '@/pages/ClaimsList';
+import ClaimPage from '@/pages/ClaimPage';
 import Production from '@/pages/Production';
 import Leads from '@/pages/Leads';
 import Customers from '@/pages/Customers';
@@ -21,8 +23,13 @@ import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
+import SetPassword from '@/pages/SetPassword';
+import Collections from '@/pages/Collections';
+import DevTools from '@/pages/DevTools';
 
-// Admin-only route guard — belt-and-suspenders on top of Admin.jsx's own check
+// ── Route guards ──────────────────────────────────────────────────────────────
+
+// Admin-only pages (role check)
 function AdminRoute({ children }) {
   const { employee } = useAuth();
   if (!employee) return <Navigate to="/" replace />;
@@ -30,7 +37,24 @@ function AdminRoute({ children }) {
   return children;
 }
 
-// Simple 404 page
+// Feature-flagged pages — redirects to / when flag is disabled
+// No flag row in DB = unrestricted (isFeatureEnabled returns true)
+function FeatureRoute({ flag, children }) {
+  const { isFeatureEnabled } = useAuth();
+  if (!isFeatureEnabled(flag)) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Dev Tools — hardcoded to Moroni only, not role-based
+// Even other admins can't access this via direct URL
+function DevRoute({ children }) {
+  const { employee } = useAuth();
+  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  return children;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function NotFound() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: 24, textAlign: 'center' }}>
@@ -50,17 +74,17 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<Login />} />
           <Route path="/sign/:token" element={<SignPage />} />
+          <Route path="/set-password" element={<SetPassword />} />
 
           {/* Protected — all wrapped in Layout */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>} />
             <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+
+            <Route path="claims">
+              <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
+              <Route path=":claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+            </Route>
 
             <Route path="jobs">
               <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
@@ -69,18 +93,43 @@ export default function App() {
             </Route>
 
             <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
-            <Route path="leads" element={<ErrorBoundary section="Leads"><Leads /></ErrorBoundary>} />
             <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
             <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
             <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
             <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
-            <Route path="time-tracking" element={<ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>} />
-            <Route path="marketing" element={<ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>} />
+
+            {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
+            <Route path="leads" element={
+              <FeatureRoute flag="page:leads">
+                <ErrorBoundary section="Leads"><Leads /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="time-tracking" element={
+              <FeatureRoute flag="page:time_tracking">
+                <ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="collections" element={
+              <FeatureRoute flag="page:collections">
+                <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="marketing" element={
+              <FeatureRoute flag="page:marketing">
+                <ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+
+            {/* Admin-only */}
             <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
             <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
+
+            {/* Dev Tools — Moroni only, not role-based */}
+            <Route path="dev-tools" element={
+              <DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>
+            } />
           </Route>
 
-          {/* 404 — explicit not-found page instead of silent redirect */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>

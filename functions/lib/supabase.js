@@ -63,6 +63,8 @@ export function supabase(env) {
         headers,
       });
       if (!res.ok) throw new Error(`Supabase DELETE ${table}: ${res.status} ${await res.text()}`);
+      // 204 No Content is a valid success response — no body to parse
+      if (res.status === 204) return null;
       return res.json();
     },
 

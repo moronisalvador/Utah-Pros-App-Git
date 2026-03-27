@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);        // Supabase auth user
   const [employee, setEmployee] = useState(null); // Matched employee row
   const [permissions, setPermissions] = useState([]);
+  const [featureFlags, setFeatureFlags] = useState({}); // key → flag row
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -67,6 +68,7 @@ export function AuthProvider({ children }) {
           setUser(null);
           setEmployee(null);
           setPermissions([]);
+          setFeatureFlags({});
           setAuthDb(null);
         }
       }
@@ -75,24 +77,42 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ── Load feature flags ──
+  const loadFeatureFlags = async (dbClient = db) => {
+    try {
+      const rows = await dbClient.rpc('get_feature_flags');
+      // Convert array → keyed object for O(1) lookups: { 'page:marketing': { enabled, dev_only_user_id, ... } }
+      const flagMap = {};
+      (rows || []).forEach(f => { flagMap[f.key] = f; });
+      setFeatureFlags(flagMap);
+    } catch (err) {
+      console.error('Feature flags load error:', err);
+      setFeatureFlags({}); // Fail open — no flags = everything unrestricted
+    }
+  };
+
   // ── Match auth user → employee row ──
   const handleAuthUser = async (authUser, token) => {
     setUser(authUser);
 
-    // Create authenticated client
+    // Create authenticated client with the session token
     const authenticatedDb = createSupabaseClient(token);
     setAuthDb(authenticatedDb);
 
     try {
-      // Bridge: look up employee by email (until auth_user_id is populated)
-      const employees = await db.select(
+      // Use the authenticated client — anon client breaks if RLS tightens
+      const employees = await authenticatedDb.select(
         'employees',
         `email=eq.${encodeURIComponent(authUser.email)}&limit=1`
       );
 
       if (employees.length > 0) {
         setEmployee(employees[0]);
-        await loadPermissions(employees[0].role);
+        // Load permissions and feature flags in parallel
+        await Promise.all([
+          loadPermissions(employees[0].role, authenticatedDb),
+          loadFeatureFlags(authenticatedDb),
+        ]);
       } else {
         // Auth user exists but no matching employee — could be new user
         setError('No employee record found for this email. Contact admin.');
@@ -104,9 +124,10 @@ export function AuthProvider({ children }) {
   };
 
   // ── Load role-based nav permissions ──
-  const loadPermissions = async (role) => {
+  // Accepts an optional dbClient so we can use the authenticated client immediately after login
+  const loadPermissions = async (role, dbClient = db) => {
     try {
-      const perms = await db.select(
+      const perms = await dbClient.select(
         'nav_permissions',
         `role=eq.${encodeURIComponent(role)}&can_view=eq.true&select=nav_key,can_view,can_edit`
       );
@@ -143,6 +164,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     setEmployee(null);
     setPermissions([]);
+    setFeatureFlags({});
     setAuthDb(null);
   }, []);
 
@@ -166,7 +188,10 @@ export function AuthProvider({ children }) {
       setEmployee(emp);
       setUser({ id: emp.id, email: emp.email }); // Fake user object
       setAuthDb(createSupabaseClient()); // Uses anon key in dev
-      await loadPermissions(emp.role);
+      await Promise.all([
+        loadPermissions(emp.role),
+        loadFeatureFlags(),
+      ]);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -187,10 +212,23 @@ export function AuthProvider({ children }) {
     return perm ? perm.can_view : false;
   }, [employee, permissions]);
 
+  // ── Feature flag check helper ──
+  // No flag row = unrestricted (backwards compatible — existing pages keep working)
+  // flag.enabled = globally on for everyone
+  // flag.dev_only_user_id === employee.id = visible only to that specific user
+  const isFeatureEnabled = useCallback((key) => {
+    const flag = featureFlags[key];
+    if (!flag) return true;                                          // No row = unrestricted
+    if (flag.enabled) return true;                                   // Globally on
+    if (employee && flag.dev_only_user_id === employee.id) return true; // Dev-only for this user
+    return false;
+  }, [featureFlags, employee]);
+
   const value = {
     user,
     employee,
     permissions,
+    featureFlags,         // Raw flags map — { 'page:marketing': { enabled, ... } }
     loading,
     error,
     db: authDb || db, // Use authenticated client when available
@@ -199,6 +237,7 @@ export function AuthProvider({ children }) {
     // devLogin only exposed in dev builds — null in production so it can't be called
     devLogin: import.meta.env.DEV ? devLogin : null,
     canAccess,
+    isFeatureEnabled,     // isFeatureEnabled('page:marketing') → boolean
     isAuthenticated: !!employee,
     isDev: import.meta.env.DEV,
   };

@@ -1,0 +1,367 @@
+# UPR Platform — Claude Code Project Context
+**Last updated:** March 27, 2026
+**Project:** Utah Pros Restoration — Internal Business Management Platform
+**Developer:** Moroni Salvador
+**Repo:** moronisalvador/Utah-Pros-App-Git
+**Local:** F:\APPS\RestorationAPP\Utah-Pros-App-Git
+
+---
+
+## ⚠️ NON-NEGOTIABLE RULES — FOLLOW EVERY SINGLE ONE
+
+1. **Read files from disk before editing.** Never assume file contents from memory.
+2. **Use `write_file` for full rewrites.** `edit_file` fails silently on Windows CRLF files — if in doubt, rewrite the whole file.
+3. **Never use `alert()` or `confirm()`.** All user feedback goes through:
+   ```js
+   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'msg', type: 'success' } }))
+   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'msg', type: 'error' } }))
+   ```
+   For destructive actions that need confirmation, use **inline two-click confirm state** — first click turns button red + shows "Confirm", second click executes, `onBlur` cancels. Never a modal or native dialog.
+4. **Always use `const { db } = useAuth()`** in components. Never import `db` directly from `@/lib/supabase`.
+5. **Work on `dev` branch only.** Never touch `main`.
+6. **CSS: mobile changes use `@media (max-width: 768px)` only.** Never change desktop layout, colors, or spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
+7. **Commit after every 2–3 files.** Small commits, clear messages.
+8. **DB queries: always use `db.rpc()` for new tables.** PostgREST schema cache may not reflect new tables — `SECURITY DEFINER` RPCs always work.
+9. **Check actual column names** via `information_schema.columns` before writing any query. Never assume column names.
+10. **Do not break existing pages.** Every page currently in the app is live and in use. If unsure, read the file first.
+
+---
+
+## Stack
+
+- **Frontend:** React 19 + Vite — all JSX, no TypeScript
+- **Database:** Supabase PostgreSQL + PostgREST REST API — **NO Supabase JS SDK**
+- **Auth:** `@supabase/supabase-js` for auth only (realtime client), raw fetch for all data
+- **Workers:** Cloudflare Pages Functions (`functions/api/*.js`)
+- **Routing:** React Router v6
+- **Styling:** CSS custom properties (no Tailwind, no CSS modules — global `index.css` only)
+- **Deployment:** Cloudflare Pages — auto-deploys on push to `dev` branch
+
+**Supabase project ID:** `glsmljpabrwonfiltiqm`
+
+---
+
+## DB Client API
+
+All data access goes through the `db` object from `useAuth()`. The methods:
+
+```js
+const { db } = useAuth();
+
+// REST operations
+await db.select(table, queryString)     // GET /rest/v1/{table}?{queryString}
+await db.insert(table, data)            // POST — returns inserted row(s)
+await db.update(table, filter, data)    // PATCH — filter is PostgREST filter string
+await db.delete(table, filter)          // DELETE — returns null on 204
+await db.rpc(functionName, params)      // POST /rest/v1/rpc/{fn} — preferred for new tables
+```
+
+**RPC is the default for anything complex or on tables created after initial deploy.**
+
+---
+
+## AuthContext — What's Exposed
+
+```js
+const {
+  user,              // Supabase auth user object
+  employee,          // employees table row for current user
+  permissions,       // nav_permissions rows
+  featureFlags,      // { 'page:marketing': { key, enabled, dev_only_user_id, ... } }
+  loading,
+  error,
+  db,                // Authenticated Supabase REST client — USE THIS
+  login,
+  logout,
+  devLogin,          // DEV builds only
+  canAccess,         // canAccess('nav_key') → boolean
+  isFeatureEnabled,  // isFeatureEnabled('page:marketing') → boolean
+  isAuthenticated,
+  isDev,
+} = useAuth();
+```
+
+---
+
+## File Structure (key files)
+
+```
+src/
+  App.jsx                   — Routes: AdminRoute, FeatureRoute, DevRoute wrappers
+  index.css                 — ALL styles — CSS custom properties, no external CSS
+  contexts/
+    AuthContext.jsx          — Auth + featureFlags + isFeatureEnabled
+  lib/
+    supabase.js             — REST client (do not modify without good reason)
+    realtime.js             — Supabase realtime + auth
+  pages/
+    DevTools.jsx            — THE FILE YOU ARE WORKING ON (see DEVTOOLS-TASK.md)
+    Settings.jsx            — Good pattern reference for tabbed pages
+    Admin.jsx               — Good pattern reference for tables + forms
+  components/
+    Layout.jsx              — App shell — owns toasts, sidebar, bottom bar
+    Sidebar.jsx             — Nav — feature-flag aware, Moroni-only Dev Tools link
+    ErrorBoundary.jsx       — Wraps every route
+
+functions/
+  api/                      — Cloudflare Pages Functions (workers)
+  lib/
+    supabase.js             — Worker-side Supabase client (different from frontend)
+    cors.js                 — jsonResponse(data, status, request, env)
+```
+
+---
+
+## CSS Design System (from `index.css`)
+
+Use these variables — do not hardcode colors or spacing:
+
+```css
+/* Colors */
+--bg-primary: #ffffff
+--bg-secondary: #f8f9fb
+--bg-tertiary: #f1f3f5
+--border-color: #e2e5e9
+--border-light: #f0f1f3
+--text-primary: #111318
+--text-secondary: #5f6672
+--text-tertiary: #8b929e
+--accent: #2563eb
+--accent-hover: #1d4ed8
+--accent-light: #eff6ff
+
+/* Typography */
+--font-sans: 'Inter', -apple-system, ...
+--font-mono: 'JetBrains Mono', 'Fira Code', monospace
+--text-xs: 11px  --text-sm: 13px  --text-base: 14px
+
+/* Spacing */
+--space-1: 4px  --space-2: 8px  --space-3: 12px
+--space-4: 16px  --space-5: 20px  --space-6: 24px  --space-8: 32px
+
+/* Radius */
+--radius-sm: 4px  --radius-md: 6px  --radius-lg: 8px
+--radius-xl: 12px  --radius-full: 9999px
+
+/* Shadows */
+--shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)
+--shadow-md: 0 4px 6px -1px rgba(0,0,0,0.06), 0 2px 4px -2px rgba(0,0,0,0.04)
+```
+
+**Existing utility classes (from index.css):**
+```
+.btn .btn-primary .btn-secondary .btn-sm
+— These already exist. Use them, don't reinvent.
+```
+
+**Status colors (use inline for status badges):**
+```
+Green:  bg #f0fdf4  text #16a34a  border #bbf7d0
+Red:    bg #fef2f2  text #dc2626  border #fecaca
+Yellow: bg #fffbeb  text #d97706  border #fde68a
+Blue:   bg #eff6ff  text #2563eb  border #bfdbfe
+Purple: bg #faf5ff  text #7c3aed  border #ddd6fe
+```
+
+---
+
+## Key Supabase Tables (confirmed columns)
+
+### `feature_flags`
+`key TEXT PK, enabled BOOLEAN, dev_only_user_id UUID, category TEXT, label TEXT, description TEXT, updated_by UUID, updated_at TIMESTAMPTZ`
+
+### `worker_runs`
+`id UUID PK, worker_name TEXT, status TEXT CHECK('started','completed','error'), records_processed INT, error_message TEXT, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ`
+
+### `employees`
+`id UUID PK, full_name TEXT, email TEXT, role TEXT, auth_user_id UUID, default_division TEXT`
+
+### `jobs`
+`id UUID PK, job_number TEXT, claim_id UUID, primary_contact_id UUID, division TEXT, phase TEXT, status TEXT, created_at TIMESTAMPTZ`
+
+### `contacts`
+`id UUID PK, first_name TEXT, last_name TEXT, phone TEXT, email TEXT, role TEXT`
+
+### `claims`
+`id UUID PK, claim_number TEXT, contact_id UUID, date_of_loss DATE, status TEXT`
+
+### `conversations`
+`id UUID PK, contact_id UUID, status TEXT, last_message_at TIMESTAMPTZ, unread_count INT`
+
+### `messages`
+`id UUID PK, conversation_id UUID, direction TEXT, body TEXT, status TEXT, created_at TIMESTAMPTZ, media_url TEXT`
+
+### `scheduled_messages`
+`id UUID PK, conversation_id UUID, contact_id UUID, body TEXT, send_at TIMESTAMPTZ, status TEXT, template_id UUID`
+
+### `message_templates`
+`id UUID PK, name TEXT, body TEXT, category TEXT, created_at TIMESTAMPTZ`
+
+### `contact_jobs`
+`id UUID PK, contact_id UUID, job_id UUID, role TEXT, is_primary BOOLEAN`
+
+### `conversation_participants`
+`id UUID PK, conversation_id UUID, contact_id UUID`
+
+### `system_events`
+`id UUID PK, event_type TEXT, entity_type TEXT, entity_id UUID, actor_id UUID, job_id UUID, payload JSONB, created_at TIMESTAMPTZ`
+
+---
+
+## Key RPCs Available
+
+```
+get_feature_flags()
+upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by)
+delete_feature_flag(p_key)
+get_worker_runs(p_limit INT DEFAULT 10)
+bust_postgrest_cache()
+get_all_employees()
+get_dashboard_stats()
+get_claim_jobs(p_claim_id)
+get_job_contacts(p_job_id)
+get_customers_list(...)
+search_contacts_for_job(...)
+get_document_templates(...)
+get_sign_request_by_token(p_token)
+```
+
+---
+
+## Patterns to Follow
+
+### Loading state
+```jsx
+const [loading, setLoading] = useState(true);
+if (loading) return <TabLoading />;  // Component defined in DevTools.jsx
+```
+
+### Data fetch pattern
+```jsx
+const load = useCallback(async () => {
+  setLoading(true);
+  try {
+    const rows = await db.rpc('some_rpc', { p_param: value });
+    setData(rows || []);
+  } catch (e) {
+    err('Failed to load data');
+  } finally {
+    setLoading(false);
+  }
+}, [db]);
+
+useEffect(() => { load(); }, [load]);
+```
+
+### Two-click delete (REQUIRED — no confirm() or alert())
+```jsx
+const [confirmDel, setConfirmDel] = useState(null);
+
+// First click: set confirmDel to item id
+// Second click: execute delete
+// onBlur: cancel
+const handleDelete = async (item) => {
+  if (confirmDel !== item.id) { setConfirmDel(item.id); return; }
+  setConfirmDel(null);
+  // ... execute delete
+};
+
+<button
+  onClick={() => handleDelete(item)}
+  onBlur={() => setConfirmDel(null)}
+  style={{
+    background: confirmDel === item.id ? '#fef2f2' : 'var(--bg-tertiary)',
+    color:      confirmDel === item.id ? '#dc2626' : 'var(--text-tertiary)',
+    border:     `1px solid ${confirmDel === item.id ? '#fecaca' : 'var(--border-light)'}`,
+  }}
+>
+  {confirmDel === item.id ? 'Confirm Delete' : 'Delete'}
+</button>
+```
+
+### Table layout pattern
+```jsx
+// Header
+<div style={{
+  display: 'grid', gridTemplateColumns: '...',
+  padding: '8px 16px', background: 'var(--bg-secondary)',
+  borderBottom: '1px solid var(--border-color)',
+  fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
+  letterSpacing: '0.06em', textTransform: 'uppercase',
+}}>
+
+// Rows
+<div style={{
+  display: 'grid', gridTemplateColumns: '...',
+  alignItems: 'center', padding: '10px 16px',
+  borderBottom: isLast ? 'none' : '1px solid var(--border-light)',
+  background: 'var(--bg-primary)',
+}}>
+```
+
+### Badge/pill pattern
+```jsx
+<span style={{
+  fontSize: 11, fontWeight: 600, padding: '2px 8px',
+  borderRadius: 'var(--radius-full)',
+  background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
+}}>
+  Active
+</span>
+```
+
+### Section wrapper
+```jsx
+<div style={{
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--border-color)',
+  overflow: 'hidden',
+}}>
+  {/* header row + item rows inside */}
+</div>
+```
+
+---
+
+## PostgREST Gotchas
+
+- **New tables:** always use `SECURITY DEFINER` RPC + `GRANT EXECUTE TO anon, authenticated`
+- **RLS:** every table needs `ALTER TABLE x ENABLE ROW LEVEL SECURITY` + explicit policies
+- **Anon policy syntax:** `CREATE POLICY "name" ON table FOR SELECT TO anon, authenticated USING (true);`
+- **Schema cache:** after new tables, call `bust_postgrest_cache()` RPC or redeploy
+- **204 responses:** `db.rpc()` and `db.delete()` return `null` on 204 — handle this
+- **`db.select()` returns `[]` on 404** — silent failure, use `db.rpc()` for reliability on new tables
+
+---
+
+## What NOT to Touch
+
+- `src/lib/supabase.js` — stable, do not modify
+- `src/lib/realtime.js` — stable, do not modify
+- `src/contexts/AuthContext.jsx` — only modify if a new feature explicitly requires it
+- `src/components/Layout.jsx` — do not modify
+- `src/App.jsx` — only add routes, do not restructure
+- Any existing page other than `DevTools.jsx` unless explicitly instructed
+- `main` branch — dev branch only
+- `functions/api/*.js` — only modify if Phase 3C worker logging is being added
+
+---
+
+## Workers (Cloudflare Pages Functions)
+
+Located in `functions/api/`. Each worker exports a `onRequest` handler.
+Worker-side Supabase client: `import { createClient } from '../lib/supabase.js'`
+CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
+
+**Active workers:**
+- `send-message.js` — outbound SMS
+- `twilio-webhook.js` — inbound SMS
+- `twilio-status.js` — delivery receipts
+- `process-scheduled.js` — cron, processes scheduled_messages
+- `sync-encircle.js` — pulls Encircle claims → jobs + contacts
+- `admin-users.js` — employee invite / auth management
+- `send-esign.js`, `submit-esign.js`, `resend-esign.js`, `track-open.js` — esign flow
+
+---
+
+*For the current active task, see `DEVTOOLS-TASK.md` in this repo.*

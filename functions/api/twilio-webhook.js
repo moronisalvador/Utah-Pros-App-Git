@@ -18,41 +18,8 @@
 //   7. Run automation rules
 
 import { supabase } from '../lib/supabase.js';
+import { validateTwilioSignature } from '../lib/twilio.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-
-// ── Twilio signature validation ──
-async function validateTwilioSignature(request, env) {
-  // In development, skip validation
-  if (!env.TWILIO_AUTH_TOKEN) return true;
-
-  const signature = request.headers.get('X-Twilio-Signature');
-  if (!signature) return false;
-
-  const url = request.url;
-  const body = await request.clone().text();
-  const params = new URLSearchParams(body);
-
-  // Sort params and build validation string
-  const sortedKeys = [...params.keys()].sort();
-  let validationString = url;
-  for (const key of sortedKeys) {
-    validationString += key + params.get(key);
-  }
-
-  // HMAC-SHA1 with auth token
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(env.TWILIO_AUTH_TOKEN),
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(validationString));
-  const computed = btoa(String.fromCharCode(...new Uint8Array(sig)));
-
-  return computed === signature;
-}
 
 // ── STOP/HELP/START keyword detection ──
 // CTIA requires handling these exact keywords (case-insensitive)
@@ -78,7 +45,8 @@ export async function onRequestPost(context) {
 
   try {
     // ── 1. Validate Twilio signature ──
-    const isValid = await validateTwilioSignature(request, env);
+    // Skip validation if auth token not configured (dev/testing)
+    const isValid = !env.TWILIO_AUTH_TOKEN || await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, request.url);
     if (!isValid) {
       return new Response('Forbidden', { status: 403 });
     }

@@ -316,8 +316,8 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const currentStatus = STATUS_OPTIONS.find(s => s.value === status) || STATUS_OPTIONS[0];
 
   return (
-    <div style={S.overlay}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
+    <div style={S.overlay} className="appt-modal-overlay">
+      <div style={S.modal} className="appt-modal" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={S.header}>
           <div style={{ flex: 1 }}>
@@ -659,7 +659,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
             )}
           </div>
         ) : (
-          <div style={S.footer}>
+          <div style={S.footer} className="appt-modal-footer">
             <div style={{ display: 'flex', gap: 8 }}>
               {!showDeleteConfirm ? (
                 <button onClick={() => setShowDeleteConfirm(true)}

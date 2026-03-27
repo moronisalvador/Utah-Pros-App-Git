@@ -77,12 +77,14 @@ export async function onRequestPost(context) {
     }
 
     // ── 3. Generate PDF ──
+    const signerIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || null;
     const pdfBytes = await buildPdf({
       job, signer_name, signature_png,
       signed_at: signedAt,
       doc_type:  signReq.doc_type,
       divisions,
       templateSections,
+      signer_ip: signerIp,
     });
 
     // ── 4. Upload to Supabase Storage ──
@@ -100,7 +102,6 @@ export async function onRequestPost(context) {
     if (!uploadRes.ok) throw new Error(`Storage upload failed: ${await uploadRes.text()}`);
 
     // ── 5. Complete sign request ──
-    const signerIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
     const result = await rpc('complete_sign_request', {
       p_token:            token,
       p_signer_name:      signer_name,
@@ -108,6 +109,59 @@ export async function onRequestPost(context) {
       p_signed_file_path: storagePath,
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
+
+    // ── 6. Send confirmation email with PDF attached ──
+    const docLabel = {
+      coc:           'Certificate of Completion',
+      work_auth:     'Work Authorization',
+      direction_pay: 'Direction of Pay',
+      change_order:  'Change Order',
+    }[signReq.doc_type] || 'Signed Document';
+
+    const firstName = signer_name.split(' ')[0];
+    // Chunk-encode to avoid V8 call stack overflow on large PDFs (btoa spread crashes at ~100KB+)
+    const pdfB64 = (() => {
+      const bytes = new Uint8Array(pdfBytes);
+      let b64 = '';
+      for (let i = 0; i < bytes.length; i += 8192) {
+        b64 += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      }
+      return btoa(b64);
+    })();
+    const fileName  = `${signReq.doc_type}-signed-${signedAt.toISOString().slice(0,10)}.pdf`;
+
+    await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        personalizations: [{
+          to:      [{ email: signReq.signer_email, name: signer_name }],
+          subject: `Your signed ${docLabel} – Utah Pros Restoration`,
+        }],
+        from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
+        reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
+        content: [
+          {
+            type:  'text/plain',
+            value: `Hi ${firstName},\n\nThank you for signing. Your ${docLabel} is attached to this email for your records.\n\nDocument: ${docLabel}\nProperty: ${[job.address, job.city, job.state].filter(Boolean).join(', ')}\nSigned: ${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}\n\nIf you have any questions, reply to this email or call us at (801) 427-0582.\n\n— Utah Pros Restoration`,
+          },
+          {
+            type:  'text/html',
+            value: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#1e293b;padding:28px 32px;text-align:center;"><p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Utah Pros Restoration</p><p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">Licensed &amp; Insured &middot; Utah</p></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 20px;font-size:16px;color:#0f172a;">Hi ${firstName},</p><p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.6;">Thank you for signing. Your <strong>${docLabel}</strong> is attached to this email for your records.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><p style="margin:0 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;">Document Details</p><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:100px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${docLabel}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${[job.address, job.city, job.state].filter(Boolean).join(', ')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr></table></td></tr></table><p style="margin:0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached. Please save it for your records.</p></td></tr><tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">Questions? Reply to this email or call <strong>(801) 427-0582</strong>.</p></td></tr></table></td></tr></table></body></html>`,
+          },
+        ],
+        attachments: [{
+          content:     pdfB64,
+          filename:    fileName,
+          type:        'application/pdf',
+          disposition: 'attachment',
+        }],
+      }),
+    }).catch(e => console.error('Confirmation email failed:', e.message));
+    // Non-fatal — don't throw if email fails, the document is already signed and stored
 
     return jsonResponse({
       success:         true,
@@ -199,13 +253,14 @@ function parseMarkdownSections(body) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  PDF BUILDER — clean cursor-based approach, no shared mutable state issues
 // ─────────────────────────────────────────────────────────────────────────────
-async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections }) {
+async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections, signer_ip }) {
   const pdfDoc = await PDFDocument.create();
   const fBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const PW = 612, PH = 792, M = 56, CW = PW - M * 2;
-  const SIG_BLOCK_H = 130; // height reserved for signature block
+  const needsCoSig  = doc_type === 'work_auth' || doc_type === 'change_order';
+  const SIG_BLOCK_H = needsCoSig ? 210 : 130; // extra height for company block
   const FOOTER_H    = 60;  // height reserved for footer
   const MIN_Y       = SIG_BLOCK_H + FOOTER_H;
 
@@ -391,13 +446,41 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   drawLine(M, curY - 82, M + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
   drawText('Authorized Signature', M, curY - 94, { font: fReg, size: 8, color: gray });
 
+  // ── COMPANY PRE-AUTHORIZATION BLOCK (Work Auth + Change Order only) ──
+  if (needsCoSig) {
+    const cy = curY - 110; // start below client sig box
+    drawLine(M, cy + 8, PW - M, { thickness: 0.5, color: lgray });
+    curPage.drawRectangle({
+      x: M - 8, y: cy - 64,
+      width: PW - (M - 8) * 2, height: 72,
+      color: rgb(0.965, 0.972, 0.984),
+      borderColor: lgray, borderWidth: 0.5,
+    });
+    // Left: company info
+    drawText('AUTHORIZED BY UTAH PROS RESTORATION', M, cy - 6,  { font: fBold, size: 8, color: gray });
+    drawText('Moroni Salvador',                       M, cy - 20, { font: fBold, size: 11, color: black });
+    drawText('Director of Operations',                M, cy - 34, { font: fReg,  size: 9,  color: gray });
+    drawLine(M, cy - 46, M + 200, { thickness: 0.75, color: rgb(0.7, 0.7, 0.7) });
+    drawText('Authorized Company Representative',     M, cy - 58, { font: fReg, size: 8, color: gray });
+    // Right: date pre-authorized
+    drawText('DATE PRE-AUTHORIZED', rx, cy - 6,  { font: fBold, size: 8, color: gray });
+    drawText(
+      signed_at.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      rx, cy - 20, { font: fReg, size: 10 }
+    );
+    drawText('Electronically pre-signed on behalf', rx, cy - 36, { font: fReg, size: 8, color: gray });
+    drawText('of Utah Pros Restoration',             rx, cy - 48, { font: fReg, size: 8, color: gray });
+  }
+
   // ── FOOTER on every page ──
+  const footerParts = [
+    `Electronically signed · ${signed_at.toISOString()}`,
+    signer_ip ? `IP: ${signer_ip}` : null,
+    'Utah Pros Restoration · utah-pros.com',
+  ].filter(Boolean).join(' · ');
   for (const p of pdfDoc.getPages()) {
     p.drawLine({ start: { x: M, y: 50 }, end: { x: PW - M, y: 50 }, thickness: 0.5, color: lgray });
-    p.drawText(
-      `Electronically signed · ${signed_at.toISOString()} · Utah Pros Restoration · utah-pros.com`,
-      { x: M, y: 36, font: fReg, size: 7.5, color: rgb(0.6, 0.6, 0.6) }
-    );
+    p.drawText(footerParts, { x: M, y: 36, font: fReg, size: 7.5, color: rgb(0.6, 0.6, 0.6) });
   }
 
   return pdfDoc.save();

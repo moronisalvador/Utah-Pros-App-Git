@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_COLORS, TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
@@ -415,7 +416,11 @@ export default function Schedule() {
     // Month only available in calendar view
     if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
   };
-  const [calSpan, setCalSpan] = useState(() => { try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; } });
+  const [calSpan, setCalSpan] = useState(() => {
+    // Always default to Day view on mobile — week/3day are unreadable on a phone
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) return 'day';
+    try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
+  });
   const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch {} };
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
@@ -423,6 +428,7 @@ export default function Schedule() {
   const [selectedPanelJob, setSelectedPanelJob] = useState(null);
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true);
+  const [showExtraControls, setShowExtraControls] = useState(false); // mobile ⚙ toggle
   const [panelRefreshKey, setPanelRefreshKey] = useState(0);
   const [placementMode, setPlacementMode] = useState(null);
   const [divFilter, setDivFilter] = useState(() => employee?.default_division || 'all');
@@ -594,12 +600,15 @@ export default function Schedule() {
 
   return (
     <div style={S.page}>
-      <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
+      <div className={`schedule-panel-wrap${panelOpen ? ' panel-is-open' : ''}`}>
+        {panelOpen && <div className="schedule-panel-backdrop" onClick={() => setPanelOpen(false)} />}
+        <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
         onSchedulePhase={(jid, jn, ph) => setCreateModal({ jobId: jid, jobName: jn, dateKey: ph?.target_start || fmtDate(new Date()), prefillPhase: ph?.phase_name || null, prefillTaskIds: [] })}
         onCreateAppointment={(jid, jn, dk, tids) => setCreateModal({ jobId: jid, jobName: jn, dateKey: dk, prefillTaskIds: tids || [] })}
         onSelectJob={(jid) => { if (jid) { const j = panelJobs.find(x => x.id === jid); setSelectedPanelJob(j ? { id: j.id, insured_name: j.insured_name } : null); } else setSelectedPanelJob(null); }}
         onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
-      />
+        />
+      </div>
 
       <div style={S.main}>
         <div style={S.header} className="schedule-header">
@@ -613,7 +622,16 @@ export default function Schedule() {
             </div>
           </div>
           <div style={S.controls} className="schedule-controls">
-            <div style={S.viewToggle}>
+            {/* Mobile-only Jobs panel button */}
+            <button className="schedule-mobile-jobs-btn" onClick={() => setPanelOpen(true)}>
+              📋 Jobs ({panelJobs.filter(j => j.on_board).length} on schedule)
+            </button>
+            {/* Mobile-only ⚙ settings toggle */}
+            <button className="schedule-gear-btn" onClick={() => setShowExtraControls(p => !p)} title="Settings">
+              {showExtraControls ? '✕' : '⚙️'}
+            </button>
+            {/* #6: view toggle hidden on mobile — Calendar is the only useful mobile view */}
+            <div style={S.viewToggle} className="schedule-view-toggle">
               <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('calendar')}>Calendar</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
               <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }} onClick={() => changeViewMode('crew')}>Crew</button>
@@ -627,8 +645,10 @@ export default function Schedule() {
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
-            {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>}
-            <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} /><span>Auto-show</span></label>
+            <div className={`schedule-extra-controls${showExtraControls ? ' open' : ''}`}>
+              {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>}
+              <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} /><span>Auto-show</span></label>
+            </div>
           </div>
         </div>
 
@@ -646,13 +666,13 @@ export default function Schedule() {
             <button onClick={() => setDivFilter('all')} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>
           )}
           {crewList.length > 0 && (
-            <>
+            <span className="schedule-crew-filter-wrap" style={{ display: 'contents' }}>
               <span style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 6px', flexShrink: 0 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
               <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, ...(crewFilter === null ? S.crewPillActive : {}) }}>All</button>
               {crewList.map(emp => <button key={emp.id} onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)} style={{ ...S.crewPill, ...(crewFilter === emp.id ? S.crewPillActive : {}) }}>{emp.display_name || emp.full_name}</button>)}
               {crewFilter && <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>}
-            </>
+            </span>
           )}
         </div>
 
@@ -662,7 +682,7 @@ export default function Schedule() {
         ) : viewMode === 'calendar' && calSpan === 'month' ? (
           <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
-          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} />
+          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} onSwipePrev={goPrev} onSwipeNext={goNext} />
         ) : filteredBoardData.length === 0 && !crewFilter && divFilter === 'all' ? (
           <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>Jobs move here automatically when a schedule is generated</div></div>
         ) : filteredBoardData.length === 0 ? (
@@ -765,6 +785,13 @@ export default function Schedule() {
       )}
 
       {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {/* Mobile + FAB — creates appointment for today */}
+      <button
+        className="schedule-mobile-fab"
+        onClick={() => { setJobPickerModal({ dateKey: fmtDate(new Date()), hour: 9 }); setJobPickerSearch(''); }}
+        aria-label="Create appointment"
+      >+</button>
+
       {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
 
       {/* Grid placement time picker (Jobs/Crew views) */}

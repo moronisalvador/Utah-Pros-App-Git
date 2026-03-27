@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+import { createPortal } from 'react-dom';
 
 const DOC_TYPES = [
   { key: 'coc',           label: 'Certificate of Completion' },
@@ -27,7 +26,7 @@ function IconX(p) {
   );
 }
 
-export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
+export default function SendEsignModal({ job, currentUser, db, onClose, onSent }) {
   const [docType,        setDocType]        = useState('coc');
   const [signerName,     setSignerName]     = useState('');
   const [signerEmail,    setSignerEmail]    = useState('');
@@ -46,39 +45,39 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
     else setDivisions([]);
   }, [docType, job?.division]);
 
-  // Auto-fetch primary contact
+  // Auto-fetch primary contact — uses authenticated db client passed from JobPage
   useEffect(() => {
     if (!job?.id) { setLoadingContact(false); return; }
-    const fetch_ = async () => {
+    const loadContact = async () => {
       try {
         let cid = null;
-        for (const filter of [`is_primary=eq.true&`, ``]) {
-          const res = await fetch(
-            `${SUPABASE_URL}/rest/v1/contact_jobs?job_id=eq.${job.id}&${filter}limit=1&select=contact_id`,
-            { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-          );
-          const rows = await res.json();
+        // Try primary contact first, then any contact on the job
+        for (const filter of ['is_primary=eq.true&', '']) {
+          const rows = await db.select('contact_jobs', `job_id=eq.${job.id}&${filter}limit=1&select=contact_id`);
           cid = rows?.[0]?.contact_id;
           if (cid) break;
         }
-        if (!cid) { if (job.insured_name) setSignerName(job.insured_name); return; }
-        const cRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/contacts?id=eq.${cid}&select=id,name,email`,
-          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-        );
-        const c = (await cRes.json())?.[0];
+        if (!cid) {
+          if (job.insured_name) setSignerName(job.insured_name);
+          if (job.client_email) setSignerEmail(job.client_email);
+          return;
+        }
+        const contacts = await db.select('contacts', `id=eq.${cid}&select=id,name,email`);
+        const c = contacts?.[0];
         if (!c) return;
         setContactId(c.id);
         if (c.name)  setSignerName(c.name);
+        // Prefer contact email, fall back to job.client_email if contact has none
         if (c.email) setSignerEmail(c.email);
+        else if (job?.client_email) setSignerEmail(job.client_email);
       } catch {
         if (job.insured_name) setSignerName(job.insured_name);
       } finally {
         setLoadingContact(false);
       }
     };
-    fetch_();
-  }, [job?.id]);
+    loadContact();
+  }, [job?.id, db]);
 
   const toggleDivision = (key) =>
     setDivisions(prev =>
@@ -161,7 +160,7 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
 
   // ── Success state ──
   if (done) {
-    return (
+    return createPortal(
       <div className="conv-modal-backdrop" onClick={onClose}>
         <div className="conv-modal" onClick={e => e.stopPropagation()}
           style={{ maxWidth: 440, display: 'flex', flexDirection: 'column' }}>
@@ -203,12 +202,13 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
             <button className="btn btn-primary" onClick={onClose} style={{ width: '100%' }}>Done</button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // ── Form state ──
-  return (
+  return createPortal(
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal" onClick={e => e.stopPropagation()}
         style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -381,7 +381,8 @@ export default function SendEsignModal({ job, currentUser, onClose, onSent }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

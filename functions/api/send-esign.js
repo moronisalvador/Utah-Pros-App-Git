@@ -5,7 +5,9 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
-const APP_URL = 'https://dev.utahpros.app';
+// APP_URL: set APP_URL env var in Cloudflare Pages for each environment
+// (dev branch → https://dev.utahpros.app, main branch → https://utahpros.app)
+const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
 
 const DOC_LABELS = {
   coc:           'Certificate of Completion',
@@ -92,6 +94,7 @@ export async function onRequestPost(context) {
     if (!signReq || signReq.error) throw new Error(signReq?.error || 'Failed to create sign request');
 
     const { token, id: sign_request_id } = signReq;
+    const APP_URL     = getAppUrl(env);
     const signingUrl  = `${APP_URL}/sign/${token}`;
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';

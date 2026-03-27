@@ -7,6 +7,7 @@ import ScheduleWizard from '@/components/ScheduleWizard';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
+import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -14,8 +15,8 @@ const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
 const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
 const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estimates'},{key:'invoice',label:'Invoices'},{key:'moisture_log',label:'Moisture Logs'},{key:'receipt',label:'Receipts'},{key:'contract',label:'Contracts'},{key:'other',label:'Other'}];
-const DIVISION_EMOJI={water:'\u{1F4A7}',mold:'\u{1F9A0}',reconstruction:'\u{1F3D7}\uFE0F',fire:'\u{1F525}',contents:'\u{1F4E6}'};
-const DIVISION_COLORS={water:'#2563eb',mold:'#9d174d',reconstruction:'#d97706',fire:'#dc2626',contents:'#059669'};
+
+
 
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
 
@@ -44,6 +45,7 @@ export default function JobPage(){
   const[documents,setDocuments]=useState([]);const[notes,setNotes]=useState([]);const[history,setHistory]=useState([]);
   const[saving,setSaving]=useState(false);const[showWizard,setShowWizard]=useState(false);const[taskSummary,setTaskSummary]=useState(null);
   const[showEsign,setShowEsign]=useState(false);
+  const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
 
   useEffect(()=>{loadJob();},[jobId]);
@@ -96,7 +98,7 @@ export default function JobPage(){
   if(!job)return null;
 
   const phaseLabel=phaseMap[job.phase]?.label||job.phase;
-  const divEmoji=DIVISION_EMOJI[job.division]||'\u{1F4C1}';
+  // divEmoji replaced by DivisionIcon component
   const priorityObj=PRIORITY_OPTIONS.find(p=>p.value===job.priority)||PRIORITY_OPTIONS[2];
   const TABS=[{key:'overview',label:'Overview'},{key:'schedule',label:'Schedule',count:taskSummary?.total||0},{key:'files',label:'Files',count:documents.length},{key:'financial',label:'Financial'},{key:'activity',label:'Activity',count:notes.length+history.length}];
 
@@ -122,7 +124,7 @@ export default function JobPage(){
 
       <div className="job-page-header">
         <div className="job-page-header-left">
-          <div className="job-page-division-icon">{divEmoji}</div>
+          <div className="job-page-division-icon"><DivisionIcon type={job.division} size={28} /></div>
           <div>
             <div className="job-page-jobnumber">{job.job_number||'No Job #'}</div>
             <div className="job-page-client" style={{cursor:job.primary_contact_id?'pointer':undefined}} onClick={()=>{if(job.primary_contact_id)navigate(`/customers/${job.primary_contact_id}`);}}>{job.insured_name||'Unknown Client'}{job.primary_contact_id&&<span style={{fontSize:11,color:'var(--brand-primary)',marginLeft:6}}>{'\u2192'}</span>}</div>
@@ -149,14 +151,14 @@ export default function JobPage(){
       ))}</div>
 
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
-        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)}/>}
+        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
-        {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)}/>}
+        {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
-      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});}} />}
+      {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
     </div>
@@ -166,7 +168,7 @@ export default function JobPage(){
 /* ===========================================
    OVERVIEW TAB
    =========================================== */
-function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer}){
+function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer,onNavigateClaim}){
   return(
     <div className="job-page-grid">
       <ClientTile job={job} saveBatch={saveBatch} onNavigateCustomer={onNavigateCustomer}/>
@@ -175,13 +177,14 @@ function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAd
       <TeamTile job={job} employees={employees} saveBatch={saveBatch}/>
       <NotesTile job={job} saveBatch={saveBatch}/>
       {job.encircle_summary&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">Encircle Summary</div><div style={{fontSize:'var(--text-sm)',whiteSpace:'pre-wrap',color:'var(--text-secondary)'}}>{job.encircle_summary}</div></div>)}
-      {claimData&&<RelatedJobsSection claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={onAddRelatedJob} onNavigateJob={onNavigateJob}/>}
+      {claimData&&<RelatedJobsSection claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={onAddRelatedJob} onNavigateJob={onNavigateJob} onNavigateClaim={onNavigateClaim}/>}
     </div>
   );
 }
 
 /* === CLIENT INFO TILE === */
 function ClientTile({job,saveBatch,onNavigateCustomer}){
+  const{db}=useAuth();
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);
   const[f,sF]=useState({});
   const start=()=>{sF({insured_name:job.insured_name||'',client_phone:fmtPh(job.client_phone),client_email:job.client_email||'',address:job.address||'',city:job.city||'',state:job.state||'',zip:job.zip||''});setEd(true);};
@@ -190,6 +193,16 @@ function ClientTile({job,saveBatch,onNavigateCustomer}){
     if(ph.length===10)ph='1'+ph;
     if(ph.length>0&&!ph.startsWith('+'))ph='+'+ph;
     await saveBatch({insured_name:f.insured_name?.trim()||null,client_phone:ph||null,client_email:f.client_email?.trim()||null,address:f.address?.trim()||null,city:f.city?.trim()||null,state:f.state?.trim()||null,zip:f.zip?.trim()||null});
+    // Sync contact record so email/phone stay consistent across the app
+    if(job.primary_contact_id){
+      const contactUpdate={};
+      if(f.client_email?.trim()!==job.client_email)contactUpdate.email=f.client_email?.trim()||null;
+      if(ph!==(job.client_phone||''))contactUpdate.phone=ph||null;
+      if(f.insured_name?.trim()!==job.insured_name)contactUpdate.name=f.insured_name?.trim()||null;
+      if(Object.keys(contactUpdate).length>0){
+        await db.update('contacts',`id=eq.${job.primary_contact_id}`,contactUpdate).catch(e=>console.warn('Contact sync failed:',e.message));
+      }
+    }
     setEd(false);}catch(err){errToast('Failed to save: '+err.message);}finally{setSv(false);}};
   const s=(k,v)=>sF(prev=>({...prev,[k]:v}));
   return(
@@ -351,18 +364,18 @@ function NotesTile({job,saveBatch}){
     </div>);}
 
 /* === RELATED JOBS SECTION === */
-function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob}){
+function RelatedJobsSection({claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateClaim}){
   return(
     <div className="job-page-section job-page-section-full">
       <div className="job-page-section-title" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <span>Related Jobs</span>
-        <span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',fontStyle:'normal',textTransform:'none',letterSpacing:0}}>{claimData.claim_number}</span>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>{claimData?.id&&<button className="btn btn-ghost btn-sm" onClick={()=>onNavigateClaim?.(claimData.id)} style={{fontSize:11,height:22,padding:'0 8px',color:'var(--brand-primary)'}}>📋 View Claim</button>}<span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',fontStyle:'normal',textTransform:'none',letterSpacing:0}}>{claimData.claim_number}</span></div>
       </div>
       {siblingJobs&&siblingJobs.length>0?(
         <div style={{display:'flex',flexDirection:'column',gap:'var(--space-2)'}}>
-          {siblingJobs.map(sj=>{const dc=DIVISION_COLORS[sj.division]||'#6b7280';const de=DIVISION_EMOJI[sj.division]||'\u{1F4C1}';
+          {siblingJobs.map(sj=>{const dc=DIVISION_COLORS[sj.division]||'#6b7280';
             return(<div key={sj.id} onClick={()=>onNavigateJob?.(sj.id)} style={{display:'flex',alignItems:'center',gap:'var(--space-3)',padding:'var(--space-2) var(--space-3)',background:'var(--bg-secondary)',borderRadius:'var(--radius-md)',border:'1px solid var(--border-light)',borderLeft:`3px solid ${dc}`,cursor:'pointer'}}>
-              <span style={{fontSize:16}}>{de}</span>
+              <DivisionIcon type={sj.division} size={18} />
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:'var(--text-primary)'}}>{sj.job_number||'New Job'} — {sj.division?.replace(/_/g,' ')}</div><div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:1}}>{sj.phase?.replace(/_/g,' ')}</div></div>
               <span style={{fontSize:11,color:'var(--brand-primary)',fontWeight:600}}>{'\u2192'}</span>
             </div>);})}
@@ -477,7 +490,8 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
     }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
   const copyLink=(token)=>{
-    navigator.clipboard.writeText(`https://dev.utahpros.app/sign/${token}`)
+    // window.location.origin = https://dev.utahpros.app in dev, https://utahpros.app in prod
+    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
   const cancelReq=async(id)=>{
@@ -598,7 +612,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   );}
 
 /* === FILES TAB === */
-function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
+function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refreshKey=0}){
   const[signRequests,setSignRequests]=useState([]);
   const[loadingSR,setLoadingSR]=useState(true);
   useEffect(()=>{
@@ -611,6 +625,8 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest}){
     db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
       .then(d=>setSignRequests(d||[])).catch(()=>{});
   };
+  // Reload sign requests whenever a new request is sent (refreshKey incremented by parent)
+  useEffect(()=>{ if(refreshKey>0) reloadSignRequests(); },[refreshKey]);
   useEffect(()=>{
     const onVisible=()=>{
       if(document.visibilityState==='visible'){

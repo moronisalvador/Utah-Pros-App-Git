@@ -1055,6 +1055,18 @@ tr:hover td { background: var(--bg-secondary); }
    Optimized for iPhone field use
    ═══════════════════════════════════════════════════ */
 
+/* Schedule — desktop defaults (hidden on mobile, shown via media query) */
+.schedule-mobile-jobs-btn { display: none; }
+.schedule-panel-backdrop { display: none; }
+.schedule-gear-btn { display: none; }
+.schedule-mobile-fab { display: none; }
+/* schedule-view-toggle: visible on desktop, hidden on mobile */
+.schedule-view-toggle { display: flex; }
+/* schedule-extra-controls: always visible on desktop */
+.schedule-extra-controls { display: flex; align-items: center; gap: 6px; }
+/* schedule-crew-filter-wrap: always visible on desktop */
+.schedule-crew-filter-wrap { display: contents; }
+
 /* ── Bottom Tab Bar ── */
 .bottom-bar {
   display: none;
@@ -1348,9 +1360,269 @@ tr:hover td { background: var(--bg-secondary); }
     gap: 4px !important;
   }
 
+  /* ── Schedule Batch A improvements ── */
+
+  /* #2: ⚙ gear button — shown on mobile */
+  .schedule-gear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* #2: secondary controls hidden by default, shown when .open */
+  .schedule-extra-controls {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    padding-top: 4px;
+  }
+  .schedule-extra-controls.open {
+    display: flex;
+  }
+
+  /* #3: crew filter hidden on mobile — too many pills, not field-relevant */
+  .schedule-crew-filter-wrap { display: none !important; }
+
+  /* #6: Calendar/Jobs/Crew view toggle hidden on mobile — always Calendar */
+  .schedule-view-toggle { display: none !important; }
+
+  /* #9: + FAB for creating appointments */
+  .schedule-mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 16px);
+    right: 16px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 28px;
+    font-weight: 300;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.4);
+    z-index: 50;
+    line-height: 1;
+  }
+
+  /* ── Schedule Jobs panel — mobile overlay ── */
+
+  /* Collapsed 40px strip: useless on mobile, hide it */
+  .schedule-job-panel-collapsed { display: none !important; }
+
+  /* Panel wrapper: always fixed on mobile so it's out of flex flow */
+  .schedule-panel-wrap {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 200;
+    width: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .schedule-panel-wrap.panel-is-open {
+    pointer-events: all;
+  }
+
+  /* Backdrop shown behind the panel */
+  .schedule-panel-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 0;
+  }
+
+  /* The panel itself slides in from left */
+  .schedule-job-panel {
+    position: relative; z-index: 1;
+    width: min(85vw, 320px) !important;
+    height: 100dvh !important;
+    transform: translateX(-100%);
+    transition: transform 250ms ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+    padding-top: var(--safe-top);
+  }
+  .schedule-panel-wrap.panel-is-open .schedule-job-panel {
+    transform: translateX(0);
+  }
+
+  /* Mobile Jobs button: shown in stacked controls, hidden on desktop */
+  .schedule-mobile-jobs-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 36px;
+  }
+
   /* ── Dashboard table: hide low-priority columns ── */
   .dashboard-tbl-ins,
   .dashboard-tbl-date { display: none !important; }
+
+  /* ────────────────────────────────────────────────────
+     BATCH C — REMAINING PAGES
+     ──────────────────────────────────────────────────── */
+
+  /* ── Settings ── */
+  /* Stack nav + content vertically on mobile */
+  .settings-body {
+    flex-direction: column !important;
+  }
+  /* Nav becomes a horizontal scrolling tab strip */
+  .settings-nav {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-color);
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px !important;
+    gap: 4px;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+  .settings-nav-label { display: none !important; }
+  .settings-nav-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+    border-radius: var(--radius-md) !important;
+    padding: 6px 14px !important;
+    min-height: 36px;
+  }
+  .settings-content {
+    padding: 16px 12px !important;
+  }
+
+  /* ── Admin modals — bottom sheet ── */
+  .admin-modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .admin-modal,
+  .admin-modal-sm {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .admin-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Admin table: horizontal scroll on mobile */
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Time Tracking ── */
+  /* Stack title + view tabs */
+  .tt-topbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding-bottom: 10px !important;
+  }
+  .tt-view-tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0;
+  }
+  /* Period tabs: scroll horizontally instead of wrapping */
+  .tt-period-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 2px;
+  }
+  .tt-period-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* Filters: wrap neatly */
+  .tt-filters {
+    flex-wrap: wrap;
+    gap: 6px !important;
+  }
+  /* Tables: horizontal scroll */
+  .tt-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Modal: bottom sheet */
+  .tt-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .tt-modal {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .tt-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Appointment modals (Create + Edit) — bottom sheet ── */
+  .appt-modal-overlay {
+    align-items: flex-end !important;
+    padding-top: 0 !important;
+  }
+  .appt-modal {
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90dvh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .appt-modal-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Prevent iOS auto-zoom on inputs (font-size < 16px triggers zoom) */
+  .appt-modal-overlay input:not([type='checkbox']),
+  .appt-modal-overlay select,
+  .appt-modal-overlay textarea {
+    font-size: 16px !important;
+  }
+  /* Edit appointment: status bar wraps gracefully */
+  .appt-modal .status-bar-row {
+    flex-wrap: wrap;
+  }
+
+  /* ── Jobs page: division tabs scroll horizontally ── */
+  .division-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 2px;
+  }
+  .division-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }
 
 /* ── Small phones: < 400px ── */
@@ -2587,6 +2859,10 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* Customer card */
 .customer-card {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
@@ -3192,4 +3468,497 @@ tr:hover td { background: var(--bg-secondary); }
   .tt-summary-value { font-size: 15px; }
   .tt-table { font-size: 12px; }
   .tt-table th, .tt-table td { padding: 8px 8px; }
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Collections / A-R Dashboard
+   ═══════════════════════════════════════════════════ */
+
+.collections-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Header */
+.collections-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Migration banner */
+.ar-migration-banner {
+  margin: 12px 24px;
+  padding: 12px 16px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.5;
+}
+
+/* ── KPI Strip ── */
+.ar-kpi-strip {
+  display: flex;
+  gap: 1px;
+  background: var(--border-color);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ar-kpi-strip::-webkit-scrollbar { display: none; }
+
+.ar-kpi-card {
+  flex: 1;
+  min-width: 110px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ar-kpi-card.ar-kpi-alert {
+  background: #fef2f2;
+}
+.ar-kpi-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.ar-kpi-value {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.ar-kpi-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ── Aging Bar ── */
+.ar-aging-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+.ar-aging-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.ar-aging-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--border-color);
+  display: flex;
+  overflow: hidden;
+  gap: 1px;
+}
+.ar-aging-legend {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.ar-aging-legend span {
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.ar-aging-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Controls: tabs + filters ── */
+.ar-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  background: var(--bg-primary);
+}
+.ar-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  flex-shrink: 0;
+}
+.ar-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+}
+.ar-tab.active {
+  background: var(--bg-primary);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.ar-tab-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: #ef4444;
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 99px;
+  min-width: 16px;
+  text-align: center;
+}
+.ar-filters {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+/* ── Body: scroll area ── */
+.ar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Desktop table ── */
+.ar-desktop-table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+}
+.ar-desktop-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ar-desktop-table thead th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.ar-th-num { text-align: right !important; }
+.ar-td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+.ar-row {
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.1s;
+}
+.ar-row:hover { background: var(--bg-secondary); }
+.ar-row.ar-row-saving { opacity: 0.5; pointer-events: none; }
+.ar-row td { padding: 8px 12px; vertical-align: middle; }
+
+.ar-sort-btn {
+  background: none;
+  border: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-sans);
+}
+.ar-sort-btn.active { color: var(--accent); }
+
+.ar-oop-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #f3f4f6;
+  color: #6b7280;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border-color);
+}
+.ar-phase-pill {
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 2px 7px;
+  border-radius: 99px;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.ar-ded-btn {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 99px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  transition: opacity 0.1s;
+}
+.ar-ded-btn:hover:not(:disabled) { opacity: 0.75; }
+
+.ar-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ar-action-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 210px;
+  padding: 4px;
+  overflow: hidden;
+}
+.ar-action-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  font-family: var(--font-sans);
+  transition: background 0.1s;
+}
+.ar-action-item:hover {
+  background: var(--bg-secondary);
+}
+
+/* ── Table footer ── */
+.ar-table-footer {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* ── Mobile cards (hidden on desktop) ── */
+.ar-mobile-cards { display: none; }
+
+.ar-mobile-card {
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  transition: background 0.1s;
+}
+.ar-mobile-card:active { background: var(--bg-secondary); }
+.ar-mobile-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ar-mobile-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+.ar-mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  gap: 8px;
+}
+.ar-mobile-card-row span:first-child {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.ar-mobile-card-row span:last-child {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ar-mobile-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Payment / Notes modals ── */
+.ar-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.ar-modal {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 460px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 80px);
+  overflow: hidden;
+}
+.ar-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.ar-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ar-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.ar-pay-summary {
+  display: flex;
+  gap: 1px;
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.ar-pay-summary-item {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+}
+.ar-pay-summary-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin-bottom: 3px;
+}
+.ar-pay-summary-value {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 768px) {
+  .collections-header {
+    padding: 14px 16px 10px;
+  }
+  .ar-kpi-strip {
+    padding: 0;
+  }
+  .ar-kpi-card {
+    min-width: 90px;
+    padding: 8px 10px;
+  }
+  .ar-kpi-value { font-size: 16px; }
+  .ar-aging-strip {
+    padding: 6px 16px;
+    gap: 8px;
+  }
+  .ar-aging-legend { display: none; }
+  .ar-controls {
+    padding: 8px 16px;
+    gap: 8px;
+  }
+  .ar-filters {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .ar-filters .input {
+    font-size: 16px !important; /* prevent iOS zoom */
+    min-width: 0 !important;
+    flex: 1;
+  }
+  /* hide desktop table, show mobile cards */
+  .ar-desktop-table { display: none; }
+  .ar-mobile-cards { display: block; }
+  /* modal: bottom sheet on mobile */
+  .ar-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .ar-modal {
+    max-width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92dvh;
+  }
+  .ar-pay-summary { flex-direction: column; gap: 0; }
+  .ar-pay-summary-item { padding: 8px 12px; }
 }

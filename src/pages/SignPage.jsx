@@ -203,12 +203,17 @@ export default function SignPage() {
       .catch(e => { setStatus('error'); setErrorMsg(e.message); });
   }, [token]);
 
-  // Scale canvas to DPR when ready
+  // Scale canvas to DPR when ready, then re-render typed sig if already populated
   useEffect(() => {
     if (status !== 'ready') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     initCanvas(canvas);
+    // initCanvas clears the buffer — re-render typed sig if font is loaded
+    if (sigMode === 'type' && typedSig.trim() && fontLoaded) {
+      renderTypedSig(canvas, typedSig);
+      setHasSig(true);
+    }
   }, [status]);
 
   const getPos = (e, canvas) => {
@@ -484,7 +489,7 @@ function buildSectionText(divisions, doc_type) {
   if (doc_type !== 'coc') return [{ heading: 'Work Completed', body: 'All work described in the work authorization has been satisfactorily completed in a professional manner.' }];
   const map = {
     water:          { heading: 'Water Damage Mitigation',  body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
-    mold:           { heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    mold:           { heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared in accordance with IICRC S520 standards. The work is 100% complete and I have no outstanding complaints or concerns.' },
     reconstruction: { heading: 'Repairs & Reconstruction', body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
     fire:           { heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     contents:       { heading: 'Contents Restoration',     body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
