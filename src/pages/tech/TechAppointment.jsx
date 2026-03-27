@@ -37,7 +37,16 @@ export default function TechAppointment() {
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [entering, setEntering] = useState(false);
   const fileRef = useRef(null);
+
+  // Page enter animation
+  useEffect(() => {
+    requestAnimationFrame(() => setEntering(true));
+  }, []);
+
+  const handleScroll = (e) => setScrolled(e.target.scrollTop > 80);
 
   const load = useCallback(async () => {
     try {
@@ -153,14 +162,13 @@ export default function TechAppointment() {
   const notes = docs.filter(d => d.category === 'note');
 
   return (
-    <div className="tech-page" style={{ padding: 0 }}>
-      {/* Top bar with back button */}
-      <div style={{
+    <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
+      {/* Top bar with back button — collapses on scroll */}
+      <div className={`tech-appt-hero-sticky${scrolled ? ' collapsed' : ''}`} style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px var(--space-4)',
+        padding: scrolled ? '8px var(--space-4)' : '10px var(--space-4)',
         borderBottom: '1px solid var(--border-light)',
         background: 'var(--bg-primary)',
-        position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
           className="btn btn-ghost btn-sm"
@@ -169,7 +177,9 @@ export default function TechAppointment() {
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>Appointment</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
+          {scrolled ? (appt.title || 'Appointment') : 'Appointment'}
+        </span>
         <span style={{
           fontSize: 10, fontWeight: 600, padding: '2px 8px',
           borderRadius: 'var(--radius-full)',
@@ -179,7 +189,7 @@ export default function TechAppointment() {
         </span>
       </div>
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }} onScroll={handleScroll}>
         {/* Hero card */}
         <div style={{ padding: 'var(--space-4)', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
           {/* Type + time */}

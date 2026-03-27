@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -24,11 +24,24 @@ const DIV_COLORS = {
   contents: { bg: '#d1fae5', color: '#065f46' },
 };
 
+const TYPE_CONFIG = {
+  monitoring:       { label: 'Monitoring',   color: '#3b82f6', bg: '#eff6ff',  icon: '\u{1F4E1}' },
+  mitigation:       { label: 'Mitigation',   color: '#0ea5e9', bg: '#f0f9ff',  icon: '\u{1F4A7}' },
+  inspection:       { label: 'Inspection',   color: '#8b5cf6', bg: '#f5f3ff',  icon: '\u{1F50D}' },
+  reconstruction:   { label: 'Recon',        color: '#f59e0b', bg: '#fffbeb',  icon: '\u{1F528}' },
+  estimate:         { label: 'Estimate',     color: '#10b981', bg: '#ecfdf5',  icon: '\u{1F4CB}' },
+  mold_remediation: { label: 'Mold Remed.',  color: '#059669', bg: '#ecfdf5',  icon: '\u{1F33F}' },
+  other:            { label: 'Other',        color: '#6b7280', bg: '#f3f4f6',  icon: '\u{1F4CC}' },
+};
+
 export default function TechSchedule() {
   const { employee, db } = useAuth();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showJumpBtn, setShowJumpBtn] = useState(false);
+  const todayRef = useRef(null);
+  const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,7 +52,6 @@ export default function TechSchedule() {
         p_start_date: start,
         p_end_date: end,
       });
-      // Filter to only this employee's appointments
       const mine = (result || []).filter(a =>
         a.appointment_crew?.some(c => c.employee_id === employee.id)
       );
@@ -51,6 +63,17 @@ export default function TechSchedule() {
   }, [db, employee.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Track scroll to show/hide jump-to-today FAB
+  const handleScroll = useCallback(() => {
+    if (!todayRef.current) return;
+    const rect = todayRef.current.getBoundingClientRect();
+    setShowJumpBtn(rect.bottom < 0);
+  }, []);
+
+  const scrollToToday = () => {
+    todayRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   // Group by date
   const grouped = {};
@@ -69,8 +92,8 @@ export default function TechSchedule() {
     const weekday = d.toLocaleDateString('en-US', { weekday: 'long' });
     const month = d.toLocaleDateString('en-US', { month: 'short' });
     const day = d.getDate();
-    if (dateStr === today) return `Today — ${weekday} ${month} ${day}`;
-    if (dateStr === tomorrow) return `Tomorrow — ${weekday} ${month} ${day}`;
+    if (dateStr === today) return `Today \u2014 ${weekday} ${month} ${day}`;
+    if (dateStr === tomorrow) return `Tomorrow \u2014 ${weekday} ${month} ${day}`;
     return `${weekday} ${month} ${day}`;
   };
 
@@ -94,7 +117,7 @@ export default function TechSchedule() {
         </div>
       </div>
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }} onScroll={handleScroll} ref={scrollRef}>
         {sortedDates.length === 0 ? (
           <div className="empty-state" style={{ marginTop: 60 }}>
             <div className="empty-state-icon">
@@ -104,7 +127,7 @@ export default function TechSchedule() {
           </div>
         ) : (
           sortedDates.map(dateStr => (
-            <div key={dateStr}>
+            <div key={dateStr} ref={dateStr === today ? todayRef : undefined}>
               {/* Sticky date header */}
               <div style={{
                 position: 'sticky', top: 0, zIndex: 5,
@@ -122,7 +145,7 @@ export default function TechSchedule() {
                 const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
                 const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
                 const dc = job?.division ? DIV_COLORS[job.division] : null;
-                const isToday = dateStr === today;
+                const tc = TYPE_CONFIG[appt.type] || TYPE_CONFIG.other;
 
                 return (
                   <div
@@ -133,12 +156,23 @@ export default function TechSchedule() {
                       borderBottom: '1px solid var(--border-light)',
                       background: 'var(--bg-primary)',
                       cursor: 'pointer',
+                      WebkitTapHighlightColor: 'transparent',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      {/* Type icon pill */}
+                      {appt.type && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, padding: '1px 6px',
+                          borderRadius: 'var(--radius-full)',
+                          background: tc.bg, color: tc.color,
+                        }}>
+                          {tc.icon} {tc.label}
+                        </span>
+                      )}
                       <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                         {formatTime(appt.time_start)}
-                        {appt.time_end ? ` – ${formatTime(appt.time_end)}` : ''}
+                        {appt.time_end ? ` \u2013 ${formatTime(appt.time_end)}` : ''}
                       </span>
                       <span style={{
                         fontSize: 10, fontWeight: 600, padding: '1px 6px',
@@ -176,6 +210,13 @@ export default function TechSchedule() {
           ))
         )}
       </PullToRefresh>
+
+      {/* Jump-to-today FAB */}
+      {showJumpBtn && (
+        <button className="tech-jump-today-fab" onClick={scrollToToday}>
+          &uarr; Today
+        </button>
+      )}
     </div>
   );
 }

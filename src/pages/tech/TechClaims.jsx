@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -19,7 +19,8 @@ export default function TechClaims() {
   const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [filtered, setFiltered] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,15 +35,20 @@ export default function TechClaims() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return claims;
-    const q = search.toLowerCase();
-    return claims.filter(c =>
-      (c.insured_name || '').toLowerCase().includes(q) ||
-      (c.claim_number || '').toLowerCase().includes(q) ||
-      (c.loss_city || '').toLowerCase().includes(q)
-    );
-  }, [claims, search]);
+  // 200ms debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!query.trim()) { setFiltered(claims); return; }
+      const q = query.toLowerCase();
+      setFiltered(claims.filter(c =>
+        c.claim_number?.toLowerCase().includes(q) ||
+        c.insured_name?.toLowerCase().includes(q) ||
+        c.loss_city?.toLowerCase().includes(q) ||
+        c.insurance_carrier?.toLowerCase().includes(q)
+      ));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query, claims]);
 
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
@@ -62,8 +68,8 @@ export default function TechClaims() {
           <input
             className="input"
             placeholder="Search claims..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
             style={{ paddingLeft: 32, fontSize: 16 }}
           />
         </div>
@@ -72,7 +78,7 @@ export default function TechClaims() {
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
         {filtered.length === 0 ? (
           <div className="empty-state" style={{ marginTop: 60 }}>
-            <div className="empty-state-text">{search ? 'No claims match your search' : 'No claims found'}</div>
+            <div className="empty-state-text">{query ? 'No claims match your search' : 'No claims found'}</div>
           </div>
         ) : (
           filtered.map(claim => {
