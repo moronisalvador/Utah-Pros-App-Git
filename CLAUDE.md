@@ -364,7 +364,8 @@ CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 
 ---
 
-*For the current active task, see `DEVTOOLS-TASK.md` in this repo (if it exists).*
+*For the current active task, see any `*-TASK.md` file in this repo root (if one exists).*
+*For UI patterns, components, and design tokens, see `UPR-Design-System.md`.*
 
 ---
 
