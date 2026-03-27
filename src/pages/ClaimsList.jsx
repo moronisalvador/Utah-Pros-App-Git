@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
-// LossIcon, LOSS_CONFIG, DIV_COLORS defined locally below (superset of DivisionIcons)
+import { LossIcon, LOSS_CONFIG, DIVISION_COLORS as DIV_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
 
 const STATUS_MAP = {
