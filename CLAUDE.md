@@ -25,6 +25,8 @@
 9. **Check actual column names** via `information_schema.columns` before writing any query. Never assume column names.
 10. **Do not break existing pages.** Every page currently in the app is live and in use. If unsure, read the file first.
 11. **Always update `UPR-Web-Context.md` after any session that creates or modifies tables, RPCs, components, pages, or workers.** This applies whether or not a `*-TASK.md` file exists. The context doc is the permanent source of truth — if it's not documented there, the next session won't know it exists.
+12. **`viewport-fit=cover` is required in `index.html`.** This enables `env(safe-area-inset-bottom)` on iOS Safari. Without it, all safe area CSS evaluates to `0px` and bottom nav bars touch the home indicator. Never remove it.
+13. **Bottom nav safe area:** `.tech-nav` must use `padding-bottom: max(12px, env(safe-area-inset-bottom, 12px))` — the `max()` with 12px minimum ensures spacing even on devices where `env()` returns 0.
 
 ---
 
@@ -100,11 +102,11 @@ src/
     Settings.jsx            — Good pattern reference for tabbed pages
     Admin.jsx               — Good pattern reference for tables + forms
   pages/tech/
-    TechDash.jsx            — Field tech dashboard
-    TechSchedule.jsx        — Field tech 14-day schedule
-    TechTasks.jsx           — Field tech tasks (swipe-to-complete)
-    TechClaims.jsx          — Field tech claims (instant search)
-    TechAppointment.jsx     — Appointment detail (slide-in)
+    TechDash.jsx            — Field tech dashboard: sticky greeting, active cards (client name + progress bar + Photo/Notes/Clock In), timeline future rows, upcoming 7-day preview when empty, snap-first photo flow
+    TechSchedule.jsx        — Field tech 14-day schedule: division-colored left borders, time+duration columns, accent today header, jump-to-today FAB
+    TechTasks.jsx           — Field tech tasks: SVG completion ring, swipe-to-complete with "Done" text, collapsible job groups with mini progress bars
+    TechClaims.jsx          — Field tech claims: Encircle-style rows, 48px search bar, accent-colored addresses, division pills
+    TechAppointment.jsx     — Appointment detail: division gradient hero, 4-button action bar (Navigate/Call/Message/Photo), 2-col photo grid, pinch-to-zoom lightbox, snap-first photo with optional caption
   components/
     Layout.jsx              — App shell — owns toasts, sidebar, bottom bar
     TechLayout.jsx          — Field tech app shell — bottom nav, no sidebar
@@ -156,6 +158,16 @@ Use these variables — do not hardcode colors or spacing:
 --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.06), 0 2px 4px -2px rgba(0,0,0,0.04)
 ```
 
+**Tech mobile CSS tokens (scoped to `.tech-layout`):**
+```css
+--tech-text-body: 15px    --tech-text-label: 12px   --tech-text-heading: 22px
+--tech-text-hero: 28px    --tech-text-timer: 40px
+--tech-radius-card: 16px  --tech-radius-button: 14px
+--tech-shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)
+--tech-min-tap: 48px      --tech-row-height: 56px    --tech-nav-height: 64px
+/* Status palette: --status-scheduled-*, --status-enroute-*, --status-working-*, --status-paused-*, --status-completed-* (each has -bg, -color, -border) */
+```
+
 **Existing utility classes (from index.css):**
 ```
 .btn .btn-primary .btn-secondary .btn-sm
@@ -169,6 +181,41 @@ Red:    bg #fef2f2  text #dc2626  border #fecaca
 Yellow: bg #fffbeb  text #d97706  border #fde68a
 Blue:   bg #eff6ff  text #2563eb  border #bfdbfe
 Purple: bg #faf5ff  text #7c3aed  border #ddd6fe
+```
+
+---
+
+## UX Design Principles — Tech Mobile App
+
+**The User Persona:** Every tech UI decision should be made through the lens of a 64-year-old field technician who is not tech-savvy, standing in a flooded basement or doing drywall repair, wearing work gloves, holding his phone in one hand, possibly in direct sunlight. If he can't figure it out in one tap without reading instructions, it's too complicated.
+
+**Core principles:**
+- **Snap-first, describe-later** — Photos upload immediately on capture with no blocking step. Description is optional, offered via a dismissable toast with "Add note" link. Never block the camera→save flow with a required input.
+- **No modals for field actions** — Inline expandable inputs on cards, not popups. The tech shouldn't lose context of where they are.
+- **One primary action per screen** — Clock In on Dash, checkbox on Tasks, search on Claims.
+- **48px minimum touch targets** — No exceptions. Gloved hands, wet fingers.
+- **Status = color from 3 feet away** — Amber=OMW/en_route, Green=working, Red=paused, Blue=scheduled, Gray=completed.
+- **Sticky headers don't move on pull-to-refresh** — The greeting/date header stays fixed, only the content below refreshes. Pattern: `PullToRefresh` wraps content BELOW the fixed header, not around it.
+- **Empty states show upcoming work** — When 0 appointments today, show next 7 days of upcoming appointments so techs can prep the night before.
+- **Completed state shows breakdown** — Travel time, on-site time, total. Never just "3.5h" with no context.
+
+**Task assignment business logic (CRITICAL):**
+Tasks are NOT assigned directly to technicians. Tasks belong to appointments. Technicians are assigned to appointments via `appointment_crew`. The join path is: `employee → appointment_crew → appointments → tasks`. The `get_assigned_tasks` RPC handles this join internally.
+
+**Time tracking model:**
+- Timer starts from `travel_start` (On My Way), not `clock_in` (Start Work)
+- `travel_minutes` — stored on `job_time_entries`, computed when tech hits Start Work: `now() - travel_start`
+- `hours` — on-site time only: `clock_out - clock_in - paused_minutes` (used for billing/Xactimate)
+- Total labor cost = `(travel_minutes/60 + hours) × rate`
+- Tech sees one continuous timer from OMW; backend stores travel and on-site separately
+
+**Photo/Note storage:**
+All photos and notes go into `job_documents` table via `insert_job_document` RPC. Photos upload to `job-files/{job_id}/{timestamp}-{filename}` in Supabase Storage. The RPC accepts `p_appointment_id` (optional) and `p_description` (optional). Always pass `p_appointment_id` when uploading from an appointment context.
+
+**Document query pattern (important):**
+When fetching docs for an appointment, query by BOTH appointment_id OR job_id as a fallback for older docs:
+```js
+db.select('job_documents', `or=(appointment_id.eq.${apptId},job_id.eq.${jobId})&select=*&order=created_at.desc`)
 ```
 
 ---
@@ -217,6 +264,12 @@ Purple: bg #faf5ff  text #7c3aed  border #ddd6fe
 ### `system_events`
 `id UUID PK, event_type TEXT, entity_type TEXT, entity_id UUID, actor_id UUID, job_id UUID, payload JSONB, created_at TIMESTAMPTZ`
 
+### `job_documents`
+`id UUID PK, job_id UUID, appointment_id UUID (nullable), name TEXT, file_path TEXT, mime_type TEXT, category TEXT ('photo'|'note'|etc), description TEXT (nullable), uploaded_by UUID, created_at TIMESTAMPTZ`
+
+### `job_time_entries`
+`id UUID PK, job_id UUID, appointment_id UUID, employee_id UUID, travel_start TIMESTAMPTZ, clock_in TIMESTAMPTZ, clock_out TIMESTAMPTZ, paused_at TIMESTAMPTZ, total_paused_minutes NUMERIC, hours NUMERIC (on-site only), travel_minutes NUMERIC (nullable — computed on clock_in from travel_start)`
+
 ---
 
 ## Key RPCs Available
@@ -240,7 +293,13 @@ search_contacts_for_job(...)
 get_document_templates(...)
 get_sign_request_by_token(p_token)
 clock_appointment_action(p_appointment_id, p_employee_id, p_action)
-get_assigned_tasks(p_employee_id)
+get_assigned_tasks(p_employee_id)  — joins employee → appointment_crew → appointments → tasks
+insert_job_document(p_job_id, p_name, p_file_path, p_mime_type, p_category, p_uploaded_by, p_appointment_id DEFAULT NULL, p_description DEFAULT NULL)
+toggle_appointment_task(p_task_id, p_employee_id)
+get_appointment_tasks(p_appointment_id)
+get_appointment_detail(p_appointment_id)
+get_my_appointments_today(p_employee_id)
+get_appointments_range(p_start_date, p_end_date)
 ```
 
 ---

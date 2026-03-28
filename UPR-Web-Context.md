@@ -77,7 +77,7 @@ src/
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
   pages/tech/
-    TechDash.jsx                  — Field tech dashboard: skeleton loading, sticky header, relative time, status borders
+    TechDash.jsx                  — Field tech dashboard: sticky greeting (doesn't scroll on pull-to-refresh), active cards with client name + task progress bar + Photo/Notes/Clock In, timeline future rows, compact completed rows, upcoming 7-day preview when 0 appointments today, snap-first photo flow (auto-upload, optional caption via toast)
     TechSchedule.jsx              — Field tech 14-day schedule: type icons, jump-to-today FAB
     TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search
@@ -147,7 +147,7 @@ contact_tags            — Tags on contacts
 job_phases              — 30 rows — Phase definitions (4 macro groups)
 job_phase_history       — Phase transition audit log
 job_notes               — Internal job notes (column: body, not content)
-job_documents           — Files attached to jobs
+job_documents           — Files attached to jobs (has appointment_id UUID nullable, description TEXT nullable — added Mar 28)
 job_tasks               — Schedule tasks
 job_schedule_phases     — Schedule phase groupings
 job_schedules           — Job schedule records
@@ -258,7 +258,7 @@ generate_job_number()           — Next job number
 generate_claim_number()         — Next CLM-YYMM-XXX
 log_phase_change(...)           — Write to job_phase_history
 log_system_event(...)           — Write to system_events
-insert_job_document(...)        — Insert job_documents row
+insert_job_document(p_job_id, p_name, p_file_path, p_mime_type, p_category, p_uploaded_by, p_appointment_id DEFAULT NULL, p_description DEFAULT NULL) — Insert job_documents row with optional appointment link and description
 ```
 
 ### Contacts & Customers
@@ -444,10 +444,12 @@ get_dashboard_stats()           — Dashboard stat counts
 - **Recovery links:** hash with `type=recovery` → redirect `/set-password` before init
 - **field_tech routing:** `employee.role === 'field_tech'` → `/` redirects to `/tech` (TechLayout, bottom nav, no sidebar). `/tech/*` routes: Dash, Schedule, Tasks, Claims, Appointment detail. `/conversations` shared with all roles.
 - **Tech mobile polish (Mar 28 2026 — full UI/UX redesign):**
+  - **UX persona:** Design every tech screen as if the user is a 64-year-old field tech, not tech-savvy, standing in a flooded basement or doing drywall repair, wearing work gloves, one hand on phone, possibly in sunlight. One-tap actions, no required inputs blocking workflows, 48px min touch targets.
+  - **viewport-fit=cover:** Required in `index.html` meta viewport tag. Without it, `env(safe-area-inset-bottom)` returns 0px on iOS and bottom nav touches the home indicator.
   - **Design tokens:** Tech-specific CSS variables (48px min tap, 16px card radius, status palette, shadow system)
   - **TechLayout:** 26px icons, 11px labels, active pill (44×30), frosted glass nav (0.92 opacity), 8px badge dot
-  - **TimeTracker:** Status-colored backgrounds (amber=en route, green=working, red=paused), 40px tabular-nums timer, 52px full-width action buttons, "On My Way" with arrow icon, two-click confirm finish
-  - **TechDash:** Greeting hero (28px name), standalone TimeTracker at top, active card with inline task progress bar, timeline-style future rows (time column + vertical line), quick actions row (Photo/Message/Schedule circles), shimmer skeleton loading
+  - **TimeTracker:** Status-colored backgrounds (amber=en route, green=working, red=paused), 40px tabular-nums timer, 52px full-width action buttons, "On My Way" with arrow icon, two-click confirm finish. Timer starts from `travel_start` (OMW), not `clock_in`. `travel_minutes` stored separately on `job_time_entries` when tech arrives. `hours` stays as on-site time only. Completed state shows breakdown: "Travel: Xm · On-site: Xh Xm · Total: Xh Xm"
+  - **TechDash:** Sticky greeting header (doesn't move on pull-to-refresh), active cards with client name + task progress bar + Photo/Notes/Clock In actions (two-click confirm with 3s timeout), timeline-style future rows, compact completed rows, upcoming 7-day preview when 0 today, snap-first photo flow (auto-upload, optional caption via toast), shimmer skeleton loading
   - **TechTasks:** SVG completion ring (52px donut), 40px pill tabs, mini progress bars per job group, 56px rows, 26px checkboxes, swipe-to-complete with "Done" text + haptic at 40px threshold, checkbox pop animation, completed tasks at 0.5 opacity
   - **TechSchedule:** Division-colored left borders per row, time+duration left column, today header accent-colored, "You're all clear" empty state, jump-to-today FAB accent-colored with arrow icon, 72px min row height
   - **TechClaims:** Encircle-style rows (16px bold name, accent-colored address, claim number + date header, division/job count/status pills), 48px search bar (16px font prevents iOS zoom, 12px radius), empty state with search query + clear button
@@ -565,3 +567,7 @@ TWILIO_*                        — 7 vars (pending go-live)
 3. **Search + export** — `tool:search_export` feature flag ready, page not built
 4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
 5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile` at `F:\APPS\Restoration APP\UPR-Mobile`
+6. **`toggle_appointment_task`** — was returning 404 as of Mar 28; needs verification that RPC exists and matches frontend call signature (`p_task_id`, `p_employee_id`)
+7. **TECH-UI-TASK.md cleanup** — file should be deleted after all tech UI changes verified working
+8. **Task assignment logic** — tasks belong to appointments, not employees. `get_assigned_tasks` must join through `appointment_crew` to find a tech's tasks. Verify this RPC works correctly.
+9. **Photo/note query fix** — TechAppointment must query `job_documents` by BOTH `appointment_id` OR `job_id` (fallback for pre-fix docs)
