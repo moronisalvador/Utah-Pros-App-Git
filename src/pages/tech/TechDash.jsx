@@ -7,16 +7,22 @@ import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
 
-/* ── Active Appointment Card (expanded) ── */
+const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
+
+/* ── Active Appointment Card ── */
 
 function ActiveCard({ appt, employee, db, onReload }) {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  const [showAllTasks, setShowAllTasks] = useState(false);
+  const [confirmOmw, setConfirmOmw] = useState(false);
+  const [acting, setActing] = useState(false);
+  const confirmTimer = useRef(null);
+  const fileRef = useRef(null);
 
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
+  const clientName = job?.insured_name;
 
   const loadTasks = useCallback(async () => {
     if (tasksLoaded) return;
@@ -29,15 +35,9 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
-  const toggleTask = async (task) => {
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
-    try {
-      await db.rpc('toggle_appointment_task', { p_task_id: task.id, p_employee_id: employee.id });
-    } catch (e) {
-      toast('Failed to toggle task', 'error');
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
-    }
-  };
+  useEffect(() => {
+    return () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); };
+  }, []);
 
   const openMap = (e) => {
     e.stopPropagation();
@@ -49,17 +49,80 @@ function ActiveCard({ appt, employee, db, onReload }) {
     window.open(url);
   };
 
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !job) return;
+    try {
+      const ts = Date.now();
+      const path = `${job.id}/${ts}-${file.name}`;
+      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
+        body: file,
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      await db.rpc('insert_job_document', {
+        p_job_id: job.id,
+        p_name: file.name,
+        p_file_path: `job-files/${path}`,
+        p_mime_type: file.type,
+        p_category: 'photo',
+        p_uploaded_by: employee.id,
+      });
+      toast('Photo uploaded');
+    } catch (err) {
+      toast('Photo upload failed: ' + err.message, 'error');
+    }
+    e.target.value = '';
+  };
+
+  const doOmw = async () => {
+    if (!confirmOmw) {
+      setConfirmOmw(true);
+      confirmTimer.current = setTimeout(() => setConfirmOmw(false), 3000);
+      return;
+    }
+    setConfirmOmw(false);
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    haptic(50);
+    setActing(true);
+    try {
+      await db.rpc('clock_appointment_action', {
+        p_appointment_id: appt.id,
+        p_employee_id: employee.id,
+        p_action: 'omw',
+      });
+      if (onReload) onReload();
+    } catch (e) {
+      toast('Action failed: ' + e.message, 'error');
+    }
+    setActing(false);
+  };
+
   const goToDetail = () => navigate(`/tech/appointment/${appt.id}`);
 
   const doneCount = tasks.filter(t => t.is_completed).length;
   const totalCount = tasks.length;
   const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
-  const visibleTasks = (totalCount <= 5 || showAllTasks) ? tasks : tasks.slice(0, 5);
+
+  const isScheduled = appt.status === 'scheduled' || appt.status === 'confirmed';
+  const isActive = ['en_route', 'in_progress', 'paused'].includes(appt.status);
 
   return (
     <div className="tech-appt-card" data-status={appt.status} onClick={goToDetail}>
-      <div className="tech-appt-title">{appt.title || job?.division || 'Appointment'}</div>
+      {/* Client name — most important identifier */}
+      {clientName && (
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+          {clientName}
+        </div>
+      )}
 
+      {/* Appointment title */}
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+        {appt.title || job?.division || 'Appointment'}
+      </div>
+
+      {/* Address */}
       {address && (
         <button className="tech-appt-address" onClick={openMap}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -67,43 +130,75 @@ function ActiveCard({ appt, employee, db, onReload }) {
         </button>
       )}
 
-      {/* Task progress inline */}
+      {/* Task progress bar (non-interactive) */}
       {tasksLoaded && totalCount > 0 && (
-        <div style={{ marginBottom: 8 }} onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Tasks {doneCount}/{totalCount}
-            </span>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+            Tasks {doneCount}/{totalCount}
           </div>
           <div className="tech-task-progress-bar">
             <div className="tech-task-progress-fill" style={{ width: `${progressPct}%` }} />
           </div>
+        </div>
+      )}
 
-          {/* Inline tasks */}
-          <div style={{ marginTop: 8 }}>
-            {visibleTasks.map(task => (
-              <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}>
-                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
-                  {task.is_completed && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                  )}
-                </div>
-                <span className={`tech-task-name${task.is_completed ? ' done' : ''}`}>{task.title}</span>
-              </div>
-            ))}
-            {totalCount > 5 && !showAllTasks && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowAllTasks(true); }}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--accent)',
-                  fontSize: 13, fontWeight: 600, padding: '8px 0', cursor: 'pointer',
-                  fontFamily: 'var(--font-sans)',
-                }}
-              >
-                Show {totalCount - 5} more tasks
-              </button>
-            )}
-          </div>
+      {/* TimeTracker for active states (en_route/in_progress/paused) */}
+      {isActive && (
+        <div onClick={e => e.stopPropagation()}>
+          <TimeTracker appt={appt} employee={employee} db={db} onUpdate={onReload} />
+        </div>
+      )}
+
+      {/* Quick actions row for scheduled state */}
+      {isScheduled && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }} onClick={e => e.stopPropagation()}>
+          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
+
+          {/* Photo */}
+          <button
+            onClick={() => fileRef.current?.click()}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
+              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-light)', cursor: 'pointer',
+              fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+            }}
+          >
+            📸 Photo
+          </button>
+
+          {/* Notes */}
+          <button
+            onClick={() => navigate(`/tech/appointment/${appt.id}`)}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
+              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-light)', cursor: 'pointer',
+              fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+            }}
+          >
+            📝 Notes
+          </button>
+
+          {/* Clock In (two-click confirm) */}
+          <button
+            onClick={doOmw}
+            onBlur={() => { setConfirmOmw(false); if (confirmTimer.current) clearTimeout(confirmTimer.current); }}
+            disabled={acting}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 700,
+              background: confirmOmw ? '#fef2f2' : '#b45309',
+              color: confirmOmw ? '#dc2626' : '#fff',
+              border: confirmOmw ? '1px solid #fecaca' : '1px solid transparent',
+              cursor: 'pointer', fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+              opacity: acting ? 0.6 : 1,
+            }}
+          >
+            {confirmOmw ? 'Confirm?' : '▶ Clock In'}
+          </button>
         </div>
       )}
     </div>
@@ -132,44 +227,6 @@ function FutureRow({ appt }) {
   );
 }
 
-/* ── Quick Actions ── */
-
-function QuickActions() {
-  const navigate = useNavigate();
-  const fileRef = useRef(null);
-
-  return (
-    <div className="tech-quick-actions">
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        style={{ display: 'none' }}
-        ref={fileRef}
-        onChange={() => { /* handled at appointment level */ fileRef.current.value = ''; }}
-      />
-      <button className="tech-quick-action-btn" onClick={() => fileRef.current?.click()}>
-        <div className="tech-quick-action-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-        </div>
-        <span className="tech-quick-action-label">Photo</span>
-      </button>
-      <Link className="tech-quick-action-btn" to="/tech/conversations">
-        <div className="tech-quick-action-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        </div>
-        <span className="tech-quick-action-label">Message</span>
-      </Link>
-      <Link className="tech-quick-action-btn" to="/tech/schedule">
-        <div className="tech-quick-action-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        </div>
-        <span className="tech-quick-action-label">Schedule</span>
-      </Link>
-    </div>
-  );
-}
-
 /* ── Skeleton Loading ── */
 
 function DashSkeleton() {
@@ -181,16 +238,22 @@ function DashSkeleton() {
         <div className="tech-skeleton-line" style={{ height: 28, width: '55%', marginBottom: 6 }} />
         <div className="tech-skeleton-line" style={{ height: 14, width: '40%' }} />
       </div>
-      {/* Tracker skeleton */}
-      <div className="tech-skeleton-card" style={{ padding: 20 }}>
-        <div className="tech-skeleton-line" style={{ height: 40, width: '50%', margin: '12px auto' }} />
-        <div className="tech-skeleton-line" style={{ height: 52, width: '100%' }} />
-      </div>
       {/* Card skeleton */}
+      <div className="tech-skeleton-card">
+        <div className="tech-skeleton-line" style={{ height: 18, width: '45%' }} />
+        <div className="tech-skeleton-line medium" />
+        <div className="tech-skeleton-line long" />
+        <div className="tech-skeleton-line" style={{ height: 4, width: '60%' }} />
+        <div style={{ height: 8 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div className="tech-skeleton-line" style={{ flex: 1, height: 40 }} />
+          <div className="tech-skeleton-line" style={{ flex: 1, height: 40 }} />
+          <div className="tech-skeleton-line" style={{ flex: 1, height: 40 }} />
+        </div>
+      </div>
       <div className="tech-skeleton-card">
         <div className="tech-skeleton-line medium" style={{ height: 18 }} />
         <div className="tech-skeleton-line long" />
-        <div className="tech-skeleton-line" style={{ height: 4, width: '60%' }} />
       </div>
     </div>
   );
@@ -248,9 +311,6 @@ export default function TechDash() {
   const active = appointments.filter(a => activeStatuses.includes(a.status));
   const completed = appointments.filter(a => a.status === 'completed');
   const future = appointments.filter(a => !activeStatuses.includes(a.status) && a.status !== 'completed');
-
-  // The "hero" appointment for the TimeTracker — first active or first overall
-  const heroAppt = active[0] || (appointments.length > 0 ? appointments.find(a => a.status !== 'completed') : null);
 
   if (appointments.length === 0) {
     // Group upcoming by date
@@ -317,8 +377,6 @@ export default function TechDash() {
             </div>
           </div>
         )}
-
-        <QuickActions />
       </div>
     );
   }
@@ -326,21 +384,22 @@ export default function TechDash() {
   return (
     <PullToRefresh onRefresh={load}>
       <div className="tech-page">
-        {/* Greeting */}
-        <div className="tech-dash-greeting">
+        {/* Sticky greeting header */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 10,
+          background: 'rgba(248, 249, 251, 0.9)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          padding: 'var(--space-3) var(--space-4)',
+          margin: '0 calc(-1 * var(--space-4)) var(--space-3)',
+          borderBottom: '1px solid var(--border-light)',
+        }}>
           <div className="tech-dash-date">{dateStr}</div>
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">
             {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
           </div>
         </div>
-
-        {/* Hero TimeTracker */}
-        {heroAppt && (
-          <div onClick={e => e.stopPropagation()}>
-            <TimeTracker appt={heroAppt} employee={employee} db={db} onUpdate={load} />
-          </div>
-        )}
 
         {/* Active appointment cards */}
         {active.map(appt => (
@@ -397,9 +456,6 @@ export default function TechDash() {
             })}
           </div>
         )}
-
-        {/* Quick Actions */}
-        <QuickActions />
       </div>
     </PullToRefresh>
   );
