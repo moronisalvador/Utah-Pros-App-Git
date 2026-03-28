@@ -14,6 +14,14 @@ const STATUS_COLORS = {
   pending:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
 };
 
+const DIV_PILL_COLORS = {
+  water:          { bg: '#dbeafe', color: '#1e40af' },
+  mold:           { bg: '#fce7f3', color: '#9d174d' },
+  reconstruction: { bg: '#fef3c7', color: '#92400e' },
+  fire:           { bg: '#fee2e2', color: '#b91c1c' },
+  contents:       { bg: '#d1fae5', color: '#065f46' },
+};
+
 export default function TechClaims() {
   const { db } = useAuth();
   const navigate = useNavigate();
@@ -50,6 +58,11 @@ export default function TechClaims() {
     return () => clearTimeout(timer);
   }, [query, claims]);
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }
@@ -62,15 +75,18 @@ export default function TechClaims() {
           <div className="tech-page-subtitle">{claims.length} total</div>
         </div>
 
-        {/* Search */}
+        {/* Search bar — 48px tall, 16px font to prevent iOS zoom */}
         <div style={{ position: 'relative', marginBottom: 'var(--space-4)' }}>
-          <IconSearch style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, color: 'var(--text-tertiary)' }} />
+          <IconSearch style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, color: 'var(--text-tertiary)' }} />
           <input
             className="input"
             placeholder="Search claims..."
             value={query}
             onChange={e => setQuery(e.target.value)}
-            style={{ paddingLeft: 32, fontSize: 16 }}
+            style={{
+              paddingLeft: 40, fontSize: 16,
+              height: 48, borderRadius: 12,
+            }}
           />
         </div>
       </div>
@@ -78,51 +94,104 @@ export default function TechClaims() {
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
         {filtered.length === 0 ? (
           <div className="empty-state" style={{ marginTop: 60 }}>
-            <div className="empty-state-text">{query ? 'No claims match your search' : 'No claims found'}</div>
+            <div className="empty-state-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+            <div className="empty-state-text">
+              {query ? `No claims match '${query}'` : 'No claims found'}
+            </div>
+            {query && (
+              <div className="empty-state-sub">
+                <button
+                  onClick={() => setQuery('')}
+                  style={{
+                    color: 'var(--accent)', background: 'none', border: 'none',
+                    cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                    fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  Clear search
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           filtered.map(claim => {
             const sc = STATUS_COLORS[claim.status] || STATUS_COLORS.open;
+            const divColor = claim.primary_division ? DIV_PILL_COLORS[claim.primary_division] : null;
+            const address = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ')
+              || (claim.loss_city ? `${claim.loss_city}${claim.loss_state ? `, ${claim.loss_state}` : ''}` : '');
+
             return (
               <div
                 key={claim.id}
                 onClick={() => navigate(`/claims/${claim.id}`)}
                 style={{
-                  padding: '12px var(--space-4)',
+                  padding: '14px var(--space-4)',
                   borderBottom: '1px solid var(--border-light)',
                   background: 'var(--bg-primary)',
                   cursor: 'pointer',
+                  minHeight: 80,
+                  WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>
+                {/* Row 1: claim number + date */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-tertiary)',
+                  }}>
                     {claim.claim_number || '—'}
                   </span>
-                  <span style={{
-                    fontSize: 10, fontWeight: 600, padding: '1px 6px',
-                    borderRadius: 'var(--radius-full)',
-                    background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
-                  }}>
-                    {claim.status || 'open'}
-                  </span>
+                  {claim.date_of_loss && (
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                      {formatDate(claim.date_of_loss)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Row 2: insured name */}
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+                  {claim.insured_name || 'Unknown'}
+                </div>
+
+                {/* Row 3: address */}
+                {address && (
+                  <div style={{ fontSize: 14, color: 'var(--accent)', marginBottom: 6 }}>
+                    {address}
+                  </div>
+                )}
+
+                {/* Row 4: pills */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {divColor && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      background: divColor.bg, color: divColor.color,
+                    }}>
+                      {claim.primary_division}
+                    </span>
+                  )}
                   {claim.job_count > 0 && (
                     <span style={{
-                      fontSize: 10, fontWeight: 600, padding: '1px 6px',
+                      fontSize: 10, fontWeight: 600, padding: '2px 8px',
                       borderRadius: 'var(--radius-full)',
                       background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
                     }}>
                       {claim.job_count} job{claim.job_count !== 1 ? 's' : ''}
                     </span>
                   )}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
-                  {claim.insured_name || 'Unknown'}
-                </div>
-                <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-                  {claim.date_of_loss && (
-                    <span>Loss: {new Date(claim.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  )}
-                  {claim.loss_city && <span>{claim.loss_city}{claim.loss_state ? `, ${claim.loss_state}` : ''}</span>}
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
+                  }}>
+                    {claim.status || 'open'}
+                  </span>
                 </div>
               </div>
             );

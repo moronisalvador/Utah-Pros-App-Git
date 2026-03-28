@@ -17,13 +17,34 @@ const STATUS_COLORS = {
   cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
 };
 
-const DIV_COLORS = {
-  water: { bg: '#dbeafe', color: '#1e40af' },
-  mold: { bg: '#fce7f3', color: '#9d174d' },
-  reconstruction: { bg: '#fef3c7', color: '#92400e' },
-  fire: { bg: '#fee2e2', color: '#b91c1c' },
-  contents: { bg: '#d1fae5', color: '#065f46' },
+const DIV_GRADIENTS = {
+  water:          'linear-gradient(135deg, #1e40af, #3b82f6)',
+  mold:           'linear-gradient(135deg, #831843, #ec4899)',
+  reconstruction: 'linear-gradient(135deg, #78350f, #f59e0b)',
+  fire:           'linear-gradient(135deg, #7f1d1d, #ef4444)',
+  contents:       'linear-gradient(135deg, #064e3b, #10b981)',
 };
+
+const DIV_PILL_COLORS = {
+  water: '#1e40af',
+  mold: '#831843',
+  reconstruction: '#78350f',
+  fire: '#7f1d1d',
+  contents: '#064e3b',
+};
+
+function relativeTime(isoStr) {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'yesterday';
+  return `${days}d ago`;
+}
 
 export default function TechAppointment() {
   const { id } = useParams();
@@ -37,16 +58,12 @@ export default function TechAppointment() {
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
-  const [scrolled, setScrolled] = useState(false);
   const [entering, setEntering] = useState(false);
   const fileRef = useRef(null);
 
-  // Page enter animation
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
   }, []);
-
-  const handleScroll = (e) => setScrolled(e.target.scrollTop > 80);
 
   const load = useCallback(async () => {
     try {
@@ -117,8 +134,6 @@ export default function TechAppointment() {
         p_category: 'note',
         p_uploaded_by: employee.id,
       });
-      // The RPC doesn't take description, so update via REST after insert
-      // For simplicity, just toast success — note is recorded as a job document
       toast('Note saved');
       setNoteText('');
       setNoteOpen(false);
@@ -156,116 +171,137 @@ export default function TechAppointment() {
   const crew = appt.appointment_crew || [];
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
   const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
-  const dc = job?.division ? DIV_COLORS[job.division] : null;
   const doneCount = tasks.filter(t => t.is_completed).length;
+  const totalCount = tasks.length;
+  const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
   const photos = docs.filter(d => d.category === 'photo');
   const notes = docs.filter(d => d.category === 'note');
+  const division = job?.division || 'water';
+  const heroGradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
+  const divPillColor = DIV_PILL_COLORS[division] || '#1e40af';
 
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
-      {/* Top bar with back button — collapses on scroll */}
-      <div className={`tech-appt-hero-sticky${scrolled ? ' collapsed' : ''}`} style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: scrolled ? '8px var(--space-4)' : '10px var(--space-4)',
-        borderBottom: '1px solid var(--border-light)',
-        background: 'var(--bg-primary)',
+      {/* ── Division-colored hero header ── */}
+      <div style={{
+        background: heroGradient,
+        padding: '0 0 0 0',
       }}>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => navigate(-1)}
-          style={{ padding: '4px 8px', minWidth: 0 }}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
-          {scrolled ? (appt.title || 'Appointment') : 'Appointment'}
-        </span>
-        <span style={{
-          fontSize: 10, fontWeight: 600, padding: '2px 8px',
-          borderRadius: 'var(--radius-full)',
-          background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
+        {/* Top bar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px var(--space-4)',
         }}>
-          {(appt.status || 'scheduled').replace(/_/g, ' ')}
-        </span>
-      </div>
-
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }} onScroll={handleScroll}>
-        {/* Hero card */}
-        <div style={{ padding: 'var(--space-4)', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
-          {/* Type + time */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            {appt.type && (
-              <span style={{
-                fontSize: 10, fontWeight: 600, padding: '2px 8px',
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                textTransform: 'capitalize',
-              }}>
-                {appt.type.replace(/_/g, ' ')}
-              </span>
-            )}
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)' }}>
-              {formatTimeStr(appt.time_start)}
-              {appt.time_end ? ` – ${formatTimeStr(appt.time_end)}` : ''}
-            </span>
-          </div>
-
-          {/* Title */}
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-            {appt.title || 'Appointment'}
-          </div>
-
-          {/* Job info */}
-          {job && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>
-                {job.job_number}
-              </span>
-              {job.insured_name && (
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{job.insured_name}</span>
-              )}
-              {dc && (
-                <span style={{
-                  fontSize: 10, fontWeight: 600, padding: '1px 6px',
-                  borderRadius: 'var(--radius-full)', background: dc.bg, color: dc.color,
-                }}>
-                  {job.division}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Address */}
-          {address && (
-            <button className="tech-appt-address" onClick={() => openMap(address)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              {address}
-            </button>
-          )}
-
-          {/* Call + Message buttons */}
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {job?.client_phone && (
-              <a
-                href={`tel:${job.client_phone}`}
-                className="btn btn-secondary btn-sm"
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                Call
-              </a>
-            )}
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => navigate('/tech/conversations')}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              Message
-            </button>
-          </div>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              background: 'none', border: 'none', color: '#fff',
+              cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center',
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: '3px 10px',
+            borderRadius: 'var(--radius-full)',
+            background: '#fff', color: divPillColor,
+          }}>
+            {(appt.status || 'scheduled').replace(/_/g, ' ')}
+          </span>
         </div>
 
+        {/* Hero content */}
+        <div style={{ padding: '4px var(--space-5) 20px' }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4, lineHeight: 1.3 }}>
+            {appt.title || 'Appointment'}
+          </div>
+          {job && (
+            <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
+              {job.job_number}{job.insured_name ? ` · ${job.insured_name}` : ''}
+            </div>
+          )}
+          {address && (
+            <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
+              {address}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Action bar ── */}
+      <div style={{
+        display: 'flex', background: 'var(--bg-primary)',
+        borderBottom: '1px solid var(--border-light)',
+        padding: '8px 0',
+      }}>
+        {/* Navigate */}
+        {address && (
+          <button
+            onClick={() => openMap(address)}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 4, background: 'none', border: 'none', cursor: 'pointer',
+              padding: '6px 0', minWidth: 64, minHeight: 56,
+              fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+              touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>Navigate</span>
+          </button>
+        )}
+
+        {/* Call */}
+        {job?.client_phone && (
+          <a
+            href={`tel:${job.client_phone}`}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 4, textDecoration: 'none',
+              padding: '6px 0', minWidth: 64, minHeight: 56,
+              fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+              touchAction: 'manipulation',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>Call</span>
+          </a>
+        )}
+
+        {/* Message */}
+        <button
+          onClick={() => navigate('/tech/conversations')}
+          style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 4, background: 'none', border: 'none', cursor: 'pointer',
+            padding: '6px 0', minWidth: 64, minHeight: 56,
+            fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+            touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
+        </button>
+
+        {/* Photo */}
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 4, background: 'none', border: 'none', cursor: 'pointer',
+            padding: '6px 0', minWidth: 64, minHeight: 56,
+            fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+            touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>Photo</span>
+        </button>
+      </div>
+
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
+
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
         {/* Time Tracker */}
         <div style={{ padding: '0 var(--space-4)' }}>
           <TimeTracker appt={appt} employee={employee} db={db} onUpdate={load} />
@@ -314,18 +350,27 @@ export default function TechAppointment() {
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Tasks</span>
-            {tasks.length > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 400, letterSpacing: 'normal', textTransform: 'none' }}>{doneCount}/{tasks.length}</span>
+            {totalCount > 0 && (
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 400, letterSpacing: 'normal', textTransform: 'none' }}>{doneCount}/{totalCount}</span>
             )}
           </div>
-          {tasks.length === 0 ? (
+
+          {/* Progress bar */}
+          {totalCount > 0 && (
+            <div className="tech-task-progress-bar" style={{ marginBottom: 8 }}>
+              <div className="tech-task-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+          )}
+
+          {totalCount === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No tasks assigned</div>
           ) : (
             tasks.map(task => (
-              <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}>
+              <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}
+                style={{ minHeight: 'var(--tech-row-height)' }}>
                 <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
                   {task.is_completed && (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                   )}
                 </div>
                 <span className={`tech-task-name${task.is_completed ? ' done' : ''}`}>{task.title}</span>
@@ -334,11 +379,10 @@ export default function TechAppointment() {
           )}
         </div>
 
-        {/* Photo upload + gallery */}
+        {/* Photo gallery — 2 columns */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Photos</span>
-            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
             <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               Add Photo
@@ -352,13 +396,13 @@ export default function TechAppointment() {
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 6 }}>
                   {group.label}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                   {group.items.map(p => (
                     <div
                       key={p.id}
                       onClick={() => setLightboxPhoto(p)}
                       style={{
-                        aspectRatio: '1', borderRadius: 'var(--radius-md)',
+                        aspectRatio: '1', borderRadius: 12,
                         background: 'var(--bg-tertiary)', overflow: 'hidden',
                         border: '1px solid var(--border-light)', cursor: 'pointer',
                       }}
@@ -377,7 +421,7 @@ export default function TechAppointment() {
           )}
         </div>
 
-        {/* Lightbox */}
+        {/* Lightbox with pinch-to-zoom */}
         {lightboxPhoto && (
           <div
             onClick={() => setLightboxPhoto(null)}
@@ -403,7 +447,11 @@ export default function TechAppointment() {
               src={`${db.baseUrl}/storage/v1/object/public/${lightboxPhoto.file_path}`}
               alt={lightboxPhoto.name}
               onClick={e => e.stopPropagation()}
-              style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 'var(--radius-md)' }}
+              style={{
+                maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain',
+                borderRadius: 'var(--radius-md)',
+                touchAction: 'pinch-zoom',
+              }}
             />
           </div>
         )}
@@ -428,7 +476,7 @@ export default function TechAppointment() {
                 onChange={e => setNoteText(e.target.value)}
                 placeholder="Type a note..."
                 rows={3}
-                style={{ fontSize: 16, marginBottom: 8, width: '100%' }}
+                style={{ fontSize: 16, marginBottom: 8, width: '100%', minHeight: 100 }}
               />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-sm" onClick={saveNote} disabled={savingNote || !noteText.trim()}>
@@ -446,13 +494,13 @@ export default function TechAppointment() {
           )}
           {notes.map(n => (
             <div key={n.id} style={{
-              padding: '8px 12px', marginBottom: 6,
+              padding: '10px 12px', marginBottom: 6,
               background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)',
-              fontSize: 13, color: 'var(--text-primary)',
+              fontSize: 14, color: 'var(--text-primary)',
             }}>
               <div>{n.description || n.name}</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                {new Date(n.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                {relativeTime(n.created_at)}
               </div>
             </div>
           ))}
@@ -464,11 +512,10 @@ export default function TechAppointment() {
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 8 }}>
               Appointment Notes
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{appt.notes}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{appt.notes}</div>
           </div>
         )}
 
-        {/* Bottom spacer */}
         <div style={{ height: 20 }} />
       </PullToRefresh>
     </div>
