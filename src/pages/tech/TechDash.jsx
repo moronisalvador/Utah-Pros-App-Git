@@ -388,6 +388,7 @@ function DashSkeleton() {
 
 export default function TechDash() {
   const { employee, db } = useAuth();
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -558,7 +559,7 @@ export default function TechDash() {
                     key={appt.id}
                     className="tech-appt-card"
                     data-status="completed"
-                    onClick={() => {}}
+                    onClick={() => navigate(`/tech/appointment/${appt.id}`)}
                     style={{ opacity: 0.65, padding: '12px 16px' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
