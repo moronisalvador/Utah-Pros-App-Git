@@ -27,3 +27,4 @@ dist-ssr
 
 # Claude Code worktrees
 .claude/worktrees/
+CLEANUP-TEST-DATA.sql
