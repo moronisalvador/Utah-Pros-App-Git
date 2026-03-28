@@ -4,34 +4,54 @@ const THRESHOLD = 70;   // px to pull before triggering refresh
 const MAX_PULL = 120;   // max visible pull distance
 const RESISTANCE = 2.5; // pull resistance factor
 
+function getScrollParent(el) {
+  let node = el.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return document.documentElement;
+}
+
 export default function PullToRefresh({ onRefresh, children, className, style }) {
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const containerRef = useRef(null);
+  const scrollParentRef = useRef(null);
   const startY = useRef(0);
   const currentY = useRef(0);
   const isPulling = useRef(false);
 
-  const handleTouchStart = useCallback((e) => {
-    const el = containerRef.current;
-    if (!el || refreshing) return;
+  // Cache the scroll parent on mount
+  useEffect(() => {
+    if (containerRef.current) {
+      scrollParentRef.current = getScrollParent(containerRef.current);
+    }
+  }, []);
 
-    // Only activate if scrolled to top (5px tolerance for bounce)
-    if (el.scrollTop > 5) return;
+  const getScrollTop = useCallback(() => {
+    const sp = scrollParentRef.current;
+    return sp ? sp.scrollTop : 0;
+  }, []);
+
+  const handleTouchStart = useCallback((e) => {
+    if (!containerRef.current || refreshing) return;
+
+    // Only activate if scroll parent is at or near the top
+    if (getScrollTop() > 5) return;
 
     startY.current = e.touches[0].clientY;
     isPulling.current = true;
-  }, [refreshing]);
+  }, [refreshing, getScrollTop]);
 
   const handleTouchMove = useCallback((e) => {
     if (!isPulling.current || refreshing) return;
 
-    const el = containerRef.current;
-    if (!el) return;
-
-    // Double-check we're at top (user may have scrolled during the gesture)
-    if (el.scrollTop > 5) {
+    // Double-check scroll parent is still at top
+    if (getScrollTop() > 5) {
       isPulling.current = false;
       setPulling(false);
       setPullDistance(0);
@@ -52,12 +72,12 @@ export default function PullToRefresh({ onRefresh, children, className, style })
         e.preventDefault();
       }
     } else {
-      // Scrolling up — cancel
+      // Scrolling up — cancel pull and let normal scroll happen
       isPulling.current = false;
       setPulling(false);
       setPullDistance(0);
     }
-  }, [refreshing]);
+  }, [refreshing, getScrollTop]);
 
   const handleTouchEnd = useCallback(async () => {
     if (!isPulling.current) return;
@@ -80,21 +100,6 @@ export default function PullToRefresh({ onRefresh, children, className, style })
     setPullDistance(0);
   }, [pullDistance, onRefresh]);
 
-  // Prevent the native Chrome pull-to-refresh while our custom one is active
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const preventNative = (e) => {
-      if (isPulling.current && el.scrollTop === 0) {
-        // Only prevent if we're actively pulling
-      }
-    };
-
-    el.addEventListener('touchmove', preventNative, { passive: false });
-    return () => el.removeEventListener('touchmove', preventNative);
-  }, []);
-
   const showIndicator = pulling || refreshing;
   const pastThreshold = pullDistance >= THRESHOLD / RESISTANCE;
 
@@ -105,9 +110,6 @@ export default function PullToRefresh({ onRefresh, children, className, style })
       style={{
         ...style,
         position: 'relative',
-        overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        overscrollBehavior: 'none',
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
