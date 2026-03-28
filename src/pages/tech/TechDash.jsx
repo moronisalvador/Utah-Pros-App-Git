@@ -78,6 +78,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
         p_mime_type: file.type,
         p_category: 'photo',
         p_uploaded_by: employee.id,
+        p_appointment_id: appt.id,
       });
       // Show inline toast with "Add note" option
       const docId = doc?.id;

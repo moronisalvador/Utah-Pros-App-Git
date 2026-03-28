@@ -72,13 +72,17 @@ export default function TechAppointment() {
 
   const load = useCallback(async () => {
     try {
-      const [detail, taskList, docList] = await Promise.all([
+      const [detail, taskList] = await Promise.all([
         db.rpc('get_appointment_detail', { p_appointment_id: id }),
         db.rpc('get_appointment_tasks', { p_appointment_id: id }),
-        db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []),
       ]);
       setAppt(detail);
       setTasks(taskList || []);
+      // Fetch docs by appointment_id OR job_id (catches older docs without appointment_id)
+      const jobId = detail?.jobs?.id || detail?.job_id;
+      const docList = jobId
+        ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`).catch(() => [])
+        : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []);
       setDocs(docList || []);
     } catch (e) {
       toast('Failed to load appointment', 'error');
@@ -125,6 +129,7 @@ export default function TechAppointment() {
         p_mime_type: file.type,
         p_category: 'photo',
         p_uploaded_by: employee.id,
+        p_appointment_id: id,
       });
       load();
       const docId = doc?.id;
@@ -171,6 +176,7 @@ export default function TechAppointment() {
         p_category: 'note',
         p_uploaded_by: employee.id,
         p_description: noteText.trim(),
+        p_appointment_id: id,
       });
       toast('Note saved');
       setNoteText('');
