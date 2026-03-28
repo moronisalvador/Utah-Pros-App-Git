@@ -12,6 +12,7 @@ const errToast = (msg) => toast(msg, 'error');
 
 
 const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Reconstruction', fire: 'Fire', contents: 'Contents', general: 'General' };
+const DIV_EMOJI  = { water: '💧', mold: '🍄', reconstruction: '🔨', fire: '🔥', contents: '📦', general: '📁' };
 const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
 const CLAIM_STATUSES = ['open', 'in_progress', 'closed', 'denied', 'settled', 'supplementing'];
 const AR_STATUSES = [
