@@ -48,18 +48,19 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   useEffect(() => { loadEntry(); }, [loadEntry]);
 
-  // Live timer
+  // Live timer — counts from travel_start (On My Way) through to Finish
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (!entry?.clock_in || entry?.clock_out) return;
+    const startRef = entry?.travel_start || entry?.clock_in;
+    if (!startRef || entry?.clock_out) return;
     if (entry.paused_at) {
-      const pausedMs = new Date(entry.paused_at) - new Date(entry.clock_in)
+      const pausedMs = new Date(entry.paused_at) - new Date(startRef)
         - (entry.total_paused_minutes || 0) * 60000;
       setElapsed(fmtMs(Math.max(0, pausedMs)));
       return;
     }
     const tick = () => {
-      const ms = Date.now() - new Date(entry.clock_in).getTime()
+      const ms = Date.now() - new Date(startRef).getTime()
         - (entry.total_paused_minutes || 0) * 60000;
       setElapsed(fmtMs(Math.max(0, ms)));
     };
@@ -206,6 +207,10 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
             Left at {fmtTime(entry.travel_start)}
           </span>
+        </div>
+
+        <div className="tech-tracker-timer" style={{ color: 'var(--status-enroute-color)' }}>
+          {elapsed}
         </div>
 
         <button
