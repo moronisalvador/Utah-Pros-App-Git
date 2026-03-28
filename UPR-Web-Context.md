@@ -156,7 +156,7 @@ job_checklists          — Checklist instances on jobs
 job_costs               — Job cost line items
 job_equipment           — Equipment on jobs
 job_equipment_costs     — Equipment cost tracking
-job_time_entries        — Time entries per job
+job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start)
 job_number_sequences    — Auto-increment job number tracking
 active_jobs             — View: currently active jobs
 ```

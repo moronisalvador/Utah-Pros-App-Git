@@ -103,9 +103,46 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const hasClockOut = entry?.clock_out;
   const isPaused = entry?.paused_at;
 
-  // Completed — compact summary
+  // Completed — compact summary with travel breakdown
   if (hasClockOut) {
-    const hours = entry.hours ?? '—';
+    const hours = entry.hours ?? null;
+    const travelMin = entry.travel_minutes ?? null;
+
+    // If we have travel_minutes, show breakdown: Travel · On-site · Total
+    if (travelMin != null && hours != null) {
+      const travelStr = travelMin < 60
+        ? `${Math.round(travelMin)}m`
+        : `${Math.floor(travelMin / 60)}h ${Math.round(travelMin % 60)}m`;
+      const onsiteHrs = Number(hours);
+      const onsiteStr = onsiteHrs < 1
+        ? `${Math.round(onsiteHrs * 60)}m`
+        : `${Math.floor(onsiteHrs)}h ${Math.round((onsiteHrs % 1) * 60)}m`;
+      const totalMin = travelMin + onsiteHrs * 60;
+      const totalStr = totalMin < 60
+        ? `${Math.round(totalMin)}m`
+        : `${Math.floor(totalMin / 60)}h ${Math.round(totalMin % 60)}m`;
+
+      return (
+        <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', padding: '14px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)',
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              Completed
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Travel: {travelStr}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>On-site: {onsiteStr}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Total: {totalStr}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback: no travel_minutes — show original format
     return (
       <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', padding: '14px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -120,7 +157,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Out: {fmtTime(entry.clock_out)}</span>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{hours}h</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{hours ?? '—'}h</span>
         </div>
       </div>
     );
