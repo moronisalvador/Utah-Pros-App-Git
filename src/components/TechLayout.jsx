@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
@@ -172,8 +172,10 @@ function InstallBanner() {
 
 export default function TechLayout() {
   const location = useLocation();
-  const { employee, db } = useAuth();
+  const { employee, db, logout } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const logoutTimer = useRef(null);
 
   useEffect(() => {
     if (!employee?.id || !db) return;
@@ -195,28 +197,70 @@ export default function TechLayout() {
 
   const isAdmin = employee?.role === 'admin';
 
+  const handleLogoutTap = () => {
+    if (!confirmLogout) {
+      setConfirmLogout(true);
+      logoutTimer.current = setTimeout(() => setConfirmLogout(false), 3000);
+      return;
+    }
+    setConfirmLogout(false);
+    if (logoutTimer.current) clearTimeout(logoutTimer.current);
+    logout();
+  };
+
   return (
     <div className="tech-layout">
-      {isAdmin && (
-        <Link
-          to="/"
+      {/* Top-right controls */}
+      <div style={{
+        position: 'fixed', top: 12, right: 12, zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        {/* Sign out button */}
+        <button
+          onClick={handleLogoutTap}
+          onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
           style={{
-            position: 'fixed', top: 12, right: 12, zIndex: 50,
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '5px 12px',
-            fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
-            background: 'rgba(255,255,255,0.85)',
-            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            width: 32, height: 32,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: confirmLogout ? 'rgba(254,242,242,0.9)' : 'rgba(248,249,251,0.8)',
+            backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
             borderRadius: 'var(--radius-full)',
-            border: '1px solid var(--border-light)',
-            textDecoration: 'none',
+            border: `1px solid ${confirmLogout ? '#fecaca' : 'var(--border-light)'}`,
+            cursor: 'pointer', padding: 0,
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            touchAction: 'manipulation',
+            WebkitTapHighlightColor: 'transparent',
+            transition: 'background 0.15s, border-color 0.15s',
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-          Admin
-        </Link>
-      )}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={confirmLogout ? '#dc2626' : 'var(--text-tertiary)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+
+        {/* Admin view pill */}
+        {isAdmin && (
+          <Link
+            to="/"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '5px 12px',
+              fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+              background: 'rgba(255,255,255,0.85)',
+              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              borderRadius: 'var(--radius-full)',
+              border: '1px solid var(--border-light)',
+              textDecoration: 'none',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+            Admin
+          </Link>
+        )}
+      </div>
       <div className="tech-content">
         <Outlet />
       </div>
