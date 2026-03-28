@@ -35,8 +35,9 @@ function IconCalendar({ filled, ...props }) {
 function IconChecklist({ filled, ...props }) {
   if (filled) {
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" {...props}>
-        <path d="M4 4a2 2 0 012-2h4a2 2 0 012 2h6a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm5.7 7.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4a1 1 0 00-1.4-1.4L11 12.6l-1.3-1.3z" />
+      <svg viewBox="0 0 24 24" {...props}>
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor" />
+        <polyline points="9 12 12 15 20 5" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
