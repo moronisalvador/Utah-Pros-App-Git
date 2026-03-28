@@ -24,50 +24,77 @@ export function formatTimeStr(timeStr) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function fmtMinutes(min) {
+  if (min == null) return '—';
+  if (min < 60) return `${Math.round(min)}m`;
+  const h = Math.floor(min / 60);
+  const rm = Math.round(min % 60);
+  return rm ? `${h}h ${rm}m` : `${h}h`;
+}
+
 const HAPTIC = { omw: 50, start: 50, pause: 30, resume: 50, finish: [50, 30, 50] };
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
 export default function TimeTracker({ appt, employee, db, onUpdate }) {
-  const [entry, setEntry] = useState(null);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [elapsed, setElapsed] = useState('0:00:00');
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [confirmReturn, setConfirmReturn] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState('');
+  const [returningJob, setReturningJob] = useState(false);
   const timerRef = useRef(null);
+  const confirmReturnTimer = useRef(null);
 
-  const loadEntry = useCallback(async () => {
+  const loadEntries = useCallback(async () => {
     try {
       const rows = await db.select(
         'job_time_entries',
-        `appointment_id=eq.${appt.id}&employee_id=eq.${employee.id}&select=*&limit=1`
+        `appointment_id=eq.${appt.id}&employee_id=eq.${employee.id}&select=*&order=created_at.asc`
       );
-      setEntry(rows?.[0] || null);
+      setEntries(rows || []);
     } catch { /* ignore */ }
     setLoading(false);
   }, [db, appt.id, employee.id]);
 
-  useEffect(() => { loadEntry(); }, [loadEntry]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // Live timer — counts from travel_start (On My Way) through to Finish
+  useEffect(() => {
+    return () => { if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current); };
+  }, []);
+
+  // Active entry = latest one without clock_out, or null
+  const activeEntry = entries.find(e => !e.clock_out) || null;
+  // All completed entries
+  const completedEntries = entries.filter(e => e.clock_out);
+  // Are ALL entries completed?
+  const allCompleted = entries.length > 0 && !activeEntry;
+  // The entry to use for timer/actions
+  const entry = activeEntry || (entries.length > 0 ? entries[entries.length - 1] : null);
+
+  // Live timer
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    const startRef = entry?.travel_start || entry?.clock_in;
-    if (!startRef || entry?.clock_out) return;
-    if (entry.paused_at) {
-      const pausedMs = new Date(entry.paused_at) - new Date(startRef)
-        - (entry.total_paused_minutes || 0) * 60000;
+    if (!activeEntry) return;
+    const startRef = activeEntry.travel_start || activeEntry.clock_in;
+    if (!startRef || activeEntry.clock_out) return;
+    if (activeEntry.paused_at) {
+      const pausedMs = new Date(activeEntry.paused_at) - new Date(startRef)
+        - (activeEntry.total_paused_minutes || 0) * 60000;
       setElapsed(fmtMs(Math.max(0, pausedMs)));
       return;
     }
     const tick = () => {
       const ms = Date.now() - new Date(startRef).getTime()
-        - (entry.total_paused_minutes || 0) * 60000;
+        - (activeEntry.total_paused_minutes || 0) * 60000;
       setElapsed(fmtMs(Math.max(0, ms)));
     };
     tick();
     timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
-  }, [entry]);
+  }, [activeEntry]);
 
   const doAction = async (action) => {
     if (action === 'finish') {
@@ -82,12 +109,59 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         p_employee_id: employee.id,
         p_action: action,
       });
-      await loadEntry();
+      await loadEntries();
       if (onUpdate) onUpdate();
     } catch (e) {
       toast('Action failed: ' + e.message, 'error');
     }
     setActing(false);
+  };
+
+  const handleReturnTap = () => {
+    if (!confirmReturn) {
+      setConfirmReturn(true);
+      confirmReturnTimer.current = setTimeout(() => setConfirmReturn(false), 3000);
+      return;
+    }
+    // Second tap — open reason input
+    setConfirmReturn(false);
+    if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current);
+    setReturnOpen(true);
+    setReturnReason('');
+  };
+
+  const handleReturnClockIn = async () => {
+    setReturningJob(true);
+    haptic(50);
+    try {
+      // Log return reason as a note linked to the job/appointment
+      const job = appt.jobs;
+      if (returnReason.trim() && job) {
+        await db.rpc('insert_job_document', {
+          p_job_id: job.id,
+          p_name: 'Return reason',
+          p_file_path: '',
+          p_mime_type: 'text/plain',
+          p_category: 'note',
+          p_uploaded_by: employee.id,
+          p_description: `Return reason: ${returnReason.trim()}`,
+          p_appointment_id: appt.id,
+        });
+      }
+      // Clock in — RPC will create a new entry since existing one is completed
+      await db.rpc('clock_appointment_action', {
+        p_appointment_id: appt.id,
+        p_employee_id: employee.id,
+        p_action: 'omw',
+      });
+      setReturnOpen(false);
+      setReturnReason('');
+      await loadEntries();
+      if (onUpdate) onUpdate();
+    } catch (e) {
+      toast('Return failed: ' + e.message, 'error');
+    }
+    setReturningJob(false);
   };
 
   if (loading) {
@@ -103,68 +177,146 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const hasClockOut = entry?.clock_out;
   const isPaused = entry?.paused_at;
 
-  // Completed — compact summary with travel breakdown
-  if (hasClockOut) {
-    const hours = entry.hours ?? null;
-    const travelMin = entry.travel_minutes ?? null;
+  // ── Completed state (all entries done) ──
+  if (allCompleted) {
+    const multiVisit = completedEntries.length > 1;
 
-    // If we have travel_minutes, show breakdown: Travel · On-site · Total
-    if (travelMin != null && hours != null) {
-      const travelStr = travelMin < 60
-        ? `${Math.round(travelMin)}m`
-        : `${Math.floor(travelMin / 60)}h ${Math.round(travelMin % 60)}m`;
-      const onsiteHrs = Number(hours);
-      const onsiteStr = onsiteHrs < 1
-        ? `${Math.round(onsiteHrs * 60)}m`
-        : `${Math.floor(onsiteHrs)}h ${Math.round((onsiteHrs % 1) * 60)}m`;
-      const totalMin = travelMin + onsiteHrs * 60;
-      const totalStr = totalMin < 60
-        ? `${Math.round(totalMin)}m`
-        : `${Math.floor(totalMin / 60)}h ${Math.round(totalMin % 60)}m`;
+    // Calculate grand totals
+    let grandTravelMin = 0;
+    let grandOnsiteMin = 0;
+    completedEntries.forEach(e => {
+      grandTravelMin += Number(e.travel_minutes || 0);
+      grandOnsiteMin += Number(e.hours || 0) * 60;
+    });
 
-      return (
-        <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', padding: '14px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)',
-              textTransform: 'uppercase', letterSpacing: '0.04em',
-            }}>
-              Completed
-            </span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Travel: {travelStr}</span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>On-site: {onsiteStr}</span>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Total: {totalStr}</span>
-          </div>
-        </div>
-      );
-    }
-
-    // Fallback: no travel_minutes — show original format
     return (
       <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', padding: '14px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{
-            fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)',
-            textTransform: 'uppercase', letterSpacing: '0.04em',
-          }}>
-            Completed
-          </span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>In: {fmtTime(entry.clock_in)}</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Out: {fmtTime(entry.clock_out)}</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{hours ?? '—'}h</span>
-        </div>
+        {multiVisit ? (
+          <>
+            {completedEntries.map((e, i) => {
+              const travelMin = Number(e.travel_minutes || 0);
+              const onsiteMin = Number(e.hours || 0) * 60;
+              // Check if this visit has a return reason in description
+              const desc = e.description || '';
+              const returnMatch = desc.includes('Return') || i > 0;
+              return (
+                <div key={e.id} style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)' }}>
+                      Visit {i + 1}:
+                    </span>
+                    {e.travel_minutes != null && (
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Travel {fmtMinutes(travelMin)}</span>
+                    )}
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>· On-site {fmtMinutes(onsiteMin)}</span>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: 6, marginTop: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                Total: {fmtMinutes(grandTravelMin + grandOnsiteMin)}
+              </span>
+            </div>
+          </>
+        ) : (
+          /* Single visit — compact format */
+          (() => {
+            const e = completedEntries[0];
+            const travelMin = e.travel_minutes ?? null;
+            const hours = e.hours ?? null;
+
+            if (travelMin != null && hours != null) {
+              const onsiteMin = Number(hours) * 60;
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Completed</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Travel: {fmtMinutes(travelMin)}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>On-site: {fmtMinutes(onsiteMin)}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Total: {fmtMinutes(Number(travelMin) + onsiteMin)}</span>
+                </div>
+              );
+            }
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Completed</span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>In: {fmtTime(e.clock_in)}</span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Out: {fmtTime(e.clock_out)}</span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{hours ?? '—'}h</span>
+              </div>
+            );
+          })()
+        )}
+
+        {/* Return to Job button */}
+        {!returnOpen && (
+          <button
+            onClick={handleReturnTap}
+            onBlur={() => { setConfirmReturn(false); if (confirmReturnTimer.current) clearTimeout(confirmReturnTimer.current); }}
+            style={{
+              width: '100%', marginTop: 10, padding: '10px 0',
+              borderRadius: 'var(--tech-radius-button)',
+              fontSize: 13, fontWeight: 600,
+              fontFamily: 'var(--font-sans)', cursor: 'pointer',
+              touchAction: 'manipulation',
+              background: confirmReturn ? '#fffbeb' : 'transparent',
+              color: confirmReturn ? '#b45309' : 'var(--text-secondary)',
+              border: `1.5px solid ${confirmReturn ? '#fde68a' : 'var(--border-color)'}`,
+              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+            }}
+          >
+            {confirmReturn ? 'Confirm Return?' : 'Return to Job'}
+          </button>
+        )}
+
+        {/* Return reason input */}
+        {returnOpen && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-light)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              Reason for return
+            </div>
+            <input
+              className="input"
+              value={returnReason}
+              onChange={e => setReturnReason(e.target.value)}
+              placeholder="e.g. Additional work requested, Follow-up monitoring..."
+              autoFocus
+              style={{ fontSize: 16, marginBottom: 10, width: '100%' }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="tech-tracker-btn"
+                onClick={handleReturnClockIn}
+                disabled={returningJob}
+                style={{ background: '#b45309', color: '#fff', flex: 1 }}
+              >
+                {returningJob ? 'Clocking In...' : 'Clock In'}
+              </button>
+              <button
+                className="tech-tracker-btn-secondary"
+                onClick={() => { setReturnOpen(false); setReturnReason(''); }}
+                style={{
+                  background: 'transparent', color: 'var(--text-primary)',
+                  border: '1.5px solid var(--border-color)', flex: 1,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // Working or Paused
-  if (hasClockIn) {
+  // ── Working or Paused ──
+  if (hasClockIn && !hasClockOut) {
     const bg = isPaused ? 'var(--status-paused-bg)' : 'var(--status-working-bg)';
     const timerColor = isPaused ? 'var(--status-paused-color)' : 'var(--status-working-color)';
     const statusLabel = isPaused ? 'PAUSED' : 'WORKING';
@@ -176,7 +328,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             fontSize: 12, fontWeight: 700, color: timerColor,
             textTransform: 'uppercase', letterSpacing: '0.04em',
           }}>
-            {statusLabel}
+            {statusLabel}{completedEntries.length > 0 ? ` (Visit ${completedEntries.length + 1})` : ''}
           </span>
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>elapsed</span>
         </div>
@@ -230,8 +382,8 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
     );
   }
 
-  // En Route
-  if (hasTravel) {
+  // ── En Route ──
+  if (hasTravel && !hasClockIn) {
     return (
       <div className="tech-tracker" style={{ background: 'var(--status-enroute-bg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -239,7 +391,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             fontSize: 12, fontWeight: 700, color: 'var(--status-enroute-color)',
             textTransform: 'uppercase', letterSpacing: '0.04em',
           }}>
-            EN ROUTE
+            EN ROUTE{completedEntries.length > 0 ? ` (Visit ${completedEntries.length + 1})` : ''}
           </span>
           <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
             Left at {fmtTime(entry.travel_start)}
@@ -262,7 +414,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
     );
   }
 
-  // Scheduled — no entry yet
+  // ── Scheduled — no entry yet ──
   return (
     <div className="tech-tracker" style={{ background: 'var(--bg-secondary)' }}>
       <button
