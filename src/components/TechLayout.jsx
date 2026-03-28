@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { IconDashboard, IconSchedule, IconConversations, IconNote } from '@/components/Icons';
+import { IconSchedule, IconConversations } from '@/components/Icons';
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -207,14 +207,13 @@ export default function TechLayout() {
               key={tab.key}
               to={tab.path}
               className={`tech-nav-tab${active ? ' active' : ''}`}
-              style={{ position: 'relative' }}
             >
               <tab.Icon filled={active} />
               {showDot && (
                 <span style={{
-                  position: 'absolute', top: 6, right: '50%', marginRight: -14,
-                  width: 7, height: 7, borderRadius: '50%',
-                  background: '#ef4444', border: '1.5px solid var(--bg-primary)',
+                  position: 'absolute', top: 4, right: '50%', marginRight: -16,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: '#ef4444',
                 }} />
               )}
               <span>{tab.label}</span>

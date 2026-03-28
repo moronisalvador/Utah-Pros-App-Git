@@ -7,14 +7,13 @@ import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
 
-/* ── Appointment Card ── */
+/* ── Active Appointment Card (expanded) ── */
 
-function AppointmentCard({ appt, employee, db, expanded, onReload }) {
+function ActiveCard({ appt, employee, db, onReload }) {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
-  const [tasksOpen, setTasksOpen] = useState(false);
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  const fileRef = useRef(null);
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
@@ -28,11 +27,7 @@ function AppointmentCard({ appt, employee, db, expanded, onReload }) {
     setTasksLoaded(true);
   }, [db, appt.id, tasksLoaded]);
 
-  const toggleTasks = (e) => {
-    e.stopPropagation();
-    if (!tasksOpen) loadTasks();
-    setTasksOpen(o => !o);
-  };
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const toggleTask = async (task) => {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
@@ -54,61 +49,15 @@ function AppointmentCard({ appt, employee, db, expanded, onReload }) {
     window.open(url);
   };
 
-  const handlePhoto = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !job) return;
-    try {
-      const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${db.apiKey}`,
-          'Content-Type': file.type,
-        },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
-        p_job_id: job.id,
-        p_name: file.name,
-        p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
-        p_category: 'photo',
-        p_uploaded_by: employee.id,
-      });
-      toast('Photo uploaded');
-    } catch (e) {
-      toast('Photo upload failed: ' + e.message, 'error');
-    }
-    e.target.value = '';
-  };
-
   const goToDetail = () => navigate(`/tech/appointment/${appt.id}`);
 
   const doneCount = tasks.filter(t => t.is_completed).length;
   const totalCount = tasks.length;
-  const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
-
-  const relTime = getRelativeTime(appt);
-
-  // Collapsed card for future appointments
-  if (!expanded) {
-    return (
-      <div className="tech-appt-card" data-status={appt.status} style={{ opacity: 0.75 }} onClick={goToDetail}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="tech-appt-time" style={{ marginBottom: 0 }}>{timeStr}</span>
-          {relTime && <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{relTime}</span>}
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{appt.title || 'Appointment'}</span>
-        </div>
-        {address && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{address}</div>}
-      </div>
-    );
-  }
+  const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
+  const visibleTasks = (totalCount <= 5 || showAllTasks) ? tasks : tasks.slice(0, 5);
 
   return (
     <div className="tech-appt-card" data-status={appt.status} onClick={goToDetail}>
-      <div className="tech-appt-time">{timeStr}</div>
       <div className="tech-appt-title">{appt.title || job?.division || 'Appointment'}</div>
 
       {address && (
@@ -118,61 +67,130 @@ function AppointmentCard({ appt, employee, db, expanded, onReload }) {
         </button>
       )}
 
-      {/* Stop propagation on interactive elements inside the card */}
-      <div onClick={e => e.stopPropagation()}>
-        <TimeTracker appt={appt} employee={employee} db={db} onUpdate={onReload} />
-      </div>
+      {/* Task progress inline */}
+      {tasksLoaded && totalCount > 0 && (
+        <div style={{ marginBottom: 8 }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Tasks {doneCount}/{totalCount}
+            </span>
+          </div>
+          <div className="tech-task-progress-bar">
+            <div className="tech-task-progress-fill" style={{ width: `${progressPct}%` }} />
+          </div>
 
-      {/* Tasks toggle */}
-      <button className="tech-tasks-toggle" onClick={toggleTasks}>
-        <span>Tasks{tasksLoaded ? ` ${doneCount}/${totalCount}` : ''}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: tasksOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-
-      {tasksOpen && (
-        <div style={{ marginTop: 8 }} onClick={e => e.stopPropagation()}>
-          {tasks.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 0' }}>No tasks assigned</div>}
-          {tasks.map(task => (
-            <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}>
-              <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
-                {task.is_completed && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                )}
+          {/* Inline tasks */}
+          <div style={{ marginTop: 8 }}>
+            {visibleTasks.map(task => (
+              <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}>
+                <div className={`tech-task-check${task.is_completed ? ' done' : ''}`}>
+                  {task.is_completed && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                  )}
+                </div>
+                <span className={`tech-task-name${task.is_completed ? ' done' : ''}`}>{task.title}</span>
               </div>
-              <span className={`tech-task-name${task.is_completed ? ' done' : ''}`}>{task.title}</span>
-            </div>
-          ))}
+            ))}
+            {totalCount > 5 && !showAllTasks && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowAllTasks(true); }}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--accent)',
+                  fontSize: 13, fontWeight: 600, padding: '8px 0', cursor: 'pointer',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              >
+                Show {totalCount - 5} more tasks
+              </button>
+            )}
+          </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Actions row */}
-      <div className="tech-appt-actions" onClick={e => e.stopPropagation()}>
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: 'none' }}
-          ref={fileRef}
-          onChange={handlePhoto}
-        />
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => fileRef.current?.click()}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          Photo
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => navigate('/tech/conversations')}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          Message
-        </button>
+/* ── Future Appointment Row (timeline style) ── */
+
+function FutureRow({ appt }) {
+  const navigate = useNavigate();
+  const job = appt.jobs;
+  const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
+  const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
+
+  return (
+    <div className="tech-future-row" onClick={() => navigate(`/tech/appointment/${appt.id}`)}>
+      <div className="tech-future-time-col">
+        <div className="tech-future-time">{timeStr}</div>
+      </div>
+      <div className="tech-future-line" />
+      <div className="tech-future-content">
+        <div className="tech-future-title">{appt.title || 'Appointment'}</div>
+        {address && <div className="tech-future-address">{address}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ── Quick Actions ── */
+
+function QuickActions() {
+  const navigate = useNavigate();
+  const fileRef = useRef(null);
+
+  return (
+    <div className="tech-quick-actions">
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        ref={fileRef}
+        onChange={() => { /* handled at appointment level */ fileRef.current.value = ''; }}
+      />
+      <button className="tech-quick-action-btn" onClick={() => fileRef.current?.click()}>
+        <div className="tech-quick-action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </div>
+        <span className="tech-quick-action-label">Photo</span>
+      </button>
+      <Link className="tech-quick-action-btn" to="/tech/conversations">
+        <div className="tech-quick-action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <span className="tech-quick-action-label">Message</span>
+      </Link>
+      <Link className="tech-quick-action-btn" to="/tech/schedule">
+        <div className="tech-quick-action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <span className="tech-quick-action-label">Schedule</span>
+      </Link>
+    </div>
+  );
+}
+
+/* ── Skeleton Loading ── */
+
+function DashSkeleton() {
+  return (
+    <div className="tech-page">
+      {/* Greeting skeleton */}
+      <div style={{ marginBottom: 16 }}>
+        <div className="tech-skeleton-line short" style={{ height: 10, width: '30%' }} />
+        <div className="tech-skeleton-line" style={{ height: 28, width: '55%', marginBottom: 6 }} />
+        <div className="tech-skeleton-line" style={{ height: 14, width: '40%' }} />
+      </div>
+      {/* Tracker skeleton */}
+      <div className="tech-skeleton-card" style={{ padding: 20 }}>
+        <div className="tech-skeleton-line" style={{ height: 40, width: '50%', margin: '12px auto' }} />
+        <div className="tech-skeleton-line" style={{ height: 52, width: '100%' }} />
+      </div>
+      {/* Card skeleton */}
+      <div className="tech-skeleton-card">
+        <div className="tech-skeleton-line medium" style={{ height: 18 }} />
+        <div className="tech-skeleton-line long" />
+        <div className="tech-skeleton-line" style={{ height: 4, width: '60%' }} />
       </div>
     </div>
   );
@@ -202,50 +220,42 @@ export default function TechDash() {
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = (employee.display_name || employee.full_name || '').split(' ')[0];
 
+  if (loading) return <DashSkeleton />;
+
   const activeStatuses = ['scheduled', 'en_route', 'in_progress', 'paused', 'confirmed'];
   const active = appointments.filter(a => activeStatuses.includes(a.status));
-  const future = appointments.filter(a => !activeStatuses.includes(a.status) && a.status !== 'completed');
   const completed = appointments.filter(a => a.status === 'completed');
+  const future = appointments.filter(a => !activeStatuses.includes(a.status) && a.status !== 'completed');
 
-  if (loading) {
-    return (
-      <div className="tech-page">
-        <div className="tech-page-header">
-          <div className="tech-skeleton-line short" style={{ height: 14 }} />
-          <div className="tech-skeleton-line medium" style={{ height: 20 }} />
-        </div>
-        {[1, 2].map(i => (
-          <div key={i} className="tech-skeleton-card">
-            <div className="tech-skeleton-line short" />
-            <div className="tech-skeleton-line tall medium" />
-            <div className="tech-skeleton-line long" />
-            <div style={{ height: 16 }} />
-            <div className="tech-skeleton-line long" />
-            <div className="tech-skeleton-line medium" />
-          </div>
-        ))}
-      </div>
-    );
-  }
+  // The "hero" appointment for the TimeTracker — first active or first overall
+  const heroAppt = active[0] || (appointments.length > 0 ? appointments.find(a => a.status !== 'completed') : null);
 
   if (appointments.length === 0) {
     return (
       <div className="tech-page">
-        <div className="tech-page-header">
-          <div className="tech-page-date">{dateStr}</div>
-          <div className="tech-page-title">{firstName}</div>
+        <div className="tech-dash-greeting">
+          <div className="tech-dash-date">{dateStr}</div>
+          <div className="tech-dash-name">Hey {firstName} 👋</div>
+          <div className="tech-dash-summary">0 appointments today</div>
         </div>
-        <div className="empty-state" style={{ marginTop: 60 }}>
+        <div className="empty-state" style={{ marginTop: 40 }}>
           <div className="empty-state-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+              <polyline points="9 16 11 18 15 14" strokeWidth="2"/>
+            </svg>
           </div>
           <div className="empty-state-text">No appointments today</div>
           <div className="empty-state-sub">
-            <Link to="/tech/schedule" style={{ color: 'var(--accent)', textDecoration: 'none' }}>
-              Check your schedule for upcoming jobs
+            <Link to="/tech/schedule" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+              Check your upcoming schedule →
             </Link>
           </div>
         </div>
+        <QuickActions />
       </div>
     );
   }
@@ -253,38 +263,81 @@ export default function TechDash() {
   return (
     <PullToRefresh onRefresh={load}>
       <div className="tech-page">
-        <div className="tech-page-header-sticky">
-          <div className="tech-page-date">{dateStr}</div>
-          <div className="tech-page-title">{firstName}</div>
-          <div className="tech-page-subtitle">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today</div>
+        {/* Greeting */}
+        <div className="tech-dash-greeting">
+          <div className="tech-dash-date">{dateStr}</div>
+          <div className="tech-dash-name">Hey {firstName} 👋</div>
+          <div className="tech-dash-summary">
+            {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
+          </div>
         </div>
 
+        {/* Hero TimeTracker */}
+        {heroAppt && (
+          <div onClick={e => e.stopPropagation()}>
+            <TimeTracker appt={heroAppt} employee={employee} db={db} onUpdate={load} />
+          </div>
+        )}
+
+        {/* Active appointment cards */}
         {active.map(appt => (
-          <AppointmentCard key={appt.id} appt={appt} employee={employee} db={db} expanded onReload={load} />
+          <ActiveCard key={appt.id} appt={appt} employee={employee} db={db} onReload={load} />
         ))}
 
-        {future.map(appt => (
-          <AppointmentCard key={appt.id} appt={appt} employee={employee} db={db} expanded={false} onReload={load} />
-        ))}
+        {/* Future appointments — timeline style */}
+        {future.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              marginBottom: 8, paddingLeft: 4,
+            }}>
+              Upcoming
+            </div>
+            {future.map(appt => (
+              <FutureRow key={appt.id} appt={appt} />
+            ))}
+          </div>
+        )}
 
-        {completed.map(appt => (
-          <AppointmentCard key={appt.id} appt={appt} employee={employee} db={db} expanded onReload={load} />
-        ))}
+        {/* Completed — compact */}
+        {completed.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              marginBottom: 8, paddingLeft: 4,
+            }}>
+              Completed
+            </div>
+            {completed.map(appt => {
+              const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
+              return (
+                <div
+                  key={appt.id}
+                  className="tech-appt-card"
+                  data-status="completed"
+                  onClick={() => {}}
+                  style={{ opacity: 0.65, padding: '12px 16px' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {appt.title || 'Appointment'}
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Quick Actions */}
+        <QuickActions />
       </div>
     </PullToRefresh>
   );
-}
-
-/* ── Helpers ── */
-
-function getRelativeTime(appt) {
-  const apptDate = new Date(`${appt.date}T${appt.time_start || '00:00'}`);
-  const diffMs = apptDate - Date.now();
-  if (diffMs < 0) return null;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 60) return `in ${diffMin}m`;
-  const diffHr = Math.floor(diffMin / 60);
-  const remMin = diffMin % 60;
-  if (remMin === 0) return `in ${diffHr}h`;
-  return `in ${diffHr}h ${remMin}m`;
 }

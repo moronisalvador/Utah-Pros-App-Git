@@ -89,58 +89,104 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
     setActing(false);
   };
 
-  if (loading) return <div className="tech-tracker" style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+        Loading...
+      </div>
+    );
+  }
 
   const hasTravel = entry?.travel_start;
   const hasClockIn = entry?.clock_in;
   const hasClockOut = entry?.clock_out;
   const isPaused = entry?.paused_at;
 
-  // Completed
+  // Completed — compact summary
   if (hasClockOut) {
+    const hours = entry.hours ?? '—';
     return (
-      <div className="tech-tracker">
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 6 }}>COMPLETED</div>
-        <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
-          <span><strong>In:</strong> {fmtTime(entry.clock_in)}</span>
-          <span><strong>Out:</strong> {fmtTime(entry.clock_out)}</span>
-          <span><strong>Hours:</strong> {entry.hours ?? '—'}</span>
+      <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', padding: '14px 20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{
+            fontSize: 12, fontWeight: 700, color: 'var(--status-completed-color)',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            Completed
+          </span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>In: {fmtTime(entry.clock_in)}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Out: {fmtTime(entry.clock_out)}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>·</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{hours}h</span>
         </div>
       </div>
     );
   }
 
-  // In Progress or Paused
+  // Working or Paused
   if (hasClockIn) {
+    const bg = isPaused ? 'var(--status-paused-bg)' : 'var(--status-working-bg)';
+    const timerColor = isPaused ? 'var(--status-paused-color)' : 'var(--status-working-color)';
+    const statusLabel = isPaused ? 'PAUSED' : 'WORKING';
+
     return (
-      <div className="tech-tracker">
-        <div className="tech-tracker-timer">{elapsed}</div>
-        {isPaused && <div style={{ fontSize: 11, fontWeight: 600, color: '#d97706', marginBottom: 6 }}>PAUSED</div>}
-        <div className="tech-tracker-actions">
+      <div className="tech-tracker" style={{ background: bg }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{
+            fontSize: 12, fontWeight: 700, color: timerColor,
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            {statusLabel}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>elapsed</span>
+        </div>
+
+        <div className="tech-tracker-timer" style={{ color: timerColor }}>
+          {elapsed}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
           {isPaused ? (
-            <button className="btn btn-primary" onClick={() => doAction('resume')} disabled={acting} style={{ flex: 1 }}>
+            <button
+              className="tech-tracker-btn"
+              onClick={() => doAction('resume')}
+              disabled={acting}
+              style={{ background: '#059669', color: '#fff' }}
+            >
               Resume
             </button>
           ) : (
-            <button className="btn btn-secondary" onClick={() => doAction('pause')} disabled={acting} style={{ flex: 1 }}>
-              Pause
-            </button>
+            <>
+              <button
+                className="tech-tracker-btn-secondary"
+                onClick={() => doAction('pause')}
+                disabled={acting}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-primary)',
+                  border: '1.5px solid var(--border-color)',
+                }}
+              >
+                Pause
+              </button>
+              <button
+                className="tech-tracker-btn-secondary"
+                onClick={() => doAction('finish')}
+                onBlur={() => setConfirmFinish(false)}
+                disabled={acting}
+                style={{
+                  background: confirmFinish ? '#fef2f2' : 'transparent',
+                  color: confirmFinish ? '#dc2626' : 'var(--text-primary)',
+                  border: `1.5px solid ${confirmFinish ? '#fecaca' : 'var(--border-color)'}`,
+                  fontWeight: confirmFinish ? 700 : 600,
+                }}
+              >
+                {confirmFinish ? 'Confirm Finish' : 'Finish'}
+              </button>
+            </>
           )}
-          <button
-            className="btn"
-            onClick={() => doAction('finish')}
-            onBlur={() => setConfirmFinish(false)}
-            disabled={acting}
-            style={{
-              flex: 1,
-              background: confirmFinish ? '#fef2f2' : 'var(--bg-tertiary)',
-              color: confirmFinish ? '#dc2626' : 'var(--text-primary)',
-              border: `1px solid ${confirmFinish ? '#fecaca' : 'var(--border-color)'}`,
-              fontWeight: confirmFinish ? 700 : 500,
-            }}
-          >
-            {confirmFinish ? 'Confirm Finish' : 'Finish'}
-          </button>
         </div>
       </div>
     );
@@ -149,15 +195,24 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   // En Route
   if (hasTravel) {
     return (
-      <div className="tech-tracker">
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-          Left at {fmtTime(entry.travel_start)}
+      <div className="tech-tracker" style={{ background: 'var(--status-enroute-bg)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <span style={{
+            fontSize: 12, fontWeight: 700, color: 'var(--status-enroute-color)',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            EN ROUTE
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            Left at {fmtTime(entry.travel_start)}
+          </span>
         </div>
+
         <button
-          className="btn"
+          className="tech-tracker-btn"
           onClick={() => doAction('start')}
           disabled={acting}
-          style={{ width: '100%', background: '#16a34a', color: '#fff', border: 'none', fontWeight: 600 }}
+          style={{ background: '#059669', color: '#fff' }}
         >
           Start Work
         </button>
@@ -167,13 +222,16 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   // Scheduled — no entry yet
   return (
-    <div className="tech-tracker">
+    <div className="tech-tracker" style={{ background: 'var(--bg-secondary)' }}>
       <button
-        className="btn"
+        className="tech-tracker-btn"
         onClick={() => doAction('omw')}
         disabled={acting}
-        style={{ width: '100%', background: '#d97706', color: '#fff', border: 'none', fontWeight: 600 }}
+        style={{ background: '#b45309', color: '#fff' }}
       >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </svg>
         On My Way
       </button>
     </div>
