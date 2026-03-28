@@ -17,6 +17,12 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [confirmOmw, setConfirmOmw] = useState(false);
   const [acting, setActing] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState(null);
+  const [photoCaption, setPhotoCaption] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const confirmTimer = useRef(null);
   const fileRef = useRef(null);
 
@@ -49,31 +55,64 @@ function ActiveCard({ appt, employee, db, onReload }) {
     window.open(url);
   };
 
-  const handlePhoto = async (e) => {
+  const handlePhotoCaptured = (e) => {
     const file = e.target.files?.[0];
     if (!file || !job) return;
+    setPendingPhoto(file);
+    setPhotoCaption('');
+    e.target.value = '';
+  };
+
+  const uploadPhoto = async (description) => {
+    if (!pendingPhoto || !job) return;
+    setUploadingPhoto(true);
     try {
       const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
+      const path = `${job.id}/${ts}-${pendingPhoto.name}`;
       const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': pendingPhoto.type },
+        body: pendingPhoto,
       });
       if (!res.ok) throw new Error('Upload failed');
       await db.rpc('insert_job_document', {
         p_job_id: job.id,
-        p_name: file.name,
+        p_name: pendingPhoto.name,
         p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
+        p_mime_type: pendingPhoto.type,
         p_category: 'photo',
         p_uploaded_by: employee.id,
+        p_description: description || null,
       });
       toast('Photo uploaded');
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     }
-    e.target.value = '';
+    setPendingPhoto(null);
+    setPhotoCaption('');
+    setUploadingPhoto(false);
+  };
+
+  const saveNote = async () => {
+    if (!noteText.trim() || !job) return;
+    setSavingNote(true);
+    try {
+      await db.rpc('insert_job_document', {
+        p_job_id: job.id,
+        p_name: 'Field note',
+        p_file_path: '',
+        p_mime_type: 'text/plain',
+        p_category: 'note',
+        p_uploaded_by: employee.id,
+        p_description: noteText.trim(),
+      });
+      toast('Note saved');
+      setNoteText('');
+      setNoteOpen(false);
+    } catch (err) {
+      toast('Failed to save note: ' + err.message, 'error');
+    }
+    setSavingNote(false);
   };
 
   const doOmw = async () => {
@@ -152,7 +191,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
       {/* Quick actions row for scheduled state */}
       {isScheduled && (
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }} onClick={e => e.stopPropagation()}>
-          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
+          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
           {/* Photo */}
           <button
@@ -170,7 +209,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
           {/* Notes */}
           <button
-            onClick={() => navigate(`/tech/appointment/${appt.id}`)}
+            onClick={() => setNoteOpen(true)}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
@@ -199,6 +238,67 @@ function ActiveCard({ appt, employee, db, onReload }) {
           >
             {confirmOmw ? 'Confirm?' : '▶ Clock In'}
           </button>
+        </div>
+      )}
+
+      {/* Photo caption input — shown after capturing a photo */}
+      {pendingPhoto && (
+        <div style={{ marginTop: 10, padding: '10px 0', borderTop: '1px solid var(--border-light)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            Add a note about this photo (optional)
+          </div>
+          <input
+            className="input"
+            value={photoCaption}
+            onChange={e => setPhotoCaption(e.target.value)}
+            placeholder="Photo description..."
+            style={{ fontSize: 16, marginBottom: 8, width: '100%' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => uploadPhoto(photoCaption.trim())}
+              disabled={uploadingPhoto}
+            >
+              {uploadingPhoto ? 'Uploading...' : 'Save'}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => uploadPhoto(null)}
+              disabled={uploadingPhoto}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Inline note input — shown when Notes button tapped */}
+      {noteOpen && (
+        <div style={{ marginTop: 10, padding: '10px 0', borderTop: '1px solid var(--border-light)' }} onClick={e => e.stopPropagation()}>
+          <textarea
+            className="input textarea"
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            placeholder="Quick note..."
+            rows={3}
+            style={{ fontSize: 16, marginBottom: 8, width: '100%' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={saveNote}
+              disabled={savingNote || !noteText.trim()}
+            >
+              {savingNote ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { setNoteOpen(false); setNoteText(''); }}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

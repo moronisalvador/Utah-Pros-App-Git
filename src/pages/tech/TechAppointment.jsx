@@ -59,6 +59,9 @@ export default function TechAppointment() {
   const [savingNote, setSavingNote] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [entering, setEntering] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState(null);
+  const [photoCaption, setPhotoCaption] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -93,33 +96,44 @@ export default function TechAppointment() {
     }
   };
 
-  const handlePhoto = async (e) => {
+  const handlePhotoCaptured = (e) => {
     const file = e.target.files?.[0];
     if (!file || !appt?.jobs) return;
+    setPendingPhoto(file);
+    setPhotoCaption('');
+    e.target.value = '';
+  };
+
+  const uploadPhoto = async (description) => {
+    if (!pendingPhoto || !appt?.jobs) return;
     const job = appt.jobs;
+    setUploadingPhoto(true);
     try {
       const ts = Date.now();
-      const path = `${job.id}/${ts}-${file.name}`;
+      const path = `${job.id}/${ts}-${pendingPhoto.name}`;
       const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': pendingPhoto.type },
+        body: pendingPhoto,
       });
       if (!res.ok) throw new Error('Upload failed');
       await db.rpc('insert_job_document', {
         p_job_id: job.id,
-        p_name: file.name,
+        p_name: pendingPhoto.name,
         p_file_path: `job-files/${path}`,
-        p_mime_type: file.type,
+        p_mime_type: pendingPhoto.type,
         p_category: 'photo',
         p_uploaded_by: employee.id,
+        p_description: description || null,
       });
       toast('Photo uploaded');
       load();
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     }
-    e.target.value = '';
+    setPendingPhoto(null);
+    setPhotoCaption('');
+    setUploadingPhoto(false);
   };
 
   const saveNote = async () => {
@@ -133,6 +147,7 @@ export default function TechAppointment() {
         p_mime_type: 'text/plain',
         p_category: 'note',
         p_uploaded_by: employee.id,
+        p_description: noteText.trim(),
       });
       toast('Note saved');
       setNoteText('');
@@ -299,7 +314,7 @@ export default function TechAppointment() {
         </button>
       </div>
 
-      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhoto} />
+      <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
         {/* Time Tracker */}
@@ -388,7 +403,31 @@ export default function TechAppointment() {
               Add Photo
             </button>
           </div>
-          {photos.length === 0 ? (
+          {/* Pending photo caption input */}
+          {pendingPhoto && (
+            <div style={{ marginBottom: 12, padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Add a note about this photo (optional)
+              </div>
+              <input
+                className="input"
+                value={photoCaption}
+                onChange={e => setPhotoCaption(e.target.value)}
+                placeholder="Photo description..."
+                style={{ fontSize: 16, marginBottom: 8, width: '100%' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={() => uploadPhoto(photoCaption.trim())} disabled={uploadingPhoto}>
+                  {uploadingPhoto ? 'Uploading...' : 'Save'}
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => uploadPhoto(null)} disabled={uploadingPhoto}>
+                  Skip
+                </button>
+              </div>
+            </div>
+          )}
+
+          {photos.length === 0 && !pendingPhoto ? (
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No photos yet</div>
           ) : (
             groupPhotosByDate(photos).map(group => (
@@ -398,21 +437,27 @@ export default function TechAppointment() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                   {group.items.map(p => (
-                    <div
-                      key={p.id}
-                      onClick={() => setLightboxPhoto(p)}
-                      style={{
-                        aspectRatio: '1', borderRadius: 12,
-                        background: 'var(--bg-tertiary)', overflow: 'hidden',
-                        border: '1px solid var(--border-light)', cursor: 'pointer',
-                      }}
-                    >
-                      <img
-                        src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
-                        alt={p.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={e => { e.target.style.display = 'none'; }}
-                      />
+                    <div key={p.id}>
+                      <div
+                        onClick={() => setLightboxPhoto(p)}
+                        style={{
+                          aspectRatio: '1', borderRadius: 12,
+                          background: 'var(--bg-tertiary)', overflow: 'hidden',
+                          border: '1px solid var(--border-light)', cursor: 'pointer',
+                        }}
+                      >
+                        <img
+                          src={`${db.baseUrl}/storage/v1/object/public/${p.file_path}`}
+                          alt={p.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+                      {p.description && (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.3 }}>
+                          {p.description}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
