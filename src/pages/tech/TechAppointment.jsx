@@ -59,9 +59,11 @@ export default function TechAppointment() {
   const [savingNote, setSavingNote] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [entering, setEntering] = useState(false);
-  const [pendingPhoto, setPendingPhoto] = useState(null);
-  const [photoCaption, setPhotoCaption] = useState('');
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
+  const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath }
+  const [photoNoteText, setPhotoNoteText] = useState('');
+  const [savingPhotoNote, setSavingPhotoNote] = useState(false);
+  const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -96,44 +98,65 @@ export default function TechAppointment() {
     }
   };
 
-  const handlePhotoCaptured = (e) => {
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => { if (photoToastTimer.current) clearTimeout(photoToastTimer.current); };
+  }, []);
+
+  const handlePhotoCaptured = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !appt?.jobs) return;
-    setPendingPhoto(file);
-    setPhotoCaption('');
-    e.target.value = '';
-  };
-
-  const uploadPhoto = async (description) => {
-    if (!pendingPhoto || !appt?.jobs) return;
     const job = appt.jobs;
-    setUploadingPhoto(true);
+    e.target.value = '';
+    // Upload immediately
     try {
       const ts = Date.now();
-      const path = `${job.id}/${ts}-${pendingPhoto.name}`;
+      const path = `${job.id}/${ts}-${file.name}`;
       const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': pendingPhoto.type },
-        body: pendingPhoto,
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
+        body: file,
       });
       if (!res.ok) throw new Error('Upload failed');
-      await db.rpc('insert_job_document', {
+      const doc = await db.rpc('insert_job_document', {
         p_job_id: job.id,
-        p_name: pendingPhoto.name,
+        p_name: file.name,
         p_file_path: `job-files/${path}`,
-        p_mime_type: pendingPhoto.type,
+        p_mime_type: file.type,
         p_category: 'photo',
         p_uploaded_by: employee.id,
-        p_description: description || null,
       });
-      toast('Photo uploaded');
       load();
+      const docId = doc?.id;
+      setPhotoToast({ id: docId, filePath: `job-files/${path}` });
+      if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
+      photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     }
-    setPendingPhoto(null);
-    setPhotoCaption('');
-    setUploadingPhoto(false);
+  };
+
+  const openPhotoNoteSheet = () => {
+    if (!photoToast) return;
+    if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
+    setPhotoNoteSheet({ id: photoToast.id, filePath: photoToast.filePath });
+    setPhotoNoteText('');
+    setPhotoToast(null);
+  };
+
+  const savePhotoNote = async () => {
+    if (!photoNoteSheet?.id || !photoNoteText.trim()) return;
+    setSavingPhotoNote(true);
+    try {
+      await db.update('job_documents', `id=eq.${photoNoteSheet.id}`, { description: photoNoteText.trim() });
+      toast('Note added');
+      load();
+    } catch (err) {
+      toast('Failed to save note: ' + err.message, 'error');
+    }
+    setSavingPhotoNote(false);
+    setPhotoNoteSheet(null);
+    setPhotoNoteText('');
   };
 
   const saveNote = async () => {
@@ -403,31 +426,29 @@ export default function TechAppointment() {
               Add Photo
             </button>
           </div>
-          {/* Pending photo caption input */}
-          {pendingPhoto && (
-            <div style={{ marginBottom: 12, padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Add a note about this photo (optional)
-              </div>
-              <input
-                className="input"
-                value={photoCaption}
-                onChange={e => setPhotoCaption(e.target.value)}
-                placeholder="Photo description..."
-                style={{ fontSize: 16, marginBottom: 8, width: '100%' }}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-primary btn-sm" onClick={() => uploadPhoto(photoCaption.trim())} disabled={uploadingPhoto}>
-                  {uploadingPhoto ? 'Uploading...' : 'Save'}
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => uploadPhoto(null)} disabled={uploadingPhoto}>
-                  Skip
-                </button>
-              </div>
+          {/* Inline photo saved toast */}
+          {photoToast && (
+            <div style={{
+              marginBottom: 12, padding: '8px 12px',
+              background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              animation: 'tech-fade-in 0.15s ease-out',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>Photo saved ✓</span>
+              <button
+                onClick={openPhotoNoteSheet}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, color: 'var(--accent)',
+                  fontFamily: 'var(--font-sans)', padding: '2px 0',
+                }}
+              >
+                Add note
+              </button>
             </div>
           )}
 
-          {photos.length === 0 && !pendingPhoto ? (
+          {photos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No photos yet</div>
           ) : (
             groupPhotosByDate(photos).map(group => (
@@ -498,6 +519,65 @@ export default function TechAppointment() {
                 touchAction: 'pinch-zoom',
               }}
             />
+          </div>
+        )}
+
+        {/* Photo note bottom sheet */}
+        {photoNoteSheet && (
+          <div
+            onClick={() => { setPhotoNoteSheet(null); setPhotoNoteText(''); }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(0,0,0,0.4)',
+              display: 'flex', alignItems: 'flex-end',
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                width: '100%', background: 'var(--bg-primary)',
+                borderRadius: '16px 16px 0 0',
+                padding: '16px 16px calc(16px + env(safe-area-inset-bottom, 0px))',
+                animation: 'tech-slide-up 0.2s ease-out',
+              }}
+            >
+              <div style={{
+                width: '100%', height: 160, borderRadius: 12, overflow: 'hidden',
+                background: 'var(--bg-tertiary)', marginBottom: 12,
+              }}>
+                <img
+                  src={`${db.baseUrl}/storage/v1/object/public/${photoNoteSheet.filePath}`}
+                  alt="Photo"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              </div>
+              <input
+                className="input"
+                value={photoNoteText}
+                onChange={e => setPhotoNoteText(e.target.value)}
+                placeholder="What's in this photo?"
+                autoFocus
+                style={{ fontSize: 16, marginBottom: 12, width: '100%' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={savePhotoNote}
+                  disabled={savingPhotoNote || !photoNoteText.trim()}
+                  style={{ flex: 1 }}
+                >
+                  {savingPhotoNote ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => { setPhotoNoteSheet(null); setPhotoNoteText(''); }}
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
