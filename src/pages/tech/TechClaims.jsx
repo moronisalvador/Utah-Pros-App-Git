@@ -128,7 +128,7 @@ export default function TechClaims() {
             return (
               <div
                 key={claim.id}
-                onClick={() => navigate(`/claims/${claim.id}`)}
+                onClick={() => navigate(`/tech/claims/${claim.id}`)}
                 style={{
                   padding: '14px var(--space-4)',
                   borderBottom: '1px solid var(--border-light)',
