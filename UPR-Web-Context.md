@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: March 27, 2026
+Last updated: March 28, 2026
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -443,7 +443,17 @@ get_dashboard_stats()           — Dashboard stat counts
 - **Dev mode:** bypasses auth by selecting employee directly (`import.meta.env.DEV` only)
 - **Recovery links:** hash with `type=recovery` → redirect `/set-password` before init
 - **field_tech routing:** `employee.role === 'field_tech'` → `/` redirects to `/tech` (TechLayout, bottom nav, no sidebar). `/tech/*` routes: Dash, Schedule, Tasks, Claims, Appointment detail. `/conversations` shared with all roles.
-- **Tech mobile polish (Mar 27 2026):** Press states, status-colored card borders, skeleton loading, haptic feedback on time tracker, frosted glass tab bar, active tab pill indicator, swipe-to-complete tasks, collapsible job groups, task badge dot, page slide-in animation, collapsing hero header, jump-to-today FAB, appointment type icons, 200ms debounced search, sticky section headers.
+- **Tech mobile polish (Mar 28 2026 — full UI/UX redesign):**
+  - **Design tokens:** Tech-specific CSS variables (48px min tap, 16px card radius, status palette, shadow system)
+  - **TechLayout:** 26px icons, 11px labels, active pill (44×30), frosted glass nav (0.92 opacity), 8px badge dot
+  - **TimeTracker:** Status-colored backgrounds (amber=en route, green=working, red=paused), 40px tabular-nums timer, 52px full-width action buttons, "On My Way" with arrow icon, two-click confirm finish
+  - **TechDash:** Greeting hero (28px name), standalone TimeTracker at top, active card with inline task progress bar, timeline-style future rows (time column + vertical line), quick actions row (Photo/Message/Schedule circles), shimmer skeleton loading
+  - **TechTasks:** SVG completion ring (52px donut), 40px pill tabs, mini progress bars per job group, 56px rows, 26px checkboxes, swipe-to-complete with "Done" text + haptic at 40px threshold, checkbox pop animation, completed tasks at 0.5 opacity
+  - **TechSchedule:** Division-colored left borders per row, time+duration left column, today header accent-colored, "You're all clear" empty state, jump-to-today FAB accent-colored with arrow icon, 72px min row height
+  - **TechClaims:** Encircle-style rows (16px bold name, accent-colored address, claim number + date header, division/job count/status pills), 48px search bar (16px font prevents iOS zoom, 12px radius), empty state with search query + clear button
+  - **TechAppointment:** Division gradient hero (water=blue, mold=pink, recon=amber, fire=red, contents=green), white text hierarchy, action bar (Navigate/Call/Message/Photo, 24px icons, 56px tall), 2-column photo grid (12px radius), pinch-to-zoom lightbox, relative timestamps on notes ("2h ago"), task progress bar
+  - **Transitions:** Fade-up (translateY 8px) for tab switches, slide-from-right for drill-down, button scale(0.97) press feedback, checkbox pop animation
+  - **Status colors:** Scheduled=blue, En Route=amber, Working=green, Paused=red, Completed=gray — visible from 3 feet away
 
 ---
 
