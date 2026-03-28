@@ -1,5 +1,5 @@
 # UPR Platform — Claude Code Project Context
-**Last updated:** March 27, 2026
+**Last updated:** March 28, 2026
 **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador
 **Repo:** moronisalvador/Utah-Pros-App-Git
@@ -24,6 +24,7 @@
 8. **DB queries: always use `db.rpc()` for new tables.** PostgREST schema cache may not reflect new tables — `SECURITY DEFINER` RPCs always work.
 9. **Check actual column names** via `information_schema.columns` before writing any query. Never assume column names.
 10. **Do not break existing pages.** Every page currently in the app is live and in use. If unsure, read the file first.
+11. **Always update `UPR-Web-Context.md` after any session that creates or modifies tables, RPCs, components, pages, or workers.** This applies whether or not a `*-TASK.md` file exists. The context doc is the permanent source of truth — if it's not documented there, the next session won't know it exists.
 
 ---
 
@@ -90,16 +91,23 @@ src/
   App.jsx                   — Routes: AdminRoute, FeatureRoute, DevRoute wrappers
   index.css                 — ALL styles — CSS custom properties, no external CSS
   contexts/
-    AuthContext.jsx          — Auth + featureFlags + isFeatureEnabled
+    AuthContext.jsx          — Auth + featureFlags + isFeatureEnabled + canAccess
   lib/
     supabase.js             — REST client (do not modify without good reason)
     realtime.js             — Supabase realtime + auth
   pages/
-    DevTools.jsx            — THE FILE YOU ARE WORKING ON (see DEVTOOLS-TASK.md)
+    DevTools.jsx            — Dev tools (Moroni-only, 7 tabs)
     Settings.jsx            — Good pattern reference for tabbed pages
     Admin.jsx               — Good pattern reference for tables + forms
+  pages/tech/
+    TechDash.jsx            — Field tech dashboard
+    TechSchedule.jsx        — Field tech 14-day schedule
+    TechTasks.jsx           — Field tech tasks (swipe-to-complete)
+    TechClaims.jsx          — Field tech claims (instant search)
+    TechAppointment.jsx     — Appointment detail (slide-in)
   components/
     Layout.jsx              — App shell — owns toasts, sidebar, bottom bar
+    TechLayout.jsx          — Field tech app shell — bottom nav, no sidebar
     Sidebar.jsx             — Nav — feature-flag aware, Moroni-only Dev Tools link
     ErrorBoundary.jsx       — Wraps every route
 
@@ -168,7 +176,10 @@ Purple: bg #faf5ff  text #7c3aed  border #ddd6fe
 ## Key Supabase Tables (confirmed columns)
 
 ### `feature_flags`
-`key TEXT PK, enabled BOOLEAN, dev_only_user_id UUID, category TEXT, label TEXT, description TEXT, updated_by UUID, updated_at TIMESTAMPTZ`
+`key TEXT PK, enabled BOOLEAN, force_disabled BOOLEAN, dev_only_user_id UUID, category TEXT, label TEXT, description TEXT, updated_by UUID, updated_at TIMESTAMPTZ`
+
+### `employee_page_access`
+`id UUID PK, employee_id UUID, nav_key TEXT, can_view BOOLEAN, updated_by UUID, updated_at TIMESTAMPTZ`
 
 ### `worker_runs`
 `id UUID PK, worker_name TEXT, status TEXT CHECK('started','completed','error'), records_processed INT, error_message TEXT, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ`
@@ -212,10 +223,14 @@ Purple: bg #faf5ff  text #7c3aed  border #ddd6fe
 
 ```
 get_feature_flags()
-upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by)
+upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by, p_force_disabled)
 delete_feature_flag(p_key)
+get_employee_page_access(p_employee_id)
+upsert_employee_page_access(p_employee_id, p_nav_key, p_can_view, p_updated_by)
+delete_employee_page_access(p_employee_id, p_nav_key)
 get_worker_runs(p_limit INT DEFAULT 10)
 bust_postgrest_cache()
+get_table_stats(p_table TEXT)
 get_all_employees()
 get_dashboard_stats()
 get_claim_jobs(p_claim_id)
@@ -224,6 +239,8 @@ get_customers_list(...)
 search_contacts_for_job(...)
 get_document_templates(...)
 get_sign_request_by_token(p_token)
+clock_appointment_action(p_appointment_id, p_employee_id, p_action)
+get_assigned_tasks(p_employee_id)
 ```
 
 ---
@@ -339,11 +356,10 @@ const handleDelete = async (item) => {
 - `src/lib/supabase.js` — stable, do not modify
 - `src/lib/realtime.js` — stable, do not modify
 - `src/contexts/AuthContext.jsx` — only modify if a new feature explicitly requires it
-- `src/components/Layout.jsx` — do not modify
+- `src/components/Layout.jsx` — do not modify unless explicitly instructed
 - `src/App.jsx` — only add routes, do not restructure
-- Any existing page other than `DevTools.jsx` unless explicitly instructed
+- Any existing page unless explicitly instructed
 - `main` branch — dev branch only
-- `functions/api/*.js` — only modify if Phase 3C worker logging is being added
 
 ---
 
@@ -353,19 +369,23 @@ Located in `functions/api/`. Each worker exports a `onRequest` handler.
 Worker-side Supabase client: `import { createClient } from '../lib/supabase.js'`
 CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 
-**Active workers:**
+**Active workers (10):**
 - `send-message.js` — outbound SMS
 - `twilio-webhook.js` — inbound SMS
 - `twilio-status.js` — delivery receipts
 - `process-scheduled.js` — cron, processes scheduled_messages
 - `sync-encircle.js` — pulls Encircle claims → jobs + contacts
 - `admin-users.js` — employee invite / auth management
-- `send-esign.js`, `submit-esign.js`, `resend-esign.js`, `track-open.js` — esign flow
+- `send-esign.js` — create sign request + send email via SendGrid
+- `submit-esign.js` — process signature, generate PDF, upload to storage
+- `resend-esign.js` — resend esign email for existing pending request
+- `track-open.js` — email open tracking pixel
 
 ---
 
 *For the current active task, see any `*-TASK.md` file in this repo root (if one exists).*
 *For UI patterns, components, and design tokens, see `UPR-Design-System.md`.*
+*For full database documentation (all 69 tables, 85+ RPCs), see `UPR-Web-Context.md`.*
 
 ---
 
@@ -376,7 +396,7 @@ When a `*-TASK.md` file exists in the repo root, it defines the active build tas
 1. **Read the task file first** before touching any code.
 2. **Follow the build order exactly** as specified in the task file.
 3. **On completion** of all phases in the task file:
-   - Update `UPR-Web-Context.md` with any new tables, RPCs, components, or status changes described in the task file’s completion checklist
+   - Update `UPR-Web-Context.md` with any new tables, RPCs, components, or status changes described in the task file's completion checklist
    - Delete the task file from the repo: `git rm <TASKFILE>.md`
    - Commit with message: `docs: update UPR-Web-Context.md, remove completed <TASKFILE>.md`
 4. **Never leave a completed task file in the repo** — it becomes stale and misleads future sessions.
