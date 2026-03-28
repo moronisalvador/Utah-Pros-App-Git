@@ -4070,6 +4070,12 @@ tr:hover td { background: var(--bg-secondary); }
   height: 26px;
 }
 
+.tech-nav-tab,
+.tech-nav-tab:hover,
+.tech-nav-tab:active,
+.tech-nav-tab:visited {
+  text-decoration: none;
+}
 .tech-nav-tab:active { opacity: 0.6; }
 
 /* Tech page shared */
