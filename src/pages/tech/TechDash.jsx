@@ -387,10 +387,12 @@ function DashSkeleton() {
 /* ── TechDash Page ── */
 
 export default function TechDash() {
-  const { employee, db } = useAuth();
+  const { employee, db, logout } = useAuth();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const logoutTimer = useRef(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -427,6 +429,23 @@ export default function TechDash() {
     if (!loading && appointments.length === 0) loadUpcoming();
   }, [loading, appointments.length, loadUpcoming]);
 
+  useEffect(() => {
+    return () => { if (logoutTimer.current) clearTimeout(logoutTimer.current); };
+  }, []);
+
+  const isAdmin = employee?.role === 'admin';
+
+  const handleLogoutTap = () => {
+    if (!confirmLogout) {
+      setConfirmLogout(true);
+      logoutTimer.current = setTimeout(() => setConfirmLogout(false), 3000);
+      return;
+    }
+    setConfirmLogout(false);
+    if (logoutTimer.current) clearTimeout(logoutTimer.current);
+    logout();
+  };
+
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = (employee.display_name || employee.full_name || '').split(' ')[0];
@@ -455,7 +474,44 @@ export default function TechDash() {
 
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div className="tech-dash-greeting-sticky">
+        <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
+          {/* Utility buttons */}
+          <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-4)', display: 'flex', gap: 8 }}>
+            {isAdmin && (
+              <button
+                onClick={() => navigate('/')}
+                style={{
+                  height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
+                  background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-light)', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  touchAction: 'manipulation',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Admin
+              </button>
+            )}
+            <button
+              onClick={handleLogoutTap}
+              onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
+              style={{
+                height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
+                background: confirmLogout ? '#fef2f2' : 'var(--bg-tertiary)',
+                color: confirmLogout ? '#dc2626' : 'var(--text-secondary)',
+                border: `1px solid ${confirmLogout ? '#fecaca' : 'var(--border-light)'}`,
+                cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                display: 'flex', alignItems: 'center', gap: 6,
+                touchAction: 'manipulation', transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              {confirmLogout ? 'Sign Out?' : 'Sign Out'}
+            </button>
+          </div>
           <div className="tech-dash-date">{dateStr}</div>
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">0 appointments today</div>
@@ -510,7 +566,44 @@ export default function TechDash() {
   return (
     <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
       {/* Greeting — fixed, never moves on pull-to-refresh */}
-      <div className="tech-dash-greeting-sticky">
+      <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
+        {/* Utility buttons */}
+        <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-4)', display: 'flex', gap: 8 }}>
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/')}
+              style={{
+                height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
+                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                border: '1px solid var(--border-light)', cursor: 'pointer',
+                fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                display: 'flex', alignItems: 'center', gap: 4,
+                touchAction: 'manipulation',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+              Admin
+            </button>
+          )}
+          <button
+            onClick={handleLogoutTap}
+            onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
+            style={{
+              height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
+              background: confirmLogout ? '#fef2f2' : 'var(--bg-tertiary)',
+              color: confirmLogout ? '#dc2626' : 'var(--text-secondary)',
+              border: `1px solid ${confirmLogout ? '#fecaca' : 'var(--border-light)'}`,
+              cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              touchAction: 'manipulation', transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            {confirmLogout ? 'Sign Out?' : 'Sign Out'}
+          </button>
+        </div>
         <div className="tech-dash-date">{dateStr}</div>
         <div className="tech-dash-name">Hey {firstName} 👋</div>
         <div className="tech-dash-summary">
