@@ -528,44 +528,47 @@ export default function TechAppointment() {
           </div>
         )}
 
-        {/* Photo note bottom sheet */}
+        {/* Photo note sheet — drops from top to avoid keyboard overlap */}
         {photoNoteSheet && (
           <div
             onClick={() => { setPhotoNoteSheet(null); setPhotoNoteText(''); }}
             style={{
               position: 'fixed', inset: 0, zIndex: 1000,
               background: 'rgba(0,0,0,0.4)',
-              display: 'flex', alignItems: 'flex-end',
             }}
           >
             <div
               onClick={e => e.stopPropagation()}
               style={{
-                width: '100%', background: 'var(--bg-primary)',
-                borderRadius: '16px 16px 0 0',
-                padding: '16px 16px calc(16px + env(safe-area-inset-bottom, 0px))',
-                animation: 'tech-slide-up 0.2s ease-out',
+                position: 'absolute', top: 0, left: 0, right: 0,
+                background: 'var(--bg-primary)',
+                borderRadius: '0 0 16px 16px',
+                padding: 'calc(env(safe-area-inset-top, 12px) + 8px) 16px 16px',
+                animation: 'tech-fade-in 0.15s ease-out',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
               }}
             >
-              <div style={{
-                width: '100%', height: 160, borderRadius: 12, overflow: 'hidden',
-                background: 'var(--bg-tertiary)', marginBottom: 12,
-              }}>
-                <img
-                  src={`${db.baseUrl}/storage/v1/object/public/${photoNoteSheet.filePath}`}
-                  alt="Photo"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={e => { e.target.style.display = 'none'; }}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 10, overflow: 'hidden',
+                  background: 'var(--bg-tertiary)', flexShrink: 0,
+                }}>
+                  <img
+                    src={`${db.baseUrl}/storage/v1/object/public/${photoNoteSheet.filePath}`}
+                    alt="Photo"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.target.style.display = 'none'; }}
+                  />
+                </div>
+                <input
+                  className="input"
+                  value={photoNoteText}
+                  onChange={e => setPhotoNoteText(e.target.value)}
+                  placeholder="What's in this photo?"
+                  autoFocus
+                  style={{ fontSize: 16, flex: 1 }}
                 />
               </div>
-              <input
-                className="input"
-                value={photoNoteText}
-                onChange={e => setPhotoNoteText(e.target.value)}
-                placeholder="What's in this photo?"
-                autoFocus
-                style={{ fontSize: 16, marginBottom: 12, width: '100%' }}
-              />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className="btn btn-primary"
