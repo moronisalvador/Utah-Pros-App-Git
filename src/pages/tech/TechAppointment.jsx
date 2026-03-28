@@ -432,28 +432,6 @@ export default function TechAppointment() {
               Add Photo
             </button>
           </div>
-          {/* Inline photo saved toast */}
-          {photoToast && (
-            <div style={{
-              marginBottom: 12, padding: '8px 12px',
-              background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              animation: 'tech-fade-in 0.15s ease-out',
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>Photo saved ✓</span>
-              <button
-                onClick={openPhotoNoteSheet}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600, color: 'var(--accent)',
-                  fontFamily: 'var(--font-sans)', padding: '2px 0',
-                }}
-              >
-                Add note
-              </button>
-            </div>
-          )}
-
           {photos.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No photos yet</div>
           ) : (
@@ -652,6 +630,35 @@ export default function TechAppointment() {
 
         <div style={{ height: 20 }} />
       </PullToRefresh>
+
+      {/* Fixed photo saved toast — above bottom nav */}
+      {photoToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',
+          left: 16, right: 16,
+          zIndex: 100,
+          padding: '10px 14px',
+          background: '#f0fdf4', border: '1px solid #bbf7d0',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          animation: 'tech-fade-in 0.15s ease-out',
+        }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>Photo saved ✓</span>
+          <button
+            onClick={openPhotoNoteSheet}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 14, fontWeight: 600, color: 'var(--accent)',
+              fontFamily: 'var(--font-sans)', padding: '4px 0',
+              touchAction: 'manipulation',
+            }}
+          >
+            Add note
+          </button>
+        </div>
+      )}
     </div>
   );
 }
