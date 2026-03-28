@@ -328,19 +328,19 @@ export default function TechDash() {
     };
 
     return (
-      <div className="tech-page">
-        <div className="tech-dash-greeting">
+      <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="tech-dash-greeting-sticky">
           <div className="tech-dash-date">{dateStr}</div>
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">0 appointments today</div>
         </div>
 
         {upcoming.length > 0 ? (
-          <div style={{ marginTop: 24 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--space-4)' }}>
             <div style={{
               fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
               textTransform: 'uppercase', letterSpacing: '0.06em',
-              marginBottom: 12, paddingLeft: 4,
+              marginBottom: 12, paddingLeft: 4, marginTop: 16,
             }}>
               Coming Up
             </div>
@@ -382,81 +382,76 @@ export default function TechDash() {
   }
 
   return (
-    <PullToRefresh onRefresh={load}>
-      <div className="tech-page">
-        {/* Sticky greeting header */}
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 10,
-          background: 'rgba(248, 249, 251, 0.9)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          padding: 'var(--space-3) var(--space-4)',
-          margin: '0 calc(-1 * var(--space-4)) var(--space-3)',
-          borderBottom: '1px solid var(--border-light)',
-        }}>
-          <div className="tech-dash-date">{dateStr}</div>
-          <div className="tech-dash-name">Hey {firstName} 👋</div>
-          <div className="tech-dash-summary">
-            {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
-          </div>
+    <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
+      {/* Greeting — fixed, never moves on pull-to-refresh */}
+      <div className="tech-dash-greeting-sticky">
+        <div className="tech-dash-date">{dateStr}</div>
+        <div className="tech-dash-name">Hey {firstName} 👋</div>
+        <div className="tech-dash-summary">
+          {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
         </div>
-
-        {/* Active appointment cards */}
-        {active.map(appt => (
-          <ActiveCard key={appt.id} appt={appt} employee={employee} db={db} onReload={load} />
-        ))}
-
-        {/* Future appointments — timeline style */}
-        {future.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              marginBottom: 8, paddingLeft: 4,
-            }}>
-              Upcoming
-            </div>
-            {future.map(appt => (
-              <FutureRow key={appt.id} appt={appt} />
-            ))}
-          </div>
-        )}
-
-        {/* Completed — compact */}
-        {completed.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              marginBottom: 8, paddingLeft: 4,
-            }}>
-              Completed
-            </div>
-            {completed.map(appt => {
-              const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
-              return (
-                <div
-                  key={appt.id}
-                  className="tech-appt-card"
-                  data-status="completed"
-                  onClick={() => {}}
-                  style={{ opacity: 0.65, padding: '12px 16px' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>{timeStr}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      {appt.title || 'Appointment'}
-                    </span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
-    </PullToRefresh>
+
+      {/* Only this part refreshes */}
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+        <div style={{ padding: 'var(--space-4)' }}>
+          {/* Active appointment cards */}
+          {active.map(appt => (
+            <ActiveCard key={appt.id} appt={appt} employee={employee} db={db} onReload={load} />
+          ))}
+
+          {/* Future appointments — timeline style */}
+          {future.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+                marginBottom: 8, paddingLeft: 4,
+              }}>
+                Upcoming
+              </div>
+              {future.map(appt => (
+                <FutureRow key={appt.id} appt={appt} />
+              ))}
+            </div>
+          )}
+
+          {/* Completed — compact */}
+          {completed.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{
+                fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+                marginBottom: 8, paddingLeft: 4,
+              }}>
+                Completed
+              </div>
+              {completed.map(appt => {
+                const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
+                return (
+                  <div
+                    key={appt.id}
+                    className="tech-appt-card"
+                    data-status="completed"
+                    onClick={() => {}}
+                    style={{ opacity: 0.65, padding: '12px 16px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        {appt.title || 'Appointment'}
+                      </span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </PullToRefresh>
+    </div>
   );
 }
