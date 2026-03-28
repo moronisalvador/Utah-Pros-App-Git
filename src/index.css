@@ -4625,3 +4625,20 @@ tr:hover td { background: var(--bg-secondary); }
   box-shadow: var(--shadow-md);
   touch-action: manipulation;
 }
+
+/* Schedule row division stripes */
+.tech-schedule-row[data-division="water"]          { border-left: 4px solid #3b82f6; }
+.tech-schedule-row[data-division="mold"]           { border-left: 4px solid #ec4899; }
+.tech-schedule-row[data-division="reconstruction"] { border-left: 4px solid #f59e0b; }
+.tech-schedule-row[data-division="fire"]           { border-left: 4px solid #ef4444; }
+.tech-schedule-row[data-division="contents"]       { border-left: 4px solid #10b981; }
+
+/* Task checkbox pop animation */
+@keyframes tech-check-pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.tech-check-pop {
+  animation: tech-check-pop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}

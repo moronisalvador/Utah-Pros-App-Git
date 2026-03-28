@@ -16,12 +16,12 @@ const STATUS_COLORS = {
   cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
 };
 
-const DIV_COLORS = {
-  water: { bg: '#dbeafe', color: '#1e40af' },
-  mold: { bg: '#fce7f3', color: '#9d174d' },
-  reconstruction: { bg: '#fef3c7', color: '#92400e' },
-  fire: { bg: '#fee2e2', color: '#b91c1c' },
-  contents: { bg: '#d1fae5', color: '#065f46' },
+const DIV_BORDER_COLORS = {
+  water: '#3b82f6',
+  mold: '#ec4899',
+  reconstruction: '#f59e0b',
+  fire: '#ef4444',
+  contents: '#10b981',
 };
 
 const TYPE_CONFIG = {
@@ -41,7 +41,6 @@ export default function TechSchedule() {
   const [loading, setLoading] = useState(true);
   const [showJumpBtn, setShowJumpBtn] = useState(false);
   const todayRef = useRef(null);
-  const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,7 +63,6 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Track scroll to show/hide jump-to-today FAB
   const handleScroll = useCallback(() => {
     if (!todayRef.current) return;
     const rect = todayRef.current.getBoundingClientRect();
@@ -104,6 +102,18 @@ export default function TechSchedule() {
     return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
   };
 
+  const formatDuration = (start, end) => {
+    if (!start || !end) return '';
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins <= 0) return '';
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const rm = mins % 60;
+    return rm ? `${h}h ${rm}m` : `${h}h`;
+  };
+
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }
@@ -117,104 +127,135 @@ export default function TechSchedule() {
         </div>
       </div>
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }} onScroll={handleScroll} ref={scrollRef}>
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }} onScroll={handleScroll}>
         {sortedDates.length === 0 ? (
           <div className="empty-state" style={{ marginTop: 60 }}>
             <div className="empty-state-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+                <polyline points="9 16 11 18 15 14" strokeWidth="2"/>
+              </svg>
             </div>
-            <div className="empty-state-text">No upcoming appointments</div>
+            <div className="empty-state-text">You're all clear for the next 2 weeks</div>
+            <div className="empty-state-sub" style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+              No upcoming appointments scheduled
+            </div>
           </div>
         ) : (
-          sortedDates.map(dateStr => (
-            <div key={dateStr} ref={dateStr === today ? todayRef : undefined}>
-              {/* Sticky date header */}
-              <div style={{
-                position: 'sticky', top: 0, zIndex: 5,
-                padding: '8px var(--space-4)',
-                background: 'var(--bg-secondary)',
-                borderBottom: '1px solid var(--border-light)',
-                fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)',
-                letterSpacing: '0.02em',
-              }}>
-                {formatDateHeader(dateStr)}
+          sortedDates.map(dateStr => {
+            const isToday = dateStr === today;
+            const isTomorrow = dateStr === tomorrow;
+
+            return (
+              <div key={dateStr} ref={isToday ? todayRef : undefined}>
+                {/* Date header */}
+                <div style={{
+                  position: 'sticky', top: 0, zIndex: 5,
+                  padding: '8px var(--space-4)',
+                  background: isToday ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-light)',
+                  fontSize: isToday ? 14 : 14,
+                  fontWeight: 700,
+                  color: isToday ? 'var(--accent)' : (isTomorrow ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                  letterSpacing: '0.02em',
+                }}>
+                  {formatDateHeader(dateStr)}
+                </div>
+
+                {grouped[dateStr].map(appt => {
+                  const job = appt.jobs;
+                  const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
+                  const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
+                  const tc = TYPE_CONFIG[appt.type] || TYPE_CONFIG.other;
+                  const divBorder = job?.division ? DIV_BORDER_COLORS[job.division] || 'var(--border-color)' : 'var(--border-color)';
+                  const duration = formatDuration(appt.time_start, appt.time_end);
+
+                  return (
+                    <div
+                      key={appt.id}
+                      className="tech-schedule-row"
+                      data-division={job?.division || ''}
+                      onClick={() => navigate(`/tech/appointment/${appt.id}`)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        padding: '14px var(--space-4)',
+                        borderBottom: '1px solid var(--border-light)',
+                        background: 'var(--bg-primary)',
+                        cursor: 'pointer',
+                        WebkitTapHighlightColor: 'transparent',
+                        borderLeft: `4px solid ${divBorder}`,
+                        minHeight: 72,
+                      }}
+                    >
+                      {/* Time column */}
+                      <div style={{ width: 70, flexShrink: 0, paddingRight: 12 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {formatTime(appt.time_start)}
+                        </div>
+                        {duration && (
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                            {duration}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Divider line */}
+                      <div style={{
+                        width: 2, alignSelf: 'stretch', flexShrink: 0, marginRight: 12,
+                        background: divBorder, borderRadius: 1, opacity: 0.4,
+                      }} />
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+                          {appt.title || 'Appointment'}
+                        </div>
+                        {address && (
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {address}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {appt.type && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 600, padding: '2px 8px',
+                              borderRadius: 'var(--radius-full)',
+                              background: tc.bg, color: tc.color,
+                            }}>
+                              {tc.icon} {tc.label}
+                            </span>
+                          )}
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, padding: '2px 8px',
+                            borderRadius: 'var(--radius-full)',
+                            background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
+                          }}>
+                            {(appt.status || 'scheduled').replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-
-              {grouped[dateStr].map(appt => {
-                const job = appt.jobs;
-                const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
-                const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
-                const dc = job?.division ? DIV_COLORS[job.division] : null;
-                const tc = TYPE_CONFIG[appt.type] || TYPE_CONFIG.other;
-
-                return (
-                  <div
-                    key={appt.id}
-                    onClick={() => navigate(`/tech/appointment/${appt.id}`)}
-                    style={{
-                      padding: '12px var(--space-4)',
-                      borderBottom: '1px solid var(--border-light)',
-                      background: 'var(--bg-primary)',
-                      cursor: 'pointer',
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      {/* Type icon pill */}
-                      {appt.type && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 600, padding: '1px 6px',
-                          borderRadius: 'var(--radius-full)',
-                          background: tc.bg, color: tc.color,
-                        }}>
-                          {tc.icon} {tc.label}
-                        </span>
-                      )}
-                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {formatTime(appt.time_start)}
-                        {appt.time_end ? ` \u2013 ${formatTime(appt.time_end)}` : ''}
-                      </span>
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: '1px 6px',
-                        borderRadius: 'var(--radius-full)',
-                        background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
-                      }}>
-                        {(appt.status || 'scheduled').replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
-                      {appt.title || 'Appointment'}
-                    </div>
-                    {address && (
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{address}</div>
-                    )}
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                      {dc && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 600, padding: '1px 6px',
-                          borderRadius: 'var(--radius-full)', background: dc.bg, color: dc.color,
-                        }}>
-                          {job.division}
-                        </span>
-                      )}
-                      {job?.job_number && (
-                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-                          {job.job_number}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))
+            );
+          })
         )}
       </PullToRefresh>
 
       {/* Jump-to-today FAB */}
       {showJumpBtn && (
         <button className="tech-jump-today-fab" onClick={scrollToToday}>
-          &uarr; Today
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginRight: 6 }}>
+            <line x1="12" y1="19" x2="12" y2="5" />
+            <polyline points="5 12 12 5 19 12" />
+          </svg>
+          Today
         </button>
       )}
     </div>
