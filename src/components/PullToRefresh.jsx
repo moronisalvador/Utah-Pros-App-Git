@@ -17,8 +17,8 @@ export default function PullToRefresh({ onRefresh, children, className, style })
     const el = containerRef.current;
     if (!el || refreshing) return;
 
-    // Only activate if scrolled to top
-    if (el.scrollTop > 0) return;
+    // Only activate if scrolled to top (5px tolerance for bounce)
+    if (el.scrollTop > 5) return;
 
     startY.current = e.touches[0].clientY;
     isPulling.current = true;
@@ -31,7 +31,7 @@ export default function PullToRefresh({ onRefresh, children, className, style })
     if (!el) return;
 
     // Double-check we're at top (user may have scrolled during the gesture)
-    if (el.scrollTop > 0) {
+    if (el.scrollTop > 5) {
       isPulling.current = false;
       setPulling(false);
       setPullDistance(0);
@@ -48,7 +48,7 @@ export default function PullToRefresh({ onRefresh, children, className, style })
       setPulling(true);
 
       // Prevent default scroll to avoid browser's native pull-to-refresh
-      if (diff > 10) {
+      if (diff > 20) {
         e.preventDefault();
       }
     } else {
@@ -105,6 +105,8 @@ export default function PullToRefresh({ onRefresh, children, className, style })
       style={{
         ...style,
         position: 'relative',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         overscrollBehavior: 'none',
       }}
       onTouchStart={handleTouchStart}
