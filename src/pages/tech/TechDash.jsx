@@ -201,6 +201,7 @@ function DashSkeleton() {
 export default function TechDash() {
   const { employee, db } = useAuth();
   const [appointments, setAppointments] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -214,7 +215,28 @@ export default function TechDash() {
     setLoading(false);
   }, [db, employee.id]);
 
+  // Fetch upcoming 7 days when today is empty
+  const loadUpcoming = useCallback(async () => {
+    try {
+      const tomorrow = new Date(Date.now() + 86400000);
+      const end = new Date(Date.now() + 7 * 86400000);
+      const result = await db.rpc('get_appointments_range', {
+        p_start_date: tomorrow.toISOString().split('T')[0],
+        p_end_date: end.toISOString().split('T')[0],
+      });
+      const mine = (result || []).filter(a =>
+        a.appointment_crew?.some(c => c.employee_id === employee.id)
+      );
+      setUpcoming(mine);
+    } catch { /* ignore */ }
+  }, [db, employee.id]);
+
   useEffect(() => { load(); }, [load]);
+
+  // Load upcoming when today has no appointments
+  useEffect(() => {
+    if (!loading && appointments.length === 0) loadUpcoming();
+  }, [loading, appointments.length, loadUpcoming]);
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -231,6 +253,20 @@ export default function TechDash() {
   const heroAppt = active[0] || (appointments.length > 0 ? appointments.find(a => a.status !== 'completed') : null);
 
   if (appointments.length === 0) {
+    // Group upcoming by date
+    const upcomingGrouped = {};
+    upcoming.forEach(a => {
+      const d = a.date;
+      if (!upcomingGrouped[d]) upcomingGrouped[d] = [];
+      upcomingGrouped[d].push(a);
+    });
+    const upcomingSorted = Object.keys(upcomingGrouped).sort();
+
+    const formatUpcomingDate = (ds) => {
+      const d = new Date(ds + 'T12:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    };
+
     return (
       <div className="tech-page">
         <div className="tech-dash-greeting">
@@ -238,23 +274,50 @@ export default function TechDash() {
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">0 appointments today</div>
         </div>
-        <div className="empty-state" style={{ marginTop: 40 }}>
-          <div className="empty-state-icon">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-              <polyline points="9 16 11 18 15 14" strokeWidth="2"/>
-            </svg>
+
+        {upcoming.length > 0 ? (
+          <div style={{ marginTop: 24 }}>
+            <div style={{
+              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              marginBottom: 12, paddingLeft: 4,
+            }}>
+              Coming Up
+            </div>
+            {upcomingSorted.map(ds => (
+              <div key={ds}>
+                <div style={{
+                  fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)',
+                  padding: '8px 4px 4px',
+                }}>
+                  {formatUpcomingDate(ds)}
+                </div>
+                {upcomingGrouped[ds].map(appt => (
+                  <FutureRow key={appt.id} appt={appt} />
+                ))}
+              </div>
+            ))}
           </div>
-          <div className="empty-state-text">No appointments today</div>
-          <div className="empty-state-sub">
-            <Link to="/tech/schedule" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
-              Check your upcoming schedule →
-            </Link>
+        ) : (
+          <div className="empty-state" style={{ marginTop: 40 }}>
+            <div className="empty-state-icon">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+                <polyline points="9 16 11 18 15 14" strokeWidth="2"/>
+              </svg>
+            </div>
+            <div className="empty-state-text">No appointments today</div>
+            <div className="empty-state-sub">
+              <Link to="/tech/schedule" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+                Check your upcoming schedule →
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
+
         <QuickActions />
       </div>
     );
