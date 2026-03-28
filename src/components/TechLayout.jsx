@@ -193,8 +193,30 @@ export default function TechLayout() {
     return location.pathname.startsWith(tab.path);
   };
 
+  const isAdmin = employee?.role === 'admin';
+
   return (
     <div className="tech-layout">
+      {isAdmin && (
+        <Link
+          to="/"
+          style={{
+            position: 'fixed', top: 12, right: 12, zIndex: 50,
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '5px 12px',
+            fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)',
+            background: 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            borderRadius: 'var(--radius-full)',
+            border: '1px solid var(--border-light)',
+            textDecoration: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+          Admin
+        </Link>
+      )}
       <div className="tech-content">
         <Outlet />
       </div>

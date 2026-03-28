@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   IconDashboard, IconConversations, IconJobs,
@@ -123,6 +123,25 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             <div className="sidebar-user-role">{employee?.role || ''}</div>
           </div>
         </div>
+        {employee?.role === 'admin' && (
+          <NavLink
+            to="/tech"
+            onClick={onNavClick}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', marginTop: 6,
+              fontSize: 12, color: 'var(--text-tertiary)',
+              textDecoration: 'none', fontFamily: 'var(--font-sans)',
+              borderRadius: 'var(--radius-md)',
+              transition: 'color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
+            Tech View
+          </NavLink>
+        )}
         <button
           onClick={logout}
           style={{
