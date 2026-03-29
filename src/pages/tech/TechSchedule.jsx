@@ -211,9 +211,22 @@ export default function TechSchedule() {
 
                       {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-                          {appt.title || 'Appointment'}
-                        </div>
+                        {job?.insured_name ? (
+                          <>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {job.insured_name}
+                            </div>
+                            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {appt.title || 'Appointment'}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+                            {appt.title || 'Appointment'}
+                          </div>
+                        )}
                         {address && (
                           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6,
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
