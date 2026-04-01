@@ -26,6 +26,7 @@ import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 import DevTools from '@/pages/DevTools';
+import WorkAuthSigning from '@/pages/WorkAuthSigning';
 
 // Tech pages (field_tech role)
 import TechLayout from '@/components/TechLayout';
@@ -90,6 +91,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/sign/:token" element={<SignPage />} />
           <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/work-auth" element={<WorkAuthSigning />} />
 
           {/* Tech layout — field_tech role, no sidebar */}
           <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
