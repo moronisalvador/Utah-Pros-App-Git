@@ -21,6 +21,7 @@ import Marketing from '@/pages/Marketing';
 import Admin from '@/pages/Admin';
 import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
+import WorkAuthDemo from '@/pages/WorkAuthDemo';
 
 // Admin-only route guard — belt-and-suspenders on top of Admin.jsx's own check
 function AdminRoute({ children }) {
@@ -50,6 +51,7 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<Login />} />
           <Route path="/sign/:token" element={<SignPage />} />
+          <Route path="/work-auth" element={<WorkAuthDemo />} />
 
           {/* Protected — all wrapped in Layout */}
           <Route
