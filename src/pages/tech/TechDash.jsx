@@ -657,6 +657,9 @@ export default function TechDash() {
             </div>
           </div>
         )}
+
+        {/* ── FAB: Create New (empty state) ── */}
+        <CreateFAB />
       </div>
     );
   }
