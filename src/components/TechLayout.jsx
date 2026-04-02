@@ -256,7 +256,7 @@ export default function TechLayout() {
                 </span>
                 <div style={{flex:1,minWidth:0}}>
                   {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
-                  <div style={{fontSize:13,color:'#334155',lineHeight:1.5}}>{toast.message}</div>
+                  <div style={{fontSize:13,color:'#334155',lineHeight:1.5,wordBreak:'break-word',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}}>{toast.message}</div>
                 </div>
                 <button onClick={()=>setToasts(prev=>prev.filter(t=>t.id!==toast.id))}
                   style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',padding:0,flexShrink:0,lineHeight:1}}>{'\u2715'}</button>

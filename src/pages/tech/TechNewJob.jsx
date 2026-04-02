@@ -153,7 +153,12 @@ export default function TechNewJob() {
         window.dispatchEvent(new CustomEvent('upr:contact-created'));
       }
     } catch (err) {
-      toast('Failed to create customer: ' + (err.message || ''), 'error');
+      const msg = err.message || '';
+      if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        toast('A customer with this phone number already exists', 'error');
+      } else {
+        toast('Failed to create customer. Please try again.', 'error');
+      }
     } finally {
       setInlineSaving(false);
     }

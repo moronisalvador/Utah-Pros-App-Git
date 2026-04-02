@@ -69,7 +69,12 @@ export default function TechNewCustomer() {
         toast('Failed to create customer', 'error');
       }
     } catch (err) {
-      toast('Failed: ' + (err.message || 'Unknown error'), 'error');
+      const msg = err.message || '';
+      if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        toast('A customer with this phone number already exists', 'error');
+      } else {
+        toast('Failed to save customer. Please try again.', 'error');
+      }
     } finally {
       setSaving(false);
     }
