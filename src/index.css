@@ -4007,6 +4007,7 @@ tr:hover td { background: var(--bg-secondary); }
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)));
 }
 
 .tech-nav {

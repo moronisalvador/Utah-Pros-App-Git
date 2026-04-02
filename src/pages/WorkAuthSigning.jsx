@@ -1,5 +1,71 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Check, ChevronDown, ChevronUp, AlertCircle, FileText, Shield, Droplets, Pen, X } from "lucide-react";
+
+/* ── Inline SVG icons (replacing lucide-react) ── */
+function Check({ size = 24, strokeWidth = 2, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+function ChevronDown({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+function ChevronUp({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="18 15 12 9 6 15" />
+    </svg>
+  );
+}
+function AlertCircle({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  );
+}
+function FileText({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+function Shield({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+function Droplets({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z" />
+      <path d="M12.56 14.1c1.93 0 3.5-1.6 3.5-3.57 0-1.02-.5-1.99-1.5-2.81S12.86 5.88 12.56 4.7c-.3 1.18-1 2.44-2 3.02s-1.5 1.79-1.5 2.81c0 1.96 1.57 3.57 3.5 3.57z" />
+      <path d="M17 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S17.29 6.75 17 5.3c-.29 1.45-1.14 2.84-2.29 3.76S13 11.1 13 12.25c0 2.22 1.8 4.05 4 4.05z" />
+    </svg>
+  );
+}
+function Pen({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  );
+}
+function IconX({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
 
 // ─── Sample data (your system replaces this from Supabase) ─────────
 const SAMPLE_CLAIM = {
@@ -116,7 +182,7 @@ function SignaturePad({ onSignatureChange }) {
           onClick={clearSignature}
           className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow-md border border-gray-200 text-gray-500 hover:text-red-500 transition-colors"
         >
-          <X size={14} />
+          <IconX size={14} />
         </button>
       )}
     </div>

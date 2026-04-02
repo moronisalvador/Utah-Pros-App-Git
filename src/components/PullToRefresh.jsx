@@ -15,7 +15,7 @@ function getScrollParent(el) {
   return document.documentElement;
 }
 
-export default function PullToRefresh({ onRefresh, children, className, style }) {
+export default function PullToRefresh({ onRefresh, onScroll, children, className, style }) {
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -25,12 +25,17 @@ export default function PullToRefresh({ onRefresh, children, className, style })
   const currentY = useRef(0);
   const isPulling = useRef(false);
 
-  // Cache the scroll parent on mount
+  // Cache the scroll parent on mount + attach onScroll
   useEffect(() => {
     if (containerRef.current) {
       scrollParentRef.current = getScrollParent(containerRef.current);
     }
-  }, []);
+    const sp = scrollParentRef.current;
+    if (onScroll && sp) {
+      sp.addEventListener('scroll', onScroll, { passive: true });
+      return () => sp.removeEventListener('scroll', onScroll);
+    }
+  }, [onScroll]);
 
   const getScrollTop = useCallback(() => {
     const sp = scrollParentRef.current;

@@ -119,6 +119,7 @@ export default function TechTasks() {
   const { employee, db } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const togglingRef = useRef(new Set());
   const [tab, setTab] = useState('today');
   const [collapsed, setCollapsed] = useState({});
 
@@ -136,6 +137,8 @@ export default function TechTasks() {
   useEffect(() => { load(); }, [load]);
 
   const toggleTask = async (task) => {
+    if (togglingRef.current.has(task.task_id)) return;
+    togglingRef.current.add(task.task_id);
     setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.task_id, p_employee_id: employee.id });
@@ -143,6 +146,8 @@ export default function TechTasks() {
     } catch (e) {
       toast('Failed to toggle task', 'error');
       setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
+    } finally {
+      togglingRef.current.delete(task.task_id);
     }
   };
 

@@ -2,37 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_BORDER_COLORS, TYPE_CONFIG } from './techConstants';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-
-const STATUS_COLORS = {
-  scheduled:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  confirmed:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  en_route:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  in_progress: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  paused:      { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  completed:   { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
-};
-
-const DIV_BORDER_COLORS = {
-  water: '#3b82f6',
-  mold: '#ec4899',
-  reconstruction: '#f59e0b',
-  fire: '#ef4444',
-  contents: '#10b981',
-};
-
-const TYPE_CONFIG = {
-  monitoring:       { label: 'Monitoring',   color: '#3b82f6', bg: '#eff6ff',  icon: '\u{1F4E1}' },
-  mitigation:       { label: 'Mitigation',   color: '#0ea5e9', bg: '#f0f9ff',  icon: '\u{1F4A7}' },
-  inspection:       { label: 'Inspection',   color: '#8b5cf6', bg: '#f5f3ff',  icon: '\u{1F50D}' },
-  reconstruction:   { label: 'Recon',        color: '#f59e0b', bg: '#fffbeb',  icon: '\u{1F528}' },
-  estimate:         { label: 'Estimate',     color: '#10b981', bg: '#ecfdf5',  icon: '\u{1F4CB}' },
-  mold_remediation: { label: 'Mold Remed.',  color: '#059669', bg: '#ecfdf5',  icon: '\u{1F33F}' },
-  other:            { label: 'Other',        color: '#6b7280', bg: '#f3f4f6',  icon: '\u{1F4CC}' },
-};
 
 export default function TechSchedule() {
   const { employee, db } = useAuth();

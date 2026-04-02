@@ -21,6 +21,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath }
   const [photoNoteText, setPhotoNoteText] = useState('');
   const [savingPhotoNote, setSavingPhotoNote] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const confirmTimer = useRef(null);
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
@@ -61,7 +62,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
     const file = e.target.files?.[0];
     if (!file || !job) return;
     e.target.value = '';
-    // Upload immediately in background
+    setUploading(true);
     try {
       const ts = Date.now();
       const path = `${job.id}/${ts}-${file.name}`;
@@ -80,6 +81,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
         p_uploaded_by: employee.id,
         p_appointment_id: appt.id,
       });
+      if (onReload) onReload();
       // Show inline toast with "Add note" option
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
@@ -87,6 +89,8 @@ function ActiveCard({ appt, employee, db, onReload }) {
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -192,16 +196,20 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
           {/* Photo */}
           <button
-            onClick={() => fileRef.current?.click()}
+            onClick={() => !uploading && fileRef.current?.click()}
+            disabled={uploading}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
-              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-              border: '1px solid var(--border-light)', cursor: 'pointer',
+              background: uploading ? 'var(--accent-light)' : 'var(--bg-tertiary)',
+              color: uploading ? 'var(--accent)' : 'var(--text-secondary)',
+              border: `1px solid ${uploading ? 'var(--accent)' : 'var(--border-light)'}`,
+              cursor: uploading ? 'wait' : 'pointer',
               fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+              opacity: uploading ? 0.8 : 1,
             }}
           >
-            📸 Photo
+            {uploading ? '⏳ Uploading...' : '📸 Photo'}
           </button>
 
           {/* Notes — navigates to appointment detail */}

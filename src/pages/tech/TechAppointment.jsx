@@ -3,35 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
+import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-
-const STATUS_COLORS = {
-  scheduled:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  confirmed:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  en_route:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  in_progress: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  paused:      { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  completed:   { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
-};
-
-const DIV_GRADIENTS = {
-  water:          'linear-gradient(135deg, #1e40af, #3b82f6)',
-  mold:           'linear-gradient(135deg, #831843, #ec4899)',
-  reconstruction: 'linear-gradient(135deg, #78350f, #f59e0b)',
-  fire:           'linear-gradient(135deg, #7f1d1d, #ef4444)',
-  contents:       'linear-gradient(135deg, #064e3b, #10b981)',
-};
-
-const DIV_PILL_COLORS = {
-  water: '#1e40af',
-  mold: '#831843',
-  reconstruction: '#78350f',
-  fire: '#7f1d1d',
-  contents: '#064e3b',
-};
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';
@@ -63,8 +38,10 @@ export default function TechAppointment() {
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath }
   const [photoNoteText, setPhotoNoteText] = useState('');
   const [savingPhotoNote, setSavingPhotoNote] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
+  const togglingRef = useRef(new Set());
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
@@ -93,12 +70,16 @@ export default function TechAppointment() {
   useEffect(() => { load(); }, [load]);
 
   const toggleTask = async (task) => {
+    if (togglingRef.current.has(task.id)) return;
+    togglingRef.current.add(task.id);
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.id, p_employee_id: employee.id });
     } catch (e) {
       toast('Failed to toggle task', 'error');
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
+    } finally {
+      togglingRef.current.delete(task.id);
     }
   };
 
@@ -112,7 +93,7 @@ export default function TechAppointment() {
     if (!file || !appt?.jobs) return;
     const job = appt.jobs;
     e.target.value = '';
-    // Upload immediately
+    setUploading(true);
     try {
       const ts = Date.now();
       const path = `${job.id}/${ts}-${file.name}`;
@@ -138,6 +119,8 @@ export default function TechAppointment() {
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -222,7 +205,8 @@ export default function TechAppointment() {
   const notes = docs.filter(d => d.category === 'note');
   const division = job?.division || 'water';
   const heroGradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
-  const divPillColor = DIV_PILL_COLORS[division] || '#1e40af';
+  const divPill = DIV_PILL_COLORS[division] || DIV_PILL_COLORS.water;
+  const divPillColor = divPill?.color || '#1e40af';
 
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
@@ -329,17 +313,20 @@ export default function TechAppointment() {
 
         {/* Photo */}
         <button
-          onClick={() => fileRef.current?.click()}
+          onClick={() => !uploading && fileRef.current?.click()}
+          disabled={uploading}
           style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: 4, background: 'none', border: 'none', cursor: 'pointer',
+            gap: 4, background: 'none', border: 'none',
+            cursor: uploading ? 'wait' : 'pointer',
             padding: '6px 0', minWidth: 64, minHeight: 56,
-            fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+            fontFamily: 'var(--font-sans)',
+            color: uploading ? 'var(--accent)' : 'var(--text-secondary)',
             touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
           }}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          <span style={{ fontSize: 10, fontWeight: 600 }}>Photo</span>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>{uploading ? 'Uploading...' : 'Photo'}</span>
         </button>
       </div>
 

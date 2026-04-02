@@ -174,6 +174,20 @@ export default function TechLayout() {
   const location = useLocation();
   const { employee, db } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
+  const [toasts, setToasts] = useState([]);
+
+  /* ── Global toast listener ── */
+  useEffect(() => {
+    const handler = (e) => {
+      const { message, type = 'success', title } = e.detail || {};
+      if (!message) return;
+      const id = Date.now() + Math.random();
+      setToasts(prev => [...prev, { id, message, type, title }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+    };
+    window.addEventListener('upr:toast', handler);
+    return () => window.removeEventListener('upr:toast', handler);
+  }, []);
 
   useEffect(() => {
     if (!employee?.id || !db) return;
@@ -186,7 +200,7 @@ export default function TechLayout() {
     load();
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
-  }, [db, employee]);
+  }, [db, employee?.id]);
 
   const isActive = (tab) => {
     if (tab.exact) return location.pathname === tab.path;
@@ -222,6 +236,36 @@ export default function TechLayout() {
           );
         })}
       </nav>
+
+      {/* ── Toast Notifications ── */}
+      {toasts.length > 0 && (
+        <div style={{position:'fixed',bottom:'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
+          {toasts.map(toast => (
+            <div key={toast.id}
+              style={{
+                background: toast.type==='error' ? '#fef2f2' : toast.type==='warning' ? '#fffbeb' : '#f0fdf4',
+                border: `1px solid ${toast.type==='error' ? '#fecaca' : toast.type==='warning' ? '#fde68a' : '#bbf7d0'}`,
+                borderLeft: `4px solid ${toast.type==='error' ? '#ef4444' : toast.type==='warning' ? '#f59e0b' : '#22c55e'}`,
+                borderRadius:12,padding:'14px 18px',boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
+                pointerEvents:'all',width:'100%',
+                animation:'slideUp 0.25s ease',
+              }}>
+              <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
+                <span style={{fontSize:20,flexShrink:0,lineHeight:1.2}}>
+                  {toast.type==='error' ? '\u274C' : toast.type==='warning' ? '\u26A0\uFE0F' : '\u2705'}
+                </span>
+                <div style={{flex:1,minWidth:0}}>
+                  {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
+                  <div style={{fontSize:13,color:'#334155',lineHeight:1.5}}>{toast.message}</div>
+                </div>
+                <button onClick={()=>setToasts(prev=>prev.filter(t=>t.id!==toast.id))}
+                  style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',padding:0,flexShrink:0,lineHeight:1}}>{'\u2715'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }

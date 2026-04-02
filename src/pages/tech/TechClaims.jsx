@@ -3,24 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { IconSearch } from '@/components/Icons';
+import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techConstants';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-
-const STATUS_COLORS = {
-  open:       { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  active:     { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  closed:     { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
-  pending:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-};
-
-const DIV_PILL_COLORS = {
-  water:          { bg: '#dbeafe', color: '#1e40af' },
-  mold:           { bg: '#fce7f3', color: '#9d174d' },
-  reconstruction: { bg: '#fef3c7', color: '#92400e' },
-  fire:           { bg: '#fee2e2', color: '#b91c1c' },
-  contents:       { bg: '#d1fae5', color: '#065f46' },
-};
 
 export default function TechClaims() {
   const { db } = useAuth();
