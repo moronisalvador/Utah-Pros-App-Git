@@ -4695,3 +4695,9 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-quick-action-btn:active {
   opacity: 0.6;
 }
+
+/* Tech FAB animation */
+@keyframes techFabIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}

@@ -9,6 +9,89 @@ const toast = (message, type = 'success') =>
 
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
+/* ── Create FAB ── */
+
+function CreateFAB() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)',
+            zIndex: 90, WebkitTapHighlightColor: 'transparent',
+          }}
+        />
+      )}
+
+      {/* FAB + menu */}
+      <div style={{
+        position: 'fixed',
+        bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)) + 16px)',
+        right: 16, zIndex: 91, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
+      }}>
+        {/* Option pills — shown when open */}
+        {open && (
+          <>
+            <button
+              onClick={() => { setOpen(false); navigate('/tech/new-job'); }}
+              style={{
+                height: 48, padding: '0 20px', borderRadius: 24,
+                background: 'var(--accent)', color: '#fff', border: 'none',
+                fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+                display: 'flex', alignItems: 'center', gap: 8,
+                WebkitTapHighlightColor: 'transparent',
+                animation: 'techFabIn 0.15s ease-out',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              New Job
+            </button>
+            <button
+              onClick={() => { setOpen(false); navigate('/tech/new-customer'); }}
+              style={{
+                height: 48, padding: '0 20px', borderRadius: 24,
+                background: '#16a34a', color: '#fff', border: 'none',
+                fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(22,163,74,0.35)',
+                display: 'flex', alignItems: 'center', gap: 8,
+                WebkitTapHighlightColor: 'transparent',
+                animation: 'techFabIn 0.1s ease-out',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              New Customer
+            </button>
+          </>
+        )}
+
+        {/* Main FAB button */}
+        <button
+          onClick={() => setOpen(prev => !prev)}
+          style={{
+            width: 56, height: 56, borderRadius: 28,
+            background: 'var(--accent)', color: '#fff', border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+            transition: 'transform 0.2s ease',
+            transform: open ? 'rotate(45deg)' : 'rotate(0deg)',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      </div>
+    </>
+  );
+}
+
 /* ── Active Appointment Card ── */
 
 function ActiveCard({ appt, employee, db, onReload }) {
@@ -686,6 +769,9 @@ export default function TechDash() {
           )}
         </div>
       </PullToRefresh>
+
+      {/* ── FAB: Create New ── */}
+      <CreateFAB />
     </div>
   );
 }
