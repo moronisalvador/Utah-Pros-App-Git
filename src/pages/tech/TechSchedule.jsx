@@ -398,21 +398,19 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-scroll list view to today on first load
+  // Auto-scroll list view to today (or nearest future date) on first load
   useEffect(() => {
-    if (!loading && view === 'list' && !didScrollToToday.current) {
+    if (!loading && view === 'list' && !didScrollToToday.current && sortedDatesWithAppts.length > 0) {
       didScrollToToday.current = true;
-      // Delay to ensure DOM refs are populated after render
       const timer = setTimeout(() => {
-        const target = dateRefs.current[todayStr] || (() => {
-          const futureDate = Object.keys(dateRefs.current).sort().find(d => d >= todayStr);
-          return futureDate ? dateRefs.current[futureDate] : null;
-        })();
-        if (target) target.scrollIntoView({ behavior: 'instant', block: 'start' });
-      }, 100);
+        // Find today, or the nearest future date with appointments
+        const targetDate = sortedDatesWithAppts.find(d => d >= todayStr) || sortedDatesWithAppts[sortedDatesWithAppts.length - 1];
+        const el = targetDate ? dateRefs.current[targetDate] : null;
+        if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' });
+      }, 150);
       return () => clearTimeout(timer);
     }
-  }, [loading, view, todayStr]);
+  }, [loading, view, todayStr, sortedDatesWithAppts]);
 
   // Dates that have appointments (for dot indicators)
   const apptDates = useMemo(() => {
