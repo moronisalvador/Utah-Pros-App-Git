@@ -6,15 +6,13 @@ import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_BORDER_COLORS, TYPE_CONFIG } f
 import { toast } from '@/lib/toast';
 import { fmtDate } from '@/lib/scheduleUtils';
 
-const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const STRIP_DAYS = 61; // ~1 month each side of today
+const STRIP_CENTER = 30; // index of today in the strip
+const DAY_WIDTH = 52; // px per day cell
 
 /* ── helpers ── */
-
-function getSunday(d) {
-  const date = new Date(d);
-  date.setDate(date.getDate() - date.getDay());
-  return date;
-}
 
 function addDays(d, n) {
   const r = new Date(d);
@@ -50,105 +48,231 @@ function formatDateHeader(dateStr, todayStr, tomorrowStr) {
   return `${weekday} ${month} ${day}`;
 }
 
-/* ── Week Strip ── */
+/* ── Continuous Date Strip ── */
 
-function WeekStrip({ anchor, selectedDay, onSelectDay, onNavigate, appointments, rows = 1 }) {
+function DateStrip({ selectedDay, onSelectDay, apptDates }) {
+  const scrollRef = useRef(null);
   const todayStr = fmtDate(new Date());
-  const touchRef = useRef(null);
+  const didCenter = useRef(false);
 
   const days = useMemo(() => {
+    const today = new Date();
     const result = [];
-    const totalDays = rows * 7;
-    for (let i = 0; i < totalDays; i++) {
-      const d = addDays(anchor, i);
-      const key = fmtDate(d);
-      result.push({ date: d, key, day: d.getDate(), dow: d.getDay() });
+    for (let i = -STRIP_CENTER; i < STRIP_DAYS - STRIP_CENTER; i++) {
+      const d = addDays(today, i);
+      result.push({ date: d, key: fmtDate(d), day: d.getDate(), dow: d.getDay(), month: d.getMonth() });
     }
     return result;
-  }, [anchor, rows]);
+  }, []);
 
-  // Dates with appointments (for dot indicators)
-  const datesWithAppts = useMemo(() => {
-    const set = new Set();
-    (appointments || []).forEach(a => { if (a.date) set.add(a.date); });
-    return set;
-  }, [appointments]);
-
-  const handleTouchStart = (e) => { touchRef.current = { x: e.touches[0].clientX, t: Date.now() }; };
-  const handleTouchEnd = (e) => {
-    if (!touchRef.current) return;
-    const dx = e.changedTouches[0].clientX - touchRef.current.x;
-    const dt = Date.now() - touchRef.current.t;
-    touchRef.current = null;
-    if (Math.abs(dx) > 50 && dt < 400) {
-      onNavigate(dx < 0 ? 1 : -1); // swipe left = next, right = prev
+  // Center on today on mount
+  useEffect(() => {
+    if (scrollRef.current && !didCenter.current) {
+      const scrollTo = STRIP_CENTER * DAY_WIDTH - (scrollRef.current.clientWidth / 2) + (DAY_WIDTH / 2);
+      scrollRef.current.scrollLeft = scrollTo;
+      didCenter.current = true;
     }
-  };
+  }, []);
 
-  // Month label for first day of each row that starts a new month
-  const monthBreak = days.length > 7 ? (() => {
-    const m1 = days[0].date.getMonth();
-    const idx = days.findIndex((d, i) => i > 0 && d.date.getMonth() !== m1);
-    return idx > 0 ? { idx, label: days[idx].date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() } : null;
-  })() : null;
+  // Scroll selected day into view when it changes
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    const idx = days.findIndex(d => d.key === selectedDay);
+    if (idx < 0) return;
+    const targetScroll = idx * DAY_WIDTH - (scrollRef.current.clientWidth / 2) + (DAY_WIDTH / 2);
+    scrollRef.current.scrollTo({ left: targetScroll, behavior: 'smooth' });
+  }, [selectedDay, days]);
 
   return (
     <div
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+      ref={scrollRef}
+      style={{
+        display: 'flex', overflowX: 'auto', overflowY: 'hidden',
+        scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+        padding: '4px 0 8px', msOverflowStyle: 'none',
+      }}
     >
-      {/* Day-of-week headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', padding: '0 8px' }}>
-        {DAYS.map((d, i) => (
-          <div key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 0' }}>{d}</div>
-        ))}
-      </div>
+      {/* Hide scrollbar */}
+      <style>{`.tech-date-strip::-webkit-scrollbar{display:none}`}</style>
+      <div className="tech-date-strip" style={{ display: 'flex' }}>
+        {days.map((d, i) => {
+          const isToday = d.key === todayStr;
+          const isSelected = d.key === selectedDay;
+          const hasAppt = apptDates.has(d.key);
+          const showMonth = i === 0 || d.day === 1;
 
-      {/* Date cells */}
-      {Array.from({ length: rows }, (_, row) => (
-        <div key={row} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', padding: '2px 8px' }}>
-          {days.slice(row * 7, (row + 1) * 7).map(d => {
+          return (
+            <button
+              key={d.key}
+              onClick={() => onSelectDay(d.key)}
+              style={{
+                width: DAY_WIDTH, flexShrink: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '4px 0', border: 'none', background: 'transparent',
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {/* Month label on first day of month */}
+              {showMonth && (
+                <div style={{
+                  fontSize: 9, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2,
+                  height: 12, lineHeight: '12px',
+                }}>
+                  {MONTHS[d.month].slice(0, 3)}
+                </div>
+              )}
+              {!showMonth && <div style={{ height: 12 }} />}
+
+              {/* Day of week */}
+              <div style={{
+                fontSize: 11, fontWeight: 500,
+                color: isSelected ? 'var(--accent)' : (isToday ? 'var(--accent)' : 'var(--text-tertiary)'),
+                marginBottom: 4,
+              }}>
+                {DOW[d.dow].charAt(0)}
+              </div>
+
+              {/* Date circle */}
+              <div style={{
+                width: 38, height: 38, borderRadius: 19,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 15, fontWeight: isToday || isSelected ? 700 : 500,
+                background: isSelected ? 'var(--accent)' : (isToday ? 'var(--accent-light)' : 'transparent'),
+                color: isSelected ? '#fff' : (isToday ? 'var(--accent)' : 'var(--text-primary)'),
+                border: isToday && !isSelected ? '2px solid var(--accent)' : '2px solid transparent',
+              }}>
+                {d.day}
+              </div>
+
+              {/* Dot indicator */}
+              <div style={{
+                width: 5, height: 5, borderRadius: 3, marginTop: 3,
+                background: hasAppt ? (isSelected ? 'var(--accent)' : 'var(--text-tertiary)') : 'transparent',
+              }} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Month Picker (full calendar overlay) ── */
+
+function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
+  const sel = new Date(selectedDay + 'T12:00:00');
+  const [viewMonth, setViewMonth] = useState(sel.getMonth());
+  const [viewYear, setViewYear] = useState(sel.getFullYear());
+  const todayStr = fmtDate(new Date());
+
+  const calDays = useMemo(() => {
+    const first = new Date(viewYear, viewMonth, 1);
+    const startDow = first.getDay();
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const result = [];
+    // Pad with empty cells
+    for (let i = 0; i < startDow; i++) result.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(viewYear, viewMonth, d);
+      result.push({ date, key: fmtDate(date), day: d });
+    }
+    return result;
+  }, [viewMonth, viewYear]);
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
+        zIndex: 100, WebkitTapHighlightColor: 'transparent',
+      }} />
+      <div style={{
+        position: 'fixed', left: 16, right: 16, top: '15%',
+        background: 'var(--bg-primary)', borderRadius: 'var(--tech-radius-card)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.18)', zIndex: 101, padding: 16,
+        animation: 'techFabIn 0.15s ease-out',
+      }}>
+        {/* Month/year nav */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <button onClick={prevMonth} style={{
+            width: 40, height: 40, borderRadius: 20, border: 'none',
+            background: 'var(--bg-tertiary)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
+            {MONTHS[viewMonth]} {viewYear}
+          </div>
+          <button onClick={nextMonth} style={{
+            width: 40, height: 40, borderRadius: 20, border: 'none',
+            background: 'var(--bg-tertiary)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2.5"><polyline points="9 6 15 12 9 18" /></svg>
+          </button>
+        </div>
+
+        {/* DOW headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', marginBottom: 4 }}>
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+            <div key={i} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 0' }}>{d}</div>
+          ))}
+        </div>
+
+        {/* Calendar grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+          {calDays.map((d, i) => {
+            if (!d) return <div key={`empty-${i}`} />;
             const isToday = d.key === todayStr;
             const isSelected = d.key === selectedDay;
-            const hasAppt = datesWithAppts.has(d.key);
-
+            const hasAppt = apptDates.has(d.key);
             return (
               <button
                 key={d.key}
-                onClick={() => onSelectDay(d.key)}
+                onClick={() => { onSelectDay(d.key); onClose(); }}
                 style={{
+                  width: '100%', aspectRatio: '1', border: 'none',
+                  borderRadius: 'var(--radius-full)', cursor: 'pointer',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  padding: '6px 0', border: 'none', background: 'transparent', cursor: 'pointer',
-                  WebkitTapHighlightColor: 'transparent', minHeight: 44,
+                  background: isSelected ? 'var(--accent)' : (isToday ? 'var(--accent-light)' : 'transparent'),
+                  color: isSelected ? '#fff' : (isToday ? 'var(--accent)' : 'var(--text-primary)'),
+                  fontSize: 14, fontWeight: isToday || isSelected ? 700 : 500,
+                  WebkitTapHighlightColor: 'transparent',
+                  position: 'relative',
                 }}
               >
-                <div style={{
-                  width: 36, height: 36, borderRadius: 18, lineHeight: '36px',
-                  fontSize: 15, fontWeight: isToday || isSelected ? 700 : 500,
-                  background: isSelected ? 'var(--accent)' : 'transparent',
-                  color: isSelected ? '#fff' : (isToday ? 'var(--accent)' : 'var(--text-primary)'),
-                  position: 'relative',
-                }}>
-                  {d.day}
-                  {/* Month label under date on month boundary */}
-                  {monthBreak && days.indexOf(d) === monthBreak.idx && (
-                    <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', fontSize: 9, fontWeight: 700, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-                      {monthBreak.label}
-                    </div>
-                  )}
-                </div>
-                {/* Dot indicator */}
-                <div style={{
-                  width: 4, height: 4, borderRadius: 2, marginTop: 2,
-                  background: hasAppt ? (isSelected ? '#fff' : 'var(--accent)') : 'transparent',
-                }} />
+                {d.day}
+                {hasAppt && (
+                  <div style={{
+                    position: 'absolute', bottom: 3, width: 4, height: 4, borderRadius: 2,
+                    background: isSelected ? '#fff' : 'var(--accent)',
+                  }} />
+                )}
               </button>
             );
           })}
         </div>
-      ))}
-    </div>
+
+        {/* Today shortcut */}
+        <button onClick={() => { onSelectDay(todayStr); onClose(); }} style={{
+          width: '100%', marginTop: 12, height: 44, borderRadius: 'var(--tech-radius-button)',
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          fontSize: 14, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer',
+        }}>
+          Go to Today
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -239,20 +363,20 @@ export default function TechSchedule() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list'); // 'list' | 'daily'
-  const [anchor, setAnchor] = useState(() => getSunday(new Date())); // Sunday of current week
   const [selectedDay, setSelectedDay] = useState(() => fmtDate(new Date()));
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const dateRefs = useRef({});
 
   const todayStr = fmtDate(new Date());
   const tomorrowStr = fmtDate(addDays(new Date(), 1));
 
-  // Date range for data loading
+  // Load a wide range around the selected day
   const dateRange = useMemo(() => {
-    const totalDays = view === 'list' ? 14 : 7;
-    const start = fmtDate(anchor);
-    const end = fmtDate(addDays(anchor, totalDays - 1));
+    const sel = new Date(selectedDay + 'T12:00:00');
+    const start = fmtDate(addDays(sel, -STRIP_CENTER));
+    const end = fmtDate(addDays(sel, STRIP_DAYS - STRIP_CENTER));
     return { start, end };
-  }, [anchor, view]);
+  }, [selectedDay]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -273,22 +397,12 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Navigate weeks
-  const navigateWeek = (dir) => {
-    setAnchor(prev => addDays(prev, dir * 7));
-  };
-
-  const goToday = () => {
-    setAnchor(getSunday(new Date()));
-    setSelectedDay(todayStr);
-  };
-
-  const handleSelectDay = (dayKey) => {
-    setSelectedDay(dayKey);
-    if (view === 'list' && dateRefs.current[dayKey]) {
-      dateRefs.current[dayKey].scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
+  // Dates that have appointments (for dot indicators)
+  const apptDates = useMemo(() => {
+    const set = new Set();
+    appointments.forEach(a => { if (a.date) set.add(a.date); });
+    return set;
+  }, [appointments]);
 
   // Group appointments by date
   const grouped = useMemo(() => {
@@ -300,50 +414,58 @@ export default function TechSchedule() {
     return g;
   }, [appointments]);
 
-  // For list view: all dates in range (show empty dates too for context)
-  const allDates = useMemo(() => {
-    const totalDays = view === 'list' ? 14 : 7;
-    const dates = [];
-    for (let i = 0; i < totalDays; i++) {
-      dates.push(fmtDate(addDays(anchor, i)));
-    }
-    return dates;
-  }, [anchor, view]);
+  // For list view: sorted dates that have appointments
+  const sortedDatesWithAppts = useMemo(() => {
+    return Object.keys(grouped).sort();
+  }, [grouped]);
 
-  // For daily view: only selected day's appointments
+  // For daily view: selected day's appointments
   const dailyAppts = useMemo(() => {
     return (grouped[selectedDay] || []).sort((a, b) => (a.time_start || '').localeCompare(b.time_start || ''));
   }, [grouped, selectedDay]);
 
-  // Check if anchor includes today
-  const anchorIncludesToday = todayStr >= fmtDate(anchor) && todayStr <= fmtDate(addDays(anchor, view === 'list' ? 13 : 6));
+  // Month/year label for header
+  const headerLabel = useMemo(() => {
+    const d = new Date(selectedDay + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [selectedDay]);
+
+  const handleSelectDay = (dayKey) => {
+    setSelectedDay(dayKey);
+    if (view === 'list' && dateRefs.current[dayKey]) {
+      dateRefs.current[dayKey].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   return (
     <div className="tech-page" style={{ padding: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
       <div style={{
-        padding: '12px 16px 0', background: 'var(--bg-primary)',
+        background: 'var(--bg-primary)',
         borderBottom: '1px solid var(--border-light)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-            Schedule
+        {/* Top row: title + controls */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 0' }}>
+          <div>
+            <div style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Schedule
+            </div>
+            {/* Tappable month/year label → opens month picker */}
+            <button
+              onClick={() => setShowMonthPicker(true)}
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontSize: 13, fontWeight: 600, color: 'var(--accent)',
+                display: 'flex', alignItems: 'center', gap: 4, marginTop: 2,
+              }}
+            >
+              {headerLabel}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Today button */}
-            {!anchorIncludesToday && (
-              <button
-                onClick={goToday}
-                style={{
-                  height: 32, padding: '0 12px', borderRadius: 'var(--tech-radius-button)',
-                  background: 'transparent', border: '1px solid var(--accent)',
-                  color: 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}
-              >
-                Today
-              </button>
-            )}
-
             {/* View toggle */}
             <div style={{
               display: 'flex', borderRadius: 'var(--radius-md)',
@@ -395,16 +517,23 @@ export default function TechSchedule() {
           </div>
         </div>
 
-        {/* Week strip */}
-        <WeekStrip
-          anchor={anchor}
+        {/* Continuous scrolling date strip */}
+        <DateStrip
           selectedDay={selectedDay}
           onSelectDay={handleSelectDay}
-          onNavigate={navigateWeek}
-          appointments={appointments}
-          rows={view === 'list' ? 2 : 1}
+          apptDates={apptDates}
         />
       </div>
+
+      {/* Month picker overlay */}
+      {showMonthPicker && (
+        <MonthPicker
+          selectedDay={selectedDay}
+          onSelectDay={handleSelectDay}
+          onClose={() => setShowMonthPicker(false)}
+          apptDates={apptDates}
+        />
+      )}
 
       {/* Content */}
       {loading ? (
@@ -412,7 +541,6 @@ export default function TechSchedule() {
       ) : view === 'daily' ? (
         /* ── Daily View ── */
         <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
-          {/* Selected day header */}
           <div style={{
             padding: '8px 16px', background: 'var(--accent-light)',
             borderBottom: '1px solid var(--border-light)',
@@ -423,12 +551,10 @@ export default function TechSchedule() {
 
           {dailyAppts.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center' }}>
-              <div style={{ fontSize: 40, marginBottom: 8, opacity: 0.3 }}>
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
-                  <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-              </div>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" style={{ opacity: 0.4, marginBottom: 8 }}>
+                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
               <div style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>No appointments this day</div>
             </div>
           ) : (
@@ -438,7 +564,7 @@ export default function TechSchedule() {
       ) : (
         /* ── List View ── */
         <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
-          {allDates.filter(d => grouped[d]?.length > 0).length === 0 ? (
+          {sortedDatesWithAppts.length === 0 ? (
             <div className="empty-state" style={{ marginTop: 60 }}>
               <div className="empty-state-icon">
                 <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
@@ -449,13 +575,12 @@ export default function TechSchedule() {
               </div>
               <div className="empty-state-text">No appointments in this range</div>
               <div className="empty-state-sub" style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                Swipe the calendar to navigate
+                Scroll the date strip or tap the month to navigate
               </div>
             </div>
           ) : (
-            allDates.map(dateStr => {
+            sortedDatesWithAppts.map(dateStr => {
               const appts = grouped[dateStr];
-              if (!appts || appts.length === 0) return null;
               const isToday = dateStr === todayStr;
               const isTomorrow = dateStr === tomorrowStr;
 
