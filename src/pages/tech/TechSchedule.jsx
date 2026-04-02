@@ -366,6 +366,7 @@ export default function TechSchedule() {
   const [selectedDay, setSelectedDay] = useState(() => fmtDate(new Date()));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const dateRefs = useRef({});
+  const didScrollToToday = useRef(false);
 
   const todayStr = fmtDate(new Date());
   const tomorrowStr = fmtDate(addDays(new Date(), 1));
@@ -397,6 +398,21 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-scroll list view to today on first load
+  useEffect(() => {
+    if (!loading && view === 'list' && !didScrollToToday.current) {
+      didScrollToToday.current = true;
+      // Find today or the nearest future date with appointments
+      const target = dateRefs.current[todayStr] || (() => {
+        const futureDate = Object.keys(dateRefs.current).sort().find(d => d >= todayStr);
+        return futureDate ? dateRefs.current[futureDate] : null;
+      })();
+      if (target) {
+        requestAnimationFrame(() => target.scrollIntoView({ behavior: 'instant', block: 'start' }));
+      }
+    }
+  }, [loading, view, todayStr]);
+
   // Dates that have appointments (for dot indicators)
   const apptDates = useMemo(() => {
     const set = new Set();
@@ -414,10 +430,10 @@ export default function TechSchedule() {
     return g;
   }, [appointments]);
 
-  // For list view: sorted dates with appointments, starting from today
+  // For list view: all sorted dates with appointments (past + future)
   const sortedDatesWithAppts = useMemo(() => {
-    return Object.keys(grouped).filter(d => d >= todayStr).sort();
-  }, [grouped, todayStr]);
+    return Object.keys(grouped).sort();
+  }, [grouped]);
 
   // For daily view: selected day's appointments
   const dailyAppts = useMemo(() => {
