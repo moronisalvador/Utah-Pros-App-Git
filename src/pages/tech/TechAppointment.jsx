@@ -91,6 +91,8 @@ export default function TechAppointment() {
   const handlePhotoCaptured = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !appt?.jobs) return;
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); e.target.value = ''; return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); e.target.value = ''; return; }
     const job = appt.jobs;
     e.target.value = '';
     setUploading(true);

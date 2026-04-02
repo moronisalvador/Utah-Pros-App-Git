@@ -144,6 +144,8 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const handlePhotoCaptured = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !job) return;
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); e.target.value = ''; return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); e.target.value = ''; return; }
     e.target.value = '';
     setUploading(true);
     try {
