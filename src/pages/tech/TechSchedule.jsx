@@ -610,32 +610,35 @@ export default function TechSchedule() {
               </div>
             </div>
           ) : (
-            sortedDatesWithAppts.map((dateStr, idx) => {
-              const appts = grouped[dateStr];
-              const isToday = dateStr === todayStr;
-              const isTomorrow = dateStr === tomorrowStr;
-              // Attach scroll ref to today or nearest future date
-              const isScrollTarget = dateStr >= todayStr && !sortedDatesWithAppts.slice(0, idx).some(d => d >= todayStr);
+            <>
+              {sortedDatesWithAppts.map((dateStr, idx) => {
+                const appts = grouped[dateStr];
+                const isToday = dateStr === todayStr;
+                const isTomorrow = dateStr === tomorrowStr;
+                const isScrollTarget = dateStr >= todayStr && !sortedDatesWithAppts.slice(0, idx).some(d => d >= todayStr);
 
-              return (
-                <div key={dateStr} ref={el => {
-                  dateRefs.current[dateStr] = el;
-                  if (isScrollTarget && el) todayScrollRef(el);
-                }}>
-                  <div style={{
-                    position: 'sticky', top: 0, zIndex: 5,
-                    padding: '8px var(--space-4)',
-                    background: isToday ? 'var(--accent-light)' : 'var(--bg-secondary)',
-                    borderBottom: '1px solid var(--border-light)',
-                    fontSize: 14, fontWeight: 700,
-                    color: isToday ? 'var(--accent)' : (isTomorrow ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                return (
+                  <div key={dateStr} ref={el => {
+                    dateRefs.current[dateStr] = el;
+                    if (isScrollTarget && el) todayScrollRef(el);
                   }}>
-                    {formatDateHeader(dateStr, todayStr, tomorrowStr)}
+                    <div style={{
+                      position: 'sticky', top: 0, zIndex: 5,
+                      padding: '8px var(--space-4)',
+                      background: isToday ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                      borderBottom: '1px solid var(--border-light)',
+                      fontSize: 14, fontWeight: 700,
+                      color: isToday ? 'var(--accent)' : (isTomorrow ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                    }}>
+                      {formatDateHeader(dateStr, todayStr, tomorrowStr)}
+                    </div>
+                    {appts.map(appt => <ApptRow key={appt.id} appt={appt} navigate={navigate} />)}
                   </div>
-                  {appts.map(appt => <ApptRow key={appt.id} appt={appt} navigate={navigate} />)}
-                </div>
-              );
-            })
+                );
+              })}
+              {/* Spacer so today can scroll to the top even when it's the last date */}
+              <div style={{ minHeight: '70vh' }} />
+            </>
           )}
         </PullToRefresh>
       )}
