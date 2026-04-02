@@ -455,10 +455,12 @@ export default function TechSchedule() {
 
   return (
     <div className="tech-page" style={{ padding: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
+      {/* Header — sticky, does not scroll with content */}
       <div style={{
         background: 'var(--bg-primary)',
         borderBottom: '1px solid var(--border-light)',
+        position: 'sticky', top: 0, zIndex: 10,
+        flexShrink: 0,
       }}>
         {/* Top row: title + controls */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 0' }}>
