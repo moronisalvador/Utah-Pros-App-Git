@@ -466,6 +466,21 @@ export default function TechSchedule() {
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Today button — visible when not on today */}
+            {selectedDay !== todayStr && (
+              <button
+                onClick={() => handleSelectDay(todayStr)}
+                style={{
+                  height: 32, padding: '0 12px', borderRadius: 'var(--tech-radius-button)',
+                  background: 'transparent', border: '1px solid var(--accent)',
+                  color: 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                Today
+              </button>
+            )}
+
             {/* View toggle */}
             <div style={{
               display: 'flex', borderRadius: 'var(--radius-md)',
