@@ -14,6 +14,14 @@ const DIVISIONS = [
   { value: 'contents', emoji: '\u{1F4E6}', label: 'Contents', color: '#059669' },
 ];
 
+const SOURCES = [
+  { value: 'insurance', label: 'Insurance' },
+  { value: 'retail', label: 'Retail / Cash' },
+  { value: 'hoa', label: 'HOA' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'tpa', label: 'TPA' },
+];
+
 function normalizePhone(raw) {
   let phone = raw.replace(/\D/g, '');
   if (phone.length === 10) phone = '1' + phone;
@@ -64,6 +72,7 @@ export default function TechNewJob() {
   const [saving, setSaving] = useState(false);
   const [f, sF] = useState({
     division: 'water',
+    source: '',
     address: '', city: '', state: 'UT', zip: '',
     insurance_company: '',
     claim_number: '',
@@ -159,11 +168,12 @@ export default function TechNewJob() {
   };
 
   /* ── Submit ── */
-  const canSubmit = contact && (f.address?.trim() || f.city?.trim()) && f.insurance_company;
+  const canSubmit = contact && (f.address?.trim() || f.city?.trim()) && f.insurance_company && f.source;
 
   const handleSubmit = async () => {
     if (!contact) { toast('Select or create a client first', 'error'); return; }
     if (!f.address?.trim() && !f.city?.trim()) { toast('Enter a loss/service address', 'error'); return; }
+    if (!f.source) { toast('Select a referral source', 'error'); return; }
     if (!f.insurance_company) { toast('Select an insurance carrier', 'error'); return; }
     if (saving) return;
     setSaving(true);
@@ -180,7 +190,7 @@ export default function TechNewJob() {
         p_billing_state: contact.billing_state || f.state || null,
         p_billing_zip: contact.billing_zip || f.zip || null,
         p_division: f.division,
-        p_source: 'insurance',
+        p_source: f.source,
         p_priority: 3,
         p_type_of_loss: f.type_of_loss || null,
         p_date_of_loss: null,
@@ -441,6 +451,29 @@ export default function TechNewJob() {
                   fontSize: 11, fontWeight: 600,
                   color: f.division === d.value ? d.color : 'var(--text-secondary)',
                 }}>{d.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ REFERRAL SOURCE ═══ */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={labelStyle}>Referral Source <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {SOURCES.map(src => (
+              <button
+                key={src.value}
+                onClick={() => s('source', src.value)}
+                style={{
+                  height: 44, padding: '0 16px', borderRadius: 'var(--tech-radius-button)',
+                  border: f.source === src.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
+                  background: f.source === src.value ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  fontSize: 14, fontWeight: 600,
+                  color: f.source === src.value ? 'var(--accent)' : 'var(--text-secondary)',
+                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                {src.label}
               </button>
             ))}
           </div>
