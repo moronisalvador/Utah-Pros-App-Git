@@ -398,20 +398,6 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-scroll list view to today (or nearest future date) on first load
-  useEffect(() => {
-    if (!loading && view === 'list' && !didScrollToToday.current && sortedDatesWithAppts.length > 0) {
-      didScrollToToday.current = true;
-      const timer = setTimeout(() => {
-        // Find today, or the nearest future date with appointments
-        const targetDate = sortedDatesWithAppts.find(d => d >= todayStr) || sortedDatesWithAppts[sortedDatesWithAppts.length - 1];
-        const el = targetDate ? dateRefs.current[targetDate] : null;
-        if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' });
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, view, todayStr, sortedDatesWithAppts]);
-
   // Dates that have appointments (for dot indicators)
   const apptDates = useMemo(() => {
     const set = new Set();
@@ -433,6 +419,21 @@ export default function TechSchedule() {
   const sortedDatesWithAppts = useMemo(() => {
     return Object.keys(grouped).sort();
   }, [grouped]);
+
+  // Callback ref for today's header — scrolls it into view when first mounted
+  const todayScrollRef = useCallback((el) => {
+    if (!el || didScrollToToday.current) return;
+    didScrollToToday.current = true;
+    // Delay enough for full list to render and scroll container to get final height
+    setTimeout(() => {
+      const container = document.querySelector('.tech-content');
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        container.scrollTop += elRect.top - containerRect.top;
+      }
+    }, 300);
+  }, []);
 
   // For daily view: selected day's appointments
   const dailyAppts = useMemo(() => {
@@ -609,13 +610,18 @@ export default function TechSchedule() {
               </div>
             </div>
           ) : (
-            sortedDatesWithAppts.map(dateStr => {
+            sortedDatesWithAppts.map((dateStr, idx) => {
               const appts = grouped[dateStr];
               const isToday = dateStr === todayStr;
               const isTomorrow = dateStr === tomorrowStr;
+              // Attach scroll ref to today or nearest future date
+              const isScrollTarget = dateStr >= todayStr && !sortedDatesWithAppts.slice(0, idx).some(d => d >= todayStr);
 
               return (
-                <div key={dateStr} ref={el => { dateRefs.current[dateStr] = el; }}>
+                <div key={dateStr} ref={el => {
+                  dateRefs.current[dateStr] = el;
+                  if (isScrollTarget && el) todayScrollRef(el);
+                }}>
                   <div style={{
                     position: 'sticky', top: 0, zIndex: 5,
                     padding: '8px var(--space-4)',
