@@ -1,9 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
+import { normalizePhone } from '@/lib/phone';
 
 const ROLES = [
   { value: 'homeowner', emoji: '\u{1F3E0}', label: 'Homeowner' },
@@ -12,17 +11,21 @@ const ROLES = [
   { value: 'other', emoji: '\u{1F464}', label: 'Other' },
 ];
 
-function normalizePhone(raw) {
-  let phone = raw.replace(/\D/g, '');
-  if (phone.length === 10) phone = '1' + phone;
-  if (!phone.startsWith('+')) phone = '+' + phone;
-  return phone;
-}
+const inputStyle = {
+  width: '100%', height: 48, padding: '0 14px',
+  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
+  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
+  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
+};
+
+const labelStyle = {
+  fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)',
+  textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6,
+};
 
 export default function TechNewCustomer() {
   const navigate = useNavigate();
   const { db } = useAuth();
-  const nameRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [role, setRole] = useState('homeowner');
   const [form, setForm] = useState({
@@ -110,7 +113,7 @@ export default function TechNewCustomer() {
 
         {/* Role pills */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>
             Contact Type
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -139,28 +142,22 @@ export default function TechNewCustomer() {
 
         {/* Name */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+          <label style={labelStyle}>
             Full Name <span style={{ color: '#ef4444' }}>*</span>
           </label>
           <input
-            ref={nameRef}
             type="text"
             value={form.name}
             onChange={e => set('name', e.target.value)}
             placeholder="John Smith"
             autoFocus
-            style={{
-              width: '100%', height: 48, padding: '0 14px',
-              fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-              border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-              color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-            }}
+            style={inputStyle}
           />
         </div>
 
         {/* Phone */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
+          <label style={labelStyle}>
             Phone <span style={{ color: '#ef4444' }}>*</span>
           </label>
           <input
@@ -168,51 +165,32 @@ export default function TechNewCustomer() {
             value={form.phone}
             onChange={e => set('phone', e.target.value)}
             placeholder="(801) 555-1234"
-            style={{
-              width: '100%', height: 48, padding: '0 14px',
-              fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-              border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-              color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-            }}
+            style={inputStyle}
           />
         </div>
 
         {/* Email */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
-            Email
-          </label>
+          <label style={labelStyle}>Email</label>
           <input
             type="email"
             value={form.email}
             onChange={e => set('email', e.target.value)}
             placeholder="john@email.com"
-            style={{
-              width: '100%', height: 48, padding: '0 14px',
-              fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-              border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-              color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-            }}
+            style={inputStyle}
           />
         </div>
 
         {/* Adjuster: Company */}
         {isAdjuster && (
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
-              Carrier / Company
-            </label>
+            <label style={labelStyle}>Carrier / Company</label>
             <input
               type="text"
               value={form.company}
               onChange={e => set('company', e.target.value)}
               placeholder="State Farm, Allstate, etc."
-              style={{
-                width: '100%', height: 48, padding: '0 14px',
-                fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-                border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-              }}
+              style={inputStyle}
             />
           </div>
         )}
@@ -220,7 +198,7 @@ export default function TechNewCustomer() {
         {/* Homeowner/Tenant: Address */}
         {isAddress && (
           <>
-            <div style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, marginTop: 4 }}>
+            <div style={{ ...labelStyle, marginBottom: 8, marginTop: 4 }}>
               Billing Address
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -229,12 +207,7 @@ export default function TechNewCustomer() {
                 value={form.billing_address}
                 onChange={e => set('billing_address', e.target.value)}
                 placeholder="Street address"
-                style={{
-                  width: '100%', height: 48, padding: '0 14px',
-                  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-                }}
+                style={inputStyle}
               />
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -243,36 +216,21 @@ export default function TechNewCustomer() {
                 value={form.billing_city}
                 onChange={e => set('billing_city', e.target.value)}
                 placeholder="City"
-                style={{
-                  flex: 2, height: 48, padding: '0 14px',
-                  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-                }}
+                style={{ ...inputStyle, flex: 2 }}
               />
               <input
                 type="text"
                 value={form.billing_state}
                 onChange={e => set('billing_state', e.target.value)}
                 placeholder="ST"
-                style={{
-                  flex: 0.6, height: 48, padding: '0 10px', textAlign: 'center',
-                  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-                }}
+                style={{ ...inputStyle, flex: 0.6, padding: '0 10px', textAlign: 'center' }}
               />
               <input
                 type="text"
                 value={form.billing_zip}
                 onChange={e => set('billing_zip', e.target.value)}
                 placeholder="ZIP"
-                style={{
-                  flex: 1, height: 48, padding: '0 10px',
-                  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-                }}
+                style={{ ...inputStyle, flex: 1, padding: '0 10px' }}
               />
             </div>
           </>
@@ -280,20 +238,15 @@ export default function TechNewCustomer() {
 
         {/* Notes */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>
-            Notes
-          </label>
+          <label style={labelStyle}>Notes</label>
           <textarea
             value={form.notes}
             onChange={e => set('notes', e.target.value)}
             placeholder="Optional notes..."
             rows={3}
             style={{
-              width: '100%', padding: '12px 14px',
-              fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-              border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-              color: 'var(--text-primary)', outline: 'none', resize: 'vertical',
-              boxSizing: 'border-box', fontFamily: 'inherit',
+              ...inputStyle, height: 'auto', padding: '12px 14px',
+              resize: 'vertical', fontFamily: 'inherit',
             }}
           />
         </div>

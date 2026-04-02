@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_BORDER_COLORS, TYPE_CONFIG } from './techConstants';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
 
 export default function TechSchedule() {
   const { employee, db } = useAuth();

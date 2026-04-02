@@ -4,9 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';

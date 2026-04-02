@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
 
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 

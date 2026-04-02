@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
+import { normalizePhone } from '@/lib/phone';
 
 const DIVISIONS = [
   { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
@@ -21,13 +20,6 @@ const SOURCES = [
   { value: 'commercial', label: 'Commercial' },
   { value: 'tpa', label: 'TPA' },
 ];
-
-function normalizePhone(raw) {
-  let phone = raw.replace(/\D/g, '');
-  if (phone.length === 10) phone = '1' + phone;
-  if (!phone.startsWith('+')) phone = '+' + phone;
-  return phone;
-}
 
 function fmtPhone(phone) {
   if (!phone) return '';
@@ -81,6 +73,9 @@ export default function TechNewJob() {
   });
   const s = (k, v) => sF(prev => ({ ...prev, [k]: v }));
   const isOop = f.insurance_company === OOP;
+
+  /* ── Cleanup search debounce timer on unmount ── */
+  useEffect(() => () => clearTimeout(searchTimer.current), []);
 
   /* ── Load carriers ── */
   useEffect(() => {

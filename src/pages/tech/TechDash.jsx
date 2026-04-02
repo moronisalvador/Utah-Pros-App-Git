@@ -3,9 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
 
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
@@ -21,9 +19,10 @@ function CreateFAB() {
       {open && (
         <div
           onClick={() => setOpen(false)}
+          onTouchMove={e => e.preventDefault()}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)',
-            zIndex: 90, WebkitTapHighlightColor: 'transparent',
+            zIndex: 90, WebkitTapHighlightColor: 'transparent', touchAction: 'none',
           }}
         />
       )}

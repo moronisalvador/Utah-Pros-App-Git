@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-
-const toast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { toast } from '@/lib/toast';
 
 export function fmtMs(ms) {
   const totalSec = Math.floor(ms / 1000);
