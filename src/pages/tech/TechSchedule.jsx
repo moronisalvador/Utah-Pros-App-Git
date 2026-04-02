@@ -402,14 +402,15 @@ export default function TechSchedule() {
   useEffect(() => {
     if (!loading && view === 'list' && !didScrollToToday.current) {
       didScrollToToday.current = true;
-      // Find today or the nearest future date with appointments
-      const target = dateRefs.current[todayStr] || (() => {
-        const futureDate = Object.keys(dateRefs.current).sort().find(d => d >= todayStr);
-        return futureDate ? dateRefs.current[futureDate] : null;
-      })();
-      if (target) {
-        requestAnimationFrame(() => target.scrollIntoView({ behavior: 'instant', block: 'start' }));
-      }
+      // Delay to ensure DOM refs are populated after render
+      const timer = setTimeout(() => {
+        const target = dateRefs.current[todayStr] || (() => {
+          const futureDate = Object.keys(dateRefs.current).sort().find(d => d >= todayStr);
+          return futureDate ? dateRefs.current[futureDate] : null;
+        })();
+        if (target) target.scrollIntoView({ behavior: 'instant', block: 'start' });
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [loading, view, todayStr]);
 
