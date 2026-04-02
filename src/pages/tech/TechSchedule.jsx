@@ -414,10 +414,10 @@ export default function TechSchedule() {
     return g;
   }, [appointments]);
 
-  // For list view: sorted dates that have appointments
+  // For list view: sorted dates with appointments, starting from today
   const sortedDatesWithAppts = useMemo(() => {
-    return Object.keys(grouped).sort();
-  }, [grouped]);
+    return Object.keys(grouped).filter(d => d >= todayStr).sort();
+  }, [grouped, todayStr]);
 
   // For daily view: selected day's appointments
   const dailyAppts = useMemo(() => {
