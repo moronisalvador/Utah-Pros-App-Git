@@ -3963,6 +3963,46 @@ tr:hover td { background: var(--bg-secondary); }
   .ar-pay-summary-item { padding: 8px 12px; }
 }
 
+/* ── Collections v2 — Overview, PaymentLogger, Dashboard ── */
+.co-expand-row td { padding: 12px 16px; background: var(--bg-secondary); }
+.co-job-card {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--radius-md); cursor: pointer;
+  border: 1px solid var(--border-light); background: var(--bg-primary);
+  transition: background 0.1s, border-color 0.1s;
+}
+.co-job-card:hover { background: var(--bg-tertiary); border-color: var(--border-color); }
+.co-totals-row td { font-weight: 700; background: var(--bg-secondary); border-top: 2px solid var(--border-color); }
+
+/* Payment Logger */
+.pl-layout { display: flex; gap: 24px; padding: 20px 24px; height: 100%; overflow: hidden; }
+.pl-form-panel { flex: 0 0 440px; overflow-y: auto; }
+.pl-recent-panel { flex: 1; overflow-y: auto; min-width: 0; }
+.pl-job-dropdown {
+  position: absolute; z-index: 50; left: 0; right: 0; top: 100%;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  max-height: 240px; overflow-y: auto;
+}
+.pl-job-option { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border-light); }
+.pl-job-option:hover { background: var(--bg-secondary); }
+.pl-job-option:last-child { border-bottom: none; }
+.pl-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+.pl-mobile-payments { display: none; }
+
+/* Dashboard grid */
+.cd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 24px; }
+
+@media (max-width: 768px) {
+  .pl-layout { flex-direction: column; padding: 16px; gap: 16px; overflow-y: auto; height: auto; }
+  .pl-form-panel { flex: none; width: 100%; }
+  .pl-recent-panel { flex: none; width: 100%; }
+  .pl-recent-panel .ar-desktop-table { display: none; }
+  .pl-mobile-payments { display: block; }
+  .cd-grid { grid-template-columns: 1fr; padding: 16px; gap: 12px; }
+  .cd-grid .ar-desktop-table { display: block; overflow-x: auto; }
+}
+
 /* ── TechLayout ── */
 .tech-layout {
   display: flex;
