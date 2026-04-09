@@ -130,7 +130,7 @@ export default function CustomerPage(){
       ))}</div>
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
-        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:cl,siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
+        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
         {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`)}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
@@ -376,7 +376,7 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
             </div><span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:99,background:ps.bg,color:ps.color,whiteSpace:'nowrap'}}>{ps.label}</span>
             <span style={{fontSize:11,color:'var(--brand-primary)',fontWeight:600}}>→</span></div>);
         })}
-        <button className="btn btn-ghost btn-sm" onClick={()=>{if(jobs[0])onAddRelated(jobs[0],cl,jobs);}} style={{width:'100%',justifyContent:'center',gap:4,marginTop:'var(--space-1)',color:'var(--brand-primary)',fontSize:12}}><IconPlus style={{width:12,height:12}}/> Add Related Job</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>onAddRelated(jobs[0]||null,cl,jobs)} style={{width:'100%',justifyContent:'center',gap:4,marginTop:'var(--space-1)',color:'var(--brand-primary)',fontSize:12}}><IconPlus style={{width:12,height:12}}/> Add Related Job</button>
       </div></div>);})}</div>);
 }
 
