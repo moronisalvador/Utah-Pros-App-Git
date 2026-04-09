@@ -27,6 +27,7 @@ import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 import DevTools from '@/pages/DevTools';
 import WorkAuthSigning from '@/pages/WorkAuthSigning';
+import EncircleImport from '@/pages/EncircleImport';
 
 // Tech pages (field_tech role)
 import TechLayout from '@/components/TechLayout';
@@ -151,6 +152,11 @@ export default function App() {
             <Route path="marketing" element={
               <FeatureRoute flag="page:marketing">
                 <ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="import/encircle" element={
+              <FeatureRoute flag="page:encircle_import">
+                <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
               </FeatureRoute>
             } />
 
