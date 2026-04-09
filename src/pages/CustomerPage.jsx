@@ -337,21 +337,26 @@ function AddrForm({form,setForm,saving,onSave,onCancel}){
 
 /* ═══ CLAIMS TAB ═══ */
 function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin}){
-  const[confirmDel,setConfirmDel]=useState(null);
+  const[menuOpen,setMenuOpen]=useState(null);
+  const[deleteTarget,setDeleteTarget]=useState(null); // claim object being deleted
+  const[deleteInput,setDeleteInput]=useState('');
   const[deleting,setDeleting]=useState(false);
-  const handleDeleteClaim=async(cl)=>{
-    if(confirmDel!==cl.id){setConfirmDel(cl.id);return;}
+  const handleSoftDelete=async()=>{
+    if(!deleteTarget)return;
     setDeleting(true);
     try{
-      await db.delete('claims',`id=eq.${cl.id}`);
-      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Claim ${cl.claim_number} deleted`,type:'success'}}));
+      await db.update('claims',`id=eq.${deleteTarget.id}`,{status:'deleted'});
+      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Claim ${deleteTarget.claim_number} archived`,type:'success'}}));
+      setDeleteTarget(null);setDeleteInput('');
       onReload();
     }catch(e){
       window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:'Failed to delete claim: '+e.message,type:'error'}}));
-    }finally{setDeleting(false);setConfirmDel(null);}
+    }finally{setDeleting(false);}
   };
-  if(!claims.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📋</div><div className="empty-state-text">No claims yet</div></div>);
-  return(<div style={{display:'flex',flexDirection:'column',gap:'var(--space-5)'}}>{claims.map(cl=>{const jobs=cl.jobs||[];return(
+  const visible=claims.filter(cl=>cl.status!=='deleted');
+  if(!visible.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📋</div><div className="empty-state-text">No claims yet</div></div>);
+  return(<div style={{display:'flex',flexDirection:'column',gap:'var(--space-5)'}}>
+    {visible.map(cl=>{const jobs=cl.jobs||[];return(
     <div key={cl.id} className="job-page-section" style={{padding:0,overflow:'hidden'}}>
       <div style={{padding:'var(--space-3) var(--space-4)',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-light)',display:'flex',alignItems:'center',gap:'var(--space-3)',flexWrap:'wrap'}}>
         <span style={{fontWeight:700,fontSize:13}}>{cl.claim_number}</span>
@@ -359,12 +364,16 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
         {cl.date_of_loss&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Loss: {fmtDate(cl.date_of_loss)}</span>}
         {cl.insurance_claim_number&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Ins#: {cl.insurance_claim_number}</span>}
         <span style={{marginLeft:'auto',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:99,background:cl.status==='open'?'#eff6ff':'#f1f3f5',color:cl.status==='open'?'#2563eb':'#6b7280'}}>{cl.status}</span>
-        {isAdmin&&jobs.length===0&&<button
-          onClick={()=>handleDeleteClaim(cl)}
-          onBlur={()=>setConfirmDel(null)}
-          disabled={deleting}
-          style={{fontSize:11,fontWeight:600,padding:'2px 10px',borderRadius:'var(--radius-full)',cursor:deleting?'wait':'pointer',border:`1px solid ${confirmDel===cl.id?'#fecaca':'var(--border-light)'}`,background:confirmDel===cl.id?'#fef2f2':'var(--bg-primary)',color:confirmDel===cl.id?'#dc2626':'var(--text-tertiary)'}}
-        >{confirmDel===cl.id?'Confirm Delete':'Delete'}</button>}
+        {isAdmin&&jobs.length===0&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setMenuOpen(null);}}>
+          <button onClick={()=>setMenuOpen(menuOpen===cl.id?null:cl.id)} style={{background:'none',border:'none',cursor:'pointer',padding:'2px 6px',color:'var(--text-tertiary)',fontSize:16,lineHeight:1}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </button>
+          {menuOpen===cl.id&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:140,overflow:'hidden'}}>
+            <button onClick={()=>{setMenuOpen(null);setDeleteTarget(cl);setDeleteInput('');}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'#dc2626',textAlign:'left'}}>
+              Delete Claim
+            </button>
+          </div>}
+        </div>}
       </div>
       {cl.loss_address&&<div style={{padding:'var(--space-2) var(--space-4)',fontSize:12,color:'var(--text-tertiary)',borderBottom:'1px solid var(--border-light)'}}>📍 {cl.loss_address}{cl.loss_city?`, ${cl.loss_city}`:''}</div>}
       <div style={{padding:'var(--space-3) var(--space-4)'}}>
@@ -377,7 +386,30 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
             <span style={{fontSize:11,color:'var(--brand-primary)',fontWeight:600}}>→</span></div>);
         })}
         <button className="btn btn-ghost btn-sm" onClick={()=>onAddRelated(jobs[0]||null,cl,jobs)} style={{width:'100%',justifyContent:'center',gap:4,marginTop:'var(--space-1)',color:'var(--brand-primary)',fontSize:12}}><IconPlus style={{width:12,height:12}}/> Add Related Job</button>
-      </div></div>);})}</div>);
+      </div></div>);})}
+    {/* Type-to-confirm delete modal */}
+    {deleteTarget&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',justifyContent:'center',alignItems:'center'}} onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>
+      <div style={{background:'var(--bg-primary)',borderRadius:'var(--radius-xl)',width:'90%',maxWidth:420,padding:'24px',boxShadow:'0 20px 60px rgba(0,0,0,0.2)',border:'1px solid var(--border-color)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:16,fontWeight:700,color:'#dc2626',marginBottom:12}}>Delete Claim</div>
+        <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:4}}>
+          This will archive <strong>{deleteTarget.claim_number}</strong>. It can be restored later but will be hidden from all views.
+        </div>
+        <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:16}}>
+          Type <strong style={{fontFamily:'var(--font-mono)',color:'var(--text-primary)'}}>{deleteTarget.claim_number}</strong> to confirm:
+        </div>
+        <input type="text" value={deleteInput} onChange={e=>setDeleteInput(e.target.value)} autoFocus placeholder={deleteTarget.claim_number}
+          style={{width:'100%',padding:'10px 12px',fontSize:14,border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',background:'var(--bg-primary)',color:'var(--text-primary)',outline:'none',boxSizing:'border-box',fontFamily:'var(--font-mono)',marginBottom:16}}/>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+          <button className="btn btn-secondary btn-sm" onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>Cancel</button>
+          <button onClick={handleSoftDelete} disabled={deleteInput!==deleteTarget.claim_number||deleting}
+            style={{padding:'8px 20px',fontSize:13,fontWeight:600,borderRadius:'var(--radius-md)',border:'none',cursor:deleteInput===deleteTarget.claim_number&&!deleting?'pointer':'not-allowed',
+              background:deleteInput===deleteTarget.claim_number?'#dc2626':'var(--bg-tertiary)',color:deleteInput===deleteTarget.claim_number?'#fff':'var(--text-tertiary)',opacity:deleting?0.6:1}}>
+            {deleting?'Deleting...':'Delete Claim'}
+          </button>
+        </div>
+      </div>
+    </div>}
+  </div>);
 }
 
 /* ═══ FINANCIAL TAB ═══ */
