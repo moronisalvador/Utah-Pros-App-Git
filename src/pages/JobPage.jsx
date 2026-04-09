@@ -154,7 +154,7 @@ export default function JobPage(){
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
-        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser}/>}
+        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser} db={db}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
@@ -390,7 +390,7 @@ function FlagToggle({label,value,onClick}){
 /* ===========================================
    FINANCIAL TAB
    =========================================== */
-function FinancialTab({job,fmt,saveBatch,employee}){
+function FinancialTab({job,fmt,saveBatch,employee,db}){
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
   const deductible=Number(job.deductible||0);const deprecHeld=Number(job.depreciation_held||0);
@@ -404,7 +404,7 @@ function FinancialTab({job,fmt,saveBatch,employee}){
   return(
     <div className="job-page-financial">
       <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit}/>
-      <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit}/>
+      <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
         <div className="job-page-section-title">Profitability</div>
@@ -428,13 +428,63 @@ function RevenueTile({job,fmt,saveBatch,canEdit}){
     {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced Date" value={f.invoiced_date} onChange={v=>sF(p=>({...p,invoiced_date:v}))} type="date"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/>{job.invoiced_date&&<FR label="Invoiced Date" value={fmtD(job.invoiced_date)}/>}<FR label="Collected" value={fmt(job.collected_value)}/></>)}
   </div>);}
 
-function InsFinTile({job,fmt,saveBatch,canEdit}){
+function InsFinTile({job,fmt,saveBatch,canEdit,db}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||'',supplement_value:job.supplement_value||''});setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null,supplement_value:parseFloat(f.supplement_value)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
+  const[supplements,setSupplements]=useState([]);const[loadingSupp,setLoadingSupp]=useState(true);
+  const[newAmt,setNewAmt]=useState('');const[newDesc,setNewDesc]=useState('');const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
+  const[addingSupp,setAddingSupp]=useState(false);const[confirmDelSupp,setConfirmDelSupp]=useState(null);
+
+  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){}finally{setLoadingSupp(false);};},[db,job.id]);
+  useEffect(()=>{loadSupplements();},[loadSupplements]);
+
+  const suppTotal=supplements.reduce((s,r)=>s+Number(r.amount||0),0);
+  const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
+
+  const syncSuppTotal=async(newSupps)=>{const total=newSupps.reduce((s,r)=>s+Number(r.amount||0),0);try{await saveBatch({supplement_value:total||null});}catch(e){}};
+
+  const addSupplement=async()=>{const amt=parseFloat(newAmt);if(!amt||amt<=0){errToast('Amount must be greater than 0');return;}
+    setAddingSupp(true);try{const ins=await db.insert('job_supplements',{job_id:job.id,amount:amt,description:newDesc.trim()||null,supplement_date:newDate||null});
+    const updated=ins?.length>0?[...supplements,ins[0]]:await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);
+    setSupplements(updated);setNewAmt('');setNewDesc('');setNewDate(new Date().toISOString().slice(0,10));
+    await syncSuppTotal(updated);toast('Supplement added');}catch(e){errToast('Failed to add supplement: '+(e.message||e));}finally{setAddingSupp(false);}};
+
+  const deleteSupplement=async(id)=>{if(confirmDelSupp!==id){setConfirmDelSupp(id);return;}setConfirmDelSupp(null);
+    try{await db.delete('job_supplements',`id=eq.${id}`);const updated=supplements.filter(s=>s.id!==id);setSupplements(updated);
+    await syncSuppTotal(updated);toast('Supplement deleted');}catch(e){errToast('Failed to delete supplement');}};
+
+  const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||''});setEd(true);};
+  const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
+
   return(<div className="job-page-section">
     {canEdit?<TileHeader title="Insurance Financials" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Insurance Financials</div>}
-    {ed?(<><EF label="Deductible" value={f.deductible} onChange={v=>sF(p=>({...p,deductible:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Held" value={f.depreciation_held} onChange={v=>sF(p=>({...p,depreciation_held:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Released" value={f.depreciation_released} onChange={v=>sF(p=>({...p,depreciation_released:v}))} type="number" placeholder="0.00"/><EF label="Supplement" value={f.supplement_value} onChange={v=>sF(p=>({...p,supplement_value:v}))} type="number" placeholder="0.00"/></>):(<><FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/></>)}
+    {ed?(<><EF label="Deductible" value={f.deductible} onChange={v=>sF(p=>({...p,deductible:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Held" value={f.depreciation_held} onChange={v=>sF(p=>({...p,depreciation_held:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Released" value={f.depreciation_released} onChange={v=>sF(p=>({...p,depreciation_released:v}))} type="number" placeholder="0.00"/></>):(<><FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/></>)}
+
+    {/* Supplements section */}
+    <div className="job-page-fin-divider"/>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'var(--space-2) 0'}}>
+      <span style={{fontSize:'var(--text-xs)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.03em',color:'var(--text-tertiary)'}}>Supplements</span>
+      {supplements.length>0&&<span style={{fontSize:'var(--text-sm)',fontWeight:700,color:'var(--text-primary)'}}>{fmt(suppTotal)}</span>}
+    </div>
+
+    {loadingSupp?<div style={{fontSize:'var(--text-xs)',color:'var(--text-tertiary)',padding:'var(--space-2) 0'}}>Loading...</div>:supplements.length===0&&!canEdit?<div style={{fontSize:'var(--text-xs)',color:'var(--text-tertiary)',padding:'var(--space-2) 0'}}>No supplements</div>:null}
+
+    {supplements.map(s=>(
+      <div key={s.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid var(--border-light)'}}>
+        <span style={{fontSize:12,color:'var(--text-tertiary)',whiteSpace:'nowrap',minWidth:70}}>{fmtD(s.supplement_date)}</span>
+        <span style={{fontSize:13,fontWeight:600,fontVariantNumeric:'tabular-nums',minWidth:80}}>{fmt(s.amount)}</span>
+        <span style={{fontSize:12,color:'var(--text-secondary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.description||'—'}</span>
+        {canEdit&&<button className="btn btn-sm btn-ghost" style={{fontSize:11,height:22,padding:'0 6px',color:confirmDelSupp===s.id?'#dc2626':'var(--text-tertiary)',background:confirmDelSupp===s.id?'#fef2f2':'transparent',flexShrink:0}} onClick={()=>deleteSupplement(s.id)} onBlur={()=>setConfirmDelSupp(null)}>{confirmDelSupp===s.id?'Confirm':'Delete'}</button>}
+      </div>
+    ))}
+
+    {canEdit&&(
+      <div style={{display:'flex',gap:6,alignItems:'flex-end',padding:'8px 0',flexWrap:'wrap'}}>
+        <div style={{flex:'0 0 100px'}}><span style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:2}}>Amount</span><input className="input" type="number" step="0.01" min="0.01" placeholder="0.00" value={newAmt} onChange={e=>setNewAmt(e.target.value)} style={{height:32,fontSize:13}}/></div>
+        <div style={{flex:'1 1 120px'}}><span style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:2}}>Description</span><input className="input" placeholder="1st Supplement..." value={newDesc} onChange={e=>setNewDesc(e.target.value)} style={{height:32,fontSize:13}}/></div>
+        <div style={{flex:'0 0 120px'}}><span style={{fontSize:11,color:'var(--text-tertiary)',display:'block',marginBottom:2}}>Date</span><input className="input" type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={{height:32,fontSize:13}}/></div>
+        <button className="btn btn-primary btn-sm" onClick={addSupplement} disabled={addingSupp||!newAmt} style={{height:32,flexShrink:0}}>{addingSupp?'Adding...':'Add'}</button>
+      </div>
+    )}
   </div>);}
 
 function CostsTile({job,fmt,totalCost}){
