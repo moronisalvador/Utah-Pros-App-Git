@@ -187,7 +187,7 @@ function EmployeesTab() {
 
       // Send recovery email via Supabase (this IS the welcome email)
       const { error: resetErr } = await realtimeClient.auth.resetPasswordForEmail(emp.email, {
-        redirectTo: window.location.origin + '/set-password',
+        redirectTo: 'https://utahpros.app/set-password',
       });
       if (resetErr) throw resetErr;
 
@@ -515,7 +515,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         if (sendInvite) {
           const { error: resetErr } = await realtimeClient.auth.resetPasswordForEmail(
             form.email.trim(),
-            { redirectTo: window.location.origin + '/set-password' }
+            { redirectTo: 'https://utahpros.app/set-password' }
           );
           if (resetErr) throw resetErr;
         }
