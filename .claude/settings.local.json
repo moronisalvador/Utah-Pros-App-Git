@@ -11,7 +11,8 @@
       "mcp__1cd66b34-6710-49cb-a016-0397ffdc1896__apply_migration",
       "Bash(git checkout:*)",
       "Bash(git merge:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "mcp__1cd66b34-6710-49cb-a016-0397ffdc1896__execute_sql"
     ]
   }
 }
