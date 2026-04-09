@@ -12,7 +12,8 @@
       "Bash(git checkout:*)",
       "Bash(git merge:*)",
       "Bash(git stash:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "mcp__1cd66b34-6710-49cb-a016-0397ffdc1896__execute_sql"
     ]
   }
 }
