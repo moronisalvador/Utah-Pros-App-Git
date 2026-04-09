@@ -3982,6 +3982,11 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .ar-v2-card-area.has-panel { flex: 1; }
 
+/* Clickable KPI cards */
+.ar-kpi-clickable { cursor: pointer; transition: background 120ms ease, box-shadow 120ms ease; }
+.ar-kpi-clickable:hover { background: var(--bg-secondary); }
+.ar-kpi-clickable.ar-kpi-active { box-shadow: inset 0 -3px 0 var(--accent); }
+
 /* Hide last 2 KPI cards on mobile */
 .ar-kpi-desktop-only { display: flex; }
 

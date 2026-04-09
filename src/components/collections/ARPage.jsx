@@ -133,7 +133,7 @@ export default function ARPage({ db, navigate }) {
         <h1 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, margin: 0 }}>Collections</h1>
       </div>
 
-      <ARKpiStrip kpis={kpis} />
+      <ARKpiStrip kpis={kpis} onFilter={setFilterMode} activeFilter={filterMode} />
 
       <ARFilterBar
         search={search}
