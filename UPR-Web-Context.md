@@ -108,6 +108,7 @@ src/
     ProtectedRoute.jsx            — Auth guard wrapper
     PullToRefresh.jsx             — Mobile pull-to-refresh
     ScheduleWizard.jsx            — Generate schedule from template
+    MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
     SendEsignModal.jsx            — Send/collect esign request modal
     Sidebar.jsx                   — Sidebar navigation
 
@@ -362,6 +363,13 @@ get_orphan_contacts()           — Contacts with no contact_jobs links
 get_orphan_conversations()      — Conversations with no participants
 get_orphan_claims()             — Claims with no linked jobs
 get_duplicate_contacts()        — Contacts sharing same normalized phone (groups)
+```
+
+### Record Merge (complete)
+```
+merge_contacts(p_keep_id, p_merge_id)  — Atomic merge: fills blanks, re-points 14 FK tables, deletes loser. Logs contact.merged event.
+merge_claims(p_keep_id, p_merge_id)    — Atomic merge: fills blanks, re-points jobs, deletes loser. Logs claim.merged event.
+merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums financials, re-points 28 FK tables, deletes loser. Blocks if both have payments. Logs job.merged event.
 ```
 
 ### Messaging Tools (Phase 5 — complete)
