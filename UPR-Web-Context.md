@@ -72,6 +72,7 @@ src/
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking)
     Marketing.jsx                 — Marketing tools (feature-flagged: page:marketing)
+    EncircleImport.jsx            — Selective Encircle claim import with division selection (feature-flagged: page:encircle_import, route: /import/encircle)
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
@@ -118,7 +119,8 @@ functions/
     send-esign.js                 — Create sign request + send email via SendGrid
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
     submit-esign.js               — Process signature, generate PDF, upload to storage
-    sync-encircle.js              — Pull Encircle claims → jobs + contacts
+    encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
+    sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
     twilio-webhook.js             — Inbound SMS handler
@@ -384,7 +386,7 @@ get_dashboard_stats()           — Dashboard stat counts
 
 ## Feature Flags System (Phase 1A complete, 1B wired in AuthContext)
 
-**Table:** `feature_flags` — 8 rows, all `enabled = false`
+**Table:** `feature_flags` — 9 rows, all `enabled = false`
 
 | Key | Category | Label |
 |-----|----------|-------|
@@ -392,6 +394,7 @@ get_dashboard_stats()           — Dashboard stat counts
 | `page:marketing` | page | Marketing |
 | `page:time_tracking` | page | Time Tracking |
 | `page:collections` | page | Collections |
+| `page:encircle_import` | pages | Encircle Import |
 | `tool:bulk_sms` | tool | Bulk Messaging |
 | `tool:search_export` | tool | Search & Export |
 | `feature:pwa` | feature | PWA |
