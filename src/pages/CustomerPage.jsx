@@ -63,6 +63,7 @@ export default function CustomerPage(){
   const[addRelatedSource,setAddRelatedSource]=useState(null);
   const[showCreateJob,setShowCreateJob]=useState(false);
   const[showMerge,setShowMerge]=useState(false);
+  const[showMore,setShowMore]=useState(false);
 
   useEffect(()=>{loadData();},[contactId]);
   const loadData=async()=>{
@@ -109,7 +110,17 @@ export default function CustomerPage(){
           {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations')}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
           <button className="customer-action-btn" onClick={()=>setShowCreateJob(true)}><IconJob style={{width:16,height:16}}/>New Job</button>
-          {currentUser?.role==='admin'&&<button className="customer-action-btn" onClick={()=>setShowMerge(true)}>Merge</button>}
+          {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
+            <button className="customer-action-btn" onClick={()=>setShowMore(v=>!v)} style={{padding:'6px 8px',minWidth:0}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
+              <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
+                Merge Customer
+              </button>
+            </div>}
+          </div>}
+
         </div>
       </div>
       <div className="job-page-tabs">{TABS.map(tab=>(

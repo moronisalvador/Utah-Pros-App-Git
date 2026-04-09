@@ -95,6 +95,7 @@ export default function ClaimPage() {
   const [payModal,  setPayModal]  = useState(null);
   const [notesModal,setNotesModal]= useState(null);
   const [showMerge, setShowMerge] = useState(false);
+  const [showMore,  setShowMore]  = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -238,7 +239,16 @@ export default function ClaimPage() {
               ✉ Email Adj.
             </a>
           )}
-          {currentUser?.role==='admin'&&<button className="btn btn-secondary btn-sm" style={{gap:5,height:32}} onClick={()=>setShowMerge(true)}>Merge</button>}
+          {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
+            <button className="btn btn-secondary btn-sm" onClick={()=>setShowMore(v=>!v)} style={{gap:0,height:32,minWidth:32,padding:'0 8px'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
+              <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
+                Merge Claim
+              </button>
+            </div>}
+          </div>}
         </div>
       </div>
 
