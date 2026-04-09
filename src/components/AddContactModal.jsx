@@ -138,9 +138,6 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
     }catch(err){/* handled in parent */}finally{setSaving(false);}
   };
 
-  const F=({label,field,type='text',placeholder,required})=><FormField label={label} field={field} type={type} placeholder={placeholder} required={required} form={form} set={set} nameRef={nameRef}/>;
-  const Sel=({label,field,options})=><FormSelect label={label} field={field} options={options} form={form} set={set}/>;
-
   return(
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal add-contact-modal" onClick={e=>e.stopPropagation()}>
@@ -172,26 +169,26 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
             <div className="add-contact-body">
               <div className="cp-edit-section-label" style={{marginTop:0}}>Basic Info</div>
               <div className="add-contact-row">
-                <F label="Name" field="name" placeholder="Full name" required/>
-                <F label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required/>
+                <FormField label="Name" field="name" placeholder="Full name" required form={form} set={set} nameRef={nameRef}/>
+                <FormField label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" required form={form} set={set} nameRef={nameRef}/>
               </div>
               <div className="add-contact-row">
-                <F label="Email" field="email" type="email" placeholder="email@example.com"/>
-                <F label="Company" field="company" placeholder={role==='adjuster'?'Carrier name':role==='vendor'?'Company name':'Company (optional)'}/>
+                <FormField label="Email" field="email" type="email" placeholder="email@example.com" form={form} set={set} nameRef={nameRef}/>
+                <FormField label="Company" field="company" placeholder={role==='adjuster'?'Carrier name':role==='vendor'?'Company name':'Company (optional)'} form={form} set={set} nameRef={nameRef}/>
               </div>
 
               {(role==='homeowner'||role==='tenant')&&(<>
                 <div className="cp-edit-section-label">Billing Address</div>
-                <div className="add-contact-row"><F label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr"/></div>
+                <div className="add-contact-row"><FormField label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" form={form} set={set} nameRef={nameRef}/></div>
                 <div className="add-contact-row">
-                  <F label="City" field="billing_city" placeholder="Lehi"/>
-                  <F label="State" field="billing_state" placeholder="UT"/>
-                  <F label="ZIP" field="billing_zip" placeholder="84043"/>
+                  <FormField label="City" field="billing_city" placeholder="Lehi" form={form} set={set} nameRef={nameRef}/>
+                  <FormField label="State" field="billing_state" placeholder="UT" form={form} set={set} nameRef={nameRef}/>
+                  <FormField label="ZIP" field="billing_zip" placeholder="84043" form={form} set={set} nameRef={nameRef}/>
                 </div>
                 <div className="cp-edit-section-label">Insurance</div>
                 <div className="add-contact-row">
                   <LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>set('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/>
-                  <F label="Policy #" field="policy_number" placeholder="SF-8820114"/>
+                  <FormField label="Policy #" field="policy_number" placeholder="SF-8820114" form={form} set={set} nameRef={nameRef}/>
                 </div>
               </>)}
 
@@ -201,44 +198,44 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
                   <LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>set('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/>
                 </div>
                 <div className="add-contact-row">
-                  <F label="Desk Phone" field="desk_phone" type="tel" placeholder="(800) 555-0100"/>
-                  <F label="Extension" field="desk_extension" placeholder="4412"/>
+                  <FormField label="Desk Phone" field="desk_phone" type="tel" placeholder="(800) 555-0100" form={form} set={set} nameRef={nameRef}/>
+                  <FormField label="Extension" field="desk_extension" placeholder="4412" form={form} set={set} nameRef={nameRef}/>
                 </div>
                 <div className="add-contact-row">
-                  <F label="Territory / Region" field="territory" placeholder="Northern Utah - Salt Lake, Davis, Weber"/>
+                  <FormField label="Territory / Region" field="territory" placeholder="Northern Utah - Salt Lake, Davis, Weber" form={form} set={set} nameRef={nameRef}/>
                 </div>
-                <F label="Relationship Notes" field="relationship_notes" type="textarea" placeholder="Response time, negotiation style, preferences..."/>
+                <FormField label="Relationship Notes" field="relationship_notes" type="textarea" placeholder="Response time, negotiation style, preferences..." form={form} set={set} nameRef={nameRef}/>
               </>)}
 
               {role==='vendor'&&(<>
                 <div className="cp-edit-section-label">Vendor Details</div>
                 <div className="add-contact-row">
-                  <F label="Trade / Specialty" field="trade_specialty" placeholder="Flooring, plumbing, electrical..."/>
-                  <Sel label="Payment Terms" field="payment_terms" options={PTO}/>
+                  <FormField label="Trade / Specialty" field="trade_specialty" placeholder="Flooring, plumbing, electrical..." form={form} set={set} nameRef={nameRef}/>
+                  <FormSelect label="Payment Terms" field="payment_terms" options={PTO} form={form} set={set}/>
                 </div>
                 <div className="add-contact-row">
-                  <F label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file"/>
+                  <FormField label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file" form={form} set={set} nameRef={nameRef}/>
                 </div>
               </>)}
 
               {role==='subcontractor'&&(<>
                 <div className="cp-edit-section-label">Subcontractor Details</div>
                 <div className="add-contact-row">
-                  <F label="Trade / Specialty" field="trade_specialty" placeholder="Drywall, painting, tile..."/>
-                  <Sel label="Payment Terms" field="payment_terms" options={PTO}/>
+                  <FormField label="Trade / Specialty" field="trade_specialty" placeholder="Drywall, painting, tile..." form={form} set={set} nameRef={nameRef}/>
+                  <FormSelect label="Payment Terms" field="payment_terms" options={PTO} form={form} set={set}/>
                 </div>
                 <div className="add-contact-row">
-                  <F label="COI Expiration" field="coi_expiration" type="date"/>
-                  <F label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file"/>
+                  <FormField label="COI Expiration" field="coi_expiration" type="date" form={form} set={set} nameRef={nameRef}/>
+                  <FormField label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received and on file" form={form} set={set} nameRef={nameRef}/>
                 </div>
               </>)}
 
               <div className="cp-edit-section-label">Other</div>
               <div className="add-contact-row">
                 <LookupSelect label="Referral Source" required value={form.referral_source} onChange={v=>set('referral_source',v)} items={referralSources} placeholder="Search sources..."/>
-                <F label="Tags" field="tags" placeholder="VIP, repeat, priority"/>
+                <FormField label="Tags" field="tags" placeholder="VIP, repeat, priority" form={form} set={set} nameRef={nameRef}/>
               </div>
-              <F label="Notes" field="notes" type="textarea" placeholder="Internal notes..."/>
+              <FormField label="Notes" field="notes" type="textarea" placeholder="Internal notes..." form={form} set={set} nameRef={nameRef}/>
             </div>
             <div className="add-contact-footer">
               <button className="btn btn-secondary" onClick={()=>setStep('pick')}>Back</button>
