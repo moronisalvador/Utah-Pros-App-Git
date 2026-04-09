@@ -130,7 +130,7 @@ export default function CustomerPage(){
       ))}</div>
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
-        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:cl,siblings:s})}/>}
+        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:cl,siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
         {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`)}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
@@ -336,7 +336,20 @@ function AddrForm({form,setForm,saving,onSave,onCancel}){
 }
 
 /* ═══ CLAIMS TAB ═══ */
-function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated}){
+function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin}){
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[deleting,setDeleting]=useState(false);
+  const handleDeleteClaim=async(cl)=>{
+    if(confirmDel!==cl.id){setConfirmDel(cl.id);return;}
+    setDeleting(true);
+    try{
+      await db.delete('claims',`id=eq.${cl.id}`);
+      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:`Claim ${cl.claim_number} deleted`,type:'success'}}));
+      onReload();
+    }catch(e){
+      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:'Failed to delete claim: '+e.message,type:'error'}}));
+    }finally{setDeleting(false);setConfirmDel(null);}
+  };
   if(!claims.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📋</div><div className="empty-state-text">No claims yet</div></div>);
   return(<div style={{display:'flex',flexDirection:'column',gap:'var(--space-5)'}}>{claims.map(cl=>{const jobs=cl.jobs||[];return(
     <div key={cl.id} className="job-page-section" style={{padding:0,overflow:'hidden'}}>
@@ -346,6 +359,12 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated}){
         {cl.date_of_loss&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Loss: {fmtDate(cl.date_of_loss)}</span>}
         {cl.insurance_claim_number&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Ins#: {cl.insurance_claim_number}</span>}
         <span style={{marginLeft:'auto',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:99,background:cl.status==='open'?'#eff6ff':'#f1f3f5',color:cl.status==='open'?'#2563eb':'#6b7280'}}>{cl.status}</span>
+        {isAdmin&&jobs.length===0&&<button
+          onClick={()=>handleDeleteClaim(cl)}
+          onBlur={()=>setConfirmDel(null)}
+          disabled={deleting}
+          style={{fontSize:11,fontWeight:600,padding:'2px 10px',borderRadius:'var(--radius-full)',cursor:deleting?'wait':'pointer',border:`1px solid ${confirmDel===cl.id?'#fecaca':'var(--border-light)'}`,background:confirmDel===cl.id?'#fef2f2':'var(--bg-primary)',color:confirmDel===cl.id?'#dc2626':'var(--text-tertiary)'}}
+        >{confirmDel===cl.id?'Confirm Delete':'Delete'}</button>}
       </div>
       {cl.loss_address&&<div style={{padding:'var(--space-2) var(--space-4)',fontSize:12,color:'var(--text-tertiary)',borderBottom:'1px solid var(--border-light)'}}>📍 {cl.loss_address}{cl.loss_city?`, ${cl.loss_city}`:''}</div>}
       <div style={{padding:'var(--space-3) var(--space-4)'}}>
