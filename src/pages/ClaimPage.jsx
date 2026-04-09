@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-page.css';
 import { LossIcon, LOSS_CONFIG, DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+import MergeModal from '@/components/MergeModal';
 
 // ── Toasts ────────────────────────────────────────────────────────────────────
 const toast  = (msg, type = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
@@ -80,7 +81,7 @@ function ES({ label, value, onChange, options }) {
 export default function ClaimPage() {
   const { claimId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, employee: currentUser } = useAuth();
 
   const [claim,     setClaim]     = useState(null);
   const [jobs,      setJobs]      = useState([]);
@@ -93,6 +94,7 @@ export default function ClaimPage() {
   const [saving,    setSaving]    = useState(null); // job id or 'claim'
   const [payModal,  setPayModal]  = useState(null);
   const [notesModal,setNotesModal]= useState(null);
+  const [showMerge, setShowMerge] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -236,6 +238,7 @@ export default function ClaimPage() {
               ✉ Email Adj.
             </a>
           )}
+          {currentUser?.role==='admin'&&<button className="btn btn-secondary btn-sm" style={{gap:5,height:32}} onClick={()=>setShowMerge(true)}>Merge</button>}
         </div>
       </div>
 
@@ -291,6 +294,7 @@ export default function ClaimPage() {
       {/* ── MODALS ── */}
       {payModal   && <PaymentModal job={payModal}   onClose={() => setPayModal(null)}   onSubmit={handleLogPayment} />}
       {notesModal && <NotesModal   job={notesModal} onClose={() => setNotesModal(null)} onSave={handleSaveNotes} />}
+      {showMerge  && <MergeModal type="claim" keepRecord={claim} onClose={() => setShowMerge(false)} onMerged={() => { setShowMerge(false); load(); }} />}
     </div>
   );
 }

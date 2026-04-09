@@ -8,6 +8,7 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
+import MergeModal from '@/components/MergeModal';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -47,6 +48,7 @@ export default function JobPage(){
   const[showEsign,setShowEsign]=useState(false);
   const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
+  const[showMerge,setShowMerge]=useState(false);
 
   useEffect(()=>{loadJob();},[jobId]);
   const loadJob=async()=>{
@@ -116,6 +118,7 @@ export default function JobPage(){
               {fmtPh(job.client_phone)}
             </a>
           )}
+          {currentUser?.role==='admin'&&<button className="btn btn-secondary btn-sm" style={{gap:5,height:32}} onClick={()=>setShowMerge(true)}>Merge</button>}
           <select className="input" value={job.phase} onChange={e=>handlePhaseChange(e.target.value)} disabled={saving} style={{width:'auto',minWidth:160,fontWeight:600,height:32}}>
             {phases.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
@@ -161,6 +164,7 @@ export default function JobPage(){
       {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
+      {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob();}}/>}
     </div>
   );
 }
