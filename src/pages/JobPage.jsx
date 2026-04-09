@@ -420,11 +420,12 @@ function FinancialTab({job,fmt,saveBatch,employee}){
 
 function RevenueTile({job,fmt,saveBatch,canEdit}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
-  const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||''});setEd(true);};
-  const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
+  const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+  const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||'',invoiced_date:job.invoiced_date||''});setEd(true);};
+  const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null,invoiced_date:f.invoiced_date||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
   return(<div className="job-page-section">
     {canEdit?<TileHeader title="Revenue" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Revenue</div>}
-    {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/></>)}
+    {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced Date" value={f.invoiced_date} onChange={v=>sF(p=>({...p,invoiced_date:v}))} type="date"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/>{job.invoiced_date&&<FR label="Invoiced Date" value={fmtD(job.invoiced_date)}/>}<FR label="Collected" value={fmt(job.collected_value)}/></>)}
   </div>);}
 
 function InsFinTile({job,fmt,saveBatch,canEdit}){
