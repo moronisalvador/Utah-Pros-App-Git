@@ -107,7 +107,7 @@ export default function CustomerPage(){
         </div>
         <div style={{display:'flex',gap:'var(--space-2)'}}>
           {c.phone&&<a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{width:16,height:16}}/>Call</a>}
-          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations')}><IconMsg style={{width:16,height:16}}/>Text</button>}
+          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations',{state:{contactId:c.id}})}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
           <button className="customer-action-btn" onClick={()=>setShowCreateJob(true)}><IconJob style={{width:16,height:16}}/>New Job</button>
           {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
