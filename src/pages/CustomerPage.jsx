@@ -395,15 +395,15 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
           This will archive <strong>{deleteTarget.claim_number}</strong>. It can be restored later but will be hidden from all views.
         </div>
         <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:16}}>
-          Type <strong style={{fontFamily:'var(--font-mono)',color:'var(--text-primary)'}}>{deleteTarget.claim_number}</strong> to confirm:
+          Type <strong style={{fontFamily:'var(--font-mono)',color:'var(--text-primary)'}}>DELETE</strong> to confirm:
         </div>
-        <input type="text" value={deleteInput} onChange={e=>setDeleteInput(e.target.value)} autoFocus placeholder={deleteTarget.claim_number}
+        <input type="text" value={deleteInput} onChange={e=>setDeleteInput(e.target.value)} autoFocus placeholder="DELETE"
           style={{width:'100%',padding:'10px 12px',fontSize:14,border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',background:'var(--bg-primary)',color:'var(--text-primary)',outline:'none',boxSizing:'border-box',fontFamily:'var(--font-mono)',marginBottom:16}}/>
         <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
           <button className="btn btn-secondary btn-sm" onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>Cancel</button>
-          <button onClick={handleSoftDelete} disabled={deleteInput!==deleteTarget.claim_number||deleting}
-            style={{padding:'8px 20px',fontSize:13,fontWeight:600,borderRadius:'var(--radius-md)',border:'none',cursor:deleteInput===deleteTarget.claim_number&&!deleting?'pointer':'not-allowed',
-              background:deleteInput===deleteTarget.claim_number?'#dc2626':'var(--bg-tertiary)',color:deleteInput===deleteTarget.claim_number?'#fff':'var(--text-tertiary)',opacity:deleting?0.6:1}}>
+          <button onClick={handleSoftDelete} disabled={deleteInput!=='DELETE'||deleting}
+            style={{padding:'8px 20px',fontSize:13,fontWeight:600,borderRadius:'var(--radius-md)',border:'none',cursor:deleteInput==='DELETE'&&!deleting?'pointer':'not-allowed',
+              background:deleteInput==='DELETE'?'#dc2626':'var(--bg-tertiary)',color:deleteInput==='DELETE'?'#fff':'var(--text-tertiary)',opacity:deleting?0.6:1}}>
             {deleting?'Deleting...':'Delete Claim'}
           </button>
         </div>
