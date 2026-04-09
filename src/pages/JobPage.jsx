@@ -154,7 +154,7 @@ export default function JobPage(){
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
-        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt}/>}
+        {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser}/>}
         {activeTab==='activity'&&<ActivityTab job={job} notes={notes} setNotes={setNotes} history={history} employees={employees} phaseMap={phaseMap} db={db} currentUser={currentUser} fmtDateTime={fmtDateTime}/>}
       </PullToRefresh>
 
@@ -390,7 +390,7 @@ function FlagToggle({label,value,onClick}){
 /* ===========================================
    FINANCIAL TAB
    =========================================== */
-function FinancialTab({job,fmt}){
+function FinancialTab({job,fmt,saveBatch,employee}){
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
   const deductible=Number(job.deductible||0);const deprecHeld=Number(job.depreciation_held||0);
@@ -400,10 +400,11 @@ function FinancialTab({job,fmt}){
   const otherCost=Number(job.total_other_cost||0);const totalCost=laborCost+materialCost+equipCost+subCost+otherCost;
   const revenueBase=approved>0?approved:estimated;const grossProfit=revenueBase-totalCost;
   const margin=revenueBase>0?((grossProfit/revenueBase)*100).toFixed(1):'0.0';const outstanding=invoiced-collected;
+  const canEdit=employee?.role==='admin'||employee?.role==='office'||employee?.role==='project_manager';
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt}/>
-      <InsFinTile job={job} fmt={fmt}/>
+      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit}/>
+      <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
         <div className="job-page-section-title">Profitability</div>
@@ -417,16 +418,22 @@ function FinancialTab({job,fmt}){
     </div>
   );}
 
-function RevenueTile({job,fmt}){
+function RevenueTile({job,fmt,saveBatch,canEdit}){
+  const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
+  const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||''});setEd(true);};
+  const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
   return(<div className="job-page-section">
-    <div className="job-page-section-title">Revenue</div>
-    <FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/>
+    {canEdit?<TileHeader title="Revenue" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Revenue</div>}
+    {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/><FR label="Collected" value={fmt(job.collected_value)}/></>)}
   </div>);}
 
-function InsFinTile({job,fmt}){
+function InsFinTile({job,fmt,saveBatch,canEdit}){
+  const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
+  const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||'',supplement_value:job.supplement_value||''});setEd(true);};
+  const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null,supplement_value:parseFloat(f.supplement_value)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
   return(<div className="job-page-section">
-    <div className="job-page-section-title">Insurance Financials</div>
-    <FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/>
+    {canEdit?<TileHeader title="Insurance Financials" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Insurance Financials</div>}
+    {ed?(<><EF label="Deductible" value={f.deductible} onChange={v=>sF(p=>({...p,deductible:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Held" value={f.depreciation_held} onChange={v=>sF(p=>({...p,depreciation_held:v}))} type="number" placeholder="0.00"/><EF label="Depreciation Released" value={f.depreciation_released} onChange={v=>sF(p=>({...p,depreciation_released:v}))} type="number" placeholder="0.00"/><EF label="Supplement" value={f.supplement_value} onChange={v=>sF(p=>({...p,supplement_value:v}))} type="number" placeholder="0.00"/></>):(<><FR label="Deductible" value={fmt(job.deductible)}/><FR label="Depreciation Held" value={fmt(job.depreciation_held)}/><FR label="Depreciation Released" value={fmt(job.depreciation_released)}/><FR label="Supplement" value={fmt(job.supplement_value)}/></>)}
   </div>);}
 
 function CostsTile({job,fmt,totalCost}){
