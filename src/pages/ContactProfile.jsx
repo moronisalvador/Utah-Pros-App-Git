@@ -188,42 +188,48 @@ export default function ContactProfile(){
   </div></PullToRefresh>);
 }
 
+/* ═══ STABLE FORM FIELD COMPONENTS (outside EditForm to prevent remount on keystroke) ═══ */
+function CPField({label,field,type='text',placeholder,form,set,nameRef}){
+  return(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label>{type==='textarea'?<textarea className="input textarea" value={form[field]||''} onChange={e=>set(field,e.target.value)} rows={2} placeholder={placeholder}/>:type==='checkbox'?<label style={{display:'flex',alignItems:'center',gap:'var(--space-2)',cursor:'pointer',fontSize:'var(--text-sm)'}}><input type="checkbox" checked={form[field]||false} onChange={e=>set(field,e.target.checked)} style={{width:16,height:16}}/>{placeholder||label}</label>:<input ref={field==='name'?nameRef:undefined} className="input" type={type} value={form[field]||''} onChange={e=>set(field,e.target.value)} placeholder={placeholder}/>}</div>);
+}
+function CPSelect({label,field,options,form,set}){
+  return(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label><select className="input" value={form[field]||''} onChange={e=>set(field,e.target.value)} style={{cursor:'pointer'}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>);
+}
+
 /* ═══ EDIT FORM ═══ */
 function EditForm({form,setForm,onSave,onCancel,saving,role,carriers,refSources}){
   const s=(f,v)=>setForm(p=>({...p,[f]:v}));const nr=useRef(null);useEffect(()=>{nr.current?.focus();},[]);
-  const F=({label,field,type='text',placeholder})=>(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label>{type==='textarea'?<textarea className="input textarea" value={form[field]||''} onChange={e=>s(field,e.target.value)} rows={2} placeholder={placeholder}/>:type==='checkbox'?<label style={{display:'flex',alignItems:'center',gap:'var(--space-2)',cursor:'pointer',fontSize:'var(--text-sm)'}}><input type="checkbox" checked={form[field]||false} onChange={e=>s(field,e.target.checked)} style={{width:16,height:16}}/>{placeholder||label}</label>:<input ref={field==='name'?nr:undefined} className="input" type={type} value={form[field]||''} onChange={e=>s(field,e.target.value)} placeholder={placeholder}/> }</div>);
-  const Sel=({label,field,options})=>(<div className="form-group" style={{flex:1,marginBottom:0}}><label className="label">{label}</label><select className="input" value={form[field]||''} onChange={e=>s(field,e.target.value)} style={{cursor:'pointer'}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>);
   const isAdj=role==='adjuster';const isVS=role==='vendor'||role==='subcontractor';
   return(<div className="cp-edit-form">
     <div className="cp-edit-section-label" style={{marginTop:0}}>Identity</div>
-    <div className="cp-edit-row"><F label="Name" field="name"/></div>
-    <div className="cp-edit-row"><F label="Company" field="company"/></div>
-    <div className="cp-edit-row"><Sel label="Preferred Contact" field="preferred_contact_method" options={CMO}/></div>
+    <div className="cp-edit-row"><CPField label="Name" field="name" form={form} set={s} nameRef={nr}/></div>
+    <div className="cp-edit-row"><CPField label="Company" field="company" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPSelect label="Preferred Contact" field="preferred_contact_method" options={CMO} form={form} set={s}/></div>
     <div className="cp-edit-section-label">Phone & Email</div>
-    <div className="cp-edit-row"><F label="Phone" field="phone" type="tel"/></div>
-    <div className="cp-edit-row"><F label="Phone 2" field="phone_secondary" type="tel"/></div>
-    <div className="cp-edit-row"><F label="Email" field="email" type="email"/></div>
+    <div className="cp-edit-row"><CPField label="Phone" field="phone" type="tel" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="Phone 2" field="phone_secondary" type="tel" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="Email" field="email" type="email" form={form} set={s}/></div>
     {isAdj&&<><div className="cp-edit-section-label">Adjuster Details</div>
     <div className="cp-edit-row"><LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/></div>
-    <div className="cp-edit-row"><F label="Desk Phone" field="desk_phone" type="tel"/></div>
-    <div className="cp-edit-row"><F label="Extension" field="desk_extension"/></div>
-    <div className="cp-edit-row"><F label="Territory" field="territory"/></div>
-    <F label="Relationship Notes" field="relationship_notes" type="textarea"/></>}
+    <div className="cp-edit-row"><CPField label="Desk Phone" field="desk_phone" type="tel" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="Extension" field="desk_extension" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="Territory" field="territory" form={form} set={s}/></div>
+    <CPField label="Relationship Notes" field="relationship_notes" type="textarea" form={form} set={s}/></>}
     {isVS&&<><div className="cp-edit-section-label">{role==='vendor'?'Vendor':'Sub'} Details</div>
-    <div className="cp-edit-row"><F label="Trade" field="trade_specialty"/></div>
-    <div className="cp-edit-row"><Sel label="Payment Terms" field="payment_terms" options={PTO}/></div>
-    <div className="cp-edit-row"><F label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received"/></div>
-    {role==='subcontractor'&&<div className="cp-edit-row"><F label="COI Expiration" field="coi_expiration" type="date"/></div>}</>}
+    <div className="cp-edit-row"><CPField label="Trade" field="trade_specialty" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPSelect label="Payment Terms" field="payment_terms" options={PTO} form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="W-9 on File" field="w9_on_file" type="checkbox" placeholder="W-9 received" form={form} set={s}/></div>
+    {role==='subcontractor'&&<div className="cp-edit-row"><CPField label="COI Expiration" field="coi_expiration" type="date" form={form} set={s}/></div>}</>}
     {!isAdj&&<><div className="cp-edit-section-label">Billing Address</div>
-    <div className="cp-edit-row"><F label="Street" field="billing_address"/></div>
-    <div className="cp-edit-row"><F label="City" field="billing_city"/><F label="State" field="billing_state"/></div>
-    <div className="cp-edit-row"><F label="ZIP" field="billing_zip"/></div>
+    <div className="cp-edit-row"><CPField label="Street" field="billing_address" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="City" field="billing_city" form={form} set={s}/><CPField label="State" field="billing_state" form={form} set={s}/></div>
+    <div className="cp-edit-row"><CPField label="ZIP" field="billing_zip" form={form} set={s}/></div>
     <div className="cp-edit-section-label">Insurance</div>
-    <div className="cp-edit-row"><LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/><F label="Policy #" field="policy_number"/></div></>}
+    <div className="cp-edit-row"><LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v=>s('insurance_carrier',v)} items={carriers} placeholder="Search carriers..."/><CPField label="Policy #" field="policy_number" form={form} set={s}/></div></>}
     <div className="cp-edit-section-label">Other</div>
     <div className="cp-edit-row"><LookupSelect label="Referral Source" value={form.referral_source} onChange={v=>s('referral_source',v)} items={refSources} placeholder="Search sources..."/></div>
-    <div className="cp-edit-row"><F label="Tags" field="tags" placeholder="VIP, repeat"/></div>
-    <F label="Notes" field="notes" type="textarea"/>
+    <div className="cp-edit-row"><CPField label="Tags" field="tags" placeholder="VIP, repeat" form={form} set={s}/></div>
+    <CPField label="Notes" field="notes" type="textarea" form={form} set={s}/>
     <div className="cp-edit-actions"><button className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button><button className="btn btn-primary btn-sm" onClick={onSave} disabled={saving}>{saving?'Saving...':'Save'}</button></div>
   </div>);
 }

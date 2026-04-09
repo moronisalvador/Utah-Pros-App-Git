@@ -8,6 +8,30 @@ function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const CMO = [{value:'sms',label:'SMS'},{value:'call',label:'Phone Call'},{value:'email',label:'Email'}];
 const LANG = [{value:'en',label:'English'},{value:'es',label:'Spanish'},{value:'pt',label:'Portuguese'}];
 
+/* Stable field components — defined outside to prevent unmount/remount on keystroke */
+function EditField({ label, field, type = 'text', placeholder, form, set }) {
+  return (
+    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+      <label className="label">{label}</label>
+      {type === 'textarea' ? (
+        <textarea className="input textarea" value={form[field] || ''} onChange={e => set(field, e.target.value)} rows={3} placeholder={placeholder} />
+      ) : (
+        <input className="input" type={type} value={form[field] || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} />
+      )}
+    </div>
+  );
+}
+function EditSelect({ label, field, options, form, set }) {
+  return (
+    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+      <label className="label">{label}</label>
+      <select className="input" value={form[field] || ''} onChange={e => set(field, e.target.value)} style={{ cursor: 'pointer' }}>
+        {options.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 /**
  * EditContactModal — edit existing contact fields.
  * Props: contact, onClose, onSave(updatedData), carriers
@@ -73,26 +97,6 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
     }
   };
 
-  const F = ({ label, field, type = 'text', placeholder }) => (
-    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-      <label className="label">{label}</label>
-      {type === 'textarea' ? (
-        <textarea className="input textarea" value={form[field] || ''} onChange={e => set(field, e.target.value)} rows={3} placeholder={placeholder} />
-      ) : (
-        <input className="input" type={type} value={form[field] || ''} onChange={e => set(field, e.target.value)} placeholder={placeholder} />
-      )}
-    </div>
-  );
-
-  const Sel = ({ label, field, options }) => (
-    <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-      <label className="label">{label}</label>
-      <select className="input" value={form[field] || ''} onChange={e => set(field, e.target.value)} style={{ cursor: 'pointer' }}>
-        {options.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-      </select>
-    </div>
-  );
-
   return (
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
@@ -105,22 +109,22 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
 
         <div className="add-contact-body">
           <div className="cp-edit-section-label" style={{ marginTop: 0 }}>Basic Info</div>
-          <div className="add-contact-row"><F label="Name" field="name" placeholder="Full name" /><F label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" /></div>
-          <div className="add-contact-row"><F label="Email" field="email" type="email" placeholder="email@example.com" /><F label="Company" field="company" placeholder="Company (optional)" /></div>
-          <div className="add-contact-row"><Sel label="Preferred Contact" field="preferred_contact_method" options={CMO} /><Sel label="Language" field="preferred_language" options={LANG} /></div>
+          <div className="add-contact-row"><EditField label="Name" field="name" placeholder="Full name" form={form} set={set} /><EditField label="Phone" field="phone" type="tel" placeholder="(801) 555-1234" form={form} set={set} /></div>
+          <div className="add-contact-row"><EditField label="Email" field="email" type="email" placeholder="email@example.com" form={form} set={set} /><EditField label="Company" field="company" placeholder="Company (optional)" form={form} set={set} /></div>
+          <div className="add-contact-row"><EditSelect label="Preferred Contact" field="preferred_contact_method" options={CMO} form={form} set={set} /><EditSelect label="Language" field="preferred_language" options={LANG} form={form} set={set} /></div>
 
           <div className="cp-edit-section-label">Billing Address</div>
-          <div className="add-contact-row"><F label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" /></div>
-          <div className="add-contact-row"><F label="City" field="billing_city" placeholder="Lehi" /><F label="State" field="billing_state" placeholder="UT" /><F label="ZIP" field="billing_zip" placeholder="84043" /></div>
+          <div className="add-contact-row"><EditField label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" form={form} set={set} /></div>
+          <div className="add-contact-row"><EditField label="City" field="billing_city" placeholder="Lehi" form={form} set={set} /><EditField label="State" field="billing_state" placeholder="UT" form={form} set={set} /><EditField label="ZIP" field="billing_zip" placeholder="84043" form={form} set={set} /></div>
 
           <div className="cp-edit-section-label">Insurance</div>
           <div className="add-contact-row">
             <LookupSelect label="Insurance Carrier" value={form.insurance_carrier} onChange={v => set('insurance_carrier', v)} items={carriers || []} placeholder="Search carriers..." />
-            <F label="Policy #" field="policy_number" placeholder="SF-8820114" />
+            <EditField label="Policy #" field="policy_number" placeholder="SF-8820114" form={form} set={set} />
           </div>
 
           <div className="cp-edit-section-label">Other</div>
-          <F label="Notes" field="notes" type="textarea" placeholder="Internal notes..." />
+          <EditField label="Notes" field="notes" type="textarea" placeholder="Internal notes..." form={form} set={set} />
         </div>
 
         <div className="add-contact-footer">
