@@ -78,6 +78,31 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
 // Backward compat
 export const CarrierSelect = ({value,onChange,carriers,...rest}) => <LookupSelect label="Insurance Carrier" value={value} onChange={onChange} items={carriers} placeholder="Search carriers..." {...rest} />;
 
+/* ═══ FORM FIELD COMPONENTS (defined outside modal to avoid re-mount on every keystroke) ═══ */
+function FormField({label,field,type='text',placeholder,required,form,set,nameRef}){
+  return(
+    <div className="form-group" style={{flex:1,marginBottom:0}}>
+      <label className="label">{label}{required&&<span style={{color:'#ef4444',marginLeft:2}}>*</span>}</label>
+      {type==='textarea'
+        ?<textarea className="input textarea" value={form[field]||''} onChange={e=>set(field,e.target.value)} rows={2} placeholder={placeholder}/>
+        :type==='checkbox'
+          ?<label style={{display:'flex',alignItems:'center',gap:'var(--space-2)',cursor:'pointer',fontSize:'var(--text-sm)',paddingTop:8}}><input type="checkbox" checked={form[field]||false} onChange={e=>set(field,e.target.checked)} style={{width:16,height:16}}/>{placeholder||label}</label>
+          :<input ref={field==='name'?nameRef:undefined} className="input" type={type} value={form[field]||''} onChange={e=>set(field,e.target.value)} placeholder={placeholder}/>
+      }
+    </div>
+  );
+}
+function FormSelect({label,field,options,form,set}){
+  return(
+    <div className="form-group" style={{flex:1,marginBottom:0}}>
+      <label className="label">{label}</label>
+      <select className="input" value={form[field]||''} onChange={e=>set(field,e.target.value)} style={{cursor:'pointer'}}>
+        {options.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 /* ═══ ADD CONTACT MODAL ═══ */
 export default function AddContactModal({onClose,onSave,carriers,referralSources}){
   const[step,setStep]=useState('pick');
@@ -113,25 +138,8 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
     }catch(err){/* handled in parent */}finally{setSaving(false);}
   };
 
-  const F=({label,field,type='text',placeholder,required})=>(
-    <div className="form-group" style={{flex:1,marginBottom:0}}>
-      <label className="label">{label}{required&&<span style={{color:'#ef4444',marginLeft:2}}>*</span>}</label>
-      {type==='textarea'
-        ?<textarea className="input textarea" value={form[field]||''} onChange={e=>set(field,e.target.value)} rows={2} placeholder={placeholder}/>
-        :type==='checkbox'
-          ?<label style={{display:'flex',alignItems:'center',gap:'var(--space-2)',cursor:'pointer',fontSize:'var(--text-sm)',paddingTop:8}}><input type="checkbox" checked={form[field]||false} onChange={e=>set(field,e.target.checked)} style={{width:16,height:16}}/>{placeholder||label}</label>
-          :<input ref={field==='name'?nameRef:undefined} className="input" type={type} value={form[field]||''} onChange={e=>set(field,e.target.value)} placeholder={placeholder}/>
-      }
-    </div>
-  );
-  const Sel=({label,field,options})=>(
-    <div className="form-group" style={{flex:1,marginBottom:0}}>
-      <label className="label">{label}</label>
-      <select className="input" value={form[field]||''} onChange={e=>set(field,e.target.value)} style={{cursor:'pointer'}}>
-        {options.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}
-      </select>
-    </div>
-  );
+  const F=({label,field,type='text',placeholder,required})=><FormField label={label} field={field} type={type} placeholder={placeholder} required={required} form={form} set={set} nameRef={nameRef}/>;
+  const Sel=({label,field,options})=><FormSelect label={label} field={field} options={options} form={form} set={set}/>;
 
   return(
     <div className="conv-modal-backdrop" onClick={onClose}>
