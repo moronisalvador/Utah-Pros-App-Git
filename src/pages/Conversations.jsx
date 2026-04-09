@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, subscribeToConversations } from '@/lib/realtime';
@@ -108,6 +109,8 @@ const TEMPLATE_CATEGORIES = {
 
 export default function Conversations() {
   const { db, employee } = useAuth();
+  const location = useLocation();
+  const deepLinkHandled = useRef(false);
 
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -154,6 +157,28 @@ export default function Conversations() {
   }, [db]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Deep-link: open/create conversation for a specific contact passed via location.state
+  useEffect(() => {
+    const targetContactId = location.state?.contactId;
+    if (!targetContactId || loading || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    const existing = conversations.find(c => c.conversation_participants?.some(p => p.contact_id === targetContactId));
+    if (existing) { selectConversation(existing.id); return; }
+    // No existing conversation — create one
+    (async () => {
+      try {
+        const rows = await db.select('contacts', `id=eq.${targetContactId}&select=id,name,phone,company`);
+        const contact = rows?.[0];
+        if (!contact || !contact.phone) return;
+        const title = contact.company ? `${contact.name} — ${contact.company}` : contact.name;
+        const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
+        await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
+        await loadConversations();
+        selectConversation(conv.id);
+      } catch (err) { console.error('Deep-link conversation error:', err); }
+    })();
+  }, [loading, conversations, location.state]);
 
   useEffect(() => {
     const unsubscribe = subscribeToConversations((payload) => {

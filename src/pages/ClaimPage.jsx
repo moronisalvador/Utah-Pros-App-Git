@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-page.css';
 import { LossIcon, LOSS_CONFIG, DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+import MergeModal from '@/components/MergeModal';
 
 // ── Toasts ────────────────────────────────────────────────────────────────────
 const toast  = (msg, type = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
@@ -80,7 +81,7 @@ function ES({ label, value, onChange, options }) {
 export default function ClaimPage() {
   const { claimId } = useParams();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, employee: currentUser } = useAuth();
 
   const [claim,     setClaim]     = useState(null);
   const [jobs,      setJobs]      = useState([]);
@@ -93,6 +94,8 @@ export default function ClaimPage() {
   const [saving,    setSaving]    = useState(null); // job id or 'claim'
   const [payModal,  setPayModal]  = useState(null);
   const [notesModal,setNotesModal]= useState(null);
+  const [showMerge, setShowMerge] = useState(false);
+  const [showMore,  setShowMore]  = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -236,6 +239,16 @@ export default function ClaimPage() {
               ✉ Email Adj.
             </a>
           )}
+          {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
+            <button className="btn btn-secondary btn-sm" onClick={()=>setShowMore(v=>!v)} style={{gap:0,height:32,minWidth:32,padding:'0 8px'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
+              <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
+                Merge Claim
+              </button>
+            </div>}
+          </div>}
         </div>
       </div>
 
@@ -291,6 +304,7 @@ export default function ClaimPage() {
       {/* ── MODALS ── */}
       {payModal   && <PaymentModal job={payModal}   onClose={() => setPayModal(null)}   onSubmit={handleLogPayment} />}
       {notesModal && <NotesModal   job={notesModal} onClose={() => setNotesModal(null)} onSave={handleSaveNotes} />}
+      {showMerge  && <MergeModal type="claim" keepRecord={claim} onClose={() => setShowMerge(false)} onMerged={() => { setShowMerge(false); load(); }} />}
     </div>
   );
 }

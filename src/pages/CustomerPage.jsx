@@ -6,6 +6,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import { LookupSelect } from '@/components/AddContactModal';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import CreateJobModal from '@/components/CreateJobModal';
+import MergeModal from '@/components/MergeModal';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -56,11 +57,13 @@ function TileHeader({title,editing,onEdit,onSave,onCancel,saving,children}){
 }
 
 export default function CustomerPage(){
-  const{contactId}=useParams();const navigate=useNavigate();const{db}=useAuth();
+  const{contactId}=useParams();const navigate=useNavigate();const{db,employee:currentUser}=useAuth();
   const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
   const[activeTab,setActiveTab]=useState('overview');const[carriers,setCarriers]=useState([]);const[employees,setEmployees]=useState([]);
   const[addRelatedSource,setAddRelatedSource]=useState(null);
   const[showCreateJob,setShowCreateJob]=useState(false);
+  const[showMerge,setShowMerge]=useState(false);
+  const[showMore,setShowMore]=useState(false);
 
   useEffect(()=>{loadData();},[contactId]);
   const loadData=async()=>{
@@ -104,9 +107,20 @@ export default function CustomerPage(){
         </div>
         <div style={{display:'flex',gap:'var(--space-2)'}}>
           {c.phone&&<a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{width:16,height:16}}/>Call</a>}
-          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations')}><IconMsg style={{width:16,height:16}}/>Text</button>}
+          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations',{state:{contactId:c.id}})}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
           <button className="customer-action-btn" onClick={()=>setShowCreateJob(true)}><IconJob style={{width:16,height:16}}/>New Job</button>
+          {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
+            <button className="customer-action-btn" onClick={()=>setShowMore(v=>!v)} style={{padding:'6px 8px',minWidth:0}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
+              <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
+                Merge Customer
+              </button>
+            </div>}
+          </div>}
+
         </div>
       </div>
       <div className="job-page-tabs">{TABS.map(tab=>(
@@ -123,6 +137,7 @@ export default function CustomerPage(){
       </PullToRefresh>
       {addRelatedSource&&<AddRelatedJobModal sourceJob={addRelatedSource.job} claimData={addRelatedSource.claimData} siblingJobs={addRelatedSource.siblings} employees={employees} db={db} onClose={()=>setAddRelatedSource(null)} onCreated={r=>{setAddRelatedSource(null);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
       {showCreateJob&&<CreateJobModal db={db} onClose={()=>setShowCreateJob(false)} prefillContact={c} onCreated={r=>{setShowCreateJob(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);else loadData();}}/>}
+      {showMerge&&<MergeModal type="contact" keepRecord={c} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadData();}}/>}
     </div>
   );
 }

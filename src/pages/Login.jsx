@@ -53,7 +53,7 @@ export default function Login() {
     try {
       const { error: resetErr } = await realtimeClient.auth.resetPasswordForEmail(
         email.trim(),
-        { redirectTo: window.location.origin + '/set-password' }
+        { redirectTo: 'https://utahpros.app/set-password' }
       );
       if (resetErr) throw resetErr;
       setResetSent(true);

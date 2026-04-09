@@ -8,6 +8,7 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
+import MergeModal from '@/components/MergeModal';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -47,6 +48,7 @@ export default function JobPage(){
   const[showEsign,setShowEsign]=useState(false);
   const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
+  const[showMerge,setShowMerge]=useState(false);const[showMore,setShowMore]=useState(false);
 
   useEffect(()=>{loadJob();},[jobId]);
   const loadJob=async()=>{
@@ -119,6 +121,16 @@ export default function JobPage(){
           <select className="input" value={job.phase} onChange={e=>handlePhaseChange(e.target.value)} disabled={saving} style={{width:'auto',minWidth:160,fontWeight:600,height:32}}>
             {phases.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
+          {currentUser?.role==='admin'&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowMore(false);}}>
+            <button className="btn btn-secondary btn-sm" onClick={()=>setShowMore(v=>!v)} style={{gap:0,height:32,minWidth:32,padding:'0 8px'}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
+              <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
+                Merge Job
+              </button>
+            </div>}
+          </div>}
         </div>
       </div>
 
@@ -161,6 +173,7 @@ export default function JobPage(){
       {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
+      {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob();}}/>}
     </div>
   );
 }
