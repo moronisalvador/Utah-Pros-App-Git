@@ -2398,12 +2398,17 @@ tr:hover td { background: var(--bg-secondary); }
    ═══════════════════════════════════════════════════ */
 
 @media (max-width: 767px) {
-  .admin-tabs {
-    padding: 0 var(--space-4);
+  .admin-page {
+    height: auto;
+    overflow: visible;
   }
 
   .admin-section {
-    padding: var(--space-4);
+    overflow: visible;
+  }
+
+  .admin-tabs {
+    padding: 0 var(--space-4);
   }
 
   .admin-table-wrap {
