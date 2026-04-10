@@ -71,7 +71,7 @@ export default function EncircleImport() {
       // Batch check which are already imported
       if (list.length > 0) {
         const ids = list.map(c => String(c.id));
-        const existing = await db.select('jobs', `encircle_claim_id=in.(${ids.join(',')})&select=encircle_claim_id`);
+        const existing = await db.select('jobs', `encircle_claim_id=in.(${ids.join(',')})&claim_id=not.is.null&select=encircle_claim_id`);
         setImportedIds(new Set((existing || []).map(j => j.encircle_claim_id)));
       }
     } catch (e) {
