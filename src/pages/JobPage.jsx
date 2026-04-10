@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
 import PullToRefresh from '@/components/PullToRefresh';
 import ScheduleWizard from '@/components/ScheduleWizard';
@@ -523,9 +524,10 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
   const handleResend=async(sr)=>{
     setResending(sr.id);
     try{
+      const auth=await getAuthHeader();
       const res=await fetch('/api/resend-esign',{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{'Content-Type':'application/json',...auth},
         body:JSON.stringify({sign_request_id:sr.id}),
       });
       const json=await res.json();

@@ -132,11 +132,16 @@ export default function TechNewJob() {
   /* ── Inline contact create ── */
   const handleInlineCreate = async () => {
     if (!inlineName.trim() || !inlinePhone.trim() || inlineSaving) return;
+    const phone = normalizePhone(inlinePhone);
+    if (!phone) {
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      return;
+    }
     setInlineSaving(true);
     try {
       const data = {
         name: inlineName.trim(),
-        phone: normalizePhone(inlinePhone),
+        phone,
         role: 'homeowner',
         opt_in_status: false,
         tags: [],

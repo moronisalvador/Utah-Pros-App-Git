@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 
 const DIVISIONS = [
   { key: 'water',          label: 'Water Mitigation', prefix: 'W-' },
@@ -61,7 +62,8 @@ export default function EncircleImport() {
     if (!q || q.length < 2) { setResults([]); return; }
     setSearching(true);
     try {
-      const res = await fetch(`/api/encircle-import?action=search&${searchMode}=${encodeURIComponent(q)}&limit=20`);
+      const auth = await getAuthHeader();
+      const res = await fetch(`/api/encircle-import?action=search&${searchMode}=${encodeURIComponent(q)}&limit=20`, { headers: auth });
       const data = await res.json();
       const list = data.list || [];
       setResults(list);
@@ -102,7 +104,8 @@ export default function EncircleImport() {
     setSelected(claim);
 
     try {
-      const res = await fetch(`/api/encircle-import?action=get&claim_id=${claim.id}`);
+      const auth = await getAuthHeader();
+      const res = await fetch(`/api/encircle-import?action=get&claim_id=${claim.id}`, { headers: auth });
       const detail = await res.json();
       const parsed = parseAddressParts(detail.full_address);
 
@@ -150,9 +153,10 @@ export default function EncircleImport() {
       setTimeout(() => setImportStep('jobs'), 800);
       setTimeout(() => setImportStep('encircle'), 1200);
 
+      const auth = await getAuthHeader();
       const res = await fetch('/api/encircle-import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           action: 'import',
           encircle_claim_id: selected.id,

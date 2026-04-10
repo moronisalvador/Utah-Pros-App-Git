@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { createPortal } from 'react-dom';
+import { getAuthHeader } from '@/lib/realtime';
 
 const DOC_TYPES = [
   { key: 'coc',           label: 'Certificate of Completion' },
@@ -102,9 +103,10 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
 
     setSending(mode);
     try {
+      const auth = await getAuthHeader();
       const res = await fetch('/api/send-esign', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           job_id:       job.id,
           contact_id:   contactId || null,

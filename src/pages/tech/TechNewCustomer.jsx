@@ -41,11 +41,16 @@ export default function TechNewCustomer() {
 
   const handleSave = async () => {
     if (!canSave || saving) return;
+    const phone = normalizePhone(form.phone);
+    if (!phone) {
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      return;
+    }
     setSaving(true);
     try {
       const data = {
         name: form.name.trim(),
-        phone: normalizePhone(form.phone),
+        phone,
         role,
         email: form.email?.trim() || null,
         notes: form.notes?.trim() || null,
