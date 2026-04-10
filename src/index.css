@@ -2861,12 +2861,11 @@ tr:hover td { background: var(--bg-secondary); }
 .customer-card {
   -webkit-tap-highlight-color: transparent;
   outline: none;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
+  min-height: 88px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);

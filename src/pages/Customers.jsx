@@ -86,7 +86,7 @@ export default function Customers() {
                 {c.email && <span>{c.email}</span>}
                 {(c.billing_address || c.billing_city) && <span>{c.billing_address}{c.billing_city ? `, ${c.billing_city}` : ''}</span>}
               </div>
-              {Array.isArray(c.jobs) && c.jobs.length > 0 && (
+              {(Array.isArray(c.jobs) && c.jobs.length > 0) ? (
                 <div className="customer-card-jobs">
                   {c.jobs.slice(0, 3).map(j => (
                     <span key={j.id} className="customer-card-job-pill"
@@ -96,7 +96,13 @@ export default function Customers() {
                   ))}
                   {c.jobs.length > 3 && <span className="customer-card-job-pill">+{c.jobs.length - 3}</span>}
                 </div>
-              )}
+              ) : c.job_count > 0 ? (
+                <div className="customer-card-jobs">
+                  <span className="customer-card-job-pill">
+                    {c.job_count} job{c.job_count !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              ) : null}
             </div>
             <div className="customer-card-right">
               <span className="customer-card-role-badge">{ROLE_LABELS[c.role] || c.role}</span>
