@@ -41,6 +41,7 @@ import TechNewCustomer from '@/pages/tech/TechNewCustomer';
 import TechNewJob from '@/pages/tech/TechNewJob';
 import TechNewAppointment from '@/pages/tech/TechNewAppointment';
 import TechEditAppointment from '@/pages/tech/TechEditAppointment';
+import TechFeedback from '@/pages/tech/TechFeedback';
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -113,6 +114,7 @@ export default function App() {
             <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
             <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
             <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+            <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
           </Route>
 
           {/* Protected — all wrapped in Layout */}
