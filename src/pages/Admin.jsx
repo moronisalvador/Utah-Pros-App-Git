@@ -126,7 +126,7 @@ function EmployeesTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [db]);
 
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
@@ -757,7 +757,7 @@ function PermissionsTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [db]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

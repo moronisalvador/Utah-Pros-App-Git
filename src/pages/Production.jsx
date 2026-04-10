@@ -50,7 +50,7 @@ const TERMINAL_PHASES = ['completed', 'closed', 'cancelled'];
 const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 export default function Production() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [phases, setPhases] = useState([]);
@@ -178,6 +178,7 @@ export default function Production() {
         job_id: job.id,
         from_phase: job.phase,
         to_phase: newPhase,
+        changed_by: employee?.id || null,
         changed_at: new Date().toISOString(),
       });
     } catch (err) {

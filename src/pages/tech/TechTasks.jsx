@@ -58,16 +58,21 @@ function SwipeTaskRow({ task, onToggle }) {
       if (dx >= 40 && dx < 42) haptic(20);
     }
   };
+  const justSwiped = useRef(false);
   const handlePointerUp = () => {
-    if (swipeX > 60) {
+    if (swipeX > 40) {
       haptic(50);
+      justSwiped.current = true;
+      if (!task.is_complete) setRecentlyDone(true);
       onToggle(task);
+      if (!task.is_complete) setTimeout(() => setRecentlyDone(false), 300);
     }
     setSwipeX(0);
     startX.current = null;
   };
 
   const handleToggle = (t) => {
+    if (justSwiped.current) { justSwiped.current = false; return; }
     if (!t.is_complete) setRecentlyDone(true);
     onToggle(t);
     if (!t.is_complete) setTimeout(() => setRecentlyDone(false), 300);

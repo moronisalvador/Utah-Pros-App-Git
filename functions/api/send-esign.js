@@ -184,7 +184,7 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
         </td></tr>
       </table>
       <!-- Tracking pixel -->
-      <img src="https://dev.utahpros.app/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
+      <img src="${getAppUrl(env)}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
     </td></tr>
   </table>
 </body>

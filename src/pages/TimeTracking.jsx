@@ -47,8 +47,7 @@ function fmtMoney(v) {
   return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
 }
 
-// DIVISION_COLORS imported
-const _DIVISION_COLORS_UNUSED = {
+const DIVISION_COLORS = {
   water:'#2563eb', mold:'#9d174d', reconstruction:'#d97706',
   fire:'#dc2626', contents:'#059669',
 };
@@ -204,7 +203,10 @@ function TimesheetView({ db, startDate, endDate, filterEmployee, currentUser, em
     finally { setApproving(false); }
   };
 
+  const [confirmDel, setConfirmDel] = useState(null);
   const handleDelete = async (id) => {
+    if (confirmDel !== id) { setConfirmDel(id); return; }
+    setConfirmDel(null);
     try {
       await db.delete('job_time_entries', `id=eq.${id}`);
       setEntries(prev => prev.filter(e => e.id !== id));
@@ -304,9 +306,13 @@ function TimesheetView({ db, startDate, endDate, filterEmployee, currentUser, em
                             onClick={() => { setEditEntry(entry); setShowAddModal(true); }}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
-                          <button className="tt-icon-btn tt-icon-btn-danger" title="Delete"
-                            onClick={() => handleDelete(entry.id)}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                          <button className="tt-icon-btn tt-icon-btn-danger" title={confirmDel === entry.id ? 'Confirm Delete' : 'Delete'}
+                            onClick={() => handleDelete(entry.id)}
+                            onBlur={() => setConfirmDel(null)}
+                            style={confirmDel === entry.id ? { background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' } : {}}>
+                            {confirmDel === entry.id
+                              ? <span style={{ fontSize:11, fontWeight:600 }}>Confirm</span>
+                              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>}
                           </button>
                         </div>
                       </td>

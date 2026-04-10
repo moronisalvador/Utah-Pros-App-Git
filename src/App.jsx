@@ -27,7 +27,7 @@ import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
-import WorkAuthSigning from '@/pages/WorkAuthSigning';
+
 import EncircleImport from '@/pages/EncircleImport';
 
 // Tech pages (field_tech role)
@@ -96,7 +96,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/sign/:token" element={<SignPage />} />
           <Route path="/set-password" element={<SetPassword />} />
-          <Route path="/work-auth" element={<WorkAuthSigning />} />
+
 
           {/* Tech layout — field_tech role, no sidebar */}
           <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
