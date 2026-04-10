@@ -13,18 +13,21 @@ export default function TechClaims() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [filtered, setFiltered] = useState([]);
+  const [scope, setScope] = useState('mine'); // 'mine' | 'all'
 
   const load = useCallback(async () => {
     if (!employee?.id) return;
     setLoading(true);
     try {
-      const result = await db.rpc('get_tech_claims', { p_employee_id: employee.id });
+      const result = scope === 'mine'
+        ? await db.rpc('get_tech_claims', { p_employee_id: employee.id })
+        : await db.rpc('get_claims_list');
       setClaims(result || []);
     } catch (e) {
       toast('Failed to load claims', 'error');
     }
     setLoading(false);
-  }, [db, employee?.id]);
+  }, [db, employee?.id, scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -58,6 +61,28 @@ export default function TechClaims() {
         <div className="tech-page-header">
           <div className="tech-page-title">Claims</div>
           <div className="tech-page-subtitle">{claims.length} total</div>
+        </div>
+
+        {/* Scope toggle */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 'var(--space-4)' }}>
+          {[{ key: 'mine', label: 'My Claims' }, { key: 'all', label: 'All Claims' }].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setScope(t.key)}
+              style={{
+                padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
+                fontSize: 14, fontWeight: scope === t.key ? 600 : 400, cursor: 'pointer',
+                height: 48,
+                background: scope === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+                color: scope === t.key ? '#fff' : 'var(--text-secondary)',
+                borderColor: scope === t.key ? 'var(--accent)' : 'var(--border-color)',
+                fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Search bar — 48px tall, 16px font to prevent iOS zoom */}
