@@ -106,6 +106,7 @@ export default function App() {
             <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
             <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
             <Route path="tech/claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+            <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
             <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
             <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
             <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />

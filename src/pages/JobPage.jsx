@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
@@ -41,7 +41,8 @@ function FR({label,value,bold,color}){return(<div className="job-page-info-row">
 function fmtPh(phone){if(!phone)return'';const d=phone.replace(/\D/g,'');const n=d.startsWith('1')?d.slice(1):d;if(n.length===10)return`(${n.slice(0,3)}) ${n.slice(3,6)}-${n.slice(6)}`;return phone;}
 
 export default function JobPage(){
-  const{jobId}=useParams();const navigate=useNavigate();const{db,employee:currentUser}=useAuth();
+  const{jobId}=useParams();const navigate=useNavigate();const location=useLocation();const{db,employee:currentUser}=useAuth();
+  const isTech=location.pathname.startsWith('/tech/');
   const[job,setJob]=useState(null);const[phases,setPhases]=useState([]);const[employees,setEmployees]=useState([]);
   const[loading,setLoading]=useState(true);const[activeTab,setActiveTab]=useState('overview');
   const[documents,setDocuments]=useState([]);const[notes,setNotes]=useState([]);const[history,setHistory]=useState([]);
@@ -66,7 +67,7 @@ export default function JobPage(){
         db.select('job_phase_history',`job_id=eq.${jobId}&order=changed_at.desc&limit=50`).catch(()=>[]),
       ]);
       if(jobReqRef.current!==reqId)return;
-      if(jobsData.length===0){navigate('/jobs',{replace:true});return;}
+      if(jobsData.length===0){navigate(isTech?'/tech/claims':'/jobs',{replace:true});return;}
       setJob(jobsData[0]);setPhases(phasesData);setEmployees(empsData);
       setDocuments(docsData);setNotes(notesData);setHistory(histData);
       db.rpc('get_job_task_summary',{p_job_id:jobId}).then(d=>setTaskSummary(d)).catch(()=>setTaskSummary(null));
@@ -111,7 +112,7 @@ export default function JobPage(){
   return(
     <div className="job-page">
       <div className="job-page-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1);else navigate('/jobs');}} style={{gap:4}}>{'\u2190'} Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1);else navigate(isTech?'/tech/claims':'/jobs');}} style={isTech?{gap:6,minWidth:48,minHeight:48,padding:'8px 12px',fontSize:15}:{gap:4}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Back</button>
         <div className="job-page-topbar-actions">
           {job.client_phone&&(
             <a href={`tel:${job.client_phone}`}
