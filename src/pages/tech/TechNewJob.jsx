@@ -139,7 +139,7 @@ export default function TechNewJob() {
         phone: normalizePhone(inlinePhone),
         role: 'homeowner',
         opt_in_status: false,
-        tags: '[]',
+        tags: [],
       };
       const result = await db.insert('contacts', data);
       if (result?.length > 0) {

@@ -50,7 +50,7 @@ export default function TechNewCustomer() {
         email: form.email?.trim() || null,
         notes: form.notes?.trim() || null,
         opt_in_status: false,
-        tags: '[]',
+        tags: [],
       };
       if (isAddress) {
         Object.assign(data, {
