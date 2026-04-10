@@ -25,9 +25,6 @@ export default function ClaimPage() {
   const [adjuster, setAdjuster] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Tab state (desktop only)
-  const [activeTab, setActiveTab] = useState('jobs');
-
   // Lazy-loaded data
   const [appointments, setAppointments] = useState([]);
   const [apptsLoaded, setApptsLoaded] = useState(false);
@@ -107,13 +104,13 @@ export default function ClaimPage() {
     setActivityLoaded(true);
   }, [db, claimId, activityLoaded]);
 
-  // Desktop: lazy load based on active tab
+  // Desktop: load all sections on mount (no tabs)
   useEffect(() => {
-    if (isTech) return;
-    if (activeTab === 'schedule') loadAppointments();
-    if (activeTab === 'documents') loadDocuments();
-    if (activeTab === 'activity') loadActivity();
-  }, [activeTab, isTech, loadAppointments, loadDocuments, loadActivity]);
+    if (isTech || jobs.length === 0) return;
+    loadAppointments();
+    loadDocuments();
+    loadActivity();
+  }, [isTech, jobs, loadAppointments, loadDocuments, loadActivity]);
 
   // Mobile: lazy load when sections open
   useEffect(() => {
@@ -161,14 +158,7 @@ export default function ClaimPage() {
   const insuredName = contact?.name || jobs[0]?.insured_name || 'Unknown';
   const carrier = claim.insurance_carrier || jobs[0]?.insurance_company || 'Out of pocket';
 
-  const TABS = [
-    { key: 'jobs', label: 'Jobs', count: jobs.length },
-    { key: 'schedule', label: 'Schedule' },
-    { key: 'documents', label: 'Documents' },
-    { key: 'info', label: 'Info' },
-    { key: 'activity', label: 'Activity' },
-    ...(!isTech ? [{ key: 'financials', label: 'Financials', isLink: true }] : []),
-  ];
+  // (tabs removed — desktop uses two-column scrollable layout)
 
   // Shared content renderers
   const jobsContent = (
@@ -286,30 +276,48 @@ export default function ClaimPage() {
         </div>
       )}
 
-      {/* ── DESKTOP: TABS ── */}
+      {/* ── DESKTOP: TWO-COLUMN SCROLLABLE LAYOUT ── */}
       {!isTech && (
-        <>
-          <div className="claim-ops-tabs">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                className={`claim-ops-tab${activeTab === t.key ? ' active' : ''}${t.isLink ? ' claim-ops-tab-link' : ''}`}
-                onClick={() => t.isLink ? navigate(`/collections/${claimId}`) : setActiveTab(t.key)}
-              >
-                {t.label}
-                {t.isLink && <span style={{ fontSize: 10, marginLeft: 2 }}>→</span>}
-                {t.count > 0 && <span className="claim-ops-tab-count">{t.count}</span>}
-              </button>
-            ))}
+        <div className="claim-ops-body">
+          {/* Top row: two columns */}
+          <div className="claim-ops-grid">
+            {/* Left column: Jobs + Schedule */}
+            <div className="claim-ops-col-left">
+              <SectionCard title="Jobs" count={jobs.length}>
+                {jobsContent}
+              </SectionCard>
+              <SectionCard title="Schedule">
+                {scheduleContent}
+              </SectionCard>
+            </div>
+
+            {/* Right column: Info + Activity */}
+            <div className="claim-ops-col-right">
+              <SectionCard title="Info">
+                {infoContent}
+              </SectionCard>
+              <SectionCard title="Activity">
+                {activityContent}
+              </SectionCard>
+            </div>
           </div>
-          <div className="claim-ops-body">
-            {activeTab === 'jobs' && jobsContent}
-            {activeTab === 'schedule' && scheduleContent}
-            {activeTab === 'documents' && documentsContent}
-            {activeTab === 'info' && infoContent}
-            {activeTab === 'activity' && activityContent}
-          </div>
-        </>
+
+          {/* Full-width: Documents (photo grid needs room) */}
+          {(docsLoaded && documents.length > 0) && (
+            <SectionCard title="Documents" count={documents.length}>
+              {documentsContent}
+            </SectionCard>
+          )}
+
+          {/* Financials link */}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => navigate(`/collections/${claimId}`)}
+            style={{ marginTop: 8, fontSize: 12 }}
+          >
+            View Financials →
+          </button>
+        </div>
       )}
 
       {/* ── MOBILE: COLLAPSIBLE SECTIONS ── */}
@@ -350,6 +358,21 @@ export default function ClaimPage() {
           onCreated={() => { setShowAddJob(false); load(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SECTION CARD (desktop)
+// ═══════════════════════════════════════════════════════════════════════
+function SectionCard({ title, count, children }) {
+  return (
+    <div className="claim-ops-section-card">
+      <div className="claim-ops-section-card-title">
+        {title}
+        {count > 0 && <span className="claim-ops-section-card-count">{count}</span>}
+      </div>
+      <div className="claim-ops-section-card-body">{children}</div>
     </div>
   );
 }
