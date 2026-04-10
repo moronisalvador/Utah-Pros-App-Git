@@ -25,6 +25,7 @@ import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
+import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
 import WorkAuthSigning from '@/pages/WorkAuthSigning';
 import EncircleImport from '@/pages/EncircleImport';
@@ -147,6 +148,11 @@ export default function App() {
             <Route path="collections" element={
               <FeatureRoute flag="page:collections">
                 <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="collections/:claimId" element={
+              <FeatureRoute flag="page:collections">
+                <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
               </FeatureRoute>
             } />
             <Route path="marketing" element={

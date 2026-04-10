@@ -160,6 +160,7 @@ export default function ARPage({ db, navigate }) {
                   onClick={() => handleCardClick(claim)}
                   onRecordPayment={(job) => openPaymentForm(job, claim)}
                   onJobClick={(jobId) => navigate(`/jobs/${jobId}`)}
+                  onViewClaim={(claimId) => navigate(`/collections/${claimId}`)}
                 />
               ))}
             </div>
