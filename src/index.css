@@ -77,10 +77,6 @@ html {
   -webkit-font-smoothing: antialiased;
   /* Prevent iOS bounce/overscroll on body */
   overscroll-behavior: none;
-  /* Fill entire physical screen in iOS PWA — covers home indicator gap */
-  background: #ffffff;
-  height: 100%;
-  min-height: -webkit-fill-available;
 }
 
 body {
@@ -90,8 +86,6 @@ body {
   line-height: 1.5;
   /* Prevent pull-to-refresh in Chrome Android */
   overscroll-behavior-y: contain;
-  height: 100%;
-  min-height: -webkit-fill-available;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -4183,8 +4177,11 @@ tr:hover td { background: var(--bg-secondary); }
   right: 0;
   bottom: 0;
   overflow: hidden;
-  background: var(--bg-secondary);
+  /* White "window" background fills behind status bar + home indicator */
+  background: #ffffff;
+  /* Safe areas handled here (like UIWindow), not on individual bars */
   padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Tech design tokens */
   --tech-text-body: 15px;
@@ -4222,7 +4219,7 @@ tr:hover td { background: var(--bg-secondary); }
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-secondary);
 }
 
 .tech-nav {
@@ -4231,9 +4228,8 @@ tr:hover td { background: var(--bg-secondary); }
   background: #ffffff;
   box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05);
   border-top: none;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   flex-shrink: 0;
-  height: calc(var(--tech-nav-height) + env(safe-area-inset-bottom, 0px));
+  height: var(--tech-nav-height);
 }
 
 .tech-nav-tab {
