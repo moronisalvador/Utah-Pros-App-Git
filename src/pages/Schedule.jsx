@@ -474,8 +474,9 @@ export default function Schedule() {
 
   // ── Load ──
   const loadPanelJobs = useCallback(async () => { setPanelLoading(true); try { const r = await db.rpc('get_dispatch_panel_jobs'); setPanelJobs(Array.isArray(r) ? r : []); } catch (e) { console.error('Panel:', e); } finally { setPanelLoading(false); } }, [db]);
-  const loadBoard = useCallback(async () => { setLoading(true); try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Board:', e); } finally { setLoading(false); } }, [db, days, autoShow]);
-  const silentReloadBoard = useCallback(async () => { try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Silent:', e); } }, [db, days, autoShow]);
+  const boardReqRef = useRef(0);
+  const loadBoard = useCallback(async () => { const reqId = ++boardReqRef.current; setLoading(true); try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); if (boardReqRef.current !== reqId) return; setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Board:', e); } finally { if (boardReqRef.current === reqId) setLoading(false); } }, [db, days, autoShow]);
+  const silentReloadBoard = useCallback(async () => { const reqId = ++boardReqRef.current; try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); if (boardReqRef.current !== reqId) return; setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Silent:', e); } }, [db, days, autoShow]);
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);

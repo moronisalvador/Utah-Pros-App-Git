@@ -50,8 +50,10 @@ export default function JobPage(){
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
   const[showMerge,setShowMerge]=useState(false);const[showMore,setShowMore]=useState(false);
 
+  const jobReqRef=useRef(0);
   useEffect(()=>{loadJob();},[jobId]);
   const loadJob=async()=>{
+    const reqId=++jobReqRef.current;
     setLoading(true);
     try{
       const[jobsData,phasesData,empsData,docsData,notesData,histData]=await Promise.all([
@@ -62,6 +64,7 @@ export default function JobPage(){
         db.select('job_notes',`job_id=eq.${jobId}&order=created_at.desc`).catch(()=>[]),
         db.select('job_phase_history',`job_id=eq.${jobId}&order=changed_at.desc&limit=50`).catch(()=>[]),
       ]);
+      if(jobReqRef.current!==reqId)return;
       if(jobsData.length===0){navigate('/jobs',{replace:true});return;}
       setJob(jobsData[0]);setPhases(phasesData);setEmployees(empsData);
       setDocuments(docsData);setNotes(notesData);setHistory(histData);
@@ -71,7 +74,7 @@ export default function JobPage(){
           setClaimData(d?.claim||null);setSiblingJobs((d?.jobs||[]).filter(j=>j.id!==jobsData[0].id));
         }).catch(()=>{});
       }
-    }catch(err){console.error('Job load:',err);}finally{setLoading(false);}
+    }catch(err){console.error('Job load:',err);}finally{if(jobReqRef.current===reqId)setLoading(false);}
   };
 
   const phaseMap=useMemo(()=>{const m={};for(const p of phases)m[p.key]=p;return m;},[phases]);
