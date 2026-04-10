@@ -593,6 +593,23 @@ export default function TechDash() {
               </button>
             )}
             <button
+              onClick={() => navigate('/tech/feedback')}
+              style={{
+                width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                border: '1px solid var(--border-light)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                touchAction: 'manipulation',
+              }}
+              title="Send Feedback"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </button>
+            <button
               onClick={handleLogoutTap}
               onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
               style={{
@@ -687,6 +704,23 @@ export default function TechDash() {
               Admin
             </button>
           )}
+          <button
+            onClick={() => navigate('/tech/feedback')}
+            style={{
+              width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-light)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'manipulation',
+            }}
+            title="Send Feedback"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </button>
           <button
             onClick={handleLogoutTap}
             onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
