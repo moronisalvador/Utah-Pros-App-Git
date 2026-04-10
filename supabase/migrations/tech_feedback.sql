@@ -1,4 +1,4 @@
--- Tech Feedback table + RPC
+-- Tech Feedback table + RPCs
 -- Run this in Supabase SQL Editor before using the feedback feature
 
 -- ── Table ──────────────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ CREATE POLICY "tech_feedback_all" ON tech_feedback
   USING (true)
   WITH CHECK (true);
 
--- ── Insert RPC ─────────────────────────────────────────────────────────────────
+-- ── Insert RPC (tech submits feedback) ─────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION insert_tech_feedback(
   p_employee_id UUID,
@@ -45,3 +45,60 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION insert_tech_feedback TO anon, authenticated;
+
+-- ── Get all feedback (admin view) ──────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION get_tech_feedback()
+RETURNS TABLE (
+  id            UUID,
+  employee_id   UUID,
+  employee_name TEXT,
+  type          TEXT,
+  title         TEXT,
+  description   TEXT,
+  screenshots   JSONB,
+  status        TEXT,
+  admin_notes   TEXT,
+  created_at    TIMESTAMPTZ
+)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+    SELECT
+      f.id, f.employee_id,
+      e.full_name AS employee_name,
+      f.type, f.title, f.description,
+      f.screenshots, f.status, f.admin_notes,
+      f.created_at
+    FROM tech_feedback f
+    JOIN employees e ON e.id = f.employee_id
+    ORDER BY f.created_at DESC;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_tech_feedback TO anon, authenticated;
+
+-- ── Update feedback status/notes (admin action) ───────────────────────────────
+
+CREATE OR REPLACE FUNCTION update_tech_feedback(
+  p_id          UUID,
+  p_status      TEXT,
+  p_admin_notes TEXT DEFAULT NULL
+)
+RETURNS tech_feedback
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  result tech_feedback;
+BEGIN
+  UPDATE tech_feedback
+  SET status      = p_status,
+      admin_notes = COALESCE(p_admin_notes, admin_notes)
+  WHERE id = p_id
+  RETURNING * INTO result;
+  RETURN result;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION update_tech_feedback TO anon, authenticated;

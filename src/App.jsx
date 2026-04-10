@@ -27,6 +27,7 @@ import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
 import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
+import AdminFeedback from '@/pages/AdminFeedback';
 
 import EncircleImport from '@/pages/EncircleImport';
 
@@ -173,6 +174,7 @@ export default function App() {
 
             {/* Admin-only */}
             <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
+            <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
             <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
 
             {/* Dev Tools — Moroni only, not role-based */}
