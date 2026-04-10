@@ -25,6 +25,7 @@ export default function ClaimPage() {
   const [contact, setContact] = useState(null);
   const [adjuster, setAdjuster] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   // Lazy-loaded data
   const [appointments, setAppointments] = useState([]);
@@ -53,19 +54,24 @@ export default function ClaimPage() {
   // ── Load claim detail ──
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await db.rpc('get_claim_detail', { p_claim_id: claimId });
-      if (!data?.claim) { navigate(isTech ? '/tech/claims' : '/claims', { replace: true }); return; }
+      if (!data?.claim) {
+        setLoadError('Claim not found');
+        return;
+      }
       setClaim(data.claim);
       setJobs(data.jobs || []);
       setContact(data.contact || null);
       setAdjuster(data.adjuster || null);
     } catch (e) {
-      errToast('Failed to load claim: ' + e.message);
+      setLoadError(e.message);
+      errToast('Failed to load claim');
     } finally {
       setLoading(false);
     }
-  }, [db, claimId, navigate, isTech]);
+  }, [db, claimId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
@@ -179,7 +185,25 @@ export default function ClaimPage() {
 
   // ── Render ──
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
-  if (!claim) return null;
+  if (!claim) return (
+    <div className="claim-ops-page">
+      <div className="claim-ops-topbar">
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims')} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          {isTech ? 'Claims' : 'Back'}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+          {loadError || 'Claim not found'}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20 }}>
+          This claim may have been removed or is unavailable.
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={load}>Retry</button>
+      </div>
+    </div>
+  );
 
   const insuredName = contact?.name || jobs[0]?.insured_name || 'Unknown';
   const carrier = claim.insurance_carrier || jobs[0]?.insurance_company || 'Out of pocket';

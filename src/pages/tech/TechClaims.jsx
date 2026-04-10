@@ -19,9 +19,17 @@ export default function TechClaims() {
     if (!employee?.id) return;
     setLoading(true);
     try {
-      const result = scope === 'mine'
-        ? await db.rpc('get_tech_claims', { p_employee_id: employee.id })
-        : await db.rpc('get_claims_list');
+      let result;
+      if (scope === 'mine') {
+        try {
+          result = await db.rpc('get_tech_claims', { p_employee_id: employee.id });
+        } catch {
+          // RPC may not exist yet — fall back to get_claims_list
+          result = await db.rpc('get_claims_list');
+        }
+      } else {
+        result = await db.rpc('get_claims_list');
+      }
       setClaims(result || []);
     } catch (e) {
       toast('Failed to load claims', 'error');
