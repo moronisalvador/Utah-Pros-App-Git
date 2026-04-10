@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
+import MergeModal from '@/components/MergeModal';
 import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 
@@ -37,6 +38,11 @@ export default function ClaimPage() {
   // UI state
   const [expandedJob, setExpandedJob] = useState(null);
   const [showAddJob, setShowAddJob] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(null);
 
   // Mobile collapsible sections
@@ -138,8 +144,26 @@ export default function ClaimPage() {
     }
   };
 
+  // ── Soft delete ──
+  const handleSoftDelete = async () => {
+    if (!claim) return;
+    setDeleting(true);
+    try {
+      await db.update('claims', `id=eq.${claimId}`, { status: 'deleted' });
+      toast(`Claim ${claim.claim_number} archived`);
+      setDeleteTarget(null);
+      setDeleteInput('');
+      navigate(isTech ? '/tech/claims' : '/claims', { replace: true });
+    } catch (e) {
+      errToast('Failed to delete claim: ' + e.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // ── Computed ──
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const canEdit = isAdmin || currentUser?.role === 'project_manager' || currentUser?.role === 'supervisor';
   const totals = useMemo(() => {
     let invoiced = 0, collected = 0, balance = 0;
     for (const j of jobs) {
@@ -199,7 +223,7 @@ export default function ClaimPage() {
       adjuster={adjuster}
       patchClaim={patchClaim}
       saving={saving}
-      isAdmin={isAdmin}
+      canEdit={canEdit}
     />
   );
 
@@ -224,7 +248,23 @@ export default function ClaimPage() {
               📱 {fmtPh(contact.phone)}
             </a>
           )}
-          {/* three-dot menu placeholder for future actions */}
+          {isAdmin && (
+            <div style={{ position: 'relative' }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setShowMore(false); }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowMore(v => !v)} style={{ gap: 0, height: 32, minWidth: 32, padding: '0 8px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
+              </button>
+              {showMore && (
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 100, minWidth: 160, overflow: 'hidden' }}>
+                  <button onClick={() => { setShowMore(false); setShowMerge(true); }} onMouseDown={e => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', textAlign: 'left' }}>
+                    Merge Claim
+                  </button>
+                  <button onClick={() => { setShowMore(false); setDeleteTarget(claim); setDeleteInput(''); }} onMouseDown={e => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}>
+                    Delete Claim
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -357,6 +397,37 @@ export default function ClaimPage() {
           onClose={() => setShowAddJob(false)}
           onCreated={() => { setShowAddJob(false); load(); }}
         />
+      )}
+
+      {/* ── MERGE MODAL ── */}
+      {showMerge && <MergeModal type="claim" keepRecord={claim} onClose={() => setShowMerge(false)} onMerged={() => { setShowMerge(false); load(); }} />}
+
+      {/* ── DELETE CONFIRMATION ── */}
+      {deleteTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => { setDeleteTarget(null); setDeleteInput(''); }}>
+          <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '90%', maxWidth: 420, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 12 }}>Delete Claim</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              This will archive <strong>{claim.claim_number}</strong>. It can be restored later but will be hidden from all views.
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+              Type <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>DELETE</strong> to confirm:
+            </div>
+            <input type="text" value={deleteInput} onChange={e => setDeleteInput(e.target.value)} autoFocus placeholder="DELETE"
+              style={{ width: '100%', padding: '10px 12px', fontSize: 14, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', fontFamily: 'var(--font-mono)', marginBottom: 16 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setDeleteTarget(null); setDeleteInput(''); }}>Cancel</button>
+              <button onClick={handleSoftDelete} disabled={deleteInput !== 'DELETE' || deleting}
+                style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 'var(--radius-md)', border: 'none',
+                  cursor: deleteInput === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',
+                  background: deleteInput === 'DELETE' ? '#dc2626' : 'var(--bg-tertiary)',
+                  color: deleteInput === 'DELETE' ? '#fff' : 'var(--text-tertiary)',
+                  opacity: deleting ? 0.6 : 1 }}>
+                {deleting ? 'Deleting...' : 'Delete Claim'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -645,7 +716,7 @@ function DocumentsSection({ jobs, documents, loaded, db, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════
 // INFO SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function InfoSection({ claim, contact, adjuster, patchClaim, saving, isAdmin }) {
+function InfoSection({ claim, contact, adjuster, patchClaim, saving, canEdit }) {
   const [ed, setEd] = useState(false);
   const [f, setF] = useState({});
   const start = () => setF({
@@ -685,7 +756,7 @@ function InfoSection({ claim, contact, adjuster, patchClaim, saving, isAdmin }) 
       <div className="job-page-section">
         <div className="job-page-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Claim Details</span>
-          {isAdmin && (
+          {canEdit && (
             <div style={{ display: 'flex', gap: 6 }}>
               {!ed
                 ? <button className="btn btn-ghost btn-sm" onClick={() => start()} style={{ height: 26, width: 26, padding: 0 }}>✏️</button>
