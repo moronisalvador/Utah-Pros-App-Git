@@ -241,8 +241,9 @@ export default function ClaimPage() {
 
       {/* ── TOP BAR ── */}
       <div className="claim-ops-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims')} style={{ gap: 4 }}>
-          ← {isTech ? 'Claims' : 'Back'}
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims')} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          {isTech ? 'Claims' : 'Back'}
         </button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {contact?.phone && (

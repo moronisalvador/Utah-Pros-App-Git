@@ -1267,6 +1267,19 @@ tr:hover td { background: var(--bg-secondary); }
     padding-bottom: var(--safe-bottom);
   }
 
+  /* ── Conversations inside TechLayout ── */
+  .tech-layout .conversations-layout {
+    height: calc(100vh - var(--tech-nav-height) - max(12px, env(safe-area-inset-bottom, 12px)));
+    height: calc(100dvh - var(--tech-nav-height) - max(12px, env(safe-area-inset-bottom, 12px)));
+  }
+  .tech-layout:has(.conversations-layout.mobile-thread) > .tech-nav { display: none; }
+  .tech-layout:has(.conversations-layout.mobile-thread) > .tech-content { padding-bottom: 0; }
+  .tech-layout .conversations-layout.mobile-thread {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .tech-layout .conv-compose { padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 12px)); }
+
   /* ── Tables ── */
   table { font-size: var(--text-xs); }
   th, td { padding: var(--space-2) var(--space-3); }
