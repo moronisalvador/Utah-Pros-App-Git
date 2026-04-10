@@ -5,6 +5,19 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
+  });
+  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
+  return { ok: true };
+}
+
 function normalizePhone(phone) {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, '');
@@ -296,6 +309,8 @@ async function handleImport(body, request, env) {
 // ── Request handlers ──────────────────────────────────────────────────────────
 
 export async function onRequestGet(context) {
+  const auth = await requireAuth(context.request, context.env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     const url = new URL(context.request.url);
     const action = url.searchParams.get('action');
@@ -311,6 +326,8 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
+  const auth = await requireAuth(context.request, context.env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     const body = await context.request.json();
     const action = body.action;

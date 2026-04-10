@@ -9,6 +9,21 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 
 const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
 
+function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
+  });
+  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
+  return { ok: true };
+}
+
 const DOC_LABELS = {
   coc:           'Certificate of Completion',
   work_auth:     'Work Authorization',
@@ -22,6 +37,10 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+
+  // Verify caller is authenticated
+  const auth = await requireAuth(request, env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
@@ -120,7 +139,7 @@ export async function onRequestPost(context) {
 }
 
 function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token }) {
-  const first = signer_name.split(' ')[0];
+  const first = escHtml(signer_name.split(' ')[0]);
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -156,7 +175,7 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
           </p>
         </td></tr>
       </table>
-      <img src="https://dev.utahpros.app/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
+      <img src="${getAppUrl(env)}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
     </td></tr>
   </table>
 </body>
@@ -164,6 +183,6 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
 }
 
 function buildEmailText({ signer_name, doc_label, job_number, location_str, signing_url }) {
-  const first = signer_name.split(' ')[0];
+  const first = escHtml(signer_name.split(' ')[0]);
   return `Hi ${first},\n\nReminder — your signature is still needed on the ${doc_label}${job_number ? ` (Job #${job_number})` : ''} for the work at ${location_str}:\n\n${signing_url}\n\nIt takes less than a minute. The link expires in 30 days.\n\nQuestions? Email restoration@utah-pros.com\n\n— Utah Pros Restoration`;
 }

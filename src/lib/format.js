@@ -84,6 +84,7 @@ export function normalisePhone(raw) {
   if (!raw) return null;
   let digits = raw.replace(/\D/g, '');
   if (digits.length === 10) digits = '1' + digits;
+  if (digits.length < 10) return null;
   if (digits.length === 11 && digits[0] === '1') return '+' + digits;
-  return digits.length > 0 ? '+' + digits : null;
+  return '+' + digits;
 }

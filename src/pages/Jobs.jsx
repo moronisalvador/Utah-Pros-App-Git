@@ -15,14 +15,6 @@ const DIVISION_TABS = [
   { key: 'contents', label: 'Contents', emoji: '📦' },
 ];
 
-// DIVISION_COLORS imported
-const _DIVISION_COLORS_UNUSED = {
-  water: '#2563eb',
-  mold: '#9d174d',
-  reconstruction: '#d97706',
-  fire: '#dc2626',
-  contents: '#059669',
-};
 
 const SORT_OPTIONS = [
   { key: 'newest', label: 'Newest First' },

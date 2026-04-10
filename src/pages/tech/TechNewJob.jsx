@@ -32,7 +32,7 @@ function fmtPhone(phone) {
 /* ── input style helper ── */
 const inputStyle = {
   width: '100%', height: 48, padding: '0 14px',
-  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
+  fontSize: 16, borderRadius: 'var(--tech-radius-button)',
   border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
   color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
 };
@@ -132,14 +132,19 @@ export default function TechNewJob() {
   /* ── Inline contact create ── */
   const handleInlineCreate = async () => {
     if (!inlineName.trim() || !inlinePhone.trim() || inlineSaving) return;
+    const phone = normalizePhone(inlinePhone);
+    if (!phone) {
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      return;
+    }
     setInlineSaving(true);
     try {
       const data = {
         name: inlineName.trim(),
-        phone: normalizePhone(inlinePhone),
+        phone,
         role: 'homeowner',
         opt_in_status: false,
-        tags: '[]',
+        tags: [],
       };
       const result = await db.insert('contacts', data);
       if (result?.length > 0) {
@@ -231,7 +236,7 @@ export default function TechNewJob() {
         <button
           onClick={() => navigate(-1)}
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer',
           }}

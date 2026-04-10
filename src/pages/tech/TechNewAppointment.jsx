@@ -2,34 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
-import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
-
-const inputStyle = {
-  width: '100%', height: 48, padding: '0 14px',
-  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
-  border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
-};
-
-const labelStyle = {
-  fontSize: 'var(--tech-text-label)', fontWeight: 600, color: 'var(--text-tertiary)',
-  textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6,
-};
-
-const TIME_OPTIONS = (() => {
-  const opts = [];
-  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
-    const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    const hr = h % 12 || 12;
-    opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
-  }
-  return opts;
-})();
-
-const MOBILE_TYPES = APPT_TYPES.filter(t =>
-  ['reconstruction', 'inspection', 'monitoring', 'mitigation', 'estimate', 'other'].includes(t.value)
-);
+import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
 
 export default function TechNewAppointment() {
   const navigate = useNavigate();
@@ -88,8 +62,9 @@ export default function TechNewAppointment() {
     if (q.trim().length < 2) { setJobResults([]); setShowJobDrop(false); return; }
     setSearching(true);
     try {
+      const eq = encodeURIComponent(q.trim());
       const r = await db.select('jobs',
-        `or=(job_number.ilike.*${q.trim()}*,insured_name.ilike.*${q.trim()}*)&status=eq.active&select=id,job_number,insured_name,division,address,city&order=created_at.desc&limit=10`
+        `or=(job_number.ilike.*${eq}*,insured_name.ilike.*${eq}*)&status=eq.active&select=id,job_number,insured_name,division,address,city&order=created_at.desc&limit=10`
       );
       setJobResults(Array.isArray(r) ? r : []);
       setShowJobDrop(true);
@@ -158,12 +133,6 @@ export default function TechNewAppointment() {
     });
   };
 
-  const getInitials = (name) => {
-    if (!name) return '?';
-    const parts = name.trim().split(/\s+/);
-    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
-  };
-
   /* ── Submit ── */
   const canSubmit = job && date;
 
@@ -227,7 +196,7 @@ export default function TechNewAppointment() {
         <button
           onClick={() => navigate(-1)}
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer',
           }}
@@ -383,7 +352,7 @@ export default function TechNewAppointment() {
                 key={t.value}
                 onClick={() => setType(t.value)}
                 style={{
-                  height: 40, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
+                  height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
                   border: type === t.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
                   background: type === t.value ? 'var(--accent-light)' : 'var(--bg-primary)',
                   fontSize: 13, fontWeight: 600,
@@ -596,13 +565,13 @@ export default function TechNewAppointment() {
                     value={newTaskTitle}
                     onChange={e => setNewTaskTitle(e.target.value)}
                     placeholder="Add a task..."
-                    style={{ ...inputStyle, flex: 1, height: 40 }}
+                    style={{ ...inputStyle, flex: 1, height: 48 }}
                   />
                   <button
                     onClick={createTask}
                     disabled={!newTaskTitle.trim()}
                     style={{
-                      height: 40, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
+                      height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
                       background: newTaskTitle.trim() ? 'var(--accent)' : 'var(--bg-tertiary)',
                       color: newTaskTitle.trim() ? '#fff' : 'var(--text-tertiary)',
                       border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { realtimeClient } from '@/lib/realtime';
+import { realtimeClient, getAuthHeader } from '@/lib/realtime';
 import PullToRefresh from '@/components/PullToRefresh';
 
 // ── Nav keys for permissions matrix (must match Sidebar.jsx) ──
@@ -91,12 +91,7 @@ export default function Admin() {
 // ══════════════════════════════════════════════════════════════
 // EMPLOYEES TAB
 // ══════════════════════════════════════════════════════════════
-// Helper: get current session token for admin-users worker calls
-async function getAuthHeader() {
-  const { data: { session } } = await realtimeClient.auth.getSession();
-  const token = session?.access_token;
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-}
+// getAuthHeader imported from @/lib/realtime
 
 function EmployeesTab() {
   const { db } = useAuth();
@@ -126,7 +121,7 @@ function EmployeesTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [db]);
 
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
@@ -757,7 +752,7 @@ function PermissionsTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [db]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

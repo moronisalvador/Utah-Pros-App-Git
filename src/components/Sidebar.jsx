@@ -99,7 +99,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             >
               <item.icon className="nav-icon" />
               {item.label}
-              {item.badge && null}
+              {item.badge && <span className="sidebar-badge">{item.badge}</span>}
             </NavLink>
           );
         })}

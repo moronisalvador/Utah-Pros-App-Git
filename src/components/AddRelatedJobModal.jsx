@@ -49,14 +49,40 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
     setSaving(true);
     setError(null);
     try {
-      const result = await db.rpc('add_related_job', {
-        p_source_job_id: sourceJob.id,
-        p_division: division,
-        p_priority: priority,
-        p_internal_notes: notes || null,
-        p_project_manager_id: pmId || null,
-        p_lead_tech_id: leadTechId || null,
-      });
+      let result;
+      if (sourceJob?.id) {
+        result = await db.rpc('add_related_job', {
+          p_source_job_id: sourceJob.id,
+          p_division: division,
+          p_priority: priority,
+          p_internal_notes: notes || null,
+          p_project_manager_id: pmId || null,
+          p_lead_tech_id: leadTechId || null,
+        });
+      } else {
+        // No source job — create directly from claim data
+        const rows = await db.insert('jobs', {
+          claim_id: claimData?.id || null,
+          division,
+          priority,
+          phase: 'lead',
+          insured_name: claimData?.insured_name || claimData?.contact_name || null,
+          address: claimData?.loss_address || null,
+          city: claimData?.loss_city || null,
+          state: claimData?.loss_state || null,
+          zip: claimData?.loss_zip || null,
+          insurance_company: claimData?.insurance_carrier || null,
+          claim_number: claimData?.insurance_claim_number || null,
+          policy_number: claimData?.policy_number || null,
+          date_of_loss: claimData?.date_of_loss || null,
+          type_of_loss: claimData?.loss_type || null,
+          primary_contact_id: claimData?.contact_id || null,
+          internal_notes: notes || null,
+          project_manager_id: pmId || null,
+          lead_tech_id: leadTechId || null,
+        });
+        result = { job: rows?.[0] };
+      }
       onCreated?.(result);
     } catch (err) {
       console.error('Add related job:', err);
@@ -86,15 +112,15 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
               Same Claim / Occurrence
             </div>
             <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {sourceJob.insured_name || 'Client'}
+              {sourceJob?.insured_name || claimData?.contact_name || 'Client'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
               {claimData?.claim_number}
               {claimData?.insurance_carrier && <> · {claimData.insurance_carrier}</>}
             </div>
-            {(sourceJob.address || claimData?.loss_address) && (
+            {(sourceJob?.address || claimData?.loss_address) && (
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                📍 {sourceJob.address || claimData?.loss_address}
+                📍 {sourceJob?.address || claimData?.loss_address}
               </div>
             )}
             {/* Existing jobs under this claim */}

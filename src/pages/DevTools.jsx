@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 
 /* ── Toast helpers ── */
 const ok  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -703,7 +704,8 @@ function WorkersTab() {
   const triggerSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/sync-encircle', { method: 'POST' });
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/sync-encircle', { method: 'POST', headers: auth });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       ok(`Encircle sync triggered — ${data.synced ?? '?'} records`);

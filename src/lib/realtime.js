@@ -6,6 +6,13 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+/** Get Authorization header from current session (for worker fetch calls) */
+export async function getAuthHeader() {
+  const { data: { session } } = await realtimeClient.auth.getSession();
+  const token = session?.access_token;
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
 export const realtimeClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: {
     params: {

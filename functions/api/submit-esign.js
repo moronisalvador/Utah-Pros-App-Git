@@ -9,6 +9,8 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
+function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -118,7 +120,7 @@ export async function onRequestPost(context) {
       change_order:  'Change Order',
     }[signReq.doc_type] || 'Signed Document';
 
-    const firstName = signer_name.split(' ')[0];
+    const firstName = escHtml(signer_name.split(' ')[0]);
     // Chunk-encode to avoid V8 call stack overflow on large PDFs (btoa spread crashes at ~100KB+)
     const pdfB64 = (() => {
       const bytes = new Uint8Array(pdfBytes);

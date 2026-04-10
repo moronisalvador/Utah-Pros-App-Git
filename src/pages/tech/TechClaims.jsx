@@ -7,23 +7,35 @@ import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techCon
 import { toast } from '@/lib/toast';
 
 export default function TechClaims() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [filtered, setFiltered] = useState([]);
+  const [scope, setScope] = useState('mine'); // 'mine' | 'all'
 
   const load = useCallback(async () => {
+    if (!employee?.id) return;
     setLoading(true);
     try {
-      const result = await db.rpc('get_claims_list');
+      let result;
+      if (scope === 'mine') {
+        try {
+          result = await db.rpc('get_tech_claims', { p_employee_id: employee.id });
+        } catch {
+          // RPC may not exist yet — fall back to get_claims_list
+          result = await db.rpc('get_claims_list');
+        }
+      } else {
+        result = await db.rpc('get_claims_list');
+      }
       setClaims(result || []);
     } catch (e) {
       toast('Failed to load claims', 'error');
     }
     setLoading(false);
-  }, [db]);
+  }, [db, employee?.id, scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -57,6 +69,28 @@ export default function TechClaims() {
         <div className="tech-page-header">
           <div className="tech-page-title">Claims</div>
           <div className="tech-page-subtitle">{claims.length} total</div>
+        </div>
+
+        {/* Scope toggle */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 'var(--space-4)' }}>
+          {[{ key: 'mine', label: 'My Claims' }, { key: 'all', label: 'All Claims' }].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setScope(t.key)}
+              style={{
+                padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
+                fontSize: 14, fontWeight: scope === t.key ? 600 : 400, cursor: 'pointer',
+                height: 48,
+                background: scope === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+                color: scope === t.key ? '#fff' : 'var(--text-secondary)',
+                borderColor: scope === t.key ? 'var(--accent)' : 'var(--border-color)',
+                fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Search bar — 48px tall, 16px font to prevent iOS zoom */}

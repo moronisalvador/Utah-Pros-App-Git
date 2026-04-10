@@ -13,7 +13,7 @@ const ROLES = [
 
 const inputStyle = {
   width: '100%', height: 48, padding: '0 14px',
-  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
+  fontSize: 16, borderRadius: 'var(--tech-radius-button)',
   border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
   color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
 };
@@ -41,16 +41,21 @@ export default function TechNewCustomer() {
 
   const handleSave = async () => {
     if (!canSave || saving) return;
+    const phone = normalizePhone(form.phone);
+    if (!phone) {
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      return;
+    }
     setSaving(true);
     try {
       const data = {
         name: form.name.trim(),
-        phone: normalizePhone(form.phone),
+        phone,
         role,
         email: form.email?.trim() || null,
         notes: form.notes?.trim() || null,
         opt_in_status: false,
-        tags: '[]',
+        tags: [],
       };
       if (isAddress) {
         Object.assign(data, {
@@ -94,7 +99,7 @@ export default function TechNewCustomer() {
         <button
           onClick={() => navigate(-1)}
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer',
           }}

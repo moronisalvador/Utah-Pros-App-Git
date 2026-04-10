@@ -238,7 +238,7 @@ db.select('job_documents', `or=(appointment_id.eq.${apptId},job_id.eq.${jobId})&
 `id UUID PK, job_number TEXT, claim_id UUID, primary_contact_id UUID, division TEXT, phase TEXT, status TEXT, created_at TIMESTAMPTZ`
 
 ### `contacts`
-`id UUID PK, first_name TEXT, last_name TEXT, phone TEXT, email TEXT, role TEXT`
+`id UUID PK, name TEXT, phone TEXT, email TEXT, role TEXT`
 
 ### `claims`
 `id UUID PK, claim_number TEXT, contact_id UUID, date_of_loss DATE, status TEXT`

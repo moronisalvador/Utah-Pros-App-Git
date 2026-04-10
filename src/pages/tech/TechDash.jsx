@@ -284,7 +284,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
             disabled={uploading}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
+              height: 48, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
               background: uploading ? 'var(--accent-light)' : 'var(--bg-tertiary)',
               color: uploading ? 'var(--accent)' : 'var(--text-secondary)',
               border: `1px solid ${uploading ? 'var(--accent)' : 'var(--border-light)'}`,
@@ -301,7 +301,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
             onClick={() => navigate(`/tech/appointment/${appt.id}`)}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
+              height: 48, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 600,
               background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
               border: '1px solid var(--border-light)', cursor: 'pointer',
               fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
@@ -317,7 +317,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
             disabled={acting}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              height: 40, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 700,
+              height: 48, borderRadius: 'var(--tech-radius-button)', fontSize: 13, fontWeight: 700,
               background: confirmOmw ? '#fef2f2' : '#b45309',
               color: confirmOmw ? '#dc2626' : '#fff',
               border: confirmOmw ? '1px solid #fecaca' : '1px solid transparent',

@@ -5,6 +5,7 @@
 export function normalizePhone(raw) {
   let phone = (raw || '').replace(/\D/g, '');
   if (phone.length === 10) phone = '1' + phone;
+  if (phone.length < 10) return null;
   if (!phone.startsWith('+')) phone = '+' + phone;
   return phone;
 }

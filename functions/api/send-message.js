@@ -148,14 +148,20 @@ export async function onRequestPost(context) {
     const results = [];
 
     if (conversation.type === 'group') {
-      const toNumbers = participants.map(p => p.phone).join(',');
-      const twilioResult = await sendMessage(env, {
-        to: toNumbers,
-        body: clientBody,
-        mediaUrls: media_urls,
-        statusCallback,
-      });
-      results.push(twilioResult);
+      for (const participant of participants) {
+        try {
+          const twilioResult = await sendMessage(env, {
+            to: participant.phone,
+            body: clientBody,
+            mediaUrls: media_urls,
+            statusCallback,
+          });
+          results.push(twilioResult);
+        } catch (err) {
+          console.error(`Group send to ${participant.phone} failed:`, err.message);
+          results.push({ error: err.message, phone: participant.phone });
+        }
+      }
     } else if (conversation.type === 'broadcast') {
       for (const participant of participants) {
         try {

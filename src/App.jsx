@@ -25,8 +25,9 @@ import Settings from '@/pages/Settings';
 import SignPage from '@/pages/SignPage';
 import SetPassword from '@/pages/SetPassword';
 import Collections from '@/pages/Collections';
+import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
-import WorkAuthSigning from '@/pages/WorkAuthSigning';
+
 import EncircleImport from '@/pages/EncircleImport';
 
 // Tech pages (field_tech role)
@@ -39,6 +40,7 @@ import TechAppointment from '@/pages/tech/TechAppointment';
 import TechNewCustomer from '@/pages/tech/TechNewCustomer';
 import TechNewJob from '@/pages/tech/TechNewJob';
 import TechNewAppointment from '@/pages/tech/TechNewAppointment';
+import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -95,7 +97,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/sign/:token" element={<SignPage />} />
           <Route path="/set-password" element={<SetPassword />} />
-          <Route path="/work-auth" element={<WorkAuthSigning />} />
+
 
           {/* Tech layout — field_tech role, no sidebar */}
           <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
@@ -104,6 +106,7 @@ export default function App() {
             <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
             <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
             <Route path="tech/claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+            <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
             <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
             <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
             <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
@@ -147,6 +150,11 @@ export default function App() {
             <Route path="collections" element={
               <FeatureRoute flag="page:collections">
                 <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
+              </FeatureRoute>
+            } />
+            <Route path="collections/:claimId" element={
+              <FeatureRoute flag="page:collections">
+                <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
               </FeatureRoute>
             } />
             <Route path="marketing" element={

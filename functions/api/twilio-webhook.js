@@ -46,7 +46,11 @@ export async function onRequestPost(context) {
   try {
     // ── 1. Validate Twilio signature ──
     // Skip validation if auth token not configured (dev/testing)
-    const isValid = !env.TWILIO_AUTH_TOKEN || await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, request.url);
+    if (!env.TWILIO_AUTH_TOKEN) {
+      console.warn('TWILIO_AUTH_TOKEN not configured — rejecting webhook (fail closed)');
+      return new Response('Twilio auth token not configured', { status: 500 });
+    }
+    const isValid = await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, request.url);
     if (!isValid) {
       return new Response('Forbidden', { status: 403 });
     }

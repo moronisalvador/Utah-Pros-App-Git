@@ -38,7 +38,7 @@ function getDivisions(claim) {
   return divs;
 }
 
-export default function ARClaimCard({ claim, isSelected, isExpanded, onClick, onRecordPayment, onJobClick }) {
+export default function ARClaimCard({ claim, isSelected, isExpanded, onClick, onRecordPayment, onJobClick, onViewClaim }) {
   const outstanding = Number(claim.outstanding || 0);
   const invoiced = Number(claim.total_invoiced || 0);
   const collected = Number(claim.total_collected || 0);
@@ -137,6 +137,15 @@ export default function ARClaimCard({ claim, isSelected, isExpanded, onClick, on
               </div>
             );
           })}
+          {onViewClaim && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ width: '100%', marginTop: 8, fontSize: 12 }}
+              onClick={() => onViewClaim(claim.claim_id)}
+            >
+              View Full Claim →
+            </button>
+          )}
         </div>
       )}
     </div>
