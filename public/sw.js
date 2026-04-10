@@ -1,4 +1,4 @@
-const CACHE = 'upr-v2';
+const CACHE = 'upr-v3';
 
 // Static assets that rarely change — cache-first
 const CACHE_FIRST_PATTERNS = [
