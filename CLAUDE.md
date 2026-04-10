@@ -41,6 +41,7 @@
 - **Deployment:** Cloudflare Pages — auto-deploys on push to `dev` branch
 
 **Supabase project ID:** `glsmljpabrwonfiltiqm`
+**Supabase anon key:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsc21sanBhYnJ3b25maWx0aXFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NDgwNjIsImV4cCI6MjA4ODIyNDA2Mn0.MySSItxhestKG9H4HOHgbnAIoHyngxAz3aAKrPDrfx4`
 
 ---
 
