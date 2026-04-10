@@ -657,7 +657,7 @@ export default function TechDash() {
             ))}
           </div>
         ) : (
-          <div className="empty-state" style={{ flex: 1 }}>
+          <div className="empty-state" style={{ marginTop: 40 }}>
             <div className="empty-state-icon">
               <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5">
                 <rect x="3" y="4" width="18" height="18" rx="2"/>
