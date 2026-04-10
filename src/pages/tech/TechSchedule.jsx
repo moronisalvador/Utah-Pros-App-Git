@@ -365,6 +365,7 @@ export default function TechSchedule() {
   const [view, setView] = useState('list'); // 'list' | 'daily'
   const [selectedDay, setSelectedDay] = useState(() => fmtDate(new Date()));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const dateRefs = useRef({});
   const didScrollToToday = useRef(false);
 
@@ -398,22 +399,38 @@ export default function TechSchedule() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Dates that have appointments (for dot indicators)
+  // Dates that have appointments (for dot indicators — unfiltered)
   const apptDates = useMemo(() => {
     const set = new Set();
     appointments.forEach(a => { if (a.date) set.add(a.date); });
     return set;
   }, [appointments]);
 
-  // Group appointments by date
+  // Filter appointments by search query
+  const filteredAppointments = useMemo(() => {
+    if (!searchQuery.trim()) return appointments;
+    const q = searchQuery.toLowerCase();
+    return appointments.filter(a => {
+      const job = a.jobs;
+      return (
+        (a.title || '').toLowerCase().includes(q) ||
+        (job?.insured_name || '').toLowerCase().includes(q) ||
+        (job?.address || '').toLowerCase().includes(q) ||
+        (job?.city || '').toLowerCase().includes(q) ||
+        (job?.job_number || '').toLowerCase().includes(q)
+      );
+    });
+  }, [appointments, searchQuery]);
+
+  // Group filtered appointments by date
   const grouped = useMemo(() => {
     const g = {};
-    appointments.forEach(a => {
+    filteredAppointments.forEach(a => {
       if (!g[a.date]) g[a.date] = [];
       g[a.date].push(a);
     });
     return g;
-  }, [appointments]);
+  }, [filteredAppointments]);
 
   // For list view: all sorted dates with appointments (past + future)
   const sortedDatesWithAppts = useMemo(() => {
@@ -489,7 +506,7 @@ export default function TechSchedule() {
               <button
                 onClick={() => handleSelectDay(todayStr)}
                 style={{
-                  height: 32, padding: '0 12px', borderRadius: 'var(--tech-radius-button)',
+                  height: 40, padding: '0 12px', borderRadius: 'var(--tech-radius-button)',
                   background: 'transparent', border: '1px solid var(--accent)',
                   color: 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
@@ -507,7 +524,7 @@ export default function TechSchedule() {
               <button
                 onClick={() => setView('daily')}
                 style={{
-                  width: 36, height: 32, border: 'none', cursor: 'pointer',
+                  width: 44, height: 40, border: 'none', cursor: 'pointer',
                   background: view === 'daily' ? 'var(--accent)' : 'var(--bg-primary)',
                   color: view === 'daily' ? '#fff' : 'var(--text-tertiary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -520,7 +537,7 @@ export default function TechSchedule() {
               <button
                 onClick={() => setView('list')}
                 style={{
-                  width: 36, height: 32, border: 'none', cursor: 'pointer',
+                  width: 44, height: 40, border: 'none', cursor: 'pointer',
                   background: view === 'list' ? 'var(--accent)' : 'var(--bg-primary)',
                   color: view === 'list' ? '#fff' : 'var(--text-tertiary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -537,7 +554,7 @@ export default function TechSchedule() {
             <button
               onClick={() => navigate(`/tech/new-appointment?date=${selectedDay}`)}
               style={{
-                width: 36, height: 36, borderRadius: 'var(--tech-radius-button)',
+                width: 44, height: 44, borderRadius: 'var(--tech-radius-button)',
                 background: 'var(--accent)', color: '#fff', border: 'none',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
@@ -547,6 +564,43 @@ export default function TechSchedule() {
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+          </div>
+        </div>
+
+        {/* Search bar */}
+        <div style={{ padding: '8px 16px 0' }}>
+          <div style={{ position: 'relative' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"
+              style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by name, address, job #..."
+              style={{
+                width: '100%', height: 40, paddingLeft: 36, paddingRight: searchQuery ? 32 : 12,
+                fontSize: 16, borderRadius: 'var(--tech-radius-button)',
+                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'var(--bg-tertiary)', border: 'none', borderRadius: 'var(--radius-full)',
+                  width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0,
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 

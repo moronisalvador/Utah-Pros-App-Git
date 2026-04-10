@@ -7,7 +7,7 @@ import DatePicker from '@/components/DatePicker';
 
 const inputStyle = {
   width: '100%', height: 48, padding: '0 14px',
-  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
+  fontSize: 16, borderRadius: 'var(--tech-radius-button)',
   border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
   color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
 };
@@ -228,7 +228,7 @@ export default function TechNewAppointment() {
         <button
           onClick={() => navigate(-1)}
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer',
           }}
@@ -384,7 +384,7 @@ export default function TechNewAppointment() {
                 key={t.value}
                 onClick={() => setType(t.value)}
                 style={{
-                  height: 40, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
+                  height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
                   border: type === t.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
                   background: type === t.value ? 'var(--accent-light)' : 'var(--bg-primary)',
                   fontSize: 13, fontWeight: 600,
@@ -597,13 +597,13 @@ export default function TechNewAppointment() {
                     value={newTaskTitle}
                     onChange={e => setNewTaskTitle(e.target.value)}
                     placeholder="Add a task..."
-                    style={{ ...inputStyle, flex: 1, height: 40 }}
+                    style={{ ...inputStyle, flex: 1, height: 48 }}
                   />
                   <button
                     onClick={createTask}
                     disabled={!newTaskTitle.trim()}
                     style={{
-                      height: 40, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
+                      height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
                       background: newTaskTitle.trim() ? 'var(--accent)' : 'var(--bg-tertiary)',
                       color: newTaskTitle.trim() ? '#fff' : 'var(--text-tertiary)',
                       border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',

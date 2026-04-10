@@ -4,8 +4,8 @@ export const APPT_STATUS_COLORS = {
   scheduled:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
   confirmed:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
   en_route:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  in_progress: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  paused:      { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+  in_progress: { bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' },
+  paused:      { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
   completed:   { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
   cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
 };

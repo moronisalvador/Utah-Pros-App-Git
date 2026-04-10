@@ -125,6 +125,7 @@ export default function TechTasks() {
   const togglingRef = useRef(new Set());
   const [tab, setTab] = useState('today');
   const [collapsed, setCollapsed] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,7 +157,18 @@ export default function TechTasks() {
 
   const toggleCollapse = (jobId) => setCollapsed(prev => ({ ...prev, [jobId]: !prev[jobId] }));
 
-  const filtered = tab === 'today' ? tasks.filter(t => t.is_today) : tasks;
+  const tabFiltered = tab === 'today' ? tasks.filter(t => t.is_today) : tasks;
+  const filtered = searchQuery.trim()
+    ? tabFiltered.filter(t => {
+        const q = searchQuery.toLowerCase();
+        return (
+          (t.task_name || '').toLowerCase().includes(q) ||
+          (t.job_number || '').toLowerCase().includes(q) ||
+          (t.insured_name || '').toLowerCase().includes(q) ||
+          (t.phase_name || '').toLowerCase().includes(q)
+        );
+      })
+    : tabFiltered;
   const doneCount = filtered.filter(t => t.is_complete).length;
   const totalCount = filtered.length;
 
@@ -200,6 +212,41 @@ export default function TechTasks() {
               {t.label}
             </button>
           ))}
+        </div>
+
+        {/* Search bar */}
+        <div style={{ position: 'relative', marginBottom: 'var(--space-4)' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"
+            style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search tasks, jobs, clients..."
+            style={{
+              width: '100%', height: 44, paddingLeft: 36, paddingRight: searchQuery ? 32 : 12,
+              fontSize: 16, borderRadius: 'var(--tech-radius-button)',
+              border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                background: 'var(--bg-tertiary)', border: 'none', borderRadius: 'var(--radius-full)',
+                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', padding: 0,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Completion summary — today tab only */}

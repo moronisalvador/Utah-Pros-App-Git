@@ -236,7 +236,7 @@ export default function TechNewJob() {
         <button
           onClick={() => navigate(-1)}
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer',
           }}

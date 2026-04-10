@@ -7,7 +7,7 @@ import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techCon
 import { toast } from '@/lib/toast';
 
 export default function TechClaims() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,15 +15,16 @@ export default function TechClaims() {
   const [filtered, setFiltered] = useState([]);
 
   const load = useCallback(async () => {
+    if (!employee?.id) return;
     setLoading(true);
     try {
-      const result = await db.rpc('get_claims_list');
+      const result = await db.rpc('get_tech_claims', { p_employee_id: employee.id });
       setClaims(result || []);
     } catch (e) {
       toast('Failed to load claims', 'error');
     }
     setLoading(false);
-  }, [db]);
+  }, [db, employee?.id]);
 
   useEffect(() => { load(); }, [load]);
 
