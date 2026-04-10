@@ -104,12 +104,13 @@ export default function MergeModal({ type, keepRecord, onClose, onMerged }) {
     setSearching(true);
     try {
       let rows = [];
+      const eq = encodeURIComponent(q);
       if (type === 'contact') {
-        rows = await db.select('contacts', `or=(name.ilike.*${q}*,phone.ilike.*${q}*)&select=id,name,phone,email,role&limit=20&order=name.asc`);
+        rows = await db.select('contacts', `or=(name.ilike.*${eq}*,phone.ilike.*${eq}*)&select=id,name,phone,email,role&limit=20&order=name.asc`);
       } else if (type === 'claim') {
-        rows = await db.select('claims', `or=(claim_number.ilike.*${q}*,insurance_carrier.ilike.*${q}*)&select=id,claim_number,insurance_carrier,date_of_loss,status&limit=20&order=claim_number.asc`);
+        rows = await db.select('claims', `or=(claim_number.ilike.*${eq}*,insurance_carrier.ilike.*${eq}*)&select=id,claim_number,insurance_carrier,date_of_loss,status&limit=20&order=claim_number.asc`);
       } else {
-        rows = await db.select('jobs', `or=(job_number.ilike.*${q}*,insured_name.ilike.*${q}*)&select=id,job_number,insured_name,division,phase&limit=20&order=job_number.desc`);
+        rows = await db.select('jobs', `or=(job_number.ilike.*${eq}*,insured_name.ilike.*${eq}*)&select=id,job_number,insured_name,division,phase&limit=20&order=job_number.desc`);
       }
       setResults((rows || []).filter(r => r.id !== keepRecord.id));
     } catch { setResults([]); }

@@ -88,8 +88,9 @@ export default function TechNewAppointment() {
     if (q.trim().length < 2) { setJobResults([]); setShowJobDrop(false); return; }
     setSearching(true);
     try {
+      const eq = encodeURIComponent(q.trim());
       const r = await db.select('jobs',
-        `or=(job_number.ilike.*${q.trim()}*,insured_name.ilike.*${q.trim()}*)&status=eq.active&select=id,job_number,insured_name,division,address,city&order=created_at.desc&limit=10`
+        `or=(job_number.ilike.*${eq}*,insured_name.ilike.*${eq}*)&status=eq.active&select=id,job_number,insured_name,division,address,city&order=created_at.desc&limit=10`
       );
       setJobResults(Array.isArray(r) ? r : []);
       setShowJobDrop(true);
