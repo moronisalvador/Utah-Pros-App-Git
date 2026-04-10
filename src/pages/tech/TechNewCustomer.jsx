@@ -13,7 +13,7 @@ const ROLES = [
 
 const inputStyle = {
   width: '100%', height: 48, padding: '0 14px',
-  fontSize: 'var(--tech-text-body)', borderRadius: 'var(--tech-radius-button)',
+  fontSize: 16, borderRadius: 'var(--tech-radius-button)',
   border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
   color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
 };

@@ -189,7 +189,7 @@ export default function TechTasks() {
               style={{
                 padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
                 fontSize: 14, fontWeight: tab === t.key ? 600 : 400, cursor: 'pointer',
-                height: 40,
+                height: 48,
                 background: tab === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
                 color: tab === t.key ? '#fff' : 'var(--text-secondary)',
                 borderColor: tab === t.key ? 'var(--accent)' : 'var(--border-color)',

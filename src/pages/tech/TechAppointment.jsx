@@ -225,6 +225,7 @@ export default function TechAppointment() {
             style={{
               background: 'none', border: 'none', color: '#fff',
               cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center',
+              minWidth: 48, minHeight: 48,
             }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
@@ -475,6 +476,7 @@ export default function TechAppointment() {
                 position: 'absolute', top: 16, right: 16,
                 background: 'none', border: 'none', color: '#fff',
                 fontSize: 28, lineHeight: 1, cursor: 'pointer', padding: 8,
+                minWidth: 48, minHeight: 48,
                 zIndex: 1001,
               }}
             >

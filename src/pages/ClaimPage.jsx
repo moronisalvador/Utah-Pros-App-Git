@@ -38,6 +38,7 @@ export default function ClaimPage() {
   // UI state
   const [expandedJob, setExpandedJob] = useState(null);
   const [showAddJob, setShowAddJob] = useState(false);
+  const [employees, setEmployees] = useState([]);
   const [showMore, setShowMore] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -67,6 +68,7 @@ export default function ClaimPage() {
   }, [db, claimId, navigate, isTech]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
 
   // ── Lazy load appointments ──
   const loadAppointments = useCallback(async () => {
@@ -392,7 +394,7 @@ export default function ClaimPage() {
             loss_address: claim.loss_address,
           }}
           siblingJobs={jobs}
-          employees={[]}
+          employees={employees}
           db={db}
           onClose={() => setShowAddJob(false)}
           onCreated={() => { setShowAddJob(false); load(); }}

@@ -498,7 +498,8 @@ function PayrollView({ db, startDate, endDate }) {
       e.regular_cost??0, e.overtime_cost??0, e.total_cost??0,
       e.approved_hours??0, e.pending_hours??0,
     ]);
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const csvEsc = (v) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [headers, ...rows].map(r => r.map(csvEsc).join(',')).join('\n');
     const blob = new Blob([csv], { type:'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a = document.createElement('a');

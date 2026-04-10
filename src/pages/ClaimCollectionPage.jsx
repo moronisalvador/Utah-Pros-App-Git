@@ -106,7 +106,7 @@ export default function ClaimCollectionPage() {
     await patchJob(job.id, {
       deductible_collected: true,
       deductible_collected_date: today,
-      ar_status: (balance - deductible) <= 0 ? 'paid' : 'partial',
+      ar_status: (balance - deductible) <= 0.005 ? 'paid' : 'partial',
     });
     toast(`✓ Deductible of ${fmt$(job.deductible)} received`);
   };

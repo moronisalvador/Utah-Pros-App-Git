@@ -37,7 +37,7 @@ export default function ARPage({ db, navigate }) {
 
   // KPI aggregation
   const kpis = useMemo(() => {
-    const sum = (key) => billingData.reduce((s, r) => s + Number(r[key] || 0), 0);
+    const sum = (key) => Math.round(billingData.reduce((s, r) => s + Number(r[key] || 0), 0) * 100) / 100;
     const invoiced = sum('total_invoiced');
     const collected = sum('total_collected');
     const outstanding = sum('outstanding');

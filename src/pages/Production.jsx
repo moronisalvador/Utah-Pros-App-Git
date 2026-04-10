@@ -391,6 +391,9 @@ export default function Production() {
                 </tr>
               </thead>
               <tbody>
+                {listFilteredJobs.length === 0 && (
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)', fontSize: 13 }}>No jobs match the current filters</td></tr>
+                )}
                 {listFilteredJobs.map(job => (
                   <tr key={job.id} onClick={() => setSelectedJob(job)} style={{ cursor: 'pointer' }}>
                     <td style={{ fontWeight: 600 }}>{job.job_number || '—'}</td>
