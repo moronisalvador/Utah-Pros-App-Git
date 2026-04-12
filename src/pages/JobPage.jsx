@@ -10,6 +10,7 @@ import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
 import MergeModal from '@/components/MergeModal';
+import DocChecklist from '@/components/DocChecklist';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -61,7 +62,7 @@ export default function JobPage(){
       const[jobsData,phasesData,empsData,docsData,notesData,histData]=await Promise.all([
         db.select('jobs',`id=eq.${jobId}`),
         db.select('job_phases','is_active=eq.true&order=display_order.asc'),
-        db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
+        db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,display_name,role'),
         db.select('job_documents',`job_id=eq.${jobId}&order=created_at.desc`).catch(()=>[]),
         db.select('job_notes',`job_id=eq.${jobId}&order=created_at.desc`).catch(()=>[]),
         db.select('job_phase_history',`job_id=eq.${jobId}&order=changed_at.desc&limit=50`).catch(()=>[]),
@@ -107,7 +108,8 @@ export default function JobPage(){
   const phaseLabel=phaseMap[job.phase]?.label||job.phase;
   // divEmoji replaced by DivisionIcon component
   const priorityObj=PRIORITY_OPTIONS.find(p=>p.value===job.priority)||PRIORITY_OPTIONS[2];
-  const TABS=[{key:'overview',label:'Overview'},{key:'schedule',label:'Schedule',count:taskSummary?.total||0},{key:'files',label:'Files',count:documents.length},{key:'financial',label:'Financial'},{key:'activity',label:'Activity',count:notes.length+history.length}];
+  const showChecklist=job.division==='water'||job.division==='mold';
+  const TABS=[{key:'overview',label:'Overview'},...(showChecklist?[{key:'checklist',label:'Checklist'}]:[]),{key:'schedule',label:'Schedule',count:taskSummary?.total||0},{key:'files',label:'Files',count:documents.length},{key:'financial',label:'Financial'},{key:'activity',label:'Activity',count:notes.length+history.length}];
 
   return(
     <div className="job-page">
@@ -168,6 +170,7 @@ export default function JobPage(){
       ))}</div>
 
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
+        {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
