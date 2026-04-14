@@ -912,8 +912,8 @@ export default function Schedule() {
         const fpd = new Date(jobPickerModal.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         const fpt = `${jobPickerModal.hour % 12 || 12}:00${jobPickerModal.hour >= 12 ? 'pm' : 'am'}`;
         const q = jobPickerSearch.toLowerCase();
-        const pj = boardData.filter(j => q ? j.insured_name.toLowerCase().includes(q) : true);
-        const oj = panelJobs.filter(j => !boardData.some(b => b.job_id === j.id) && (q ? j.insured_name.toLowerCase().includes(q) : true));
+        const pj = boardData.filter(j => q ? (j.insured_name || '').toLowerCase().includes(q) : true);
+        const oj = panelJobs.filter(j => !boardData.some(b => b.job_id === j.id) && (q ? (j.insured_name || '').toLowerCase().includes(q) : true));
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 80 }} onClick={() => setJobPickerModal(null)}>
             <div style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 400, maxHeight: 'calc(100dvh - 160px - env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
