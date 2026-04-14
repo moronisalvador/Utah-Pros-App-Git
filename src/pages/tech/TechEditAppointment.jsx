@@ -284,7 +284,17 @@ export default function TechEditAppointment() {
         {/* ═══ DATE ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>Date <span style={{ color: '#ef4444' }}>*</span></div>
-          <DatePicker value={date} onChange={setDate} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => { const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() - 1); setDate(d.toISOString().split('T')[0]); }}
+              style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 'var(--tech-radius-button)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div style={{ flex: 1 }}><DatePicker value={date} onChange={setDate} /></div>
+            <button onClick={() => { const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() + 1); setDate(d.toISOString().split('T')[0]); }}
+              style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 'var(--tech-radius-button)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+          </div>
           {/* Day schedule preview */}
           {dayAppts.length > 0 && (
             <div style={{ marginTop: 10, borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
