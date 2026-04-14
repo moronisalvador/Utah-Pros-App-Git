@@ -361,7 +361,14 @@ const MITIGATION_DIVS = ['water', 'mold', 'contents'];
 function loadFilters(empId) {
   try {
     const raw = localStorage.getItem(`tech_schedule_filters_${empId}`);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate old single-string employee filter to new format
+      if (typeof parsed.employee === 'string' && parsed.employee !== 'me' && parsed.employee !== 'all') {
+        parsed.employee = [parsed.employee];
+      }
+      return parsed;
+    }
   } catch {}
   return { employee: 'me', division: 'all' };
 }
@@ -450,9 +457,10 @@ export default function TechSchedule() {
     // Employee filter
     if (filterEmployee === 'me') {
       list = list.filter(a => a.appointment_crew?.some(c => c.employee_id === employee.id));
-    } else if (filterEmployee !== 'all') {
-      list = list.filter(a => a.appointment_crew?.some(c => c.employee_id === filterEmployee));
+    } else if (Array.isArray(filterEmployee)) {
+      list = list.filter(a => a.appointment_crew?.some(c => filterEmployee.includes(c.employee_id)));
     }
+    // 'all' = no employee filter
 
     // Division filter
     if (filterDivision === 'mitigation') {
@@ -488,6 +496,31 @@ export default function TechSchedule() {
   }, [appointments, searchQuery]);
 
   const hasActiveFilters = filterEmployee !== 'me' || filterDivision !== 'all';
+
+  // Toggle an individual crew member in/out of multi-select
+  const toggleCrewFilter = (id) => {
+    setFilterEmployee(prev => {
+      let selected;
+      if (prev === 'me') {
+        // Switching from "Me" to picking individuals — start with me + the tapped person
+        selected = [employee.id, id];
+      } else if (prev === 'all') {
+        // Switching from "All" to just this one person
+        selected = [id];
+      } else if (Array.isArray(prev)) {
+        if (prev.includes(id)) {
+          selected = prev.filter(x => x !== id);
+          if (selected.length === 0) return 'me'; // nothing left → back to "Me"
+          if (selected.length === 1 && selected[0] === employee.id) return 'me'; // only me left
+        } else {
+          selected = [...prev, id];
+        }
+      } else {
+        selected = [id];
+      }
+      return selected;
+    });
+  };
 
   // Group filtered appointments by date
   const grouped = useMemo(() => {
@@ -731,7 +764,7 @@ export default function TechSchedule() {
                 scrollbarWidth: 'none', msOverflowStyle: 'none',
               }}>
                 <style>{`.tech-crew-chips::-webkit-scrollbar{display:none}`}</style>
-                <div className="tech-crew-chips" style={{ display: 'flex', gap: 6 }}>
+                <div className="tech-crew-chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {/* Me chip */}
                   <button
                     onClick={() => setFilterEmployee('me')}
@@ -760,23 +793,27 @@ export default function TechSchedule() {
                   >
                     All
                   </button>
-                  {/* Individual crew members */}
-                  {crewMembers.filter(c => c.id !== employee.id).map(c => (
+                  {/* Individual crew members — multi-select */}
+                  {crewMembers.map(c => {
+                    const isMe = c.id === employee.id;
+                    const isSelected = Array.isArray(filterEmployee) && filterEmployee.includes(c.id);
+                    return (
                     <button
                       key={c.id}
-                      onClick={() => setFilterEmployee(c.id)}
+                      onClick={() => toggleCrewFilter(c.id)}
                       style={{
                         height: 36, padding: '0 14px', borderRadius: 'var(--radius-full)',
                         fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                        border: filterEmployee === c.id ? '2px solid var(--accent)' : '1px solid var(--border-color)',
-                        background: filterEmployee === c.id ? 'var(--accent-light)' : 'var(--bg-primary)',
-                        color: filterEmployee === c.id ? 'var(--accent)' : 'var(--text-secondary)',
+                        border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                        background: isSelected ? 'var(--accent-light)' : 'var(--bg-primary)',
+                        color: isSelected ? 'var(--accent)' : 'var(--text-secondary)',
                         WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      {c.name}
+                      {isMe ? `Me (${c.name})` : c.name}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
