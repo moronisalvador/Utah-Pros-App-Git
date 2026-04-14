@@ -52,6 +52,7 @@ export default function JobPage(){
   const[filesRefreshKey,setFilesRefreshKey]=useState(0);
   const[claimData,setClaimData]=useState(null);const[siblingJobs,setSiblingJobs]=useState([]);const[showAddRelated,setShowAddRelated]=useState(false);
   const[showMerge,setShowMerge]=useState(false);const[showMore,setShowMore]=useState(false);
+  const[deleteTarget,setDeleteTarget]=useState(null);const[deleteInput,setDeleteInput]=useState('');const[deleting,setDeleting]=useState(false);
 
   const jobReqRef=useRef(0);
   useEffect(()=>{loadJob();},[jobId]);
@@ -90,6 +91,15 @@ export default function JobPage(){
       setJob(prev=>({...prev,phase:newPhase,phase_entered_at:new Date().toISOString()}));
       const h=await db.select('job_phase_history',`job_id=eq.${job.id}&order=changed_at.desc&limit=50`).catch(()=>[]);setHistory(h);
     }catch(err){errToast('Failed to update phase: '+err.message);}finally{setSaving(false);}
+  };
+
+  const handleSoftDelete=async()=>{
+    if(!job)return;setDeleting(true);
+    try{
+      await db.update('jobs',`id=eq.${job.id}`,{status:'deleted'});
+      toast(`Job ${job.job_number} archived`);setDeleteTarget(null);setDeleteInput('');
+      navigate(isTech?'/tech':'/jobs',{replace:true});
+    }catch(e){errToast('Failed to delete job: '+e.message);}finally{setDeleting(false);}
   };
 
   const saveBatch=async(fields)=>{
@@ -135,6 +145,9 @@ export default function JobPage(){
             {showMore&&<div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:'var(--bg-primary)',border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',boxShadow:'var(--shadow-md)',zIndex:100,minWidth:160,overflow:'hidden'}}>
               <button onClick={()=>{setShowMore(false);setShowMerge(true);}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'var(--text-primary)',textAlign:'left'}}>
                 Merge Job
+              </button>
+              <button onClick={()=>{setShowMore(false);setDeleteTarget(job);setDeleteInput('');}} onMouseDown={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',fontSize:13,color:'#dc2626',textAlign:'left'}}>
+                Delete Job
               </button>
             </div>}
           </div>}
@@ -182,6 +195,32 @@ export default function JobPage(){
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
       {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob();}}/>}
+      {deleteTarget&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',justifyContent:'center',alignItems:'center'}} onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>
+          <div style={{background:'var(--bg-primary)',borderRadius:'var(--radius-xl)',width:'90%',maxWidth:420,padding:24,boxShadow:'0 20px 60px rgba(0,0,0,0.2)',border:'1px solid var(--border-color)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:700,color:'#dc2626',marginBottom:12}}>Delete Job</div>
+            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:4}}>
+              This will archive <strong>{job.job_number}</strong>. It can be restored later but will be hidden from all views.
+            </div>
+            <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:16}}>
+              Type <strong style={{fontFamily:'var(--font-mono)',color:'var(--text-primary)'}}>DELETE</strong> to confirm:
+            </div>
+            <input type="text" value={deleteInput} onChange={e=>setDeleteInput(e.target.value)} autoFocus placeholder="DELETE"
+              style={{width:'100%',padding:'10px 12px',fontSize:14,border:'1px solid var(--border-color)',borderRadius:'var(--radius-md)',background:'var(--bg-primary)',color:'var(--text-primary)',outline:'none',boxSizing:'border-box',fontFamily:'var(--font-mono)',marginBottom:16}}/>
+            <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+              <button className="btn btn-secondary btn-sm" onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>Cancel</button>
+              <button onClick={handleSoftDelete} disabled={deleteInput!=='DELETE'||deleting}
+                style={{padding:'8px 20px',fontSize:13,fontWeight:600,borderRadius:'var(--radius-md)',border:'none',
+                  cursor:deleteInput==='DELETE'&&!deleting?'pointer':'not-allowed',
+                  background:deleteInput==='DELETE'?'#dc2626':'var(--bg-tertiary)',
+                  color:deleteInput==='DELETE'?'#fff':'var(--text-tertiary)',
+                  opacity:deleting?0.6:1}}>
+                {deleting?'Deleting...':'Delete Job'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
