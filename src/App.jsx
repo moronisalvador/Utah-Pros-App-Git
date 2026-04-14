@@ -167,9 +167,7 @@ export default function App() {
               </FeatureRoute>
             } />
             <Route path="import/encircle" element={
-              <FeatureRoute flag="page:encircle_import">
-                <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
-              </FeatureRoute>
+              <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
             } />
 
             {/* Admin-only */}

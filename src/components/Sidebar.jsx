@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking, featureFlag: 'page:time_tracking' },
   { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections,  featureFlag: 'page:collections' },
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,         featureFlag: 'page:leads' },
-  { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport,       featureFlag: 'page:encircle_import' },
+  { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
 
   { section: 'System' },
   { key: 'admin_panel',   label: 'Admin',         path: '/admin',         icon: IconAdmin },
