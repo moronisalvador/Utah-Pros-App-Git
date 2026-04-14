@@ -447,7 +447,10 @@ function FutureRow({ appt, showCrew }) {
       </div>
       <div className="tech-future-line" />
       <div className="tech-future-content">
-        <div className="tech-future-title">{appt.title || 'Appointment'}</div>
+        <div className="tech-future-title">{job?.insured_name || appt.title || 'Appointment'}</div>
+        <div className="tech-future-address">
+          {[appt.title, job?.job_number ? `#${job.job_number}` : null].filter(Boolean).join(' · ')}
+        </div>
         {address && <div className="tech-future-address">{address}</div>}
         {crewNames && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{crewNames}</div>}
       </div>
