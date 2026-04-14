@@ -355,19 +355,64 @@ function ApptRow({ appt, navigate }) {
   );
 }
 
+/* ── Filter persistence helpers ── */
+const MITIGATION_DIVS = ['water', 'mold', 'contents'];
+
+function loadFilters(empId) {
+  try {
+    const raw = localStorage.getItem(`tech_schedule_filters_${empId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { employee: 'me', division: 'all' };
+}
+function saveFilters(empId, filters) {
+  try { localStorage.setItem(`tech_schedule_filters_${empId}`, JSON.stringify(filters)); } catch {}
+}
+
 /* ── Main Component ── */
 
 export default function TechSchedule() {
   const { employee, db } = useAuth();
   const navigate = useNavigate();
-  const [appointments, setAppointments] = useState([]);
+  const [allAppointments, setAllAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list'); // 'list' | 'daily'
   const [selectedDay, setSelectedDay] = useState(() => fmtDate(new Date()));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const dateRefs = useRef({});
   const didScrollToToday = useRef(false);
+
+  // Filter state — persisted per employee
+  const [filterEmployee, setFilterEmployee] = useState(() => loadFilters(employee.id).employee);
+  const [filterDivision, setFilterDivision] = useState(() => loadFilters(employee.id).division);
+
+  // Persist filters on change
+  useEffect(() => {
+    saveFilters(employee.id, { employee: filterEmployee, division: filterDivision });
+  }, [employee.id, filterEmployee, filterDivision]);
+
+  // Build crew member list from loaded appointments
+  const crewMembers = useMemo(() => {
+    const map = new Map();
+    allAppointments.forEach(a => {
+      (a.appointment_crew || []).forEach(c => {
+        if (!map.has(c.employee_id)) {
+          map.set(c.employee_id, {
+            id: c.employee_id,
+            name: c.employees?.display_name || c.employees?.full_name || 'Unknown',
+          });
+        }
+      });
+    });
+    // Sort: current user first, then alphabetical
+    return [...map.values()].sort((a, b) => {
+      if (a.id === employee.id) return -1;
+      if (b.id === employee.id) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [allAppointments, employee.id]);
 
   const todayStr = fmtDate(new Date());
   const tomorrowStr = fmtDate(addDays(new Date(), 1));
@@ -387,19 +432,37 @@ export default function TechSchedule() {
         p_start_date: dateRange.start,
         p_end_date: dateRange.end,
       });
-      const mine = (result || []).filter(a =>
-        a.appointment_crew?.some(c => c.employee_id === employee.id)
-      );
-      setAppointments(mine);
+      setAllAppointments(result || []);
     } catch (e) {
       toast('Failed to load schedule', 'error');
     }
     setLoading(false);
-  }, [db, employee.id, dateRange.start, dateRange.end]);
+  }, [db, dateRange.start, dateRange.end]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Dates that have appointments (for dot indicators — unfiltered)
+  // Apply employee + division + search filters
+  const appointments = useMemo(() => {
+    let list = allAppointments;
+
+    // Employee filter
+    if (filterEmployee === 'me') {
+      list = list.filter(a => a.appointment_crew?.some(c => c.employee_id === employee.id));
+    } else if (filterEmployee !== 'all') {
+      list = list.filter(a => a.appointment_crew?.some(c => c.employee_id === filterEmployee));
+    }
+
+    // Division filter
+    if (filterDivision === 'mitigation') {
+      list = list.filter(a => MITIGATION_DIVS.includes(a.jobs?.division));
+    } else if (filterDivision === 'reconstruction') {
+      list = list.filter(a => a.jobs?.division === 'reconstruction');
+    }
+
+    return list;
+  }, [allAppointments, filterEmployee, filterDivision, employee.id]);
+
+  // Dates that have appointments (for dot indicators — after filters)
   const apptDates = useMemo(() => {
     const set = new Set();
     appointments.forEach(a => { if (a.date) set.add(a.date); });
@@ -421,6 +484,8 @@ export default function TechSchedule() {
       );
     });
   }, [appointments, searchQuery]);
+
+  const hasActiveFilters = filterEmployee !== 'me' || filterDivision !== 'all';
 
   // Group filtered appointments by date
   const grouped = useMemo(() => {
@@ -567,9 +632,9 @@ export default function TechSchedule() {
           </div>
         </div>
 
-        {/* Search bar */}
-        <div style={{ padding: '8px 16px 0' }}>
-          <div style={{ position: 'relative' }}>
+        {/* Search bar + filter toggle */}
+        <div style={{ padding: '8px 16px 0', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"
               style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -602,7 +667,119 @@ export default function TechSchedule() {
               </button>
             )}
           </div>
+          {/* Filter toggle button */}
+          <button
+            onClick={() => setShowFilters(v => !v)}
+            style={{
+              width: 40, height: 40, flexShrink: 0, borderRadius: 'var(--tech-radius-button)',
+              border: hasActiveFilters ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+              background: hasActiveFilters ? 'var(--accent-light)' : 'var(--bg-secondary)',
+              color: hasActiveFilters ? 'var(--accent)' : 'var(--text-tertiary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', position: 'relative',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+            {hasActiveFilters && (
+              <div style={{
+                position: 'absolute', top: -3, right: -3, width: 10, height: 10,
+                borderRadius: 5, background: 'var(--accent)', border: '2px solid var(--bg-primary)',
+              }} />
+            )}
+          </button>
         </div>
+
+        {/* Expandable filter panel */}
+        {showFilters && (
+          <div style={{ padding: '8px 16px 4px', borderTop: '1px solid var(--border-light)', marginTop: 4 }}>
+            {/* Division filter */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Type</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'mitigation', label: 'Mitigation' },
+                  { key: 'reconstruction', label: 'Reconstruction' },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setFilterDivision(opt.key)}
+                    style={{
+                      height: 36, padding: '0 14px', borderRadius: 'var(--radius-full)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                      border: filterDivision === opt.key ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                      background: filterDivision === opt.key ? 'var(--accent-light)' : 'var(--bg-primary)',
+                      color: filterDivision === opt.key ? 'var(--accent)' : 'var(--text-secondary)',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Employee filter */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Crew</div>
+              <div style={{
+                display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4,
+                scrollbarWidth: 'none', msOverflowStyle: 'none',
+              }}>
+                <style>{`.tech-crew-chips::-webkit-scrollbar{display:none}`}</style>
+                <div className="tech-crew-chips" style={{ display: 'flex', gap: 6 }}>
+                  {/* Me chip */}
+                  <button
+                    onClick={() => setFilterEmployee('me')}
+                    style={{
+                      height: 36, padding: '0 14px', borderRadius: 'var(--radius-full)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                      border: filterEmployee === 'me' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                      background: filterEmployee === 'me' ? 'var(--accent-light)' : 'var(--bg-primary)',
+                      color: filterEmployee === 'me' ? 'var(--accent)' : 'var(--text-secondary)',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    Me
+                  </button>
+                  {/* All chip */}
+                  <button
+                    onClick={() => setFilterEmployee('all')}
+                    style={{
+                      height: 36, padding: '0 14px', borderRadius: 'var(--radius-full)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                      border: filterEmployee === 'all' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                      background: filterEmployee === 'all' ? 'var(--accent-light)' : 'var(--bg-primary)',
+                      color: filterEmployee === 'all' ? 'var(--accent)' : 'var(--text-secondary)',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    All
+                  </button>
+                  {/* Individual crew members */}
+                  {crewMembers.filter(c => c.id !== employee.id).map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setFilterEmployee(c.id)}
+                      style={{
+                        height: 36, padding: '0 14px', borderRadius: 'var(--radius-full)',
+                        fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                        border: filterEmployee === c.id ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                        background: filterEmployee === c.id ? 'var(--accent-light)' : 'var(--bg-primary)',
+                        color: filterEmployee === c.id ? 'var(--accent)' : 'var(--text-secondary)',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Continuous scrolling date strip */}
         <DateStrip
