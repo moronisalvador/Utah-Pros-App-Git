@@ -542,6 +542,7 @@ export default function TechDash() {
   const [appointments, setAppointments] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const logoutTimer = useRef(null);
   const [loading, setLoading] = useState(true);
 
@@ -599,64 +600,67 @@ export default function TechDash() {
   const completed = appointments.filter(a => a.status === 'completed');
   const future = appointments.filter(a => !activeStatuses.includes(a.status) && a.status !== 'completed');
 
+  // Shared menu button + dropdown
+  const menuButton = (
+    <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-4)', zIndex: 20 }}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setShowMenu(false); }}>
+      <button
+        onClick={() => setShowMenu(v => !v)}
+        style={{
+          width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+          background: showMenu ? 'var(--accent-light)' : 'var(--bg-tertiary)',
+          color: showMenu ? 'var(--accent)' : 'var(--text-secondary)',
+          border: `1px solid ${showMenu ? 'var(--accent)' : 'var(--border-light)'}`,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          touchAction: 'manipulation',
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+        </svg>
+      </button>
+      {showMenu && (
+        <div style={{
+          position: 'absolute', right: 0, top: 46, background: 'var(--bg-primary)',
+          border: '1px solid var(--border-color)', borderRadius: 'var(--tech-radius-card)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 180, overflow: 'hidden',
+          animation: 'techFabIn 0.12s ease-out',
+        }}>
+          {isAdmin && (
+            <button onClick={() => { setShowMenu(false); navigate('/'); }} onMouseDown={e => e.preventDefault()}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '14px 16px',
+                background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Admin View
+            </button>
+          )}
+          <button onClick={() => { setShowMenu(false); navigate('/tech/feedback'); }} onMouseDown={e => e.preventDefault()}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '14px 16px',
+              background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+              color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left',
+              borderTop: '1px solid var(--border-light)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Send Feedback
+          </button>
+          <button onClick={() => { setShowMenu(false); handleLogoutTap(); }} onMouseDown={e => e.preventDefault()}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '14px 16px',
+              background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+              color: confirmLogout ? '#dc2626' : 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left',
+              borderTop: '1px solid var(--border-light)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={confirmLogout ? '#dc2626' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            {confirmLogout ? 'Tap again to Sign Out' : 'Sign Out'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   if (appointments.length === 0) {
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
-          {/* Utility buttons */}
-          <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-4)', display: 'flex', gap: 8 }}>
-            {isAdmin && (
-              <button
-                onClick={() => navigate('/')}
-                style={{
-                  height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
-                  background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                  border: '1px solid var(--border-light)', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  touchAction: 'manipulation',
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-                Admin
-              </button>
-            )}
-            <button
-              onClick={() => navigate('/tech/feedback')}
-              style={{
-                width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
-                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                border: '1px solid var(--border-light)', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                touchAction: 'manipulation',
-              }}
-              title="Send Feedback"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </button>
-            <button
-              onClick={handleLogoutTap}
-              onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
-              style={{
-                height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
-                background: confirmLogout ? '#fef2f2' : 'var(--bg-tertiary)',
-                color: confirmLogout ? '#dc2626' : 'var(--text-secondary)',
-                border: `1px solid ${confirmLogout ? '#fecaca' : 'var(--border-light)'}`,
-                cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
-                display: 'flex', alignItems: 'center', gap: 6,
-                touchAction: 'manipulation', transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              {confirmLogout ? 'Sign Out?' : 'Sign Out'}
-            </button>
-          </div>
+          {menuButton}
           <div className="tech-dash-date">{dateStr}</div>
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">0 appointments today</div>
@@ -696,60 +700,7 @@ export default function TechDash() {
     <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
       {/* Greeting — fixed, never moves on pull-to-refresh */}
       <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
-        {/* Utility buttons */}
-        <div style={{ position: 'absolute', top: 'var(--space-3)', right: 'var(--space-4)', display: 'flex', gap: 8 }}>
-          {isAdmin && (
-            <button
-              onClick={() => navigate('/')}
-              style={{
-                height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
-                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                border: '1px solid var(--border-light)', cursor: 'pointer',
-                fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
-                display: 'flex', alignItems: 'center', gap: 4,
-                touchAction: 'manipulation',
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-              Admin
-            </button>
-          )}
-          <button
-            onClick={() => navigate('/tech/feedback')}
-            style={{
-              width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
-              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-              border: '1px solid var(--border-light)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              touchAction: 'manipulation',
-            }}
-            title="Send Feedback"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          </button>
-          <button
-            onClick={handleLogoutTap}
-            onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }}
-            style={{
-              height: 40, padding: '8px 16px', borderRadius: 'var(--tech-radius-button)',
-              background: confirmLogout ? '#fef2f2' : 'var(--bg-tertiary)',
-              color: confirmLogout ? '#dc2626' : 'var(--text-secondary)',
-              border: `1px solid ${confirmLogout ? '#fecaca' : 'var(--border-light)'}`,
-              cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
-              display: 'flex', alignItems: 'center', gap: 6,
-              touchAction: 'manipulation', transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            {confirmLogout ? 'Sign Out?' : 'Sign Out'}
-          </button>
-        </div>
+        {menuButton}
         <div className="tech-dash-date">{dateStr}</div>
         <div className="tech-dash-name">Hey {firstName} 👋</div>
         <div className="tech-dash-summary">
