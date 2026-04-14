@@ -86,7 +86,7 @@ export default function JobPage(){
   const handlePhaseChange=async(newPhase)=>{
     if(newPhase===job.phase)return;setSaving(true);
     try{
-      await db.update('jobs',`id=eq.${job.id}`,{phase:newPhase,phase_entered_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+      await db.update('jobs',`id=eq.${job.id}`,{phase:newPhase,phase_entered_at:new Date().toISOString(),updated_at:new Date().toISOString(),updated_by:currentUser?.id||null});
       await db.insert('job_phase_history',{job_id:job.id,from_phase:job.phase,to_phase:newPhase,changed_by:currentUser?.id||null,changed_at:new Date().toISOString()});
       setJob(prev=>({...prev,phase:newPhase,phase_entered_at:new Date().toISOString()}));
       const h=await db.select('job_phase_history',`job_id=eq.${job.id}&order=changed_at.desc&limit=50`).catch(()=>[]);setHistory(h);
@@ -96,14 +96,14 @@ export default function JobPage(){
   const handleSoftDelete=async()=>{
     if(!job)return;setDeleting(true);
     try{
-      await db.update('jobs',`id=eq.${job.id}`,{status:'deleted'});
+      await db.update('jobs',`id=eq.${job.id}`,{status:'deleted',updated_by:currentUser?.id||null});
       toast(`Job ${job.job_number} archived`);setDeleteTarget(null);setDeleteInput('');
       navigate(isTech?'/tech':'/jobs',{replace:true});
     }catch(e){errToast('Failed to delete job: '+e.message);}finally{setDeleting(false);}
   };
 
   const saveBatch=async(fields)=>{
-    const update={...fields,updated_at:new Date().toISOString()};
+    const update={...fields,updated_at:new Date().toISOString(),updated_by:currentUser?.id||null};
     await db.update('jobs',`id=eq.${job.id}`,update);
     setJob(prev=>({...prev,...update}));
   };

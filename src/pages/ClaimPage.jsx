@@ -143,7 +143,7 @@ export default function ClaimPage() {
   const patchClaim = async (fields) => {
     setSaving('claim');
     try {
-      await db.update('claims', `id=eq.${claimId}`, { ...fields, updated_at: new Date().toISOString() });
+      await db.update('claims', `id=eq.${claimId}`, { ...fields, updated_at: new Date().toISOString(), updated_by: currentUser?.id || null });
       setClaim(prev => ({ ...prev, ...fields }));
     } catch (e) {
       errToast('Update failed: ' + e.message);
@@ -157,7 +157,7 @@ export default function ClaimPage() {
     if (!claim) return;
     setDeleting(true);
     try {
-      await db.update('claims', `id=eq.${claimId}`, { status: 'deleted' });
+      await db.update('claims', `id=eq.${claimId}`, { status: 'deleted', updated_by: currentUser?.id || null });
       toast(`Claim ${claim.claim_number} archived`);
       setDeleteTarget(null);
       setDeleteInput('');
