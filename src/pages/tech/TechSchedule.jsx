@@ -425,8 +425,9 @@ export default function TechSchedule() {
     return { start, end };
   }, [selectedDay]);
 
+  const hasFetched = useRef(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!hasFetched.current) setLoading(true);
     try {
       const result = await db.rpc('get_appointments_range', {
         p_start_date: dateRange.start,
@@ -437,6 +438,7 @@ export default function TechSchedule() {
       toast('Failed to load schedule', 'error');
     }
     setLoading(false);
+    hasFetched.current = true;
   }, [db, dateRange.start, dateRange.end]);
 
   useEffect(() => { load(); }, [load]);
