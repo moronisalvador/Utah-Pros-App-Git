@@ -97,7 +97,7 @@ export default function JobPage(){
     if(!job)return;setDeleting(true);
     try{
       await db.update('jobs',`id=eq.${job.id}`,{status:'deleted',updated_by:currentUser?.id||null});
-      toast(`Job ${job.job_number} archived`);setDeleteTarget(null);setDeleteInput('');
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `Job ${job.job_number} archived`, type: 'success' } }));setDeleteTarget(null);setDeleteInput('');
       navigate(isTech?'/tech':'/jobs',{replace:true});
     }catch(e){errToast('Failed to delete job: '+e.message);}finally{setDeleting(false);}
   };
