@@ -431,11 +431,14 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
 /* ── Future Appointment Row (timeline style) ── */
 
-function FutureRow({ appt }) {
+function FutureRow({ appt, showCrew }) {
   const navigate = useNavigate();
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
   const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
+  const crewNames = showCrew && appt.appointment_crew?.length > 0
+    ? appt.appointment_crew.map(c => c.employees?.display_name || c.employees?.full_name || '?').join(', ')
+    : null;
 
   return (
     <div className="tech-future-row" onClick={() => navigate(`/tech/appointment/${appt.id}`)}>
@@ -446,7 +449,52 @@ function FutureRow({ appt }) {
       <div className="tech-future-content">
         <div className="tech-future-title">{appt.title || 'Appointment'}</div>
         {address && <div className="tech-future-address">{address}</div>}
+        {crewNames && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{crewNames}</div>}
       </div>
+    </div>
+  );
+}
+
+/* ── Upcoming Section (reusable) ── */
+
+function UpcomingSection({ upcoming }) {
+  if (!upcoming || upcoming.length === 0) return null;
+
+  const grouped = {};
+  upcoming.forEach(a => {
+    const d = a.date;
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push(a);
+  });
+  const sorted = Object.keys(grouped).sort();
+
+  const formatDate = (ds) => {
+    const d = new Date(ds + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{
+        fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
+        textTransform: 'uppercase', letterSpacing: '0.06em',
+        marginBottom: 12, paddingLeft: 4,
+      }}>
+        Coming Up
+      </div>
+      {sorted.map(ds => (
+        <div key={ds}>
+          <div style={{
+            fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)',
+            padding: '8px 4px 4px',
+          }}>
+            {formatDate(ds)}
+          </div>
+          {grouped[ds].map(appt => (
+            <FutureRow key={appt.id} appt={appt} showCrew />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -505,7 +553,7 @@ export default function TechDash() {
     setLoading(false);
   }, [db, employee.id]);
 
-  // Fetch upcoming 7 days when today is empty
+  // Fetch upcoming 7 days — always, for all crew
   const loadUpcoming = useCallback(async () => {
     try {
       const tomorrow = new Date(Date.now() + 86400000);
@@ -514,19 +562,11 @@ export default function TechDash() {
         p_start_date: tomorrow.toISOString().split('T')[0],
         p_end_date: end.toISOString().split('T')[0],
       });
-      const mine = (result || []).filter(a =>
-        a.appointment_crew?.some(c => c.employee_id === employee.id)
-      );
-      setUpcoming(mine);
+      setUpcoming(result || []);
     } catch { /* ignore */ }
-  }, [db, employee.id]);
+  }, [db]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Load upcoming when today has no appointments
-  useEffect(() => {
-    if (!loading && appointments.length === 0) loadUpcoming();
-  }, [loading, appointments.length, loadUpcoming]);
+  useEffect(() => { load(); loadUpcoming(); }, [load, loadUpcoming]);
 
   useEffect(() => {
     return () => { if (logoutTimer.current) clearTimeout(logoutTimer.current); };
@@ -557,20 +597,6 @@ export default function TechDash() {
   const future = appointments.filter(a => !activeStatuses.includes(a.status) && a.status !== 'completed');
 
   if (appointments.length === 0) {
-    // Group upcoming by date
-    const upcomingGrouped = {};
-    upcoming.forEach(a => {
-      const d = a.date;
-      if (!upcomingGrouped[d]) upcomingGrouped[d] = [];
-      upcomingGrouped[d].push(a);
-    });
-    const upcomingSorted = Object.keys(upcomingGrouped).sort();
-
-    const formatUpcomingDate = (ds) => {
-      const d = new Date(ds + 'T12:00:00');
-      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-    };
-
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
@@ -635,26 +661,7 @@ export default function TechDash() {
 
         {upcoming.length > 0 ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--space-4)' }}>
-            <div style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-              marginBottom: 12, paddingLeft: 4, marginTop: 16,
-            }}>
-              Coming Up
-            </div>
-            {upcomingSorted.map(ds => (
-              <div key={ds}>
-                <div style={{
-                  fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)',
-                  padding: '8px 4px 4px',
-                }}>
-                  {formatUpcomingDate(ds)}
-                </div>
-                {upcomingGrouped[ds].map(appt => (
-                  <FutureRow key={appt.id} appt={appt} />
-                ))}
-              </div>
-            ))}
+            <UpcomingSection upcoming={upcoming} />
           </div>
         ) : (
           <div className="empty-state" style={{ flex: 1 }}>
@@ -805,6 +812,9 @@ export default function TechDash() {
               })}
             </div>
           )}
+
+          {/* Coming Up — all crew, next 7 days */}
+          <UpcomingSection upcoming={upcoming} />
         </div>
       </PullToRefresh>
 
