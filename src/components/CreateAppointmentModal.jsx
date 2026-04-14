@@ -242,11 +242,9 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
               Crew
               {selectedCrew.length > 0 && <span style={M.sectionBadge}>{selectedCrew.length}</span>}
             </div>
-            {employees.length > 5 && (
-              <input style={{ ...M.input, marginBottom: 8, padding: '6px 10px', fontSize: 12 }}
-                placeholder="Search crew..." value={crewSearch}
-                onChange={e => setCrewSearch(e.target.value)} />
-            )}
+            <input style={{ ...M.input, marginBottom: 8, padding: '6px 10px', fontSize: 12 }}
+              placeholder="Search crew..." value={crewSearch}
+              onChange={e => setCrewSearch(e.target.value)} />
             <div style={M.crewGrid}>
               {employees
                 .filter(emp => {
