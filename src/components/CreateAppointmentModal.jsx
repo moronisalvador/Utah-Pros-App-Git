@@ -1,6 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
+
+// Auto-derive appointment type from job division
+function divisionToType(div) {
+  if (!div) return 'other';
+  if (['water', 'mold', 'contents', 'fire'].includes(div)) return 'mitigation';
+  if (div === 'reconstruction') return 'reconstruction';
+  return 'other';
+}
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -14,10 +21,10 @@ const TIME_OPTIONS = (() => {
   return opts;
 })();
 
-function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
+function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
-  const [type, setType] = useState('reconstruction');
+  const type = divisionToType(jobDivision);
   const [timeStart, setTimeStart] = useState(prefillTimeStart || '07:00');
   const [timeEnd, setTimeEnd] = useState(prefillTimeEnd || '15:30');
   const [notes, setNotes] = useState('');
@@ -197,18 +204,10 @@ function CreateAppointmentModal({ jobId, jobName, dateKey, prefillTaskIds = [], 
               autoFocus />
           </div>
 
-          {/* Date + Type */}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ ...M.field, flex: 1 }}>
-              <label style={M.label}>Date</label>
-              <DatePicker value={date} onChange={v => setDate(v)} />
-            </div>
-            <div style={{ ...M.field, flex: 1 }}>
-              <label style={M.label}>Type</label>
-              <select style={M.input} value={type} onChange={e => setType(e.target.value)}>
-                {APPT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
+          {/* Date */}
+          <div style={M.field}>
+            <label style={M.label}>Date</label>
+            <DatePicker value={date} onChange={v => setDate(v)} />
           </div>
 
           {/* Start + End */}

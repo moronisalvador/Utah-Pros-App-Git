@@ -587,10 +587,10 @@ export default function Schedule() {
   const [jobPickerSearch, setJobPickerSearch] = useState('');
   const handleCellClick = (dateKey, hour) => {
     if (placementMode) return;
-    if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
+    if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, jobDivision: selectedPanelJob.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
     else { setJobPickerModal({ dateKey, hour }); setJobPickerSearch(''); }
   };
-  const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
+  const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, jobDivision: job.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
   const handleMonthDayClick = (dateKey) => { setAnchor(new Date(dateKey + 'T00:00:00')); changeCalSpan('day'); };
 
   // Filter days for Jobs/Crew grids (respect weekends)
@@ -604,9 +604,9 @@ export default function Schedule() {
       <div className={`schedule-panel-wrap${panelOpen ? ' panel-is-open' : ''}`}>
         {panelOpen && <div className="schedule-panel-backdrop" onClick={() => setPanelOpen(false)} />}
         <JobPanel jobs={panelJobs} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen(!panelOpen)} onToggleJob={toggleJob} loading={panelLoading} db={db} refreshKey={panelRefreshKey}
-        onSchedulePhase={(jid, jn, ph) => setCreateModal({ jobId: jid, jobName: jn, dateKey: ph?.target_start || fmtDate(new Date()), prefillPhase: ph?.phase_name || null, prefillTaskIds: [] })}
-        onCreateAppointment={(jid, jn, dk, tids) => setCreateModal({ jobId: jid, jobName: jn, dateKey: dk, prefillTaskIds: tids || [] })}
-        onSelectJob={(jid) => { if (jid) { const j = panelJobs.find(x => x.id === jid); setSelectedPanelJob(j ? { id: j.id, insured_name: j.insured_name } : null); } else setSelectedPanelJob(null); }}
+        onSchedulePhase={(jid, jn, ph, div) => setCreateModal({ jobId: jid, jobName: jn, jobDivision: div, dateKey: ph?.target_start || fmtDate(new Date()), prefillPhase: ph?.phase_name || null, prefillTaskIds: [] })}
+        onCreateAppointment={(jid, jn, dk, tids, div) => setCreateModal({ jobId: jid, jobName: jn, jobDivision: div, dateKey: dk, prefillTaskIds: tids || [] })}
+        onSelectJob={(jid) => { if (jid) { const j = panelJobs.find(x => x.id === jid); setSelectedPanelJob(j ? { id: j.id, insured_name: j.insured_name, division: j.division } : null); } else setSelectedPanelJob(null); }}
         onRefreshPanel={() => { loadPanelJobs(); loadBoard(); }}
         />
       </div>
@@ -723,7 +723,7 @@ export default function Schedule() {
                     return (
                       <div key={`${job.job_id}_${day.key}`}
                         style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
-                        onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : setCreateModal({ jobId: job.job_id, jobName: job.insured_name, dateKey: day.key, prefillTaskIds: [] })}
+                        onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : setCreateModal({ jobId: job.job_id, jobName: job.insured_name, jobDivision: job.division, dateKey: day.key, prefillTaskIds: [] })}
                         onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
                         onMouseEnter={e => {
                           const el = e.currentTarget.querySelector('[data-plus]'); if (el) el.style.opacity = '1';
@@ -785,7 +785,7 @@ export default function Schedule() {
           onMouseEnter={keepGridHover} onMouseLeave={dismissGridHover} />
       )}
 
-      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+      {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
       {/* Mobile + FAB — creates appointment for today */}
       <button
         className="schedule-mobile-fab"

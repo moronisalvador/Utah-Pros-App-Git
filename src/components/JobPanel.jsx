@@ -249,7 +249,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
           if (!earliestDate || phase.target_start < earliestDate) earliestDate = phase.target_start;
         }
       }
-      onCreateAppointment?.(activeJob.id, activeJob.insured_name, earliestDate || fmtDate(new Date()), ids);
+      onCreateAppointment?.(activeJob.id, activeJob.insured_name, earliestDate || fmtDate(new Date()), ids, activeJob.division);
       setSelectedTaskIds(new Set());
     };
 
@@ -667,7 +667,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
                   </div>
                 ) : (
                   <button onClick={() => {
-                    onCreateAppointment?.(activeJob.id, activeJob.insured_name, fmtDate(new Date()), []);
+                    onCreateAppointment?.(activeJob.id, activeJob.insured_name, fmtDate(new Date()), [], activeJob.division);
                   }}
                     style={{
                       width: '100%', padding: '9px', fontSize: 12, fontWeight: 600,
