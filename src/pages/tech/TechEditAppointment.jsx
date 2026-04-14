@@ -21,6 +21,7 @@ export default function TechEditAppointment() {
   const [timeStart, setTimeStart] = useState('07:00');
   const [timeEnd, setTimeEnd] = useState('15:30');
   const [type, setType] = useState('reconstruction');
+  const [dayAppts, setDayAppts] = useState([]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -94,6 +95,18 @@ export default function TechEditAppointment() {
 
   // Cleanup delete timer
   useEffect(() => () => { if (deleteTimer.current) clearTimeout(deleteTimer.current); }, []);
+
+  // Fetch that day's appointments when date changes (for schedule preview)
+  useEffect(() => {
+    if (!date) return;
+    (async () => {
+      try {
+        const result = await db.rpc('get_appointments_range', { p_start_date: date, p_end_date: date });
+        // Exclude current appointment from preview
+        setDayAppts((result || []).filter(a => a.id !== id));
+      } catch { setDayAppts([]); }
+    })();
+  }, [db, date, id]);
 
   /* ── Task pool helpers ── */
   const allPoolTasks = useMemo(() => {
@@ -272,6 +285,32 @@ export default function TechEditAppointment() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>Date <span style={{ color: '#ef4444' }}>*</span></div>
           <DatePicker value={date} onChange={setDate} />
+          {/* Day schedule preview */}
+          {dayAppts.length > 0 && (
+            <div style={{ marginTop: 10, borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+              <div style={{ padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)' }}>
+                {dayAppts.length} other appointment{dayAppts.length !== 1 ? 's' : ''} this day
+              </div>
+              {dayAppts.map(a => {
+                const t = a.time_start ? (() => { const [h, m] = a.time_start.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; })() : '';
+                const te = a.time_end ? (() => { const [h, m] = a.time_end.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; })() : '';
+                const crew = (a.appointment_crew || []).map(c => c.employees?.display_name || c.employees?.full_name || '').filter(Boolean).join(', ');
+                return (
+                  <div key={a.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ width: 58, flexShrink: 0, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                      {t}{te ? <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-tertiary)' }}>– {te}</div> : null}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {a.jobs?.insured_name || a.title || 'Appointment'}
+                      </div>
+                      {crew && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{crew}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ═══ TIME ═══ */}
@@ -293,29 +332,6 @@ export default function TechEditAppointment() {
             >
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
-          </div>
-        </div>
-
-        {/* ═══ TYPE ═══ */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Type</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {MOBILE_TYPES.map(t => (
-              <button
-                key={t.value}
-                onClick={() => setType(t.value)}
-                style={{
-                  height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
-                  border: type === t.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
-                  background: type === t.value ? 'var(--accent-light)' : 'var(--bg-primary)',
-                  fontSize: 13, fontWeight: 600,
-                  color: type === t.value ? 'var(--accent)' : 'var(--text-secondary)',
-                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
           </div>
         </div>
 
