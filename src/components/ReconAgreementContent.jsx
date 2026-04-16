@@ -246,7 +246,7 @@ export default function ReconAgreementContent({ job, templates, consents, onCons
       </Expandable>
 
       {/* ── Scope & Estimate summary ── */}
-      <Expandable title="Scope & Estimate" icon={<IconClipboardList size={16} />} defaultOpen>
+      <Expandable title="Scope & Estimate" icon={<IconClipboardList size={16} />}>
         <div style={{ marginTop: 8 }}>
           <AmberNote title="How It Works">
             We'll prepare a detailed Xactimate estimate covering all reconstruction work, submit it to your insurance company, and negotiate on your behalf to get the full scope approved. That estimate becomes part of this agreement.
@@ -261,7 +261,7 @@ export default function ReconAgreementContent({ job, templates, consents, onCons
       </Expandable>
 
       {/* ── Payment summary ── */}
-      <Expandable title="Payment" icon={<IconShield size={16} />} defaultOpen>
+      <Expandable title="Payment" icon={<IconShield size={16} />}>
         <div style={{ marginTop: 8 }}>
           <AmberNote title="Direction to Pay">
             You irrevocably direct your insurance company to pay all covered reconstruction amounts directly to Utah Pros at 1055 N State St, Orem, UT 84057. If a joint check is issued, you will endorse and deliver it within 5 business days.
