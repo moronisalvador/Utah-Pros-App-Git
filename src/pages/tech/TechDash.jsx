@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { toast } from '@/lib/toast';
+import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
@@ -140,12 +141,10 @@ function ActiveCard({ appt, employee, db, onReload }) {
     window.open(url);
   };
 
-  const handlePhotoCaptured = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadPhotoFile = async (file) => {
     if (!file || !job) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); e.target.value = ''; return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); e.target.value = ''; return; }
-    e.target.value = '';
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
     setUploading(true);
     try {
       const ts = Date.now();
@@ -175,6 +174,28 @@ function ActiveCard({ appt, employee, db, onReload }) {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Web path: triggered by hidden <input type=file capture>
+  const handlePhotoCaptured = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await uploadPhotoFile(file);
+  };
+
+  // Unified photo button: native camera on iOS, file picker on web
+  const openPhotoCapture = async () => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const file = await takeNativePhoto();
+        if (file) await uploadPhotoFile(file);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+      }
+    } else {
+      fileRef.current?.click();
     }
   };
 
@@ -280,7 +301,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
           {/* Photo */}
           <button
-            onClick={() => !uploading && fileRef.current?.click()}
+            onClick={openPhotoCapture}
             disabled={uploading}
             style={{
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,

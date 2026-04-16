@@ -9,6 +9,15 @@
         "revision" : "f1a8fadf1437c23b825c818fb6509c9dbbae2f61",
         "version" : "8.3.1"
       }
+    },
+    {
+      "identity" : "ion-ios-camera",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ionic-team/ion-ios-camera.git",
+      "state" : {
+        "revision" : "f6e58e8d78913c00433efa230f2ef20451566d51",
+        "version" : "1.0.0"
+      }
     }
   ],
   "version" : 3

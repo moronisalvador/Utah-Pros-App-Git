@@ -24,6 +24,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>UPR Tech uses the camera to document job site conditions, damage, and progress.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>UPR Tech saves job photos to document work for insurance claims.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>UPR Tech saves job photos to document work for insurance claims.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
