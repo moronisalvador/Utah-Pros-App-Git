@@ -25,7 +25,8 @@
       "autoDeleteFailed": true,
       "autoDeletePrevious": true,
       "resetWhenUpdate": false,
-      "directUpdate": false
+      "directUpdate": false,
+      "appId": "com.utahprosrestoration.upr"
     }
   }
 }
