@@ -120,6 +120,7 @@ functions/
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via SendGrid
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
+    send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
@@ -160,7 +161,7 @@ job_checklists          — Checklist instances on jobs
 job_costs               — Job cost line items
 job_equipment           — Equipment on jobs
 job_equipment_costs     — Equipment cost tracking
-job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start)
+job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start; Phase 5 added travel_start_lat/lng + clock_in_lat/lng NUMERIC(9,6) captured from iOS Geolocation)
 job_number_sequences    — Auto-increment job number tracking
 active_jobs             — View: currently active jobs
 ```
@@ -235,6 +236,7 @@ employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 8 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins)
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
+device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
 automation_rules        — Workflow automation rules
 insurance_carriers      — 29 rows — Carrier lookup table
 referral_sources        — 49 rows — Referral source lookup table
@@ -315,7 +317,7 @@ finish_appointment(...)         — Release incomplete tasks
 
 ### Employees & Time
 ```
-clock_appointment_action(p_appointment_id, p_employee_id, p_action) — Atomic time tracking (omw/start/pause/resume/finish). On 'omw', auto-closes any other open entries for the same employee with hours capped at LEAST(24, ...). If auto-closed entry was stale (>24h since clock_in), logs a 'time_entry.auto_closed_stale' row to system_events (payload: previous_appointment_id, new_appointment_id, clock_in, auto_closed_at, raw_hours, capped_hours, reason). Future: replace stale-close heuristic with geofence-based auto-finish when tech leaves the job site.
+clock_appointment_action(p_appointment_id, p_employee_id, p_action, p_lat NUMERIC DEFAULT NULL, p_lng NUMERIC DEFAULT NULL, p_accuracy NUMERIC DEFAULT NULL) — Atomic time tracking (omw/start/pause/resume/finish). Coords are optional; on 'omw' they populate travel_start_lat/lng on the new entry, on 'start' they populate clock_in_lat/lng. Legacy 3-arg calls still work. On 'omw', auto-closes any other open entries for the same employee with hours capped at LEAST(24, ...). If auto-closed entry was stale (>24h since clock_in), logs a 'time_entry.auto_closed_stale' row to system_events (payload: previous_appointment_id, new_appointment_id, clock_in, auto_closed_at, raw_hours, capped_hours, reason). Phase 5 layers a foreground "away from jobsite" nudge on top (see get_active_appointment_geo) — future work can add true geofence-based auto-finish.
 get_assigned_tasks(p_employee_id) — Incomplete tasks for employee with job context
 get_all_employees()             — All employees with auth status
 get_payroll_summary(...)        — Payroll summary
@@ -400,6 +402,9 @@ get_scheduled_queue(p_limit)    — Scheduled messages with contact + template i
 get_worker_runs(p_limit INT)    — Last N worker_runs rows (default 10)
 bust_postgrest_cache()          — NOTIFY pgrst 'reload schema' — forces schema reload
 get_table_stats(p_table TEXT)   — Row count + latest created_at for any table (Phase 6)
+upsert_device_token(p_employee_id UUID, p_token TEXT, p_platform TEXT)  — Registers iOS/Android device for push; idempotent (unique on token)
+delete_device_token(p_token TEXT)                                        — Removes a device token (logout/uninstall cleanup)
+get_active_appointment_geo(p_employee_id UUID)                           — Returns jsonb of the tech's in_progress/paused appointment with clock_in_lat/lng, or NULL. Powers the "away from jobsite" nudge.
 ```
 
 ### Dashboard
@@ -538,9 +543,15 @@ SUPABASE_SERVICE_ROLE_KEY       — Service role key (Cloudflare Pages secrets)
 SUPABASE_ANON_KEY               — Anon key
 VITE_SUPABASE_URL               — Same (Vite build)
 VITE_SUPABASE_ANON_KEY          — Same (Vite build)
+VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
 SENDGRID_API_KEY                — SendGrid v3
 ENCIRCLE_API_KEY                — Encircle integration
 TWILIO_*                        — 7 vars (pending go-live)
+APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
+APNS_KEY_ID                     — 10-char APNs Auth Key ID
+APNS_TEAM_ID                    — 10-char Apple Developer Team ID
+APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
+APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (App Store); defaults sandbox
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
@@ -554,6 +565,27 @@ TWILIO_*                        — 7 vars (pending go-live)
 - **Pull to refresh:** `PullToRefresh` component wraps page content
 - **iOS auto-zoom fix:** all inputs must have `font-size: 16px`
 - **CSS transforms:** cause content clipping on real iPhones — use display toggle instead
+
+---
+
+## Native iOS App (Capacitor) — In Progress
+
+- **Bundle id:** `com.utahprosrestoration.upr`
+- **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
+- **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
+- **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
+- **Plugins installed:**
+  - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
+  - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
+  - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (statusBarLight/Dark, hideSplash). Splash held until React mounts, status bar flips to light on TechAppointment's gradient hero and back to dark elsewhere.
+  - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeBiometric.js` + `<BiometricGate>` in App.jsx. Cold-launch gate on native: if a Supabase session exists and the flag is set, show "Unlocking UPR…" lock screen and prompt Face ID / Touch ID / passcode. Cancel or failure → sign out + show login. Flag is enabled in Login.jsx after a successful password login on native, cleared in AuthContext.logout. Token still lives in localStorage — full Keychain migration is future hardening.
+  - `@capgo/capacitor-updater` — OTA React/CSS/HTML updates without App Store resubmit. `src/lib/nativeUpdater.js` exposes `markBundleReady()` (called on App.jsx mount — critical, Capgo rolls back otherwise), plus `checkForUpdate` and `getCurrentBundleInfo` helpers. `capacitor.config.json` plugin config: `autoUpdate: true`, `defaultChannel: production`, auto-cleanup on success/fail.
+- **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` runs on push to `main` (production channel) or `dev` (beta channel). Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. One-time setup on Capgo dashboard: create app, generate API token.
+- **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
+- **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
+- **Task tracker:** `CAPACITOR-TASK.md` (removed when all phases ship)
 
 ---
 

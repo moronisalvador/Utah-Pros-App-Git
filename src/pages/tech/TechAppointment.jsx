@@ -5,6 +5,9 @@ import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
+import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { impact } from '@/lib/nativeHaptics';
+import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';
@@ -43,6 +46,9 @@ export default function TechAppointment() {
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
+    // Division-colored hero = light text on dark gradient
+    statusBarLight();
+    return () => statusBarDark();
   }, []);
 
   const load = useCallback(async () => {
@@ -86,13 +92,11 @@ export default function TechAppointment() {
     return () => { if (photoToastTimer.current) clearTimeout(photoToastTimer.current); };
   }, []);
 
-  const handlePhotoCaptured = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadPhotoFile = async (file) => {
     if (!file || !appt?.jobs) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); e.target.value = ''; return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); e.target.value = ''; return; }
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
     const job = appt.jobs;
-    e.target.value = '';
     setUploading(true);
     try {
       const ts = Date.now();
@@ -113,6 +117,7 @@ export default function TechAppointment() {
         p_appointment_id: id,
       });
       load();
+      impact('light');
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
@@ -121,6 +126,28 @@ export default function TechAppointment() {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Web path: triggered by hidden <input type=file capture>
+  const handlePhotoCaptured = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) await uploadPhotoFile(file);
+  };
+
+  // Unified photo button: native camera on iOS, file picker on web
+  const openPhotoCapture = async () => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const file = await takeNativePhoto();
+        if (file) await uploadPhotoFile(file);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+      }
+    } else {
+      fileRef.current?.click();
     }
   };
 
@@ -314,7 +341,7 @@ export default function TechAppointment() {
 
         {/* Photo */}
         <button
-          onClick={() => !uploading && fileRef.current?.click()}
+          onClick={openPhotoCapture}
           disabled={uploading}
           style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -431,7 +458,7 @@ export default function TechAppointment() {
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>Photos</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button className="btn btn-secondary btn-sm" onClick={openPhotoCapture} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               Add Photo
             </button>

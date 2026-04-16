@@ -1,0 +1,45 @@
+name: Deploy native OTA bundle (Capgo)
+
+on:
+  push:
+    branches: [main, dev]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Determine channel
+        id: channel
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build native bundle
+        env:
+          VITE_BUILD_TARGET: native
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npx vite build
+
+      - name: Upload bundle to Capgo
+        env:
+          CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+        run: |
+          npx --yes @capgo/cli bundle upload \
+            --apikey "$CAPGO_TOKEN" \
+            --channel "${{ steps.channel.outputs.name }}"

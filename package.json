@@ -6,17 +6,30 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:ios": "VITE_BUILD_TARGET=native vite build && cap sync ios",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aparajita/capacitor-biometric-auth": "^10.0.0",
+    "@capacitor/camera": "^8.1.0",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/geolocation": "^8.2.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.3.1",
+    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
+    "@capgo/capacitor-updater": "^8.45.9",
+    "@supabase/supabase-js": "^2.49.4",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.6.1",
-    "@supabase/supabase-js": "^2.49.4",
-    "pdf-lib": "^1.17.1"
+    "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
+    "@capgo/cli": "^7.92.2",
     "@eslint/js": "^9.39.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

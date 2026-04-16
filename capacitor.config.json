@@ -1,0 +1,32 @@
+{
+  "appId": "com.utahprosrestoration.upr",
+  "appName": "UPR",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#ffffff"
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 900,
+      "launchAutoHide": false,
+      "backgroundColor": "#ffffff",
+      "iosSplashResourceName": "Splash",
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "showSpinner": false
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "defaultChannel": "production",
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "resetWhenUpdate": false,
+      "directUpdate": false,
+      "appId": "com.utahprosrestoration.upr"
+    }
+  }
+}
