@@ -85,7 +85,7 @@ src/
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot
-    tech/TimeTracker.jsx          — Shared time tracker widget with haptic feedback (OMW/Start/Pause/Resume/Finish)
+    tech/TimeTracker.jsx          — Static three-station row (OMW · Start · Finish) with timestamps under each. No live ticking. Between-step durations ("Travel: 23m", "On job: 4h") shown only after the right side of the interval is reached. Past stations greyed + non-tappable for techs (admin/PM edits via desktop). Pause is a secondary control; preserves original Start timestamp on Resume. Supports multi-visit via "Return to Job" flow.
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner
     Sidebar.jsx                   — Desktop nav + sign out button
     AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
@@ -460,7 +460,7 @@ get_dashboard_stats()           — Dashboard stat counts
   - **viewport-fit=cover:** Required in `index.html` meta viewport tag. Without it, `env(safe-area-inset-bottom)` returns 0px on iOS and bottom nav touches the home indicator.
   - **Design tokens:** Tech-specific CSS variables (48px min tap, 16px card radius, status palette, shadow system)
   - **TechLayout:** 26px icons, 11px labels, active pill (44×30), frosted glass nav (0.92 opacity), 8px badge dot
-  - **TimeTracker:** Status-colored backgrounds (amber=en route, green=working, red=paused), 40px tabular-nums timer, 52px full-width action buttons, "On My Way" with arrow icon, two-click confirm finish. Timer starts from `travel_start` (OMW), not `clock_in`. `travel_minutes` stored separately on `job_time_entries` when tech arrives. `hours` stays as on-site time only. Completed state shows breakdown: "Travel: Xm · On-site: Xh Xm · Total: Xh Xm"
+  - **TimeTracker:** Status-colored background tints (amber=en route, green=working, red=paused). Three stations in a horizontal grid — each shows icon, label, timestamp, and optional between-step duration below. The "next" station is the only tappable/prominent (blue) one; completed stations grey out. No live ticker — all durations are closed-interval only. `travel_minutes` computed on clock-in from `travel_start`, displayed under the OMW station. `hours` (net on-site, excludes pauses) displayed under Start station after Finish. Two-click confirm finish. Pause/Resume preserves original Start timestamp. Multi-visit summary lines shown above the current-visit row.
   - **TechDash:** Sticky greeting header (doesn't move on pull-to-refresh), active cards with client name + task progress bar + Photo/Notes/Clock In actions (two-click confirm with 3s timeout), timeline-style future rows, compact completed rows, upcoming 7-day preview when 0 today, snap-first photo flow (auto-upload, optional caption via toast), shimmer skeleton loading
   - **TechTasks:** SVG completion ring (52px donut), 40px pill tabs, mini progress bars per job group, 56px rows, 26px checkboxes, swipe-to-complete with "Done" text + haptic at 40px threshold, checkbox pop animation, completed tasks at 0.5 opacity
   - **TechSchedule:** Division-colored left borders per row, time+duration left column, today header accent-colored, "You're all clear" empty state, jump-to-today FAB accent-colored with arrow icon, 72px min row height
