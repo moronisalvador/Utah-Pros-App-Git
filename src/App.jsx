@@ -44,6 +44,10 @@ import TechNewAppointment from '@/pages/tech/TechNewAppointment';
 import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 import TechFeedback from '@/pages/tech/TechFeedback';
 
+// Native builds (iOS via Capacitor) render only /login + /tech/*.
+// Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
+const IS_NATIVE = import.meta.env.VITE_BUILD_TARGET === 'native';
+
 // ── Route guards ──────────────────────────────────────────────────────────────
 
 // Admin-only pages (role check)
@@ -70,7 +74,7 @@ function DevRoute({ children }) {
   return children;
 }
 
-// Redirect field_tech users from / to /tech
+// Redirect field_tech users from / to /tech (web only — native always redirects)
 function HomeRedirect() {
   const { employee } = useAuth();
   if (employee?.role === 'field_tech') return <Navigate to="/tech" replace />;
@@ -90,99 +94,127 @@ function NotFound() {
   );
 }
 
+// Shared tech routes — used by both native and web trees
+function TechRoutes() {
+  return (
+    <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
+      <Route path="tech" element={<ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>} />
+      <Route path="tech/schedule" element={<ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>} />
+      <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
+      <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
+      <Route path="tech/claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+      <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
+      <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
+      <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
+      <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
+      <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
+      <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
+      <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+      <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
+    </Route>
+  );
+}
+
+// Native build: /login + /tech/* only. Everything else → /tech.
+function NativeRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/sign/:token" element={<SignPage />} />
+      <Route path="/set-password" element={<SetPassword />} />
+      {TechRoutes()}
+      <Route path="/" element={<Navigate to="/tech" replace />} />
+      <Route path="*" element={<Navigate to="/tech" replace />} />
+    </Routes>
+  );
+}
+
+// Web build: full app — tech routes + admin/settings/devtools under Layout.
+function WebRoutes() {
+  return (
+    <Routes>
+      {/* Public */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/sign/:token" element={<SignPage />} />
+      <Route path="/set-password" element={<SetPassword />} />
+
+
+      {/* Tech layout — field_tech role, no sidebar */}
+      {TechRoutes()}
+
+      {/* Protected — all wrapped in Layout */}
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<HomeRedirect />} />
+        <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+
+        <Route path="claims">
+          <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
+          <Route path=":claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+        </Route>
+
+        <Route path="jobs">
+          <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
+          <Route path="new" element={<Navigate to="/jobs" replace />} />
+          <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
+        </Route>
+
+        <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+        <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
+        <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
+        <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
+        <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
+
+        {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
+        <Route path="leads" element={
+          <FeatureRoute flag="page:leads">
+            <ErrorBoundary section="Leads"><Leads /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="time-tracking" element={
+          <FeatureRoute flag="page:time_tracking">
+            <ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="collections" element={
+          <FeatureRoute flag="page:collections">
+            <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="collections/:claimId" element={
+          <FeatureRoute flag="page:collections">
+            <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="marketing" element={
+          <FeatureRoute flag="page:marketing">
+            <ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="import/encircle" element={
+          <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+        } />
+
+        {/* Admin-only */}
+        <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
+        <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
+        <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
+
+        {/* Dev Tools — Moroni only, not role-based */}
+        <Route path="dev-tools" element={
+          <DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>
+        } />
+      </Route>
+
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Public */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/sign/:token" element={<SignPage />} />
-          <Route path="/set-password" element={<SetPassword />} />
-
-
-          {/* Tech layout — field_tech role, no sidebar */}
-          <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
-            <Route path="tech" element={<ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>} />
-            <Route path="tech/schedule" element={<ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>} />
-            <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
-            <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
-            <Route path="tech/claims/:claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
-            <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
-            <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
-            <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
-            <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
-            <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
-            <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
-            <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
-            <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
-          </Route>
-
-          {/* Protected — all wrapped in Layout */}
-          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<HomeRedirect />} />
-            <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
-
-            <Route path="claims">
-              <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
-              <Route path=":claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
-            </Route>
-
-            <Route path="jobs">
-              <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
-              <Route path="new" element={<Navigate to="/jobs" replace />} />
-              <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
-            </Route>
-
-            <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
-            <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
-            <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
-            <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
-            <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
-
-            {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
-            <Route path="leads" element={
-              <FeatureRoute flag="page:leads">
-                <ErrorBoundary section="Leads"><Leads /></ErrorBoundary>
-              </FeatureRoute>
-            } />
-            <Route path="time-tracking" element={
-              <FeatureRoute flag="page:time_tracking">
-                <ErrorBoundary section="Time Tracking"><TimeTracking /></ErrorBoundary>
-              </FeatureRoute>
-            } />
-            <Route path="collections" element={
-              <FeatureRoute flag="page:collections">
-                <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
-              </FeatureRoute>
-            } />
-            <Route path="collections/:claimId" element={
-              <FeatureRoute flag="page:collections">
-                <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
-              </FeatureRoute>
-            } />
-            <Route path="marketing" element={
-              <FeatureRoute flag="page:marketing">
-                <ErrorBoundary section="Marketing"><Marketing /></ErrorBoundary>
-              </FeatureRoute>
-            } />
-            <Route path="import/encircle" element={
-              <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
-            } />
-
-            {/* Admin-only */}
-            <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
-            <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
-            <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
-
-            {/* Dev Tools — Moroni only, not role-based */}
-            <Route path="dev-tools" element={
-              <DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>
-            } />
-          </Route>
-
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
       </AuthProvider>
     </BrowserRouter>
   );

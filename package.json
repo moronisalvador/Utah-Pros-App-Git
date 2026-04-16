@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:ios": "VITE_BUILD_TARGET=native vite build && cap sync ios",
     "lint": "eslint .",
     "preview": "vite preview"
   },
