@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { toast } from '@/lib/toast';
-
-const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
+import { impact } from '@/lib/nativeHaptics';
 
 const TABS = [
   { key: 'today', label: 'Today' },
@@ -55,13 +54,13 @@ function SwipeTaskRow({ task, onToggle }) {
     const dx = e.clientX - startX.current;
     if (dx > 0) {
       setSwipeX(Math.min(dx, 80));
-      if (dx >= 40 && dx < 42) haptic(20);
+      if (dx >= 40 && dx < 42) impact('light');
     }
   };
   const justSwiped = useRef(false);
   const handlePointerUp = () => {
     if (swipeX > 40) {
-      haptic(50);
+      impact('medium');
       justSwiped.current = true;
       if (!task.is_complete) setRecentlyDone(true);
       onToggle(task);

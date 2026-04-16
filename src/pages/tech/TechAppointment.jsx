@@ -6,6 +6,8 @@ import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { impact } from '@/lib/nativeHaptics';
+import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';
@@ -44,6 +46,9 @@ export default function TechAppointment() {
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
+    // Division-colored hero = light text on dark gradient
+    statusBarLight();
+    return () => statusBarDark();
   }, []);
 
   const load = useCallback(async () => {
@@ -112,6 +117,7 @@ export default function TechAppointment() {
         p_appointment_id: id,
       });
       load();
+      impact('light');
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);

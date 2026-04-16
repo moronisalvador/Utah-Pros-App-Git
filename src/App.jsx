@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { statusBarDark, hideSplash } from '@/lib/nativeAppearance';
 
 // Pages
 import Login from '@/pages/Login';
@@ -211,6 +213,12 @@ function WebRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Default appearance for the app shell — individual screens can override
+    statusBarDark();
+    // Clear the native splash once the React tree has mounted
+    hideSplash();
+  }, []);
   return (
     <BrowserRouter>
       <AuthProvider>

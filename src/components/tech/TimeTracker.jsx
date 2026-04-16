@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/lib/toast';
 import { getCurrentCoords } from '@/lib/nativeGeolocation';
+import { impact, notify } from '@/lib/nativeHaptics';
 
 export function fmtTime(iso) {
   if (!iso) return '—';
@@ -39,8 +40,12 @@ function fmtHoursDecimal(hours) {
   return fmtMinutes(min);
 }
 
-const HAPTIC = { omw: 50, start: 50, pause: 30, resume: 50, finish: [50, 30, 50] };
-const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
+// Haptic profile per clock action: Taptic Engine on iOS, navigator.vibrate fallback elsewhere
+function actionHaptic(action) {
+  if (action === 'start' || action === 'finish') return notify('success');
+  if (action === 'pause' || action === 'resume') return impact('light');
+  return impact('medium'); // omw
+}
 
 // ── Icons ───────────────────────────────────────────────
 const IconTruck = ({ color }) => (
@@ -184,10 +189,10 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   const doAction = async (action) => {
     if (action === 'finish') {
-      if (!confirmFinish) { setConfirmFinish(true); return; }
+      if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
       setConfirmFinish(false);
     }
-    haptic(HAPTIC[action] || 50);
+    actionHaptic(action);
     setActing(true);
     try {
       // Capture coords on arrival-transitions (omw, start). Pause/resume/finish skip it
@@ -215,6 +220,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const handleReturnTap = () => {
     if (!confirmReturn) {
       setConfirmReturn(true);
+      impact('light');
       confirmReturnTimer.current = setTimeout(() => setConfirmReturn(false), 3000);
       return;
     }
@@ -226,7 +232,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   const handleReturnClockIn = async () => {
     setReturningJob(true);
-    haptic(50);
+    impact('medium');
     try {
       const job = appt.jobs;
       if (returnReason.trim() && job) {

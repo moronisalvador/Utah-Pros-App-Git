@@ -6,8 +6,8 @@ import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
+import { impact, notify } from '@/lib/nativeHaptics';
 
-const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
 /* ── Create FAB ── */
 
@@ -166,6 +166,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
         p_appointment_id: appt.id,
       });
       if (onReload) onReload();
+      impact('light');
       // Show inline toast with "Add note" option
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
@@ -225,12 +226,13 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const doOmw = async () => {
     if (!confirmOmw) {
       setConfirmOmw(true);
+      impact('light');
       confirmTimer.current = setTimeout(() => setConfirmOmw(false), 3000);
       return;
     }
     setConfirmOmw(false);
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    haptic(50);
+    impact('medium');
     setActing(true);
     try {
       const coords = await getCurrentCoords().catch(() => null);
@@ -630,6 +632,7 @@ export default function TechDash() {
     if (action === 'finish') {
       if (!awayConfirmFinish) {
         setAwayConfirmFinish(true);
+        impact('light');
         awayConfirmTimer.current = setTimeout(() => setAwayConfirmFinish(false), 3000);
         return;
       }
@@ -649,6 +652,7 @@ export default function TechDash() {
       });
       setAwayFromJobsite(null);
       lastAwayCheck.current = 0;
+      notify('success');
       await load();
     } catch (e) {
       toast('Action failed: ' + e.message, 'error');
@@ -698,6 +702,7 @@ export default function TechDash() {
   const handleLogoutTap = () => {
     if (!confirmLogout) {
       setConfirmLogout(true);
+      impact('light');
       logoutTimer.current = setTimeout(() => setConfirmLogout(false), 3000);
       return;
     }

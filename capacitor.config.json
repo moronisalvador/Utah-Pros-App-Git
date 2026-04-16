@@ -8,5 +8,16 @@
   },
   "server": {
     "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 900,
+      "launchAutoHide": false,
+      "backgroundColor": "#ffffff",
+      "iosSplashResourceName": "Splash",
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "showSpinner": false
+    }
   }
 }
