@@ -17,7 +17,8 @@
       "Bash(wc -l \"F:/APPS/RestorationAPP/Utah-Pros-App-Git/src/pages/tech\"/*.jsx)",
       "Bash(grep -E \"\\\\.\\(jsx?|tsx?\\)$\")",
       "Bash(find /f/APPS/RestorationAPP/Utah-Pros-App-Git/src/pages/tech -name \"*.jsx\" -type f -exec grep -l \"console\\\\.\" {} \\\\;)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(ls F:/APPS/RestorationAPP/Utah-Pros-App-Git/*.md)"
     ]
   }
 }
