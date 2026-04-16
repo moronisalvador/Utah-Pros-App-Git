@@ -1,0 +1,12 @@
+{
+  "appId": "com.utahprosrestoration.upr",
+  "appName": "UPR",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#ffffff"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
