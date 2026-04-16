@@ -18,6 +18,14 @@
       "splashFullScreen": true,
       "splashImmersive": true,
       "showSpinner": false
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "defaultChannel": "production",
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "resetWhenUpdate": false,
+      "directUpdate": false
     }
   }
 }

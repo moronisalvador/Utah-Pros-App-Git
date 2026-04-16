@@ -12,6 +12,7 @@ import {
   setBiometricEnabled,
   enablePrivacyScreen,
 } from '@/lib/nativeBiometric';
+import { markBundleReady } from '@/lib/nativeUpdater';
 import { realtimeClient } from '@/lib/realtime';
 
 // Pages
@@ -300,6 +301,9 @@ export default function App() {
     enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();
+    // Tell Capgo this bundle booted successfully — otherwise it rolls back
+    // on next launch (safety net for shipping a broken OTA update)
+    markBundleReady();
   }, []);
   return (
     <BrowserRouter>
