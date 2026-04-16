@@ -13,7 +13,18 @@ export default function TechClaims() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [filtered, setFiltered] = useState([]);
-  const [scope, setScope] = useState('mine'); // 'mine' | 'all'
+  // Scope default = 'all' for everyone; last choice persists per device in localStorage
+  const [scope, setScope] = useState(() => {
+    try {
+      const saved = localStorage.getItem('upr:tech-claims-scope');
+      return saved === 'mine' || saved === 'all' ? saved : 'all';
+    } catch { return 'all'; }
+  });
+
+  // Persist scope changes
+  useEffect(() => {
+    try { localStorage.setItem('upr:tech-claims-scope', scope); } catch { /* ignore */ }
+  }, [scope]);
 
   const load = useCallback(async () => {
     if (!employee?.id) return;
