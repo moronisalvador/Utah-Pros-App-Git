@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { realtimeClient } from '@/lib/realtime';
 import { createSupabaseClient, db } from '@/lib/supabase';
+import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotifications';
 
 const AuthContext = createContext(null);
 
@@ -129,6 +130,11 @@ export function AuthProvider({ children }) {
           loadFeatureFlags(authenticatedDb),
           loadEmployeePageAccess(employees[0].id, authenticatedDb),
         ]);
+        // Register for push on native (silent no-op on web).
+        // Intentionally not awaited — login shouldn't block on APNs.
+        if (canRegisterPush()) {
+          registerPushForEmployee(authenticatedDb, employees[0].id);
+        }
       } else {
         // Auth user exists but no matching employee — could be new user
         setError('No employee record found for this email. Contact admin.');

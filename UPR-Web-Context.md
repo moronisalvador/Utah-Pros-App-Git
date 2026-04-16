@@ -120,6 +120,7 @@ functions/
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via SendGrid
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
+    send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
@@ -235,6 +236,7 @@ employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 8 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins)
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
+device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
 automation_rules        — Workflow automation rules
 insurance_carriers      — 29 rows — Carrier lookup table
 referral_sources        — 49 rows — Referral source lookup table
@@ -400,6 +402,8 @@ get_scheduled_queue(p_limit)    — Scheduled messages with contact + template i
 get_worker_runs(p_limit INT)    — Last N worker_runs rows (default 10)
 bust_postgrest_cache()          — NOTIFY pgrst 'reload schema' — forces schema reload
 get_table_stats(p_table TEXT)   — Row count + latest created_at for any table (Phase 6)
+upsert_device_token(p_employee_id UUID, p_token TEXT, p_platform TEXT)  — Registers iOS/Android device for push; idempotent (unique on token)
+delete_device_token(p_token TEXT)                                        — Removes a device token (logout/uninstall cleanup)
 ```
 
 ### Dashboard
@@ -538,9 +542,15 @@ SUPABASE_SERVICE_ROLE_KEY       — Service role key (Cloudflare Pages secrets)
 SUPABASE_ANON_KEY               — Anon key
 VITE_SUPABASE_URL               — Same (Vite build)
 VITE_SUPABASE_ANON_KEY          — Same (Vite build)
+VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
 SENDGRID_API_KEY                — SendGrid v3
 ENCIRCLE_API_KEY                — Encircle integration
 TWILIO_*                        — 7 vars (pending go-live)
+APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
+APNS_KEY_ID                     — 10-char APNs Auth Key ID
+APNS_TEAM_ID                    — 10-char Apple Developer Team ID
+APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
+APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (App Store); defaults sandbox
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
@@ -554,6 +564,21 @@ TWILIO_*                        — 7 vars (pending go-live)
 - **Pull to refresh:** `PullToRefresh` component wraps page content
 - **iOS auto-zoom fix:** all inputs must have `font-size: 16px`
 - **CSS transforms:** cause content clipping on real iPhones — use display toggle instead
+
+---
+
+## Native iOS App (Capacitor) — In Progress
+
+- **Bundle id:** `com.utahprosrestoration.upr`
+- **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
+- **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
+- **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
+- **Plugins installed:**
+  - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
+- **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`
+- **Task tracker:** `CAPACITOR-TASK.md` (removed when all phases ship)
 
 ---
 
