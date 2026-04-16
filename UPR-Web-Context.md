@@ -70,7 +70,7 @@ src/
     Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant)
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month)
     ScheduleTemplates.jsx         — Schedule template management
-    TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking)
+    TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
     Marketing.jsx                 — Marketing tools (feature-flagged: page:marketing)
     EncircleImport.jsx            — Selective Encircle claim import with division selection (feature-flagged: page:encircle_import, route: /import/encircle)
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
@@ -317,6 +317,7 @@ get_job_labor_summary(p_job_id) — Labor cost per job
 upsert_time_entry(...)          — Save time entry
 approve_time_entries(...)       — Bulk approve
 calc_time_entry_cost(...)       — Calculate cost from hours/rate
+get_tech_status_board()         — Live dispatch board: one row per active field_tech/supervisor (plus any employee currently clocked in or scheduled today) with derived status ('paused'|'on_site'|'omw'|'scheduled'|'idle'), status_since, current/next appointment, job, client_name, address. Sorted by status priority then name. Powers the Status Board tab on Time Tracking.
 ```
 
 ### Auth & Permissions

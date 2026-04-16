@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import StatusBoard from '@/components/StatusBoard';
+
+const BOARD_ROLES = ['admin', 'project_manager', 'supervisor'];
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -65,7 +68,8 @@ const PERIODS = [
 // ══════════════════════════════════════════════════════════════
 export default function TimeTracking() {
   const { db, employee: currentUser } = useAuth();
-  const [view, setView] = useState('timesheet');
+  const canSeeBoard = BOARD_ROLES.includes(currentUser?.role);
+  const [view, setView] = useState(canSeeBoard ? 'board' : 'timesheet');
   const [period, setPeriod] = useState('this_week');
   const [customStart, setCustomStart] = useState('');
   const [customEnd,   setCustomEnd]   = useState('');
@@ -89,36 +93,44 @@ export default function TimeTracking() {
           <p className="page-subtitle">{fmtDate(startDate)} — {fmtDate(endDate)}</p>
         </div>
         <div className="tt-view-tabs">
+          {canSeeBoard && (
+            <button className={`tt-view-tab${view==='board'?' active':''}`} onClick={() => setView('board')}>Status Board</button>
+          )}
           <button className={`tt-view-tab${view==='timesheet'?' active':''}`} onClick={() => setView('timesheet')}>Timesheet</button>
           <button className={`tt-view-tab${view==='job'?' active':''}`} onClick={() => setView('job')}>By Job</button>
           <button className={`tt-view-tab${view==='payroll'?' active':''}`} onClick={() => setView('payroll')}>Payroll</button>
         </div>
       </div>
 
-      <div className="tt-filters">
-        <div className="tt-period-tabs">
-          {PERIODS.map(p => (
-            <button key={p.key}
-              className={`tt-period-tab${period===p.key?' active':''}`}
-              onClick={() => setPeriod(p.key)}
-            >{p.label}</button>
-          ))}
-        </div>
-        {period === 'custom' && (
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            <input type="date" className="input" value={customStart} onChange={e => setCustomStart(e.target.value)} style={{ height:32, fontSize:13 }}/>
-            <span style={{ color:'var(--text-tertiary)', fontSize:13 }}>to</span>
-            <input type="date" className="input" value={customEnd} onChange={e => setCustomEnd(e.target.value)} style={{ height:32, fontSize:13 }}/>
+      {view !== 'board' && (
+        <div className="tt-filters">
+          <div className="tt-period-tabs">
+            {PERIODS.map(p => (
+              <button key={p.key}
+                className={`tt-period-tab${period===p.key?' active':''}`}
+                onClick={() => setPeriod(p.key)}
+              >{p.label}</button>
+            ))}
           </div>
-        )}
-        {view !== 'payroll' && (
-          <select className="input" value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} style={{ height:32, fontSize:13, minWidth:160 }}>
-            <option value="all">All Employees</option>
-            {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
-          </select>
-        )}
-      </div>
+          {period === 'custom' && (
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <input type="date" className="input" value={customStart} onChange={e => setCustomStart(e.target.value)} style={{ height:32, fontSize:13 }}/>
+              <span style={{ color:'var(--text-tertiary)', fontSize:13 }}>to</span>
+              <input type="date" className="input" value={customEnd} onChange={e => setCustomEnd(e.target.value)} style={{ height:32, fontSize:13 }}/>
+            </div>
+          )}
+          {view !== 'payroll' && (
+            <select className="input" value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} style={{ height:32, fontSize:13, minWidth:160 }}>
+              <option value="all">All Employees</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+            </select>
+          )}
+        </div>
+      )}
 
+      {view === 'board' && canSeeBoard && (
+        <StatusBoard />
+      )}
       {view === 'timesheet' && (
         <TimesheetView db={db} startDate={startDate} endDate={endDate}
           filterEmployee={filterEmployee === 'all' ? null : filterEmployee}
