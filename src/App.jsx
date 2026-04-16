@@ -53,6 +53,7 @@ import TechNewJob from '@/pages/tech/TechNewJob';
 import TechNewAppointment from '@/pages/tech/TechNewAppointment';
 import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 import TechFeedback from '@/pages/tech/TechFeedback';
+import TechMore from '@/pages/tech/TechMore';
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
@@ -121,6 +122,7 @@ function TechRoutes() {
       <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
+      <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
     </Route>
   );
 }
