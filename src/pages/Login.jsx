@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient } from '@/lib/realtime';
 import { db } from '@/lib/supabase';
+import { checkBiometricAvailable, setBiometricEnabled } from '@/lib/nativeBiometric';
 
 export default function Login() {
   const { login, devLogin, isAuthenticated, isDev, error: authError } = useAuth();
@@ -38,6 +39,9 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
+      // On native, if Face ID / Touch ID is enrolled, enable the gate for next launch.
+      // checkBiometricAvailable() is a no-op (returns false) on web.
+      if (await checkBiometricAvailable()) setBiometricEnabled(true);
     } catch (err) {
       setError(err.message);
     } finally {

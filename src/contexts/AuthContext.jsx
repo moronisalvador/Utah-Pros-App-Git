@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { realtimeClient } from '@/lib/realtime';
 import { createSupabaseClient, db } from '@/lib/supabase';
 import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotifications';
+import { setBiometricEnabled } from '@/lib/nativeBiometric';
 
 const AuthContext = createContext(null);
 
@@ -182,6 +183,7 @@ export function AuthProvider({ children }) {
 
   // ── Logout ──
   const logout = useCallback(async () => {
+    setBiometricEnabled(false);
     await realtimeClient.auth.signOut();
     setUser(null);
     setEmployee(null);

@@ -1,10 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { statusBarDark, hideSplash } from '@/lib/nativeAppearance';
+import {
+  checkBiometricAvailable,
+  isBiometricEnabled,
+  verifyBiometric,
+  setBiometricEnabled,
+  enablePrivacyScreen,
+} from '@/lib/nativeBiometric';
+import { realtimeClient } from '@/lib/realtime';
 
 // Pages
 import Login from '@/pages/Login';
@@ -212,18 +220,94 @@ function WebRoutes() {
   );
 }
 
+// Cold-launch biometric gate. On native, if the user has a stored session and
+// opted into biometric unlock, block UI rendering until Face ID / Touch ID /
+// passcode succeeds. On cancel or failure, sign out and fall through to /login.
+// Web is passthrough — no gate.
+function BiometricGate({ children }) {
+  const [gate, setGate] = useState(() => (IS_NATIVE ? 'checking' : 'open'));
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    if (!IS_NATIVE) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await realtimeClient.auth.getSession();
+        const hasSession = !!data?.session;
+        if (!hasSession) { if (!cancelled) setGate('open'); return; }
+
+        const [available, enabled] = await Promise.all([
+          checkBiometricAvailable(),
+          Promise.resolve(isBiometricEnabled()),
+        ]);
+        if (!available || !enabled) { if (!cancelled) setGate('open'); return; }
+
+        const ok = await verifyBiometric('Unlock UPR');
+        if (cancelled) return;
+        if (ok) { setGate('open'); return; }
+
+        // Failed or cancelled — sign out and let the login screen render
+        setBiometricEnabled(false);
+        await realtimeClient.auth.signOut();
+        setGate('open');
+      } catch {
+        if (!cancelled) setGate('open');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [retry]);
+
+  if (gate === 'checking') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 16,
+        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
+        fontFamily: 'var(--font-sans)',
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 16,
+          background: 'var(--accent)', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 36, fontWeight: 800, letterSpacing: -1,
+        }}>U</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Unlocking UPR…</div>
+        <button
+          onClick={() => { setGate('checking'); setRetry(r => r + 1); }}
+          style={{
+            marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
+            color: 'var(--accent)', background: 'transparent', border: 'none',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+          }}
+        >
+          Retry Face ID
+        </button>
+      </div>
+    );
+  }
+
+  return children;
+}
+
 export default function App() {
   useEffect(() => {
     // Default appearance for the app shell — individual screens can override
     statusBarDark();
+    // Blur the app snapshot in the app-switcher / on background
+    enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();
   }, []);
   return (
     <BrowserRouter>
-      <AuthProvider>
-        {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
-      </AuthProvider>
+      <BiometricGate>
+        <AuthProvider>
+          {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
+        </AuthProvider>
+      </BiometricGate>
     </BrowserRouter>
   );
 }
