@@ -20,7 +20,9 @@
       "Bash(xargs grep:*)",
       "Bash(ls F:/APPS/RestorationAPP/Utah-Pros-App-Git/*.md)",
       "Bash(node -e \"const fs = require\\('fs'\\); const c = fs.readFileSync\\('src/pages/SignPage.jsx','utf8'\\); console.log\\('lines:', c.split\\('\\\\n'\\).length\\); console.log\\('has ReconAgreementContent import:', /import ReconAgreementContent/.test\\(c\\)\\); console.log\\('has isRecon:', /const isRecon/.test\\(c\\)\\); console.log\\('has consent body fields:', /consent_terms:/.test\\(c\\)\\); console.log\\('has recon branch render:', /isRecon \\\\? \\\\\\(\\\\s*<ReconAgreementContent/.test\\(c\\)\\);\")",
-      "Bash(node -e \"const fs = require\\('fs'\\); const c = fs.readFileSync\\('src/pages/SignPage.jsx','utf8'\\); console.log\\('has body.consent_terms:', /body\\\\.consent_terms/.test\\(c\\)\\); console.log\\('has consents.authority:', /consents\\\\.authority/.test\\(c\\)\\); console.log\\('has accentColor:', /accentColor/.test\\(c\\)\\);\")"
+      "Bash(node -e \"const fs = require\\('fs'\\); const c = fs.readFileSync\\('src/pages/SignPage.jsx','utf8'\\); console.log\\('has body.consent_terms:', /body\\\\.consent_terms/.test\\(c\\)\\); console.log\\('has consents.authority:', /consents\\\\.authority/.test\\(c\\)\\); console.log\\('has accentColor:', /accentColor/.test\\(c\\)\\);\")",
+      "Bash(node --check functions/api/submit-esign.js)",
+      "Bash(node --check functions/api/send-esign.js)"
     ]
   }
 }
