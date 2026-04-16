@@ -161,7 +161,7 @@ job_checklists          — Checklist instances on jobs
 job_costs               — Job cost line items
 job_equipment           — Equipment on jobs
 job_equipment_costs     — Equipment cost tracking
-job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start)
+job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start; Phase 5 added travel_start_lat/lng + clock_in_lat/lng NUMERIC(9,6) captured from iOS Geolocation)
 job_number_sequences    — Auto-increment job number tracking
 active_jobs             — View: currently active jobs
 ```
@@ -317,7 +317,7 @@ finish_appointment(...)         — Release incomplete tasks
 
 ### Employees & Time
 ```
-clock_appointment_action(p_appointment_id, p_employee_id, p_action) — Atomic time tracking (omw/start/pause/resume/finish). On 'omw', auto-closes any other open entries for the same employee with hours capped at LEAST(24, ...). If auto-closed entry was stale (>24h since clock_in), logs a 'time_entry.auto_closed_stale' row to system_events (payload: previous_appointment_id, new_appointment_id, clock_in, auto_closed_at, raw_hours, capped_hours, reason). Future: replace stale-close heuristic with geofence-based auto-finish when tech leaves the job site.
+clock_appointment_action(p_appointment_id, p_employee_id, p_action, p_lat NUMERIC DEFAULT NULL, p_lng NUMERIC DEFAULT NULL, p_accuracy NUMERIC DEFAULT NULL) — Atomic time tracking (omw/start/pause/resume/finish). Coords are optional; on 'omw' they populate travel_start_lat/lng on the new entry, on 'start' they populate clock_in_lat/lng. Legacy 3-arg calls still work. On 'omw', auto-closes any other open entries for the same employee with hours capped at LEAST(24, ...). If auto-closed entry was stale (>24h since clock_in), logs a 'time_entry.auto_closed_stale' row to system_events (payload: previous_appointment_id, new_appointment_id, clock_in, auto_closed_at, raw_hours, capped_hours, reason). Phase 5 layers a foreground "away from jobsite" nudge on top (see get_active_appointment_geo) — future work can add true geofence-based auto-finish.
 get_assigned_tasks(p_employee_id) — Incomplete tasks for employee with job context
 get_all_employees()             — All employees with auth status
 get_payroll_summary(...)        — Payroll summary
@@ -404,6 +404,7 @@ bust_postgrest_cache()          — NOTIFY pgrst 'reload schema' — forces sche
 get_table_stats(p_table TEXT)   — Row count + latest created_at for any table (Phase 6)
 upsert_device_token(p_employee_id UUID, p_token TEXT, p_platform TEXT)  — Registers iOS/Android device for push; idempotent (unique on token)
 delete_device_token(p_token TEXT)                                        — Removes a device token (logout/uninstall cleanup)
+get_active_appointment_geo(p_employee_id UUID)                           — Returns jsonb of the tech's in_progress/paused appointment with clock_in_lat/lng, or NULL. Powers the "away from jobsite" nudge.
 ```
 
 ### Dashboard
@@ -577,7 +578,8 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
-- **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`
+  - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
+- **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`
 - **Task tracker:** `CAPACITOR-TASK.md` (removed when all phases ship)
 
 ---

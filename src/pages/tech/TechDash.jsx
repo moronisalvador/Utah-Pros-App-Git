@@ -5,6 +5,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
 
 const haptic = (ms = 50) => { if ('vibrate' in navigator) navigator.vibrate(ms); };
 
@@ -232,10 +233,14 @@ function ActiveCard({ appt, employee, db, onReload }) {
     haptic(50);
     setActing(true);
     try {
+      const coords = await getCurrentCoords().catch(() => null);
       await db.rpc('clock_appointment_action', {
         p_appointment_id: appt.id,
         p_employee_id: employee.id,
         p_action: 'omw',
+        p_lat: coords?.lat ?? null,
+        p_lng: coords?.lng ?? null,
+        p_accuracy: coords?.accuracy ?? null,
       });
       if (onReload) onReload();
     } catch (e) {
@@ -566,6 +571,11 @@ export default function TechDash() {
   const [showMenu, setShowMenu] = useState(false);
   const logoutTimer = useRef(null);
   const [loading, setLoading] = useState(true);
+  const [awayFromJobsite, setAwayFromJobsite] = useState(null);
+  const [awayActing, setAwayActing] = useState(false);
+  const [awayConfirmFinish, setAwayConfirmFinish] = useState(false);
+  const awayConfirmTimer = useRef(null);
+  const lastAwayCheck = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -577,6 +587,75 @@ export default function TechDash() {
     }
     setLoading(false);
   }, [db, employee.id]);
+
+  // "Away from jobsite" reminder — compares tech's current location against
+  // the arrival coords of any active (in_progress / paused) appointment. If
+  // the tech walked off without tapping Pause or Finish, nudge them.
+  // Foreground-only: runs on mount and whenever the app returns to foreground.
+  const AWAY_THRESHOLD_M = 200;
+  const checkAwayFromJobsite = useCallback(async () => {
+    // Debounce — no more than once per 20s
+    const now = Date.now();
+    if (now - lastAwayCheck.current < 20_000) return;
+    lastAwayCheck.current = now;
+
+    try {
+      const active = await db.rpc('get_active_appointment_geo', { p_employee_id: employee.id });
+      if (!active || active.clock_in_lat == null || active.clock_in_lng == null) {
+        setAwayFromJobsite(null);
+        return;
+      }
+      const here = await getCurrentCoords({ timeoutMs: 6000 });
+      if (!here) return; // permission denied or timed out — leave state unchanged
+      const meters = distanceMeters(here, { lat: active.clock_in_lat, lng: active.clock_in_lng });
+      if (!Number.isFinite(meters) || meters < AWAY_THRESHOLD_M) {
+        setAwayFromJobsite(null);
+        return;
+      }
+      const addr = [active.address, active.city].filter(Boolean).join(', ');
+      setAwayFromJobsite({
+        appointment_id: active.appointment_id,
+        title: active.title || 'Active appointment',
+        address: addr,
+        status: active.status,
+        distance: Math.round(meters),
+      });
+    } catch {
+      // Silent fail — reminder is additive; never block the dashboard
+    }
+  }, [db, employee.id]);
+
+  const resolveAway = useCallback(async (action) => {
+    if (!awayFromJobsite) return;
+    if (action === 'finish') {
+      if (!awayConfirmFinish) {
+        setAwayConfirmFinish(true);
+        awayConfirmTimer.current = setTimeout(() => setAwayConfirmFinish(false), 3000);
+        return;
+      }
+      setAwayConfirmFinish(false);
+      if (awayConfirmTimer.current) clearTimeout(awayConfirmTimer.current);
+    }
+    setAwayActing(true);
+    try {
+      const coords = await getCurrentCoords({ timeoutMs: 4000 }).catch(() => null);
+      await db.rpc('clock_appointment_action', {
+        p_appointment_id: awayFromJobsite.appointment_id,
+        p_employee_id: employee.id,
+        p_action: action,
+        p_lat: coords?.lat ?? null,
+        p_lng: coords?.lng ?? null,
+        p_accuracy: coords?.accuracy ?? null,
+      });
+      setAwayFromJobsite(null);
+      lastAwayCheck.current = 0;
+      await load();
+    } catch (e) {
+      toast('Action failed: ' + e.message, 'error');
+    } finally {
+      setAwayActing(false);
+    }
+  }, [awayFromJobsite, awayConfirmFinish, db, employee.id, load]);
 
   // Fetch upcoming 7 days — always, for all crew
   const loadUpcoming = useCallback(async () => {
@@ -593,8 +672,25 @@ export default function TechDash() {
 
   useEffect(() => { load(); loadUpcoming(); }, [load, loadUpcoming]);
 
+  // Check jobsite proximity on mount + whenever the app returns to foreground
   useEffect(() => {
-    return () => { if (logoutTimer.current) clearTimeout(logoutTimer.current); };
+    checkAwayFromJobsite();
+    const onVis = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        checkAwayFromJobsite();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVis);
+      return () => document.removeEventListener('visibilitychange', onVis);
+    }
+  }, [checkAwayFromJobsite]);
+
+  useEffect(() => {
+    return () => {
+      if (logoutTimer.current) clearTimeout(logoutTimer.current);
+      if (awayConfirmTimer.current) clearTimeout(awayConfirmTimer.current);
+    };
   }, []);
 
   const isAdmin = employee?.role === 'admin';
@@ -677,6 +773,69 @@ export default function TechDash() {
     </div>
   );
 
+  // "Away from jobsite" reminder banner — null when not needed.
+  // Sticks under the greeting header in both empty and populated branches.
+  const awayBanner = awayFromJobsite ? (
+    <div style={{
+      margin: 'var(--space-3) var(--space-4) 0',
+      padding: 'var(--space-3) var(--space-4)',
+      background: '#fffbeb',
+      border: '1px solid #fde68a',
+      borderRadius: 'var(--tech-radius-card)',
+      boxShadow: 'var(--tech-shadow-card)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}>
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+          <line x1="12" y1="7" x2="12" y2="13"/>
+          <circle cx="12" cy="16" r="1"/>
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 2 }}>
+            You're ~{awayFromJobsite.distance}m from the jobsite
+          </div>
+          <div style={{ fontSize: 13, color: '#92400e', opacity: 0.85 }}>
+            {awayFromJobsite.title}{awayFromJobsite.address ? ` · ${awayFromJobsite.address}` : ''} is still{' '}
+            {awayFromJobsite.status === 'paused' ? 'paused' : 'running'}. Pause it or mark it finished.
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        {awayFromJobsite.status !== 'paused' && (
+          <button
+            onClick={() => resolveAway('pause')}
+            disabled={awayActing}
+            style={{
+              flex: 1, height: 40, borderRadius: 'var(--tech-radius-button)',
+              fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
+              background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a',
+              cursor: awayActing ? 'wait' : 'pointer', touchAction: 'manipulation',
+              opacity: awayActing ? 0.6 : 1,
+            }}
+            onBlur={() => setAwayConfirmFinish(false)}
+          >
+            Pause
+          </button>
+        )}
+        <button
+          onClick={() => resolveAway('finish')}
+          onBlur={() => setAwayConfirmFinish(false)}
+          disabled={awayActing}
+          style={{
+            flex: 1, height: 40, borderRadius: 'var(--tech-radius-button)',
+            fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-sans)',
+            background: awayConfirmFinish ? '#dc2626' : '#d97706',
+            color: '#fff', border: 'none',
+            cursor: awayActing ? 'wait' : 'pointer', touchAction: 'manipulation',
+            opacity: awayActing ? 0.6 : 1,
+          }}
+        >
+          {awayConfirmFinish ? 'Tap again to Finish' : 'Finish'}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   if (appointments.length === 0) {
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -686,6 +845,8 @@ export default function TechDash() {
           <div className="tech-dash-name">Hey {firstName} 👋</div>
           <div className="tech-dash-summary">0 appointments today</div>
         </div>
+
+        {awayBanner}
 
         {upcoming.length > 0 ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--space-4)' }}>
@@ -728,6 +889,8 @@ export default function TechDash() {
           {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
         </div>
       </div>
+
+      {awayBanner}
 
       {/* Only this part refreshes */}
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>

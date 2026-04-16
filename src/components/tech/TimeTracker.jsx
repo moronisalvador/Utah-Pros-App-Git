@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/lib/toast';
+import { getCurrentCoords } from '@/lib/nativeGeolocation';
 
 export function fmtTime(iso) {
   if (!iso) return '—';
@@ -189,10 +190,19 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
     haptic(HAPTIC[action] || 50);
     setActing(true);
     try {
+      // Capture coords on arrival-transitions (omw, start). Pause/resume/finish skip it
+      // so we don't stall the UI asking for GPS when location doesn't add value.
+      let coords = null;
+      if (action === 'omw' || action === 'start') {
+        coords = await getCurrentCoords().catch(() => null);
+      }
       await db.rpc('clock_appointment_action', {
         p_appointment_id: appt.id,
         p_employee_id: employee.id,
         p_action: action,
+        p_lat: coords?.lat ?? null,
+        p_lng: coords?.lng ?? null,
+        p_accuracy: coords?.accuracy ?? null,
       });
       await loadEntries();
       if (onUpdate) onUpdate();
@@ -231,10 +241,14 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           p_appointment_id: appt.id,
         });
       }
+      const coords = await getCurrentCoords().catch(() => null);
       await db.rpc('clock_appointment_action', {
         p_appointment_id: appt.id,
         p_employee_id: employee.id,
         p_action: 'omw',
+        p_lat: coords?.lat ?? null,
+        p_lng: coords?.lng ?? null,
+        p_accuracy: coords?.accuracy ?? null,
       });
       setReturnOpen(false);
       setReturnReason('');

@@ -30,6 +30,8 @@
 	<string>UPR Tech saves job photos to document work for insurance claims.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>UPR Tech saves job photos to document work for insurance claims.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>UPR Tech uses your location to timestamp arrivals and generate accurate travel logs.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
