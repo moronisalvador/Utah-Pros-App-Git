@@ -4,10 +4,11 @@ import { createPortal } from 'react-dom';
 import { getAuthHeader } from '@/lib/realtime';
 
 const DOC_TYPES = [
-  { key: 'coc',           label: 'Certificate of Completion' },
-  { key: 'work_auth',     label: 'Work Authorization'        },
-  { key: 'direction_pay', label: 'Direction of Pay'          },
-  { key: 'change_order',  label: 'Change Order'              },
+  { key: 'coc',              label: 'Certificate of Completion' },
+  { key: 'work_auth',        label: 'Work Authorization'        },
+  { key: 'direction_pay',    label: 'Direction of Pay'          },
+  { key: 'change_order',     label: 'Change Order'              },
+  { key: 'recon_agreement',  label: 'Reconstruction Agreement', fullWidth: true },
 ];
 
 const DIVISIONS = [
@@ -40,10 +41,13 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   const [loadingContact, setLoadingContact] = useState(true);
   const [copied,         setCopied]         = useState(false);
 
-  // Pre-seed division from job when CoC selected
+  // Pre-seed division from job when CoC selected.
+  // Recon agreement is always reconstruction-scoped — pre-set so the
+  // division is recorded on the sign_request and available to the PDF.
   useEffect(() => {
     if (docType === 'coc' && job?.division) setDivisions([job.division]);
-    else setDivisions([]);
+    else if (docType === 'recon_agreement')  setDivisions(['reconstruction']);
+    else                                      setDivisions([]);
   }, [docType, job?.division]);
 
   // Auto-fetch primary contact — uses authenticated db client passed from JobPage
@@ -251,17 +255,23 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {DOC_TYPES.map(d => {
                 const active = docType === d.key;
+                // Reconstruction Agreement uses amber accent to match signer page branding
+                const isRecon = d.key === 'recon_agreement';
+                const accent       = isRecon ? '#f59e0b' : 'var(--brand-primary)';
+                const accentFill   = isRecon ? '#f59e0b' : '#2563eb';
+                const accentShadow = isRecon ? '0 1px 4px rgba(245,158,11,0.28)' : '0 1px 4px rgba(37,99,235,0.25)';
                 return (
                   <button key={d.key} onClick={() => setDocType(d.key)}
                     style={{
                       padding: '9px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-                      border: `2px solid ${active ? 'var(--brand-primary)' : 'var(--border-light)'}`,
-                      background: active ? '#2563eb' : 'var(--bg-primary)',
+                      border: `2px solid ${active ? accent : 'var(--border-light)'}`,
+                      background: active ? accentFill : 'var(--bg-primary)',
                       fontFamily: 'var(--font-sans)', fontSize: 12,
                       fontWeight: active ? 700 : 500,
                       color: active ? '#ffffff' : 'var(--text-secondary)',
                       textAlign: 'left', transition: 'all 0.12s',
-                      boxShadow: active ? '0 1px 4px rgba(37,99,235,0.25)' : 'none',
+                      boxShadow: active ? accentShadow : 'none',
+                      gridColumn: d.fullWidth ? '1 / -1' : 'auto',
                     }}>
                     {d.label}
                   </button>

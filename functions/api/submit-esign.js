@@ -46,7 +46,11 @@ export async function onRequestPost(context) {
   };
 
   try {
-    const { token, signer_name, signature_png } = await request.json();
+    const {
+      token, signer_name, signature_png,
+      // Recon agreement: four separately-attested consents. Ignored for other doc types.
+      consent_terms, consent_commitment, consent_esign, consent_authority,
+    } = await request.json();
 
     if (!token)         return jsonResponse({ error: 'token is required' },         400, request, env);
     if (!signer_name)   return jsonResponse({ error: 'signer_name is required' },   400, request, env);
@@ -59,6 +63,13 @@ export async function onRequestPost(context) {
     if (signReq.status !== 'pending')              return jsonResponse({ error: 'Signing link is no longer valid' }, 410, request, env);
     if (new Date(signReq.expires_at) < new Date()) return jsonResponse({ error: 'Signing link has expired' },       410, request, env);
 
+    // Recon agreement: all 4 consents must be true
+    if (signReq.doc_type === 'recon_agreement') {
+      if (!(consent_terms && consent_commitment && consent_esign && consent_authority)) {
+        return jsonResponse({ error: 'All four acknowledgments are required for reconstruction agreements.' }, 400, request, env);
+      }
+    }
+
     const job      = signReq.job;
     const signedAt = new Date();
     const divisions = (Array.isArray(signReq.divisions) && signReq.divisions.length > 0)
@@ -66,6 +77,10 @@ export async function onRequestPost(context) {
       : (job.division ? [job.division] : []);
 
     // ── 2. Fetch template from DB for non-CoC docs ──
+    //   - recon_agreement: one DB row per section (heading + plain body). Map each
+    //     row to { heading, blocks } where blocks are paragraphs split on blank lines.
+    //   - Other doc types (work_auth, direction_pay, change_order): single DB row
+    //     with inline ## headings — parseMarkdownSections splits into sections.
     let templateSections = null;
     if (signReq.doc_type !== 'coc') {
       const templates = await select(
@@ -73,8 +88,18 @@ export async function onRequestPost(context) {
         `doc_type=eq.${encodeURIComponent(signReq.doc_type)}&order=sort_order.asc`
       );
       if (templates.length > 0) {
-        const body = substituteVars(templates[0].body, job);
-        templateSections = parseMarkdownSections(body);
+        if (signReq.doc_type === 'recon_agreement') {
+          templateSections = templates.map(t => ({
+            heading: t.heading || null,
+            blocks:  substituteVars(t.body || '', job)
+              .split(/\n\s*\n/)
+              .map(s => s.trim())
+              .filter(Boolean),
+          }));
+        } else {
+          const body = substituteVars(templates[0].body, job);
+          templateSections = parseMarkdownSections(body);
+        }
       }
     }
 
@@ -87,6 +112,10 @@ export async function onRequestPost(context) {
       divisions,
       templateSections,
       signer_ip: signerIp,
+      // Only populated for recon_agreement — rendered as attestations after the signature block
+      consents: signReq.doc_type === 'recon_agreement'
+        ? { terms: !!consent_terms, commitment: !!consent_commitment, esign: !!consent_esign, authority: !!consent_authority }
+        : null,
     });
 
     // ── 4. Upload to Supabase Storage ──
@@ -105,19 +134,25 @@ export async function onRequestPost(context) {
 
     // ── 5. Complete sign request ──
     const result = await rpc('complete_sign_request', {
-      p_token:            token,
-      p_signer_name:      signer_name,
-      p_signer_ip:        signerIp,
-      p_signed_file_path: storagePath,
+      p_token:              token,
+      p_signer_name:        signer_name,
+      p_signer_ip:          signerIp,
+      p_signed_file_path:   storagePath,
+      // Recon-agreement consents — NULL for other doc types, persisted verbatim
+      p_consent_terms:      signReq.doc_type === 'recon_agreement' ? !!consent_terms      : null,
+      p_consent_commitment: signReq.doc_type === 'recon_agreement' ? !!consent_commitment : null,
+      p_consent_esign:      signReq.doc_type === 'recon_agreement' ? !!consent_esign      : null,
+      p_consent_authority:  signReq.doc_type === 'recon_agreement' ? !!consent_authority  : null,
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
 
     // ── 6. Send confirmation email with PDF attached ──
     const docLabel = {
-      coc:           'Certificate of Completion',
-      work_auth:     'Work Authorization',
-      direction_pay: 'Direction of Pay',
-      change_order:  'Change Order',
+      coc:              'Certificate of Completion',
+      work_auth:        'Work Authorization',
+      direction_pay:    'Direction of Pay',
+      change_order:     'Change Order',
+      recon_agreement:  'Reconstruction Agreement',
     }[signReq.doc_type] || 'Signed Document';
 
     const firstName = escHtml(signer_name.split(' ')[0]);
@@ -255,16 +290,19 @@ function parseMarkdownSections(body) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  PDF BUILDER — clean cursor-based approach, no shared mutable state issues
 // ─────────────────────────────────────────────────────────────────────────────
-async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections, signer_ip }) {
+async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, divisions, templateSections, signer_ip, consents }) {
   const pdfDoc = await PDFDocument.create();
   const fBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const PW = 612, PH = 792, M = 56, CW = PW - M * 2;
-  const needsCoSig  = doc_type === 'work_auth' || doc_type === 'change_order';
-  const SIG_BLOCK_H = needsCoSig ? 210 : 130; // extra height for company block
-  const FOOTER_H    = 60;  // height reserved for footer
-  const MIN_Y       = SIG_BLOCK_H + FOOTER_H;
+  // Recon agreement gets a company pre-authorization block like work_auth
+  const needsCoSig   = doc_type === 'work_auth' || doc_type === 'change_order' || doc_type === 'recon_agreement';
+  // Recon agreement also renders a 4-line attestations block below the signature
+  const ATTEST_H     = consents ? 120 : 0;
+  const SIG_BLOCK_H  = (needsCoSig ? 210 : 130) + ATTEST_H;
+  const FOOTER_H     = 60;
+  const MIN_Y        = SIG_BLOCK_H + FOOTER_H;
 
   const black = rgb(0.05, 0.05, 0.05);
   const gray  = rgb(0.40, 0.40, 0.40);
@@ -448,7 +486,7 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   drawLine(M, curY - 82, M + 240, { thickness: 0.75, color: rgb(0.6, 0.6, 0.6) });
   drawText('Authorized Signature', M, curY - 94, { font: fReg, size: 8, color: gray });
 
-  // ── COMPANY PRE-AUTHORIZATION BLOCK (Work Auth + Change Order only) ──
+  // ── COMPANY PRE-AUTHORIZATION BLOCK (Work Auth, Change Order, Recon Agreement) ──
   if (needsCoSig) {
     const cy = curY - 110; // start below client sig box
     drawLine(M, cy + 8, PW - M, { thickness: 0.5, color: lgray });
@@ -472,6 +510,46 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
     );
     drawText('Electronically pre-signed on behalf', rx, cy - 36, { font: fReg, size: 8, color: gray });
     drawText('of Utah Pros Restoration',             rx, cy - 48, { font: fReg, size: 8, color: gray });
+  }
+
+  // ── ACKNOWLEDGMENTS BLOCK (recon_agreement only) ──
+  // Audit-defensible record of the four separately-attested consents. Drawn below
+  // the signature (and optional co-sig) block so it reads as "these are what was
+  // affirmatively acknowledged at sign time".
+  if (consents) {
+    // Move cursor to below whatever was drawn in the sig/cosig blocks
+    curY = curY - (needsCoSig ? 190 : 110);
+    needY(ATTEST_H + FOOTER_H);
+
+    drawText('ACKNOWLEDGMENTS — ATTESTED AT SIGNING', M, curY, { font: fBold, size: 8, color: gray });
+    curY -= 16;
+
+    const amber = rgb(0.96, 0.62, 0.04);
+    const attestRows = [
+      { ok: !!consents.terms,      text: 'I have read and agree to the Terms & Conditions attached to this Agreement.' },
+      { ok: !!consents.commitment, text: 'I am committing to use Utah Pros for reconstruction; cancellation after estimate preparation is subject to the fees in Section 1.' },
+      { ok: !!consents.esign,      text: 'I consent to electronic signature under the Utah UETA and federal E-SIGN Act.' },
+      { ok: !!consents.authority,  text: 'I am the property owner or authorized representative with authority to authorize reconstruction and payment terms.' },
+    ];
+
+    for (const r of attestRows) {
+      const lineY = curY;
+      // Checkbox square — filled amber if attested, empty otherwise
+      curPage.drawRectangle({
+        x: M, y: lineY - 1, width: 9, height: 9,
+        color:        r.ok ? amber : white,
+        borderColor:  r.ok ? amber : rgb(0.5, 0.5, 0.5),
+        borderWidth:  0.5,
+      });
+      if (r.ok) {
+        // White check mark inside filled box
+        curPage.drawLine({ start: { x: M + 1.5, y: lineY + 3 }, end: { x: M + 3.5, y: lineY + 1 }, thickness: 1.1, color: white });
+        curPage.drawLine({ start: { x: M + 3.5, y: lineY + 1 }, end: { x: M + 7.5, y: lineY + 6 }, thickness: 1.1, color: white });
+      }
+      // Attestation text (wraps if needed; drawWrapped advances curY)
+      drawWrapped(r.text, M + 16, CW - 16, { font: fReg, size: 9, color: black, lh: 12 });
+      curY -= 4;
+    }
   }
 
   // ── FOOTER on every page ──
@@ -510,8 +588,9 @@ function buildCocSections(divisions) {
 }
 
 const DOC_TITLES = {
-  coc:           'Certificate of Completion',
-  work_auth:     'Work Authorization',
-  direction_pay: 'Direction of Pay',
-  change_order:  'Change Order',
+  coc:              'Certificate of Completion',
+  work_auth:        'Work Authorization',
+  direction_pay:    'Direction of Pay',
+  change_order:     'Change Order',
+  recon_agreement:  'Reconstruction Agreement',
 };

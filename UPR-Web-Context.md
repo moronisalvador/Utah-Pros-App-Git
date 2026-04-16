@@ -109,7 +109,8 @@ src/
     PullToRefresh.jsx             — Mobile pull-to-refresh
     ScheduleWizard.jsx            — Generate schedule from template
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
-    SendEsignModal.jsx            — Send/collect esign request modal
+    SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
+    ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
     Sidebar.jsx                   — Sidebar navigation
 
 functions/
@@ -197,12 +198,18 @@ notification_queue      — Queued notifications
 
 ### Documents & Esign
 ```
-sign_requests           — Esign requests (token, status, open tracking)
-document_templates      — 8 rows — (CoC×5 divisions, work_auth, direction_pay, change_order)
+sign_requests           — Esign requests (token, status, open tracking). Recon agreement adds:
+                          consent_terms, consent_commitment, consent_esign, consent_authority BOOLEAN (all nullable),
+                          consents_signed_at TIMESTAMPTZ — populated by complete_sign_request when consents are attested.
+document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_pay, change_order,
+                          recon_agreement×16 legal sections with sort_order 1–16)
 document_requests       — Document request records
 forms                   — Form definitions
 demo_sheets             — Demo sheet records
 ```
+
+**Supported eSign doc_types:** `coc`, `work_auth`, `direction_pay`, `change_order`, `recon_agreement`.
+Only `recon_agreement` uses the four separately-attested consent columns + the expandable ReconAgreementContent signer layout.
 
 ### Financial
 ```
@@ -335,9 +342,18 @@ get_document_templates(...)     — Templates by doc_type
 upsert_document_template(...)   — Save template
 get_sign_request_by_token(p_token) — p_token TEXT (casts to UUID internally)
 create_sign_request(...)        — Creates sign_request row
-complete_sign_request(...)      — Mark signed + insert job_document
+complete_sign_request(p_token, p_signer_name, p_signer_ip, p_signed_file_path,
+                      p_consent_terms DEFAULT NULL, p_consent_commitment DEFAULT NULL,
+                      p_consent_esign DEFAULT NULL, p_consent_authority DEFAULT NULL)
+                                — Mark signed + insert job_document + emit system_events 'esign.signed'.
+                                  Derives job_documents.name from doc_type (fixed prior hardcoded-CoC bug).
+                                  Consent flags only stored for recon_agreement; other doc types pass NULLs.
 record_email_open(p_token)      — Update email_opened_at + open_count
 ```
+
+**eSign audit trail:** `complete_sign_request` emits a `system_events` row with `event_type='esign.signed'`,
+`entity_type='sign_request'`, `entity_id=<sign_request_id>`, and a payload including doc_type, signer info,
+signed_at, divisions, and (for recon_agreement) the four consent booleans + consents_signed_at.
 
 ### Lookup Tables
 ```
@@ -480,17 +496,24 @@ get_dashboard_stats()           — Dashboard stat counts
 
 ---
 
-## Esign System (complete as of Mar 23 2026)
+## Esign System (recon_agreement added Apr 16 2026)
 - **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via SendGrid
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)
   - Desktop defaults to Type mode, Mobile defaults to Draw mode
 - **PDF generation:** `/api/submit-esign` — pdf-lib, fetches template from DB, substitutes `{{variables}}`, multi-page
 - **Open tracking:** `/api/track-open?t=<token>` — 1×1 pixel, updates `email_opened_at` + `email_open_count`
 - **Resend:** `/api/resend-esign` — reuses same token, resets open tracking
-- **Doc types:** `coc` (per-division ×5), `work_auth`, `direction_pay`, `change_order`
+- **Doc types:** `coc` (per-division ×5), `work_auth`, `direction_pay`, `change_order`, `recon_agreement`
 - **Insurance clause:** insured job → direction-to-pay clause; OOP → conditional pre-assignment clause
 - **Canvas DPR fix:** retina display handled via `initCanvas` + `setTransform` with `devicePixelRatio`
 - **Token note:** `get_sign_request_by_token` takes `p_token TEXT` and casts to UUID internally
+- **Template format:** `work_auth`, `direction_pay`, `change_order` use ONE row with inline `## heading` splits; `recon_agreement` uses 16 rows (one per section, sort_order 1–16, heading in `heading` column). `submit-esign.js` branches on `doc_type` to handle both.
+- **Recon agreement specifics:**
+  - Signer page renders `ReconAgreementContent.jsx` (expandable summary cards + full legal drawer + 4 attested consent checkboxes, amber branding)
+  - All 4 consents required; `submit-esign` returns 400 if any missing
+  - PDF includes an "ACKNOWLEDGMENTS — ATTESTED AT SIGNING" block with filled-amber checkbox rects
+  - `recon_agreement` gets the company pre-authorization block (same as `work_auth` / `change_order`)
+- **Audit trail:** `complete_sign_request` emits `system_events` row with `event_type='esign.signed'`, payload includes doc_type, signer info, divisions, and (for recon) the 4 consent booleans
 
 ---
 
