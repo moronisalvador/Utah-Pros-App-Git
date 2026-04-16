@@ -75,14 +75,28 @@ function IconFolder({ filled, ...props }) {
   );
 }
 
+// eslint-disable-next-line no-unused-vars
+function IconMoreDots({ filled, ...props }) {
+  // Horizontal three-dots — solid in both active/inactive states
+  // (active state is conveyed by the accent color pill behind it).
+  // `filled` is accepted/ignored so render stays consistent with other tab icons.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <circle cx="5" cy="12" r="1.9" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.9" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.9" fill="currentColor" />
+    </svg>
+  );
+}
+
 /* ── Tab definitions ── */
 
 const TABS = [
   { key: 'dash', label: 'Dash', path: '/tech', Icon: IconHome, exact: true },
-  { key: 'schedule', label: 'Schedule', path: '/tech/schedule', Icon: IconCalendar },
-  { key: 'tasks', label: 'Tasks', path: '/tech/tasks', Icon: IconChecklist },
-  { key: 'messages', label: 'Messages', path: '/tech/conversations', Icon: IconChat },
   { key: 'claims', label: 'Claims', path: '/tech/claims', Icon: IconFolder },
+  { key: 'schedule', label: 'Schedule', path: '/tech/schedule', Icon: IconCalendar },
+  { key: 'messages', label: 'Messages', path: '/tech/conversations', Icon: IconChat },
+  { key: 'more', label: 'More', path: '/tech/more', Icon: IconMoreDots },
 ];
 
 /* ── PWA Install Banner ── */
@@ -216,7 +230,7 @@ export default function TechLayout() {
       <nav className="tech-nav">
         {TABS.map(tab => {
           const active = isActive(tab);
-          const showDot = tab.key === 'tasks' && taskCount > 0;
+          const showDot = tab.key === 'more' && taskCount > 0;
           return (
             <Link
               key={tab.key}
