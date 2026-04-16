@@ -308,7 +308,7 @@ finish_appointment(...)         — Release incomplete tasks
 
 ### Employees & Time
 ```
-clock_appointment_action(p_appointment_id, p_employee_id, p_action) — Atomic time tracking (omw/start/pause/resume/finish)
+clock_appointment_action(p_appointment_id, p_employee_id, p_action) — Atomic time tracking (omw/start/pause/resume/finish). On 'omw', auto-closes any other open entries for the same employee with hours capped at LEAST(24, ...). If auto-closed entry was stale (>24h since clock_in), logs a 'time_entry.auto_closed_stale' row to system_events (payload: previous_appointment_id, new_appointment_id, clock_in, auto_closed_at, raw_hours, capped_hours, reason). Future: replace stale-close heuristic with geofence-based auto-finish when tech leaves the job site.
 get_assigned_tasks(p_employee_id) — Incomplete tasks for employee with job context
 get_all_employees()             — All employees with auth status
 get_payroll_summary(...)        — Payroll summary
