@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import ReconAgreementContent from '@/components/ReconAgreementContent';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -138,6 +139,13 @@ export default function SignPage() {
   const [nameError,  setNameError]  = useState('');
   const [hasSig,     setHasSig]     = useState(false);
   const [agreed,     setAgreed]     = useState(false);
+  // Four separately-attested consents for recon_agreement doc_type.
+  // Unused for other doc types — classic `agreed` single-checkbox flow still applies.
+  const [consents,   setConsents]   = useState({ terms: false, commitment: false, esign: false, authority: false });
+  const onConsentChange = (key, value) => {
+    setConsents(prev => ({ ...prev, [key]: value }));
+    setNameError('');
+  };
 
   // ── Signature mode: 'type' | 'draw' ──
   const [sigMode,    setSigMode]    = useState(() => isDesktop() ? 'type' : 'draw');
@@ -254,16 +262,36 @@ export default function SignPage() {
   };
 
   const handleSubmit = async () => {
+    const isRecon = data?.doc_type === 'recon_agreement';
     if (!signerName.trim()) { setNameError('Please enter your full name.'); return; }
     if (!hasSig)             { setNameError(sigMode === 'type' ? 'Please type your name in the signature box.' : 'Please provide your signature.'); return; }
-    if (!agreed)             { setNameError('Please confirm the checkbox above.'); return; }
+    if (isRecon) {
+      if (!consents.terms || !consents.commitment || !consents.esign || !consents.authority) {
+        setNameError('Please check all acknowledgments above.');
+        return;
+      }
+    } else {
+      if (!agreed) { setNameError('Please confirm the checkbox above.'); return; }
+    }
     setNameError(''); setStatus('submitting');
     try {
       const canvas = canvasRef.current;
       const sigPng = canvas.toDataURL('image/png');
+      const body = {
+        token,
+        signer_name: signerName.trim(),
+        signature_png: sigPng,
+        divisions: data?.divisions || (data?.job?.division ? [data.job.division] : []),
+      };
+      if (isRecon) {
+        body.consent_terms       = consents.terms;
+        body.consent_commitment  = consents.commitment;
+        body.consent_esign       = consents.esign;
+        body.consent_authority   = consents.authority;
+      }
       const res = await fetch('/api/submit-esign', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, signer_name: signerName.trim(), signature_png: sigPng, divisions: data?.divisions || (data?.job?.division ? [data.job.division] : []) }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Submission failed');
@@ -282,7 +310,7 @@ export default function SignPage() {
         <div style={{ background: '#fff', borderRadius: 16, padding: '48px 36px', maxWidth: 460, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
           <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 36 }}>✅</div>
           <h1 style={{ margin: '0 0 12px', fontSize: 24, fontWeight: 800, color: '#0f172a' }}>You're all set!</h1>
-          <p style={{ margin: '0 0 8px', fontSize: 16, color: '#334155', lineHeight: 1.6 }}>Your <strong>{data?.doc_type === 'coc' ? 'Certificate of Completion' : 'document'}</strong> has been signed and saved successfully.</p>
+          <p style={{ margin: '0 0 8px', fontSize: 16, color: '#334155', lineHeight: 1.6 }}>Your <strong>{DOC_LABELS[data?.doc_type] || 'document'}</strong> has been signed and saved successfully.</p>
           <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. You may close this window.</p>
           <div style={{ background: '#f8fafc', borderRadius: 10, padding: '14px 18px', border: '1px solid #e2e8f0' }}>
             <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Signed on</p>
@@ -297,6 +325,9 @@ export default function SignPage() {
   const address  = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const docLabel = DOC_LABELS[data?.doc_type] || 'Document';
   const sectionText = buildSectionsFromTemplates(templates, data?.divisions || (job.division ? [job.division] : []), data?.doc_type, job);
+  const isRecon  = data?.doc_type === 'recon_agreement';
+  // Amber accent for recon_agreement, blue for everything else
+  const accentColor = isRecon ? '#f59e0b' : '#2563eb';
 
   return (
     <Screen>
@@ -317,38 +348,50 @@ export default function SignPage() {
         </div>
 
         <div style={styles.content}>
-          <div style={styles.titleBlock}>
-            <h1 style={styles.docTitle}>{docLabel}</h1>
-            <div style={styles.titleLine} />
-          </div>
+          {isRecon ? (
+            <ReconAgreementContent
+              job={job}
+              templates={templates}
+              consents={consents}
+              onConsentChange={onConsentChange}
+              submitting={status === 'submitting'}
+            />
+          ) : (
+            <>
+              <div style={styles.titleBlock}>
+                <h1 style={styles.docTitle}>{docLabel}</h1>
+                <div style={styles.titleLine} />
+              </div>
 
-          <div style={styles.infoGrid}>
-            <InfoRow label="Client"   value={job.insured_name} />
-            <InfoRow label="Property" value={address} />
-            <InfoRow label="Job #"    value={job.job_number} />
-            {job.insurance_company && <InfoRow label="Insurance"    value={job.insurance_company} />}
-            {job.claim_number      && <InfoRow label="Claim #"      value={job.claim_number} />}
-            {job.date_of_loss      && <InfoRow label="Date of Loss" value={new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} />}
-          </div>
+              <div style={styles.infoGrid}>
+                <InfoRow label="Client"   value={job.insured_name} />
+                <InfoRow label="Property" value={address} />
+                <InfoRow label="Job #"    value={job.job_number} />
+                {job.insurance_company && <InfoRow label="Insurance"    value={job.insurance_company} />}
+                {job.claim_number      && <InfoRow label="Claim #"      value={job.claim_number} />}
+                {job.date_of_loss      && <InfoRow label="Date of Loss" value={new Date(job.date_of_loss + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} />}
+              </div>
 
-          <Divider />
+              <Divider />
 
-          {sectionText.map((s, i) => (
-            <div key={i} style={styles.section}>
-              {s.heading && <p style={styles.sectionHeading}>{s.heading}</p>}
-              <div style={styles.sectionBody}>{renderMarkdown(s.body)}</div>
-            </div>
-          ))}
+              {sectionText.map((s, i) => (
+                <div key={i} style={styles.section}>
+                  {s.heading && <p style={styles.sectionHeading}>{s.heading}</p>}
+                  <div style={styles.sectionBody}>{renderMarkdown(s.body)}</div>
+                </div>
+              ))}
 
-          <Divider />
+              <Divider />
 
-          <p style={styles.authText}>
-            By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties,
-            and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive
-            payment directly for all work performed under this agreement.
-          </p>
+              <p style={styles.authText}>
+                By signing below, I confirm that I am authorized to sign on behalf of the property owner and all responsible parties,
+                and that the information above is accurate to the best of my knowledge. I authorize Utah Pros Restoration to receive
+                payment directly for all work performed under this agreement.
+              </p>
 
-          <Divider />
+              <Divider />
+            </>
+          )}
 
           {/* Full name */}
           <div style={styles.fieldGroup}>
@@ -431,19 +474,21 @@ export default function SignPage() {
             </div>
           </div>
 
-          {/* Agreement checkbox */}
-          <label style={styles.checkLabel}>
-            <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); setNameError(''); }}
-              disabled={status === 'submitting'} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              I have read and agree to the terms stated above, and confirm this electronic signature is legally binding.
-            </span>
-          </label>
+          {/* Agreement checkbox (skipped for recon — attested via 4 consents above) */}
+          {!isRecon && (
+            <label style={styles.checkLabel}>
+              <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); setNameError(''); }}
+                disabled={status === 'submitting'} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                I have read and agree to the terms stated above, and confirm this electronic signature is legally binding.
+              </span>
+            </label>
+          )}
 
           {nameError && <p style={styles.errorMsg}>⚠ {nameError}</p>}
 
           <button
-            style={{ ...styles.submitBtn, opacity: status === 'submitting' ? 0.7 : 1, cursor: status === 'submitting' ? 'not-allowed' : 'pointer' }}
+            style={{ ...styles.submitBtn, background: accentColor, opacity: status === 'submitting' ? 0.7 : 1, cursor: status === 'submitting' ? 'not-allowed' : 'pointer' }}
             onClick={handleSubmit} disabled={status === 'submitting'}
           >
             {status === 'submitting' ? (
@@ -501,7 +546,7 @@ function buildSectionText(divisions, doc_type) {
   return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
 
-const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order' };
+const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
 
 const styles = {
   page:          { minHeight: '100vh', background: '#f1f5f9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
