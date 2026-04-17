@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DIV_EMOJI } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { impact } from '@/lib/nativeHaptics';
 
 function openMap(address) {
   if (!address) return;
@@ -639,6 +641,15 @@ export default function TechClaimDetail() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  // Add Photo / Add Note state
+  const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note' }
+  const [uploading, setUploading] = useState(false);
+  const [noteJobId, setNoteJobId] = useState(null); // when set, inline note composer is open
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const fileRef = useRef(null);
+  const pendingPhotoJobIdRef = useRef(null);
+
   // Dark gradient hero → switch status bar to light icons
   useEffect(() => {
     statusBarLight();
@@ -684,6 +695,110 @@ export default function TechClaimDetail() {
   }, [db, claimId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Photo upload flow ──
+  const uploadPhotoForJob = useCallback(async (file, jobId) => {
+    if (!file || !jobId) return;
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    setUploading(true);
+    try {
+      const ts = Date.now();
+      const path = `${jobId}/${ts}-${file.name}`;
+      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
+        body: file,
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      await db.rpc('insert_job_document', {
+        p_job_id: jobId,
+        p_name: file.name,
+        p_file_path: `job-files/${path}`,
+        p_mime_type: file.type,
+        p_category: 'photo',
+        p_uploaded_by: employee?.id || null,
+        p_appointment_id: null,
+      });
+      impact('light');
+      toast('Photo uploaded');
+      load();
+    } catch (err) {
+      toast('Photo upload failed: ' + err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  }, [db, employee?.id, load]);
+
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const jobId = pendingPhotoJobIdRef.current;
+    pendingPhotoJobIdRef.current = null;
+    if (file && jobId) uploadPhotoForJob(file, jobId);
+  };
+
+  const captureForJob = async (jobId) => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const file = await takeNativePhoto();
+        if (file) await uploadPhotoForJob(file, jobId);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+      }
+    } else {
+      pendingPhotoJobIdRef.current = jobId;
+      fileRef.current?.click();
+    }
+  };
+
+  const startAddPhoto = () => {
+    const jobs = detail?.jobs || [];
+    if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
+    if (jobs.length === 1) captureForJob(jobs[0].id);
+    else setJobPicker({ action: 'photo' });
+  };
+
+  const startAddNote = () => {
+    const jobs = detail?.jobs || [];
+    if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
+    setNoteText('');
+    if (jobs.length === 1) setNoteJobId(jobs[0].id);
+    else setJobPicker({ action: 'note' });
+  };
+
+  const onJobPicked = (jobId) => {
+    const action = jobPicker?.action;
+    setJobPicker(null);
+    if (action === 'photo') captureForJob(jobId);
+    else if (action === 'note') { setNoteText(''); setNoteJobId(jobId); }
+  };
+
+  const saveNote = async () => {
+    if (!noteJobId || !noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      await db.rpc('insert_job_document', {
+        p_job_id: noteJobId,
+        p_name: 'Field note',
+        p_file_path: '',
+        p_mime_type: 'text/plain',
+        p_category: 'note',
+        p_uploaded_by: employee?.id || null,
+        p_description: noteText.trim(),
+        p_appointment_id: null,
+      });
+      toast('Note saved');
+      setNoteText('');
+      setNoteJobId(null);
+      load();
+    } catch (err) {
+      toast('Failed to save note: ' + err.message, 'error');
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
@@ -808,7 +923,191 @@ export default function TechClaimDetail() {
             No photos or notes yet.
           </div>
         )}
+
+        {/* Inline note composer — appears when a job is picked for a note */}
+        {noteJobId && (
+          <div style={{
+            marginTop: 12, padding: 12,
+            border: '1px solid var(--border-color)', borderRadius: 12,
+            background: 'var(--bg-primary)',
+          }}>
+            {jobs.length > 1 && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                Note for <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                  {jobs.find(j => j.id === noteJobId)?.job_number}
+                </strong>
+              </div>
+            )}
+            <textarea
+              className="input textarea"
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="What do you want to note?"
+              rows={3}
+              autoFocus
+              style={{ width: '100%', fontSize: 15, fontFamily: 'var(--font-sans)', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setNoteJobId(null); setNoteText(''); }}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)', cursor: 'pointer',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveNote}
+                disabled={!noteText.trim() || savingNote}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: noteText.trim() ? 'var(--accent)' : 'var(--bg-tertiary)',
+                  color: noteText.trim() ? '#fff' : 'var(--text-tertiary)',
+                  border: 'none',
+                  cursor: noteText.trim() && !savingNote ? 'pointer' : 'not-allowed',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  opacity: savingNote ? 0.7 : 1,
+                }}
+              >
+                {savingNote ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Action row */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button
+            onClick={startAddPhoto}
+            disabled={uploading || jobs.length === 0}
+            style={{
+              flex: 1, minHeight: 48, borderRadius: 12,
+              background: 'var(--accent)', color: '#fff', border: 'none',
+              cursor: uploading ? 'wait' : 'pointer',
+              fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              WebkitTapHighlightColor: 'transparent', opacity: uploading ? 0.7 : 1,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+            </svg>
+            {uploading ? 'Uploading…' : 'Add Photo'}
+          </button>
+          <button
+            onClick={startAddNote}
+            disabled={jobs.length === 0 || !!noteJobId}
+            style={{
+              flex: 1, minHeight: 48, borderRadius: 12,
+              background: 'var(--bg-primary)', color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)', cursor: 'pointer',
+              fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              WebkitTapHighlightColor: 'transparent',
+              opacity: (jobs.length === 0 || noteJobId) ? 0.5 : 1,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Add Note
+          </button>
+        </div>
       </div>
+
+      {/* Hidden file input for web photo picker */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+
+      {/* Job picker sheet (multi-job claims) */}
+      {jobPicker && (
+        <div
+          onClick={() => setJobPicker(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', width: '100%',
+              borderTopLeftRadius: 20, borderTopRightRadius: 20,
+              padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
+              maxHeight: '70vh', overflowY: 'auto',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
+            }}
+          >
+            <div style={{
+              width: 36, height: 4, background: 'var(--border-color)',
+              borderRadius: 2, margin: '0 auto 12px',
+            }} />
+            <div style={{
+              fontSize: 15, fontWeight: 700, color: 'var(--text-primary)',
+              marginBottom: 10, textAlign: 'center',
+            }}>
+              {jobPicker.action === 'photo' ? 'Add photo to which job?' : 'Add note to which job?'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {jobs.map(job => {
+                const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+                const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
+                return (
+                  <button
+                    key={job.id}
+                    onClick={() => onJobPicked(job.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '14px 14px', minHeight: 60,
+                      borderRadius: 12, textAlign: 'left',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-light)',
+                      borderLeft: `4px solid ${divColor}`,
+                      cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{emoji}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                        {job.job_number}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
+                        {job.division} · {(job.phase || '').replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setJobPicker(null)}
+              style={{
+                marginTop: 14, width: '100%', minHeight: 44, borderRadius: 10,
+                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                border: 'none', cursor: 'pointer',
+                fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Phase 5: Claim details collapsed + adjuster contact */}
 
