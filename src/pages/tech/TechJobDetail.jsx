@@ -11,6 +11,8 @@ import ActionBar from '@/components/tech/ActionBar';
 import NowNextTile, { pickNowNext } from '@/components/tech/NowNextTile';
 import PhotosGroup from '@/components/tech/PhotosGroup';
 import Lightbox from '@/components/tech/Lightbox';
+import DetailRow from '@/components/tech/DetailRow';
+import MergeModal from '@/components/MergeModal';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
 function formatLossDate(dateStr) {
@@ -95,6 +97,14 @@ export default function TechJobDetail() {
   const [loadError, setLoadError] = useState(null);
   const [entering, setEntering] = useState(false);
   const fileRef = useRef(null);
+
+  // Collapsed details + admin kebab state
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
@@ -194,6 +204,23 @@ export default function TechJobDetail() {
     }
   };
 
+  const handleSoftDelete = async () => {
+    setDeleting(true);
+    try {
+      await db.update('jobs', `id=eq.${jobId}`, {
+        status: 'deleted',
+        updated_by: employee?.id || null,
+      });
+      toast(`Job ${job?.job_number || ''} archived`);
+      // Return to the parent claim
+      navigate(claim ? `/tech/claims/${claim.id}` : '/tech/claims', { replace: true });
+    } catch (err) {
+      toast('Failed to delete job: ' + err.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const saveNote = async () => {
     if (!noteText.trim()) return;
     setSavingNote(true);
@@ -257,6 +284,8 @@ export default function TechJobDetail() {
   if (job.division) metaPieces.push(titleCase(job.division));
   if (job.status && job.status !== 'active') metaPieces.push(`Status: ${titleCase(job.status)}`);
 
+  const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
+
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
@@ -269,6 +298,8 @@ export default function TechJobDetail() {
         meta={metaPieces}
         onBack={() => (claim ? navigate(`/tech/claims/${claim.id}`) : navigate(-1))}
         backLabel={claim ? 'Back to claim' : 'Back'}
+        showMenu={isAdmin}
+        onMenu={() => setMenuOpen(true)}
       />
       <ActionBar phone={phone} address={address} />
 
@@ -509,7 +540,229 @@ export default function TechJobDetail() {
         />
       )}
 
-      {/* Phase 4: Collapsed Job details + admin kebab */}
+      {/* Collapsed Job details — reference info at bottom */}
+      <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
+        <button
+          onClick={() => setDetailsOpen(v => !v)}
+          style={{
+            width: '100%', minHeight: 48, padding: '12px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <span>Job details</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {detailsOpen && (
+          <div style={{
+            marginTop: 8, padding: '14px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+          }}>
+            <DetailRow label="Phase" value={phaseLabel} />
+            <DetailRow label="Status" value={titleCase(job.status || 'active')} />
+            <DetailRow label="Division" value={titleCase(job.division)} />
+            <DetailRow label="Date of loss" value={formatLossDate(job.date_of_loss)} />
+            <DetailRow label="Type of loss" value={job.type_of_loss ? titleCase(job.type_of_loss) : null} />
+            <DetailRow label="Carrier" value={job.insurance_company || 'Out of pocket'} />
+            <DetailRow label="Policy #" value={job.policy_number} mono />
+            <DetailRow label="Claim #" value={job.claim_number} mono />
+            {isAdmin && typeof job.deductible === 'number' && (
+              <DetailRow label="Deductible" value={`$${Number(job.deductible).toFixed(2)}`} />
+            )}
+            {job.ar_notes && <DetailRow label="Notes" value={job.ar_notes} multiline />}
+
+            {(contact || job.insured_name) && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Insured / Homeowner
+                </div>
+                <DetailRow label="Name" value={contact?.name || job.insured_name} />
+                <DetailRow label="Phone" value={contact?.phone || job.client_phone} href={(contact?.phone || job.client_phone) ? `tel:${contact?.phone || job.client_phone}` : null} />
+                <DetailRow label="Email" value={contact?.email || job.client_email} href={(contact?.email || job.client_email) ? `mailto:${contact?.email || job.client_email}` : null} />
+              </>
+            )}
+
+            {(job.adjuster_name || job.adjuster_phone || job.adjuster_email) && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Adjuster
+                </div>
+                <DetailRow label="Name" value={job.adjuster_name} />
+                <DetailRow label="Phone" value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
+                <DetailRow label="Email" value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Admin kebab bottom sheet */}
+      {menuOpen && (
+        <div
+          onClick={() => setMenuOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', width: '100%',
+              borderTopLeftRadius: 20, borderTopRightRadius: 20,
+              padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
+            }}
+          >
+            <div style={{
+              width: 36, height: 4, background: 'var(--border-color)',
+              borderRadius: 2, margin: '0 auto 12px',
+            }} />
+            <button
+              onClick={() => { setMenuOpen(false); setShowMerge(true); }}
+              style={{
+                width: '100%', minHeight: 56, padding: '14px 16px',
+                borderRadius: 12, background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)', marginBottom: 8,
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 15, fontWeight: 600, color: 'var(--text-primary)',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent', textAlign: 'left',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="7 17 17 7" /><polyline points="7 7 17 17" /><circle cx="12" cy="12" r="10" />
+              </svg>
+              Merge job
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
+              style={{
+                width: '100%', minHeight: 56, padding: '14px 16px',
+                borderRadius: 12, background: '#fef2f2',
+                border: '1px solid #fecaca',
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 15, fontWeight: 600, color: '#dc2626',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent', textAlign: 'left',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+              </svg>
+              Delete job
+            </button>
+            <button
+              onClick={() => setMenuOpen(false)}
+              style={{
+                marginTop: 14, width: '100%', minHeight: 44, borderRadius: 10,
+                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                border: 'none', cursor: 'pointer',
+                fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showMerge && (
+        <MergeModal
+          type="job"
+          keepRecord={job}
+          onClose={() => setShowMerge(false)}
+          onMerged={() => { setShowMerge(false); load(); }}
+        />
+      )}
+
+      {deleteOpen && (
+        <div
+          onClick={() => { if (!deleting) { setDeleteOpen(false); setDeleteInput(''); } }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1200,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', width: '100%', maxWidth: 420,
+              borderRadius: 16, padding: 20,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>Delete Job</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
+              This will archive <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{job.job_number}</strong>. It can be restored later but will be hidden from all views.
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              Type <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>DELETE</strong> to confirm:
+            </div>
+            <input
+              type="text"
+              value={deleteInput}
+              onChange={e => setDeleteInput(e.target.value)}
+              autoFocus
+              placeholder="DELETE"
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                padding: '12px 14px', fontSize: 16,
+                border: '1px solid var(--border-color)', borderRadius: 10,
+                background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                outline: 'none', fontFamily: 'var(--font-mono)',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button
+                onClick={() => { setDeleteOpen(false); setDeleteInput(''); }}
+                disabled={deleting}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)', cursor: deleting ? 'not-allowed' : 'pointer',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSoftDelete}
+                disabled={deleteInput !== 'DELETE' || deleting}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: deleteInput === 'DELETE' ? '#dc2626' : 'var(--bg-tertiary)',
+                  color: deleteInput === 'DELETE' ? '#fff' : 'var(--text-tertiary)',
+                  border: 'none',
+                  cursor: deleteInput === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete Job'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
