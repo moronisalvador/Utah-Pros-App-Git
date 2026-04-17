@@ -1,5 +1,5 @@
 import { DIV_BORDER_COLORS } from '@/pages/tech/techConstants';
-import { DIV_EMOJI } from '@/lib/claimUtils';
+import { DivisionIcon } from '@/components/DivisionIcons';
 import { fileUrl } from '@/lib/techDateUtils';
 
 // A per-job group of photos + notes on the parent entity's detail page
@@ -9,7 +9,6 @@ import { fileUrl } from '@/lib/techDateUtils';
 export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
   if (photos.length === 0 && notes.length === 0) return null;
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
-  const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
   const maxPreview = 3;
   const visible = photos.slice(0, maxPreview);
   const remaining = Math.max(0, photos.length - maxPreview);
@@ -22,7 +21,7 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
           paddingBottom: 6, marginBottom: 8,
           borderBottom: `2px solid ${divColor}`,
         }}>
-          <span style={{ fontSize: 14 }}>{emoji}</span>
+          <DivisionIcon type={job.division} size={16} />
           <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
             {job.job_number}
           </span>
