@@ -690,7 +690,7 @@ const CV = {
   timeCol: { width: 52, flexShrink: 0, borderRight: '1px solid var(--border-color)' },
   timeHeader: { height: 44, borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' },
   timeLabel: { height: CAL_HOUR_HEIGHT, position: 'relative' },
-  dayCol: { flex: 1, minWidth: 120, borderRight: '1px solid var(--border-light)' },
+  dayCol: { flex: 1, minWidth: 120, borderRight: '1px solid var(--border-color)' },
   dayHeader: { height: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 },
   dayBody: { position: 'relative', height: CAL_TOTAL_HOURS * CAL_HOUR_HEIGHT },
   hourLine: { position: 'absolute', left: 0, right: 0, height: CAL_HOUR_HEIGHT, borderBottom: '1px solid var(--border-light)', cursor: 'pointer' },
