@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
+import MergeModal from '@/components/MergeModal';
 
 function openMap(address) {
   if (!address) return;
@@ -626,6 +627,43 @@ function Lightbox({ photos, index, onClose, onIndex, db }) {
 }
 
 // ───────────────────────────────────────────────────────────────
+// DetailRow — one line inside the collapsed Claim details section.
+// ───────────────────────────────────────────────────────────────
+function DetailRow({ label, value, href, mono, capitalize, multiline }) {
+  if (!value) return null;
+  const valueStyle = {
+    fontSize: 14, color: 'var(--text-primary)', fontWeight: 500,
+    fontFamily: mono ? 'var(--font-mono)' : 'var(--font-sans)',
+    textTransform: capitalize ? 'capitalize' : 'none',
+    textAlign: 'right', flex: 1, minWidth: 0,
+    whiteSpace: multiline ? 'pre-wrap' : 'nowrap',
+    overflow: multiline ? 'visible' : 'hidden',
+    textOverflow: multiline ? 'clip' : 'ellipsis',
+    wordBreak: multiline ? 'break-word' : 'normal',
+  };
+  return (
+    <div style={{
+      display: 'flex', alignItems: multiline ? 'flex-start' : 'center',
+      gap: 10, padding: '8px 0',
+      borderBottom: '1px solid var(--border-light)',
+      minHeight: 36,
+    }}>
+      <span style={{
+        fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)',
+        flexShrink: 0, minWidth: 100,
+      }}>
+        {label}
+      </span>
+      {href ? (
+        <a href={href} style={{ ...valueStyle, color: 'var(--accent)', textDecoration: 'none' }}>{value}</a>
+      ) : (
+        <span style={valueStyle}>{value}</span>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────
 export default function TechClaimDetail() {
@@ -649,6 +687,14 @@ export default function TechClaimDetail() {
   const [savingNote, setSavingNote] = useState(false);
   const fileRef = useRef(null);
   const pendingPhotoJobIdRef = useRef(null);
+
+  // Admin kebab state
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   // Dark gradient hero → switch status bar to light icons
   useEffect(() => {
@@ -775,6 +821,23 @@ export default function TechClaimDetail() {
     else if (action === 'note') { setNoteText(''); setNoteJobId(jobId); }
   };
 
+  const handleSoftDelete = async () => {
+    if (!detail?.claim) return;
+    setDeleting(true);
+    try {
+      await db.update('claims', `id=eq.${claimId}`, {
+        status: 'deleted',
+        updated_by: employee?.id || null,
+      });
+      toast(`Claim ${detail.claim.claim_number} archived`);
+      navigate('/tech/claims', { replace: true });
+    } catch (err) {
+      toast('Failed to delete claim: ' + err.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const saveNote = async () => {
     if (!noteJobId || !noteText.trim()) return;
     setSavingNote(true);
@@ -861,7 +924,7 @@ export default function TechClaimDetail() {
         insuranceClaimNumber={claim.insurance_claim_number}
         onBack={() => navigate('/tech/claims')}
         showMenu={isAdmin}
-        onMenu={() => { /* Phase 5: admin kebab menu */ }}
+        onMenu={() => setMenuOpen(true)}
       />
       <ActionBar phone={phone} address={address} />
 
@@ -1109,7 +1172,72 @@ export default function TechClaimDetail() {
         </div>
       )}
 
-      {/* Phase 5: Claim details collapsed + adjuster contact */}
+      {/* Collapsed Claim details — reference info, bottom of page */}
+      <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
+        <button
+          onClick={() => setDetailsOpen(v => !v)}
+          style={{
+            width: '100%', minHeight: 48, padding: '12px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <span>Claim details</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {detailsOpen && (
+          <div style={{
+            marginTop: 8, padding: '14px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+          }}>
+            <DetailRow label="Carrier" value={claim.insurance_carrier || 'Out of pocket'} />
+            <DetailRow label="Policy #" value={claim.policy_number} />
+            <DetailRow label="Ins. claim #" value={claim.insurance_claim_number} mono />
+            <DetailRow label="Date of loss" value={formatLossDate(claim.date_of_loss)} />
+            <DetailRow label="Loss type" value={claim.loss_type} capitalize />
+            {claim.notes && <DetailRow label="Notes" value={claim.notes} multiline />}
+
+            {contact && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Insured / Homeowner
+                </div>
+                <DetailRow label="Name" value={contact.name} />
+                <DetailRow label="Phone" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : null} />
+                <DetailRow label="Email" value={contact.email} href={contact.email ? `mailto:${contact.email}` : null} />
+              </>
+            )}
+
+            {adjuster && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Adjuster
+                </div>
+                <DetailRow label="Name" value={adjuster.name} />
+                <DetailRow label="Company" value={adjuster.company} />
+                <DetailRow label="Cell" value={adjuster.phone} href={adjuster.phone ? `tel:${adjuster.phone}` : null} />
+                <DetailRow label="Email" value={adjuster.email} href={adjuster.email ? `mailto:${adjuster.email}` : null} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Lightbox */}
       {lightbox && (
@@ -1122,8 +1250,159 @@ export default function TechClaimDetail() {
         />
       )}
 
-      {/* Silence unused-adjuster warning — wired up in Phase 5 */}
-      {adjuster ? null : null}
+      {/* Admin kebab bottom sheet */}
+      {menuOpen && (
+        <div
+          onClick={() => setMenuOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', width: '100%',
+              borderTopLeftRadius: 20, borderTopRightRadius: 20,
+              padding: '16px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
+            }}
+          >
+            <div style={{
+              width: 36, height: 4, background: 'var(--border-color)',
+              borderRadius: 2, margin: '0 auto 12px',
+            }} />
+            <button
+              onClick={() => { setMenuOpen(false); setShowMerge(true); }}
+              style={{
+                width: '100%', minHeight: 56, padding: '14px 16px',
+                borderRadius: 12, background: 'var(--bg-primary)',
+                border: '1px solid var(--border-light)', marginBottom: 8,
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 15, fontWeight: 600, color: 'var(--text-primary)',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent', textAlign: 'left',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="7 17 17 7" /><polyline points="7 7 17 17" /><circle cx="12" cy="12" r="10" />
+              </svg>
+              Merge claim
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
+              style={{
+                width: '100%', minHeight: 56, padding: '14px 16px',
+                borderRadius: 12, background: '#fef2f2',
+                border: '1px solid #fecaca',
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: 15, fontWeight: 600, color: '#dc2626',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent', textAlign: 'left',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+              </svg>
+              Delete claim
+            </button>
+            <button
+              onClick={() => setMenuOpen(false)}
+              style={{
+                marginTop: 14, width: '100%', minHeight: 44, borderRadius: 10,
+                background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                border: 'none', cursor: 'pointer',
+                fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Merge modal (reuses desktop component) */}
+      {showMerge && (
+        <MergeModal
+          type="claim"
+          keepRecord={claim}
+          onClose={() => setShowMerge(false)}
+          onMerged={() => { setShowMerge(false); load(); }}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deleteOpen && (
+        <div
+          onClick={() => { if (!deleting) { setDeleteOpen(false); setDeleteInput(''); } }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1200,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', width: '100%', maxWidth: 420,
+              borderRadius: 16, padding: 20,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>Delete Claim</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
+              This will archive <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{claim.claim_number}</strong>. It can be restored later but will be hidden from all views.
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              Type <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>DELETE</strong> to confirm:
+            </div>
+            <input
+              type="text"
+              value={deleteInput}
+              onChange={e => setDeleteInput(e.target.value)}
+              autoFocus
+              placeholder="DELETE"
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                padding: '12px 14px', fontSize: 16,
+                border: '1px solid var(--border-color)', borderRadius: 10,
+                background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                outline: 'none', fontFamily: 'var(--font-mono)',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button
+                onClick={() => { setDeleteOpen(false); setDeleteInput(''); }}
+                disabled={deleting}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)', cursor: deleting ? 'not-allowed' : 'pointer',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSoftDelete}
+                disabled={deleteInput !== 'DELETE' || deleting}
+                style={{
+                  padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                  background: deleteInput === 'DELETE' ? '#dc2626' : 'var(--bg-tertiary)',
+                  color: deleteInput === 'DELETE' ? '#fff' : 'var(--text-tertiary)',
+                  border: 'none',
+                  cursor: deleteInput === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete Claim'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
