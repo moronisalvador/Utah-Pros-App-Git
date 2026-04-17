@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS, DIV_PILL_COLORS } from './techConstants';
-import { DIV_EMOJI } from '@/lib/claimUtils';
+import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
@@ -238,7 +238,6 @@ export default function TechClaimAlbum() {
             const photos = photosByJob[job.id] || [];
             if (photos.length === 0) return null;
             const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
-            const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
             return (
               <div key={job.id} id={`album-group-${job.id}`} style={{ marginBottom: 22 }}>
                 {jobs.length > 1 && (
@@ -247,7 +246,7 @@ export default function TechClaimAlbum() {
                     paddingBottom: 6, marginBottom: 10,
                     borderBottom: `2px solid ${divColor}`,
                   }}>
-                    <span style={{ fontSize: 16 }}>{emoji}</span>
+                    <DivisionIcon type={job.division} size={18} />
                     <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                       {job.job_number}
                     </span>
@@ -404,7 +403,6 @@ export default function TechClaimAlbum() {
               {jobs.map(job => {
                 const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
                 const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
-                const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
                 return (
                   <button
                     key={job.id}
@@ -420,7 +418,7 @@ export default function TechClaimAlbum() {
                       WebkitTapHighlightColor: 'transparent',
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>{emoji}</span>
+                    <DivisionIcon type={job.division} size={22} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                         {job.job_number}

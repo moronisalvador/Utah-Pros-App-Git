@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
-import { DIV_EMOJI } from '@/lib/claimUtils';
+import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
@@ -37,7 +37,6 @@ function nextApptForJob(jobId, appointments) {
 function JobTile({ job, taskSummary, nextAppt, onOpen }) {
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
   const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
-  const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
   const divLabel = (job.division || '').charAt(0).toUpperCase() + (job.division || '').slice(1);
   const total = taskSummary?.total || 0;
   const completed = taskSummary?.completed || 0;
@@ -61,7 +60,7 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 22, lineHeight: 1 }}>{emoji}</span>
+        <DivisionIcon type={job.division} size={22} />
         <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
           {job.job_number}
         </span>
@@ -612,7 +611,6 @@ export default function TechClaimDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {
                 const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
-                const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
                 return (
                   <button
                     key={job.id}
@@ -628,7 +626,7 @@ export default function TechClaimDetail() {
                       WebkitTapHighlightColor: 'transparent',
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>{emoji}</span>
+                    <DivisionIcon type={job.division} size={22} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                         {job.job_number}
