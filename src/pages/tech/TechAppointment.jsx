@@ -324,20 +324,36 @@ export default function TechAppointment() {
           </a>
         )}
 
-        {/* Message */}
-        <button
-          onClick={() => navigate('/tech/conversations')}
-          style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: 4, background: 'none', border: 'none', cursor: 'pointer',
-            padding: '6px 0', minWidth: 64, minHeight: 56,
-            fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
-            touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
-        </button>
+        {/* Message — TODO: switch to in-app SMS when available */}
+        {job?.client_phone ? (
+          <a
+            href={`sms:${job.client_phone}`}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 4, textDecoration: 'none',
+              padding: '6px 0', minWidth: 64, minHeight: 56,
+              fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
+              touchAction: 'manipulation',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
+          </a>
+        ) : (
+          <button
+            disabled
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: 4, background: 'none', border: 'none', cursor: 'not-allowed',
+              padding: '6px 0', minWidth: 64, minHeight: 56, opacity: 0.45,
+              fontFamily: 'var(--font-sans)', color: 'var(--text-tertiary)',
+              touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
+          </button>
+        )}
 
         {/* Photo */}
         <button
