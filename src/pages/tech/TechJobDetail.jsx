@@ -1,12 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
+import { impact } from '@/lib/nativeHaptics';
 import Hero from '@/components/tech/Hero';
 import ActionBar from '@/components/tech/ActionBar';
 import NowNextTile, { pickNowNext } from '@/components/tech/NowNextTile';
+import PhotosGroup from '@/components/tech/PhotosGroup';
+import Lightbox from '@/components/tech/Lightbox';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
 function formatLossDate(dateStr) {
@@ -81,9 +85,16 @@ export default function TechJobDetail() {
   const [contact, setContact] = useState(null);
   const [claim, setClaim] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [entering, setEntering] = useState(false);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
@@ -103,7 +114,7 @@ export default function TechJobDetail() {
       }
       setJob(j);
 
-      const [contacts, claimRows, allAppts] = await Promise.all([
+      const [contacts, claimRows, allAppts, docList] = await Promise.all([
         db.rpc('get_job_contacts', { p_job_id: jobId }).catch(() => []),
         j.claim_id
           ? db.select('claims', `id=eq.${j.claim_id}&select=id,claim_number`).catch(() => [])
@@ -111,14 +122,15 @@ export default function TechJobDetail() {
         j.claim_id
           ? db.rpc('get_claim_appointments', { p_claim_id: j.claim_id }).catch(() => [])
           : Promise.resolve([]),
+        db.select('job_documents', `job_id=eq.${jobId}&order=created_at.desc`).catch(() => []),
       ]);
       const list = Array.isArray(contacts) ? contacts : [];
       const primary = list.find(c => c.is_primary) || list[0] || null;
       setContact(primary);
       setClaim(claimRows?.[0] || null);
-      // Filter appts to this job only
       const jobAppts = (allAppts || []).filter(a => a.job_id === jobId);
       setAppointments(jobAppts);
+      setDocs(docList || []);
     } catch (e) {
       setLoadError(e.message || 'Failed to load job');
       toast('Failed to load job', 'error');
@@ -128,6 +140,84 @@ export default function TechJobDetail() {
   }, [db, jobId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const uploadPhoto = useCallback(async (file) => {
+    if (!file || !jobId) return;
+    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    setUploading(true);
+    try {
+      const ts = Date.now();
+      const path = `${jobId}/${ts}-${file.name}`;
+      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
+        body: file,
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      await db.rpc('insert_job_document', {
+        p_job_id: jobId,
+        p_name: file.name,
+        p_file_path: `job-files/${path}`,
+        p_mime_type: file.type,
+        p_category: 'photo',
+        p_uploaded_by: employee?.id || null,
+        p_appointment_id: null,
+      });
+      impact('light');
+      toast('Photo uploaded');
+      load();
+    } catch (err) {
+      toast('Photo upload failed: ' + err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  }, [db, employee?.id, jobId, load]);
+
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) uploadPhoto(file);
+  };
+
+  const triggerAddPhoto = async () => {
+    if (uploading) return;
+    if (isNativeCamera()) {
+      try {
+        const file = await takeNativePhoto();
+        if (file) await uploadPhoto(file);
+      } catch (err) {
+        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+      }
+    } else {
+      fileRef.current?.click();
+    }
+  };
+
+  const saveNote = async () => {
+    if (!noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      await db.rpc('insert_job_document', {
+        p_job_id: jobId,
+        p_name: 'Field note',
+        p_file_path: '',
+        p_mime_type: 'text/plain',
+        p_category: 'note',
+        p_uploaded_by: employee?.id || null,
+        p_description: noteText.trim(),
+        p_appointment_id: null,
+      });
+      toast('Note saved');
+      setNoteText('');
+      setNoteOpen(false);
+      load();
+    } catch (err) {
+      toast('Failed to save note: ' + err.message, 'error');
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
@@ -262,7 +352,163 @@ export default function TechJobDetail() {
         );
       })()}
 
-      {/* Phase 3: Photos & Notes + Add Photo/Note */}
+      {/* Photos & Notes — single group (this IS one job) */}
+      {(() => {
+        const photos = docs.filter(d => d.category === 'photo');
+        const notes = docs.filter(d => d.category === 'note');
+        const hasAny = photos.length + notes.length > 0;
+
+        return (
+          <div style={{ padding: '22px var(--space-4) 0' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 4,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                Photos & Notes{hasAny ? ` (${photos.length + notes.length})` : ''}
+              </div>
+              {photos.length > 0 && (
+                <button
+                  onClick={() => navigate(`/tech/jobs/${jobId}/photos`)}
+                  style={{
+                    background: 'none', border: 'none', padding: '4px 0',
+                    color: 'var(--accent)', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  See all →
+                </button>
+              )}
+            </div>
+
+            {hasAny ? (
+              <PhotosGroup
+                job={job}
+                photos={photos}
+                notes={notes}
+                isSingleJob
+                db={db}
+                onOpenAlbum={(_jobId, index) => setLightboxIndex(index)}
+              />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
+                No photos or notes yet.
+              </div>
+            )}
+
+            {noteOpen && (
+              <div style={{
+                marginTop: 12, padding: 12,
+                border: '1px solid var(--border-color)', borderRadius: 12,
+                background: 'var(--bg-primary)',
+              }}>
+                <textarea
+                  className="input textarea"
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder="What do you want to note?"
+                  rows={3}
+                  autoFocus
+                  style={{ width: '100%', fontSize: 15, fontFamily: 'var(--font-sans)', boxSizing: 'border-box' }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => { setNoteOpen(false); setNoteText(''); }}
+                    style={{
+                      padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                      background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)', cursor: 'pointer',
+                      fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveNote}
+                    disabled={!noteText.trim() || savingNote}
+                    style={{
+                      padding: '10px 18px', minHeight: 44, borderRadius: 10,
+                      background: noteText.trim() ? 'var(--accent)' : 'var(--bg-tertiary)',
+                      color: noteText.trim() ? '#fff' : 'var(--text-tertiary)',
+                      border: 'none',
+                      cursor: noteText.trim() && !savingNote ? 'pointer' : 'not-allowed',
+                      fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                      opacity: savingNote ? 0.7 : 1,
+                    }}
+                  >
+                    {savingNote ? 'Saving…' : 'Save note'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                onClick={triggerAddPhoto}
+                disabled={uploading}
+                style={{
+                  flex: 1, minHeight: 48, borderRadius: 12,
+                  background: 'var(--accent)', color: '#fff', border: 'none',
+                  cursor: uploading ? 'wait' : 'pointer',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  WebkitTapHighlightColor: 'transparent', opacity: uploading ? 0.7 : 1,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                </svg>
+                {uploading ? 'Uploading…' : 'Add Photo'}
+              </button>
+              <button
+                onClick={() => { setNoteOpen(true); setNoteText(''); }}
+                disabled={noteOpen}
+                style={{
+                  flex: 1, minHeight: 48, borderRadius: 12,
+                  background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)', cursor: 'pointer',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  WebkitTapHighlightColor: 'transparent',
+                  opacity: noteOpen ? 0.5 : 1,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Add Note
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Hidden file input for web photo picker */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+
+      {/* Lightbox for in-page preview */}
+      {lightboxIndex !== null && (
+        <Lightbox
+          photos={docs.filter(d => d.category === 'photo')}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndex={(i) => setLightboxIndex(i)}
+          db={db}
+        />
+      )}
+
       {/* Phase 4: Collapsed Job details + admin kebab */}
     </div>
   );
