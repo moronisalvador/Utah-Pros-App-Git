@@ -50,3 +50,22 @@ export const TYPE_CONFIG = {
   mold_remediation: { label: 'Mold Remed.',  color: '#059669', bg: '#ecfdf5',  icon: '\u{1F33F}' },
   other:            { label: 'Other',        color: '#6b7280', bg: '#f3f4f6',  icon: '\u{1F4CC}' },
 };
+
+export const ROOM_TEMPLATES = [
+  'Living Room',
+  'Kitchen',
+  'Dining Room',
+  'Master Bedroom',
+  'Bedroom 2',
+  'Bedroom 3',
+  'Master Bathroom',
+  'Bathroom 2',
+  'Hallway',
+  'Stairs',
+  'Basement',
+  'Garage',
+  'Laundry',
+  'Mud Room',
+  'Office',
+  'Closet',
+];
