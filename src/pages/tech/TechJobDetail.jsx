@@ -13,6 +13,7 @@ import PhotosGroup from '@/components/tech/PhotosGroup';
 import Lightbox from '@/components/tech/Lightbox';
 import DetailRow from '@/components/tech/DetailRow';
 import MergeModal from '@/components/MergeModal';
+import PullToRefresh from '@/components/PullToRefresh';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
 function formatLossDate(dateStr) {
@@ -303,6 +304,7 @@ export default function TechJobDetail() {
       />
       <ActionBar phone={phone} address={address} />
 
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
       {/* Claim breadcrumb */}
       {claim && (
         <button
@@ -519,27 +521,6 @@ export default function TechJobDetail() {
         );
       })()}
 
-      {/* Hidden file input for web photo picker */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        style={{ display: 'none' }}
-        onChange={handleFileInputChange}
-      />
-
-      {/* Lightbox for in-page preview */}
-      {lightboxIndex !== null && (
-        <Lightbox
-          photos={docs.filter(d => d.category === 'photo')}
-          index={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-          onIndex={(i) => setLightboxIndex(i)}
-          db={db}
-        />
-      )}
-
       {/* Collapsed Job details — reference info at bottom */}
       <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
         <button
@@ -611,6 +592,29 @@ export default function TechJobDetail() {
           </div>
         )}
       </div>
+
+      </PullToRefresh>
+
+      {/* Hidden file input for web photo picker */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+
+      {/* Lightbox for in-page preview */}
+      {lightboxIndex !== null && (
+        <Lightbox
+          photos={docs.filter(d => d.category === 'photo')}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndex={(i) => setLightboxIndex(i)}
+          db={db}
+        />
+      )}
 
       {/* Admin kebab bottom sheet */}
       {menuOpen && (
