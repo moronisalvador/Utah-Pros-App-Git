@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { DIV_PILL_COLORS, APPT_STATUS_COLORS } from './techConstants';
+import { DIV_PILL_COLORS, DIV_BORDER_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
@@ -291,6 +291,7 @@ export default function TechJobDetail() {
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
+        eyebrow="Job"
         topLabel={job.job_number}
         title={title}
         address={address}
@@ -305,25 +306,50 @@ export default function TechJobDetail() {
       <ActionBar phone={phone} address={address} />
 
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
-      {/* Claim breadcrumb */}
-      {claim && (
-        <button
-          onClick={() => navigate(`/tech/claims/${claim.id}`)}
-          style={{
-            width: '100%', padding: '10px var(--space-4)',
-            background: 'var(--bg-secondary)',
-            border: 'none', borderBottom: '1px solid var(--border-light)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            WebkitTapHighlightColor: 'transparent', textAlign: 'left',
-          }}
-        >
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            Part of <strong style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{claim.claim_number}</strong>
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>View claim →</span>
-        </button>
-      )}
+      {/* Claim breadcrumb — division-tinted, division-bordered card.
+          Visually signals "this job lives inside a claim". */}
+      {claim && (() => {
+        const pill = DIV_PILL_COLORS[division] || DIV_PILL_COLORS.water;
+        const border = DIV_BORDER_COLORS?.[division] || '#3b82f6';
+        return (
+          <button
+            onClick={() => navigate(`/tech/claims/${claim.id}`)}
+            style={{
+              width: 'calc(100% - 2 * var(--space-4))',
+              margin: '12px var(--space-4) 0',
+              padding: '12px 14px', minHeight: 56,
+              background: pill.bg, borderRadius: 12,
+              border: '1px solid var(--border-light)',
+              borderLeft: `4px solid ${border}`,
+              display: 'flex', alignItems: 'center', gap: 10,
+              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+              WebkitTapHighlightColor: 'transparent', textAlign: 'left',
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pill.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, color: pill.color,
+                textTransform: 'uppercase', letterSpacing: '0.12em',
+                lineHeight: 1.2,
+              }}>
+                Part of claim
+              </div>
+              <div style={{
+                fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                color: 'var(--text-primary)', marginTop: 2,
+              }}>
+                {claim.claim_number}
+              </div>
+            </div>
+            <span style={{ fontSize: 12, color: pill.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
+              View →
+            </span>
+          </button>
+        );
+      })()}
 
       {(() => {
         const nowNext = pickNowNext(appointments, employee?.id);

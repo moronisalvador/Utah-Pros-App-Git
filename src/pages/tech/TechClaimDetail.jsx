@@ -384,6 +384,7 @@ export default function TechClaimDetail() {
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
+        eyebrow="Claim"
         topLabel={claim.claim_number}
         title={insuredName}
         address={address}

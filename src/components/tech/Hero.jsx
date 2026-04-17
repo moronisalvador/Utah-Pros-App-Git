@@ -6,6 +6,8 @@ import { openMap } from '@/lib/techDateUtils';
 //
 // Props:
 //   division        — 'water' | 'fire' | 'mold' | ... (drives gradient + emoji)
+//   eyebrow         — tiny uppercase tag above the mono number ("CLAIM", "JOB")
+//                     — distinguishes entity type at a glance
 //   topLabel        — mono label above title (claim number or job number)
 //   title           — big insured name (24/700)
 //   address         — tappable address (opens Maps)
@@ -17,7 +19,7 @@ import { openMap } from '@/lib/techDateUtils';
 //   showMenu        — boolean (admin-only kebab visibility)
 //   onMenu          — function
 export default function Hero({
-  division, topLabel, title, address, statusText, statusColors,
+  division, eyebrow, topLabel, title, address, statusText, statusColors,
   meta = [], onBack, backLabel = 'Back', showMenu, onMenu,
 }) {
   const gradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
@@ -77,6 +79,16 @@ export default function Hero({
 
       {/* Content */}
       <div style={{ padding: '4px var(--space-5) 22px' }}>
+        {eyebrow && (
+          <div style={{
+            fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.7)',
+            marginBottom: 6,
+          }}>
+            {eyebrow}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <span style={{ fontSize: 28, lineHeight: 1 }}>{emoji}</span>
           <span style={{
