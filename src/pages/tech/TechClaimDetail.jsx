@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { DIV_GRADIENTS, DIV_PILL_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
+import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DIV_EMOJI } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
@@ -310,6 +310,115 @@ function NowNextTile({ appt, ctxType, onOpen }) {
   );
 }
 
+function nextApptForJob(jobId, appointments) {
+  if (!jobId || !appointments?.length) return null;
+  const today = new Date().toISOString().split('T')[0];
+  return appointments
+    .filter(a => a.job_id === jobId && a.date >= today && !['completed', 'cancelled'].includes(a.status))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''))[0] || null;
+}
+
+// ───────────────────────────────────────────────────────────────
+// JobTile — one large tile per job under the claim.
+// Reusable on TechJobDetail? No — job page IS a single job.
+// But the internal layout (division-bordered card + progress + next appt)
+// mirrors patterns we may want on the job page's appointments section.
+// ───────────────────────────────────────────────────────────────
+function JobTile({ job, taskSummary, nextAppt, onOpen }) {
+  const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+  const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
+  const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
+  const divLabel = (job.division || '').charAt(0).toUpperCase() + (job.division || '').slice(1);
+  const total = taskSummary?.total || 0;
+  const completed = taskSummary?.completed || 0;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const allDone = total > 0 && completed === total;
+  const phase = (job.phase || '').replace(/_/g, ' ');
+  const status = job.status || 'active';
+
+  return (
+    <button
+      onClick={onOpen}
+      style={{
+        position: 'relative', display: 'block', width: 'calc(100% - 2 * var(--space-4))',
+        margin: '10px var(--space-4) 0', padding: '14px 40px 14px 18px',
+        borderRadius: 16, background: 'var(--bg-primary)',
+        border: '1px solid var(--border-light)',
+        borderLeft: `4px solid ${divColor}`,
+        textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+        WebkitTapHighlightColor: 'transparent', minHeight: 104,
+        boxShadow: 'var(--tech-shadow-card)',
+      }}
+    >
+      {/* Top row: emoji + job# + division + phase + status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontSize: 22, lineHeight: 1 }}>{emoji}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+          {job.job_number}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{divLabel}</span>
+        {phase && (
+          <span style={{
+            fontSize: 10, fontWeight: 600, padding: '2px 8px',
+            borderRadius: 'var(--radius-full)',
+            background: divPill.bg, color: divPill.color,
+            textTransform: 'capitalize',
+          }}>
+            {phase}
+          </span>
+        )}
+        <span style={{
+          fontSize: 10, fontWeight: 600, padding: '2px 8px',
+          borderRadius: 'var(--radius-full)',
+          background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+          textTransform: 'capitalize',
+        }}>
+          {status}
+        </span>
+      </div>
+
+      {/* Progress bar — only if tasks exist */}
+      {total > 0 ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Tasks</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: allDone ? '#059669' : 'var(--text-primary)' }}>
+              {completed}/{total}
+            </span>
+          </div>
+          <div style={{ width: '100%', height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+            <div style={{
+              width: `${pct}%`, height: '100%',
+              background: allDone ? '#059669' : divColor,
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No tasks yet</div>
+      )}
+
+      {/* Next appt */}
+      {nextAppt && (
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+          Next: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            {relativeDate(nextAppt.date)}{nextAppt.time_start ? ` · ${formatTime(nextAppt.time_start)}` : ''}
+          </span>
+        </div>
+      )}
+
+      <span style={{
+        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+        color: 'var(--text-tertiary)', display: 'flex',
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────
@@ -320,6 +429,7 @@ export default function TechClaimDetail() {
 
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
+  const [taskSummaries, setTaskSummaries] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -343,6 +453,17 @@ export default function TechClaimDetail() {
       }
       setDetail(data);
       setAppointments(appts || []);
+
+      // Task summaries per job — parallel, soft-fail per-job
+      const jobIds = (data.jobs || []).map(j => j.id);
+      if (jobIds.length > 0) {
+        const entries = await Promise.all(jobIds.map(id =>
+          db.rpc('get_job_task_summary', { p_job_id: id })
+            .then(s => [id, s])
+            .catch(() => [id, null])
+        ));
+        setTaskSummaries(Object.fromEntries(entries));
+      }
     } catch (e) {
       setLoadError(e.message || 'Failed to load claim');
       toast('Failed to load claim', 'error');
@@ -413,7 +534,27 @@ export default function TechClaimDetail() {
         />
       )}
 
-      {/* Phase 3: Jobs tiles */}
+      {jobs.length > 0 && (
+        <>
+          <div style={{
+            padding: '20px var(--space-4) 0',
+            fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>
+            {jobs.length === 1 ? 'Job' : `Jobs (${jobs.length})`}
+          </div>
+          {jobs.map(job => (
+            <JobTile
+              key={job.id}
+              job={job}
+              taskSummary={taskSummaries[job.id]}
+              nextAppt={nextApptForJob(job.id, appointments)}
+              onOpen={() => navigate(`/tech/jobs/${job.id}`)}
+            />
+          ))}
+        </>
+      )}
+
       {/* Phase 4: Photos & Notes grouped by job */}
       {/* Phase 5: Claim details collapsed + adjuster contact */}
 
