@@ -8,6 +8,7 @@ import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
+import PullToRefresh from '@/components/PullToRefresh';
 
 function openMap(address) {
   if (!address) return;
@@ -696,8 +697,12 @@ export default function TechClaimDetail() {
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  // Dark gradient hero → switch status bar to light icons
+  // Entry animation flag
+  const [entering, setEntering] = useState(false);
+
+  // Dark gradient hero → switch status bar to light icons; kick off entry anim
   useEffect(() => {
+    requestAnimationFrame(() => setEntering(true));
     statusBarLight();
     return () => statusBarDark();
   }, []);
@@ -911,7 +916,7 @@ export default function TechClaimDetail() {
   const lightboxPhotos = lightbox ? (docsByJob[lightbox.jobId]?.photos || []) : [];
 
   return (
-    <div className="tech-page" style={{ padding: 0 }}>
+    <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
         claimNumber={claim.claim_number}
@@ -928,6 +933,7 @@ export default function TechClaimDetail() {
       />
       <ActionBar phone={phone} address={address} />
 
+      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
       {nowNext && (
         <NowNextTile
           appt={nowNext.appt}
@@ -1081,6 +1087,8 @@ export default function TechClaimDetail() {
           </button>
         </div>
       </div>
+
+      </PullToRefresh>
 
       {/* Hidden file input for web photo picker */}
       <input
