@@ -310,6 +310,11 @@ function NowNextTile({ appt, ctxType, onOpen }) {
   );
 }
 
+function fileUrl(db, filePath) {
+  if (!filePath) return null;
+  return `${db.baseUrl}/storage/v1/object/public/${filePath}`;
+}
+
 function nextApptForJob(jobId, appointments) {
   if (!jobId || !appointments?.length) return null;
   const today = new Date().toISOString().split('T')[0];
@@ -420,6 +425,205 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
 }
 
 // ───────────────────────────────────────────────────────────────
+// PhotosGroup — one section per job. Mini header only when multi-job.
+// Thumbnails sorted newest-first (caller responsibility).
+// Reusable shell for TechJobDetail (single group, no header).
+// ───────────────────────────────────────────────────────────────
+function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum }) {
+  if (photos.length === 0 && notes.length === 0) return null;
+  const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+  const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
+  const maxPreview = 3;
+  const visible = photos.slice(0, maxPreview);
+  const remaining = Math.max(0, photos.length - maxPreview);
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {!isSingleJob && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          paddingBottom: 6, marginBottom: 8,
+          borderBottom: `2px solid ${divColor}`,
+        }}>
+          <span style={{ fontSize: 14 }}>{emoji}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+            {job.job_number}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
+            · {job.division}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+            {photos.length} photo{photos.length !== 1 ? 's' : ''}
+            {notes.length > 0 && ` · ${notes.length} note${notes.length !== 1 ? 's' : ''}`}
+          </span>
+        </div>
+      )}
+
+      {photos.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+          {visible.map((p, i) => (
+            <button
+              key={p.id}
+              onClick={() => onOpenAlbum(job.id, i)}
+              style={{
+                padding: 0, border: '1px solid var(--border-light)', borderRadius: 10,
+                aspectRatio: '1', background: 'var(--bg-tertiary)', overflow: 'hidden',
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <img
+                src={fileUrl(db, p.file_path)}
+                alt={p.name || 'Photo'}
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                onError={e => { e.target.style.display = 'none'; }}
+              />
+            </button>
+          ))}
+          {remaining > 0 ? (
+            <button
+              onClick={() => onOpenAlbum(job.id, maxPreview)}
+              style={{
+                padding: 0, border: '1px solid var(--border-light)', borderRadius: 10,
+                aspectRatio: '1', background: 'var(--bg-tertiary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexDirection: 'column', gap: 2,
+                cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>+{remaining}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>more</span>
+            </button>
+          ) : (
+            // Pad with empty cells if fewer than 4 photos so grid stays consistent
+            Array.from({ length: Math.max(0, 4 - visible.length) }).map((_, i) => (
+              <div key={`pad-${i}`} style={{ aspectRatio: '1' }} />
+            ))
+          )}
+        </div>
+      )}
+
+      {notes.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {notes.slice(0, 3).map(n => (
+            <div key={n.id} style={{
+              padding: '8px 12px', borderRadius: 10,
+              background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
+              fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4,
+            }}>
+              {n.description || n.name || 'Note'}
+            </div>
+          ))}
+          {notes.length > 3 && (
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+              +{notes.length - 3} more note{notes.length - 3 !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// Lightbox — full-screen pager over one job's photos, newest-first.
+// ───────────────────────────────────────────────────────────────
+function Lightbox({ photos, index, onClose, onIndex, db }) {
+  if (!photos || photos.length === 0 || index == null) return null;
+  const current = photos[index];
+  if (!current) return null;
+  const canPrev = index > 0;
+  const canNext = index < photos.length - 1;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.92)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <button
+        onClick={e => { e.stopPropagation(); onClose(); }}
+        aria-label="Close album"
+        style={{
+          position: 'absolute', top: 16, right: 16,
+          background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
+          fontSize: 22, lineHeight: 1, cursor: 'pointer',
+          minWidth: 44, minHeight: 44, borderRadius: 'var(--radius-full)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        ✕
+      </button>
+
+      <div style={{
+        position: 'absolute', top: 16, left: 16,
+        color: '#fff', fontSize: 13, fontWeight: 600,
+        background: 'rgba(0,0,0,0.35)', padding: '6px 12px', borderRadius: 'var(--radius-full)',
+      }}>
+        {index + 1} / {photos.length}
+      </div>
+
+      <img
+        src={fileUrl(db, current.file_path)}
+        alt={current.name || 'Photo'}
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain',
+          touchAction: 'pinch-zoom',
+        }}
+      />
+
+      {canPrev && (
+        <button
+          onClick={e => { e.stopPropagation(); onIndex(index - 1); }}
+          aria-label="Previous photo"
+          style={{
+            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+            background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
+            minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+      )}
+      {canNext && (
+        <button
+          onClick={e => { e.stopPropagation(); onIndex(index + 1); }}
+          aria-label="Next photo"
+          style={{
+            position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+            background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
+            minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
+
+      {current.description && (
+        <div style={{
+          position: 'absolute', bottom: 20, left: 20, right: 20,
+          background: 'rgba(0,0,0,0.55)', color: '#fff',
+          padding: '10px 14px', borderRadius: 'var(--radius-md)',
+          fontSize: 13, lineHeight: 1.4, textAlign: 'center',
+        }}>
+          {current.description}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────
 export default function TechClaimDetail() {
@@ -430,6 +634,8 @@ export default function TechClaimDetail() {
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [taskSummaries, setTaskSummaries] = useState({});
+  const [docs, setDocs] = useState([]);
+  const [lightbox, setLightbox] = useState(null); // { jobId, index }
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -457,12 +663,17 @@ export default function TechClaimDetail() {
       // Task summaries per job — parallel, soft-fail per-job
       const jobIds = (data.jobs || []).map(j => j.id);
       if (jobIds.length > 0) {
-        const entries = await Promise.all(jobIds.map(id =>
-          db.rpc('get_job_task_summary', { p_job_id: id })
-            .then(s => [id, s])
-            .catch(() => [id, null])
-        ));
-        setTaskSummaries(Object.fromEntries(entries));
+        const idList = jobIds.map(id => `"${id}"`).join(',');
+        const [summaryEntries, docList] = await Promise.all([
+          Promise.all(jobIds.map(id =>
+            db.rpc('get_job_task_summary', { p_job_id: id })
+              .then(s => [id, s])
+              .catch(() => [id, null])
+          )),
+          db.select('job_documents', `job_id=in.(${idList})&order=created_at.desc`).catch(() => []),
+        ]);
+        setTaskSummaries(Object.fromEntries(summaryEntries));
+        setDocs(docList || []);
       }
     } catch (e) {
       setLoadError(e.message || 'Failed to load claim');
@@ -507,6 +718,19 @@ export default function TechClaimDetail() {
   const address = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ');
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
   const nowNext = pickNowNext(appointments, employee?.id);
+
+  // Group docs by job, split into photos (cat=photo) + notes (cat=note)
+  const docsByJob = {};
+  for (const d of docs) {
+    if (!docsByJob[d.job_id]) docsByJob[d.job_id] = { photos: [], notes: [] };
+    if (d.category === 'photo') docsByJob[d.job_id].photos.push(d);
+    else if (d.category === 'note') docsByJob[d.job_id].notes.push(d);
+  }
+  const totalPhotos = docs.filter(d => d.category === 'photo').length;
+  const totalNotes = docs.filter(d => d.category === 'note').length;
+  const hasAnyPhotoOrNote = totalPhotos + totalNotes > 0;
+
+  const lightboxPhotos = lightbox ? (docsByJob[lightbox.jobId]?.photos || []) : [];
 
   return (
     <div className="tech-page" style={{ padding: 0 }}>
@@ -555,8 +779,49 @@ export default function TechClaimDetail() {
         </>
       )}
 
-      {/* Phase 4: Photos & Notes grouped by job */}
+      {/* Photos & Notes — grouped by job */}
+      <div style={{ padding: '22px var(--space-4) 0' }}>
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4,
+        }}>
+          Photos & Notes{hasAnyPhotoOrNote ? ` (${totalPhotos + totalNotes})` : ''}
+        </div>
+        {hasAnyPhotoOrNote ? (
+          jobs.map(job => {
+            const g = docsByJob[job.id];
+            if (!g || (g.photos.length === 0 && g.notes.length === 0)) return null;
+            return (
+              <PhotosGroup
+                key={job.id}
+                job={job}
+                photos={g.photos}
+                notes={g.notes}
+                isSingleJob={jobs.length === 1}
+                db={db}
+                onOpenAlbum={(jobId, index) => setLightbox({ jobId, index })}
+              />
+            );
+          })
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
+            No photos or notes yet.
+          </div>
+        )}
+      </div>
+
       {/* Phase 5: Claim details collapsed + adjuster contact */}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <Lightbox
+          photos={lightboxPhotos}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onIndex={(i) => setLightbox(prev => prev ? { ...prev, index: i } : null)}
+          db={db}
+        />
+      )}
 
       {/* Silence unused-adjuster warning — wired up in Phase 5 */}
       {adjuster ? null : null}
