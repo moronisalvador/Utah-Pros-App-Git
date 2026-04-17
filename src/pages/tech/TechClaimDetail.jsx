@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
+import { DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DIV_EMOJI } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
@@ -9,314 +9,17 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
-
-function openMap(address) {
-  if (!address) return;
-  const encoded = encodeURIComponent(address);
-  const url = /iPhone|iPad/.test(navigator.userAgent)
-    ? `maps://?q=${encoded}`
-    : `https://maps.google.com/?q=${encoded}`;
-  window.open(url);
-}
+import Hero from '@/components/tech/Hero';
+import ActionBar from '@/components/tech/ActionBar';
+import NowNextTile, { pickNowNext } from '@/components/tech/NowNextTile';
+import PhotosGroup from '@/components/tech/PhotosGroup';
+import Lightbox from '@/components/tech/Lightbox';
+import DetailRow from '@/components/tech/DetailRow';
+import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatTime(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const hh = h % 12 || 12;
-  return `${hh}:${String(m).padStart(2, '0')} ${period}`;
-}
-
-function relativeDate(dateStr) {
-  if (!dateStr) return '';
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const target = new Date(dateStr + 'T12:00:00'); target.setHours(0, 0, 0, 0);
-  const diff = Math.round((target - today) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  if (diff === -1) return 'Yesterday';
-  if (diff > 1 && diff < 7) return target.toLocaleDateString('en-US', { weekday: 'long' });
-  return target.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-// Returns { ctxType: 'now_active'|'today'|'next', appt } or null.
-// Mirrors the logic spec'd in TECH-CLAIM-DETAIL-TASK.md § "Now / Next module".
-function pickNowNext(appointments, employeeId) {
-  if (!appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
-  const crewHas = (a) => (a.crew || []).some(c => c.employee_id === employeeId);
-  const live = ['en_route', 'in_progress', 'paused'];
-
-  const active = appointments.find(a => live.includes(a.status) && crewHas(a));
-  if (active) return { ctxType: 'now_active', appt: active };
-
-  const todayMine = appointments.find(a =>
-    a.date === today && crewHas(a) &&
-    a.status !== 'completed' && a.status !== 'cancelled'
-  );
-  if (todayMine) return { ctxType: 'today', appt: todayMine };
-
-  const upcoming = appointments
-    .filter(a => a.date >= today && a.status !== 'completed' && a.status !== 'cancelled')
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''));
-  if (upcoming.length > 0) return { ctxType: 'next', appt: upcoming[0] };
-
-  return null;
-}
-
-// ───────────────────────────────────────────────────────────────
-// Hero — division-gradient header. Candidate for future extraction
-// to components/tech/ once TechJobDetail needs the same shape.
-// ───────────────────────────────────────────────────────────────
-function Hero({
-  division, claimNumber, insuredName, address, status, jobCount,
-  lossDate, lossType, insuranceClaimNumber,
-  onBack, showMenu, onMenu,
-}) {
-  const gradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
-  const statusColors = CLAIM_STATUS_COLORS[status] || CLAIM_STATUS_COLORS.open;
-  const emoji = DIV_EMOJI[division] || DIV_EMOJI.general;
-
-  return (
-    <div className="tech-hero" style={{ background: gradient, color: '#fff' }}>
-      {/* Top bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px var(--space-4)',
-      }}>
-        <button
-          onClick={onBack}
-          aria-label="Back to claims"
-          style={{
-            background: 'none', border: 'none', color: '#fff',
-            cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center',
-            minWidth: 48, minHeight: 48, WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            fontSize: 11, fontWeight: 700, padding: '4px 10px',
-            borderRadius: 'var(--radius-full)',
-            background: '#fff', color: statusColors.color,
-            textTransform: 'capitalize', letterSpacing: '0.02em',
-          }}>
-            {status || 'open'}
-          </span>
-          {showMenu && (
-            <button
-              onClick={onMenu}
-              aria-label="More actions"
-              style={{
-                background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
-                cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                minWidth: 36, minHeight: 36, borderRadius: 'var(--radius-full)',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div style={{ padding: '4px var(--space-5) 22px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 28, lineHeight: 1 }}>{emoji}</span>
-          <span style={{
-            fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)',
-            color: 'rgba(255,255,255,0.72)', letterSpacing: '0.02em',
-          }}>
-            {claimNumber || '—'}
-          </span>
-        </div>
-
-        <div style={{
-          fontSize: 24, fontWeight: 700, color: '#fff',
-          lineHeight: 1.2, marginBottom: 6,
-        }}>
-          {insuredName || 'Unknown'}
-        </div>
-
-        {address && (
-          <button
-            onClick={() => openMap(address)}
-            style={{
-              background: 'none', border: 'none', padding: 0,
-              color: 'rgba(255,255,255,0.88)', fontSize: 14, fontWeight: 500,
-              textAlign: 'left', cursor: 'pointer', textDecoration: 'underline',
-              textUnderlineOffset: 3, textDecorationColor: 'rgba(255,255,255,0.4)',
-              fontFamily: 'var(--font-sans)', WebkitTapHighlightColor: 'transparent',
-              minHeight: 24,
-            }}
-          >
-            {address}
-          </button>
-        )}
-
-        {/* Meta row: loss date · loss type · ins# · job count */}
-        <div style={{
-          marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,0.72)',
-          display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
-        }}>
-          {lossDate && <span>Loss: {formatLossDate(lossDate)}</span>}
-          {lossType && <><span>·</span><span style={{ textTransform: 'capitalize' }}>{lossType}</span></>}
-          {insuranceClaimNumber && <><span>·</span><span style={{ fontFamily: 'var(--font-mono)' }}>Ins# {insuranceClaimNumber}</span></>}
-          {jobCount > 0 && <><span>·</span><span>{jobCount} job{jobCount !== 1 ? 's' : ''}</span></>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────
-// ActionBar — Call · Navigate · Message
-// Candidate for extraction once TechJobDetail reuses it.
-// ───────────────────────────────────────────────────────────────
-function ActionBar({ phone, address }) {
-  const btnBase = {
-    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-    gap: 4, padding: '6px 0', minWidth: 64, minHeight: 56,
-    fontFamily: 'var(--font-sans)',
-    touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
-  };
-  const enabledStyle = { color: 'var(--text-secondary)', cursor: 'pointer' };
-  const disabledStyle = { color: 'var(--text-tertiary)', opacity: 0.45, cursor: 'not-allowed' };
-
-  return (
-    <div style={{
-      display: 'flex', background: 'var(--bg-primary)',
-      borderBottom: '1px solid var(--border-light)', padding: '8px 0',
-    }}>
-      {/* Call */}
-      {phone ? (
-        <a href={`tel:${phone}`} style={{ ...btnBase, ...enabledStyle, textDecoration: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Call</span>
-        </a>
-      ) : (
-        <button disabled style={{ ...btnBase, ...disabledStyle, background: 'none', border: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Call</span>
-        </button>
-      )}
-
-      {/* Navigate */}
-      {address ? (
-        <button onClick={() => openMap(address)} style={{ ...btnBase, ...enabledStyle, background: 'none', border: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="3 11 22 2 13 21 11 13 3 11" />
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Navigate</span>
-        </button>
-      ) : (
-        <button disabled style={{ ...btnBase, ...disabledStyle, background: 'none', border: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="3 11 22 2 13 21 11 13 3 11" />
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Navigate</span>
-        </button>
-      )}
-
-      {/* Message — TODO: switch to in-app SMS when available */}
-      {phone ? (
-        <a href={`sms:${phone}`} style={{ ...btnBase, ...enabledStyle, textDecoration: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Message</span>
-        </a>
-      ) : (
-        <button disabled style={{ ...btnBase, ...disabledStyle, background: 'none', border: 'none' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Message</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────
-// NowNextTile — context-aware "what's happening on this claim"
-// Shown when the tech has live work, a today appt, or the claim
-// has any upcoming appt. Hidden otherwise. Reusable on TechJobDetail.
-// ───────────────────────────────────────────────────────────────
-function NowNextTile({ appt, ctxType, onOpen }) {
-  let label, bg, border, color;
-  if (ctxType === 'now_active') {
-    if (appt.status === 'en_route')         { label = 'ON MY WAY'; color = '#d97706'; bg = '#fffbeb'; border = '#fde68a'; }
-    else if (appt.status === 'in_progress') { label = 'WORKING';   color = '#059669'; bg = '#ecfdf5'; border = '#a7f3d0'; }
-    else                                     { label = 'PAUSED';    color = '#dc2626'; bg = '#fef2f2'; border = '#fecaca'; }
-  } else if (ctxType === 'today') {
-    label = 'TODAY'; color = '#2563eb'; bg = '#eff6ff'; border = '#bfdbfe';
-  } else {
-    label = 'NEXT'; color = 'var(--text-secondary)'; bg = 'var(--bg-secondary)'; border = 'var(--border-color)';
-  }
-
-  const time = formatTime(appt.time_start);
-  const dateRel = ctxType === 'next' ? relativeDate(appt.date) : '';
-  const title = appt.title || (appt.type || '').replace(/_/g, ' ') || 'Appointment';
-  const crewNames = (appt.crew || []).map(c => (c.full_name || '').split(' ')[0]).filter(Boolean).join(', ');
-
-  const headerPieces = [label];
-  if (ctxType === 'next' && dateRel) headerPieces.push(dateRel);
-  if (time) headerPieces.push(time);
-
-  return (
-    <button
-      onClick={onOpen}
-      style={{
-        position: 'relative', display: 'block', width: 'calc(100% - 2 * var(--space-4))',
-        margin: '14px var(--space-4) 0', padding: '14px 44px 14px 16px',
-        borderRadius: 16, border: `1px solid ${border}`, background: bg,
-        textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-sans)',
-        WebkitTapHighlightColor: 'transparent', minHeight: 72,
-      }}
-    >
-      <div style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: '0.08em' }}>
-        {headerPieces.join(' · ')}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4, textTransform: 'capitalize' }}>
-        {title}
-      </div>
-      {(appt.job_number || crewNames) && (
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-          {[appt.job_number, crewNames && `Crew: ${crewNames}`].filter(Boolean).join(' · ')}
-        </div>
-      )}
-      <span style={{
-        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-        color: 'var(--text-tertiary)', display: 'flex',
-      }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </span>
-    </button>
-  );
-}
-
-function fileUrl(db, filePath) {
-  if (!filePath) return null;
-  return `${db.baseUrl}/storage/v1/object/public/${filePath}`;
 }
 
 function nextApptForJob(jobId, appointments) {
@@ -328,10 +31,8 @@ function nextApptForJob(jobId, appointments) {
 }
 
 // ───────────────────────────────────────────────────────────────
-// JobTile — one large tile per job under the claim.
-// Reusable on TechJobDetail? No — job page IS a single job.
-// But the internal layout (division-bordered card + progress + next appt)
-// mirrors patterns we may want on the job page's appointments section.
+// JobTile — one large tile per job under the claim. Claim-specific;
+// the job detail page doesn't render multiple jobs, so this stays local.
 // ───────────────────────────────────────────────────────────────
 function JobTile({ job, taskSummary, nextAppt, onOpen }) {
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
@@ -359,7 +60,6 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
         boxShadow: 'var(--tech-shadow-card)',
       }}
     >
-      {/* Top row: emoji + job# + division + phase + status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <span style={{ fontSize: 22, lineHeight: 1 }}>{emoji}</span>
         <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
@@ -386,7 +86,6 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
         </span>
       </div>
 
-      {/* Progress bar — only if tasks exist */}
       {total > 0 ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -407,7 +106,6 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No tasks yet</div>
       )}
 
-      {/* Next appt */}
       {nextAppt && (
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
           Next: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -425,255 +123,6 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
         </svg>
       </span>
     </button>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────
-// PhotosGroup — one section per job. Mini header only when multi-job.
-// Thumbnails sorted newest-first (caller responsibility).
-// Reusable shell for TechJobDetail (single group, no header).
-// ───────────────────────────────────────────────────────────────
-function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
-  if (photos.length === 0 && notes.length === 0) return null;
-  const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
-  const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
-  const maxPreview = 3;
-  const visible = photos.slice(0, maxPreview);
-  const remaining = Math.max(0, photos.length - maxPreview);
-
-  return (
-    <div style={{ marginTop: 14 }}>
-      {!isSingleJob && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          paddingBottom: 6, marginBottom: 8,
-          borderBottom: `2px solid ${divColor}`,
-        }}>
-          <span style={{ fontSize: 14 }}>{emoji}</span>
-          <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-            {job.job_number}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-            · {job.division}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-            {photos.length} photo{photos.length !== 1 ? 's' : ''}
-            {notes.length > 0 && ` · ${notes.length} note${notes.length !== 1 ? 's' : ''}`}
-          </span>
-          {photos.length > 0 && onSeeAllForJob && (
-            <button
-              onClick={() => onSeeAllForJob(job.id)}
-              style={{
-                background: 'none', border: 'none', padding: '4px 0 4px 8px',
-                color: 'var(--accent)', cursor: 'pointer',
-                fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              See all →
-            </button>
-          )}
-        </div>
-      )}
-
-      {photos.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-          {visible.map((p, i) => (
-            <button
-              key={p.id}
-              onClick={() => onOpenAlbum(job.id, i)}
-              style={{
-                padding: 0, border: '1px solid var(--border-light)', borderRadius: 10,
-                aspectRatio: '1', background: 'var(--bg-tertiary)', overflow: 'hidden',
-                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <img
-                src={fileUrl(db, p.file_path)}
-                alt={p.name || 'Photo'}
-                loading="lazy"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
-            </button>
-          ))}
-          {remaining > 0 ? (
-            <button
-              onClick={() => onOpenAlbum(job.id, maxPreview)}
-              style={{
-                padding: 0, border: '1px solid var(--border-light)', borderRadius: 10,
-                aspectRatio: '1', background: 'var(--bg-tertiary)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'column', gap: 2,
-                cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>+{remaining}</span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>more</span>
-            </button>
-          ) : (
-            // Pad with empty cells if fewer than 4 photos so grid stays consistent
-            Array.from({ length: Math.max(0, 4 - visible.length) }).map((_, i) => (
-              <div key={`pad-${i}`} style={{ aspectRatio: '1' }} />
-            ))
-          )}
-        </div>
-      )}
-
-      {notes.length > 0 && (
-        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {notes.slice(0, 3).map(n => (
-            <div key={n.id} style={{
-              padding: '8px 12px', borderRadius: 10,
-              background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
-              fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4,
-            }}>
-              {n.description || n.name || 'Note'}
-            </div>
-          ))}
-          {notes.length > 3 && (
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-              +{notes.length - 3} more note{notes.length - 3 !== 1 ? 's' : ''}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────
-// Lightbox — full-screen pager over one job's photos, newest-first.
-// ───────────────────────────────────────────────────────────────
-function Lightbox({ photos, index, onClose, onIndex, db }) {
-  if (!photos || photos.length === 0 || index == null) return null;
-  const current = photos[index];
-  if (!current) return null;
-  const canPrev = index > 0;
-  const canNext = index < photos.length - 1;
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.92)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <button
-        onClick={e => { e.stopPropagation(); onClose(); }}
-        aria-label="Close album"
-        style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
-          fontSize: 22, lineHeight: 1, cursor: 'pointer',
-          minWidth: 44, minHeight: 44, borderRadius: 'var(--radius-full)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        ✕
-      </button>
-
-      <div style={{
-        position: 'absolute', top: 16, left: 16,
-        color: '#fff', fontSize: 13, fontWeight: 600,
-        background: 'rgba(0,0,0,0.35)', padding: '6px 12px', borderRadius: 'var(--radius-full)',
-      }}>
-        {index + 1} / {photos.length}
-      </div>
-
-      <img
-        src={fileUrl(db, current.file_path)}
-        alt={current.name || 'Photo'}
-        onClick={e => e.stopPropagation()}
-        style={{
-          maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain',
-          touchAction: 'pinch-zoom',
-        }}
-      />
-
-      {canPrev && (
-        <button
-          onClick={e => { e.stopPropagation(); onIndex(index - 1); }}
-          aria-label="Previous photo"
-          style={{
-            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-            background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
-            minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-      )}
-      {canNext && (
-        <button
-          onClick={e => { e.stopPropagation(); onIndex(index + 1); }}
-          aria-label="Next photo"
-          style={{
-            position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-            background: 'rgba(255,255,255,0.18)', border: 'none', color: '#fff',
-            minWidth: 48, minHeight: 48, borderRadius: 'var(--radius-full)',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      )}
-
-      {current.description && (
-        <div style={{
-          position: 'absolute', bottom: 20, left: 20, right: 20,
-          background: 'rgba(0,0,0,0.55)', color: '#fff',
-          padding: '10px 14px', borderRadius: 'var(--radius-md)',
-          fontSize: 13, lineHeight: 1.4, textAlign: 'center',
-        }}>
-          {current.description}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────
-// DetailRow — one line inside the collapsed Claim details section.
-// ───────────────────────────────────────────────────────────────
-function DetailRow({ label, value, href, mono, capitalize, multiline }) {
-  if (!value) return null;
-  const valueStyle = {
-    fontSize: 14, color: 'var(--text-primary)', fontWeight: 500,
-    fontFamily: mono ? 'var(--font-mono)' : 'var(--font-sans)',
-    textTransform: capitalize ? 'capitalize' : 'none',
-    textAlign: 'right', flex: 1, minWidth: 0,
-    whiteSpace: multiline ? 'pre-wrap' : 'nowrap',
-    overflow: multiline ? 'visible' : 'hidden',
-    textOverflow: multiline ? 'clip' : 'ellipsis',
-    wordBreak: multiline ? 'break-word' : 'normal',
-  };
-  return (
-    <div style={{
-      display: 'flex', alignItems: multiline ? 'flex-start' : 'center',
-      gap: 10, padding: '8px 0',
-      borderBottom: '1px solid var(--border-light)',
-      minHeight: 36,
-    }}>
-      <span style={{
-        fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)',
-        flexShrink: 0, minWidth: 100,
-      }}>
-        {label}
-      </span>
-      {href ? (
-        <a href={href} style={{ ...valueStyle, color: 'var(--accent)', textDecoration: 'none' }}>{value}</a>
-      ) : (
-        <span style={valueStyle}>{value}</span>
-      )}
-    </div>
   );
 }
 
@@ -696,7 +145,7 @@ export default function TechClaimDetail() {
   // Add Photo / Add Note state
   const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note' }
   const [uploading, setUploading] = useState(false);
-  const [noteJobId, setNoteJobId] = useState(null); // when set, inline note composer is open
+  const [noteJobId, setNoteJobId] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const fileRef = useRef(null);
@@ -713,7 +162,6 @@ export default function TechClaimDetail() {
   // Entry animation flag
   const [entering, setEntering] = useState(false);
 
-  // Dark gradient hero → switch status bar to light icons; kick off entry anim
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
     statusBarLight();
@@ -735,7 +183,6 @@ export default function TechClaimDetail() {
       setDetail(data);
       setAppointments(appts || []);
 
-      // Task summaries per job — parallel, soft-fail per-job
       const jobIds = (data.jobs || []).map(j => j.id);
       if (jobIds.length > 0) {
         const idList = jobIds.map(id => `"${id}"`).join(',');
@@ -760,7 +207,6 @@ export default function TechClaimDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Photo upload flow ──
   const uploadPhotoForJob = useCallback(async (file, jobId) => {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -915,7 +361,6 @@ export default function TechClaimDetail() {
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
   const nowNext = pickNowNext(appointments, employee?.id);
 
-  // Group docs by job, split into photos (cat=photo) + notes (cat=note)
   const docsByJob = {};
   for (const d of docs) {
     if (!docsByJob[d.job_id]) docsByJob[d.job_id] = { photos: [], notes: [] };
@@ -928,19 +373,26 @@ export default function TechClaimDetail() {
 
   const lightboxPhotos = lightbox ? (docsByJob[lightbox.jobId]?.photos || []) : [];
 
+  // Build hero meta row pieces
+  const metaPieces = [];
+  if (claim.date_of_loss) metaPieces.push(`Loss: ${formatLossDate(claim.date_of_loss)}`);
+  if (claim.loss_type) metaPieces.push(claim.loss_type.charAt(0).toUpperCase() + claim.loss_type.slice(1));
+  if (claim.insurance_claim_number) metaPieces.push(`Ins# ${claim.insurance_claim_number}`);
+  if (jobs.length > 0) metaPieces.push(`${jobs.length} job${jobs.length !== 1 ? 's' : ''}`);
+
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
-        claimNumber={claim.claim_number}
-        insuredName={insuredName}
+        eyebrow="Claim"
+        topLabel={claim.claim_number}
+        title={insuredName}
         address={address}
-        status={claim.status}
-        jobCount={jobs.length}
-        lossDate={claim.date_of_loss}
-        lossType={claim.loss_type}
-        insuranceClaimNumber={claim.insurance_claim_number}
+        statusText={claim.status || 'open'}
+        statusColors={CLAIM_STATUS_COLORS[claim.status] || CLAIM_STATUS_COLORS.open}
+        meta={metaPieces}
         onBack={() => navigate('/tech/claims')}
+        backLabel="Back to claims"
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
@@ -976,7 +428,6 @@ export default function TechClaimDetail() {
         </>
       )}
 
-      {/* Photos & Notes — grouped by job */}
       <div style={{ padding: '22px var(--space-4) 0' }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1025,7 +476,6 @@ export default function TechClaimDetail() {
           </div>
         )}
 
-        {/* Inline note composer — appears when a job is picked for a note */}
         {noteJobId && (
           <div style={{
             marginTop: 12, padding: 12,
@@ -1079,7 +529,6 @@ export default function TechClaimDetail() {
           </div>
         )}
 
-        {/* Action row */}
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button
             onClick={startAddPhoto}
@@ -1122,7 +571,6 @@ export default function TechClaimDetail() {
 
       </PullToRefresh>
 
-      {/* Hidden file input for web photo picker */}
       <input
         ref={fileRef}
         type="file"
@@ -1132,7 +580,6 @@ export default function TechClaimDetail() {
         onChange={handleFileInputChange}
       />
 
-      {/* Job picker sheet (multi-job claims) */}
       {jobPicker && (
         <div
           onClick={() => setJobPicker(null)}
@@ -1212,7 +659,6 @@ export default function TechClaimDetail() {
         </div>
       )}
 
-      {/* Collapsed Claim details — reference info, bottom of page */}
       <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
         <button
           onClick={() => setDetailsOpen(v => !v)}
@@ -1279,7 +725,6 @@ export default function TechClaimDetail() {
         )}
       </div>
 
-      {/* Lightbox */}
       {lightbox && (
         <Lightbox
           photos={lightboxPhotos}
@@ -1290,7 +735,6 @@ export default function TechClaimDetail() {
         />
       )}
 
-      {/* Admin kebab bottom sheet */}
       {menuOpen && (
         <div
           onClick={() => setMenuOpen(false)}
@@ -1361,7 +805,6 @@ export default function TechClaimDetail() {
         </div>
       )}
 
-      {/* Merge modal (reuses desktop component) */}
       {showMerge && (
         <MergeModal
           type="claim"
@@ -1371,7 +814,6 @@ export default function TechClaimDetail() {
         />
       )}
 
-      {/* Delete confirmation */}
       {deleteOpen && (
         <div
           onClick={() => { if (!deleting) { setDeleteOpen(false); setDeleteInput(''); } }}
