@@ -433,7 +433,7 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
 // Thumbnails sorted newest-first (caller responsibility).
 // Reusable shell for TechJobDetail (single group, no header).
 // ───────────────────────────────────────────────────────────────
-function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum }) {
+function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
   if (photos.length === 0 && notes.length === 0) return null;
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
   const emoji = DIV_EMOJI[job.division] || DIV_EMOJI.general;
@@ -460,6 +460,19 @@ function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum }) {
             {photos.length} photo{photos.length !== 1 ? 's' : ''}
             {notes.length > 0 && ` · ${notes.length} note${notes.length !== 1 ? 's' : ''}`}
           </span>
+          {photos.length > 0 && onSeeAllForJob && (
+            <button
+              onClick={() => onSeeAllForJob(job.id)}
+              style={{
+                background: 'none', border: 'none', padding: '4px 0 4px 8px',
+                color: 'var(--accent)', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              See all →
+            </button>
+          )}
         </div>
       )}
 
@@ -966,10 +979,28 @@ export default function TechClaimDetail() {
       {/* Photos & Notes — grouped by job */}
       <div style={{ padding: '22px var(--space-4) 0' }}>
         <div style={{
-          fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
-          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 4,
         }}>
-          Photos & Notes{hasAnyPhotoOrNote ? ` (${totalPhotos + totalNotes})` : ''}
+          <div style={{
+            fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>
+            Photos & Notes{hasAnyPhotoOrNote ? ` (${totalPhotos + totalNotes})` : ''}
+          </div>
+          {totalPhotos > 0 && (
+            <button
+              onClick={() => navigate(`/tech/claims/${claimId}/photos`)}
+              style={{
+                background: 'none', border: 'none', padding: '4px 0',
+                color: 'var(--accent)', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              See all →
+            </button>
+          )}
         </div>
         {hasAnyPhotoOrNote ? (
           jobs.map(job => {
@@ -984,6 +1015,7 @@ export default function TechClaimDetail() {
                 isSingleJob={jobs.length === 1}
                 db={db}
                 onOpenAlbum={(jobId, index) => setLightbox({ jobId, index })}
+                onSeeAllForJob={(jobId) => navigate(`/tech/claims/${claimId}/photos`, { state: { focusJobId: jobId } })}
               />
             );
           })

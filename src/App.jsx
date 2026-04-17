@@ -48,6 +48,7 @@ import TechSchedule from '@/pages/tech/TechSchedule';
 import TechTasks from '@/pages/tech/TechTasks';
 import TechClaims from '@/pages/tech/TechClaims';
 import TechClaimDetail from '@/pages/tech/TechClaimDetail';
+import TechClaimAlbum from '@/pages/tech/TechClaimAlbum';
 import TechAppointment from '@/pages/tech/TechAppointment';
 import TechNewCustomer from '@/pages/tech/TechNewCustomer';
 import TechNewJob from '@/pages/tech/TechNewJob';
@@ -115,6 +116,7 @@ function TechRoutes() {
       <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
+      <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
       <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
