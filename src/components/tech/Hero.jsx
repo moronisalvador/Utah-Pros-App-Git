@@ -1,5 +1,5 @@
 import { DIV_GRADIENTS } from '@/pages/tech/techConstants';
-import { DIV_EMOJI } from '@/lib/claimUtils';
+import { DivisionIcon } from '@/components/DivisionIcons';
 import { openMap } from '@/lib/techDateUtils';
 
 // Division-gradient hero used by TechClaimDetail and TechJobDetail.
@@ -23,7 +23,6 @@ export default function Hero({
   meta = [], onBack, backLabel = 'Back', showMenu, onMenu,
 }) {
   const gradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
-  const emoji = DIV_EMOJI[division] || DIV_EMOJI.general;
   const pillColor = statusColors?.color || '#2563eb';
 
   return (
@@ -78,30 +77,48 @@ export default function Hero({
       </div>
 
       {/* Content */}
-      <div style={{ padding: '4px var(--space-5) 22px' }}>
-        {eyebrow && (
+      <div style={{ padding: '4px var(--space-5) 22px', position: 'relative' }}>
+        {/* Decorative division SVG — large white watermark, top-right */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: 4, right: 'var(--space-5)',
+            opacity: 0.22, pointerEvents: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <DivisionIcon type={division} size={88} color="#ffffff" />
+        </div>
+
+        {/* Identifier line: EYEBROW # topLabel */}
+        {(eyebrow || topLabel) && (
           <div style={{
-            fontSize: 10, fontWeight: 700,
-            letterSpacing: '0.18em', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.7)',
-            marginBottom: 6,
+            fontSize: 15, fontWeight: 800,
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.92)',
+            marginBottom: 10,
+            display: 'flex', alignItems: 'baseline', gap: 6,
+            fontFamily: 'var(--font-sans)',
           }}>
-            {eyebrow}
+            {eyebrow && <span>{eyebrow}</span>}
+            {eyebrow && topLabel && <span style={{ opacity: 0.55, fontWeight: 600 }}>#</span>}
+            {topLabel && (
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.04em',
+                fontWeight: 700,
+              }}>
+                {topLabel}
+              </span>
+            )}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 28, lineHeight: 1 }}>{emoji}</span>
-          <span style={{
-            fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)',
-            color: 'rgba(255,255,255,0.72)', letterSpacing: '0.02em',
-          }}>
-            {topLabel || '—'}
-          </span>
-        </div>
 
         <div style={{
           fontSize: 24, fontWeight: 700, color: '#fff',
           lineHeight: 1.2, marginBottom: 6,
+          maxWidth: 'calc(100% - 96px)',
         }}>
           {title || 'Unknown'}
         </div>
