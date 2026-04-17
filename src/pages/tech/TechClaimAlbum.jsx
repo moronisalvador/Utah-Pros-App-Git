@@ -12,19 +12,14 @@ function fileUrl(db, filePath) {
   return `${db.baseUrl}/storage/v1/object/public/${filePath}`;
 }
 
-function photoTimestamp(isoStr) {
-  if (!isoStr) return '';
-  const then = new Date(isoStr);
-  const diff = Date.now() - then.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// Insurance + timeline-friendly: always show actual date + time. Two lines
+// (date then time) so the caption reads cleanly even on narrow columns.
+function photoDateTime(isoStr) {
+  if (!isoStr) return { date: '', time: '' };
+  const d = new Date(isoStr);
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return { date, time };
 }
 
 // Local copy of Lightbox — promote to components/tech/ once TechJobDetail
@@ -325,10 +320,12 @@ export default function TechClaimAlbum() {
       {/* Division-tinted thin band */}
       <div style={{ height: 4, background: tint }} />
 
-      {/* Content — scrollable */}
+      {/* Content — scrollable. Bottom padding clears the pinned Add Photo
+          button (~72px tall block) plus breathing room for the 2-line
+          timestamp caption of the last photo. */}
       <div style={{
         flex: 1, overflowY: 'auto',
-        padding: '12px var(--space-4) calc(88px + env(safe-area-inset-bottom, 0px))',
+        padding: '12px var(--space-4) calc(132px + env(safe-area-inset-bottom, 0px))',
       }}>
         {totalPhotos === 0 ? (
           <div style={{
@@ -397,12 +394,19 @@ export default function TechClaimAlbum() {
                           onError={e => { e.target.style.display = 'none'; }}
                         />
                       </div>
-                      <div style={{
-                        marginTop: 6, fontSize: 11, fontWeight: 500,
-                        color: 'var(--text-tertiary)',
-                      }}>
-                        {photoTimestamp(p.created_at)}
-                      </div>
+                      {(() => {
+                        const { date, time } = photoDateTime(p.created_at);
+                        return (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                              {date}
+                            </div>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-tertiary)', lineHeight: 1.2, marginTop: 1 }}>
+                              {time}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {p.description && (
                         <div style={{
                           fontSize: 12, color: 'var(--text-secondary)',
