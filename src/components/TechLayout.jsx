@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
+import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -226,6 +227,20 @@ export default function TechLayout() {
       <div className="tech-content">
         <Outlet />
       </div>
+
+      {/* Floating offline-queue indicator — renders nothing when idle */}
+      <div style={{
+        position: 'fixed',
+        top: 'calc(env(safe-area-inset-top, 0px) + 10px)',
+        right: 10,
+        zIndex: 500,
+        pointerEvents: 'none',
+      }}>
+        <div style={{ pointerEvents: 'auto' }}>
+          <OfflineStatusPill />
+        </div>
+      </div>
+
       <InstallBanner />
       <nav className="tech-nav">
         {TABS.map(tab => {

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
+import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
@@ -97,18 +98,19 @@ function CreateFAB() {
 
 function ActiveCard({ appt, employee, db, onReload }) {
   const navigate = useNavigate();
+  const { isFeatureEnabled } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [confirmOmw, setConfirmOmw] = useState(false);
   const [acting, setActing] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
-  const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath }
-  const [photoNoteText, setPhotoNoteText] = useState('');
-  const [savingPhotoNote, setSavingPhotoNote] = useState(false);
+  const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath, description? }
+  const [rooms, setRooms] = useState(null);
   const [uploading, setUploading] = useState(false);
   const confirmTimer = useRef(null);
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
+  const roomsEnabled = isFeatureEnabled('page:tech_rooms');
 
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
@@ -204,23 +206,53 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const openPhotoNoteSheet = () => {
     if (!photoToast) return;
     if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
-    setPhotoNoteSheet({ id: photoToast.id, filePath: photoToast.filePath });
-    setPhotoNoteText('');
+    setPhotoNoteSheet({ id: photoToast.id, filePath: photoToast.filePath, description: '' });
     setPhotoToast(null);
   };
 
-  const savePhotoNote = async () => {
-    if (!photoNoteSheet?.id || !photoNoteText.trim()) return;
-    setSavingPhotoNote(true);
-    try {
-      await db.update('job_documents', `id=eq.${photoNoteSheet.id}`, { description: photoNoteText.trim() });
-      toast('Note added');
-    } catch (err) {
-      toast('Failed to save note: ' + err.message, 'error');
+  // Load rooms for this job when the rooms flag is on.
+  useEffect(() => {
+    if (!roomsEnabled || !job?.id) { setRooms(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await db.rpc('get_job_rooms', { p_job_id: job.id });
+        if (!cancelled) setRooms(r || []);
+      } catch {
+        if (!cancelled) setRooms([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [roomsEnabled, job?.id, db]);
+
+  const handleSavePhotoNote = async (text) => {
+    if (!photoNoteSheet?.id) return;
+    await db.update('job_documents', `id=eq.${photoNoteSheet.id}`, { description: text });
+  };
+
+  const handleAssignPhotoRoom = async (roomId) => {
+    if (!photoNoteSheet?.id) return;
+    await db.rpc('move_photo_to_room', {
+      p_document_id: photoNoteSheet.id,
+      p_room_id: roomId,
+    });
+    if (job?.id) {
+      const r = await db.rpc('get_job_rooms', { p_job_id: job.id });
+      setRooms(r || []);
     }
-    setSavingPhotoNote(false);
-    setPhotoNoteSheet(null);
-    setPhotoNoteText('');
+  };
+
+  const handleCreateRoom = async (name) => {
+    if (!job?.id) throw new Error('Job not loaded');
+    const created = await db.rpc('create_room', {
+      p_job_id: job.id,
+      p_name: name,
+      p_created_by: employee?.id,
+      p_client_id: crypto?.randomUUID?.() || null,
+    });
+    const r = await db.rpc('get_job_rooms', { p_job_id: job.id });
+    setRooms(r || []);
+    return created;
   };
 
   const doOmw = async () => {
@@ -390,69 +422,17 @@ function ActiveCard({ appt, employee, db, onReload }) {
         </div>
       )}
 
-      {/* Photo note bottom sheet */}
-      {photoNoteSheet && (
-        <div
-          onClick={e => { e.stopPropagation(); setPhotoNoteSheet(null); setPhotoNoteText(''); }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.4)',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', top: 0, left: 0, right: 0,
-              background: 'var(--bg-primary)',
-              borderRadius: '0 0 16px 16px',
-              padding: 'calc(env(safe-area-inset-top, 12px) + 8px) 16px 16px',
-              animation: 'tech-fade-in 0.15s ease-out',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-            }}
-          >
-            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-              {/* Small thumbnail */}
-              <div style={{
-                width: 56, height: 56, borderRadius: 10, overflow: 'hidden',
-                background: 'var(--bg-tertiary)', flexShrink: 0,
-              }}>
-                <img
-                  src={`${db.baseUrl}/storage/v1/object/public/${photoNoteSheet.filePath}`}
-                  alt="Photo"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              </div>
-              {/* Input */}
-              <input
-                className="input"
-                value={photoNoteText}
-                onChange={e => setPhotoNoteText(e.target.value)}
-                placeholder="What's in this photo?"
-                autoFocus
-                style={{ fontSize: 16, flex: 1 }}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                className="btn btn-primary"
-                onClick={savePhotoNote}
-                disabled={savingPhotoNote || !photoNoteText.trim()}
-                style={{ flex: 1 }}
-              >
-                {savingPhotoNote ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => { setPhotoNoteSheet(null); setPhotoNoteText(''); }}
-                style={{ flex: 1 }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Photo note + room-tag sheet — shared with TechAppointment */}
+      <PhotoNoteSheet
+        photo={photoNoteSheet}
+        rooms={rooms}
+        roomsEnabled={roomsEnabled}
+        currentRoomId={null}
+        onSaveNote={handleSavePhotoNote}
+        onAssignRoom={handleAssignPhotoRoom}
+        onCreateRoom={handleCreateRoom}
+        onClose={() => setPhotoNoteSheet(null)}
+      />
     </div>
   );
 }
