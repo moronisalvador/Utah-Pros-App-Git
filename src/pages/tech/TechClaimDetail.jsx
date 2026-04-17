@@ -20,6 +20,51 @@ function formatLossDate(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 || 12;
+  return `${hh}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function relativeDate(dateStr) {
+  if (!dateStr) return '';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr + 'T12:00:00'); target.setHours(0, 0, 0, 0);
+  const diff = Math.round((target - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  if (diff > 1 && diff < 7) return target.toLocaleDateString('en-US', { weekday: 'long' });
+  return target.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Returns { ctxType: 'now_active'|'today'|'next', appt } or null.
+// Mirrors the logic spec'd in TECH-CLAIM-DETAIL-TASK.md § "Now / Next module".
+function pickNowNext(appointments, employeeId) {
+  if (!appointments?.length) return null;
+  const today = new Date().toISOString().split('T')[0];
+  const crewHas = (a) => (a.crew || []).some(c => c.employee_id === employeeId);
+  const live = ['en_route', 'in_progress', 'paused'];
+
+  const active = appointments.find(a => live.includes(a.status) && crewHas(a));
+  if (active) return { ctxType: 'now_active', appt: active };
+
+  const todayMine = appointments.find(a =>
+    a.date === today && crewHas(a) &&
+    a.status !== 'completed' && a.status !== 'cancelled'
+  );
+  if (todayMine) return { ctxType: 'today', appt: todayMine };
+
+  const upcoming = appointments
+    .filter(a => a.date >= today && a.status !== 'completed' && a.status !== 'cancelled')
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''));
+  if (upcoming.length > 0) return { ctxType: 'next', appt: upcoming[0] };
+
+  return null;
+}
+
 // ───────────────────────────────────────────────────────────────
 // Hero — division-gradient header. Candidate for future extraction
 // to components/tech/ once TechJobDetail needs the same shape.
@@ -206,6 +251,66 @@ function ActionBar({ phone, address }) {
 }
 
 // ───────────────────────────────────────────────────────────────
+// NowNextTile — context-aware "what's happening on this claim"
+// Shown when the tech has live work, a today appt, or the claim
+// has any upcoming appt. Hidden otherwise. Reusable on TechJobDetail.
+// ───────────────────────────────────────────────────────────────
+function NowNextTile({ appt, ctxType, onOpen }) {
+  let label, bg, border, color;
+  if (ctxType === 'now_active') {
+    if (appt.status === 'en_route')         { label = 'ON MY WAY'; color = '#d97706'; bg = '#fffbeb'; border = '#fde68a'; }
+    else if (appt.status === 'in_progress') { label = 'WORKING';   color = '#059669'; bg = '#ecfdf5'; border = '#a7f3d0'; }
+    else                                     { label = 'PAUSED';    color = '#dc2626'; bg = '#fef2f2'; border = '#fecaca'; }
+  } else if (ctxType === 'today') {
+    label = 'TODAY'; color = '#2563eb'; bg = '#eff6ff'; border = '#bfdbfe';
+  } else {
+    label = 'NEXT'; color = 'var(--text-secondary)'; bg = 'var(--bg-secondary)'; border = 'var(--border-color)';
+  }
+
+  const time = formatTime(appt.time_start);
+  const dateRel = ctxType === 'next' ? relativeDate(appt.date) : '';
+  const title = appt.title || (appt.type || '').replace(/_/g, ' ') || 'Appointment';
+  const crewNames = (appt.crew || []).map(c => (c.full_name || '').split(' ')[0]).filter(Boolean).join(', ');
+
+  const headerPieces = [label];
+  if (ctxType === 'next' && dateRel) headerPieces.push(dateRel);
+  if (time) headerPieces.push(time);
+
+  return (
+    <button
+      onClick={onOpen}
+      style={{
+        position: 'relative', display: 'block', width: 'calc(100% - 2 * var(--space-4))',
+        margin: '14px var(--space-4) 0', padding: '14px 44px 14px 16px',
+        borderRadius: 16, border: `1px solid ${border}`, background: bg,
+        textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+        WebkitTapHighlightColor: 'transparent', minHeight: 72,
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: '0.08em' }}>
+        {headerPieces.join(' · ')}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4, textTransform: 'capitalize' }}>
+        {title}
+      </div>
+      {(appt.job_number || crewNames) && (
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+          {[appt.job_number, crewNames && `Crew: ${crewNames}`].filter(Boolean).join(' · ')}
+        </div>
+      )}
+      <span style={{
+        position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+        color: 'var(--text-tertiary)', display: 'flex',
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────
 export default function TechClaimDetail() {
@@ -214,6 +319,7 @@ export default function TechClaimDetail() {
   const { db, employee } = useAuth();
 
   const [detail, setDetail] = useState(null);
+  const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -227,12 +333,16 @@ export default function TechClaimDetail() {
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await db.rpc('get_claim_detail', { p_claim_id: claimId });
+      const [data, appts] = await Promise.all([
+        db.rpc('get_claim_detail', { p_claim_id: claimId }),
+        db.rpc('get_claim_appointments', { p_claim_id: claimId }).catch(() => []),
+      ]);
       if (!data?.claim) {
         setLoadError('Claim not found');
         return;
       }
       setDetail(data);
+      setAppointments(appts || []);
     } catch (e) {
       setLoadError(e.message || 'Failed to load claim');
       toast('Failed to load claim', 'error');
@@ -275,6 +385,7 @@ export default function TechClaimDetail() {
   const phone = contact?.phone || jobs[0]?.client_phone || null;
   const address = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ');
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
+  const nowNext = pickNowNext(appointments, employee?.id);
 
   return (
     <div className="tech-page" style={{ padding: 0 }}>
@@ -294,12 +405,19 @@ export default function TechClaimDetail() {
       />
       <ActionBar phone={phone} address={address} />
 
-      {/* Phase 2: NowNext module */}
+      {nowNext && (
+        <NowNextTile
+          appt={nowNext.appt}
+          ctxType={nowNext.ctxType}
+          onOpen={() => navigate(`/tech/appointment/${nowNext.appt.id}`)}
+        />
+      )}
+
       {/* Phase 3: Jobs tiles */}
       {/* Phase 4: Photos & Notes grouped by job */}
       {/* Phase 5: Claim details collapsed + adjuster contact */}
 
-      {/* Silence unused-adjuster warning for Phase 1 — wired up in Phase 5 */}
+      {/* Silence unused-adjuster warning — wired up in Phase 5 */}
       {adjuster ? null : null}
     </div>
   );
