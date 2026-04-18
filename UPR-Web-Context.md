@@ -180,8 +180,8 @@ active_jobs             — View: currently active jobs
 
 ### Scheduling & Appointments
 ```
-appointments            — Calendar appointments
-appointment_crew        — Crew assignments per appointment
+appointments            — Calendar appointments + events. kind TEXT ('job'|'event') added Apr 17 2026; job_id is nullable when kind='event'. CHECK constraint enforces: (kind='job' AND job_id IS NOT NULL) OR (kind='event' AND job_id IS NULL). Partial index idx_appointments_events_date on (date) WHERE kind='event'.
+appointment_crew        — Crew assignments per appointment (also used for event tech assignment)
 appointment_dependencies — Appointment ordering dependencies
 schedule_blocks         — Blocked time on schedule
 schedule_templates      — 3 rows — Reusable schedule templates
@@ -317,7 +317,8 @@ toggle_appointment_task(...)    — Toggle task complete
 get_job_schedule(p_job_id)      — Schedule for one job
 get_job_schedules(...)          — All job schedules
 get_my_appointments_today(...)  — Today's appointments for employee
-get_dispatch_board(...)         — Dispatch board data
+get_dispatch_board(...)         — Dispatch board data (kind='job' appointments only — joins to jobs so events naturally excluded)
+get_dispatch_events(p_start_date, p_end_date) — Returns non-job calendar events (kind='event') with assigned crew; shape mirrors per-appointment object in get_dispatch_board. Added Apr 17 2026.
 get_dispatch_panel_jobs(...)    — Jobs panel for dispatch
 get_schedule_templates()        — All schedule templates
 get_schedule_template(p_id)     — Single template detail
@@ -592,6 +593,7 @@ get_dashboard_stats()           — Dashboard stat counts
 - **Task dependency type enum:** `starts_after` | `ends_before` (NOT `finish_to_start`)
 - **`get_unassigned_tasks` returns grouped by phase — must flatten before use**
 - **`apply_schedule_plan`** creates job_tasks + phases with dates, auto-advances job to `reconstruction_in_progress`
+- **Calendar events (kind='event'):** non-job blocks like meetings, PTO, training. Created via the "+ FAB" or empty-cell click which opens a Job-vs-Event picker. Event rows live in the same `appointments` table with `job_id=NULL` and are fetched via `get_dispatch_events`. `CalendarView.jsx` renders them with a pastel tech-color background + solid tech-color left border + 📅 icon prefix, hiding job-only chrome (address, job #, tasks). Clicking an event opens `EventModal.jsx` (create/edit combined); clicking a job still opens `EditAppointmentModal`. Division filter hides events; crew filter still applies. `hexToTint` helper lives in `src/lib/scheduleUtils.js`.
 
 ---
 
