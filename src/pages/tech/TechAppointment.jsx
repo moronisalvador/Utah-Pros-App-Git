@@ -9,6 +9,9 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { savePhotoBlob } from '@/lib/offlineDb';
+import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';
@@ -27,6 +30,8 @@ export default function TechAppointment() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
+  const { enqueue } = useOfflineQueue();
+  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -98,6 +103,47 @@ export default function TechAppointment() {
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
     const job = appt.jobs;
+
+    // ── Offline-queue path (gated by offline:queue flag) ─────────────────
+    // Store the blob in IDB + enqueue. The sync runner drains immediately
+    // when online; otherwise it waits for the next connectivity event.
+    // A sync:item-done listener below reloads the gallery on success.
+    if (offlineQueueEnabled) {
+      try {
+        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+        await savePhotoBlob(clientId, {
+          blob: file,
+          mimeType: file.type,
+          name: file.name,
+          jobId: job.id,
+          appointmentId: id,
+          uploadedBy: employee?.id || null,
+          roomId: null,
+          description: null,
+        });
+        await enqueue({
+          type: 'photo.upload',
+          clientId,
+          payload: {
+            clientId,
+            jobId: job.id,
+            appointmentId: id,
+            roomId: null,
+            description: null,
+            name: file.name,
+          },
+        });
+        impact('light');
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('Photo queued — will upload when online', 'success');
+        }
+      } catch (err) {
+        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+      }
+      return;
+    }
+
+    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -129,6 +175,19 @@ export default function TechAppointment() {
       setUploading(false);
     }
   };
+
+  // Reload gallery when a queued photo for this appointment finishes syncing.
+  // Only active when offline:queue is on — otherwise load() runs inline.
+  useEffect(() => {
+    if (!offlineQueueEnabled) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    return runner.on('sync:item-done', ({ item }) => {
+      if (item?.type !== 'photo.upload') return;
+      if (item?.payload?.appointmentId !== id) return;
+      load();
+    });
+  }, [offlineQueueEnabled, id, load]);
 
   // Web path: triggered by hidden <input type=file capture>
   const handlePhotoCaptured = async (e) => {
