@@ -219,6 +219,16 @@ document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_
 document_requests       — Document request records
 forms                   — Form definitions
 demo_sheets             — Demo sheet records
+rooms                   — Per-CLAIM physical rooms (water/mold/recon share same structure).
+                          Columns: id, claim_id (FK claims, CASCADE), name, area_sqft, ceiling_height_ft,
+                          sort_order, client_id UUID UNIQUE (offline idempotency key),
+                          created_by (FK employees), created_at, deleted_at (soft).
+                          Added Apr 17 2026 as part of Encircle replacement Phase 1.
+                          NOTE: Earlier draft had job_id; refactored to claim_id on Apr 17 so jobs
+                          under the same claim share rooms.
+job_documents           — Extended Apr 17 with `room_id UUID` (FK rooms, ON DELETE SET NULL).
+                          Tags photos/notes to a specific room for Encircle-style grouping.
+                          `insert_job_document` RPC accepts p_room_id as final optional param.
 ```
 
 **Supported eSign doc_types:** `coc`, `work_auth`, `direction_pay`, `change_order`, `recon_agreement`.
@@ -246,7 +256,7 @@ sub_confirmations       — Subcontractor job confirmations
 ```
 employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
-feature_flags           — 8 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins)
+feature_flags           — 13 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue.
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
 automation_rules        — Workflow automation rules
@@ -384,6 +394,33 @@ delete_referral_source(p_id)
 get_feature_flags()             — Returns all flag rows ordered by category, label
 upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by, p_force_disabled)
 delete_feature_flag(p_key)
+```
+
+### Rooms & Encircle Replacement (Phase 1 + 1.5 — Apr 17 2026)
+All claim-scoped. Frontend passes p_job_id where convenient; function resolves claim_id internally.
+```
+get_job_rooms(p_job_id)         — Resolves job→claim, returns rooms for that claim.
+                                  Row shape: id, claim_id, name, area_sqft, ceiling_height_ft,
+                                  sort_order, client_id, created_by, created_at, deleted_at,
+                                  photo_count INT (job_documents WHERE room_id=r.id AND category='photo'),
+                                  reading_count INT (stub 0, wired in Phase 2 Hydro).
+get_claim_rooms(p_claim_id)     — Direct claim-level lookup. Same shape as get_job_rooms.
+create_room(p_job_id, p_name,
+            p_area_sqft, p_ceiling_height_ft, p_sort_order,
+            p_client_id, p_created_by)
+                                — Resolves claim from job, INSERT … ON CONFLICT (client_id)
+                                  DO UPDATE (idempotent for offline retries).
+create_room_for_claim(p_claim_id, p_name, …same optional params…)
+                                — Direct claim-level variant.
+update_room(p_room_id, p_name, p_area_sqft, p_ceiling_height_ft, p_sort_order)
+delete_room(p_room_id)          — Soft delete (sets deleted_at=now) + nulls
+                                  job_documents.room_id that pointed at it.
+move_photo_to_room(p_document_id, p_room_id DEFAULT NULL)
+                                — p_room_id NULL untags the photo.
+insert_job_document(…, p_room_id UUID DEFAULT NULL)
+                                — MODIFIED Apr 17. Older 7-param and 8-param overloads dropped.
+                                  Single canonical 9-param version; all existing callers use named
+                                  args via db.rpc() so backward compatibility is preserved.
 ```
 
 ### Data Integrity (Phase 4 — complete)
@@ -664,3 +701,76 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 11. **Desktop ClaimPage photo URL bug** — noticed during TechClaimDetail build: desktop `ClaimPage.jsx` builds photo URLs as `${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}` but `doc.file_path` already starts with `job-files/`, producing a double prefix. TechClaimDetail uses the correct pattern: `${db.baseUrl}/storage/v1/object/public/${doc.file_path}`. Desktop photos may not be loading — verify.
 12. **In-app SMS** — TechClaimDetail + TechAppointment Message buttons open native `sms:` compose; swap to in-app Messages flow when available (search `TODO: switch to in-app SMS` in tech files).
 13. **Claim-level photo attachments** — TechClaimDetail uploads with `p_appointment_id: null`. On multi-job claims, the tech is prompted to pick which job the photo attaches to. Single-job claims direct-fire to `jobs[0].id`.
+
+---
+
+## Encircle Replacement — Phase 1 + 1.5 (Apr 17 2026)
+
+The Encircle replacement build is scoped as a 6-8 week effort ending with Hydro
+(moisture readings, IICRC S500) and a Water Loss Report PDF. Phase 1 + 1.5
+landed Apr 17 and covers rooms + offline-first photo capture.
+
+### What's live
+- **Rooms** — claim-scoped per `rooms` table. UI: Rooms grid on TechClaimDetail,
+  dedicated TechRoomDetail page with Photos/Notes tabs. Add Room sheet with 16
+  starter templates + custom name. All feature-gated behind `page:tech_rooms`.
+- **PhotoNoteSheet** — shared bottom sheet used post-upload. Two tabs (Note +
+  Room). Extracted from duplicated JSX in TechAppointment.jsx and TechDash.jsx.
+- **Offline queue** — IDB-backed write queue. All four photo capture surfaces
+  (TechAppointment, TechDash ActiveCard, TechClaimDetail, TechRoomDetail) route
+  through it when `offline:queue` is enabled. Sync runner drains on online/
+  visibilitychange/30s poll with exponential backoff (1s/4s/15s/1m/5m). Max 5
+  retries before status=error. OfflineStatusPill in TechLayout shows
+  "Syncing N" / "N failed" (tap to retry) / brief "Synced" flash.
+- **Service worker** — `public/sw.js` CacheFirst for /assets and Supabase
+  Storage reads under job-files/; NetworkFirst (3s timeout → cache) for the
+  three cacheable RPCs: get_job_rooms, get_appointment_detail,
+  get_my_appointments_today. Cache name `upr-v1`.
+- **5 feature flags** seeded dev-only for Moroni Salvador admin
+  (`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`):
+  - `page:tech_rooms` — Rooms UI + PhotoNoteSheet Room tab
+  - `page:tech_moisture` — Phase 2 Hydro (placeholder)
+  - `page:tech_equipment` — Phase 2 equipment placements (placeholder)
+  - `page:water_loss_report` — Phase 3 PDF (placeholder)
+  - `offline:queue` — Queue kill-switch; on = enqueue path, off = inline path
+
+### New files
+```
+src/components/tech/
+  PhotoNoteSheet.jsx       — shared bottom sheet, Note + Room tabs
+  RoomCard.jsx             — cover-photo tile, scrim + name overlay, photo-count chip
+  AddRoomSheet.jsx         — template grid + custom name
+  OfflineStatusPill.jsx    — mounted in TechLayout header, floating top-right
+src/pages/tech/
+  TechRoomDetail.jsx       — /tech/claims/:claimId/rooms/:roomId — Photos/Notes tabs
+src/lib/
+  offlineDb.js             — idb wrapper, 7 stores: queue, photos, rooms, readings,
+                             equipment, cacheMeta, idSwaps
+  syncRunner.js            — drain/dispatch/backoff/emit
+  syncRunnerSingleton.js   — one runner per (db, employee.id)
+  registerSW.js            — SW registration helper (unused; main.jsx already registers)
+  dispatchers/
+    roomDispatcher.js      — create_room RPC + temp→server UUID swap
+    photoDispatcher.js     — Storage upload + insert_job_document, resolves roomId swap
+src/hooks/
+  useOfflineQueue.js       — useSyncExternalStore-based hook, lazy-inits singleton
+supabase/migrations/
+  20260420_phase1_rooms.sql               — table, RPCs, insert_job_document extension
+  20260417_phase1_rooms_claim_scoped.sql  — job_id → claim_id refactor + get_claim_rooms
+```
+
+### Client ID idempotency contract
+- Every new table has `client_id UUID UNIQUE`.
+- Every write RPC takes `p_client_id` and does `ON CONFLICT (client_id) DO UPDATE`.
+- Retries are safe. Photo dispatcher uses `resolveIdSwap` to turn a temp
+  room UUID (queued before `room.create` synced) into the real server UUID
+  before calling `insert_job_document`.
+
+### Pending follow-ups
+- Web admin parity (`ClaimPage.jsx` desktop) — rooms section not yet added
+- Photo capture auto-open PhotoNoteSheet after enqueue to allow note + room
+  tagging pre-sync (currently only possible after sync completes)
+- Rename / delete room UI on TechRoomDetail (currently create-only)
+- Offline app-shell bootstrap — SW doesn't cache index.html for cold-offline-launch
+- Phase 2: Hydro (moisture_readings + equipment_placements tables + sheets)
+- Phase 3: Water Loss Report PDF (extend pdf-lib engine from submit-esign.js)
