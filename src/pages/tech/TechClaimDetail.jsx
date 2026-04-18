@@ -18,6 +18,9 @@ import DetailRow from '@/components/tech/DetailRow';
 import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { savePhotoBlob } from '@/lib/offlineDb';
+import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
@@ -134,6 +137,8 @@ export default function TechClaimDetail() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
+  const { enqueue } = useOfflineQueue();
+  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
 
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -243,6 +248,46 @@ export default function TechClaimDetail() {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+
+    // ── Offline-queue path (gated) ────────────────────────────────────────
+    if (offlineQueueEnabled) {
+      try {
+        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+        await savePhotoBlob(clientId, {
+          blob: file,
+          mimeType: file.type,
+          name: file.name,
+          jobId,
+          appointmentId: null,
+          uploadedBy: employee?.id || null,
+          roomId: null,
+          description: null,
+        });
+        await enqueue({
+          type: 'photo.upload',
+          clientId,
+          payload: {
+            clientId,
+            jobId,
+            appointmentId: null,
+            roomId: null,
+            description: null,
+            name: file.name,
+          },
+        });
+        impact('light');
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('Photo queued — will upload when online', 'success');
+        } else {
+          toast('Photo uploading…');
+        }
+      } catch (err) {
+        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+      }
+      return;
+    }
+
+    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -270,7 +315,20 @@ export default function TechClaimDetail() {
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, load]);
+  }, [db, employee?.id, load, offlineQueueEnabled, enqueue]);
+
+  // Reload when a queued photo for one of this claim's jobs finishes syncing.
+  useEffect(() => {
+    if (!offlineQueueEnabled) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    const jobIds = new Set((detail?.jobs || []).map(j => j.id));
+    return runner.on('sync:item-done', ({ item }) => {
+      if (item?.type !== 'photo.upload') return;
+      if (!jobIds.has(item?.payload?.jobId)) return;
+      load();
+    });
+  }, [offlineQueueEnabled, detail?.jobs, load]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];

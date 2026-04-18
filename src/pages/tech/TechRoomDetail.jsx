@@ -8,6 +8,9 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { photoDateTime } from '@/lib/techDateUtils';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { savePhotoBlob } from '@/lib/offlineDb';
+import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 /**
  * TechRoomDetail — view photos + notes tagged to a single room, spanning
@@ -19,7 +22,9 @@ import { photoDateTime } from '@/lib/techDateUtils';
 export default function TechRoomDetail() {
   const { claimId, roomId } = useParams();
   const navigate = useNavigate();
-  const { db, employee } = useAuth();
+  const { db, employee, isFeatureEnabled } = useAuth();
+  const { enqueue } = useOfflineQueue();
+  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
 
   const [claim, setClaim] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -97,6 +102,48 @@ export default function TechRoomDetail() {
     if (!file || !jobId || !room) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+
+    // ── Offline-queue path (gated) ────────────────────────────────────────
+    // This page pre-tags every upload with the current room_id so the photo
+    // lands in the right place even if it syncs hours later.
+    if (offlineQueueEnabled) {
+      try {
+        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+        await savePhotoBlob(clientId, {
+          blob: file,
+          mimeType: file.type,
+          name: file.name,
+          jobId,
+          appointmentId: null,
+          uploadedBy: employee?.id || null,
+          roomId: room.id,
+          description: null,
+        });
+        await enqueue({
+          type: 'photo.upload',
+          clientId,
+          payload: {
+            clientId,
+            jobId,
+            appointmentId: null,
+            roomId: room.id,
+            description: null,
+            name: file.name,
+          },
+        });
+        impact('light');
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('Photo queued — will upload when online', 'success');
+        } else {
+          toast('Photo uploading…');
+        }
+      } catch (err) {
+        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+      }
+      return;
+    }
+
+    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -125,7 +172,19 @@ export default function TechRoomDetail() {
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, room, load]);
+  }, [db, employee?.id, room, load, offlineQueueEnabled, enqueue]);
+
+  // Reload when a queued photo for THIS room finishes syncing.
+  useEffect(() => {
+    if (!offlineQueueEnabled || !room) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    return runner.on('sync:item-done', ({ item }) => {
+      if (item?.type !== 'photo.upload') return;
+      if (item?.payload?.roomId !== room.id) return;
+      load();
+    });
+  }, [offlineQueueEnabled, room, load]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];

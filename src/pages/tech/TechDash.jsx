@@ -8,6 +8,9 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
 import { impact, notify } from '@/lib/nativeHaptics';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { savePhotoBlob } from '@/lib/offlineDb';
+import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 
 /* ── Create FAB ── */
@@ -99,6 +102,8 @@ function CreateFAB() {
 function ActiveCard({ appt, employee, db, onReload }) {
   const navigate = useNavigate();
   const { isFeatureEnabled } = useAuth();
+  const { enqueue } = useOfflineQueue();
+  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const [tasks, setTasks] = useState([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [confirmOmw, setConfirmOmw] = useState(false);
@@ -148,6 +153,44 @@ function ActiveCard({ appt, employee, db, onReload }) {
     if (!file || !job) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+
+    // ── Offline-queue path (gated) ────────────────────────────────────────
+    if (offlineQueueEnabled) {
+      try {
+        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+        await savePhotoBlob(clientId, {
+          blob: file,
+          mimeType: file.type,
+          name: file.name,
+          jobId: job.id,
+          appointmentId: appt.id,
+          uploadedBy: employee?.id || null,
+          roomId: null,
+          description: null,
+        });
+        await enqueue({
+          type: 'photo.upload',
+          clientId,
+          payload: {
+            clientId,
+            jobId: job.id,
+            appointmentId: appt.id,
+            roomId: null,
+            description: null,
+            name: file.name,
+          },
+        });
+        impact('light');
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('Photo queued — will upload when online', 'success');
+        }
+      } catch (err) {
+        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+      }
+      return;
+    }
+
+    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -169,7 +212,6 @@ function ActiveCard({ appt, employee, db, onReload }) {
       });
       if (onReload) onReload();
       impact('light');
-      // Show inline toast with "Add note" option
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
@@ -180,6 +222,18 @@ function ActiveCard({ appt, employee, db, onReload }) {
       setUploading(false);
     }
   };
+
+  // Reload the dashboard when a queued photo for this appointment finishes.
+  useEffect(() => {
+    if (!offlineQueueEnabled) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    return runner.on('sync:item-done', ({ item }) => {
+      if (item?.type !== 'photo.upload') return;
+      if (item?.payload?.appointmentId !== appt.id) return;
+      if (onReload) onReload();
+    });
+  }, [offlineQueueEnabled, appt.id, onReload]);
 
   // Web path: triggered by hidden <input type=file capture>
   const handlePhotoCaptured = async (e) => {
