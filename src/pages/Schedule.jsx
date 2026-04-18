@@ -7,6 +7,7 @@ import CreateAppointmentModal from '@/components/CreateAppointmentModal';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 import EditAppointmentModal from '@/components/EditAppointmentModal';
+import EventModal from '@/components/EventModal';
 import CalendarView from '@/components/CalendarView';
 
 const SPAN_OPTIONS = [
@@ -425,6 +426,9 @@ export default function Schedule() {
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
+  const [eventModal, setEventModal] = useState(null); // { event } for edit, { dateKey, prefillTimeStart, prefillTimeEnd } for create
+  const [creationPicker, setCreationPicker] = useState(null); // { dateKey, hour } — Job vs Event picker
+  const [events, setEvents] = useState([]); // non-job calendar events (kind='event')
   const [selectedPanelJob, setSelectedPanelJob] = useState(null);
   const [allEmployees, setAllEmployees] = useState([]);
   const [autoShow, setAutoShow] = useState(true);
@@ -475,8 +479,31 @@ export default function Schedule() {
   // ── Load ──
   const loadPanelJobs = useCallback(async () => { setPanelLoading(true); try { const r = await db.rpc('get_dispatch_panel_jobs'); setPanelJobs(Array.isArray(r) ? r : []); } catch (e) { console.error('Panel:', e); } finally { setPanelLoading(false); } }, [db]);
   const boardReqRef = useRef(0);
-  const loadBoard = useCallback(async () => { const reqId = ++boardReqRef.current; setLoading(true); try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); if (boardReqRef.current !== reqId) return; setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Board:', e); } finally { if (boardReqRef.current === reqId) setLoading(false); } }, [db, days, autoShow]);
-  const silentReloadBoard = useCallback(async () => { const reqId = ++boardReqRef.current; try { const r = await db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }); if (boardReqRef.current !== reqId) return; setBoardData(Array.isArray(r) ? r : []); } catch (e) { console.error('Silent:', e); } }, [db, days, autoShow]);
+  const loadBoard = useCallback(async () => {
+    const reqId = ++boardReqRef.current; setLoading(true);
+    try {
+      const [r, ev] = await Promise.all([
+        db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }),
+        db.rpc('get_dispatch_events', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key }),
+      ]);
+      if (boardReqRef.current !== reqId) return;
+      setBoardData(Array.isArray(r) ? r : []);
+      setEvents(Array.isArray(ev) ? ev : []);
+    } catch (e) { console.error('Board:', e); }
+    finally { if (boardReqRef.current === reqId) setLoading(false); }
+  }, [db, days, autoShow]);
+  const silentReloadBoard = useCallback(async () => {
+    const reqId = ++boardReqRef.current;
+    try {
+      const [r, ev] = await Promise.all([
+        db.rpc('get_dispatch_board', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key, p_auto_show: autoShow }),
+        db.rpc('get_dispatch_events', { p_start_date: days[0].key, p_end_date: days[days.length - 1].key }),
+      ]);
+      if (boardReqRef.current !== reqId) return;
+      setBoardData(Array.isArray(r) ? r : []);
+      setEvents(Array.isArray(ev) ? ev : []);
+    } catch (e) { console.error('Silent:', e); }
+  }, [db, days, autoShow]);
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);
@@ -514,24 +541,36 @@ export default function Schedule() {
 
   const filteredCellMap = useMemo(() => { if (!crewFilter) return cellMap; const m = {}; for (const [key, appts] of Object.entries(cellMap)) { const f = appts.filter(a => a.crew?.some(c => c.employee_id === crewFilter)); if (f.length > 0) m[key] = f; } return m; }, [cellMap, crewFilter]);
   const filteredBoardData = useMemo(() => crewFilter ? divFilteredBoardData.filter(j => j.appointments?.some(a => a.crew?.some(c => c.employee_id === crewFilter))) : divFilteredBoardData, [divFilteredBoardData, crewFilter]);
+  // Events: filter by crew only (events have no division). Division filter ignores events.
+  const filteredEvents = useMemo(() => {
+    if (divFilter !== 'all' && divFilter) return []; // hide events when filtering by division
+    if (!crewFilter) return events;
+    return events.filter(e => e.crew?.some(c => c.employee_id === crewFilter));
+  }, [events, crewFilter, divFilter]);
   const filteredCrewList = useMemo(() => crewFilter ? crewList.filter(e => e.id === crewFilter) : crewList, [crewList, crewFilter]);
 
   const totalAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.length || 0), 0);
   const todayKey = fmtDate(new Date());
   const todayAppts = filteredBoardData.reduce((s, j) => s + (j.appointments?.filter(a => a.date === todayKey).length || 0), 0);
 
-  const handleApptClick = (appt) => { dismissGridHover(); setEditModal(appt); };
+  const handleApptClick = (appt) => {
+    dismissGridHover();
+    if (appt.kind === 'event') setEventModal({ event: appt });
+    else setEditModal(appt);
+  };
 
-  // ── Optimistic drag-drop (move) ──
+  // ── Optimistic drag-drop (move) — works for both jobs and events ──
   const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {
-    const prev = boardData;
+    const prevBoard = boardData, prevEvents = events;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : a) })));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prev); }
+    setEvents(evs => evs.map(e => e.id === apptId ? { ...e, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : e));
+    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
   };
   const handleApptResize = async (apptId, newTimeEnd) => {
-    const prev = boardData;
+    const prevBoard = boardData, prevEvents = events;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, time_end: newTimeEnd } : a) })));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prev); }
+    setEvents(evs => evs.map(e => e.id === apptId ? { ...e, time_end: newTimeEnd } : e));
+    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
   };
 
   // ── Grid cell drop handler (Jobs/Crew views — date change only) ──
@@ -588,7 +627,7 @@ export default function Schedule() {
   const handleCellClick = (dateKey, hour) => {
     if (placementMode) return;
     if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, jobDivision: selectedPanelJob.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
-    else { setJobPickerModal({ dateKey, hour }); setJobPickerSearch(''); }
+    else { setCreationPicker({ dateKey, hour }); }
   };
   const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, jobDivision: job.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
   const handleMonthDayClick = (dateKey) => { setAnchor(new Date(dateKey + 'T00:00:00')); changeCalSpan('day'); };
@@ -683,7 +722,7 @@ export default function Schedule() {
         ) : viewMode === 'calendar' && calSpan === 'month' ? (
           <MonthView anchor={anchor} boardData={filteredBoardData} onApptClick={handleApptClick} onDayClick={handleMonthDayClick} showWeekend={showWeekend} />
         ) : viewMode === 'calendar' ? (
-          <CalendarView days={gridDays} boardData={filteredBoardData} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} onSwipePrev={goPrev} onSwipeNext={goNext} />
+          <CalendarView days={gridDays} boardData={filteredBoardData} events={filteredEvents} onApptClick={handleApptClick} onCellClick={handleCellClick} onApptDrop={handleApptDrop} onApptResize={handleApptResize} placementMode={placementMode} onPlacementClick={handlePlacementClick} onCancelPlacement={() => setPlacementMode(null)} onRescheduleRemaining={handleRescheduleRemaining} onSwipePrev={goPrev} onSwipeNext={goNext} />
         ) : filteredBoardData.length === 0 && !crewFilter && divFilter === 'all' ? (
           <div style={S.center}><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>No jobs in production</div><div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>Jobs move here automatically when a schedule is generated</div></div>
         ) : filteredBoardData.length === 0 ? (
@@ -786,14 +825,89 @@ export default function Schedule() {
       )}
 
       {createModal && <CreateAppointmentModal jobId={createModal.jobId} jobName={createModal.jobName} jobDivision={createModal.jobDivision} dateKey={createModal.dateKey} prefillTaskIds={createModal.prefillTaskIds || []} prefillTimeStart={createModal.prefillTimeStart} prefillTimeEnd={createModal.prefillTimeEnd} db={db} employees={allEmployees} onClose={() => setCreateModal(null)} onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setCreateModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
-      {/* Mobile + FAB — creates appointment for today */}
+      {/* + FAB — opens creation picker (Job vs Event) */}
       <button
         className="schedule-mobile-fab"
-        onClick={() => { setJobPickerModal({ dateKey: fmtDate(new Date()), hour: 9 }); setJobPickerSearch(''); }}
-        aria-label="Create appointment"
+        onClick={() => setCreationPicker({ dateKey: fmtDate(new Date()), hour: 9 })}
+        aria-label="Create appointment or event"
       >+</button>
 
       {editModal && <EditAppointmentModal appointment={editModal} db={db} employees={allEmployees} onClose={() => setEditModal(null)} onSaved={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} onDeleted={() => { setEditModal(null); loadBoard(); setPanelRefreshKey(k => k + 1); }} />}
+
+      {/* Event create/edit modal */}
+      {eventModal && <EventModal
+        event={eventModal.event}
+        dateKey={eventModal.dateKey}
+        prefillTimeStart={eventModal.prefillTimeStart}
+        prefillTimeEnd={eventModal.prefillTimeEnd}
+        db={db}
+        employees={allEmployees}
+        onClose={() => setEventModal(null)}
+        onSaved={(sd) => { if (sd) setAnchor(new Date(sd + 'T00:00:00')); setEventModal(null); loadBoard(); }}
+        onDeleted={() => { setEventModal(null); loadBoard(); }}
+      />}
+
+      {/* Creation picker — Job appointment vs Event */}
+      {creationPicker && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1000, paddingTop: 140 }}
+          onClick={() => setCreationPicker(null)}
+        >
+          <div
+            style={{ background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 340, boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Create new</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                {new Date(creationPicker.dateKey + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {creationPicker.hour != null ? ` · ${creationPicker.hour % 12 || 12}:00 ${creationPicker.hour >= 12 ? 'PM' : 'AM'}` : ''}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const { dateKey, hour } = creationPicker;
+                setCreationPicker(null);
+                setJobPickerModal({ dateKey, hour: hour ?? 9 });
+                setJobPickerSearch('');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '14px 18px', background: 'var(--bg-primary)', border: 'none', borderBottom: '1px solid var(--border-light)', cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-primary)'}
+            >
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              </span>
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Job appointment</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>Linked to a job, with tasks &amp; crew</div>
+              </span>
+              <span style={{ fontSize: 16, color: 'var(--text-tertiary)' }}>›</span>
+            </button>
+            <button
+              onClick={() => {
+                const { dateKey, hour } = creationPicker;
+                const t = hour != null ? `${String(hour).padStart(2, '0')}:00` : '09:00';
+                const e2 = hour != null ? `${String(Math.min(hour + 1, 20)).padStart(2, '0')}:00` : '10:00';
+                setCreationPicker(null);
+                setEventModal({ event: null, dateKey, prefillTimeStart: t, prefillTimeEnd: e2 });
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '14px 18px', background: 'var(--bg-primary)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-primary)'}
+            >
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: '#faf5ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Event</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>Meeting, PTO, training — no job needed</div>
+              </span>
+              <span style={{ fontSize: 16, color: 'var(--text-tertiary)' }}>›</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Grid placement time picker (Jobs/Crew views) */}
       {gridPlacementPicker && placementMode && (() => {

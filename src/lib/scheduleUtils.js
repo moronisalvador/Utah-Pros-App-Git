@@ -93,3 +93,13 @@ export function fmtShortDate(d) {
   if (!d) return '';
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+// Convert a hex color to a translucent rgba — used for pastel event backgrounds
+// and subtle tinted fills throughout the schedule UI.
+export function hexToTint(hex, opacity = 0.08) {
+  if (!hex || hex[0] !== '#' || hex.length < 7) return `rgba(107,114,128,${opacity})`;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+}

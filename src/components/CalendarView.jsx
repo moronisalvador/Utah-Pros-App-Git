@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { TYPE_COLORS, STATUS_LABELS, fmtTime } from '@/lib/scheduleUtils';
+import { TYPE_COLORS, STATUS_LABELS, fmtTime, hexToTint } from '@/lib/scheduleUtils';
 
 const CAL_START_HOUR = 7;
 const CAL_END_HOUR = 18;
@@ -88,9 +88,15 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
       {/* Header */}
       <div style={{ padding: '10px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{appt._jobName}</div>
-          {appt._jobNumber && (
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+            {appt.kind === 'event' && <span style={{ marginRight: 4 }} aria-hidden>📅</span>}
+            {appt.kind === 'event' ? (appt.title || 'Event') : appt._jobName}
+          </div>
+          {appt.kind !== 'event' && appt._jobNumber && (
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>Job #{appt._jobNumber}</div>
+          )}
+          {appt.kind === 'event' && appt.title !== appt._jobName && (
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>Event</div>
           )}
         </div>
         <button onClick={e => { e.stopPropagation(); onEdit(appt); }}
@@ -127,10 +133,10 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
         </div>
       </div>
 
-      {/* Crew */}
+      {/* Crew / Assigned to */}
       {crew.length > 0 && (
         <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-light)' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 6 }}>Crew</div>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginBottom: 6 }}>{appt.kind === 'event' ? 'Assigned to' : 'Crew'}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {crew.map(c => (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -216,7 +222,7 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
 // Detect touch device once — used to skip hover popovers and resize handles
 const isTouchDevice = typeof window !== 'undefined' && (window.innerWidth <= 768 || navigator.maxTouchPoints > 0);
 
-function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, onApptResize, placementMode, onPlacementClick, onCancelPlacement, onRescheduleRemaining, onSwipePrev, onSwipeNext }) {
+function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, onApptDrop, onApptResize, placementMode, onPlacementClick, onCancelPlacement, onRescheduleRemaining, onSwipePrev, onSwipeNext }) {
   const isMobile = isTouchDevice;
   const timeColW = isMobile ? 36 : 52; // #1: narrower time column on mobile
   const [dragOver, setDragOver] = useState(null);
@@ -278,12 +284,16 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
     requestAnimationFrame(() => { if (wrapRef.current) wrapRef.current.scrollTop = scrollTo; });
   }, []); // mount only
 
-  // Flatten appointments
+  // Flatten appointments (jobs + events). Events carry kind='event' from RPC;
+  // job appointments get kind='job' explicitly so downstream branches are simple.
   const allAppts = [];
   for (const job of boardData) {
     for (const appt of (job.appointments || [])) {
-      allAppts.push({ ...appt, _jobName: job.insured_name, _jobId: job.job_id, _division: job.division, _address: job.address, _jobNumber: job.job_number });
+      allAppts.push({ ...appt, kind: appt.kind || 'job', _jobName: job.insured_name, _jobId: job.job_id, _division: job.division, _address: job.address, _jobNumber: job.job_number });
     }
+  }
+  for (const ev of events) {
+    allAppts.push({ ...ev, kind: 'event' });
   }
   const byDate = {};
   for (const a of allAppts) { if (!byDate[a.date]) byDate[a.date] = []; byDate[a.date].push(a); }
@@ -552,10 +562,20 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                     const crew = appt.crew || [];
                     const leadCrew = crew.find(c => c.role === 'lead');
                     const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+                    const isEvent = appt.kind === 'event';
                     const isDone = appt.status === 'completed';
                     const canInteract = !isDone && !placementMode;
                     const shortAddr = appt._address ? appt._address.split(',')[0] : '';
                     const colWidth = 100 / appt._totalCols; const leftPct = appt._col * colWidth;
+
+                    // Event visuals: pastel tech-color background + strong tech-color text,
+                    // so events read as "belonging" to the tech without shouting like a job.
+                    const bgColor = isEvent ? hexToTint(color, 0.16) : color;
+                    const fgColor = isEvent ? color : '#fff';
+                    const subFgColor = isEvent ? 'rgba(17,19,24,0.55)' : 'rgba(255,255,255,0.85)';
+                    const crewPillBorder = isEvent ? hexToTint(color, 0.4) : 'rgba(255,255,255,0.3)';
+                    const crewPillLeadBorder = isEvent ? color : 'rgba(255,255,255,0.9)';
+                    const displayTitle = isEvent ? (appt.title || 'Event') : appt._jobName;
 
                     return (
                       <div key={appt.id}
@@ -568,9 +588,14 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                           dismissHover(); onApptClick(appt);
                         }}
                         style={{
-                          position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26), // #7: 44px min tap target on mobile
+                          position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26),
                           left: `calc(${leftPct}% + 1px)`, width: `calc(${colWidth}% - 2px)`,
-                          background: color, borderLeft: `3px solid ${color}`, borderRadius: 4,
+                          background: bgColor,
+                          borderLeft: `3px solid ${color}`,
+                          borderTop: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
+                          borderRight: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
+                          borderBottom: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
+                          borderRadius: 4,
                           padding: '4px 6px', overflow: 'visible',
                           cursor: placementMode ? 'copy' : isDone ? 'pointer' : 'grab',
                           zIndex: isBeingResized ? 8 : 2, opacity: isDone ? 0.5 : placementMode ? 0.7 : 1,
@@ -579,7 +604,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                         }}
                         onMouseEnter={e => {
                           if (!isBeingResized && !placementMode) {
-                            e.currentTarget.style.filter = 'brightness(1.1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
+                            e.currentTarget.style.filter = 'brightness(1.04)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.18)';
                             const h = e.currentTarget.querySelector('[data-resize]'); if (h) h.style.opacity = '1';
                             scheduleShowHover(appt, e.currentTarget);
                           }
@@ -593,28 +618,31 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                         }}
                       >
                         <div style={{ overflow: 'hidden', height: '100%' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt._jobName}</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: fgColor, lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {isEvent && <span style={{ marginRight: 4 }} aria-hidden>📅</span>}
+                            {displayTitle}
+                          </div>
                           {crew.length > 0 && (
                             <div style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap' }}>
                               {crew.slice(0, 4).map(c => (
                                 <span key={c.id} title={c.display_name || c.full_name} style={{
                                   width: 20, height: 20, borderRadius: 10, fontSize: 8, fontWeight: 700,
-                                  background: c.color || 'rgba(255,255,255,0.3)', color: '#fff',
+                                  background: c.color || (isEvent ? '#9ca3af' : 'rgba(255,255,255,0.3)'), color: '#fff',
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  border: c.role === 'lead' ? '2px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.3)',
+                                  border: c.role === 'lead' ? `2px solid ${crewPillLeadBorder}` : `1px solid ${crewPillBorder}`,
                                 }}>{getInitials(c.full_name || c.display_name)}</span>
                               ))}
-                              {crew.length > 4 && <span style={{ fontSize: 8, fontWeight: 600, color: 'rgba(255,255,255,0.7)', alignSelf: 'center' }}>+{crew.length - 4}</span>}
+                              {crew.length > 4 && <span style={{ fontSize: 8, fontWeight: 600, color: subFgColor, alignSelf: 'center' }}>+{crew.length - 4}</span>}
                             </div>
                           )}
                           {appt.time_start && (
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>
+                            <div style={{ fontSize: 10, color: subFgColor, lineHeight: 1.3 }}>
                               🕐 {fmtTime(appt.time_start)}{appt.time_end || isBeingResized ? `-${fmtTime(isBeingResized ? minutesToTime(resizing.endMins) : appt.time_end)}` : ''}
                             </div>
                           )}
-                          {height > 60 && shortAddr && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
-                          {height > 80 && appt._jobNumber && !isMobile && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
-                          {height > 100 && appt.tasks_total > 0 && (
+                          {!isEvent && height > 60 && shortAddr && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
+                          {!isEvent && height > 80 && appt._jobNumber && !isMobile && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
+                          {!isEvent && height > 100 && appt.tasks_total > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                               <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden' }}>
                                 <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: 'rgba(255,255,255,0.8)', borderRadius: 2 }} />
@@ -622,7 +650,7 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                               <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
                             </div>
                           )}
-                          {height > 120 && (appt.task_names || []).length > 0 && (
+                          {!isEvent && height > 120 && (appt.task_names || []).length > 0 && (
                             <div style={{ marginTop: 3 }}>
                               {(appt.task_names || []).slice(0, Math.floor((height - 120) / 14)).map((name, i) => (
                                 <div key={i} style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 8, position: 'relative' }}>
@@ -634,8 +662,11 @@ function CalendarView({ days, boardData, onApptClick, onCellClick, onApptDrop, o
                               )}
                             </div>
                           )}
-                          {height > 120 && (appt.task_names || []).length === 0 && (
+                          {!isEvent && height > 120 && (appt.task_names || []).length === 0 && (
                             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.title}</div>
+                          )}
+                          {isEvent && height > 60 && appt.notes && (
+                            <div style={{ fontSize: 10, color: subFgColor, lineHeight: 1.3, marginTop: 2, fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.notes}</div>
                           )}
                         </div>
 
