@@ -8,6 +8,7 @@ import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
 import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
+import GenerateReportButton from '@/components/tech/GenerateReportButton';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
@@ -1104,6 +1105,11 @@ export default function TechAppointment() {
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{appt.notes}</div>
           </div>
+        )}
+
+        {/* ── Water Loss Report (Phase 3, feature-gated) ───────────────── */}
+        {jobIdForRooms && (
+          <GenerateReportButton jobId={jobIdForRooms} jobNumber={appt.jobs?.job_number} />
         )}
 
         <div style={{ height: 20 }} />
