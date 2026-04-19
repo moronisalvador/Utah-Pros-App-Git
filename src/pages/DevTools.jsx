@@ -21,16 +21,18 @@ function IconUser(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="cu
 function IconCode(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>; }
 function IconX(p)       { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
 function IconSend(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>; }
+function IconDatabase(p){ return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>; }
 
 /* ── Tab config ── */
 const TABS = [
-  { key: 'flags',      label: 'Feature Flags', icon: IconFlag   },
-  { key: 'health',     label: 'Health',        icon: IconHeart  },
-  { key: 'employees',  label: 'Employees',     icon: IconUsers  },
-  { key: 'workers',    label: 'Workers',       icon: IconZap    },
-  { key: 'integrity',  label: 'Integrity',     icon: IconShield },
-  { key: 'messaging',  label: 'Messaging',     icon: IconMsg    },
-  { key: 'advanced',   label: 'Advanced',      icon: IconCode   },
+  { key: 'flags',      label: 'Feature Flags', icon: IconFlag     },
+  { key: 'health',     label: 'Health',        icon: IconHeart    },
+  { key: 'employees',  label: 'Employees',     icon: IconUsers    },
+  { key: 'workers',    label: 'Workers',       icon: IconZap      },
+  { key: 'backfill',   label: 'Backfill',      icon: IconDatabase },
+  { key: 'integrity',  label: 'Integrity',     icon: IconShield   },
+  { key: 'messaging',  label: 'Messaging',     icon: IconMsg      },
+  { key: 'advanced',   label: 'Advanced',      icon: IconCode     },
 ];
 
 const CATEGORY_COLOR = {
@@ -672,7 +674,7 @@ function EmployeesTab() {
 /* ════════════════════════════════════════════════════
    WORKERS TAB
    ════════════════════════════════════════════════════ */
-const WORKER_NAMES = ['send-message', 'twilio-webhook', 'twilio-status', 'process-scheduled', 'sync-encircle'];
+const WORKER_NAMES = ['send-message', 'twilio-webhook', 'twilio-status', 'process-scheduled', 'sync-encircle', 'encircle-backfill'];
 
 const STATUS_STYLE = {
   completed: { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
@@ -1873,6 +1875,476 @@ const inputStyle = {
 };
 
 /* ════════════════════════════════════════════════════
+   BACKFILL TAB — Encircle 6-month historical import
+   ════════════════════════════════════════════════════ */
+const ACTION_STYLE = {
+  new:     { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+  repair:  { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+  update:  { bg: '#faf5ff', color: '#7c3aed', border: '#ddd6fe' },
+  skip:    { bg: '#f3f4f6', color: '#6b7280', border: '#e5e7eb' },
+  error:   { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+};
+
+function isoDaysAgo(days) {
+  return new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+}
+
+function EncircleBackfillTab() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [from, setFrom]                 = useState(isoDaysAgo(180));
+  const [to, setTo]                     = useState(today);
+  const [dateField, setDateField]       = useState('date_of_loss');
+  const [divisionStrategy, setStrategy] = useState('smart');
+  const [fixedDivisions, setFixedDivs]  = useState(['water', 'reconstruction']);
+  const [maxClaims, setMaxClaims]       = useState(500);
+  const [skipExisting, setSkipExisting] = useState(true);
+  const [repairOrphans, setRepair]      = useState(true);
+  const [skipNoPhone, setSkipNoPhone]   = useState(true);
+  const [writebackClm, setWriteback]    = useState(true);
+
+  const [previewing, setPreviewing]     = useState(false);
+  const [preview, setPreview]           = useState(null);
+  const [running, setRunning]           = useState(false);
+  const [result, setResult]             = useState(null);
+  const [confirmRun, setConfirmRun]     = useState(false);
+
+  const allDivisions = ['water', 'mold', 'fire', 'reconstruction', 'contents', 'general'];
+
+  const toggleFixedDiv = (d) => {
+    setFixedDivs(prev => prev.includes(d) ? prev.filter(k => k !== d) : [...prev, d]);
+  };
+
+  const doPreview = async () => {
+    setPreviewing(true);
+    setPreview(null);
+    setResult(null);
+    try {
+      const auth = await getAuthHeader();
+      const params = new URLSearchParams({
+        from, to, date_field: dateField, max: String(maxClaims),
+        division_strategy: divisionStrategy,
+        divisions: fixedDivisions.join(','),
+        skip_existing: String(skipExisting),
+        repair_orphans: String(repairOrphans),
+        skip_no_phone: String(skipNoPhone),
+      });
+      const res = await fetch(`/api/encircle-backfill?${params}`, { headers: auth });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Preview failed');
+      setPreview(data);
+      ok(`Preview loaded — ${data.totals.total_in_window} claims in window`);
+    } catch (e) {
+      err('Preview failed: ' + e.message);
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const doRun = async () => {
+    if (!confirmRun) {
+      setConfirmRun(true);
+      setTimeout(() => setConfirmRun(false), 5000);
+      return;
+    }
+    setConfirmRun(false);
+    setRunning(true);
+    setResult(null);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/encircle-backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({
+          from, to, date_field: dateField, max: maxClaims,
+          divisions: fixedDivisions, division_strategy: divisionStrategy,
+          dry_run: false,
+          skip_existing: skipExisting,
+          repair_orphans: repairOrphans,
+          skip_no_phone: skipNoPhone,
+          writeback_clm: writebackClm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Backfill failed');
+      setResult(data);
+      ok(`Backfill complete: ${data.counts.imported} new, ${data.counts.repaired} repaired, ${data.counts.skipped} skipped, ${data.counts.errors} errors`);
+    } catch (e) {
+      err('Backfill failed: ' + e.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Encircle 6-Month Backfill</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+          Bulk import historical Encircle claims as contacts + claims + jobs. Repairs legacy orphan jobs. Idempotent.
+        </div>
+      </div>
+
+      {/* Config card */}
+      <div style={{
+        padding: 16, marginBottom: 16,
+        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
+        background: 'var(--bg-secondary)',
+      }}>
+        {/* Date range + date_field */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Date field</label>
+            <select value={dateField} onChange={e => setDateField(e.target.value)} style={inputStyle}>
+              <option value="date_of_loss">date_of_loss</option>
+              <option value="created_at">created_at</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Max claims</label>
+            <input
+              type="number" min="1" max="2000" value={maxClaims}
+              onChange={e => setMaxClaims(parseInt(e.target.value, 10) || 500)}
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        {/* Division strategy */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Division strategy</label>
+          <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input type="radio" checked={divisionStrategy === 'smart'} onChange={() => setStrategy('smart')} />
+              Smart (by type_of_loss)
+            </label>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+              <input type="radio" checked={divisionStrategy === 'fixed'} onChange={() => setStrategy('fixed')} />
+              Fixed
+            </label>
+          </div>
+          {divisionStrategy === 'fixed' && (
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {allDivisions.map(d => {
+                const checked = fixedDivisions.includes(d);
+                return (
+                  <label key={d} style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '4px 10px', borderRadius: 'var(--radius-md)',
+                    border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
+                    background: checked ? 'var(--accent-light)' : 'var(--bg-primary)',
+                    color: checked ? 'var(--accent)' : 'var(--text-secondary)',
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer', userSelect: 'none',
+                  }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleFixedDiv(d)} style={{ accentColor: 'var(--accent)' }} />
+                    {d}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Behavior checkboxes */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          <CheckboxRow checked={skipExisting}  onChange={setSkipExisting}  label="Skip claims already fully imported" />
+          <CheckboxRow checked={repairOrphans} onChange={setRepair}        label="Repair orphan jobs (legacy sync-encircle rows)" />
+          <CheckboxRow checked={skipNoPhone}   onChange={setSkipNoPhone}   label="Skip claims with no phone number" />
+          <CheckboxRow checked={writebackClm}  onChange={setWriteback}     label="Write CLM# back to Encircle (only if empty)" />
+        </div>
+      </div>
+
+      {/* Action row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button
+          className="btn btn-secondary"
+          onClick={doPreview}
+          disabled={previewing || running}
+        >
+          {previewing ? 'Previewing…' : 'Preview (Dry Run)'}
+        </button>
+        <button
+          onClick={doRun}
+          onBlur={() => setConfirmRun(false)}
+          disabled={!preview || running || previewing}
+          style={{
+            padding: '8px 18px', fontWeight: 600, fontSize: 13, cursor: (!preview || running) ? 'not-allowed' : 'pointer',
+            borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)',
+            border: `1px solid ${confirmRun ? '#fde68a' : 'var(--accent)'}`,
+            background: !preview ? 'var(--bg-tertiary)' : confirmRun ? '#fffbeb' : 'var(--accent)',
+            color: !preview ? 'var(--text-tertiary)' : confirmRun ? '#d97706' : '#fff',
+            transition: 'all 0.12s',
+          }}
+        >
+          {running ? 'Running…' : confirmRun ? 'Confirm Run?' : 'Run Backfill'}
+        </button>
+        {preview && !result && !running && (
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', alignSelf: 'center' }}>
+            Preview loaded · click Run twice to execute
+          </span>
+        )}
+      </div>
+
+      {/* Preview summary */}
+      {preview && <PreviewCard preview={preview} />}
+
+      {/* Result summary */}
+      {result && <ResultCard result={result} />}
+    </div>
+  );
+}
+
+function CheckboxRow({ checked, onChange, label }) {
+  return (
+    <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer', padding: '4px 0' }}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+      {label}
+    </label>
+  );
+}
+
+function BackfillStat({ label, value, highlight }) {
+  return (
+    <div style={{
+      padding: '10px 12px', borderRadius: 'var(--radius-md)',
+      background: highlight ? 'var(--accent-light)' : 'var(--bg-secondary)',
+      border: `1px solid ${highlight ? '#bfdbfe' : 'var(--border-color)'}`,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: highlight ? 'var(--accent)' : 'var(--text-primary)', marginTop: 2 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ActionBadge({ action }) {
+  const s = ACTION_STYLE[action] || ACTION_STYLE.skip;
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, padding: '2px 7px',
+      borderRadius: 'var(--radius-full)',
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      textTransform: 'uppercase', letterSpacing: '0.04em',
+    }}>
+      {action}
+    </span>
+  );
+}
+
+function PreviewCard({ preview }) {
+  const { totals, claims, cursor, window: win } = preview;
+  return (
+    <div style={{
+      padding: 16, marginBottom: 16,
+      border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
+      background: 'var(--bg-primary)',
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+        Preview · {win.from} → {win.to} by {win.date_field}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+        Fetched {cursor.pages_fetched} page{cursor.pages_fetched !== 1 ? 's' : ''} from Encircle
+        {cursor.hit_max ? ' · hit max limit' : ''}
+        {cursor.earliest_claim_date ? ` · earliest: ${cursor.earliest_claim_date}` : ''}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 16 }}>
+        <BackfillStat label="In window"          value={totals.total_in_window} highlight />
+        <BackfillStat label="New imports"        value={totals.new_imports} />
+        <BackfillStat label="Orphan repairs"     value={totals.orphans_to_repair} />
+        <BackfillStat label="Already imported"   value={totals.already_fully_imported} />
+        <BackfillStat label="Skipped (no phone)" value={totals.skipped_no_phone} />
+        <BackfillStat label="Contacts new"       value={totals.estimated_contacts_new} />
+        <BackfillStat label="Contacts reused"    value={totals.estimated_contacts_reused} />
+        <BackfillStat label="Claims new"         value={totals.estimated_claims_new} />
+        <BackfillStat label="Job divisions"      value={totals.estimated_jobs_new} />
+      </div>
+
+      {/* Claims table */}
+      {claims.length > 0 && (
+        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '80px 1.8fr 110px 160px 1.2fr 90px',
+            padding: '8px 12px', background: 'var(--bg-secondary)',
+            borderBottom: '1px solid var(--border-color)',
+            fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            <span>Action</span>
+            <span>Policyholder</span>
+            <span>DOL</span>
+            <span>Type of loss</span>
+            <span>Divisions</span>
+            <span>Enc CLM#</span>
+          </div>
+          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+            {claims.map((c, i) => (
+              <div key={c.encircle_claim_id} style={{
+                display: 'grid', gridTemplateColumns: '80px 1.8fr 110px 160px 1.2fr 90px',
+                padding: '8px 12px',
+                borderBottom: i === claims.length - 1 ? 'none' : '1px solid var(--border-light)',
+                fontSize: 12, alignItems: 'center',
+              }}>
+                <span><ActionBadge action={c.action} /></span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {c.policyholder_name || <span style={{ color: 'var(--text-tertiary)' }}>(no name)</span>}
+                  {c.reason === 'no_phone' && <span style={{ marginLeft: 6, fontSize: 10, color: '#dc2626' }}>no phone</span>}
+                </span>
+                <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                  {c.date_of_loss || '—'}
+                </span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                  {c.type_of_loss || '—'}
+                </span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                  {(c.divisions_to_create || []).join(', ')}
+                  {c.divisions_already_present && c.divisions_already_present.length > 0 && (
+                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                      (have: {c.divisions_already_present.join(', ')})
+                    </span>
+                  )}
+                </span>
+                <span style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+                  {c.contractor_identifier_in_encircle || '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultCard({ result }) {
+  const { counts, errors, samples, cursor, window: win, duration_ms } = result;
+  const [errorsOpen, setErrorsOpen] = useState(false);
+  const [samplesOpen, setSamplesOpen] = useState(true);
+
+  return (
+    <div style={{
+      padding: 16, marginBottom: 16,
+      border: '1px solid #bbf7d0', borderRadius: 'var(--radius-lg)',
+      background: '#f0fdf4',
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>
+        Backfill complete · {win.from} → {win.to}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+        {cursor.pages_fetched} Encircle pages · {(duration_ms / 1000).toFixed(1)}s · worker_run_id: {result.worker_run_id || '—'}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+        <BackfillStat label="Processed"        value={counts.total_processed} highlight />
+        <BackfillStat label="Imported"         value={counts.imported} />
+        <BackfillStat label="Repaired"         value={counts.repaired} />
+        <BackfillStat label="Skipped"          value={counts.skipped} />
+        <BackfillStat label="Errors"           value={counts.errors} />
+        <BackfillStat label="Contacts new"     value={counts.contacts_created} />
+        <BackfillStat label="Contacts reused"  value={counts.contacts_reused} />
+        <BackfillStat label="Claims new"       value={counts.claims_created} />
+        <BackfillStat label="Writebacks OK"    value={counts.writebacks_ok} />
+        <BackfillStat label="WB skipped"       value={counts.writebacks_skipped_existing_cid} />
+      </div>
+
+      {counts.contacts_reused_different_name > 0 && (
+        <div style={{
+          padding: '8px 12px', marginBottom: 12, fontSize: 12,
+          background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a',
+          borderRadius: 'var(--radius-md)',
+        }}>
+          ⚠ {counts.contacts_reused_different_name} contact{counts.contacts_reused_different_name !== 1 ? 's' : ''} reused from a row with a different name (same phone). Likely a landlord/property manager listed on multiple claims. Verify manually.
+        </div>
+      )}
+
+      {errors && errors.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            onClick={() => setErrorsOpen(!errorsOpen)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600, color: '#dc2626', padding: 0,
+            }}
+          >
+            {errorsOpen ? '▾' : '▸'} {errors.length} error{errors.length !== 1 ? 's' : ''}
+          </button>
+          {errorsOpen && (
+            <div style={{ marginTop: 6, padding: 10, background: '#fef2f2', borderRadius: 'var(--radius-md)', border: '1px solid #fecaca' }}>
+              {errors.map((e, i) => (
+                <div key={i} style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#dc2626', marginBottom: 4 }}>
+                  [{e.encircle_claim_id}] {e.step}: {e.error_message}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {samples && samples.length > 0 && (
+        <div>
+          <button
+            onClick={() => setSamplesOpen(!samplesOpen)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', padding: 0,
+            }}
+          >
+            {samplesOpen ? '▾' : '▸'} {samples.length} sample{samples.length !== 1 ? 's' : ''} — verify against Encircle
+          </button>
+          {samplesOpen && (
+            <div style={{ marginTop: 8 }}>
+              {samples.map(s => (
+                <div key={s.encircle_claim_id} style={{
+                  padding: '8px 12px', marginBottom: 6,
+                  background: 'var(--bg-primary)', borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {s.policyholder_name || '(no name)'}
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <ActionBadge action={s.action} />
+                      {s.claim_number && s.claim_number !== '<existing>' && (
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 'var(--radius-full)', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
+                          {s.claim_number}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    DOL {s.date_of_loss || '—'} · {s.type_of_loss || '—'} · jobs: {(s.jobs || []).map(j => `${j.division} (${j.job_number || j.id.slice(0, 8)})`).join(', ') || 'none'}
+                  </div>
+                  <a
+                    href={`https://app.encircleapp.com/property_claims/${s.encircle_claim_id}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+                  >
+                    Open in Encircle →
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    MAIN PAGE
    ════════════════════════════════════════════════════ */
 const TAB_COMPONENTS = {
@@ -1880,6 +2352,7 @@ const TAB_COMPONENTS = {
   health:    HealthTab,
   employees: EmployeesTab,
   workers:   WorkersTab,
+  backfill:  EncircleBackfillTab,
   integrity: IntegrityTab,
   messaging: MessagingTab,
   advanced:  AdvancedTab,

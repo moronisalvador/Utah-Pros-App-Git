@@ -134,6 +134,7 @@ functions/
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage
+    encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
@@ -683,7 +684,26 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 | 6B | Table inspector (15 tables, row count, recent rows) | ✅ Done |
 | 6C | `bust_postgrest_cache()` RPC + button | ✅ Done |
 
-**All DevTools phases complete.** 7 tabs: Flags, Health, Employees, Workers, Integrity, Messaging, Advanced.
+**All DevTools phases complete.** 8 tabs: Flags, Health, Employees, Workers, Backfill, Integrity, Messaging, Advanced.
+
+**Backfill tab** (Apr 18 2026) — 6-month Encircle historical importer UI.
+- Date-range + `date_field` (`date_of_loss` | `created_at`) picker
+- Division strategy: `smart` (by `type_of_loss`) or `fixed` (user picks divisions)
+- Behavior toggles: skip already-imported, repair orphans, skip no-phone claims, writeback CLM
+- Preview (dry-run GET) renders totals grid + per-claim action table (new/repair/skip)
+- Run (POST) executes with two-click confirm; result card shows counts, errors, 5 random samples with Encircle links
+- Calls `/api/encircle-backfill` worker; logs to `worker_runs` as `encircle-backfill`
+
+**Encircle integration patterns (three entry points):**
+- `sync-encircle` — automated 15-newest sync, hardcoded `division='reconstruction'`, jobs only (no claims/contacts). Scheduled worker. Legacy, don't modify.
+- `encircle-import` — manual UI at `/import/encircle`, one claim at a time, full contact→claim→jobs chain + CLM writeback.
+- `encircle-backfill` — batch worker, date-range + cursor pagination, full chain + orphan repair + gated writeback (only when Encircle `contractor_identifier` is empty).
+
+**Idempotency rules:**
+- Jobs: composite unique `(encircle_claim_id, division) WHERE encircle_claim_id IS NOT NULL` — upsert target for multi-division claims.
+- Claims: no encircle_claim_id column; dedup via `jobs.encircle_claim_id` lookup (reuse `claim_id` if any job already has one).
+- Contacts: `phone UNIQUE NOT NULL`; email fallback lookup only when matched row has `phone IS NULL`.
+- `type_of_loss` values come prefixed (`type_of_loss_water`, `type_of_loss_mold`). Smart mapping: water/sewer/flood → `[water, reconstruction]`; mold → `[mold]`; fire/smoke → `[fire, reconstruction]`; wind/storm/hail → `[reconstruction]`; unknown → `[water, reconstruction]`.
 
 **DevRoute access:** `employee?.email === 'moroni@utah-pros.com'` — hardcoded, not role-based
 
