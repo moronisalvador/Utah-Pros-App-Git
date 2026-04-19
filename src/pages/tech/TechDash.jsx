@@ -977,14 +977,19 @@ export default function TechDash() {
                     className="tech-appt-card"
                     data-status="completed"
                     onClick={() => navigate(`/tech/appointment/${appt.id}`)}
-                    style={{ opacity: 0.65, padding: '12px 16px' }}
+                    style={{
+                      padding: '12px 16px',
+                      background: '#f3f4f6',
+                      borderLeft: '3px solid #9ca3af',
+                      boxShadow: 'none',
+                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>{timeStr}</span>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{timeStr}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#6b7280' }}>
                         {appt.title || 'Appointment'}
                       </span>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     </div>

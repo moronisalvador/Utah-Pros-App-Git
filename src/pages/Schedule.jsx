@@ -524,7 +524,7 @@ export default function Schedule() {
     const m = {};
     for (const job of divFilteredBoardData) for (const appt of (job.appointments || [])) {
       const k = `${job.job_id}_${appt.date}`; if (!m[k]) m[k] = [];
-      m[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _address: job.address, _division: job.division, _jobId: job.job_id });
+      m[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _address: job.address, _division: job.division, _jobId: job.job_id, _claimId: job.claim_id });
     }
     return m;
   }, [divFilteredBoardData]);
@@ -534,7 +534,7 @@ export default function Schedule() {
     for (const job of divFilteredBoardData) for (const appt of (job.appointments || [])) for (const crew of (appt.crew || [])) {
       if (!empMap[crew.employee_id]) empMap[crew.employee_id] = { id: crew.employee_id, display_name: crew.display_name, full_name: crew.full_name, role: crew.role };
       const k = `${crew.employee_id}_${appt.date}`; if (!cells[k]) cells[k] = [];
-      cells[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _division: job.division, _jobId: job.job_id, _address: job.address });
+      cells[k].push({ ...appt, _jobName: job.insured_name, _jobNumber: job.job_number, _division: job.division, _jobId: job.job_id, _address: job.address, _claimId: job.claim_id });
     }
     return { crewList: Object.values(empMap).sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '')), crewCellMap: cells };
   }, [divFilteredBoardData]);

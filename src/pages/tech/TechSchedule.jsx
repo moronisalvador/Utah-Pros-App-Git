@@ -388,6 +388,7 @@ export default function TechSchedule() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showCreatePicker, setShowCreatePicker] = useState(false); // Job appt vs Event picker
   const dateRefs = useRef({});
   const didScrollToToday = useRef(false);
 
@@ -650,15 +651,16 @@ export default function TechSchedule() {
               </button>
             </div>
 
-            {/* + New appointment */}
+            {/* + New — opens Job appointment vs Event picker */}
             <button
-              onClick={() => navigate(`/tech/new-appointment?date=${selectedDay}`)}
+              onClick={() => setShowCreatePicker(true)}
               style={{
                 width: 44, height: 44, borderRadius: 'var(--tech-radius-button)',
                 background: 'var(--accent)', color: '#fff', border: 'none',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
               }}
+              aria-label="Create appointment or event"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -913,6 +915,84 @@ export default function TechSchedule() {
             </>
           )}
         </PullToRefresh>
+      )}
+
+      {/* ── Create picker: Job appointment vs Event ── */}
+      {showCreatePicker && (
+        <div
+          onClick={() => setShowCreatePicker(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            zIndex: 1000, WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 520,
+              background: 'var(--bg-primary)',
+              borderRadius: 'var(--tech-radius-card) var(--tech-radius-card) 0 0',
+              paddingBottom: `calc(12px + env(safe-area-inset-bottom, 0px))`,
+              boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
+              overflow: 'hidden',
+              animation: 'techFabIn 0.18s ease-out',
+            }}
+          >
+            <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border-light)' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Create new</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                {new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+            </div>
+            <button
+              onClick={() => { setShowCreatePicker(false); navigate(`/tech/new-appointment?date=${selectedDay}`); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                padding: '16px 20px', minHeight: 'var(--tech-min-tap)',
+                background: 'var(--bg-primary)', border: 'none', borderBottom: '1px solid var(--border-light)',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <span style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: 'var(--accent-light)', color: 'var(--accent)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              </span>
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Job appointment</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Linked to a job, with tasks &amp; crew</div>
+              </span>
+              <span style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>›</span>
+            </button>
+            <button
+              onClick={() => { setShowCreatePicker(false); navigate(`/tech/new-event?date=${selectedDay}`); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                padding: '16px 20px', minHeight: 'var(--tech-min-tap)',
+                background: 'var(--bg-primary)', border: 'none',
+                cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <span style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: '#faf5ff', color: '#7c3aed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Event</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Meeting, PTO, training — no job needed</div>
+              </span>
+              <span style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>›</span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

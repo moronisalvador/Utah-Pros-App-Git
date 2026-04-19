@@ -56,6 +56,7 @@ import TechAppointment from '@/pages/tech/TechAppointment';
 import TechNewCustomer from '@/pages/tech/TechNewCustomer';
 import TechNewJob from '@/pages/tech/TechNewJob';
 import TechNewAppointment from '@/pages/tech/TechNewAppointment';
+import TechNewEvent from '@/pages/tech/TechNewEvent';
 import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 import TechFeedback from '@/pages/tech/TechFeedback';
 import TechMore from '@/pages/tech/TechMore';
@@ -128,6 +129,7 @@ function TechRoutes() {
       <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
       <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
       <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
+      <Route path="tech/new-event" element={<ErrorBoundary section="TechNewEvent"><TechNewEvent /></ErrorBoundary>} />
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />

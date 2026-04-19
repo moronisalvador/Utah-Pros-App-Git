@@ -289,7 +289,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
   const allAppts = [];
   for (const job of boardData) {
     for (const appt of (job.appointments || [])) {
-      allAppts.push({ ...appt, kind: appt.kind || 'job', _jobName: job.insured_name, _jobId: job.job_id, _division: job.division, _address: job.address, _jobNumber: job.job_number });
+      allAppts.push({ ...appt, kind: appt.kind || 'job', _jobName: job.insured_name, _jobId: job.job_id, _claimId: job.claim_id, _division: job.division, _address: job.address, _jobNumber: job.job_number });
     }
   }
   for (const ev of events) {
@@ -568,13 +568,19 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     const shortAddr = appt._address ? appt._address.split(',')[0] : '';
                     const colWidth = 100 / appt._totalCols; const leftPct = appt._col * colWidth;
 
-                    // Event visuals: pastel tech-color background + strong tech-color text,
-                    // so events read as "belonging" to the tech without shouting like a job.
-                    const bgColor = isEvent ? hexToTint(color, 0.16) : color;
-                    const fgColor = isEvent ? color : '#fff';
-                    const subFgColor = isEvent ? 'rgba(17,19,24,0.55)' : 'rgba(255,255,255,0.85)';
-                    const crewPillBorder = isEvent ? hexToTint(color, 0.4) : 'rgba(255,255,255,0.3)';
-                    const crewPillLeadBorder = isEvent ? color : 'rgba(255,255,255,0.9)';
+                    // Visual palette branches on three states — completed wins over event/job:
+                    //  - done:  solid neutral gray. Reads as "already happened" from 3ft away.
+                    //  - event: pastel tint of tech color + strong tech-color text.
+                    //  - job:   solid tech color + white text (existing behavior).
+                    const bgColor = isDone ? '#e5e7eb' : (isEvent ? hexToTint(color, 0.16) : color);
+                    const borderColor = isDone ? '#9ca3af' : color;
+                    const fgColor = isDone ? '#6b7280' : (isEvent ? color : '#fff');
+                    const subFgColor = isDone ? '#9ca3af' : (isEvent ? 'rgba(17,19,24,0.55)' : 'rgba(255,255,255,0.85)');
+                    const detailColor = isDone ? '#9ca3af' : 'rgba(255,255,255,0.75)';
+                    const progressTrackColor = isDone ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.25)';
+                    const progressFillColor = isDone ? '#9ca3af' : 'rgba(255,255,255,0.8)';
+                    const crewPillBorder = isDone ? '#d1d5db' : (isEvent ? hexToTint(color, 0.4) : 'rgba(255,255,255,0.3)');
+                    const crewPillLeadBorder = isDone ? '#6b7280' : (isEvent ? color : 'rgba(255,255,255,0.9)');
                     const displayTitle = isEvent ? (appt.title || 'Event') : appt._jobName;
 
                     return (
@@ -591,14 +597,14 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                           position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26),
                           left: `calc(${leftPct}% + 1px)`, width: `calc(${colWidth}% - 2px)`,
                           background: bgColor,
-                          borderLeft: `3px solid ${color}`,
-                          borderTop: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
-                          borderRight: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
-                          borderBottom: isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined,
+                          borderLeft: `3px solid ${borderColor}`,
+                          borderTop: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
+                          borderRight: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
+                          borderBottom: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
                           borderRadius: 4,
                           padding: '4px 6px', overflow: 'visible',
                           cursor: placementMode ? 'copy' : isDone ? 'pointer' : 'grab',
-                          zIndex: isBeingResized ? 8 : 2, opacity: isDone ? 0.5 : placementMode ? 0.7 : 1,
+                          zIndex: isBeingResized ? 8 : 2, opacity: placementMode ? 0.7 : 1,
                           transition: isBeingResized ? 'none' : 'box-shadow 120ms ease',
                           boxShadow: isBeingResized ? '0 4px 16px rgba(0,0,0,0.25)' : 'none',
                         }}
@@ -640,30 +646,30 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                               🕐 {fmtTime(appt.time_start)}{appt.time_end || isBeingResized ? `-${fmtTime(isBeingResized ? minutesToTime(resizing.endMins) : appt.time_end)}` : ''}
                             </div>
                           )}
-                          {!isEvent && height > 60 && shortAddr && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
-                          {!isEvent && height > 80 && appt._jobNumber && !isMobile && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
+                          {!isEvent && height > 60 && shortAddr && <div style={{ fontSize: 10, color: detailColor, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
+                          {!isEvent && height > 80 && appt._jobNumber && !isMobile && <div style={{ fontSize: 10, color: detailColor, lineHeight: 1.3 }}>Job #{appt._jobNumber}</div>}
                           {!isEvent && height > 100 && appt.tasks_total > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                              <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: 'rgba(255,255,255,0.8)', borderRadius: 2 }} />
+                              <div style={{ flex: 1, height: 3, background: progressTrackColor, borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: progressFillColor, borderRadius: 2 }} />
                               </div>
-                              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
+                              <span style={{ fontSize: 9, color: detailColor }}>{appt.tasks_done}/{appt.tasks_total}</span>
                             </div>
                           )}
                           {!isEvent && height > 120 && (appt.task_names || []).length > 0 && (
                             <div style={{ marginTop: 3 }}>
                               {(appt.task_names || []).slice(0, Math.floor((height - 120) / 14)).map((name, i) => (
-                                <div key={i} style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 8, position: 'relative' }}>
+                                <div key={i} style={{ fontSize: 10, color: detailColor, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 8, position: 'relative' }}>
                                   <span style={{ position: 'absolute', left: 0, top: 1, fontSize: 7 }}>•</span>{name}
                                 </div>
                               ))}
                               {(appt.task_names || []).length > Math.floor((height - 120) / 14) && (
-                                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', paddingLeft: 8, marginTop: 1 }}>+{(appt.task_names || []).length - Math.floor((height - 120) / 14)} more</div>
+                                <div style={{ fontSize: 9, color: subFgColor, paddingLeft: 8, marginTop: 1 }}>+{(appt.task_names || []).length - Math.floor((height - 120) / 14)} more</div>
                               )}
                             </div>
                           )}
                           {!isEvent && height > 120 && (appt.task_names || []).length === 0 && (
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.title}</div>
+                            <div style={{ fontSize: 10, color: detailColor, marginTop: 2, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.title}</div>
                           )}
                           {isEvent && height > 60 && appt.notes && (
                             <div style={{ fontSize: 10, color: subFgColor, lineHeight: 1.3, marginTop: 2, fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{appt.notes}</div>
