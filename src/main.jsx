@@ -4,6 +4,13 @@ import App from './App.jsx';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import './index.css';
 
+// Bumped to force a new bundle hash when the Cloudflare edge cached a
+// broken response (text/html instead of application/javascript) for an
+// immutable /assets/*.js URL. Any time you suspect edge poisoning again,
+// changing this literal is the cheapest way to invalidate.
+const BUILD_ID = '2026-04-18-ios-unblank';
+void BUILD_ID;
+
 // Notify Capgo that the app booted successfully so a bad OTA bundle isn't
 // auto-rolled-back. Defensive try/catch: a top-level module throw here would
 // blank the entire app — if notifyAppReady ever changes its web fallback
