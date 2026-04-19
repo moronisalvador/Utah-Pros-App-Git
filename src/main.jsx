@@ -33,8 +33,22 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 );
 
+// Service worker registration is DISABLED (Apr 18 2026) until we redesign
+// the caching strategy to avoid the /assets/* MIME-mismatch trap that
+// blanked iOS Safari. /sw.js is still served (as a kill-switch no-op) so
+// any already-installed client receives it and unregisters itself.
+//
+// When we re-enable caching, register BELOW a navigator.serviceWorker check
+// AND verify the installed SW version before trusting it.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
+  // Proactively unregister any SW clinging on from an older deploy, and
+  // wipe their caches so iOS Safari isn't served stale index.html-as-JS.
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => Promise.all(regs.map((r) => r.unregister().catch(() => {}))))
+    .catch(() => {});
+  if (typeof caches !== 'undefined' && caches.keys) {
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k).catch(() => {}))))
+      .catch(() => {});
+  }
 }
