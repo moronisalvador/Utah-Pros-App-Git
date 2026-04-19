@@ -925,6 +925,8 @@ export default function TechSchedule() {
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
             display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
             zIndex: 1000, WebkitTapHighlightColor: 'transparent',
+            // Push sheet above the tech bottom nav so "Event" isn't hidden behind it.
+            paddingBottom: 'calc(var(--tech-nav-height) + env(safe-area-inset-bottom, 0px))',
           }}
         >
           <div
@@ -933,7 +935,7 @@ export default function TechSchedule() {
               width: '100%', maxWidth: 520,
               background: 'var(--bg-primary)',
               borderRadius: 'var(--tech-radius-card) var(--tech-radius-card) 0 0',
-              paddingBottom: `calc(12px + env(safe-area-inset-bottom, 0px))`,
+              paddingBottom: 12,
               boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
               overflow: 'hidden',
               animation: 'techFabIn 0.18s ease-out',
