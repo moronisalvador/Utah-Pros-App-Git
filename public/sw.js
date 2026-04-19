@@ -3,7 +3,11 @@
 // Keep this file intentionally small: the main thread handles auth, token refresh,
 // and the IDB-backed write queue.
 
-const CACHE = 'upr-v1';
+const CACHE = 'upr-v2';
+
+// Set once per SW lifetime when we detect a stale-HTML → 404-asset condition,
+// so we only trigger one reload even if the page references multiple missing assets.
+let selfHealed = false;
 
 // Hosts we want to intercept. Derived from the standard Supabase URL shape.
 const SUPABASE_HOST_RE = /^https:\/\/[a-z0-9-]+\.supabase\.co/i;
@@ -76,7 +80,19 @@ async function cacheFirst(req) {
   if (hit) return hit;
   try {
     const res = await fetch(req);
-    if (res.ok) cache.put(req, res.clone());
+    if (res.ok) {
+      cache.put(req, res.clone());
+      return res;
+    }
+    // 404 on a hashed /assets/* URL means the browser is rendering a stale index.html
+    // that references bundles which no longer exist (cache got wiped on activate, then
+    // the page kept asking for old hashes). Tell every open window to reload so it
+    // picks up the fresh HTML — now served no-cache from the edge — with valid hashes.
+    if (!selfHealed && res.status === 404 && new URL(req.url).pathname.startsWith('/assets/')) {
+      selfHealed = true;
+      const clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach(c => { try { c.navigate(c.url); } catch { /* ignore */ } });
+    }
     return res;
   } catch (err) {
     // Dead offline with no cache hit — fall through to browser's default error.
