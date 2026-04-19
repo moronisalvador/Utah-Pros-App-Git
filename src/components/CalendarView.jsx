@@ -571,8 +571,8 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     // breathing room, interior edges between overlapping same-day appointments
                     // stay at 0.5px on each side = 1px total — so stacked appts read as "one cluster"
                     // but adjacent days read as "two days".
-                    const leftPad = appt._col === 0 ? 4 : 0.5;
-                    const rightPad = appt._col === appt._totalCols - 1 ? 4 : 0.5;
+                    const leftPad = appt._col === 0 ? 5 : 0.5;
+                    const rightPad = appt._col === appt._totalCols - 1 ? 5 : 0.5;
 
                     // Visual palette branches on three states — completed wins over event/job:
                     //  - done:  solid neutral gray. Reads as "already happened" from 3ft away.
