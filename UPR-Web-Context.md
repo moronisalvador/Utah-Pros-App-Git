@@ -272,8 +272,8 @@ create_job_with_contact(...)    — Atomic job + contact creation
 add_related_job(...)            — Sibling job under same claim
 get_claim_jobs(p_claim_id)      — {claim, jobs[]}
 get_claim_detail(p_claim_id)    — Full claim detail
-get_claims_list(...)            — Paginated claims list (sorted by last_activity_at DESC — GREATEST(claim.updated_at, MAX(job.updated_at)))
-get_tech_claims(p_employee_id)  — Claims where tech is on appointment_crew (sorted by last_activity_at DESC)
+get_claims_list(...)            — Paginated claims list. Sorted by last_activity_at DESC NULLS LAST, then created_at DESC. last_activity_at = GREATEST of MAX(appointments.updated_at), MAX(job_documents.created_at), MAX(system_events.created_at WHERE event_type NOT LIKE '%.created'), MAX(job_time_entries.updated_at), all joined via jobs.claim_id. Frozen bulk-import sources (claims.updated_at, jobs.updated_at, *.created events) are excluded — they set every row to the same import timestamp and would hide real activity.
+get_tech_claims(p_employee_id)  — Claims where tech is on appointment_crew. Same last_activity_at computation and tiered sort as get_claims_list.
 get_job_contacts(p_job_id)      — Contacts linked to a job
 link_contact_to_job(...)        — Link contact with role
 search_contacts_for_job(...)    — Typeahead contact search
