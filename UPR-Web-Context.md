@@ -272,7 +272,8 @@ create_job_with_contact(...)    — Atomic job + contact creation
 add_related_job(...)            — Sibling job under same claim
 get_claim_jobs(p_claim_id)      — {claim, jobs[]}
 get_claim_detail(p_claim_id)    — Full claim detail
-get_claims_list(...)            — Paginated claims list
+get_claims_list(...)            — Paginated claims list (sorted by last_activity_at DESC — GREATEST(claim.updated_at, MAX(job.updated_at)))
+get_tech_claims(p_employee_id)  — Claims where tech is on appointment_crew (sorted by last_activity_at DESC)
 get_job_contacts(p_job_id)      — Contacts linked to a job
 link_contact_to_job(...)        — Link contact with role
 search_contacts_for_job(...)    — Typeahead contact search

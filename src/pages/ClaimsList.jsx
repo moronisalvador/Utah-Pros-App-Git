@@ -26,6 +26,7 @@ const LOSS_TABS = [
 ];
 
 const SORT_OPTIONS = [
+  { key: 'recent_activity', label: 'Recent Activity' },
   { key: 'newest', label: 'Newest First' },
   { key: 'oldest', label: 'Oldest First' },
   { key: 'client', label: 'Client A–Z' },
@@ -55,7 +56,7 @@ export default function ClaimsList() {
   const [search, setSearch] = useState('');
   const [lossTab, setLossTab] = useState('all');
   const [statusF, setStatusF] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
+  const [sortBy, setSortBy] = useState('recent_activity');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +90,11 @@ export default function ClaimsList() {
     if (statusF !== 'all') list = list.filter(c => c.status === statusF);
     list.sort((a, b) => {
       switch (sortBy) {
+        case 'recent_activity': {
+          const av = a.last_activity_at ? new Date(a.last_activity_at).getTime() : 0;
+          const bv = b.last_activity_at ? new Date(b.last_activity_at).getTime() : 0;
+          return bv - av;
+        }
         case 'newest':    return new Date(b.created_at) - new Date(a.created_at);
         case 'oldest':    return new Date(a.created_at) - new Date(b.created_at);
         case 'client':    return (a.insured_name || '').localeCompare(b.insured_name || '');
