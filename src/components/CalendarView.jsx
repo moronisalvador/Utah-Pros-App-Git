@@ -567,6 +567,12 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     const canInteract = !isDone && !placementMode;
                     const shortAddr = appt._address ? appt._address.split(',')[0] : '';
                     const colWidth = 100 / appt._totalCols; const leftPct = appt._col * colWidth;
+                    // Asymmetric gutters: outer edges (shared with adjacent days) get 4px of
+                    // breathing room, interior edges between overlapping same-day appointments
+                    // stay at 0.5px on each side = 1px total — so stacked appts read as "one cluster"
+                    // but adjacent days read as "two days".
+                    const leftPad = appt._col === 0 ? 4 : 0.5;
+                    const rightPad = appt._col === appt._totalCols - 1 ? 4 : 0.5;
 
                     // Visual palette branches on three states — completed wins over event/job:
                     //  - done:  solid neutral gray. Reads as "already happened" from 3ft away.
@@ -595,7 +601,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                         }}
                         style={{
                           position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26),
-                          left: `calc(${leftPct}% + 4px)`, width: `calc(${colWidth}% - 8px)`,
+                          left: `calc(${leftPct}% + ${leftPad}px)`, width: `calc(${colWidth}% - ${leftPad + rightPad}px)`,
                           background: bgColor,
                           borderLeft: `3px solid ${borderColor}`,
                           borderTop: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
