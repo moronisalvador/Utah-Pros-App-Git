@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
+import StalledWidget from '@/components/tech/StalledWidget';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
@@ -933,6 +934,9 @@ export default function TechDash() {
 
       {/* Only this part refreshes */}
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+        {/* Stalled-materials banner — renders nothing when clean */}
+        <StalledWidget />
+
         <div style={{ padding: 'var(--space-4)' }}>
           {/* Active appointment cards */}
           {active.map(appt => (

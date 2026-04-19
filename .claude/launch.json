@@ -8,6 +8,12 @@
       "port": 5173
     },
     {
+      "name": "Vite Preview (prod bundle)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--port", "4173"],
+      "port": 4173
+    },
+    {
       "name": "Cloudflare Pages Functions",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["wrangler", "pages", "dev", "dist", "--port", "8788"],
