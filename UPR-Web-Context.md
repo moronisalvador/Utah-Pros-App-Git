@@ -136,6 +136,7 @@ functions/
     submit-esign.js               — Process signature, generate PDF, upload to storage
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
+    sync-claim-to-encircle.js     — Push UPR-native claim UP to Encircle. POST { claim_id }. Idempotent (skips if claims.encircle_claim_id set). Writes encircle_claim_id back on claims AND all child jobs. On failure stores error on claims.encircle_sync_error for retry. Called automatically from CreateJobModal + TechNewJob post-RPC; manual retry via DevTools → Backfill tab → Unsynced Claims panel.
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
@@ -695,16 +696,22 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 - Run (POST) executes with two-click confirm; result card shows counts, errors, 5 random samples with Encircle links
 - Calls `/api/encircle-backfill` worker; logs to `worker_runs` as `encircle-backfill`
 
-**Encircle integration patterns (three entry points):**
-- `sync-encircle` — automated 15-newest sync, hardcoded `division='reconstruction'`, jobs only (no claims/contacts). Scheduled worker. Legacy, don't modify.
+**Encircle integration patterns (four entry points):**
+- `sync-encircle` — automated 15-newest sync, hardcoded `division='reconstruction'`, jobs only. Scheduled worker. Legacy, don't modify.
 - `encircle-import` — manual UI at `/import/encircle`, one claim at a time, full contact→claim→jobs chain + CLM writeback.
 - `encircle-backfill` — batch worker, date-range + cursor pagination, full chain + orphan repair + gated writeback (only when Encircle `contractor_identifier` is empty).
+- `sync-claim-to-encircle` (Apr 18 2026) — pushes UPR-native claims UP to Encircle. Fired automatically from CreateJobModal + TechNewJob after `create_job_with_contact` RPC succeeds. Idempotent via `claims.encircle_claim_id`. Failures stored on `claims.encircle_sync_error` and surfaced in DevTools → Backfill → Unsynced Claims panel with per-row retry. On success writes Encircle id back to `claims.encircle_claim_id` AND all child `jobs.encircle_claim_id`.
 
 **Idempotency rules:**
 - Jobs: composite unique `(encircle_claim_id, division) WHERE encircle_claim_id IS NOT NULL` — upsert target for multi-division claims.
-- Claims: no encircle_claim_id column; dedup via `jobs.encircle_claim_id` lookup (reuse `claim_id` if any job already has one).
+- Claims: `encircle_claim_id TEXT` (added Apr 18 2026, non-unique index because one pre-existing dupe on encircle_claim_id 4517466). Linked via backfill from jobs. Populated going forward by sync-claim-to-encircle.
 - Contacts: `phone UNIQUE NOT NULL`; email fallback lookup only when matched row has `phone IS NULL`.
 - `type_of_loss` values come prefixed (`type_of_loss_water`, `type_of_loss_mold`). Smart mapping: water/sewer/flood → `[water, reconstruction]`; mold → `[mold]`; fire/smoke → `[fire, reconstruction]`; wind/storm/hail → `[reconstruction]`; unknown → `[water, reconstruction]`.
+
+**Claims schema additions (Apr 18 2026):**
+- `encircle_claim_id TEXT` — Encircle PropertyClaim id linked to this UPR claim (for bidirectional sync)
+- `encircle_synced_at TIMESTAMPTZ` — when the link was established
+- `encircle_sync_error TEXT` — last sync error message (cleared on success)
 
 **DevRoute access:** `employee?.email === 'moroni@utah-pros.com'` — hardcoded, not role-based
 

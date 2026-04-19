@@ -2,6 +2,27 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import AddContactModal from '@/components/AddContactModal';
 import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
+import { getAuthHeader } from '@/lib/realtime';
+
+async function syncClaimToEncircle(claimId) {
+  try {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/sync-claim-to-encircle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ claim_id: claimId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (data.skipped) return; // already_synced
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `Synced to Encircle (${data.encircle_claim_id})`, type: 'success' } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed — retry from Dev Tools → Backfill', type: 'error' } }));
+    }
+  } catch (e) {
+    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed: ' + e.message, type: 'error' } }));
+  }
+}
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -138,6 +159,8 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
         p_internal_notes:  internalNotes || null,
       });
       onCreated?.(result);
+      // Fire-and-forget push to Encircle — don't block the UI on the response
+      if (result?.claim_id) syncClaimToEncircle(result.claim_id);
     } catch (err) {
       console.error(err); setError('Failed: ' + err.message);
     } finally { setSaving(false); }
