@@ -4,6 +4,26 @@ import { useAuth } from '@/contexts/AuthContext';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
+import { getAuthHeader } from '@/lib/realtime';
+
+async function syncClaimToEncircle(claimId) {
+  try {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/sync-claim-to-encircle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ claim_id: claimId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (!data.skipped) toast(`Synced to Encircle`, 'success');
+    } else {
+      toast('Encircle sync failed — retry from Dev Tools', 'error');
+    }
+  } catch (e) {
+    toast('Encircle sync failed: ' + e.message, 'error');
+  }
+}
 
 const DIVISIONS = [
   { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
@@ -217,6 +237,8 @@ export default function TechNewJob() {
       });
       const jobNum = result?.job?.job_number || '';
       toast(jobNum ? `Job #${jobNum} created` : 'Job created');
+      // Fire-and-forget push to Encircle
+      if (result?.claim_id) syncClaimToEncircle(result.claim_id);
       navigate(-1);
     } catch (err) {
       toast('Failed to create job: ' + (err.message || ''), 'error');

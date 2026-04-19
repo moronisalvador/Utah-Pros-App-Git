@@ -1889,6 +1889,132 @@ function isoDaysAgo(days) {
   return new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 }
 
+function UnsyncedClaimsPanel() {
+  const { db } = useAuth();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(null); // claim_id currently being retried
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const claimRows = await db.select('claims',
+        'encircle_claim_id=is.null&status=neq.deleted&select=id,claim_number,created_at,encircle_sync_error,contact_id&order=created_at.desc&limit=50'
+      );
+      const claims = claimRows || [];
+      // Fetch contact names in a single query for the ones that have a contact
+      const contactIds = [...new Set(claims.map(c => c.contact_id).filter(Boolean))];
+      let contactsById = {};
+      if (contactIds.length > 0) {
+        const contacts = await db.select('contacts', `id=in.(${contactIds.join(',')})&select=id,name`);
+        contactsById = Object.fromEntries((contacts || []).map(c => [c.id, c]));
+      }
+      setRows(claims.map(c => ({ ...c, contact_name: contactsById[c.contact_id]?.name || null })));
+    } catch (e) {
+      err('Failed to load unsynced claims');
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const retry = async (claimId) => {
+    setRetrying(claimId);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/sync-claim-to-encircle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ claim_id: claimId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        ok(`Synced: ${data.encircle_claim_id || 'done'}`);
+        await load();
+      } else {
+        err(data.error || data.detail || `Sync failed (${res.status})`);
+        await load();
+      }
+    } catch (e) {
+      err('Retry failed: ' + e.message);
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  if (loading) return null;
+  if (rows.length === 0) {
+    return (
+      <div style={{
+        padding: '10px 14px', marginBottom: 16, fontSize: 12,
+        background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)',
+        color: '#16a34a', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <span>✓ All claims are synced to Encircle</span>
+        <button className="btn btn-secondary btn-sm" onClick={load}>Refresh</button>
+      </div>
+    );
+  }
+
+  const withErrors = rows.filter(r => r.encircle_sync_error);
+
+  return (
+    <div style={{
+      padding: 14, marginBottom: 16,
+      border: '1px solid #fde68a', borderRadius: 'var(--radius-lg)',
+      background: '#fffbeb',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#d97706' }}>
+            {rows.length} claim{rows.length !== 1 ? 's' : ''} not synced to Encircle
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            {withErrors.length > 0 ? `${withErrors.length} with errors · ` : ''}
+            Click Retry to push to Encircle
+          </div>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={load}>Refresh</button>
+      </div>
+      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+        {rows.map(r => (
+          <div key={r.id} style={{
+            display: 'grid', gridTemplateColumns: '110px 1fr 80px',
+            gap: 10, alignItems: 'center',
+            padding: '8px 10px', marginBottom: 4,
+            background: 'var(--bg-primary)', borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-color)',
+            fontSize: 12,
+          }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
+              {r.claim_number}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.contact_name || '(no contact)'}
+              </div>
+              {r.encircle_sync_error && (
+                <div style={{ color: '#dc2626', fontSize: 10, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.encircle_sync_error}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => retry(r.id)}
+              disabled={retrying === r.id}
+              style={{ fontSize: 11, padding: '4px 10px' }}
+            >
+              {retrying === r.id ? 'Syncing…' : 'Retry'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EncircleBackfillTab() {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1985,6 +2111,8 @@ function EncircleBackfillTab() {
           Bulk import historical Encircle claims as contacts + claims + jobs. Repairs legacy orphan jobs. Idempotent.
         </div>
       </div>
+
+      <UnsyncedClaimsPanel />
 
       {/* Config card */}
       <div style={{
