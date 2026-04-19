@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
@@ -15,6 +16,7 @@ const TIME_OPTIONS = (() => {
 })();
 
 function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
+  const navigate = useNavigate();
   const [title, setTitle] = useState(appointment.title || '');
   const [date, setDate] = useState(appointment.date || '');
   const [timeStart, setTimeStart] = useState(appointment.time_start?.slice(0, 5) || '');
@@ -329,8 +331,38 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                 outline: 'none', background: 'transparent', flex: 1, padding: 0, fontFamily: 'var(--font-sans)' }}
                 value={title} onChange={e => { setTitle(e.target.value); setDirty(true); }} />
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', paddingLeft: 18 }}>
-              {appointment._jobName || 'Job'} · {fmtApptDate(date)}
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', paddingLeft: 18, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span>{appointment._jobName || 'Job'} · {fmtApptDate(date)}</span>
+              {(appointment._jobId || appointment.job_id) && (
+                <button
+                  onClick={() => { const id = appointment._jobId || appointment.job_id; onClose(); navigate(`/jobs/${id}`); }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+                    padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                    background: 'var(--accent-light)', border: 'none', cursor: 'pointer',
+                    fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  View job
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              )}
+              {appointment._claimId && (
+                <button
+                  onClick={() => { const id = appointment._claimId; onClose(); navigate(`/claims/${id}`); }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+                    padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                    background: 'var(--accent-light)', border: 'none', cursor: 'pointer',
+                    fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  View claim
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              )}
             </div>
           </div>
           <button onClick={onClose} style={S.closeBtn}>✕</button>
