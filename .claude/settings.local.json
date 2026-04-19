@@ -35,7 +35,12 @@
       "Bash(dir src/lib)",
       "Bash(icacls src/hooks)",
       "Bash(icacls src/lib/dispatchers)",
-      "Bash(taskkill //F //IM node.exe)"
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(git fetch *)",
+      "Bash(git reset *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
