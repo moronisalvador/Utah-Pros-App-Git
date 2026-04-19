@@ -1408,6 +1408,9 @@ tr:hover td { background: var(--bg-secondary); }
   /* #6: Calendar/Jobs/Crew view toggle hidden on mobile — always Calendar */
   .schedule-view-toggle { display: none !important; }
 
+  /* Hide the desktop "+ New" button on mobile — the FAB replaces it */
+  .schedule-new-btn { display: none !important; }
+
   /* #9: + FAB for creating appointments */
   .schedule-mobile-fab {
     display: flex;
