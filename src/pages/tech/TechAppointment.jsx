@@ -4,6 +4,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
+import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
+import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
+import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
+import { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
@@ -46,6 +50,14 @@ export default function TechAppointment() {
   const [rooms, setRooms] = useState(null);
   const [uploading, setUploading] = useState(false);
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
+  // ── Hydro (Phase 2) state ──────────────────────────────────────────────
+  const moistureEnabled = isFeatureEnabled('page:tech_moisture');
+  const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
+  const [readings, setReadings] = useState([]);
+  const [equipment, setEquipment] = useState([]);
+  const [readingSheetOpen, setReadingSheetOpen] = useState(false);
+  const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
+  const [confirmRemoveEquipId, setConfirmRemoveEquipId] = useState(null);
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
   const togglingRef = useRef(new Set());
@@ -270,6 +282,160 @@ export default function TechAppointment() {
   const currentPhotoRoomId = photoNoteSheet?.id
     ? docs.find(d => d.id === photoNoteSheet.id)?.room_id || null
     : null;
+
+  // ── Hydro: load readings + equipment, and save handlers ─────────────────
+  const loadHydro = useCallback(async () => {
+    if (!jobIdForRooms) return;
+    try {
+      const [r, e] = await Promise.all([
+        moistureEnabled ? db.rpc('get_job_readings', { p_job_id: jobIdForRooms }) : Promise.resolve([]),
+        equipmentEnabled ? db.rpc('get_job_equipment', { p_job_id: jobIdForRooms, p_include_removed: false }) : Promise.resolve([]),
+      ]);
+      setReadings(r || []);
+      setEquipment(e || []);
+    } catch {
+      // silent — the sections will just show empty state
+    }
+  }, [db, jobIdForRooms, moistureEnabled, equipmentEnabled]);
+
+  useEffect(() => { loadHydro(); }, [loadHydro]);
+
+  // Refresh when a queued reading or equipment change for THIS job syncs.
+  useEffect(() => {
+    if (!offlineQueueEnabled) return;
+    if (!jobIdForRooms) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    return runner.on('sync:item-done', ({ item }) => {
+      const t = item?.type;
+      if (t !== 'reading.insert' && t !== 'equipment.place' && t !== 'equipment.remove') return;
+      if (item?.payload?.jobId && item.payload.jobId !== jobIdForRooms) return;
+      loadHydro();
+    });
+  }, [offlineQueueEnabled, jobIdForRooms, loadHydro]);
+
+  const handleSaveReading = async (payload) => {
+    if (!jobIdForRooms) throw new Error('Appointment not loaded');
+    const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+    const queuePayload = {
+      clientId,
+      jobId: jobIdForRooms,
+      roomId: payload.roomId || null,
+      material: payload.material,
+      location: payload.location || null,
+      mc: payload.mc ?? null,
+      rh: payload.rh ?? null,
+      tempF: payload.temp_f ?? null,
+      gpp: payload.gpp ?? null,
+      dewPoint: payload.dew_point ?? null,
+      isAffected: !!payload.is_affected,
+      equipmentId: payload.equipment_id || null,
+      notes: payload.notes || null,
+      takenBy: employee?.id || null,
+      takenAt: new Date().toISOString(),
+    };
+    if (offlineQueueEnabled) {
+      await enqueue({ type: 'reading.insert', clientId, payload: queuePayload });
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        toast('Reading queued — will upload when online', 'success');
+      } else {
+        toast('Reading saved');
+      }
+    } else {
+      await db.rpc('insert_reading', {
+        p_job_id:       queuePayload.jobId,
+        p_room_id:      queuePayload.roomId,
+        p_material:     queuePayload.material,
+        p_location:     queuePayload.location,
+        p_mc:           queuePayload.mc,
+        p_rh:           queuePayload.rh,
+        p_temp_f:       queuePayload.tempF,
+        p_gpp:          queuePayload.gpp,
+        p_dew_point:    queuePayload.dewPoint,
+        p_is_affected:  queuePayload.isAffected,
+        p_equipment_id: queuePayload.equipmentId,
+        p_taken_by:     queuePayload.takenBy,
+        p_notes:        queuePayload.notes,
+        p_client_id:    clientId,
+      });
+      toast('Reading saved');
+      loadHydro();
+    }
+  };
+
+  const handlePlaceEquipment = async (payload) => {
+    if (!jobIdForRooms) throw new Error('Appointment not loaded');
+    const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+    const queuePayload = {
+      clientId,
+      jobId: jobIdForRooms,
+      roomId: payload.roomId || null,
+      equipmentType: payload.equipment_type,
+      nickname: payload.nickname || null,
+      serialNumber: payload.serial_number || null,
+      placedBy: employee?.id || null,
+    };
+    if (offlineQueueEnabled) {
+      await enqueue({ type: 'equipment.place', clientId, payload: queuePayload });
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        toast('Placement queued — will upload when online', 'success');
+      } else {
+        toast('Equipment placed');
+      }
+    } else {
+      await db.rpc('place_equipment', {
+        p_job_id:         queuePayload.jobId,
+        p_room_id:        queuePayload.roomId,
+        p_equipment_type: queuePayload.equipmentType,
+        p_nickname:       queuePayload.nickname,
+        p_serial:         queuePayload.serialNumber,
+        p_placed_by:      queuePayload.placedBy,
+        p_client_id:      clientId,
+        p_notes:          null,
+      });
+      toast('Equipment placed');
+      loadHydro();
+    }
+  };
+
+  const handleRemoveEquipment = async (equipmentId) => {
+    if (confirmRemoveEquipId !== equipmentId) {
+      setConfirmRemoveEquipId(equipmentId);
+      setTimeout(() => setConfirmRemoveEquipId(null), 3000);
+      return;
+    }
+    setConfirmRemoveEquipId(null);
+    try {
+      if (offlineQueueEnabled) {
+        await enqueue({
+          type: 'equipment.remove',
+          clientId: (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`,
+          payload: { equipmentId, removedBy: employee?.id || null, jobId: jobIdForRooms },
+        });
+        toast('Equipment marked for removal');
+      } else {
+        await db.rpc('remove_equipment', { p_equipment_id: equipmentId, p_removed_by: employee?.id || null });
+        toast('Equipment removed');
+        loadHydro();
+      }
+    } catch (err) {
+      toast('Remove failed: ' + (err?.message || 'unknown'), 'error');
+    }
+  };
+
+  // Latest reading per (room, material) — used for compact section rows.
+  const latestReadings = (() => {
+    const seen = new Set();
+    const out = [];
+    for (const r of readings) {
+      const key = `${r.room_id || 'none'}:${r.material}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
+  })();
+  const stalledCount = latestReadings.filter(r => r.is_stalled).length;
 
   const saveNote = async () => {
     if (!noteText.trim() || !appt?.jobs) return;
@@ -566,6 +732,223 @@ export default function TechAppointment() {
             ))
           )}
         </div>
+
+        {/* ── Moisture Readings (Phase 2, feature-gated) ───────────────── */}
+        {moistureEnabled && (
+          <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
+            <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                Moisture
+                {readings.length > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', letterSpacing: 'normal', textTransform: 'none' }}>
+                    {readings.length} reading{readings.length === 1 ? '' : 's'}
+                  </span>
+                )}
+                {stalledCount > 0 && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700,
+                    padding: '2px 8px', borderRadius: 'var(--radius-full)',
+                    background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                    letterSpacing: 'normal', textTransform: 'none',
+                  }}>
+                    {stalledCount} stalled
+                  </span>
+                )}
+              </span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setReadingSheetOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Reading
+              </button>
+            </div>
+
+            {readings.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
+                No readings yet. Log MC, RH, and temp to start a drying log.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {readings.slice(0, 12).map(r => {
+                  // Color-code MC: green ≤ goal, amber within 2, red above
+                  const mc = r.mc_pct;
+                  const goal = r.drying_goal_pct;
+                  let mcColor = 'var(--text-primary)';
+                  if (mc != null && goal != null) {
+                    if (mc <= goal) mcColor = '#16a34a';
+                    else if (mc - goal <= 2) mcColor = '#d97706';
+                    else mcColor = '#dc2626';
+                  }
+                  return (
+                    <div key={r.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      minHeight: 48, padding: '8px 10px',
+                      borderRadius: 10, background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-light)',
+                    }}>
+                      <MaterialIcon type={r.material} size={22} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {MATERIAL_LABELS[r.material] || r.material}
+                          {!r.is_affected && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-tertiary)', marginLeft: 6 }}>(unaffected)</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          {r.room_name || 'Untagged'}
+                          {r.location_description ? ` · ${r.location_description}` : ''}
+                          {` · ${relativeTime(r.taken_at)}`}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', minWidth: 72 }}>
+                        {mc != null ? (
+                          <div style={{ fontSize: 16, fontWeight: 700, color: mcColor, fontFamily: 'var(--font-mono)' }}>
+                            {mc}%
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>—</div>
+                        )}
+                        {goal != null && (
+                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                            goal {goal}%
+                          </div>
+                        )}
+                      </div>
+                      {r.is_stalled && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700,
+                          padding: '2px 6px', borderRadius: 'var(--radius-full)',
+                          background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                        }}>
+                          STALLED
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {readings.length > 12 && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingTop: 4 }}>
+                    +{readings.length - 12} older reading{readings.length - 12 === 1 ? '' : 's'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Equipment Placements (Phase 2, feature-gated) ──────────── */}
+        {equipmentEnabled && (
+          <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
+            <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>
+                Equipment
+                {equipment.length > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', letterSpacing: 'normal', textTransform: 'none', marginLeft: 6 }}>
+                    {equipment.length} on-site
+                  </span>
+                )}
+              </span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setEquipmentSheetOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Place
+              </button>
+            </div>
+
+            {equipment.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
+                No equipment on-site. Place dehus, air movers, or AFDs to start tracking days on-site.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {equipment.map(e => {
+                  const isConfirming = confirmRemoveEquipId === e.id;
+                  return (
+                    <div key={e.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      minHeight: 48, padding: '8px 10px',
+                      borderRadius: 10, background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-light)',
+                    }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        background: 'var(--bg-tertiary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)',
+                      }}>
+                        {(EQUIPMENT_LABELS[e.equipment_type] || 'EQ').slice(0, 3).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {e.nickname || EQUIPMENT_LABELS[e.equipment_type] || e.equipment_type}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          {e.room_name || 'Untagged'}
+                          {` · Day ${(e.days_onsite || 0) + 1}`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveEquipment(e.id)}
+                        onBlur={() => setConfirmRemoveEquipId(null)}
+                        style={{
+                          minHeight: 36, minWidth: 48,
+                          padding: '6px 10px',
+                          fontSize: 12, fontWeight: 700,
+                          border: `1px solid ${isConfirming ? '#fecaca' : 'var(--border-light)'}`,
+                          borderRadius: 8,
+                          background: isConfirming ? '#fef2f2' : 'var(--bg-tertiary)',
+                          color: isConfirming ? '#dc2626' : 'var(--text-tertiary)',
+                          cursor: 'pointer',
+                          fontFamily: 'var(--font-sans)',
+                        }}
+                      >
+                        {isConfirming ? 'Confirm' : 'Remove'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Phase 2 sheets — mounted unconditionally so flipping the feature
+            flag on doesn't require a remount. Sheets self-gate on `open`. */}
+        <ReadingEntrySheet
+          open={readingSheetOpen}
+          onClose={() => setReadingSheetOpen(false)}
+          onSave={async (payload) => {
+            await handleSaveReading(payload);
+            setReadingSheetOpen(false);
+          }}
+          jobId={jobIdForRooms}
+          rooms={rooms}
+          onCreateRoom={handleCreateRoom}
+          equipmentList={equipment.map(e => ({
+            id: e.id,
+            label: e.nickname || EQUIPMENT_LABELS[e.equipment_type] || e.equipment_type,
+          }))}
+        />
+        <EquipmentPlacementSheet
+          open={equipmentSheetOpen}
+          onClose={() => setEquipmentSheetOpen(false)}
+          onSave={async (payload) => {
+            await handlePlaceEquipment(payload);
+            setEquipmentSheetOpen(false);
+          }}
+          jobId={jobIdForRooms}
+          rooms={rooms}
+          onCreateRoom={handleCreateRoom}
+        />
 
         {/* Photo gallery — 2 columns */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
