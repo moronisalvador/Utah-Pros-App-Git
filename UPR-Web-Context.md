@@ -774,5 +774,137 @@ supabase/migrations/
   tagging pre-sync (currently only possible after sync completes)
 - Rename / delete room UI on TechRoomDetail (currently create-only)
 - Offline app-shell bootstrap — SW doesn't cache index.html for cold-offline-launch
-- Phase 2: Hydro (moisture_readings + equipment_placements tables + sheets)
 - Phase 3: Water Loss Report PDF (extend pdf-lib engine from submit-esign.js)
+
+---
+
+## Encircle Replacement — Phase 2 Hydro (Apr 18 2026)
+
+IICRC S500 drying workflow: moisture readings, equipment placements, stall
+detection. All feature-gated (`page:tech_moisture`, `page:tech_equipment`)
+to Moroni's admin account — team sees zero change.
+
+### Schema additions
+```
+material_type enum   — 'drywall','wood_subfloor','wood_framing','wood_hardwood',
+                       'wood_engineered','concrete','carpet','carpet_pad',
+                       'tile','laminate','vinyl','insulation','other'
+equipment_type enum  — 'dehu_lgr','dehu_conventional','dehu_desiccant',
+                       'air_mover','air_mover_axial','afd','hepa','heater','other'
+
+moisture_readings    — id UUID, job_id, room_id, equipment_id (FK set after
+                       equipment_placements exists), reading_date,
+                       material material_type, location_description,
+                       mc_pct, rh_pct, temp_f, gpp, dew_point_f,
+                       dry_standard_pct, drying_goal_pct,
+                       is_affected BOOL DEFAULT true,
+                       taken_by, taken_at, edited_at, edited_by, notes,
+                       client_id UUID UNIQUE (offline), created_at
+                       Indexes: (job_id, reading_date DESC),
+                                (room_id, material, reading_date DESC)
+
+equipment_placements — id UUID, job_id, room_id, equipment_type,
+                       nickname, serial_number,
+                       status TEXT CHECK('active','removed'),
+                       placed_at, removed_at, placed_by, removed_by,
+                       notes, client_id UUID UNIQUE, created_at
+                       Partial index: (job_id) WHERE status='active'
+```
+
+### RPCs
+```
+insert_reading(p_job_id, p_room_id, p_material, p_location, p_mc, p_rh,
+               p_temp_f, p_gpp, p_dew_point, p_is_affected, p_equipment_id,
+               p_taken_by, p_notes, p_client_id, p_taken_at DEFAULT now())
+  — Idempotent upsert on client_id. Establishes dry_standard when the
+    first unaffected reading for a (job, material) pair lands; backfills
+    prior affected rows in the same pair; copies standard forward for
+    future ones. drying_goal defaults to dry_standard + 2.
+
+update_reading(p_reading_id, ...)  — 10-minute edit window; RAISES after
+delete_reading(p_reading_id)       — 10-minute delete window; RAISES after
+
+get_job_readings(p_job_id)
+  — Joins room_name, computes per-row is_stalled via CTE: latest row for
+    each (room, material) is stalled if mc_pct > drying_goal_pct AND a
+    prior reading ≥36h older shows (prior.mc − latest.mc) < 1.0.
+
+get_job_equipment(p_job_id, p_include_removed DEFAULT false)
+  — Joins room_name + days_onsite.
+
+place_equipment(p_job_id, p_room_id, p_equipment_type, p_nickname,
+                p_serial, p_placed_by, p_client_id, p_notes)
+  — Idempotent on client_id.
+
+remove_equipment(p_equipment_id, p_removed_by)
+  — No-op if already removed.
+
+get_stalled_materials(p_job_id)
+  — One row per stalled (room, material) pair on the job.
+
+get_stalled_materials_for_employee(p_employee_id)
+  — Aggregates stalled materials across every job the tech has touched via
+    appointment_crew in the last 30 days. Joins job_number + latest
+    appointment_id per job. Powers the StalledWidget on TechDash.
+```
+
+### New files
+```
+src/lib/
+  psychrometric.js              — pure calcs: calcSaturationPressure_inHg,
+                                   calcDewPoint, calcVaporPressure, calcGPP.
+                                   Magnus-Tetens + ASHRAE humidity-ratio.
+                                   Guards NaN on out-of-range input.
+  psychrometric.test.js         — 27 vitest assertions covering ASHRAE
+                                   checkpoints at ±2% (±5% for 90°F/80%
+                                   where fixed-Pa Magnus under-predicts).
+  dispatchers/
+    readingDispatcher.js        — insert_reading RPC; resolveIdSwap on
+                                   room + equipment ids.
+    equipmentDispatcher.js      — dispatchEquipmentPlace (resolveIdSwap
+                                   on room) + dispatchEquipmentRemove.
+
+src/components/tech/
+  MaterialIcon.jsx              — 10 SVG icons (one per material group) +
+                                   MATERIAL_LABELS export.
+  ReadingEntrySheet.jsx         — 4-step bottom sheet: Room → Material →
+                                   MC/RH/Temp with live GPP + dew-point
+                                   readout → Affected/location/equipment/
+                                   notes. Auto-advance on material tap.
+                                   Default-room skips step 1.
+  EquipmentPlacementSheet.jsx   — 2-step sheet: type picker → details.
+                                   Exports EQUIPMENT_LABELS.
+  StalledWidget.jsx             — Red banner on TechDash, polled every
+                                   2 min. Tap row → navigate to latest
+                                   appointment on that job.
+
+supabase/migrations/
+  20260418_phase2_hydro.sql             — tables, enums, 8 RPCs
+  20260418_get_stalled_for_employee.sql — employee-scoped aggregator
+
+package.json  — added "test": "vitest run" and vitest devDependency.
+```
+
+### TechAppointment integration
+- New sections between Tasks and Photos: **Moisture** and **Equipment**,
+  both flag-gated.
+- Moisture rows: material icon, name + (unaffected) marker, room /
+  location / relativeTime, mono MC% color-coded (green ≤ goal, amber
+  within 2, red above), goal% subline, STALLED chip when flagged.
+  "N stalled" red pill in section header.
+- Equipment rows: 3-letter type badge, nickname || type, room · Day N,
+  inline two-click Remove.
+- Save via `handleSaveReading` / `handlePlaceEquipment` / `handleRemoveEquipment`
+  — route through offline queue when `offline:queue` is on, else call
+  RPC inline + loadHydro(). sync:item-done listener triggers loadHydro
+  when a Hydro item for this job finishes draining.
+
+### TechDash integration
+- StalledWidget mounted at the top of the scrollable PullToRefresh region.
+  Returns null when nothing is stalled (zero footprint on clean days).
+
+### Known dev-server quirk (not blocking)
+`npm run dev` intermittently hits a Vite deps-cache version-hash mismatch
+that manifests as "Invalid hook call" in OfflineStatusPill. Clearing
+`node_modules/.vite` and restarting usually fixes it. Production bundle
+(`npm run build` / Cloudflare Pages) is unaffected.
