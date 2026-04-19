@@ -9,6 +9,8 @@ import {
 } from './offlineDb';
 import { dispatchRoom } from './dispatchers/roomDispatcher';
 import { dispatchPhoto } from './dispatchers/photoDispatcher';
+import { dispatchReading } from './dispatchers/readingDispatcher';
+import { dispatchEquipmentPlace, dispatchEquipmentRemove } from './dispatchers/equipmentDispatcher';
 
 const MAX_RETRIES = 5;
 const POLL_MS = 30_000;
@@ -47,11 +49,12 @@ export function createSyncRunner({ db, employee }) {
         return dispatchRoom(db, employee, item.payload);
       case 'photo.upload':
         return dispatchPhoto(db, employee, item.payload, item);
-      // Phase 2 types — placeholders so the switch doesn't throw once they're wired in.
       case 'reading.insert':
+        return dispatchReading(db, employee, item.payload, item);
       case 'equipment.place':
+        return dispatchEquipmentPlace(db, employee, item.payload, item);
       case 'equipment.remove':
-        throw new Error(`Dispatcher for ${item.type} not implemented yet`);
+        return dispatchEquipmentRemove(db, employee, item.payload, item);
       default:
         throw new Error(`Unknown queue item type: ${item.type}`);
     }
