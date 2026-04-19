@@ -685,6 +685,15 @@ export default function Schedule() {
             <button style={S.btn} onClick={goToday}>{todayLabel}</button>
             <button style={S.btnIcon} onClick={goPrev}>‹</button>
             <button style={S.btnIcon} onClick={goNext}>›</button>
+            {/* + New button — opens Job vs Event picker. Hidden on mobile (FAB replaces it). */}
+            <button
+              className="schedule-new-btn"
+              onClick={() => setCreationPicker({ dateKey: fmtDate(new Date()), hour: 9 })}
+              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: 4 }}
+              aria-label="Create new appointment or event"
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>+</span> New
+            </button>
             <div className={`schedule-extra-controls${showExtraControls ? ' open' : ''}`}>
               {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>}
               <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} /><span>Auto-show</span></label>
