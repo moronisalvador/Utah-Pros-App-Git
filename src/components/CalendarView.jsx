@@ -550,10 +550,33 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     if (col === -1) { col = columns.length; columns.push(0); }
                     columns[col] = appt._endMins; return { ...appt, _col: col };
                   });
-                  const withTotal = layout.map(appt => {
-                    const ov = layout.filter(o => o._startMins < appt._endMins && o._endMins > appt._startMins);
-                    return { ...appt, _totalCols: Math.max(...ov.map(o => o._col)) + 1 };
-                  });
+
+                  // _totalCols must be CONSISTENT across a connected overlap component —
+                  // otherwise A overlapping B, B overlapping C, and A not touching C can
+                  // end up with different totalCols, and the blocks will render at
+                  // different widths and visually overlap each other. Walk the overlap
+                  // graph (transitively) and set totalCols = max(_col) + 1 for each
+                  // connected component.
+                  const overlaps = (a, b) => a._startMins < b._endMins && a._endMins > b._startMins;
+                  const groupIndex = new Map();
+                  const groups = [];
+                  for (const a of layout) {
+                    if (groupIndex.has(a.id)) continue;
+                    const group = [];
+                    const stack = [a];
+                    while (stack.length) {
+                      const cur = stack.pop();
+                      if (groupIndex.has(cur.id)) continue;
+                      groupIndex.set(cur.id, groups.length);
+                      group.push(cur);
+                      for (const b of layout) {
+                        if (!groupIndex.has(b.id) && overlaps(cur, b)) stack.push(b);
+                      }
+                    }
+                    groups.push(group);
+                  }
+                  const groupTotal = groups.map(g => Math.max(...g.map(x => x._col)) + 1);
+                  const withTotal = layout.map(appt => ({ ...appt, _totalCols: groupTotal[groupIndex.get(appt.id)] }));
 
                   return withTotal.map(appt => {
                     const isBeingResized = resizing && resizing.apptId === appt.id;
