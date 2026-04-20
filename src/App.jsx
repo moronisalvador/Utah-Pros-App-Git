@@ -38,6 +38,7 @@ import Collections from '@/pages/Collections';
 import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
 import AdminFeedback from '@/pages/AdminFeedback';
+import OOPPricing from '@/pages/OOPPricing';
 
 import EncircleImport from '@/pages/EncircleImport';
 
@@ -60,6 +61,7 @@ import TechNewEvent from '@/pages/tech/TechNewEvent';
 import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 import TechFeedback from '@/pages/tech/TechFeedback';
 import TechMore from '@/pages/tech/TechMore';
+import TechOOPPricing from '@/pages/tech/TechOOPPricing';
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
@@ -133,6 +135,11 @@ function TechRoutes() {
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
+      <Route path="tech/tools/oop-pricing" element={
+        <FeatureRoute flag="tool:oop_pricing">
+          <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
+        </FeatureRoute>
+      } />
     </Route>
   );
 }
@@ -214,6 +221,13 @@ function WebRoutes() {
         } />
         <Route path="import/encircle" element={
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+        } />
+
+        {/* Tools */}
+        <Route path="tools/oop-pricing" element={
+          <FeatureRoute flag="tool:oop_pricing">
+            <ErrorBoundary section="OOP Pricing"><OOPPricing /></ErrorBoundary>
+          </FeatureRoute>
         } />
 
         {/* Admin-only */}

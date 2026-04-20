@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
@@ -451,6 +451,7 @@ function FlagToggle({label,value,onClick}){
    FINANCIAL TAB
    =========================================== */
 function FinancialTab({job,fmt,saveBatch,employee,db}){
+  const{isFeatureEnabled}=useAuth();
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
   const deductible=Number(job.deductible||0);const deprecHeld=Number(job.depreciation_held||0);
@@ -475,6 +476,13 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
         <FR label="Margin" value={`${margin}%`} bold color={grossProfit>=0?'var(--status-resolved)':'var(--status-needs-response)'}/>
         {outstanding>0&&<FR label="Outstanding" value={fmt(outstanding)} color="#d97706" bold/>}
       </div>
+      {canEdit&&isFeatureEnabled('tool:oop_pricing')&&(
+        <div style={{marginTop:'var(--space-3)',display:'flex',justifyContent:'flex-end'}}>
+          <Link to={`/tools/oop-pricing?jobId=${job.id}`} className="btn btn-secondary btn-sm" style={{gap:6,textDecoration:'none'}}>
+            Calculate OOP Pricing →
+          </Link>
+        </div>
+      )}
     </div>
   );}
 

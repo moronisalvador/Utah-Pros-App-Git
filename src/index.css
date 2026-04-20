@@ -5087,3 +5087,22 @@ tr:hover td { background: var(--bg-secondary); }
   font-size: 10px; color: var(--text-tertiary);
   display: block; margin-top: 3px;
 }
+
+/* ── OOP Pricing Calculator — print rules ─────────────────────────────────── */
+/* Hide app shell + input column + internal margin panel when printing.
+   Keep only the customer-facing breakdown visible. */
+@media print {
+  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop { display: none !important; }
+  .oop-no-print { display: none !important; }
+  .oop-print-only { display: block !important; }
+  .oop-layout { grid-template-columns: 1fr !important; }
+  .oop-breakdown { position: static !important; page-break-inside: avoid; break-inside: avoid; }
+  .oop-page { padding: 0 !important; max-width: none !important; }
+  body, html { background: #fff !important; }
+}
+
+/* Responsive stack for the OOP Pricing page on narrow viewports */
+@media (max-width: 900px) {
+  .oop-layout { grid-template-columns: 1fr !important; }
+  .oop-breakdown { position: static !important; }
+}
