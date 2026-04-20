@@ -72,13 +72,23 @@ export default function TechNewCustomer() {
       if (result?.length > 0) {
         toast('Customer created');
         window.dispatchEvent(new CustomEvent('upr:contact-created'));
-        navigate(-1);
+        navigate(`/customers/${result[0].id}`, { replace: true });
       } else {
         toast('Failed to create customer', 'error');
       }
     } catch (err) {
       const msg = err.message || '';
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        // Duplicate phone — navigate to the existing customer instead of failing
+        try {
+          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=id,name&limit=1`);
+          if (existing?.length > 0) {
+            toast(`Customer already exists: ${existing[0].name}`, 'success');
+            window.dispatchEvent(new CustomEvent('upr:contact-created'));
+            navigate(`/customers/${existing[0].id}`, { replace: true });
+            return;
+          }
+        } catch { /* fall through */ }
         toast('A customer with this phone number already exists', 'error');
       } else {
         toast('Failed to save customer. Please try again.', 'error');
