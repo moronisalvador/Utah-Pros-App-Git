@@ -102,16 +102,34 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
   };
 
   const handleNewContact = async data => {
+    const applyContact = (c) => {
+      setContact(c); setShowAddContact(false);
+      if (c.billing_address) setAddress(c.billing_address);
+      if (c.billing_city)    setCity(c.billing_city);
+      if (c.billing_state)   setState(c.billing_state);
+      if (c.billing_zip)     setZip(c.billing_zip);
+    };
     try {
       const r = await db.insert('contacts', data);
-      if (r?.length > 0) {
-        const c = r[0]; setContact(c); setShowAddContact(false);
-        if (c.billing_address) setAddress(c.billing_address);
-        if (c.billing_city)    setCity(c.billing_city);
-        if (c.billing_state)   setState(c.billing_state);
-        if (c.billing_zip)     setZip(c.billing_zip);
+      if (r?.length > 0) applyContact(r[0]);
+    } catch (err) {
+      const msg = err.message || '';
+      // Duplicate phone — look up the existing contact and use it instead of failing
+      if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        try {
+          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`);
+          if (existing?.length > 0) {
+            applyContact(existing[0]);
+            okToast(`Found existing customer: ${existing[0].name}`);
+            return;
+          }
+        } catch { /* fall through to generic error */ }
+        errToast('A customer with this phone number already exists. Try searching by name.');
+        throw err;
       }
-    } catch (err) { errToast('Failed: ' + err.message); throw err; }
+      errToast('Failed: ' + msg);
+      throw err;
+    }
   };
 
   const clearContact = () => { setContact(null); setAddress(''); setCity(''); setState('UT'); setZip(''); };

@@ -175,6 +175,15 @@ export default function TechNewJob() {
     } catch (err) {
       const msg = err.message || '';
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        // Duplicate phone — auto-select the existing contact so the user can proceed
+        try {
+          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`);
+          if (existing?.length > 0) {
+            selectContact(existing[0]);
+            toast(`Found existing customer: ${existing[0].name}`, 'success');
+            return;
+          }
+        } catch { /* fall through */ }
         toast('A customer with this phone number already exists', 'error');
       } else {
         toast('Failed to create customer. Please try again.', 'error');
