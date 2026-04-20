@@ -284,6 +284,11 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
               <input className="input" value={state} onChange={e => setState(e.target.value)} placeholder="UT"   style={{ width: 56, height: 34, fontSize: 13 }} />
               <input className="input" value={zip}   onChange={e => setZip(e.target.value)}   placeholder="ZIP"  style={{ width: 76, height: 34, fontSize: 13 }} />
             </div>
+            {contact?.billing_address && address === contact.billing_address && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, fontStyle: 'italic', lineHeight: 1.4 }}>
+                Prefilled from {contact.name}'s billing address — edit these fields if this claim is for a different property.
+              </div>
+            )}
           </div>
 
           {/* CLAIM DETAILS */}

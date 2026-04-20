@@ -548,6 +548,11 @@ export default function TechNewJob() {
               style={{ ...inputStyle, flex: 1, padding: '0 10px' }}
             />
           </div>
+          {contact?.billing_address && f.address === contact.billing_address && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.4 }}>
+              Prefilled from {contact.name}'s billing address — edit if this claim is for a different property.
+            </div>
+          )}
         </div>
 
         {/* ═══ INSURANCE ═══ */}
