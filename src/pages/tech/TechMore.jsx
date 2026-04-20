@@ -60,6 +60,23 @@ function IconDocument(props) {
   );
 }
 
+function IconCalculator(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="8" y1="6" x2="16" y2="6" />
+      <line x1="8" y1="10" x2="8" y2="10.01" />
+      <line x1="12" y1="10" x2="12" y2="10.01" />
+      <line x1="16" y1="10" x2="16" y2="10.01" />
+      <line x1="8" y1="14" x2="8" y2="14.01" />
+      <line x1="12" y1="14" x2="12" y2="14.01" />
+      <line x1="16" y1="14" x2="16" y2="14.01" />
+      <line x1="8" y1="18" x2="12" y2="18" />
+      <line x1="16" y1="18" x2="16" y2="18.01" />
+    </svg>
+  );
+}
+
 function IconChevronRight(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -150,7 +167,7 @@ function MoreRow({ item, isLast }) {
 /* ── TechMore page ── */
 
 export default function TechMore() {
-  const { db, employee } = useAuth();
+  const { db, employee, isFeatureEnabled } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
 
   // Fetch today's incomplete task count for the Tasks row badge
@@ -173,6 +190,9 @@ export default function TechMore() {
       title: 'Work',
       items: [
         { key: 'tasks', label: 'Tasks', Icon: IconChecklist, path: '/tech/tasks', badge: taskCount },
+        ...(isFeatureEnabled('tool:oop_pricing')
+          ? [{ key: 'oop_pricing', label: 'OOP Pricing', Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
+          : []),
         { key: 'collections', label: 'Collections', Icon: IconDollar, comingSoon: true },
         { key: 'time', label: 'Time Tracking', Icon: IconClock, comingSoon: true },
       ],

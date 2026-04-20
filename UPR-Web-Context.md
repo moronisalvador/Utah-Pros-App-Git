@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: April 16, 2026 (TechJobDetail + shared tech components)
+Last updated: April 20, 2026 (OOP Pricing Calculator)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -74,6 +74,7 @@ src/
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
     Marketing.jsx                 — Marketing tools (feature-flagged: page:marketing)
     EncircleImport.jsx            — Selective Encircle claim import with division selection (feature-flagged: page:encircle_import, route: /import/encircle)
+    OOPPricing.jsx                — Out-of-Pocket Pricing Calculator (Apr 20 2026). Route /tools/oop-pricing. Feature-flagged tool:oop_pricing (dev-only → Moroni). 2-column desktop / stacked mobile layout: LEFT inputs (job type pill, customer, labor, 5 equipment rows count×days, materials+fees, mold add-ons when job_type=mold, notes) / RIGHT sticky breakdown (customer-facing line items + big QUOTE TOTAL) + internal margin panel (hidden via .oop-no-print). Margin color tiers: green ≥20%, amber 10–20%, red <10% (with "Recommend decline or reprice" banner). Supports ?jobId=X prefill (reads jobs table → sets jobType from division + insured_name + address + shows linked chip) and ?quoteId=X rehydrate (loads via get_oop_quote). Browser print omits input column + sidebar + internal margin via @media print rules in index.css. Pricing math + form hydration extracted to src/lib/oopPricing.js (shared with TechOOPPricing.jsx).
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
@@ -88,7 +89,8 @@ src/
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, statusBarLight.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
-    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
+    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
+    TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon.
     tech/Hero.jsx                 — Shared division-gradient hero. Prop-configurable: { division, topLabel, title, address, statusText, statusColors, meta[], onBack, backLabel, showMenu, onMenu }. Used by TechClaimDetail and TechJobDetail.
@@ -235,6 +237,17 @@ payments                — Payment records
 estimates               — Estimate records
 vendor_invoices         — Vendor invoice tracking (also used by Netlify vendor app)
 vendors                 — Vendor records
+oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-generated
+                          quote_number TEXT UNIQUE (format OOP-YYMM-XXX).
+                          job_id UUID nullable FK jobs (ON DELETE SET NULL).
+                          job_type TEXT CHECK ('water','mold').
+                          Inputs: tech_hours, bill_rate, (count,days) × 5 equipment types
+                          (air_mover, lgr, xlgr, air_scrubber, neg_air — neg_air mold only),
+                          materials_actual_cost, antimicrobial_sqft, disposal_trips,
+                          containment_linear_ft + prv_invoice_cost (mold only).
+                          Snapshots: quote_total, net_margin_pct (audit trail; UI recomputes
+                          on open). Denormalized insured_name + address for standalone
+                          quotes without a linked job.
 ```
 
 ### Selections & Subs
@@ -428,6 +441,37 @@ get_active_appointment_geo(p_employee_id UUID)                           — Ret
 get_dashboard_stats()           — Dashboard stat counts
 ```
 
+### OOP Pricing Calculator (Apr 20 2026)
+All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Dev-only behind
+`tool:oop_pricing` feature flag (initially Moroni Salvador).
+```
+generate_oop_quote_number()     — Returns next OOP-YYMM-XXX number (counts existing
+                                   rows with current prefix + 1, zero-padded to 3 digits).
+upsert_oop_quote(p_id UUID,     — Insert (p_id NULL → auto-generates quote_number) or
+  p_job_id, p_job_type,           update. 25 params covering all input fields + snapshot
+  p_insured_name, p_address,      totals (p_quote_total, p_net_margin_pct). Returns full
+  p_tech_hours, p_bill_rate,      oop_quotes row. COALESCE-wraps numerics so NULL inputs
+  p_air_mover_count/days, ...     default to 0.
+  p_lgr_count/days, ...
+  p_xlgr_count/days, ...
+  p_air_scrubber_count/days, ...
+  p_neg_air_count/days,
+  p_materials_actual_cost,
+  p_antimicrobial_sqft,
+  p_disposal_trips,
+  p_containment_linear_ft,
+  p_prv_invoice_cost,
+  p_quote_total, p_net_margin_pct,
+  p_notes, p_created_by)
+get_oop_quotes(p_limit, p_job_id) — Paginated list. When p_job_id set, scoped to that job.
+                                     Summary columns only (id, quote_number, job_id,
+                                     job_type, insured_name, address, quote_total,
+                                     net_margin_pct, created_at, created_by).
+get_oop_quote(p_id)             — Returns single full oop_quotes row for the calculator
+                                   to hydrate on load.
+delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
+```
+
 ---
 
 ## Feature Flags System (Phase 1A complete, 1B wired in AuthContext)
@@ -443,6 +487,7 @@ get_dashboard_stats()           — Dashboard stat counts
 | `page:encircle_import` | pages | Encircle Import |
 | `tool:bulk_sms` | tool | Bulk Messaging |
 | `tool:search_export` | tool | Search & Export |
+| `tool:oop_pricing` | tool | OOP Pricing Calculator (dev-only → Moroni, Apr 20 2026) |
 | `feature:pwa` | feature | PWA |
 | `feature:twilio_live` | feature | Twilio Live SMS |
 
