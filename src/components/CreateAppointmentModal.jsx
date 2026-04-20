@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import DatePicker from '@/components/DatePicker';
 
 // Auto-derive appointment type from job division
@@ -13,7 +14,7 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 
 const TIME_OPTIONS = (() => {
   const opts = [];
-  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+  for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {
     const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const hr = h % 12 || 12;
     opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
@@ -22,12 +23,15 @@ const TIME_OPTIONS = (() => {
 })();
 
 function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillTaskIds = [], prefillTimeStart, prefillTimeEnd, db, employees, onClose, onSaved }) {
+  const { employee } = useAuth();
+  const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateKey);
   const type = divisionToType(jobDivision);
   const [timeStart, setTimeStart] = useState(prefillTimeStart || '07:00');
   const [timeEnd, setTimeEnd] = useState(prefillTimeEnd || '15:30');
   const [notes, setNotes] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([...prefillTaskIds]);
   const [taskPool, setTaskPool] = useState([]);
@@ -153,6 +157,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
         type,
         status: 'scheduled',
         notes: notes.trim() || null,
+        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
       });
       const apptId = apptResult[0]?.id;
       if (!apptId) throw new Error('Failed to create appointment');
@@ -235,6 +240,25 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
             <textarea style={{ ...M.input, minHeight: 48, resize: 'vertical' }} value={notes}
               onChange={e => setNotes(e.target.value)} placeholder="Instructions for the crew..." />
           </div>
+
+          {/* Private — admin/PM only */}
+          {canTogglePrivate && (
+            <div style={{ ...M.field, padding: '10px 12px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--radius-md)' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+                  style={{ marginTop: 2, width: 16, height: 16, cursor: 'pointer', accentColor: '#d97706' }} />
+                <span style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Private
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                    Only admins, project managers, and assigned crew will see this appointment.
+                  </div>
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* ── Crew with initials circles ── */}
           <div style={M.section}>

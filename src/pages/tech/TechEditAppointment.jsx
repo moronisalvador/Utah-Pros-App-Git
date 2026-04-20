@@ -23,7 +23,10 @@ export default function TechEditAppointment() {
   const [type, setType] = useState('reconstruction');
   const [dayAppts, setDayAppts] = useState([]);
   const [notes, setNotes] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
 
   /* ── Crew ── */
   const [employees, setEmployees] = useState([]);
@@ -64,6 +67,7 @@ export default function TechEditAppointment() {
       setTimeEnd(detail.time_end?.slice(0, 5) || '15:30');
       setType(detail.type || 'reconstruction');
       setNotes(detail.notes || '');
+      setIsPrivate(!!detail.is_private);
       setSelectedCrew(
         (detail.appointment_crew || []).map(c => ({
           employee_id: c.employee_id || c.employees?.id,
@@ -177,6 +181,12 @@ export default function TechEditAppointment() {
         p_status: appt.status || 'scheduled',
         p_notes: notes.trim() || null,
       });
+
+      // is_private is a separate column, not on update_appointment. Only push
+      // the change when an admin/PM actually flipped it.
+      if (canTogglePrivate && isPrivate !== !!appt?.is_private) {
+        await db.update('appointments', `id=eq.${id}`, { is_private: isPrivate });
+      }
 
       // 2. Sync crew — delete all + re-insert
       await db.delete('appointment_crew', `appointment_id=eq.${id}`);
@@ -598,6 +608,30 @@ export default function TechEditAppointment() {
             }}
           />
         </div>
+
+        {/* ═══ PRIVATE ═══ admin/PM toggle; read-only badge otherwise */}
+        {canTogglePrivate ? (
+          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 'var(--tech-min-tap)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+              <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: '#d97706', flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Private
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                  Only admins, project managers, and assigned crew can see this.
+                </div>
+              </span>
+            </label>
+          </div>
+        ) : isPrivate && (
+          <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 'var(--tech-radius-button)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>Private appointment</span>
+          </div>
+        )}
 
         {/* ═══ DANGER ZONE ═══ */}
         <div style={{ marginBottom: 20, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>

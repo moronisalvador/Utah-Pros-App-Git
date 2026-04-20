@@ -25,7 +25,10 @@ export default function TechNewAppointment() {
   const [timeEnd, setTimeEnd] = useState('15:30');
   const [type, setType] = useState('reconstruction');
   const [notes, setNotes] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
 
   /* ── Crew ── */
   const [employees, setEmployees] = useState([]);
@@ -155,6 +158,7 @@ export default function TechNewAppointment() {
         type,
         status: 'scheduled',
         notes: notes.trim() || null,
+        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
       });
       const apptId = apptResult?.[0]?.id;
       if (!apptId) throw new Error('Failed to create appointment');
@@ -600,6 +604,25 @@ export default function TechNewAppointment() {
             }}
           />
         </div>
+
+        {/* ═══ PRIVATE ═══ admin/PM only */}
+        {canTogglePrivate && (
+          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 'var(--tech-min-tap)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+              <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: '#d97706', flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Private
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                  Only admins, project managers, and assigned crew will see this.
+                </div>
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Sticky submit */}

@@ -17,11 +17,14 @@ export default function TechNewEvent() {
 
   const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
+  const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
+
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(initialDate);
   const [timeStart, setTimeStart] = useState('09:00');
   const [timeEnd, setTimeEnd] = useState('10:00');
   const [notes, setNotes] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [selectedCrew, setSelectedCrew] = useState(() =>
     employee?.id ? [{ employee_id: employee.id, role: 'lead' }] : []
   );
@@ -59,6 +62,7 @@ export default function TechNewEvent() {
         type: 'other',
         status: 'scheduled',
         notes: notes.trim() || null,
+        ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
       });
       const eventId = result?.[0]?.id;
       if (!eventId) throw new Error('Failed to create event');
@@ -174,6 +178,25 @@ export default function TechNewEvent() {
             style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }}
           />
         </div>
+
+        {/* Private — admin/PM only */}
+        {canTogglePrivate && (
+          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 'var(--tech-min-tap)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+              <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: '#d97706', flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Private
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                  Only admins, project managers, and assigned crew will see this event.
+                </div>
+              </span>
+            </label>
+          </div>
+        )}
 
         {/* Crew */}
         <div style={{ marginBottom: 20 }}>
