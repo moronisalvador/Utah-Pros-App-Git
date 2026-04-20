@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
 import DatePicker from '@/components/DatePicker';
 
@@ -7,7 +8,7 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 
 const TIME_OPTIONS = (() => {
   const opts = [];
-  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+  for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {
     const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const hr = h % 12 || 12;
     opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
@@ -17,6 +18,8 @@ const TIME_OPTIONS = (() => {
 
 function EditAppointmentModal({ appointment, db, employees = [], onClose, onSaved, onDeleted }) {
   const navigate = useNavigate();
+  const { employee } = useAuth();
+  const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
   const [title, setTitle] = useState(appointment.title || '');
   const [date, setDate] = useState(appointment.date || '');
   const [timeStart, setTimeStart] = useState(appointment.time_start?.slice(0, 5) || '');
@@ -24,6 +27,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [type, setType] = useState(appointment.type || 'reconstruction');
   const [notes, setNotes] = useState(appointment.notes || '');
   const [status, setStatus] = useState(appointment.status || 'scheduled');
+  const [isPrivate, setIsPrivate] = useState(!!appointment.is_private);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -210,6 +214,12 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
         p_status: status || null,
         p_notes: notes.trim() || null,
       });
+
+      // is_private isn't on update_appointment — push it via direct PATCH
+      // (only for admin/PM who can actually toggle it, and only on change).
+      if (canTogglePrivate && isPrivate !== !!appointment.is_private) {
+        await db.update('appointments', `id=eq.${appointment.id}`, { is_private: isPrivate });
+      }
 
       // Save crew changes — delete all and re-insert
       await db.delete('appointment_crew', `appointment_id=eq.${appointment.id}`);
@@ -424,6 +434,31 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
             <textarea style={{ ...S.input, minHeight: 48, resize: 'vertical' }} value={notes}
               onChange={e => { setNotes(e.target.value); setDirty(true); }} placeholder="Instructions for the crew..." />
           </div>
+
+          {/* Private — admin/PM toggle; read-only badge for others when already private */}
+          {canTogglePrivate ? (
+            <div style={{ ...S.field, marginBottom: 16, padding: '10px 12px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--radius-md)' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={isPrivate}
+                  onChange={e => { setIsPrivate(e.target.checked); setDirty(true); }}
+                  style={{ marginTop: 2, width: 16, height: 16, cursor: 'pointer', accentColor: '#d97706' }} />
+                <span style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Private
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                    Only admins, project managers, and assigned crew can see this.
+                  </div>
+                </span>
+              </label>
+            </div>
+          ) : isPrivate && (
+            <div style={{ ...S.field, marginBottom: 16, padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#92400e' }}>Private appointment</span>
+            </div>
+          )}
 
           {/* ── Crew ── */}
           <div style={S.section}>

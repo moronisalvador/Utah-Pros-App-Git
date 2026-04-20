@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { TYPE_COLORS, STATUS_LABELS, fmtTime, hexToTint } from '@/lib/scheduleUtils';
 
 const CAL_START_HOUR = 7;
-const CAL_END_HOUR = 18;
+const CAL_END_HOUR = 22;  // 10pm — rare evening work does happen, and capping at 6:30pm was too restrictive
 const CAL_HOUR_HEIGHT = 60;
 const CAL_TOTAL_HOURS = CAL_END_HOUR - CAL_START_HOUR;
 const SNAP_MINUTES = 30;
@@ -88,9 +88,15 @@ function ApptPopover({ appt, rect, onEdit, onRescheduleRemaining, onMouseEnter, 
       {/* Header */}
       <div style={{ padding: '10px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
-            {appt.kind === 'event' && <span style={{ marginRight: 4 }} aria-hidden>📅</span>}
-            {appt.kind === 'event' ? (appt.title || 'Event') : appt._jobName}
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            {appt.kind === 'event' && <span aria-hidden>📅</span>}
+            <span>{appt.kind === 'event' ? (appt.title || 'Event') : appt._jobName}</span>
+            {appt.is_private && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: 'var(--radius-full)' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Private
+              </span>
+            )}
           </div>
           {appt.kind !== 'event' && appt._jobNumber && (
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>Job #{appt._jobNumber}</div>
@@ -653,9 +659,12 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                         }}
                       >
                         <div style={{ overflow: 'hidden', height: '100%' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: fgColor, lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {isEvent && <span style={{ marginRight: 4 }} aria-hidden>📅</span>}
-                            {displayTitle}
+                          <div style={{ fontSize: 11, fontWeight: 700, color: fgColor, lineHeight: 1.2, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {appt.is_private && (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={fgColor} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-label="Private"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            )}
+                            {isEvent && <span aria-hidden>📅</span>}
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayTitle}</span>
                           </div>
                           {crew.length > 0 && (
                             <div style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap' }}>

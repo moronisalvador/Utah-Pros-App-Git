@@ -349,6 +349,17 @@ function ApptRow({ appt, navigate }) {
           }}>
             {(appt.status || 'scheduled').replace(/_/g, ' ')}
           </span>
+          {appt.is_private && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              fontSize: 10, fontWeight: 700, padding: '2px 8px',
+              borderRadius: 'var(--radius-full)',
+              background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a',
+            }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Private
+            </span>
+          )}
         </div>
       </div>
     </div>

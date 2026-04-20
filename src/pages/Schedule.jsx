@@ -626,10 +626,10 @@ export default function Schedule() {
   const [jobPickerSearch, setJobPickerSearch] = useState('');
   const handleCellClick = (dateKey, hour) => {
     if (placementMode) return;
-    if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, jobDivision: selectedPanelJob.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
+    if (selectedPanelJob) { const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 22)).padStart(2, '0')}:00`; setCreateModal({ jobId: selectedPanelJob.id, jobName: selectedPanelJob.insured_name, jobDivision: selectedPanelJob.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); }
     else { setCreationPicker({ dateKey, hour }); }
   };
-  const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 18)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, jobDivision: job.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
+  const handleJobPicked = (job) => { const { dateKey, hour } = jobPickerModal; const t = `${String(hour).padStart(2, '0')}:00`; const e = `${String(Math.min(hour + 2, 22)).padStart(2, '0')}:00`; setJobPickerModal(null); setCreateModal({ jobId: job.job_id || job.id, jobName: job.insured_name, jobDivision: job.division, dateKey, prefillTaskIds: [], prefillTimeStart: t, prefillTimeEnd: e }); };
   const handleMonthDayClick = (dateKey) => { setAnchor(new Date(dateKey + 'T00:00:00')); changeCalSpan('day'); };
 
   // Filter days for Jobs/Crew grids (respect weekends)
@@ -897,7 +897,7 @@ export default function Schedule() {
               onClick={() => {
                 const { dateKey, hour } = creationPicker;
                 const t = hour != null ? `${String(hour).padStart(2, '0')}:00` : '09:00';
-                const e2 = hour != null ? `${String(Math.min(hour + 1, 20)).padStart(2, '0')}:00` : '10:00';
+                const e2 = hour != null ? `${String(Math.min(hour + 1, 22)).padStart(2, '0')}:00` : '10:00';
                 setCreationPicker(null);
                 setEventModal({ event: null, dateKey, prefillTimeStart: t, prefillTimeEnd: e2 });
               }}
@@ -928,7 +928,7 @@ export default function Schedule() {
         const formatTime12 = (t) => { const { h, m } = parseTime(t); const hr = h % 12 || 12; return `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 
         const HOUR_OPTIONS = [];
-        for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+        for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {
           const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
           const hr = h % 12 || 12;
           const label = `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;

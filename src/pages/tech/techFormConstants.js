@@ -14,7 +14,7 @@ export const labelStyle = {
 
 export const TIME_OPTIONS = (() => {
   const opts = [];
-  for (let h = 6; h <= 20; h++) for (let m = 0; m < 60; m += 30) {
+  for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {
     const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     const hr = h % 12 || 12;
     opts.push({ val, label: `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}` });
