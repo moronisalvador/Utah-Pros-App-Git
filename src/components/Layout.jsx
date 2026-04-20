@@ -109,20 +109,35 @@ export default function Layout() {
 
   // After contact saved — navigate to new contact, reload customers list if on that page
   const handleContactSaved = async (data) => {
+    const goTo = (id, msg, type = 'success') => {
+      setShowAddContact(false);
+      window.dispatchEvent(new CustomEvent('upr:contact-created'));
+      navigate(`/customers/${id}`);
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
+    };
     try {
       const result = await db.insert('contacts', data);
-      setShowAddContact(false);
       if (result?.length > 0) {
-        // Fire event so Customers.jsx can reload its list if mounted
-        window.dispatchEvent(new CustomEvent('upr:contact-created'));
-        navigate(`/customers/${result[0].id}`);
-        window.dispatchEvent(new CustomEvent('upr:toast', {
-          detail: { message: `${data.name} added successfully`, type: 'success' }
-        }));
+        goTo(result[0].id, `${data.name} added successfully`);
       }
     } catch (err) {
+      const msg = err.message || '';
+      if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        // Duplicate phone — navigate to the existing customer instead of failing
+        try {
+          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=id,name&limit=1`);
+          if (existing?.length > 0) {
+            goTo(existing[0].id, `Customer already exists: ${existing[0].name}`, 'success');
+            return;
+          }
+        } catch { /* fall through */ }
+        window.dispatchEvent(new CustomEvent('upr:toast', {
+          detail: { message: 'A customer with this phone number already exists', type: 'error' }
+        }));
+        throw err;
+      }
       window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: 'Failed to save contact: ' + err.message, type: 'error' }
+        detail: { message: 'Failed to save contact: ' + msg, type: 'error' }
       }));
       throw err;
     }
