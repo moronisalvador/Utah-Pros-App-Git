@@ -127,7 +127,14 @@ async function doSync(request, env) {
     state: claim.loss_state, zip: claim.loss_zip,
   });
 
+  // UPR's Encircle tenant identifiers — Encircle requires these on create.
+  // These are tenant constants; override via env vars if ever needed.
+  const ORGANIZATION_ID = env.ENCIRCLE_ORGANIZATION_ID || 'f87c96f8-ce68-422c-bc4a-44c01a928b79';
+  const BRAND_ID        = parseInt(env.ENCIRCLE_BRAND_ID || '226212', 10);
+
   const payload = {
+    organization_id:            ORGANIZATION_ID,
+    brand_id:                   BRAND_ID,
     policyholder_name:          contact.name || null,
     policyholder_phone_number:  contact.phone || null,
     policyholder_email_address: contact.email || null,
