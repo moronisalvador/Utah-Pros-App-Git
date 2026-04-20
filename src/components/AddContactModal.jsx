@@ -29,8 +29,20 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
   const[dropPos,setDropPos]=useState({top:0,left:0,width:0});
   const wr=useRef(null);
   const inputRef=useRef(null);
+  const dropdownRef=useRef(null);
 
-  useEffect(()=>{const h=(e)=>{if(wr.current&&!wr.current.contains(e.target))setOpen(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+  // Outside-click close — must ignore clicks inside the portal dropdown,
+  // otherwise mousedown on an item fires before click and closes the menu,
+  // swallowing the selection.
+  useEffect(()=>{
+    const h=(e)=>{
+      const inWrapper  = wr.current       && wr.current.contains(e.target);
+      const inDropdown = dropdownRef.current && dropdownRef.current.contains(e.target);
+      if(!inWrapper && !inDropdown) setOpen(false);
+    };
+    document.addEventListener('mousedown',h);
+    return()=>document.removeEventListener('mousedown',h);
+  },[]);
 
   const openDropdown=()=>{
     if(inputRef.current){
@@ -49,7 +61,7 @@ export function LookupSelect({label,value,onChange,items,placeholder='Search...'
       <div className="lookup-select-wrap">
         <input ref={inputRef} className="input" value={open?search:value||''} onChange={e=>{setSearch(e.target.value);if(!open)openDropdown();}} onFocus={openDropdown} placeholder={value||placeholder}/>
         {open&&typeof document!=='undefined'&&createPortal(
-          <div className="lookup-select-dropdown" style={{position:'fixed',top:dropPos.top,left:dropPos.left,width:dropPos.width,zIndex:9999}}>
+          <div className="lookup-select-dropdown" ref={dropdownRef} style={{position:'fixed',top:dropPos.top,left:dropPos.left,width:dropPos.width,zIndex:9999}}>
             {fil.length===0?(
               search.trim()
                 ?<button className="lookup-select-item" onClick={()=>sel(search.trim())}>Use "<strong>{search.trim()}</strong>"</button>
