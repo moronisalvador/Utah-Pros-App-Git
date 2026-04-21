@@ -14,7 +14,6 @@ import {
 function IconBack(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
 function IconMinus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
 function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
-function IconChevronDown(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="6 9 12 15 18 9"/></svg>);}
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
 function IconTrash(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>);}
 
@@ -32,7 +31,6 @@ export default function TechOOPPricing() {
   const [deleting, setDeleting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [internalOpen, setInternalOpen] = useState(false);
 
   const [form, setForm] = useState(BLANK);
   const [linkedJob, setLinkedJob] = useState(null);
@@ -248,17 +246,8 @@ export default function TechOOPPricing() {
           display: 'flex', flexDirection: 'column', gap: 12,
         }}>
 
-          {/* ── Live total card (always visible at top) ──────────────── */}
-          <TotalCard
-            calc={calc}
-            marginTier={marginTier}
-            tierColors={tierColors}
-            onTap={() => setInternalOpen(o => !o)}
-            open={internalOpen}
-          />
-
-          {/* ── Collapsible internal panel ───────────────────────────── */}
-          {internalOpen && <InternalPanel calc={calc} marginTier={marginTier} />}
+          {/* ── Live total strip at top (compact, for orientation while editing) ── */}
+          <LiveTotalStrip calc={calc} tierColors={tierColors} />
 
           {/* ── Job Type ────────────────────────────────────────────── */}
           <Section label="Job type">
@@ -342,6 +331,10 @@ export default function TechOOPPricing() {
             />
           </Section>
 
+          {/* ── Full breakdown + internal margin at the bottom ──────── */}
+          <TotalCard calc={calc} marginTier={marginTier} tierColors={tierColors} />
+          <InternalPanel calc={calc} marginTier={marginTier} />
+
           {/* ── Danger zone ─────────────────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             <button
@@ -392,32 +385,69 @@ export default function TechOOPPricing() {
 
 /* ── Sub-components ───────────────────────────────────────────────────── */
 
-function TotalCard({ calc, marginTier, tierColors, onTap, open }) {
+/* Compact non-tappable strip shown at the top so the tech can see the
+   live quote while filling fields. Full breakdown lives at the bottom. */
+function LiveTotalStrip({ calc, tierColors }) {
   const pct = calc.internal.netMarginPct;
   return (
-    <div
-      onClick={onTap}
-      role="button"
-      tabIndex={0}
-      style={{
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: 'var(--tech-radius-card)',
-        padding: '16px',
-        boxShadow: 'var(--tech-shadow-card)',
-        cursor: 'pointer',
-        WebkitTapHighlightColor: 'transparent',
-      }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, padding: '10px 14px',
+      background: 'var(--bg-primary)',
+      border: '1px solid var(--border-color)',
+      borderRadius: 'var(--tech-radius-card)',
+      boxShadow: 'var(--tech-shadow-card)',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{
+          fontSize: 'var(--tech-text-label)', fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '0.06em',
+          color: 'var(--text-tertiary)',
+        }}>Live quote</div>
+        <div style={{
+          fontSize: 'var(--tech-text-heading)', fontWeight: 800,
+          color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+          letterSpacing: '-0.02em', lineHeight: 1.1,
+        }}>
+          {fmt$(calc.quote)}
+        </div>
+      </div>
       <div style={{
-        fontSize: 'var(--tech-text-label)', fontWeight: 600,
+        padding: '6px 12px', borderRadius: 'var(--radius-full)',
+        background: tierColors.bg, color: tierColors.fg,
+        border: `1px solid ${tierColors.border}`,
+        fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)',
+        flexShrink: 0,
+      }}>
+        {pct == null ? '—' : `${pct.toFixed(1)}%`}
+      </div>
+    </div>
+  );
+}
+
+/* Large total card at the bottom — always expanded, includes warning
+   banners. Paired with InternalPanel below. */
+function TotalCard({ calc, marginTier, tierColors }) {
+  const pct = calc.internal.netMarginPct;
+  return (
+    <div style={{
+      background: 'var(--bg-primary)',
+      border: '1px solid var(--border-color)',
+      borderRadius: 'var(--tech-radius-card)',
+      padding: '16px',
+      boxShadow: 'var(--tech-shadow-card)',
+      marginTop: 12,
+    }}>
+      <div style={{
+        fontSize: 'var(--tech-text-label)', fontWeight: 700,
         textTransform: 'uppercase', letterSpacing: '0.06em',
         color: 'var(--text-tertiary)',
       }}>Customer quote</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 6, gap: 12 }}>
         <div style={{
           fontSize: 'var(--tech-text-hero)', fontWeight: 800,
           color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
-          letterSpacing: '-0.02em',
+          letterSpacing: '-0.02em', lineHeight: 1.1,
         }}>
           {fmt$(calc.quote)}
         </div>
@@ -426,20 +456,14 @@ function TotalCard({ calc, marginTier, tierColors, onTap, open }) {
           background: tierColors.bg, color: tierColors.fg,
           border: `1px solid ${tierColors.border}`,
           fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)',
+          flexShrink: 0,
         }}>
           {pct == null ? '—' : `${pct.toFixed(1)}%`}
         </div>
       </div>
-      <div style={{
-        marginTop: 6, display: 'flex', alignItems: 'center', gap: 4,
-        fontSize: 12, color: 'var(--text-tertiary)',
-      }}>
-        <IconChevronDown width={14} height={14} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-        {open ? 'Hide breakdown & margin' : 'Tap to see breakdown & margin'}
-      </div>
       {marginTier === 'red' && (
         <div style={{
-          marginTop: 10, padding: '8px 10px',
+          marginTop: 12, padding: '8px 10px',
           fontSize: 12, color: '#991b1b',
           background: '#fef2f2', border: '1px solid #fecaca',
           borderRadius: 'var(--radius-md)', fontWeight: 500,
@@ -449,7 +473,7 @@ function TotalCard({ calc, marginTier, tierColors, onTap, open }) {
       )}
       {marginTier === 'amber' && (
         <div style={{
-          marginTop: 10, padding: '8px 10px',
+          marginTop: 12, padding: '8px 10px',
           fontSize: 12, color: '#92400e',
           background: '#fffbeb', border: '1px solid #fde68a',
           borderRadius: 'var(--radius-md)',
