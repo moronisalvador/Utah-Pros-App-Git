@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import ClaimPicker from '@/components/ClaimPicker';
 import { fmt$, toast, errToast } from '@/lib/claimUtils';
 import {
   RATES, BLANK, calcQuote, tierFor, TIER_COLORS,
@@ -36,6 +37,7 @@ export default function OOPPricing() {
 
   const [form, setForm] = useState(BLANK);
   const [linkedJob, setLinkedJob]   = useState(null); // { id, job_number, ... }
+  const [linkedClaim, setLinkedClaim] = useState(null); // { id, claim_number, insured_name, ... }
   const [quote, setQuote] = useState(null);           // saved quote row (id, quote_number, ...)
 
   /* Prefill from job or load existing quote */
@@ -89,6 +91,40 @@ export default function OOPPricing() {
   const tierColors = TIER_COLORS[marginTier];
 
   const setField = (key) => (val) => setForm(f => ({ ...f, [key]: val }));
+
+  /* Claim picker handlers ─────────────────────────────────────────────── */
+  const handleInsuredChange = (v) => {
+    setForm(f => ({ ...f, insuredName: v }));
+    if (linkedClaim) setLinkedClaim(null);
+    if (linkedJob)   setLinkedJob(null);
+  };
+
+  const handleClaimSelect = async (claim) => {
+    const addr = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ');
+    setForm(f => ({ ...f, insuredName: claim.insured_name || '', address: addr || f.address }));
+    setLinkedClaim(claim);
+    try {
+      const res = await db.rpc('get_claim_jobs', { p_claim_id: claim.id });
+      const firstJob = res?.jobs?.[0];
+      if (firstJob) {
+        setLinkedJob({
+          id: firstJob.id,
+          job_number: firstJob.job_number,
+          insured_name: firstJob.insured_name,
+          address: firstJob.address,
+          division: firstJob.division,
+        });
+        if (firstJob.division === 'water' || firstJob.division === 'mold') {
+          setForm(f => ({ ...f, jobType: divisionToJobType(firstJob.division) }));
+        }
+      }
+    } catch { /* best-effort */ }
+  };
+
+  const handleUnlinkClaim = () => {
+    setLinkedClaim(null);
+    setLinkedJob(null);
+  };
 
   /* Save */
   const handleSave = async () => {
@@ -242,8 +278,17 @@ export default function OOPPricing() {
 
           {/* Customer */}
           <Section title="Customer">
-            <TextField label="Insured Name" value={form.insuredName} onChange={setField('insuredName')} placeholder="Jane Homeowner" />
-            <TextField label="Address"      value={form.address}     onChange={setField('address')}     placeholder="123 Main St, Salt Lake City, UT" />
+            <ClaimPicker
+              label="Claim / Insured name"
+              value={form.insuredName}
+              onChangeText={handleInsuredChange}
+              onSelectClaim={handleClaimSelect}
+              linkedClaim={linkedClaim}
+              onUnlink={handleUnlinkClaim}
+              placeholder="Type homeowner name or search claims…"
+              compact
+            />
+            <TextField label="Address" value={form.address} onChange={setField('address')} placeholder="123 Main St, Salt Lake City, UT" />
           </Section>
 
           {/* Labor */}
@@ -254,12 +299,12 @@ export default function OOPPricing() {
 
           {/* Equipment */}
           <Section title="Equipment">
-            <CountDaysRow label="Air movers"            countField="airMoverCount"     daysField="airMoverDays"     rate={RATES.airMover}     form={form} setField={setField} />
-            <CountDaysRow label="LGR dehumidifier"      countField="lgrCount"          daysField="lgrDays"          rate={RATES.lgr}          form={form} setField={setField} />
-            <CountDaysRow label="XLGR dehumidifier"     countField="xlgrCount"         daysField="xlgrDays"         rate={RATES.xlgr}         form={form} setField={setField} />
-            <CountDaysRow label="Air scrubber (HEPA)"   countField="airScrubberCount"  daysField="airScrubberDays"  rate={RATES.airScrubber}  form={form} setField={setField} />
+            <CountDaysRow label="Air movers"            countField="airMoverCount"     daysField="airMoverDays"     rate={RATES.airMover}     form={form} setForm={setForm} />
+            <CountDaysRow label="LGR dehumidifier"      countField="lgrCount"          daysField="lgrDays"          rate={RATES.lgr}          form={form} setForm={setForm} />
+            <CountDaysRow label="XLGR dehumidifier"     countField="xlgrCount"         daysField="xlgrDays"         rate={RATES.xlgr}         form={form} setForm={setForm} />
+            <CountDaysRow label="Air scrubber (HEPA)"   countField="airScrubberCount"  daysField="airScrubberDays"  rate={RATES.airScrubber}  form={form} setForm={setForm} />
             {isMold && (
-              <CountDaysRow label="Negative air setup"  countField="negAirCount"       daysField="negAirDays"       rate={RATES.negAir}       form={form} setField={setField} subLabel="includes air scrubber" />
+              <CountDaysRow label="Negative air setup"  countField="negAirCount"       daysField="negAirDays"       rate={RATES.negAir}       form={form} setForm={setForm} subLabel="includes air scrubber" />
             )}
           </Section>
 
@@ -380,10 +425,25 @@ function NumField({ label, value, onChange, placeholder, hint, intOnly }) {
   );
 }
 
-function CountDaysRow({ label, countField, daysField, rate, form, setField, subLabel }) {
+function CountDaysRow({ label, countField, daysField, rate, form, setForm, subLabel }) {
   const count = n(form[countField]);
   const days  = n(form[daysField]);
   const line  = count * days * rate;
+
+  // When user increments count from 0 to 1+ and days is still empty, default
+  // days to 3 (typical OOP mitigation drying cycle). Tech can still override.
+  const onCountChange = (v) => {
+    if (!isInt(v)) return;
+    setForm(f => ({
+      ...f,
+      [countField]: v,
+      ...(n(v) > 0 && !f[daysField] ? { [daysField]: '3' } : {}),
+    }));
+  };
+  const onDaysChange = (v) => {
+    if (isInt(v)) setForm(f => ({ ...f, [daysField]: v }));
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 90px', gap: 8, alignItems: 'end' }}>
       <div>
@@ -395,13 +455,13 @@ function CountDaysRow({ label, countField, daysField, rate, form, setField, subL
       <input
         type="text" inputMode="numeric" pattern="[0-9]*"
         value={form[countField]} placeholder="0"
-        onChange={e => { if (isInt(e.target.value)) setField(countField)(e.target.value); }}
+        onChange={e => onCountChange(e.target.value)}
         style={inlineNumInput}
       />
       <input
         type="text" inputMode="numeric" pattern="[0-9]*"
         value={form[daysField]} placeholder="days"
-        onChange={e => { if (isInt(e.target.value)) setField(daysField)(e.target.value); }}
+        onChange={e => onDaysChange(e.target.value)}
         style={inlineNumInput}
       />
       <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: line > 0 ? 'var(--text-primary)' : 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
