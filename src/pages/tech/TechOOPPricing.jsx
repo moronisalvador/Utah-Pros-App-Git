@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import ClaimPicker from '@/components/ClaimPicker';
 import { fmt$ } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import {
@@ -34,6 +35,7 @@ export default function TechOOPPricing() {
 
   const [form, setForm] = useState(BLANK);
   const [linkedJob, setLinkedJob] = useState(null);
+  const [linkedClaim, setLinkedClaim] = useState(null);
   const [quote, setQuote] = useState(null);
 
   const loadJob = async (id) => {
@@ -107,6 +109,42 @@ export default function TechOOPPricing() {
   // rapid taps on the +/− steppers read fresh state instead of the closure.
   const setField = (key) => (valOrFn) =>
     setForm(f => ({ ...f, [key]: typeof valOrFn === 'function' ? valOrFn(f[key]) : valOrFn }));
+
+  /* Claim picker handlers ─────────────────────────────────────────────── */
+  const handleInsuredChange = (v) => {
+    // Manual typing → no longer tied to any selected claim/job
+    setForm(f => ({ ...f, insuredName: v }));
+    if (linkedClaim) setLinkedClaim(null);
+    if (linkedJob)   setLinkedJob(null);
+  };
+
+  const handleClaimSelect = async (claim) => {
+    const addr = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ');
+    setForm(f => ({ ...f, insuredName: claim.insured_name || '', address: addr || f.address }));
+    setLinkedClaim(claim);
+    // Pull jobs under this claim — link the first one + use its division for jobType
+    try {
+      const res = await db.rpc('get_claim_jobs', { p_claim_id: claim.id });
+      const firstJob = res?.jobs?.[0];
+      if (firstJob) {
+        setLinkedJob({
+          id: firstJob.id,
+          job_number: firstJob.job_number,
+          insured_name: firstJob.insured_name,
+          address: firstJob.address,
+          division: firstJob.division,
+        });
+        if (firstJob.division === 'water' || firstJob.division === 'mold') {
+          setForm(f => ({ ...f, jobType: divisionToJobType(firstJob.division) }));
+        }
+      }
+    } catch { /* silent — linking is best-effort */ }
+  };
+
+  const handleUnlinkClaim = () => {
+    setLinkedClaim(null);
+    setLinkedJob(null);
+  };
 
   /* Save */
   const handleSave = async () => {
@@ -263,8 +301,16 @@ export default function TechOOPPricing() {
 
           {/* ── Customer ────────────────────────────────────────────── */}
           <Section label="Customer">
-            <TextField label="Insured name" value={form.insuredName} onChange={setField('insuredName')} placeholder="Jane Homeowner" />
-            <TextField label="Address"      value={form.address}     onChange={setField('address')}     placeholder="Street, city, state" />
+            <ClaimPicker
+              label="Claim / Insured name"
+              value={form.insuredName}
+              onChangeText={handleInsuredChange}
+              onSelectClaim={handleClaimSelect}
+              linkedClaim={linkedClaim}
+              onUnlink={handleUnlinkClaim}
+              placeholder="Type homeowner name or search claims…"
+            />
+            <TextField label="Address" value={form.address} onChange={setField('address')} placeholder="Street, city, state" />
           </Section>
 
           {/* ── Labor ───────────────────────────────────────────────── */}
@@ -278,20 +324,20 @@ export default function TechOOPPricing() {
           <Section label="Equipment">
             <StepperRow label="Air movers" rate={RATES.airMover}
               countField="airMoverCount" daysField="airMoverDays"
-              form={form} setField={setField} />
+              form={form} setForm={setForm} />
             <StepperRow label="LGR dehu" rate={RATES.lgr}
               countField="lgrCount" daysField="lgrDays"
-              form={form} setField={setField} />
+              form={form} setForm={setForm} />
             <StepperRow label="XLGR dehu" rate={RATES.xlgr}
               countField="xlgrCount" daysField="xlgrDays"
-              form={form} setField={setField} />
+              form={form} setForm={setForm} />
             <StepperRow label="Air scrubber" rate={RATES.airScrubber}
               countField="airScrubberCount" daysField="airScrubberDays"
-              form={form} setField={setField} />
+              form={form} setForm={setForm} />
             {isMold && (
               <StepperRow label="Neg. air setup" rate={RATES.negAir}
                 countField="negAirCount" daysField="negAirDays"
-                form={form} setField={setField}
+                form={form} setForm={setForm}
                 sub="includes scrubber" />
             )}
             <LineHint total={calc.lines.equipment} label="Equipment total" />
@@ -631,18 +677,31 @@ function NumField({ label, value, onChange, placeholder, hint, suffix, intOnly }
 }
 
 /* Stepper row: big +/− buttons around a count + a days input, for gloved hands. */
-function StepperRow({ label, rate, countField, daysField, form, setField, sub }) {
+function StepperRow({ label, rate, countField, daysField, form, setForm, sub }) {
   const count = toNum(form[countField]);
   const days  = toNum(form[daysField]);
   const line  = count * days * rate;
 
-  // Use functional updaters so rapid +/- taps always see fresh state.
-  const incCount = () => setField(countField)(prev => String(toNum(prev) + 1));
-  const decCount = () => setField(countField)(prev => String(Math.max(0, toNum(prev) - 1)));
+  // Single setForm call so rapid taps see fresh state AND the days-default
+  // check runs against the same snapshot. OOP jobs default to 3 drying days
+  // on first increment of any equipment — tech can still override after.
+  const incCount = () => setForm(f => {
+    const nextCount = toNum(f[countField]) + 1;
+    const daysEmpty = !f[daysField] || f[daysField] === '';
+    return {
+      ...f,
+      [countField]: String(nextCount),
+      ...(daysEmpty ? { [daysField]: '3' } : {}),
+    };
+  });
+  const decCount = () => setForm(f => ({
+    ...f,
+    [countField]: String(Math.max(0, toNum(f[countField]) - 1)),
+  }));
 
   const handleDaysChange = (e) => {
     const v = e.target.value;
-    if (isInt(v)) setField(daysField)(v);
+    if (isInt(v)) setForm(f => ({ ...f, [daysField]: v }));
   };
 
   return (
