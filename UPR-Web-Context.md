@@ -143,10 +143,17 @@ functions/
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
     twilio-webhook.js             — Inbound SMS handler
+    v1/                           — Public read-only API for ChatGPT Custom GPT Actions (bearer-token auth via env.API_KEY).
+      claims.js                   — GET /api/v1/claims — list claims (status/q/since/until/limit/offset).
+      claims/[id].js              — GET /api/v1/claims/{id} — claim + linked jobs + primary contact.
+      jobs.js                     — GET /api/v1/jobs — list jobs (status/phase/division/claim_id/q/limit/offset; default excludes deleted).
+      jobs/[id].js                — GET /api/v1/jobs/{id} — job + claim summary + primary_contact + contacts (via contact_jobs).
+      openapi.json.js             — GET /api/v1/openapi.json — OpenAPI 3.1 spec (no auth). Paste this URL into ChatGPT Custom GPT > Actions > Import from URL.
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
     twilio.js                     — Twilio helpers
+    api-auth.js                   — Bearer-token auth for /api/v1/* (compares against env.API_KEY, timing-safe compare)
 ```
 
 ---
