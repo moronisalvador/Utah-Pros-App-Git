@@ -91,6 +91,7 @@ src/
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
+    TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (SendGrid HTML email) + /api/encircle-upload (general note posted to the linked claim) in parallel; ResultScreen shows per-channel success/fail; final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon.
     tech/Hero.jsx                 — Shared division-gradient hero. Prop-configurable: { division, topLabel, title, address, statusText, statusColors, meta[], onBack, backLabel, showMenu, onMenu }. Used by TechClaimDetail and TechJobDetail.
@@ -143,6 +144,10 @@ functions/
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
     twilio-webhook.js             — Inbound SMS handler
+    encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
+    encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
+    encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
+    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via SendGrid v3. From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
@@ -221,8 +226,14 @@ sign_requests           — Esign requests (token, status, open tracking). Recon
 document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_pay, change_order,
                           recon_agreement×16 legal sections with sort_order 1–16)
 document_requests       — Document request records
-forms                   — Form definitions
-demo_sheets             — Demo sheet records
+forms                   — Multi-form storage (form_type enum: demo_sheet, mold_protocol, fire_scope,
+                          contents_inventory, reconstruction_scope, inspection, custom). Columns:
+                          id, created_at, updated_at, job_id, submitted_by, form_type, form_version,
+                          form_date, technician_name, status (draft|submitted), encircle_claim_id,
+                          encircle_note_id, encircle_synced_at, email_sent, email_sent_at,
+                          form_data JSONB, summary JSONB. RLS permissive (allow_authenticated_forms).
+demo_sheets             — VIEW over forms WHERE form_type='demo_sheet' (legacy flat shape, read-only).
+                          The TechDemoSheet page reads/writes `forms` directly via RPCs.
 rooms                   — Per-CLAIM physical rooms (water/mold/recon share same structure).
                           Columns: id, claim_id (FK claims, CASCADE), name, area_sqft, ceiling_height_ft,
                           sort_order, client_id UUID UNIQUE (offline idempotency key),
@@ -509,6 +520,26 @@ get_oop_quote(p_id)             — Returns single full oop_quotes row for the c
 delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
 ```
 
+### Demo Sheet (May 8 2026 — port of standalone Netlify app)
+```
+save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
+                p_insured_name, p_encircle_claim_id, p_status, p_encircle_note_id)
+                                — Insert/update a forms row with form_type='demo_sheet'.
+                                  When p_id is NULL inserts; otherwise updates only rows
+                                  where form_type='demo_sheet'. Resolves technician_name
+                                  from employees.display_name||full_name based on p_tech_id.
+                                  Sets encircle_synced_at=now() the first time encircle_note_id
+                                  is supplied. Returns the row UUID.
+get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
+                                  job_number, address, insured_name, encircle_claim_id) for
+                                  the resume-draft banner. Sorted by updated_at DESC.
+get_demo_sheet(p_id)            — Single demo_sheet row including form_data JSONB. Used to
+                                  rehydrate state when the page loads with ?id=…
+get_active_techs()              — UUID + display_name for all is_active employees with role
+                                  in (field_tech, supervisor, project_manager, admin).
+                                  Replaces the demo's hardcoded TECHS array.
+```
+
 ---
 
 ## Feature Flags System (Phase 1A complete, 1B wired in AuthContext)
@@ -655,6 +686,8 @@ VITE_SUPABASE_ANON_KEY          — Same (Vite build)
 VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
 SENDGRID_API_KEY                — SendGrid v3
 ENCIRCLE_API_KEY                — Encircle integration
+DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
+DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
 TWILIO_*                        — 7 vars (pending go-live)
 APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
