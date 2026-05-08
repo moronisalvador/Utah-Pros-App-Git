@@ -605,75 +605,76 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
 }
 
 // ── Result Screen ────────────────────────────────────────────────────────────
-function ResultScreen({ result, onStartNew, onBack }) {
-  const allOk = result.emailOk && (result.encircleSkipped || result.encircleOk);
-  const partialOk = result.emailOk || result.encircleOk;
+// DB save is the source of truth — email + Encircle are best-effort secondary
+// notifications. Show the sheet as Saved when it's persisted to UPR, regardless
+// of email/Encircle status.
+function ResultScreen({ result, onStartNew, onBack, onClose }) {
+  const saveOk = result.saveOk;
 
   return (
     <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, textAlign:'center' }}>
-      <div style={{ fontSize:72, marginBottom:20, lineHeight:1 }}>{allOk?'✅':partialOk?'⚠️':'❌'}</div>
-      <div style={{ fontSize:22, fontWeight:800, color:allOk?C.green:partialOk?C.accent:C.red, marginBottom:8 }}>
-        {allOk?'Demo Sheet Submitted!':partialOk?'Partially Submitted':'Submission Failed'}
+      <div style={{ fontSize:72, marginBottom:20, lineHeight:1 }}>{saveOk ? '✅' : '❌'}</div>
+      <div style={{ fontSize:22, fontWeight:800, color:saveOk ? C.green : C.red, marginBottom:8 }}>
+        {saveOk ? 'Demo Sheet Saved!' : 'Save Failed'}
       </div>
       <div style={{ fontSize:13, color:C.muted, marginBottom:32, lineHeight:1.5 }}>
-        {allOk?'Everything was sent successfully.':'Some actions failed — see details below.'}
+        {saveOk
+          ? 'Stored in UPR and visible from this claim.'
+          : (result.saveErr || 'Could not save — check connection.')
+        }
       </div>
 
-      <div style={{ width:'100%', maxWidth:360, marginBottom:32 }}>
-        <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.emailOk?C.greenDim:C.redDim, border:`1.5px solid ${result.emailOk?C.greenBd:C.redBd}`, borderRadius:10, padding:'14px 16px', marginBottom:10 }}>
-          <span style={{ fontSize:24, flexShrink:0 }}>📧</span>
-          <div style={{ textAlign:'left', minWidth:0, flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:result.emailOk?C.green:C.red }}>
-              {result.emailOk?'Email Sent ✓':'Email Failed ✗'}
-            </div>
-            <div style={{ fontSize:11, color:C.muted, marginTop:2, wordBreak:'break-word' }}>
-              {result.emailOk
-                ? 'restoration@utah-pros.com'
-                : (result.errors?.find(e => e.startsWith('Email:'))?.replace(/^Email:\s*/, '') || 'Could not send email — check connection')
-              }
+      {saveOk && (
+        <div style={{ width:'100%', maxWidth:360, marginBottom:32 }}>
+          {/* Email — best effort, secondary status */}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.emailOk ? C.greenDim : C.cardAlt, border:`1.5px solid ${result.emailOk ? C.greenBd : C.border}`, borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+            <span style={{ fontSize:20, flexShrink:0 }}>📧</span>
+            <div style={{ textAlign:'left', minWidth:0, flex:1 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:result.emailOk ? C.green : C.muted }}>
+                {result.emailOk ? 'Email sent' : 'Email skipped'}
+              </div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:2, wordBreak:'break-word' }}>
+                {result.emailOk
+                  ? 'restoration@utah-pros.com'
+                  : (result.emailErr || 'Could not send — sheet saved anyway')
+                }
+              </div>
             </div>
           </div>
+
+          {/* Encircle — only show if there was an attempt */}
+          {!result.encircleSkipped && (
+            <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.encircleOk ? C.greenDim : C.cardAlt, border:`1.5px solid ${result.encircleOk ? C.greenBd : C.border}`, borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+              <span style={{ fontSize:20, flexShrink:0 }}>⛓</span>
+              <div style={{ textAlign:'left' }}>
+                <div style={{ fontSize:12, fontWeight:700, color:result.encircleOk ? C.green : C.muted }}>
+                  {result.encircleOk ? 'Posted to Encircle' : 'Encircle skipped'}
+                </div>
+                <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+                  {result.encircleOk ? 'General note saved to job' : 'Could not post note — sheet saved anyway'}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-
-        {!result.encircleSkipped && (
-          <div style={{ display:'flex', alignItems:'center', gap:12, background:result.encircleOk?C.greenDim:C.redDim, border:`1.5px solid ${result.encircleOk?C.greenBd:C.redBd}`, borderRadius:10, padding:'14px 16px', marginBottom:10 }}>
-            <span style={{ fontSize:24, flexShrink:0 }}>⛓</span>
-            <div style={{ textAlign:'left' }}>
-              <div style={{ fontSize:13, fontWeight:700, color:result.encircleOk?C.green:C.red }}>
-                {result.encircleOk?'Posted to Encircle ✓':'Encircle Note Failed ✗'}
-              </div>
-              <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
-                {result.encircleOk?'General note saved to job':'Could not save Encircle note — try again'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {result.encircleSkipped && (
-          <div style={{ display:'flex', alignItems:'center', gap:12, background:C.cardAlt, border:`1.5px solid ${C.border}`, borderRadius:10, padding:'14px 16px', marginBottom:10, opacity:0.6 }}>
-            <span style={{ fontSize:24, flexShrink:0 }}>⛓</span>
-            <div style={{ textAlign:'left' }}>
-              <div style={{ fontSize:13, fontWeight:700, color:C.muted }}>Encircle — Skipped</div>
-              <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>No job was linked</div>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       <div style={{ width:'100%', maxWidth:360, display:'flex', flexDirection:'column', gap:10 }}>
-        {allOk && (
-          <button onClick={onStartNew} style={{ background:C.green, border:'none', borderRadius:10, color:'#fff', fontSize:15, fontWeight:800, padding:15, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
-            + Start New Demo Sheet
-          </button>
-        )}
-        {!allOk && (
+        {saveOk ? (
+          <>
+            <button onClick={onClose} style={{ background:C.green, border:'none', borderRadius:10, color:'#fff', fontSize:15, fontWeight:800, padding:15, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              ✓ Done
+            </button>
+            <button onClick={onStartNew} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:10, color:C.muted, fontSize:13, fontWeight:600, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              + Start New Demo Sheet
+            </button>
+            <button onClick={onBack} style={{ background:'transparent', border:'none', color:C.muted, fontSize:12, fontWeight:600, padding:8, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              ← Back to Sheet
+            </button>
+          </>
+        ) : (
           <button onClick={onBack} style={{ background:C.accent, border:'none', borderRadius:10, color:'#fff', fontSize:15, fontWeight:800, padding:15, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
             ← Go Back & Retry
-          </button>
-        )}
-        {allOk && (
-          <button onClick={onBack} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:10, color:C.muted, fontSize:13, fontWeight:600, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
-            ← Back to Sheet
           </button>
         )}
       </div>
@@ -1453,107 +1454,131 @@ export default function TechDemoSheet() {
 
   const allComplete = rooms.every(r => r.notesDone);
 
+  // Flush any pending autosave then save the current state synchronously.
+  // Returns the final sheet id, or throws.
+  const flushSave = async ({ status = 'draft', emailOk = null, encircleNoteId = null } = {}) => {
+    clearTimeout(saveTimerRef.current);
+    const newId = await db.rpc('save_demo_sheet', {
+      p_id: sheetId,
+      p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
+      p_job_date: jobInfo.date || null,
+      p_tech_id:  jobInfo.tech || null,
+      p_job_number: jobInfo.jobNumber || null,
+      p_address:    jobInfo.address || null,
+      p_insured_name: jobInfo.insuredName || null,
+      p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
+      p_status: status,
+      p_encircle_note_id: encircleNoteId,
+      p_job_id: jobId || null,
+      p_summary: computeSummary(rooms),
+      p_email_sent: emailOk,
+    });
+    if (!sheetId && newId) setSheetId(newId);
+    return newId || sheetId;
+  };
+
+  const handleSaveAndClose = async () => {
+    if (sending) return;
+    setSending(true);
+    try {
+      await flushSave({ status: 'draft' });
+      toast('Draft saved', 'success');
+      navigate(-1);
+    } catch (e) {
+      toast(`Save failed: ${e.message || 'unknown'}`, 'error');
+      setSending(false);
+    }
+  };
+
   const doSubmit = async () => {
     setSending(true);
     setSubmitResult(null);
     const html = buildEmailHTML(rooms, jobInfo, hasSketchDone);
     const subject = `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'} | ${jobInfo.address||'No Address'}`;
+
+    // ── 1. Persist to UPR first — this is the source of truth ──
+    let saveOk = false;
+    let saveErr = null;
+    try {
+      await flushSave({ status: 'submitted' });
+      saveOk = true;
+    } catch (e) {
+      saveErr = e?.message || 'Failed to save';
+    }
+
+    // ── 2. Best-effort email + Encircle (don't block submit success) ──
     let emailOk = false;
+    let emailErr = null;
     let encircleOk = false;
     let encircleNoteId = null;
     const encircleSkipped = !encircleLinked?.id;
-    const errors = [];
 
-    const tasks = [
-      fetch('/api/send-demo-sheet', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ subject, message: html }),
-      })
-        .then(async r => {
-          // Worker mirrors send-esign: always 200 with { ok, error?, sendgrid_status?, sendgrid_error? }.
-          // Fall back to r.ok when body parse fails (e.g. edge returned non-JSON 5xx).
-          let parsed = null;
-          try { parsed = await r.json(); } catch { /* not JSON */ }
-          if (parsed && typeof parsed === 'object') {
-            emailOk = parsed.ok === true;
-            if (!emailOk) {
-              const sg = parsed.sendgrid_error ? ` — ${String(parsed.sendgrid_error).slice(0, 200)}` : '';
-              const det = parsed.detail ? ` — ${parsed.detail}` : '';
-              const msg = (parsed.error || `HTTP ${r.status}`) + sg + det;
-              console.error('[demo-sheet] send-demo-sheet failed:', msg, parsed);
-              errors.push(`Email: ${msg}`);
-            }
-          } else {
-            emailOk = false;
-            console.error('[demo-sheet] send-demo-sheet non-JSON response, status', r.status);
-            errors.push(`Email: HTTP ${r.status} (no body)`);
-          }
-        })
-        .catch(e => {
-          console.error('[demo-sheet] send-demo-sheet network error:', e);
-          errors.push(`Email: ${e.message || 'network error'}`);
-        }),
-    ];
-
-    if (!encircleSkipped) {
-      tasks.push(
-        fetch('/api/encircle-upload', {
+    if (saveOk) {
+      const tasks = [
+        fetch('/api/send-demo-sheet', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({
-            claim_id: encircleLinked.id,
-            title: `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
-            text: buildNoteText(rooms, jobInfo, hasSketchDone),
-          }),
+          body: JSON.stringify({ subject, message: html }),
         })
           .then(async r => {
-            encircleOk = r.ok;
-            if (r.ok) {
-              try { const d = await r.json(); encircleNoteId = d?.id || null; } catch { /* ignore */ }
+            let parsed = null;
+            try { parsed = await r.json(); } catch { /* not JSON */ }
+            if (parsed && typeof parsed === 'object') {
+              emailOk = parsed.ok === true;
+              if (!emailOk) {
+                const sg = parsed.sendgrid_error ? ` — ${String(parsed.sendgrid_error).slice(0, 200)}` : '';
+                const det = parsed.detail ? ` — ${parsed.detail}` : '';
+                emailErr = (parsed.error || `HTTP ${r.status}`) + sg + det;
+                console.error('[demo-sheet] send-demo-sheet failed:', emailErr, parsed);
+              }
             } else {
-              errors.push('Encircle note failed');
+              emailErr = `HTTP ${r.status} (no body)`;
+              console.error('[demo-sheet] send-demo-sheet non-JSON response, status', r.status);
             }
           })
-          .catch(() => errors.push('Encircle note failed')),
-      );
-    }
+          .catch(e => {
+            emailErr = e?.message || 'network error';
+            console.error('[demo-sheet] send-demo-sheet network error:', e);
+          }),
+      ];
 
-    await Promise.all(tasks);
+      if (!encircleSkipped) {
+        tasks.push(
+          fetch('/api/encircle-upload', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({
+              claim_id: encircleLinked.id,
+              title: `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
+              text: buildNoteText(rooms, jobInfo, hasSketchDone),
+            }),
+          })
+            .then(async r => {
+              encircleOk = r.ok;
+              if (r.ok) {
+                try { const d = await r.json(); encircleNoteId = d?.id || null; } catch { /* ignore */ }
+              }
+            })
+            .catch(() => { /* ignore — best-effort */ }),
+        );
+      }
 
-    // Persist final status
-    try {
-      const newId = await db.rpc('save_demo_sheet', {
-        p_id: sheetId,
-        p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
-        p_job_date: jobInfo.date || null,
-        p_tech_id:  jobInfo.tech || null,
-        p_job_number: jobInfo.jobNumber || null,
-        p_address:    jobInfo.address || null,
-        p_insured_name: jobInfo.insuredName || null,
-        p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
-        p_status: emailOk ? 'submitted' : 'draft',
-        p_encircle_note_id: encircleNoteId,
-        p_job_id: jobId || null,
-        p_summary: computeSummary(rooms),
-        p_email_sent: emailOk,
-      });
-      if (!sheetId && newId) setSheetId(newId);
-    } catch {
-      /* DB save failure shouldn't block the result screen */
+      await Promise.all(tasks);
+
+      // Update email_sent + encircle_note_id flags on the saved row (best effort).
+      if (emailOk || encircleNoteId) {
+        try {
+          await flushSave({ status: 'submitted', emailOk, encircleNoteId });
+        } catch { /* ignore — flags only */ }
+      }
     }
 
     setSending(false);
-    setSubmitResult({ emailOk, encircleOk, encircleSkipped, errors });
+    setSubmitResult({ saveOk, saveErr, emailOk, emailErr, encircleOk, encircleSkipped });
     setShowReview(false);
     setShowResult(true);
-    if (emailOk && (encircleSkipped || encircleOk)) {
-      toast('Demo sheet submitted', 'success');
-    } else if (!emailOk && !encircleOk) {
-      toast('Submission failed — see details', 'error');
-    } else {
-      toast('Partially submitted', 'success');
-    }
+    if (saveOk) toast('Demo sheet saved', 'success');
+    else        toast(`Save failed: ${saveErr}`, 'error');
   };
 
   const startNew = () => {
@@ -1577,7 +1602,7 @@ export default function TechDemoSheet() {
   const visibleDrafts = drafts.filter(d => d.id !== sheetId);
 
   return (
-    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(130px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
+    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(180px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
       <style>{`
         .demo-sheet input, .demo-sheet select, .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
         .demo-sheet input:focus, .demo-sheet select:focus, .demo-sheet textarea:focus { border-color: ${C.accent} !important; outline: none; }
@@ -1734,23 +1759,32 @@ export default function TechDemoSheet() {
           padding:'11px 13px 11px',
           zIndex:30,
         }}>
-          <div style={{ display:'flex', gap:9 }}>
+          <div style={{ display:'flex', gap:9, marginBottom:8 }}>
             <button onClick={addRoom} disabled={hasSketchDone===null}
               style={{ flex:1, background:C.card, border:`1.5px solid ${C.border}`, borderRadius:10, color:hasSketchDone===null?C.muted:C.text, fontSize:14, fontWeight:600, padding:14, cursor:hasSketchDone===null?'default':'pointer', opacity:hasSketchDone===null?0.4:1, fontFamily:'var(--font-sans)' }}>
               + Room
             </button>
-            <button onClick={() => setShowReview(true)} disabled={hasSketchDone===null}
-              style={{ flex:3, background:hasSketchDone===null?C.cardAlt:allComplete?C.green:C.accent, border:'none', borderRadius:10, color:hasSketchDone===null?C.muted:'#fff', fontSize:15, fontWeight:800, padding:14, cursor:hasSketchDone===null?'default':'pointer', fontFamily:'var(--font-sans)' }}>
+            <button onClick={() => setShowReview(true)} disabled={hasSketchDone===null || sending}
+              style={{ flex:3, background:hasSketchDone===null?C.cardAlt:allComplete?C.green:C.accent, border:'none', borderRadius:10, color:hasSketchDone===null?C.muted:'#fff', fontSize:15, fontWeight:800, padding:14, cursor:hasSketchDone===null?'default':'pointer', fontFamily:'var(--font-sans)', opacity:sending?0.6:1 }}>
               {allComplete?'✓ Review & Submit':'📋 Review & Submit'}
             </button>
           </div>
+          <button onClick={handleSaveAndClose} disabled={sending}
+            style={{ width:'100%', background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:10, color:C.muted, fontSize:13, fontWeight:600, padding:'11px', cursor:sending?'default':'pointer', fontFamily:'var(--font-sans)', opacity:sending?0.6:1 }}>
+            💾 Save Draft & Close
+          </button>
         </div>
 
         {showReview && (
           <ReviewScreen rooms={rooms} jobInfo={jobInfo} hasSketchDone={hasSketchDone} onBack={() => setShowReview(false)} onSubmit={doSubmit} sending={sending} encircleLinked={encircleLinked} />
         )}
         {showResult && submitResult && (
-          <ResultScreen result={submitResult} onBack={() => { setShowResult(false); setShowReview(true); }} onStartNew={startNew} />
+          <ResultScreen
+            result={submitResult}
+            onBack={() => { setShowResult(false); setShowReview(true); }}
+            onStartNew={startNew}
+            onClose={() => navigate(-1)}
+          />
         )}
         {showEncircle && (
           <EncircleSearchModal onSelect={handleEncircleSelect} onClose={() => setShowEncircle(false)} />
