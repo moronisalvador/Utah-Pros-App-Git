@@ -39,9 +39,10 @@ const NAV_ITEMS = [
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing' },
 
   { section: 'System' },
-  { key: 'admin_panel',   label: 'Admin',         path: '/admin',         icon: IconAdmin },
-  { key: 'tech_feedback', label: 'Tech Feedback',  path: '/tech-feedback', icon: IconFeedback },
-  { key: 'settings',      label: 'Settings',       path: '/settings',      icon: IconSettings },
+  { key: 'admin_panel',          label: 'Admin',              path: '/admin',                       icon: IconAdmin },
+  { key: 'demo_sheet_builder',   label: 'Demo Sheet Builder', path: '/admin/demo-sheet-builder',    icon: IconAdmin, adminOnly: true },
+  { key: 'tech_feedback',        label: 'Tech Feedback',      path: '/tech-feedback',               icon: IconFeedback },
+  { key: 'settings',             label: 'Settings',           path: '/settings',                    icon: IconSettings },
 ];
 
 export default function Sidebar({ isOpen, onNavClick, onAction }) {
@@ -87,8 +88,13 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             );
           }
 
-          // Role-based nav permission check
-          if (!canAccess(item.key)) return null;
+          // Admin-only override (skip canAccess check for admins)
+          if (item.adminOnly) {
+            if (employee?.role !== 'admin') return null;
+          } else if (!canAccess(item.key)) {
+            // Role-based nav permission check
+            return null;
+          }
 
           // Feature flag check — hides item when flag is disabled
           if (item.featureFlag && !isFeatureEnabled(item.featureFlag)) return null;
