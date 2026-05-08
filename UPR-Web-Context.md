@@ -524,24 +524,26 @@ delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
 ```
 save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
                 p_insured_name, p_encircle_claim_id, p_status, p_encircle_note_id,
-                p_job_id, p_summary, p_email_sent)
+                p_job_id, p_summary, p_email_sent, p_schema_id)
                                 — Insert/update a forms row with form_type='demo_sheet'.
                                   When p_id is NULL inserts; otherwise updates only rows
                                   where form_type='demo_sheet'. Resolves technician_name
                                   from employees.display_name||full_name based on p_tech_id.
-                                  May 8 2026: added p_job_id (writes forms.job_id so the
-                                  sheet is reachable from a claim via jobs.claim_id),
-                                  p_summary JSONB (rolled-up totals stored in forms.summary
-                                  for fast list rendering), and p_email_sent BOOLEAN
-                                  (flips forms.email_sent + email_sent_at on submit).
-                                  Sets encircle_synced_at=now() the first time
-                                  encircle_note_id is supplied. Returns the row UUID.
+                                  May 8 2026: added p_schema_id (snapshot of the
+                                  demo_sheet_schemas row this sheet was filled against —
+                                  defaults to the active schema on insert; never changes
+                                  on update). p_job_id writes forms.job_id so the sheet
+                                  is reachable from a claim via jobs.claim_id; p_summary
+                                  JSONB stores rolled-up totals; p_email_sent flips
+                                  forms.email_sent + email_sent_at on submit. Sets
+                                  encircle_synced_at=now() the first time encircle_note_id
+                                  is supplied. Returns the row UUID.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
-get_demo_sheet(p_id)            — Single demo_sheet row including form_data, summary, and
-                                  job_id. Used to rehydrate state when the page loads
-                                  with ?id=…
+get_demo_sheet(p_id)            — Single demo_sheet row including form_data, summary,
+                                  job_id, and schema_id. Used to rehydrate state when the
+                                  page loads with ?id=…
 get_claim_demo_sheets(p_claim_id) — All demo sheets attached to ANY job under the claim
                                   (joins forms.job_id → jobs.claim_id). Returns id, status,
                                   email_sent, job_id, job_number, division, technician_name,
@@ -553,6 +555,62 @@ get_active_techs()              — UUID + display_name for all is_active employ
                                   in (field_tech, supervisor, project_manager, admin).
                                   Replaces the demo's hardcoded TECHS array.
 ```
+
+### Demo Sheet Builder (May 8 2026 — Phase 1: DB foundation)
+```
+demo_sheet_schemas              — Versioned JSONB definitions of the demo sheet's
+                                  sections + fields + room presets. One row is is_active
+                                  at a time (partial unique index). Each forms row
+                                  (form_type='demo_sheet') is FK'd to the schema_id it
+                                  was filled against — snapshot semantics, so editing
+                                  the schema later doesn't reshape old sheets. Seeded
+                                  with v1 mirroring the previously-hardcoded constants
+                                  (12 sections, 12 room presets, full field tree).
+                                  Inline updated_at trigger via
+                                  public.demo_sheet_schemas_touch_updated_at().
+
+get_active_demo_schema()        — Returns id/version/name/definition/updated_at for the
+                                  currently-active schema. Used by TechDemoSheet to
+                                  render new sheets and by the builder.
+get_demo_schema(p_id)           — One row by id (includes is_active + notes).
+list_demo_schemas()             — All versions newest-first plus per-version sheet_count
+                                  (how many forms are pinned to each).
+upsert_demo_schema(p_id, p_name, p_definition, p_notes, p_created_by)
+                                — Insert (auto-bumps version) or update an existing row.
+                                  Never flips is_active — use publish_demo_schema for that.
+publish_demo_schema(p_id)       — Atomically deactivate the current active row and
+                                  activate this one. New sheets created after publish
+                                  pick up this schema; existing sheets keep their
+                                  schema_id snapshot.
+```
+
+**Schema definition shape (JSONB):**
+```jsonc
+{
+  "version": 1,
+  "name": "v1 — initial port",
+  "roomPresets": ["Living Room", "Kitchen", ...],
+  "sections": [
+    {
+      "key": "trim", "label": "Baseboard & Trim", "icon": "📏",
+      "alwaysOn": true,                    // OR { "gateField": "floodCuts" }
+      "doneFlag": "trimDone",              // boolean key set when "Done → Next" is tapped
+      "fields": [
+        { "key": "baseboardLF", "type": "stepper", "label": "...",
+          "unit": "LF", "step": 1, "small": true, "summaryKey": "baseboardLF" },
+        // field types: stepper | single-chip | multi-chip | text | textarea |
+        //              checkbox | select | list (nested itemFields)
+        // showWhen: { field, equals } | { field, includes }
+        // unitWhen: { field, equals, thenLabel, thenUnit }   (dynamic unit)
+        // summaryKey + summaryAggregate: 'sum' | 'tally' (for rollup totals)
+      ]
+    }
+  ]
+}
+```
+
+`forms.schema_id` (UUID, nullable, FK to demo_sheet_schemas) — every demo_sheet form
+points back to its schema. Backfilled to v1 for all pre-existing rows.
 
 ---
 
