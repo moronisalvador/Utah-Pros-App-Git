@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
+import { RoomCard, makeDefaultRoom, C as RC } from '@/components/demo-sheet/DemoSheetRenderer';
 
 // Allowed field types (kept in sync with TechDemoSheet's FieldRenderer).
 const FIELD_TYPES = [
@@ -141,7 +142,7 @@ export default function AdminDemoSheetBuilder() {
   // parsedDef is the source of truth for the editor. JSON view re-stringifies.
   const [parsedDef, setParsedDef] = useState(null);
   const [originalSerialized, setOriginalSerialized] = useState('');
-  const [viewMode, setViewMode] = useState('visual'); // 'visual' | 'json'
+  const [viewMode, setViewMode] = useState('visual'); // 'visual' | 'json' | 'preview'
   const [jsonText, setJsonText] = useState('');
   const [jsonParseError, setJsonParseError] = useState(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -397,15 +398,20 @@ export default function AdminDemoSheetBuilder() {
                   )}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                     <ViewModeButton active={viewMode === 'visual'} onClick={() => setViewMode('visual')}>Visual</ViewModeButton>
+                    <ViewModeButton active={viewMode === 'preview'} onClick={() => setViewMode('preview')}>Preview</ViewModeButton>
                     <ViewModeButton active={viewMode === 'json'} onClick={() => setViewMode('json')}>JSON</ViewModeButton>
                   </div>
                 </div>
               </div>
 
-              {viewMode === 'visual' ? (
+              {viewMode === 'visual' && (
                 <VisualEditor def={parsedDef} onChange={updateDef} />
-              ) : (
+              )}
+              {viewMode === 'json' && (
                 <JsonView text={jsonText} onChange={onJsonChange} />
+              )}
+              {viewMode === 'preview' && (
+                <LivePreview def={parsedDef} />
               )}
 
               {/* Validation panel */}
@@ -1094,5 +1100,53 @@ function DefaultItemEditor({ value, onChange }) {
       />
       {error && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>{error}</div>}
     </>
+  );
+}
+
+// ── Live preview ─────────────────────────────────────────────────────────────
+// Renders an interactive sample room using the shared RoomCard so admins can
+// click through the schema as a tech would. Resets when the schema changes.
+function LivePreview({ def }) {
+  // Re-derive a fresh sample room every time the schema definition changes
+  // (we don't try to keep state when fields are added/removed/renamed).
+  const sampleRoom = useMemo(() => makeDefaultRoom(def), [def]);
+  const [room, setRoom] = useState(sampleRoom);
+  useEffect(() => { setRoom(sampleRoom); }, [sampleRoom]);
+
+  const sectionCount = (def?.sections || []).length;
+
+  return (
+    <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+          Preview · how a tech sees it
+        </div>
+        <button
+          onClick={() => setRoom(makeDefaultRoom(def))}
+          className="btn btn-secondary btn-sm"
+          style={{ padding: '4px 10px', fontSize: 12 }}
+        >
+          ↺ Reset
+        </button>
+      </div>
+      <div style={{ padding: 'var(--space-3)', background: RC.bg, minHeight: 320 }}>
+        {sectionCount === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center', padding: '40px 0' }}>
+            No sections in this schema yet — add some in the Visual editor to see them here.
+          </div>
+        ) : (
+          <div style={{ maxWidth: 480, margin: '0 auto' }}>
+            <RoomCard
+              room={room}
+              index={0}
+              onChange={setRoom}
+              totalRooms={1}
+              needsDimensions={false}
+              schema={def}
+            />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
