@@ -321,7 +321,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
   }, { baseboardLF:0, casingLF:0, quarterRoundLF:0, floorSF:0, subfloorSF:0, fcLF:0, fcSF:0, drywallCeiling:0, drywallWalls:0, insulationSF:0, cabLF:0, countertopLF:0, contentsMins:0, airMovers:0, dehus:0 });
 
   return (
-    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:120 }}>
+    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:'calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))' }}>
       <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', position:'sticky', top:0, zIndex:10, display:'flex', alignItems:'center', gap:12 }}>
         <button onClick={onBack} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', flexShrink:0, fontFamily:'var(--font-sans)' }}>← Edit</button>
         <div style={{ flex:1 }}>
@@ -471,7 +471,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
         </div>
       </div>
 
-      <div style={{ position:'fixed', bottom:0, left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px max(16px, env(safe-area-inset-bottom, 16px))', zIndex:60 }}>
+      <div style={{ position:'fixed', bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
         <div style={{ fontSize:11, color:C.muted, textAlign:'center', marginBottom:8 }}>
           Will email to restoration@utah-pros.com
         </div>
