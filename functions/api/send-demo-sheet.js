@@ -1,12 +1,14 @@
 // POST /api/send-demo-sheet  body: { subject, message }
 // Sends the rendered demo-sheet HTML email via SendGrid.
-// Mirrors the payload shape of send-esign.js / resend-esign.js exactly so it
-// goes through the same proven path.
+// Mirrors send-esign.js / resend-esign.js exactly: the canonical SendGrid
+// payload shape (subject inside personalizations, text+html parts, reply_to)
+// AND the canonical response shape — always returns 200 with `{ ok }` so the
+// frontend can read body details cleanly. Some upstream layers strip the
+// body on 5xx responses, so we surface success/failure as a body field
+// instead of an HTTP status code.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
-// Strip HTML tags + collapse whitespace so we always have a plain-text part.
-// SendGrid prefers (and some downstreams require) text/plain alongside text/html.
 function htmlToText(html) {
   if (!html) return '';
   return String(html)
@@ -32,27 +34,31 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!env.SENDGRID_API_KEY) {
-    return jsonResponse({ error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);
-  }
-
-  let body;
+  // Top-level guard: anything that throws ends up as JSON 200 with ok:false
   try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400, request, env);
-  }
+    if (!env.SENDGRID_API_KEY) {
+      return jsonResponse({
+        ok: false,
+        error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars',
+      }, 200, request, env);
+    }
 
-  const { subject, message } = body || {};
-  if (!subject || !message) {
-    return jsonResponse({ error: 'subject and message required' }, 400, request, env);
-  }
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'Invalid JSON body' }, 200, request, env);
+    }
 
-  const fromEmail = env.DEMO_SHEET_FROM_EMAIL || 'restoration@utah-pros.com';
-  const toList = (env.DEMO_SHEET_TO_EMAILS || 'moroni.s@utah-pros.com,restoration@utah-pros.com')
-    .split(',').map(s => s.trim()).filter(Boolean);
+    const { subject, message } = body || {};
+    if (!subject || !message) {
+      return jsonResponse({ ok: false, error: 'subject and message required' }, 200, request, env);
+    }
 
-  try {
+    const fromEmail = env.DEMO_SHEET_FROM_EMAIL || 'restoration@utah-pros.com';
+    const toList = (env.DEMO_SHEET_TO_EMAILS || 'moroni.s@utah-pros.com,restoration@utah-pros.com')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
     const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -74,17 +80,23 @@ export async function onRequestPost(context) {
     });
 
     if (!emailRes.ok) {
-      const errBody = await emailRes.text();
+      const errBody = await emailRes.text().catch(() => '');
       console.error('send-demo-sheet SendGrid error:', emailRes.status, errBody.slice(0, 500));
-      return jsonResponse(
-        { error: `SendGrid ${emailRes.status}`, detail: errBody.slice(0, 500) },
-        502, request, env,
-      );
+      return jsonResponse({
+        ok: false,
+        error: `SendGrid ${emailRes.status}`,
+        sendgrid_status: emailRes.status,
+        sendgrid_error: errBody.slice(0, 500),
+      }, 200, request, env);
     }
 
     return jsonResponse({ ok: true }, 200, request, env);
   } catch (err) {
-    console.error('send-demo-sheet error:', err);
-    return jsonResponse({ error: err.message || 'Network error' }, 500, request, env);
+    console.error('send-demo-sheet unhandled error:', err);
+    return jsonResponse({
+      ok: false,
+      error: 'Worker exception',
+      detail: err?.message || String(err),
+    }, 200, request, env);
   }
 }

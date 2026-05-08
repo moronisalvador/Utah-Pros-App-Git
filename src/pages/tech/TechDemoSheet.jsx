@@ -1221,15 +1221,22 @@ export default function TechDemoSheet() {
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ subject, message: html }),
       });
-      emailOk = r.ok;
-      if (!r.ok) {
-        let detail = `HTTP ${r.status}`;
-        try {
-          const body = await r.json();
-          if (body?.error) detail = body.error + (body.detail ? ` — ${body.detail}` : '');
-        } catch { /* not JSON */ }
-        console.error('[demo-sheet] send-demo-sheet failed:', detail);
-        errors.push(`Email: ${detail}`);
+      // Worker mirrors send-esign: always 200 with { ok, error?, sendgrid_status?, sendgrid_error? }.
+      let parsed = null;
+      try { parsed = await r.json(); } catch { /* not JSON */ }
+      if (parsed && typeof parsed === 'object') {
+        emailOk = parsed.ok === true;
+        if (!emailOk) {
+          const sg = parsed.sendgrid_error ? ` — ${String(parsed.sendgrid_error).slice(0, 200)}` : '';
+          const det = parsed.detail ? ` — ${parsed.detail}` : '';
+          const msg = (parsed.error || `HTTP ${r.status}`) + sg + det;
+          console.error('[demo-sheet] send-demo-sheet failed:', msg, parsed);
+          errors.push(`Email: ${msg}`);
+        }
+      } else {
+        emailOk = false;
+        console.error('[demo-sheet] send-demo-sheet non-JSON response, status', r.status);
+        errors.push(`Email: HTTP ${r.status} (no body)`);
       }
     } catch (e) {
       console.error('[demo-sheet] send-demo-sheet network error:', e);
