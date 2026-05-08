@@ -1159,6 +1159,53 @@ export default function TechAppointment() {
           <GenerateReportButton jobId={jobIdForRooms} jobNumber={appt.jobs?.job_number} />
         )}
 
+        {/* ── Demo Sheet entry — opens the standalone scope-sheet tool ───── */}
+        <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
+          <div className="tech-section-header-sticky" style={{ marginBottom: 8 }}>Tools</div>
+          <button
+            onClick={() => {
+              const params = new URLSearchParams();
+              if (job?.job_number)   params.set('jobNumber', job.job_number);
+              if (address)           params.set('address', address);
+              if (job?.insured_name) params.set('insuredName', job.insured_name);
+              const qs = params.toString();
+              navigate(`/tech/tools/demo-sheet${qs ? '?' + qs : ''}`);
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              width: '100%', minHeight: 'var(--tech-min-tap, 48px)',
+              padding: '12px 14px',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-lg)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              textAlign: 'left',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: 'var(--accent-light)', color: 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, flexShrink: 0,
+            }}>
+              📋
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                Demo Sheet
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                Capture scope of work room-by-room and email it
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
+
         <div style={{ height: 20 }} />
       </PullToRefresh>
 
