@@ -145,6 +145,7 @@ export default function TechClaimDetail() {
   const [taskSummaries, setTaskSummaries] = useState({});
   const [docs, setDocs] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [demoSheets, setDemoSheets] = useState([]);
   const [addRoomOpen, setAddRoomOpen] = useState(false);
   const [lightbox, setLightbox] = useState(null); // { jobId, index }
   const [loading, setLoading] = useState(true);
@@ -182,12 +183,13 @@ export default function TechClaimDetail() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [data, appts, roomList] = await Promise.all([
+      const [data, appts, roomList, sheets] = await Promise.all([
         db.rpc('get_claim_detail', { p_claim_id: claimId }),
         db.rpc('get_claim_appointments', { p_claim_id: claimId }).catch(() => []),
         roomsEnabled
           ? db.rpc('get_claim_rooms', { p_claim_id: claimId }).catch(() => [])
           : Promise.resolve([]),
+        db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }).catch(() => []),
       ]);
       if (!data?.claim) {
         setLoadError('Claim not found');
@@ -196,6 +198,7 @@ export default function TechClaimDetail() {
       setDetail(data);
       setAppointments(appts || []);
       setRooms(roomList || []);
+      setDemoSheets(sheets || []);
 
       const jobIds = (data.jobs || []).map(j => j.id);
       if (jobIds.length > 0) {
@@ -819,6 +822,79 @@ export default function TechClaimDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Demo Sheets ───────────────────────────────────────────────── */}
+      <div style={{ padding: '18px var(--space-4) 0' }}>
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+          textTransform: 'uppercase', letterSpacing: '0.06em',
+          marginBottom: 8,
+        }}>
+          Demo Sheets{demoSheets.length > 0 ? ` (${demoSheets.length})` : ''}
+        </div>
+        {demoSheets.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
+            No demo sheets yet. Open one from any appointment under this claim.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {demoSheets.map(s => {
+              const isSubmitted = s.status === 'submitted';
+              const dateStr = s.form_date
+                ? new Date(s.form_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : new Date(s.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => navigate(`/tech/tools/demo-sheet?id=${s.id}`)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    width: '100%', minHeight: 56, padding: '12px 14px',
+                    borderRadius: 12, background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                    textAlign: 'left',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 8,
+                    background: isSubmitted ? '#f0fdf4' : 'var(--accent-light)',
+                    color: isSubmitted ? '#16a34a' : 'var(--accent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16, flexShrink: 0,
+                  }}>
+                    📋
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {s.room_count} {s.room_count === 1 ? 'room' : 'rooms'}
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                        background: isSubmitted ? '#f0fdf4' : '#fffbeb',
+                        color:      isSubmitted ? '#16a34a' : '#d97706',
+                        border: `1px solid ${isSubmitted ? '#bbf7d0' : '#fde68a'}`,
+                      }}>
+                        {isSubmitted ? 'Submitted' : 'Draft'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                      {dateStr}
+                      {s.technician_name ? ` · ${s.technician_name}` : ''}
+                      {s.job_number ? ` · ${s.job_number}` : ''}
+                    </div>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
         <button

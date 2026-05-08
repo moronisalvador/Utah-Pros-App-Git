@@ -1261,6 +1261,38 @@ function buildNoteText(rooms, jobInfo, hasSketchDone) {
   return out.trim();
 }
 
+// Roll up rooms into the totals shape the demo_sheets VIEW exposes via summary
+function computeSummary(rooms) {
+  return rooms.reduce((a, r) => {
+    const fcLF    = r.floodCuts===true ? r.floodCutsList.filter(c=>c.height!=='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0) : 0;
+    const fcSF    = r.floodCuts===true ? r.floodCutsList.filter(c=>c.height==='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0) : 0;
+    const cabLF   = r.cabinets===true  ? r.cabinetsList.reduce((s,c)=>s+(c.lf||0),0) : 0;
+    const floorSF = r.floors.reduce((s,f)=>s+(f.sf||0),0);
+    const eqList  = r.equipment===true ? r.equipmentList : [];
+    return {
+      baseboardLF:    a.baseboardLF    + (r.baseboardLF || 0),
+      casingLF:       a.casingLF       + (r.casingLF || 0),
+      quarterRoundLF: a.quarterRoundLF + (r.quarterRoundLF || 0),
+      floorSF:        a.floorSF        + floorSF,
+      subfloorSF:     a.subfloorSF     + (r.subfloorSF || 0),
+      drywallSF:      a.drywallSF      + (r.drywallCeilingSF || 0) + (r.drywallWallsSF || 0),
+      floodCutsLF:    a.floodCutsLF    + fcLF,
+      floodCutsSF:    a.floodCutsSF    + fcSF,
+      insulationSF:   a.insulationSF   + (r.insulation===true ? (r.insulationSF || 0) : 0),
+      cabinetsLF:     a.cabinetsLF     + cabLF,
+      countertopLF:   a.countertopLF   + (r.cabinets===true ? (r.countertopLF || 0) : 0),
+      contentsHrs:    a.contentsHrs    + (r.contentsMoveHrs || 0),
+      airMovers:      a.airMovers      + eqList.filter(e=>e.type==='Air Mover').reduce((s,e)=>s+(e.qty||0), 0),
+      dehumidifiers:  a.dehumidifiers  + eqList.filter(e=>e.type==='Dehumidifier').reduce((s,e)=>s+(e.qty||0), 0),
+      airScrubbers:   a.airScrubbers   + eqList.filter(e=>e.type==='Air Scrubber').reduce((s,e)=>s+(e.qty||0), 0),
+    };
+  }, {
+    baseboardLF:0, casingLF:0, quarterRoundLF:0, floorSF:0, subfloorSF:0,
+    drywallSF:0, floodCutsLF:0, floodCutsSF:0, insulationSF:0, cabinetsLF:0,
+    countertopLF:0, contentsHrs:0, airMovers:0, dehumidifiers:0, airScrubbers:0,
+  });
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function TechDemoSheet() {
   const navigate = useNavigate();
@@ -1284,6 +1316,7 @@ export default function TechDemoSheet() {
   const [encircleRooms, setEncircleRooms] = useState([]);
   const [encircleRoomsLoading, setEncircleRoomsLoading] = useState(false);
 
+  const [jobId, setJobIdState] = useState(null);
   const saveTimerRef = useRef(null);
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
 
@@ -1301,6 +1334,7 @@ export default function TechDemoSheet() {
           const row = Array.isArray(rows) ? rows[0] : rows;
           if (row && row.form_data) {
             setSheetId(row.id);
+            if (row.job_id) setJobIdState(row.job_id);
             const d = row.form_data;
             setRooms((d.rooms || [defaultRoom()]).map(r => ({ ...defaultRoom(), ...r })));
             setJobInfo(d.jobInfo || { date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
@@ -1313,10 +1347,12 @@ export default function TechDemoSheet() {
         .catch(() => setHydrated(true));
     } else {
       // Optional appt prefill via query params
-      const apptJobNumber = searchParams.get('jobNumber') || '';
-      const apptAddress   = searchParams.get('address')   || '';
+      const apptJobId     = searchParams.get('jobId')      || '';
+      const apptJobNumber = searchParams.get('jobNumber')  || '';
+      const apptAddress   = searchParams.get('address')    || '';
       const apptInsured   = searchParams.get('insuredName')|| '';
-      const apptClaim     = searchParams.get('claimId')   || '';
+      const apptClaim     = searchParams.get('claimId')    || '';
+      if (apptJobId) setJobIdState(apptJobId);
       if (apptJobNumber || apptAddress || apptInsured) {
         setJobInfo(p => ({
           ...p,
@@ -1358,6 +1394,8 @@ export default function TechDemoSheet() {
           p_insured_name: jobInfo.insuredName || null,
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
           p_status: 'draft',
+          p_job_id: jobId || null,
+          p_summary: computeSummary(rooms),
         };
         const newId = await db.rpc('save_demo_sheet', payload);
         if (!sheetId && newId) {
@@ -1365,7 +1403,7 @@ export default function TechDemoSheet() {
           const next = new URLSearchParams(searchParams);
           next.set('id', newId);
           // Strip prefill params now that we have a draft id
-          next.delete('jobNumber'); next.delete('address'); next.delete('insuredName'); next.delete('claimId');
+          next.delete('jobNumber'); next.delete('address'); next.delete('insuredName'); next.delete('claimId'); next.delete('jobId');
           setSearchParams(next, { replace: true });
         }
       } catch {
@@ -1373,7 +1411,7 @@ export default function TechDemoSheet() {
       }
     }, 2000);
     return () => clearTimeout(saveTimerRef.current);
-  }, [hydrated, rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone, sheetId, db, searchParams, setSearchParams, showResult]);
+  }, [hydrated, rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone, sheetId, jobId, db, searchParams, setSearchParams, showResult]);
 
   const handleEncircleSelect = async (claim) => {
     setJobInfo(p => ({
@@ -1471,6 +1509,9 @@ export default function TechDemoSheet() {
         p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
         p_status: emailOk ? 'submitted' : 'draft',
         p_encircle_note_id: encircleNoteId,
+        p_job_id: jobId || null,
+        p_summary: computeSummary(rooms),
+        p_email_sent: emailOk,
       });
       if (!sheetId && newId) setSheetId(newId);
     } catch {
