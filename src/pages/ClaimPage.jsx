@@ -35,6 +35,8 @@ export default function ClaimPage() {
   const [docsLoaded, setDocsLoaded] = useState(false);
   const [activity, setActivity] = useState([]);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [demoSheets, setDemoSheets] = useState([]);
+  const [demoSheetsLoaded, setDemoSheetsLoaded] = useState(false);
 
   // UI state
   const [expandedJob, setExpandedJob] = useState(null);
@@ -48,7 +50,7 @@ export default function ClaimPage() {
   const [saving, setSaving] = useState(null);
 
   // Mobile collapsible sections
-  const [openSections, setOpenSections] = useState({ jobs: true, schedule: false, documents: false, info: false, activity: false });
+  const [openSections, setOpenSections] = useState({ jobs: true, schedule: false, documents: false, info: false, activity: false, demoSheets: false });
   const toggleSection = (key) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
   // ── Load claim detail ──
@@ -118,13 +120,24 @@ export default function ClaimPage() {
     setActivityLoaded(true);
   }, [db, claimId, activityLoaded]);
 
+  // ── Lazy load demo sheets ──
+  const loadDemoSheets = useCallback(async () => {
+    if (demoSheetsLoaded) return;
+    try {
+      const data = await db.rpc('get_claim_demo_sheets', { p_claim_id: claimId });
+      setDemoSheets(data || []);
+    } catch { setDemoSheets([]); }
+    setDemoSheetsLoaded(true);
+  }, [db, claimId, demoSheetsLoaded]);
+
   // Desktop: load all sections on mount (no tabs)
   useEffect(() => {
     if (isTech || jobs.length === 0) return;
     loadAppointments();
     loadDocuments();
     loadActivity();
-  }, [isTech, jobs, loadAppointments, loadDocuments, loadActivity]);
+    loadDemoSheets();
+  }, [isTech, jobs, loadAppointments, loadDocuments, loadActivity, loadDemoSheets]);
 
   // Mobile: lazy load when sections open
   useEffect(() => {
@@ -132,7 +145,8 @@ export default function ClaimPage() {
     if (openSections.schedule) loadAppointments();
     if (openSections.documents) loadDocuments();
     if (openSections.activity) loadActivity();
-  }, [isTech, openSections, loadAppointments, loadDocuments, loadActivity]);
+    if (openSections.demoSheets) loadDemoSheets();
+  }, [isTech, openSections, loadAppointments, loadDocuments, loadActivity, loadDemoSheets]);
 
   // Load task summary when a job is expanded
   useEffect(() => {
@@ -260,6 +274,14 @@ export default function ClaimPage() {
     />
   );
 
+  const demoSheetsContent = (
+    <DemoSheetsSection
+      sheets={demoSheets}
+      loaded={demoSheetsLoaded}
+      navigate={navigate}
+    />
+  );
+
   return (
     <div className="claim-ops-page">
 
@@ -369,6 +391,11 @@ export default function ClaimPage() {
             </div>
           </div>
 
+          {/* Full-width: Demo Sheets */}
+          <SectionCard title="Demo Sheets" count={demoSheets.length}>
+            {demoSheetsContent}
+          </SectionCard>
+
           {/* Full-width: Documents (photo grid needs room) */}
           {(docsLoaded && documents.length > 0) && (
             <SectionCard title="Documents" count={documents.length}>
@@ -398,6 +425,9 @@ export default function ClaimPage() {
           </CollapsibleSection>
           <CollapsibleSection title="Documents" open={openSections.documents} onToggle={() => toggleSection('documents')}>
             {documentsContent}
+          </CollapsibleSection>
+          <CollapsibleSection title="Demo Sheets" count={demoSheets.length} open={openSections.demoSheets} onToggle={() => toggleSection('demoSheets')}>
+            {demoSheetsContent}
           </CollapsibleSection>
           <CollapsibleSection title="Info" open={openSections.info} onToggle={() => toggleSection('info')}>
             {infoContent}
@@ -937,6 +967,85 @@ function ActivitySection({ activity, loaded }) {
               </div>
             </div>
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DemoSheetsSection({ sheets, loaded, navigate }) {
+  if (!loaded) return <div className="loading-page" style={{ padding: 32 }}><div className="spinner" /></div>;
+
+  if (!sheets || sheets.length === 0) {
+    return (
+      <div className="claim-ops-empty">
+        <div className="claim-ops-empty-icon">📋</div>
+        <div className="claim-ops-empty-text">No demo sheets for this claim yet.</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+          Field techs open demo sheets from inside an appointment under this claim.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {sheets.map(s => {
+        const isSubmitted = s.status === 'submitted';
+        const dateStr = s.form_date
+          ? new Date(s.form_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : new Date(s.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return (
+          <button
+            key={s.id}
+            onClick={() => navigate(`/tech/tools/demo-sheet?id=${s.id}`)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              width: '100%', minHeight: 56, padding: '12px 14px',
+              borderRadius: 'var(--radius-lg)', background: 'var(--bg-primary)',
+              border: '1px solid var(--border-color)',
+              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: isSubmitted ? '#f0fdf4' : 'var(--accent-light)',
+              color:      isSubmitted ? '#16a34a' : 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, flexShrink: 0,
+            }}>
+              📋
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {s.room_count} {s.room_count === 1 ? 'room' : 'rooms'}
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                  background: isSubmitted ? '#f0fdf4' : '#fffbeb',
+                  color:      isSubmitted ? '#16a34a' : '#d97706',
+                  border: `1px solid ${isSubmitted ? '#bbf7d0' : '#fde68a'}`,
+                }}>
+                  {isSubmitted ? 'Submitted' : 'Draft'}
+                </span>
+                {s.email_sent && (
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }} title="Email sent">📧</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                {dateStr}
+                {s.technician_name ? ` · ${s.technician_name}` : ''}
+                {s.job_number ? ` · ${s.job_number}` : ''}
+                {s.summary?.drywallSF > 0 ? ` · ${Number(s.summary.drywallSF).toLocaleString()} SF drywall` : ''}
+                {s.summary?.floorSF > 0   ? ` · ${Number(s.summary.floorSF).toLocaleString()} SF floor`     : ''}
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
         );
       })}
     </div>
