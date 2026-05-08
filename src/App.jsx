@@ -39,6 +39,7 @@ import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
 import AdminFeedback from '@/pages/AdminFeedback';
 import OOPPricing from '@/pages/OOPPricing';
+import AdminDemoSheetBuilder from '@/pages/AdminDemoSheetBuilder';
 
 import EncircleImport from '@/pages/EncircleImport';
 
@@ -236,6 +237,7 @@ function WebRoutes() {
 
         {/* Admin-only */}
         <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
+        <Route path="admin/demo-sheet-builder" element={<AdminRoute><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AdminRoute>} />
         <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
         <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
 
