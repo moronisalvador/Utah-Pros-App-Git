@@ -61,6 +61,7 @@ import TechEditAppointment from '@/pages/tech/TechEditAppointment';
 import TechFeedback from '@/pages/tech/TechFeedback';
 import TechMore from '@/pages/tech/TechMore';
 import TechOOPPricing from '@/pages/tech/TechOOPPricing';
+import TechDemoSheet from '@/pages/tech/TechDemoSheet';
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
@@ -137,6 +138,9 @@ function TechRoutes() {
         <FeatureRoute flag="tool:oop_pricing">
           <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
         </FeatureRoute>
+      } />
+      <Route path="tech/tools/demo-sheet" element={
+        <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
     </Route>
   );
