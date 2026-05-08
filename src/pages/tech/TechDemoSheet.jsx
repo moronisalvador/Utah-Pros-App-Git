@@ -26,52 +26,101 @@ const C = {
   headerBg:  '#ffffff',
 };
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const ROOM_PRESETS = ['Living Room','Kitchen','Master Bedroom','Bedroom','Bathroom','Master Bath','Hallway','Laundry','Garage','Basement','Office','Dining Room'];
-const FLOOR_TYPES = ['Carpet','Pad','Hardwood','Laminate / Pergo','LVP / LVT','Vinyl Sheet','Vinyl Tile','Ceramic / Porcelain Tile','Concrete','Other'];
-const INSULATION_TYPES = ['Batt (Fiberglass)','Blown-in / Loose Fill','Rigid Foam Board','Spray Foam'];
-const FLOOD_CUT_HEIGHTS = ['4 inches','2 ft','4 ft','Full wall (SF)'];
-const DOOR_TYPES = ['Interior','Exterior','Bi-fold'];
-const APPLIANCE_LIST = ['Refrigerator','Stove (Gas)','Stove (Electric)','Dishwasher','Washer','Dryer','Sink','Microwave','Other'];
-const EQUIP_TYPES = ['Air Mover','Dehumidifier','Air Scrubber','Other'];
-const COUNTERTOP_MATERIALS = ['Formica','Tile','Marble','Granite','Quartz','Other'];
-const CABINET_TYPES = ['Base Cabinets','Upper Cabinets','Full Height','Vanity'];
-
-const SECTIONS = [
-  { key:'trim',       label:'Baseboard & Trim',         icon:'📏', alwaysOn:true  },
-  { key:'flooring',   label:'Flooring',                 icon:'🪵', alwaysOn:true  },
-  { key:'floodCuts',  label:'Flood Cuts?',              icon:'✂️',  alwaysOn:false },
-  { key:'drywall',    label:'Drywall',                  icon:'🧱', alwaysOn:true  },
-  { key:'insulation', label:'Insulation Removed?',      icon:'🌡️', alwaysOn:false },
-  { key:'cabinets',   label:'Cabinets / Countertops?',  icon:'🍽️', alwaysOn:false },
-  { key:'doors',      label:'Doors Removed?',           icon:'🚪', alwaysOn:false },
-  { key:'fixtures',   label:'Fixtures / Electrical?',   icon:'🚿', alwaysOn:false },
-  { key:'appliances', label:'Appliances Moved?',        icon:'🔌', alwaysOn:false },
-  { key:'equipment',  label:'Equipment Left in Room?',  icon:'💨', alwaysOn:false },
-  { key:'contents',   label:'Contents Move',            icon:'📦', alwaysOn:true  },
-  { key:'notes',      label:'Notes',                    icon:'📝', alwaysOn:true  },
-];
-
+// ── Schema-driven helpers ────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split('T')[0];
 const newRowId = () => Date.now() + Math.random();
-const defaultFloor = () => ({ id:newRowId(), type:'', typeOther:'', sf:0 });
-const defaultRoom = () => ({
-  id:newRowId(), name:'',
-  lengthFt:'', widthFt:'', heightFt:'',
-  trimDone:false, baseboardLF:0, casingLF:0, quarterRoundLF:0,
-  flooringDone:false, floors:[defaultFloor()], subfloorSF:0,
-  drywallDone:false, drywallCeilingSF:0, drywallWallsSF:0,
-  contentsDone:false, contentsMoveHrs:0, contentsTechs:1,
-  notesDone:false, notes:'',
-  floodCuts:null, floodCutsList:[],
-  insulation:null, insulationTypes:[], insulationSF:0,
-  cabinets:null, cabinetsList:[], countertopSF:0, countertopLF:0, countertopMaterial:'', backsplashLF:0, backsplashMaterial:'',
-  doors:null, doorsList:[],
-  fixtures:null, outletCoversCount:0, ceilingFans:0, registers:0, lights:0, toiletRemoved:false,
-  appliances:null, appliancesList:[], applianceOther:'',
-  equipment:null, equipmentList:[],
-  openSection:'trim',
-});
+
+// Walk a schema fields tree (handles nested 'row' groups + 'list' itemFields).
+function walkFields(fields, fn, parent = null) {
+  for (const f of fields || []) {
+    if (f.type === 'row') {
+      walkFields(f.fields, fn, parent);
+    } else {
+      fn(f, parent);
+      if (f.type === 'list' && Array.isArray(f.itemFields)) {
+        // itemFields are walked but parent context is the list field
+        // (used by summary aggregation; not by defaultRoom).
+      }
+    }
+  }
+}
+
+// Build the flat "leaf fields" list — strips out 'row' wrappers.
+function flattenLeafFields(fields) {
+  const out = [];
+  walkFields(fields, (f) => out.push(f));
+  return out;
+}
+
+// Default value for a single field type.
+function defaultFieldValue(field) {
+  switch (field.type) {
+    case 'stepper':    return 0;
+    case 'single-chip':return '';
+    case 'multi-chip': return [];
+    case 'text':       return '';
+    case 'textarea':   return '';
+    case 'checkbox':   return false;
+    case 'select':     return '';
+    case 'list':       return field.defaultItem ? [{ id: newRowId(), ...field.defaultItem }] : [];
+    default:           return null;
+  }
+}
+
+// Build a fresh blank room from the schema. Initializes:
+//   - id, name, dimensions
+//   - section gate fields (null) + section doneFlag (false)
+//   - all leaf fields under each section to their default
+//   - openSection = first section's key
+function makeDefaultRoom(schema) {
+  const room = {
+    id: newRowId(),
+    name: '',
+    lengthFt: '',
+    widthFt: '',
+    heightFt: '',
+  };
+  const sections = schema?.sections || [];
+  for (const section of sections) {
+    if (section.gateField) {
+      room[section.gateField] = null;          // unanswered
+    }
+    if (section.doneFlag) {
+      room[section.doneFlag] = false;
+    }
+    for (const f of flattenLeafFields(section.fields || [])) {
+      if (f.key && room[f.key] === undefined) {
+        room[f.key] = defaultFieldValue(f);
+      }
+    }
+  }
+  room.openSection = sections[0]?.key || null;
+  return room;
+}
+
+// Honor a field's `showWhen` clause against the current room/list-item context.
+function fieldShouldShow(field, ctx) {
+  if (!field.showWhen) return true;
+  const sw = field.showWhen;
+  const v = ctx?.[sw.field];
+  if (sw.equals !== undefined)   return v === sw.equals;
+  if (sw.includes !== undefined) return Array.isArray(v) && v.includes(sw.includes);
+  return true;
+}
+
+// Honor a field's `unitWhen` clause for dynamic stepper units (e.g. flood cut LF→SF).
+function resolveUnitAndLabel(field, ctx) {
+  let label = field.label;
+  let unit = field.unit;
+  if (field.unitWhen) {
+    const uw = field.unitWhen;
+    if (ctx?.[uw.field] === uw.equals) {
+      if (uw.thenLabel) label = uw.thenLabel;
+      if (uw.thenUnit)  unit  = uw.thenUnit;
+    }
+  }
+  return { label, unit };
+}
 
 // ── Style helpers ────────────────────────────────────────────────────────────
 const sLabel = { fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:'0.1em', fontWeight:700, marginBottom:5, display:'block' };
@@ -287,116 +336,150 @@ function RoomProgress({ answeredCount, total }) {
   );
 }
 
-// ── Sub-item editors ─────────────────────────────────────────────────────────
-function FloorEntry({ floor, onChange, onRemove, showRemove }) {
-  return (
-    <div style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>Floor Type</span>
-        {showRemove && <button onClick={onRemove} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>}
+// ── Field / list / row renderers (schema-driven) ─────────────────────────────
+//
+// FieldRenderer is the single switch over field.type. It honors:
+//   showWhen   — { field, equals } | { field, includes }
+//   unitWhen   — { field, equals, thenLabel, thenUnit }   (stepper only)
+// Used both at room level (ctx = the room) and inside list items
+// (ctx = the list item).
+function FieldRenderer({ field, ctx, onChange }) {
+  if (!fieldShouldShow(field, ctx)) return null;
+
+  if (field.type === 'row') {
+    return (
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${field.cols||2}, 1fr)`, gap:8, marginBottom:8 }}>
+        {(field.fields || []).map((sub, i) => (
+          <div key={sub.key || i}>
+            <FieldRenderer field={sub} ctx={ctx} onChange={onChange} />
+          </div>
+        ))}
       </div>
-      <SingleChips options={FLOOR_TYPES} value={floor.type} onChange={v=>onChange({ ...floor, type:v })} />
-      {floor.type==='Other' && <div style={{ marginTop:8 }}><input value={floor.typeOther} onChange={e=>onChange({ ...floor, typeOther:e.target.value })} placeholder="Describe…" style={sInput} /></div>}
-      <div style={{ height:10 }} />
-      <label style={sLabel}>Square Feet (SF)</label>
-      <Stepper value={floor.sf} onChange={v=>onChange({ ...floor, sf:v })} step={10} unit="SF" />
-    </div>
-  );
+    );
+  }
+
+  const value = ctx?.[field.key];
+  const setValue = (v) => onChange({ [field.key]: v });
+
+  switch (field.type) {
+    case 'stepper': {
+      const { label, unit } = resolveUnitAndLabel(field, ctx);
+      return (
+        <div>
+          {label && <label style={sLabel}>{label}</label>}
+          <Stepper value={value || 0} onChange={setValue} step={field.step || 1} unit={unit} small={!!field.small} />
+        </div>
+      );
+    }
+    case 'single-chip':
+      return (
+        <div>
+          {field.label && <label style={sLabel}>{field.label}</label>}
+          <SingleChips options={field.options || []} value={value || ''} onChange={setValue} cols={field.cols || 2} />
+        </div>
+      );
+    case 'multi-chip':
+      return (
+        <div>
+          {field.label && <label style={sLabel}>{field.label}</label>}
+          <MultiChips options={field.options || []} selected={value || []} onChange={setValue} />
+        </div>
+      );
+    case 'text':
+      return (
+        <div>
+          {field.label && <label style={sLabel}>{field.label}</label>}
+          <input value={value || ''} onChange={e => setValue(e.target.value)} placeholder={field.placeholder || ''} style={sInput} />
+        </div>
+      );
+    case 'textarea':
+      return (
+        <div>
+          {field.label && <label style={sLabel}>{field.label}</label>}
+          <textarea value={value || ''} onChange={e => setValue(e.target.value)} placeholder={field.placeholder || ''} rows={field.rows || 3} style={{ ...sInput, resize:'vertical', fontFamily:'var(--font-sans)' }} />
+        </div>
+      );
+    case 'checkbox':
+      return <CheckRow label={field.label || ''} checked={value === true} onChange={setValue} />;
+    case 'select':
+      return (
+        <div>
+          {field.label && <label style={sLabel}>{field.label}</label>}
+          <select value={value || ''} onChange={e => setValue(e.target.value)} style={{ ...sInput, fontSize:14 }}>
+            {(field.options || []).map(o => <option key={o} value={o}>{o || '—'}</option>)}
+          </select>
+        </div>
+      );
+    case 'list':
+      return <ListField field={field} value={Array.isArray(value) ? value : []} onChange={setValue} />;
+    default:
+      return null;
+  }
 }
-function FloodCutEntry({ cut, onChange, onRemove }) {
+
+// Repeating list of items, each rendered as a stack of FieldRenderers.
+function ListField({ field, value, onChange }) {
+  const items = value;
+  const updateItem = (i, patch) =>
+    onChange(items.map((it, j) => j === i ? { ...it, ...patch } : it));
+  const removeItem = (i) =>
+    onChange(items.filter((_, j) => j !== i));
+  const addItem = () =>
+    onChange([...items, { id: newRowId(), ...(field.defaultItem || {}) }]);
+
   return (
-    <div style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>Flood Cut</span>
-        <button onClick={onRemove} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>
-      </div>
-      <label style={sLabel}>Height</label>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5, marginBottom:8 }}>
-        {FLOOD_CUT_HEIGHTS.map(h=><Chip key={h} label={h} selected={cut.height===h} onToggle={()=>onChange({ ...cut, height:h })} />)}
-      </div>
-      <label style={sLabel}>{cut.height==='Full wall (SF)'?'SF':'LF'}</label>
-      <Stepper value={cut.lf||0} onChange={v=>onChange({ ...cut, lf:v })} step={1} unit={cut.height==='Full wall (SF)'?'SF':'LF'} small />
-    </div>
-  );
-}
-function DoorEntry({ door, onChange, onRemove }) {
-  return (
-    <div style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>Door</span>
-        <button onClick={onRemove} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:5, marginBottom:8 }}>
-        {DOOR_TYPES.map(t=><Chip key={t} label={t} selected={door.type===t} onToggle={()=>onChange({ ...door, type:t })} />)}
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-        <div><label style={sLabel}>Detach Only</label><Stepper value={door.detach||0} onChange={v=>onChange({ ...door, detach:v })} step={1} unit="ea" small /></div>
-        <div><label style={sLabel}>Tear Out</label><Stepper value={door.tearOut||0} onChange={v=>onChange({ ...door, tearOut:v })} step={1} unit="ea" small /></div>
-      </div>
-    </div>
-  );
-}
-function CabinetEntry({ cab, onChange, onRemove }) {
-  return (
-    <div style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>Cabinet Set</span>
-        <button onClick={onRemove} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5, marginBottom:8 }}>
-        {CABINET_TYPES.map(t=><Chip key={t} label={t} selected={cab.type===t} onToggle={()=>onChange({ ...cab, type:t })} />)}
-      </div>
-      <label style={sLabel}>Linear Feet (LF)</label>
-      <Stepper value={cab.lf||0} onChange={v=>onChange({ ...cab, lf:v })} step={1} unit="LF" small />
-    </div>
-  );
-}
-function EquipEntry({ eq, onChange, onRemove }) {
-  return (
-    <div style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-        <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>Equipment</span>
-        <button onClick={onRemove} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5, marginBottom:8 }}>
-        {EQUIP_TYPES.map(t=><Chip key={t} label={t} selected={eq.type===t} onToggle={()=>onChange({ ...eq, type:t })} />)}
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-        <div><label style={sLabel}>Qty</label><Stepper value={eq.qty||0} onChange={v=>onChange({ ...eq, qty:v })} step={1} unit="ea" small /></div>
-        <div><label style={sLabel}>Days</label><Stepper value={eq.days||0} onChange={v=>onChange({ ...eq, days:v })} step={1} unit="days" small /></div>
-      </div>
+    <div>
+      {field.label && <label style={sLabel}>{field.label}</label>}
+      {items.map((item, i) => (
+        <div key={item.id ?? i} style={{ background:C.cardAlt, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px', marginBottom:8 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            <span style={{ fontSize:11, color:C.accent, fontWeight:700 }}>{field.itemLabel || 'Item'}</span>
+            {(items.length > 1 || field.itemRemovable !== false) && (
+              <button onClick={() => removeItem(i)} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:16 }}>×</button>
+            )}
+          </div>
+          {(field.itemFields || []).map((sub, j) => (
+            <div key={sub.key || j} style={{ marginBottom: 8 }}>
+              <FieldRenderer field={sub} ctx={item} onChange={patch => updateItem(i, patch)} />
+            </div>
+          ))}
+        </div>
+      ))}
+      <AddBtn label={field.addLabel || 'Add'} onClick={addItem} />
     </div>
   );
 }
 
-// ── Section status helpers ───────────────────────────────────────────────────
-function getStatus(room, key) {
-  if (key==='trim')     return room.trimDone     ? 'done-yes' : 'open';
-  if (key==='flooring') return room.flooringDone ? 'done-yes' : 'open';
-  if (key==='drywall')  return room.drywallDone  ? 'done-yes' : 'open';
-  if (key==='contents') return room.contentsDone ? 'done-yes' : 'open';
-  if (key==='notes')    return room.notesDone    ? 'done-yes' : 'open';
-  const v = room[key];
-  if (v===null) return 'unanswered';
-  if (v===false) return 'done-no';
+// ── Section status helpers (schema-aware) ────────────────────────────────────
+// alwaysOn sections track completion via doneFlag. Gated sections track via
+// gateField: null = unanswered, false = "No" (done-no), true = "Yes" (done-yes).
+function getStatus(room, section) {
+  if (section.alwaysOn) {
+    return section.doneFlag && room[section.doneFlag] ? 'done-yes' : 'open';
+  }
+  const v = room[section.gateField];
+  if (v === null || v === undefined) return 'unanswered';
+  if (v === false) return 'done-no';
   return 'done-yes';
 }
-function isAnswered(room, key) {
-  const st = getStatus(room, key);
-  return st==='done-yes' || st==='done-no';
+function isAnswered(room, section) {
+  const st = getStatus(room, section);
+  return st === 'done-yes' || st === 'done-no';
 }
-function buildUnlocked(room) {
+// "Unlocked" = sections that should be tappable / openable. Walk in order;
+// the next unanswered section (and earlier ones) are unlocked.
+function buildUnlocked(room, sections) {
   const unlocked = new Set();
-  for (let i=0; i<SECTIONS.length; i++) {
-    const s = SECTIONS[i];
+  for (const s of sections || []) {
     unlocked.add(s.key);
-    if (!isAnswered(room, s.key)) break;
+    if (!isAnswered(room, s)) break;
   }
   return unlocked;
 }
 
 // ── Review Screen ────────────────────────────────────────────────────────────
-function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending, encircleLinked }) {
+function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+  const sections = schema?.sections || [];
   const [expandedRooms, setExpandedRooms] = useState(new Set([rooms[0]?.id]));
   const toggleRoom = id => setExpandedRooms(prev => { const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
 
@@ -460,9 +543,16 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
 
         {rooms.map((r,i) => {
           const isOpen = expandedRooms.has(r.id);
-          const floorSF = r.floors.reduce((s,f)=>s+(f.sf||0),0);
+          const floorSF = (r.floors || []).reduce((s,f)=>s+(f.sf||0),0);
           const dim = (r.lengthFt&&r.widthFt&&r.heightFt)?`${r.lengthFt}×${r.widthFt}×${r.heightFt}ft`:'';
-          const isComplete = r.notesDone;
+          // Last section's doneFlag from schema (e.g. notesDone for v1).
+          const lastDoneFlag = (() => {
+            for (let i = sections.length - 1; i >= 0; i--) {
+              if (sections[i].doneFlag) return sections[i].doneFlag;
+            }
+            return null;
+          })();
+          const isComplete = !!(lastDoneFlag && r[lastDoneFlag]);
 
           return (
             <div key={r.id} style={{ ...sCard, border:`1px solid ${isComplete?C.greenBd:C.accent}` }}>
@@ -558,7 +648,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
                   </>}
 
                   <div style={{ marginTop:12, flexWrap:'wrap', display:'flex' }}>
-                    {SECTIONS.filter(s=>!s.alwaysOn&&r[s.key]===false).map(s=><SectionTag key={s.key} label={s.label} isNA />)}
+                    {sections.filter(s => !s.alwaysOn && s.gateField && r[s.gateField] === false).map(s => <SectionTag key={s.key} label={s.label} isNA />)}
                   </div>
                 </div>
               )}
@@ -683,269 +773,48 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
 }
 
 // ── Room Card ────────────────────────────────────────────────────────────────
-function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRooms, needsDimensions, encircleRooms, encircleRoomsLoading }) {
-  const up = (fields) => onChange({ ...room, ...fields });
-  const upField = (f, v) => up({ [f]:v });
-  const upListItem = (f, i, val) => up({ [f]:room[f].map((x,j)=>j===i?val:x) });
-  const addItem = (f, def) => up({ [f]:[...room[f], def] });
-  const removeItem = (f, i) => up({ [f]:room[f].filter((_,j)=>j!==i) });
+function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRooms, needsDimensions, encircleRooms, encircleRoomsLoading, schema }) {
+  const sections = schema?.sections || [];
+  const roomPresets = schema?.roomPresets || [];
 
-  const calcSF = (room.lengthFt&&room.widthFt)?Math.round(parseFloat(room.lengthFt)*parseFloat(room.widthFt)):null;
-  const unlocked = buildUnlocked(room);
+  const up = (patch) => onChange({ ...room, ...patch });
+  const upField = (f, v) => up({ [f]: v });
+
+  const calcSF = (room.lengthFt && room.widthFt) ? Math.round(parseFloat(room.lengthFt) * parseFloat(room.widthFt)) : null;
+  const unlocked = buildUnlocked(room, sections);
+
+  const sectionIndex = (key) => sections.findIndex(s => s.key === key);
+  const nextSectionKey = (currentKey) => {
+    const idx = sectionIndex(currentKey);
+    return idx >= 0 && idx < sections.length - 1 ? sections[idx + 1].key : null;
+  };
 
   const handleToggle = (key) => {
     if (!unlocked.has(key)) return;
-    up({ openSection: room.openSection===key?null:key });
+    up({ openSection: room.openSection === key ? null : key });
   };
+  const advance     = (key) => up({ openSection: nextSectionKey(key) });
+  const markDone    = (doneFlag, key) => up({ [doneFlag]: true, openSection: nextSectionKey(key) });
+  const markNo      = (gateField, key) => up({ [gateField]: false, openSection: nextSectionKey(key) });
+  const markYes     = (gateField, key) => up({ [gateField]: true, openSection: key });
+  const resetGate   = (gateField, key) => up({ [gateField]: null, openSection: key });
 
-  const advance = (currentKey) => {
-    const idx = SECTIONS.findIndex(s=>s.key===currentKey);
-    for (let i=idx+1; i<SECTIONS.length; i++) { up({ openSection:SECTIONS[i].key }); return; }
-    up({ openSection:null });
-  };
-
-  const markDone = (doneFlag, currentKey) => {
-    const idx = SECTIONS.findIndex(s=>s.key===currentKey);
-    let next = null;
-    for (let i=idx+1; i<SECTIONS.length; i++) { next=SECTIONS[i].key; break; }
-    up({ [doneFlag]:true, openSection:next });
-  };
-
-  const markNo = (key) => {
-    const idx = SECTIONS.findIndex(s=>s.key===key);
-    let next = null;
-    for (let i=idx+1; i<SECTIONS.length; i++) { next=SECTIONS[i].key; break; }
-    up({ [key]:false, openSection:next });
-  };
-
-  const markYes = (key) => up({ [key]:true, openSection:key });
-  const resetGate = (key) => up({ [key]:null, openSection:key });
-
-  const answeredCount = SECTIONS.filter(s=>isAnswered(room, s.key)).length;
-  const isComplete = room.notesDone;
-
-  const bodies = {
-    trim: (
-      <>
-        <div style={{ height:12 }} />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:8 }}>
-          <div><label style={sLabel}>Baseboard (LF)</label><Stepper value={room.baseboardLF} onChange={v=>upField('baseboardLF',v)} step={1} unit="LF" small /></div>
-          <div><label style={sLabel}>Casing (LF)</label><Stepper value={room.casingLF} onChange={v=>upField('casingLF',v)} step={1} unit="LF" small /></div>
-          <div><label style={sLabel}>Qtr Round (LF)</label><Stepper value={room.quarterRoundLF} onChange={v=>upField('quarterRoundLF',v)} step={1} unit="LF" small /></div>
-        </div>
-        <NextBtn onClick={()=>markDone('trimDone','trim')} />
-      </>
-    ),
-    flooring: (
-      <>
-        <div style={{ height:12 }} />
-        {room.floors.map((fl,i) => (
-          <FloorEntry key={fl.id} floor={fl} onChange={v=>upListItem('floors',i,v)} onRemove={()=>removeItem('floors',i)} showRemove={room.floors.length>1} />
-        ))}
-        <AddBtn label="Add another floor type" onClick={()=>addItem('floors',defaultFloor())} />
-        <div style={{ height:10 }} />
-        <label style={sLabel}>Subfloor (SF)</label>
-        <Stepper value={room.subfloorSF} onChange={v=>upField('subfloorSF',v)} step={10} unit="SF" />
-        <NextBtn onClick={()=>markDone('flooringDone','flooring')} />
-      </>
-    ),
-    floodCuts: (
-      <>
-        {room.floodCuts===null && <YesNo onNo={()=>markNo('floodCuts')} onYes={()=>markYes('floodCuts')} />}
-        {room.floodCuts!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('floodCuts')} />
-            {room.floodCuts===true && (
-              <>
-                {room.floodCutsList.map((c,i) => (
-                  <FloodCutEntry key={i} cut={c} onChange={v=>upListItem('floodCutsList',i,v)} onRemove={()=>removeItem('floodCutsList',i)} />
-                ))}
-                <AddBtn label="Add flood cut" onClick={()=>addItem('floodCutsList',{height:'2 ft',lf:0})} />
-                <NextBtn onClick={()=>advance('floodCuts')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    drywall: (
-      <>
-        <div style={{ height:12 }} />
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
-          <div><label style={sLabel}>Ceiling (SF)</label><Stepper value={room.drywallCeilingSF} onChange={v=>upField('drywallCeilingSF',v)} step={10} unit="SF" /></div>
-          <div><label style={sLabel}>Walls (SF)</label><Stepper value={room.drywallWallsSF} onChange={v=>upField('drywallWallsSF',v)} step={10} unit="SF" /></div>
-        </div>
-        <NextBtn onClick={()=>markDone('drywallDone','drywall')} />
-      </>
-    ),
-    insulation: (
-      <>
-        {room.insulation===null && <YesNo onNo={()=>markNo('insulation')} onYes={()=>markYes('insulation')} />}
-        {room.insulation!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('insulation')} />
-            {room.insulation===true && (
-              <>
-                <label style={sLabel}>Type (select all)</label>
-                <MultiChips options={INSULATION_TYPES} selected={room.insulationTypes} onChange={v=>upField('insulationTypes',v)} />
-                <div style={{ height:10 }} />
-                <label style={sLabel}>Quantity (SF)</label>
-                <Stepper value={room.insulationSF} onChange={v=>upField('insulationSF',v)} step={10} unit="SF" />
-                <NextBtn onClick={()=>advance('insulation')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    cabinets: (
-      <>
-        {room.cabinets===null && <YesNo onNo={()=>markNo('cabinets')} onYes={()=>markYes('cabinets')} />}
-        {room.cabinets!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('cabinets')} />
-            {room.cabinets===true && (
-              <>
-                {room.cabinetsList.map((c,i) => (
-                  <CabinetEntry key={i} cab={c} onChange={v=>upListItem('cabinetsList',i,v)} onRemove={()=>removeItem('cabinetsList',i)} />
-                ))}
-                <AddBtn label="Add cabinet set" onClick={()=>addItem('cabinetsList',{type:'Base Cabinets',lf:0})} />
-                <div style={{ height:12 }} />
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
-                  <div><label style={sLabel}>Countertop (SF)</label><Stepper value={room.countertopSF} onChange={v=>upField('countertopSF',v)} step={1} unit="SF" small /></div>
-                  <div><label style={sLabel}>Countertop (LF)</label><Stepper value={room.countertopLF} onChange={v=>upField('countertopLF',v)} step={1} unit="LF" small /></div>
-                </div>
-                <label style={sLabel}>Countertop Material</label>
-                <SingleChips options={COUNTERTOP_MATERIALS} value={room.countertopMaterial} onChange={v=>upField('countertopMaterial',v)} />
-                <div style={{ height:10 }} />
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                  <div><label style={sLabel}>Backsplash (LF)</label><Stepper value={room.backsplashLF} onChange={v=>upField('backsplashLF',v)} step={1} unit="LF" small /></div>
-                  <div>
-                    <label style={sLabel}>Backsplash Material</label>
-                    <select value={room.backsplashMaterial} onChange={e=>upField('backsplashMaterial',e.target.value)} style={{ ...sInput, fontSize:14 }}>
-                      <option value="">—</option>
-                      {['Tile','Formica','Marble','Granite','Other'].map(m=><option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <NextBtn onClick={()=>advance('cabinets')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    doors: (
-      <>
-        {room.doors===null && <YesNo onNo={()=>markNo('doors')} onYes={()=>markYes('doors')} />}
-        {room.doors!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('doors')} />
-            {room.doors===true && (
-              <>
-                {room.doorsList.map((d,i) => (
-                  <DoorEntry key={i} door={d} onChange={v=>upListItem('doorsList',i,v)} onRemove={()=>removeItem('doorsList',i)} />
-                ))}
-                <AddBtn label="Add door" onClick={()=>addItem('doorsList',{type:'Interior',detach:0,tearOut:0})} />
-                <NextBtn onClick={()=>advance('doors')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    fixtures: (
-      <>
-        {room.fixtures===null && <YesNo onNo={()=>markNo('fixtures')} onYes={()=>markYes('fixtures')} />}
-        {room.fixtures!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('fixtures')} />
-            {room.fixtures===true && (
-              <>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
-                  <div><label style={sLabel}>Outlet Covers</label><Stepper value={room.outletCoversCount} onChange={v=>upField('outletCoversCount',v)} step={1} unit="ea" small /></div>
-                  <div><label style={sLabel}>Ceiling Fans</label><Stepper value={room.ceilingFans} onChange={v=>upField('ceilingFans',v)} step={1} unit="ea" small /></div>
-                </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
-                  <div><label style={sLabel}>Registers</label><Stepper value={room.registers} onChange={v=>upField('registers',v)} step={1} unit="ea" small /></div>
-                  <div><label style={sLabel}>Lights</label><Stepper value={room.lights} onChange={v=>upField('lights',v)} step={1} unit="ea" small /></div>
-                </div>
-                <CheckRow label="Toilet removed / disconnected" checked={room.toiletRemoved} onChange={v=>upField('toiletRemoved',v)} />
-                <NextBtn onClick={()=>advance('fixtures')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    appliances: (
-      <>
-        {room.appliances===null && <YesNo onNo={()=>markNo('appliances')} onYes={()=>markYes('appliances')} />}
-        {room.appliances!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('appliances')} />
-            {room.appliances===true && (
-              <>
-                <MultiChips options={APPLIANCE_LIST} selected={room.appliancesList} onChange={v=>upField('appliancesList',v)} />
-                {room.appliancesList.includes('Other') && <div style={{ marginTop:8 }}><input value={room.applianceOther} onChange={e=>upField('applianceOther',e.target.value)} placeholder="Describe…" style={sInput} /></div>}
-                <NextBtn onClick={()=>advance('appliances')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    equipment: (
-      <>
-        {room.equipment===null && <YesNo onNo={()=>markNo('equipment')} onYes={()=>markYes('equipment')} />}
-        {room.equipment!==null && (
-          <div style={{ marginTop:8 }}>
-            <ChangeBtn onClick={()=>resetGate('equipment')} />
-            {room.equipment===true && (
-              <>
-                {room.equipmentList.map((e,i) => (
-                  <EquipEntry key={i} eq={e} onChange={v=>upListItem('equipmentList',i,v)} onRemove={()=>removeItem('equipmentList',i)} />
-                ))}
-                <AddBtn label="Add equipment" onClick={()=>addItem('equipmentList',{type:'Air Mover',qty:0,days:0})} />
-                <NextBtn onClick={()=>advance('equipment')} />
-              </>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    contents: (
-      <>
-        <div style={{ height:12 }} />
-        <label style={sLabel}>Contents move in this room</label>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
-          <div><label style={sLabel}>Hours</label><Stepper value={room.contentsMoveHrs} onChange={v=>upField('contentsMoveHrs',v)} step={0.5} unit="hrs" small /></div>
-          <div><label style={sLabel}>Technicians</label><Stepper value={room.contentsTechs} onChange={v=>upField('contentsTechs',v)} step={1} unit="techs" small /></div>
-        </div>
-        <NextBtn onClick={()=>markDone('contentsDone','contents')} />
-      </>
-    ),
-    notes: (
-      <>
-        <div style={{ height:12 }} />
-        <textarea value={room.notes} onChange={e=>upField('notes',e.target.value)} placeholder="Hazards, access issues, special conditions, sketch notes…" rows={3} style={{ ...sInput, resize:'vertical', fontFamily:'var(--font-sans)' }} />
-        <NextBtn onClick={()=>markDone('notesDone','notes')} label="✓ Room Complete" />
-      </>
-    ),
-  };
+  const answeredCount = sections.filter(s => isAnswered(room, s)).length;
+  const lastSection = sections[sections.length - 1];
+  const isComplete = !!(lastSection?.doneFlag && room[lastSection.doneFlag]);
 
   return (
-    <div style={{ ...sCard, border:`1px solid ${isComplete?C.greenBd:C.border}` }}>
+    <div style={{ ...sCard, border: `1px solid ${isComplete ? C.greenBd : C.border}` }}>
       <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:8 }}>
         <div style={{ background:isComplete?C.green:C.accent, color:'#fff', fontWeight:900, fontSize:12, width:30, height:30, borderRadius:7, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-          {isComplete?'✓':index+1}
+          {isComplete ? '✓' : index + 1}
         </div>
         <div style={{ flex:1 }}>
-          <input value={room.name} onChange={e=>upField('name',e.target.value)} placeholder="Room name…" style={{ ...sInput, fontWeight:600, padding:'10px 12px' }} />
+          <input value={room.name} onChange={e => upField('name', e.target.value)} placeholder="Room name…" style={{ ...sInput, fontWeight:600, padding:'10px 12px' }} />
         </div>
         <div style={{ display:'flex', gap:6 }}>
           <button onClick={onDuplicate} title="Duplicate" style={{ background:'transparent', border:`1.5px solid ${C.border}`, color:C.muted, width:34, height:34, borderRadius:7, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>⎘</button>
-          {totalRooms>1 && <button onClick={onRemove} style={{ background:'transparent', border:`1.5px solid ${C.border}`, color:C.muted, width:34, height:34, borderRadius:7, cursor:'pointer', fontSize:17, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>}
+          {totalRooms > 1 && <button onClick={onRemove} style={{ background:'transparent', border:`1.5px solid ${C.border}`, color:C.muted, width:34, height:34, borderRadius:7, cursor:'pointer', fontSize:17, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>}
         </div>
       </div>
 
@@ -954,12 +823,12 @@ function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRooms, ne
           <div style={{ fontSize:11, color:C.muted, padding:'6px 2px' }}>⏳ Loading rooms from Encircle…</div>
         ) : (
           <div style={{ display:'inline-flex', gap:6 }}>
-            {(encircleRooms&&encircleRooms.length>0?encircleRooms:ROOM_PRESETS).map(p=>(
-              <button key={p} onClick={()=>upField('name',p)} style={{ background:room.name===p?C.accentDim:C.cardAlt, border:`1px solid ${room.name===p?C.accent:encircleRooms?.length>0?C.greenBd:C.border}`, borderRadius:20, color:room.name===p?C.accent:encircleRooms?.length>0?C.green:C.muted, fontSize:11, fontWeight:room.name===p?700:400, padding:'5px 10px', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0, fontFamily:'var(--font-sans)' }}>
+            {(encircleRooms && encircleRooms.length > 0 ? encircleRooms : roomPresets).map(p => (
+              <button key={p} onClick={() => upField('name', p)} style={{ background:room.name===p?C.accentDim:C.cardAlt, border:`1px solid ${room.name===p?C.accent:encircleRooms?.length>0?C.greenBd:C.border}`, borderRadius:20, color:room.name===p?C.accent:encircleRooms?.length>0?C.green:C.muted, fontSize:11, fontWeight:room.name===p?700:400, padding:'5px 10px', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0, fontFamily:'var(--font-sans)' }}>
                 {p}
               </button>
             ))}
-            {encircleRooms?.length>0 && (
+            {encircleRooms?.length > 0 && (
               <span style={{ fontSize:10, color:C.green, padding:'5px 8px', whiteSpace:'nowrap', opacity:0.7, flexShrink:0 }}>from Encircle ⛓</span>
             )}
           </div>
@@ -970,10 +839,10 @@ function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRooms, ne
         <div style={{ background:C.cardAlt, border:`1.5px solid ${C.redBd}`, borderRadius:8, padding:12, marginBottom:10 }}>
           <div style={{ fontSize:10, color:C.red, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10 }}>📐 Room Dimensions (required)</div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
-            {[['lengthFt','L (ft)'],['widthFt','W (ft)'],['heightFt','H (ft)']].map(([f,l])=>(
+            {[['lengthFt','L (ft)'],['widthFt','W (ft)'],['heightFt','H (ft)']].map(([f, l]) => (
               <div key={f}>
                 <label style={sLabel}>{l}</label>
-                <input type="number" inputMode="decimal" value={room[f]} onChange={e=>upField(f,e.target.value)} placeholder="0" style={{ ...sInput, textAlign:'center', borderColor:!room[f]?C.redBd:C.border }} />
+                <input type="number" inputMode="decimal" value={room[f]} onChange={e => upField(f, e.target.value)} placeholder="0" style={{ ...sInput, textAlign:'center', borderColor: !room[f] ? C.redBd : C.border }} />
               </div>
             ))}
           </div>
@@ -981,15 +850,62 @@ function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRooms, ne
         </div>
       )}
 
-      <RoomProgress answeredCount={answeredCount} total={SECTIONS.length} />
+      <RoomProgress answeredCount={answeredCount} total={sections.length} />
 
-      {SECTIONS.map(sec => {
+      {sections.map(sec => {
         const locked = !unlocked.has(sec.key);
-        const status = locked?null:getStatus(room, sec.key);
-        const displayStatus = locked?null:(status==='open'||status==='unanswered')?null:status;
+        const status = locked ? null : getStatus(room, sec);
+        const displayStatus = locked ? null : (status === 'open' || status === 'unanswered') ? null : status;
+        const isOpen = room.openSection === sec.key && !locked;
+
+        // Decide what to show inside the (open) section body
+        let body = null;
+        if (isOpen) {
+          const isGated = !sec.alwaysOn && !!sec.gateField;
+          const gateValue = isGated ? room[sec.gateField] : null;
+
+          if (isGated && gateValue === null) {
+            body = <YesNo onNo={() => markNo(sec.gateField, sec.key)} onYes={() => markYes(sec.gateField, sec.key)} />;
+          } else if (isGated && gateValue === false) {
+            body = (
+              <div style={{ marginTop: 8 }}>
+                <ChangeBtn onClick={() => resetGate(sec.gateField, sec.key)} />
+              </div>
+            );
+          } else {
+            // alwaysOn OR gated-with-yes: render fields + Next
+            body = (
+              <>
+                {isGated && <div style={{ marginTop: 8 }}><ChangeBtn onClick={() => resetGate(sec.gateField, sec.key)} /></div>}
+                <div style={{ height: 12 }} />
+                {(sec.fields || []).map((field, i) => (
+                  <div key={field.key || `f${i}`} style={{ marginBottom: field.type === 'row' ? 0 : 8 }}>
+                    <FieldRenderer field={field} ctx={room} onChange={up} />
+                  </div>
+                ))}
+                <NextBtn
+                  onClick={() => sec.alwaysOn
+                    ? markDone(sec.doneFlag, sec.key)
+                    : advance(sec.key)
+                  }
+                  label={sec.nextLabel || 'Done → Next'}
+                />
+              </>
+            );
+          }
+        }
+
         return (
-          <Section key={sec.key} icon={sec.icon} label={sec.label} status={displayStatus} open={room.openSection===sec.key&&!locked} onToggle={()=>handleToggle(sec.key)} locked={locked}>
-            {bodies[sec.key]}
+          <Section
+            key={sec.key}
+            icon={sec.icon}
+            label={sec.label}
+            status={displayStatus}
+            open={isOpen}
+            onToggle={() => handleToggle(sec.key)}
+            locked={locked}
+          >
+            {body}
           </Section>
         );
       })}
@@ -1307,8 +1223,10 @@ export default function TechDemoSheet() {
   const [sheetId, setSheetId] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [hydrated, setHydrated] = useState(false);
+  const [schema, setSchema] = useState(null);
+  const [schemaError, setSchemaError] = useState(null);
 
-  const [rooms, setRooms] = useState([defaultRoom()]);
+  const [rooms, setRooms] = useState([]);
   const [jobInfo, setJobInfo] = useState({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
   const [hasSketchDone, setHasSketchDone] = useState(null);
   const [showReview, setShowReview] = useState(false);
@@ -1329,8 +1247,49 @@ export default function TechDemoSheet() {
     db.rpc('get_active_techs').then(rows => setTechs(rows || [])).catch(() => setTechs([]));
   }, [db]);
 
-  // Bootstrap: prefer ?id=<draft>; otherwise prefill from appointment context
+  // Load the schema. If we're loading an existing draft (?id=…), use THAT
+  // sheet's snapshotted schema_id so old drafts render with their original
+  // fields. Otherwise use the currently-active schema.
   useEffect(() => {
+    let cancelled = false;
+    const id = searchParams.get('id');
+    const loadSchemaById = async (schemaId) => {
+      const rows = await db.rpc('get_demo_schema', { p_id: schemaId });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      return row?.definition ? { ...row.definition, _id: row.id, _version: row.version } : null;
+    };
+    const loadActiveSchema = async () => {
+      const rows = await db.rpc('get_active_demo_schema');
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      return row?.definition ? { ...row.definition, _id: row.id, _version: row.version } : null;
+    };
+    (async () => {
+      try {
+        let schemaToUse = null;
+        if (id) {
+          const sheetRows = await db.rpc('get_demo_sheet', { p_id: id });
+          const sheetRow = Array.isArray(sheetRows) ? sheetRows[0] : sheetRows;
+          if (sheetRow?.schema_id) {
+            schemaToUse = await loadSchemaById(sheetRow.schema_id);
+          }
+        }
+        if (!schemaToUse) schemaToUse = await loadActiveSchema();
+        if (!cancelled) {
+          if (schemaToUse) setSchema(schemaToUse);
+          else setSchemaError('No active demo sheet schema found.');
+        }
+      } catch (e) {
+        if (!cancelled) setSchemaError(e?.message || 'Failed to load schema');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [db, searchParams]);
+
+  // Bootstrap: prefer ?id=<draft>; otherwise prefill from appointment context.
+  // Waits for schema to be ready before building default rooms.
+  useEffect(() => {
+    if (!schema) return;
+    const defaultRoom = () => makeDefaultRoom(schema);
     const id = searchParams.get('id');
     if (id) {
       db.rpc('get_demo_sheet', { p_id: id })
@@ -1345,10 +1304,12 @@ export default function TechDemoSheet() {
             setHasSketchDone(d.hasSketchDone ?? null);
             if (d.encircleLinked) setEncircleLinked(d.encircleLinked);
             if (Array.isArray(d.encircleRooms)) setEncircleRooms(d.encircleRooms);
+          } else {
+            setRooms([defaultRoom()]);
           }
           setHydrated(true);
         })
-        .catch(() => setHydrated(true));
+        .catch(() => { setRooms([defaultRoom()]); setHydrated(true); });
     } else {
       // Optional appt prefill via query params
       const apptJobId     = searchParams.get('jobId')      || '';
@@ -1368,10 +1329,11 @@ export default function TechDemoSheet() {
       if (apptClaim) {
         setEncircleLinked({ id: apptClaim, policyholder_name: apptInsured });
       }
+      setRooms([defaultRoom()]);
       setHydrated(true);
     }
     db.rpc('get_demo_sheet_drafts').then(d => setDrafts(d || [])).catch(() => {});
-  }, [db, searchParams]);
+  }, [db, searchParams, schema]);
 
   // Default tech to current employee once techs are loaded
   useEffect(() => {
@@ -1400,6 +1362,7 @@ export default function TechDemoSheet() {
           p_status: 'draft',
           p_job_id: jobId || null,
           p_summary: computeSummary(rooms),
+          p_schema_id: schema?._id || null,
         };
         const newId = await db.rpc('save_demo_sheet', payload);
         if (!sheetId && newId) {
@@ -1442,17 +1405,29 @@ export default function TechDemoSheet() {
   };
 
   const needsDimensions = hasSketchDone === false;
-  const addRoom = () => setRooms(p => [...p, defaultRoom()]);
+  const addRoom = () => setRooms(p => [...p, makeDefaultRoom(schema)]);
   const updateRoom = (id, u) => setRooms(p => p.map(r => r.id===id?u:r));
   const removeRoom = id => setRooms(p => p.filter(r => r.id !== id));
   const duplicateRoom = id => {
     const room = rooms.find(r => r.id===id);
-    const copy = { ...room, id:newRowId(), name:room.name?room.name+' (copy)':'', openSection:'trim' };
+    const firstSectionKey = schema?.sections?.[0]?.key || null;
+    const copy = { ...room, id:newRowId(), name:room.name?room.name+' (copy)':'', openSection:firstSectionKey };
     const idx = rooms.findIndex(r => r.id===id);
     setRooms(p => [...p.slice(0, idx+1), copy, ...p.slice(idx+1)]);
   };
 
-  const allComplete = rooms.every(r => r.notesDone);
+  // A room is "complete" when the last section's doneFlag is set (e.g.
+  // notesDone in v1). Schema-driven so future schemas with a different
+  // final section keep working.
+  const lastDoneFlag = (() => {
+    const secs = schema?.sections || [];
+    for (let i = secs.length - 1; i >= 0; i--) {
+      if (secs[i].doneFlag) return secs[i].doneFlag;
+    }
+    return null;
+  })();
+  const isRoomComplete = (r) => !!(lastDoneFlag && r[lastDoneFlag]);
+  const allComplete = rooms.length > 0 && rooms.every(isRoomComplete);
 
   // Flush any pending autosave then save the current state synchronously.
   // Returns the final sheet id, or throws.
@@ -1472,6 +1447,7 @@ export default function TechDemoSheet() {
       p_job_id: jobId || null,
       p_summary: computeSummary(rooms),
       p_email_sent: emailOk,
+      p_schema_id: schema?._id || null,
     });
     if (!sheetId && newId) setSheetId(newId);
     return newId || sheetId;
@@ -1582,7 +1558,7 @@ export default function TechDemoSheet() {
   };
 
   const startNew = () => {
-    setRooms([defaultRoom()]);
+    setRooms([makeDefaultRoom(schema)]);
     setJobInfo({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
     setHasSketchDone(null);
     setEncircleLinked(null);
@@ -1600,6 +1576,27 @@ export default function TechDemoSheet() {
   };
 
   const visibleDrafts = drafts.filter(d => d.id !== sheetId);
+
+  // Block render until the schema is loaded — otherwise rooms / sections
+  // can't be built.
+  if (!schema) {
+    return (
+      <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, fontFamily:'var(--font-sans)' }}>
+        <div style={{ fontSize:32, marginBottom:12 }}>📋</div>
+        <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:6 }}>
+          {schemaError ? 'Could not load demo sheet' : 'Loading demo sheet…'}
+        </div>
+        {schemaError && (
+          <div style={{ fontSize:12, color:C.muted, marginBottom:16, textAlign:'center', maxWidth:320 }}>
+            {schemaError}
+          </div>
+        )}
+        <button onClick={() => navigate(-1)} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+          ← Back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(180px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
@@ -1628,7 +1625,7 @@ export default function TechDemoSheet() {
               <div style={{ textAlign:'right' }}>
                 <div style={{ fontSize:10, color:C.muted }}>Rooms</div>
                 <div style={{ fontSize:20, fontWeight:800, color:allComplete?C.green:C.accent }}>
-                  {rooms.filter(r => r.notesDone).length}<span style={{ fontSize:13, color:C.muted, fontWeight:400 }}>/{rooms.length}</span>
+                  {rooms.filter(isRoomComplete).length}<span style={{ fontSize:13, color:C.muted, fontWeight:400 }}>/{rooms.length}</span>
                 </div>
               </div>
             )}
@@ -1743,6 +1740,7 @@ export default function TechDemoSheet() {
                   needsDimensions={needsDimensions}
                   encircleRooms={encircleRooms}
                   encircleRoomsLoading={encircleRoomsLoading}
+                  schema={schema}
                 />
               ))}
             </>
@@ -1776,7 +1774,7 @@ export default function TechDemoSheet() {
         </div>
 
         {showReview && (
-          <ReviewScreen rooms={rooms} jobInfo={jobInfo} hasSketchDone={hasSketchDone} onBack={() => setShowReview(false)} onSubmit={doSubmit} sending={sending} encircleLinked={encircleLinked} />
+          <ReviewScreen rooms={rooms} jobInfo={jobInfo} hasSketchDone={hasSketchDone} onBack={() => setShowReview(false)} onSubmit={doSubmit} sending={sending} encircleLinked={encircleLinked} schema={schema} />
         )}
         {showResult && submitResult && (
           <ResultScreen
