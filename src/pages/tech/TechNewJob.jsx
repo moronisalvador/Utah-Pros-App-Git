@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
@@ -518,12 +519,13 @@ export default function TechNewJob() {
         {/* ═══ ADDRESS ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>Loss / Service Address <span style={{ color: '#ef4444' }}>*</span></div>
-          <input
-            type="text"
+          <AddressAutocomplete
             value={f.address}
-            onChange={e => s('address', e.target.value)}
+            onChange={v => s('address', v)}
+            onSelect={p => sF(prev => ({ ...prev, address: p.address, city: p.city, state: p.state || prev.state, zip: p.zip }))}
             placeholder="Street address"
             style={{ ...inputStyle, marginBottom: 8 }}
+            touchTarget
           />
           <div style={{ display: 'flex', gap: 8 }}>
             <input

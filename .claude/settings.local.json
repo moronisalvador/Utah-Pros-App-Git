@@ -40,7 +40,24 @@
       "Bash(git reset *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(grep -rn \"create_job_with_contact\" src/ functions/)",
+      "Bash(grep -rnE \"db\\\\.insert\\\\s*\\\\\\(\\\\s*['\\\\\"]claims['\\\\\"]\" src/ functions/)",
+      "Bash(grep -rnE \"rest/v1/claims\\\\s*['\\\\\"]|rest/v1/claims\\\\?\" src/ functions/)",
+      "Bash(grep -rnE \"rpc\\\\\\(['\\\\\"]add_related_job['\\\\\"]|rpc\\\\\\(['\\\\\"]create.*\\(job|claim\\)\" src/ functions/)",
+      "Bash(curl -s -X POST https://api.encircleapp.com/v1/property_claims -H 'Authorization: Bearer bce7c436-aedc-46ce-9f6e-3b9886fe5db6' -H 'X-Encircle-Attribution: UtahProsRestorationApp' -H 'Content-Type: application/json' -H 'X-Encircle-Request: upr-claim-995c87bf-a9dc-49bf-bfff-649652151990' -d '{ *)",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(grep -rnE \"db\\\\.insert\\\\s*\\\\\\(\\\\s*['\\\\\"]contacts['\\\\\"]\" src/)",
+      "Bash(grep -rn \"AddContactModal\" src/)",
+      "Bash(git cherry-pick *)",
+      "Bash(npm install *)",
+      "Bash(ls -la .env*)",
+      "Bash(grep -l \"VITE_GOOGLE_MAPS_API_KEY\" .env*)",
+      "Bash(grep -c \"VITE_GOOGLE_MAPS_API_KEY\" .env.local)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(grep -E \"\\\\.js$\")",
+      "mcp__filesystem__read_text_file",
+      "Bash(find \"F:\\\\APPS\\\\RestorationAPP\\\\Utah-Pros-App-Git/supabase\" -name \"*.sql\" -exec grep -l \"search_contacts_for_job\\\\|get_claims_list\" {} \\\\;)"
     ]
   }
 }

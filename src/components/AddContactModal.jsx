@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 /* ═══ ICONS ═══ */
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
@@ -191,7 +192,17 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
 
               {(role==='homeowner'||role==='tenant')&&(<>
                 <div className="cp-edit-section-label">Billing Address</div>
-                <div className="add-contact-row"><FormField label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" form={form} set={set} nameRef={nameRef}/></div>
+                <div className="add-contact-row">
+                  <div className="form-group" style={{flex:1,marginBottom:0}}>
+                    <label className="label">Street</label>
+                    <AddressAutocomplete
+                      value={form.billing_address}
+                      onChange={v => set('billing_address', v)}
+                      onSelect={p => setForm(prev => ({ ...prev, billing_address: p.address, billing_city: p.city, billing_state: p.state || prev.billing_state, billing_zip: p.zip }))}
+                      placeholder="1422 E Maple Ridge Dr"
+                    />
+                  </div>
+                </div>
                 <div className="add-contact-row">
                   <FormField label="City" field="billing_city" placeholder="Lehi" form={form} set={set} nameRef={nameRef}/>
                   <FormField label="State" field="billing_state" placeholder="UT" form={form} set={set} nameRef={nameRef}/>

@@ -7,6 +7,7 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import MergeModal from '@/components/MergeModal';
 import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 // ═══════════════════════════════════════════════════════════════════════
 // CLAIM PAGE — Operational view (Jobs, Schedule, Docs, Info, Activity)
@@ -803,7 +804,16 @@ function InfoSection({ claim, contact, adjuster, patchClaim, saving, canEdit }) 
             <ES label="Loss Type" value={f.loss_type} onChange={v => s('loss_type', v)} options={LOSS_TYPES} />
           </div>
           <ES label="Claim Status" value={f.status} onChange={v => s('status', v)} options={CLAIM_STATUSES} />
-          <EF label="Loss Address" value={f.loss_address} onChange={v => s('loss_address', v)} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 0' }}>
+            <span className="job-page-info-label">Loss Address</span>
+            <AddressAutocomplete
+              value={f.loss_address}
+              onChange={v => s('loss_address', v)}
+              onSelect={p => setF(prev => ({ ...prev, loss_address: p.address, loss_city: p.city, loss_state: p.state || prev.loss_state, loss_zip: p.zip }))}
+              placeholder="Loss Address"
+              style={{ height: 34 }}
+            />
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <EF label="City" value={f.loss_city} onChange={v => s('loss_city', v)} />
             <EF label="State" value={f.loss_state} onChange={v => s('loss_state', v)} />
