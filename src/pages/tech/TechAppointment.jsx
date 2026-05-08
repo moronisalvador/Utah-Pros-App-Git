@@ -1165,9 +1165,11 @@ export default function TechAppointment() {
           <button
             onClick={() => {
               const params = new URLSearchParams();
-              if (job?.job_number)   params.set('jobNumber', job.job_number);
-              if (address)           params.set('address', address);
-              if (job?.insured_name) params.set('insuredName', job.insured_name);
+              if (job?.id)                params.set('jobId', job.id);
+              if (job?.job_number)        params.set('jobNumber', job.job_number);
+              if (address)                params.set('address', address);
+              if (job?.insured_name)      params.set('insuredName', job.insured_name);
+              if (job?.encircle_claim_id) params.set('claimId', job.encircle_claim_id);
               const qs = params.toString();
               navigate(`/tech/tools/demo-sheet${qs ? '?' + qs : ''}`);
             }}

@@ -523,18 +523,32 @@ delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
 ```
 save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
-                p_insured_name, p_encircle_claim_id, p_status, p_encircle_note_id)
+                p_insured_name, p_encircle_claim_id, p_status, p_encircle_note_id,
+                p_job_id, p_summary, p_email_sent)
                                 — Insert/update a forms row with form_type='demo_sheet'.
                                   When p_id is NULL inserts; otherwise updates only rows
                                   where form_type='demo_sheet'. Resolves technician_name
                                   from employees.display_name||full_name based on p_tech_id.
-                                  Sets encircle_synced_at=now() the first time encircle_note_id
-                                  is supplied. Returns the row UUID.
+                                  May 8 2026: added p_job_id (writes forms.job_id so the
+                                  sheet is reachable from a claim via jobs.claim_id),
+                                  p_summary JSONB (rolled-up totals stored in forms.summary
+                                  for fast list rendering), and p_email_sent BOOLEAN
+                                  (flips forms.email_sent + email_sent_at on submit).
+                                  Sets encircle_synced_at=now() the first time
+                                  encircle_note_id is supplied. Returns the row UUID.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
-get_demo_sheet(p_id)            — Single demo_sheet row including form_data JSONB. Used to
-                                  rehydrate state when the page loads with ?id=…
+get_demo_sheet(p_id)            — Single demo_sheet row including form_data, summary, and
+                                  job_id. Used to rehydrate state when the page loads
+                                  with ?id=…
+get_claim_demo_sheets(p_claim_id) — All demo sheets attached to ANY job under the claim
+                                  (joins forms.job_id → jobs.claim_id). Returns id, status,
+                                  email_sent, job_id, job_number, division, technician_name,
+                                  form_date, insured_name, address, room_count, summary.
+                                  Sorted by updated_at DESC. Powers the Demo Sheets list
+                                  on TechClaimDetail (mobile) and ClaimPage (desktop).
+get_job_demo_sheets(p_job_id)   — Same shape but scoped to a single job.
 get_active_techs()              — UUID + display_name for all is_active employees with role
                                   in (field_tech, supervisor, project_manager, admin).
                                   Replaces the demo's hardcoded TECHS array.
