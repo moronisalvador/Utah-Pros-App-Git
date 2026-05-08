@@ -133,6 +133,137 @@ export function buildUnlocked(room, sections) {
   return unlocked;
 }
 
+// ── Schema-driven aggregation + review/email helpers ─────────────────────────
+//
+// computeSummary walks every field across every room, honoring section
+// gating. Fields with `summaryKey` get summed into that bucket (default
+// aggregate). Fields with `summaryAggregate: 'tally'` look up their value in
+// `summaryTallyKeys` and add `summaryQtyField`'s value to that bucket — used
+// by the Equipment list (Air Mover / Dehumidifier / Air Scrubber).
+//
+// Returns a flat object like { drywallSF: 240, airMovers: 4, contentsHrs: 2 }.
+export function computeSummary(rooms, schema) {
+  const summary = {};
+  const sections = schema?.sections || [];
+
+  const aggregateLeaf = (field, ctx, listItem) => {
+    if (field.summaryAggregate === 'tally' && field.summaryTallyKeys && field.summaryQtyField && listItem) {
+      const tallyKey = field.summaryTallyKeys[ctx?.[field.key]];
+      if (tallyKey) {
+        const qty = Number(listItem[field.summaryQtyField] || 0);
+        summary[tallyKey] = (summary[tallyKey] || 0) + qty;
+      }
+      return;
+    }
+    if (field.summaryKey) {
+      const v = Number(ctx?.[field.key] || 0);
+      if (!Number.isNaN(v) && v) {
+        summary[field.summaryKey] = (summary[field.summaryKey] || 0) + v;
+      }
+    }
+  };
+
+  const visit = (fields, ctx, listItem) => {
+    for (const f of fields || []) {
+      if (f.type === 'row') { visit(f.fields, ctx, listItem); continue; }
+      if (!fieldShouldShow(f, listItem || ctx)) continue;
+      if (f.type === 'list') {
+        const items = Array.isArray(ctx?.[f.key]) ? ctx[f.key] : [];
+        for (const item of items) visit(f.itemFields || [], item, item);
+        continue;
+      }
+      aggregateLeaf(f, listItem || ctx, listItem);
+    }
+  };
+
+  for (const room of rooms || []) {
+    for (const section of sections) {
+      if (!section.alwaysOn && room[section.gateField] !== true) continue;
+      visit(section.fields || [], room, null);
+    }
+  }
+  return summary;
+}
+
+// Format one leaf field's value for a review/email row. Returns
+// { label, value, isYes } or null when the field is empty / N/A.
+export function formatFieldForReview(field, value, ctx) {
+  const { label } = resolveUnitAndLabel(field, ctx || {});
+  switch (field.type) {
+    case 'stepper': {
+      const v = Number(value || 0);
+      if (!v) return null;
+      const { unit } = resolveUnitAndLabel(field, ctx || {});
+      return { label: label || field.key, value: `${v.toLocaleString()}${unit ? ' ' + unit : ''}` };
+    }
+    case 'single-chip':
+    case 'select': {
+      if (!value) return null;
+      return { label: label || field.key, value: String(value) };
+    }
+    case 'multi-chip': {
+      if (!Array.isArray(value) || value.length === 0) return null;
+      return { label: label || field.key, value: value.join(', ') };
+    }
+    case 'text':
+    case 'textarea': {
+      if (!value) return null;
+      return { label: label || field.key, value: String(value) };
+    }
+    case 'checkbox':
+      return value === true ? { label: label || field.key, value: 'Yes', isYes: true } : null;
+    default:
+      return null;
+  }
+}
+
+// Walk a section's fields and produce a flat list of review entries.
+// List fields produce one "header" entry per item (using itemLabel) followed
+// by the item's leaf fields. Used by ReviewScreen + email/note builders so
+// they all stay consistent and schema-driven.
+//
+// Returns: [{ kind:'group', label } | { kind:'row', label, value, isYes }].
+export function collectSectionEntries(section, room) {
+  const entries = [];
+
+  const visit = (fields, ctx, listItem) => {
+    for (const f of fields || []) {
+      if (f.type === 'row') { visit(f.fields, ctx, listItem); continue; }
+      if (!fieldShouldShow(f, listItem || ctx)) continue;
+      if (f.type === 'list') {
+        const items = Array.isArray(ctx?.[f.key]) ? ctx[f.key] : [];
+        items.forEach((item, idx) => {
+          if ((f.itemFields || []).some(sub => formatFieldForReview(sub, item[sub.key], item) !== null)) {
+            entries.push({ kind: 'group', label: `${f.itemLabel || 'Item'}${items.length > 1 ? ` ${idx + 1}` : ''}` });
+            visit(f.itemFields || [], item, item);
+          }
+        });
+        continue;
+      }
+      const value = (listItem || ctx)?.[f.key];
+      const formatted = formatFieldForReview(f, value, listItem || ctx);
+      if (formatted) entries.push({ kind: 'row', ...formatted });
+    }
+  };
+
+  visit(section.fields || [], room, null);
+  return entries;
+}
+
+// True iff this room has any populated entries in the section (or the gate
+// is "Yes" with no fields under it). Used by ReviewScreen / email to skip
+// empty sections.
+export function sectionHasContent(section, room) {
+  if (!section.alwaysOn) {
+    if (room[section.gateField] === true) {
+      // Even if no fields filled, count as "yes"
+      return true;
+    }
+    return false;
+  }
+  return collectSectionEntries(section, room).length > 0;
+}
+
 // ── UI primitives ────────────────────────────────────────────────────────────
 export function Stepper({ value, onChange, step=1, unit, small }) {
   const [editing, setEditing] = useState(false);
