@@ -10,6 +10,9 @@ import {
   today, newRowId,
   makeDefaultRoom,
   RoomCard,
+  computeSummary,
+  collectSectionEntries,
+  sectionHasContent,
 } from '@/components/demo-sheet/DemoSheetRenderer';
 
 // ── Encircle Job Search Sheet ────────────────────────────────────────────────
@@ -126,305 +129,373 @@ function EncircleSearchModal({ onSelect, onClose }) {
 }
 
 
-// ── Email HTML / Encircle note builders ──────────────────────────────────────
-function buildEmailHTML(rooms, jobInfo, hasSketchDone) {
-  const displayDate = jobInfo.date ? new Date(jobInfo.date+'T12:00:00').toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }) : 'N/A';
+// ── Email HTML / Encircle note builders (schema-driven) ──────────────────────
+//
+// Walks the active schema's sections per room, listing only fields that have
+// a value. Section colors come from `section.emailColor` if set, else accent.
+// Same content drives both the HTML email body and the plain-text Encircle
+// note via collectSectionEntries() from the renderer module.
 
-  const mkCat = (label, color='#2563eb') => `
+const SECTION_PALETTE = ['#2563eb', '#166534', '#6B21A8', '#0F766E', '#B45309', '#0369A1', '#0891B2', '#7C3AED', '#1D4ED8', '#D97706'];
+const sectionColor = (section, idx) => section?.emailColor || SECTION_PALETTE[idx % SECTION_PALETTE.length];
+
+const escHtml = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
+  const sections = schema?.sections || [];
+  const displayDate = jobInfo.date
+    ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'N/A';
+
+  const mkCat = (label, color) => `
     <tr>
       <td colspan="3" style="padding:8px 10px 4px;background:${color}18;border-top:2px solid ${color};font-size:10px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:0.08em;">
-        ${label}
+        ${escHtml(label)}
       </td>
     </tr>`;
-
-  const mkRow = (label, val, unit) => {
-    if (!val || val===0) return '';
-    const display = typeof val==='number'?val.toLocaleString():val;
-    return `<tr>
-      <td style="padding:5px 10px 5px 18px;color:#444;font-size:12px;">${label}</td>
-      <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:12px;color:#111;">${display}</td>
-      <td style="padding:5px 10px;color:#888;font-size:11px;white-space:nowrap;">${unit}</td>
+  const mkRow = (label, value) => `<tr>
+      <td style="padding:5px 10px 5px 18px;color:#444;font-size:12px;">${escHtml(label)}</td>
+      <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:12px;color:#111;" colspan="2">${escHtml(value)}</td>
     </tr>`;
-  };
 
-  const mkBoolRow = (label, show) => show?`<tr>
-    <td style="padding:5px 10px 5px 18px;color:#444;font-size:12px;">${label}</td>
-    <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:12px;color:#111;">✓</td>
-    <td style="padding:5px 10px;color:#888;font-size:11px;"></td>
-  </tr>`:'';
+  const roomsHTML = rooms.map((r, i) => {
+    const dim = (r.lengthFt && r.widthFt && r.heightFt)
+      ? `${r.lengthFt}' × ${r.widthFt}' × ${r.heightFt}'`
+      : '';
 
-  const roomsHTML = rooms.map((r,i) => {
-    const dim = (r.lengthFt&&r.widthFt&&r.heightFt)?`${r.lengthFt}' × ${r.widthFt}' × ${r.heightFt}'`:'';
+    const sectionsHTML = sections.map((sec, sIdx) => {
+      if (!sectionHasContent(sec, r)) return '';
+      const entries = collectSectionEntries(sec, r);
+      if (entries.length === 0) {
+        // Gated section answered Yes but no fields populated — still show header.
+        return mkCat(`${sec.icon || ''} ${sec.label}`, sectionColor(sec, sIdx));
+      }
+      return [
+        mkCat(`${sec.icon || ''} ${sec.label}`, sectionColor(sec, sIdx)),
+        ...entries.map(e => e.kind === 'group'
+          ? `<tr><td colspan="3" style="padding:4px 10px 2px 18px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(e.label)}</td></tr>`
+          : mkRow(e.label, e.value)
+        ),
+      ].join('');
+    }).join('');
 
-    const contentsRows = [
-      mkCat('📦 Contents Move','#7C3AED'),
-      mkRow('Hours',r.contentsMoveHrs,'hrs'),
-      r.contentsMoveHrs>0?mkRow('Technicians',r.contentsTechs,'techs'):'',
-    ].join('');
-    const hasContents = r.contentsMoveHrs>0;
-
-    const appRows = r.appliances===true&&r.appliancesList.length>0?[
-      mkCat('🔌 Appliances — Disconnect & Move','#0891B2'),
-      ...r.appliancesList.map(a=>`<tr><td style="padding:5px 10px 5px 18px;color:#444;font-size:12px;">${a}</td><td style="padding:5px 10px;text-align:right;font-weight:700;font-size:12px;">✓</td><td></td></tr>`),
-    ].join(''):'';
-
-    const fixtureRows = r.fixtures===true?[
-      mkCat('🚿 Plumbing & Fixtures','#0369A1'),
-      mkBoolRow('Toilet — Disconnect & Remove',r.toiletRemoved),
-      mkRow('Registers — Remove',r.registers,'ea'),
-      mkRow('Ceiling Fans — Remove',r.ceilingFans,'ea'),
-      mkRow('Light Fixtures — Remove',r.lights,'ea'),
-      mkRow('Outlet & Switch Covers — Remove',r.outletCoversCount,'ea'),
-    ].join(''):'';
-
-    const cabRows = r.cabinets===true?[
-      mkCat('🍽️ Cabinetry & Countertops','#B45309'),
-      ...r.cabinetsList.map(c=>mkRow(`${c.type} — Remove`, c.lf||0, 'LF')),
-      r.countertopLF>0?mkRow(`Countertop${r.countertopMaterial?` (${r.countertopMaterial})`:''} — Remove`,r.countertopLF,'LF'):'',
-      r.countertopSF>0?mkRow(`Countertop${r.countertopMaterial?` (${r.countertopMaterial})`:''} — Remove`,r.countertopSF,'SF'):'',
-      r.backsplashLF>0?mkRow(`Backsplash${r.backsplashMaterial?` (${r.backsplashMaterial})`:''} — Remove`,r.backsplashLF,'LF'):'',
-    ].join(''):'';
-
-    const trimRows = [
-      mkCat('📏 Carpentry & Trim','#2563eb'),
-      mkRow('Baseboard — Remove & Reset',r.baseboardLF,'LF'),
-      mkRow('Door Casing — Remove & Reset',r.casingLF,'LF'),
-      mkRow('Quarter Round — Remove & Reset',r.quarterRoundLF,'LF'),
-      ...(r.doors===true?r.doorsList.flatMap(d=>[
-        d.detach>0?mkRow(`${d.type} Door — Detach & Reset`,d.detach,'ea'):'',
-        d.tearOut>0?mkRow(`${d.type} Door — Tear Out`,d.tearOut,'ea'):'',
-      ]):[]),
-    ].join('');
-    const hasTrim = r.baseboardLF>0||r.casingLF>0||r.quarterRoundLF>0||(r.doors===true&&r.doorsList.length>0);
-
-    const floorRows = [
-      mkCat('🪵 Flooring','#166534'),
-      ...r.floors.filter(f=>f.sf>0).map(f=>mkRow(`${f.type==='Other'?(f.typeOther||'Other'):f.type||'—'} — Remove`,f.sf,'SF')),
-      mkRow('Subfloor — Remove',r.subfloorSF,'SF'),
-    ].join('');
-    const hasFlooring = r.floors.some(f=>f.sf>0)||r.subfloorSF>0;
-
-    const drywallRows = [
-      mkCat('🧱 Drywall','#6B21A8'),
-      ...(r.floodCuts===true?r.floodCutsList.map(c=>mkRow(`Flood Cut (${c.height})`,c.lf||0,c.height==='Full wall (SF)'?'SF':'LF')):[]),
-      mkRow('Drywall Ceiling — Remove',r.drywallCeilingSF,'SF'),
-      mkRow('Drywall Walls — Remove',r.drywallWallsSF,'SF'),
-    ].join('');
-    const hasDrywall = r.floodCuts===true||r.drywallCeilingSF>0||r.drywallWallsSF>0;
-
-    const insulRows = r.insulation===true&&r.insulationSF>0?[
-      mkCat('🌡️ Insulation','#0F766E'),
-      mkRow(`${r.insulationTypes.join(', ')||'—'} — Remove`,r.insulationSF,'SF'),
-    ].join(''):'';
-
-    const eqRows = r.equipment===true&&r.equipmentList.length>0?[
-      mkCat('💨 Drying Equipment','#1D4ED8'),
-      ...r.equipmentList.map(e=>`<tr>
-        <td style="padding:5px 10px 5px 18px;color:#444;font-size:12px;">${e.type}</td>
-        <td style="padding:5px 10px;text-align:right;font-weight:700;font-size:12px;">${e.qty} ea × ${e.days} days</td>
-        <td style="padding:5px 10px;color:#888;font-size:11px;"></td>
-      </tr>`),
-    ].join(''):'';
-
-    const body = [
-      hasContents?contentsRows:'',
-      appRows,
-      fixtureRows,
-      cabRows,
-      hasTrim?trimRows:'',
-      hasFlooring?floorRows:'',
-      hasDrywall?drywallRows:'',
-      insulRows,
-      eqRows,
-    ].filter(Boolean).join('');
-
-    if (!body) return '';
-
+    if (!sectionsHTML) return '';
+    const headerColor = sectionColor(sections[0], 0);
     return `
       <div style="margin-bottom:24px;">
-        <div style="background:#2563eb;color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">Room ${i+1}: ${r.name||'(Unnamed)'}</span>
-          ${dim?`<span style="font-size:11px;opacity:0.85;">${dim}</span>`:''}
+        <div style="background:${headerColor};color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:baseline;">
+          <span style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">Room ${i+1}: ${escHtml(r.name || '(Unnamed)')}</span>
+          ${dim ? `<span style="font-size:11px;opacity:0.85;">${escHtml(dim)}</span>` : ''}
         </div>
         <table style="width:100%;border-collapse:collapse;border:1px solid #e0e0e0;border-top:none;">
-          <tbody>${body}</tbody>
+          <tbody>${sectionsHTML}</tbody>
         </table>
-        ${r.notes?`<div style="padding:8px 12px;background:#fffbf0;border:1px solid #e8d5a0;border-top:none;border-radius:0 0 4px 4px;font-size:11px;color:#666;line-height:1.5;"><strong>⚠️ Notes:</strong> ${r.notes}</div>`:''}
       </div>`;
-  }).join('');
+  }).filter(Boolean).join('');
 
-  const t = rooms.reduce((a, r) => {
-    const fcLF = r.floodCuts===true?r.floodCutsList.filter(c=>c.height!=='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0):0;
-    const fcSF = r.floodCuts===true?r.floodCutsList.filter(c=>c.height==='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0):0;
-    const cabLF = r.cabinets===true?r.cabinetsList.reduce((s,c)=>s+(c.lf||0),0):0;
-    const floorSF = r.floors.reduce((s,f)=>s+(f.sf||0),0);
-    const eqList = r.equipment===true?r.equipmentList:[];
-    return {
-      contentsMins:a.contentsMins+(r.contentsMoveHrs||0)*60,
-      baseboardLF:a.baseboardLF+(r.baseboardLF||0),
-      casingLF:a.casingLF+(r.casingLF||0),
-      quarterRoundLF:a.quarterRoundLF+(r.quarterRoundLF||0),
-      doorsDetach:a.doorsDetach+(r.doors===true?r.doorsList.reduce((s,d)=>s+(d.detach||0),0):0),
-      doorsTearOut:a.doorsTearOut+(r.doors===true?r.doorsList.reduce((s,d)=>s+(d.tearOut||0),0):0),
-      floorSF:a.floorSF+floorSF,
-      subfloorSF:a.subfloorSF+(r.subfloorSF||0),
-      fcLF:a.fcLF+fcLF, fcSF:a.fcSF+fcSF,
-      drywallCeiling:a.drywallCeiling+(r.drywallCeilingSF||0),
-      drywallWalls:a.drywallWalls+(r.drywallWallsSF||0),
-      insulationSF:a.insulationSF+(r.insulation===true?(r.insulationSF||0):0),
-      cabLF:a.cabLF+cabLF,
-      countertopLF:a.countertopLF+(r.cabinets===true?(r.countertopLF||0):0),
-      airMovers:a.airMovers+eqList.filter(e=>e.type==='Air Mover').reduce((s,e)=>s+(e.qty||0),0),
-      dehus:a.dehus+eqList.filter(e=>e.type==='Dehumidifier').reduce((s,e)=>s+(e.qty||0),0),
-      scrubbers:a.scrubbers+eqList.filter(e=>e.type==='Air Scrubber').reduce((s,e)=>s+(e.qty||0),0),
-    };
-  }, { contentsMins:0,baseboardLF:0,casingLF:0,quarterRoundLF:0,doorsDetach:0,doorsTearOut:0,floorSF:0,subfloorSF:0,fcLF:0,fcSF:0,drywallCeiling:0,drywallWalls:0,insulationSF:0,cabLF:0,countertopLF:0,airMovers:0,dehus:0,scrubbers:0 });
-
-  const mkTotCat = (label, color) => `<tr><td colspan="3" style="padding:7px 10px 3px;background:${color}18;border-top:2px solid ${color};font-size:10px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:0.08em;">${label}</td></tr>`;
-  const mkTotRow = (label, val, unit) => val>0?`<tr><td style="padding:4px 10px 4px 18px;color:#444;font-size:12px;">${label}</td><td style="padding:4px 10px;text-align:right;font-weight:700;font-size:12px;">${typeof val==='number'?val.toLocaleString():val}</td><td style="padding:4px 10px;color:#888;font-size:11px;">${unit}</td></tr>`:'';
-
-  const hrsTotal = t.contentsMins/60;
-  const totalsHTML = [
-    t.contentsMins>0?mkTotCat('📦 Contents Move','#7C3AED'):'',
-    t.contentsMins>0?mkTotRow('Total Hours',hrsTotal%1===0?hrsTotal:hrsTotal.toFixed(1),'hrs'):'',
-    (t.baseboardLF||t.casingLF||t.quarterRoundLF||t.doorsDetach||t.doorsTearOut)?mkTotCat('📏 Carpentry & Trim','#2563eb'):'',
-    mkTotRow('Baseboard',t.baseboardLF,'LF'),
-    mkTotRow('Door Casing',t.casingLF,'LF'),
-    mkTotRow('Quarter Round',t.quarterRoundLF,'LF'),
-    mkTotRow('Doors — Detach',t.doorsDetach,'ea'),
-    mkTotRow('Doors — Tear Out',t.doorsTearOut,'ea'),
-    (t.floorSF||t.subfloorSF)?mkTotCat('🪵 Flooring','#166534'):'',
-    mkTotRow('Floor Covering',t.floorSF,'SF'),
-    mkTotRow('Subfloor',t.subfloorSF,'SF'),
-    (t.fcLF||t.fcSF||t.drywallCeiling||t.drywallWalls)?mkTotCat('🧱 Drywall','#6B21A8'):'',
-    mkTotRow('Flood Cuts',t.fcLF,'LF'),
-    mkTotRow('Flood Cuts (full wall)',t.fcSF,'SF'),
-    mkTotRow('Drywall — Ceiling',t.drywallCeiling,'SF'),
-    mkTotRow('Drywall — Walls',t.drywallWalls,'SF'),
-    (t.drywallCeiling+t.drywallWalls)>0?mkTotRow('Drywall — TOTAL',t.drywallCeiling+t.drywallWalls,'SF'):'',
-    t.insulationSF?mkTotCat('🌡️ Insulation','#0F766E'):'',
-    mkTotRow('Insulation Removed',t.insulationSF,'SF'),
-    (t.cabLF||t.countertopLF)?mkTotCat('🍽️ Cabinetry','#B45309'):'',
-    mkTotRow('Cabinets',t.cabLF,'LF'),
-    mkTotRow('Countertops',t.countertopLF,'LF'),
-    (t.airMovers||t.dehus||t.scrubbers)?mkTotCat('💨 Drying Equipment','#1D4ED8'):'',
-    mkTotRow('Air Movers',t.airMovers,'ea'),
-    mkTotRow('Dehumidifiers',t.dehus,'ea'),
-    mkTotRow('Air Scrubbers',t.scrubbers,'ea'),
-  ].filter(Boolean).join('');
+  // Job-totals card (schema-driven via summaryKey aggregation).
+  const totals = computeSummary(rooms, schema);
+  const totalsRows = Object.entries(totals)
+    .filter(([, v]) => v && v !== 0)
+    .map(([k, v]) => mkRow(prettySummaryKey(k), typeof v === 'number' ? v.toLocaleString() : v))
+    .join('');
+  const headerColor = sectionColor(sections[0], 0);
 
   return `<div style="font-family:system-ui,sans-serif;max-width:660px;margin:0 auto;padding:20px;">
-    <div style="border-bottom:3px solid #2563eb;padding-bottom:14px;margin-bottom:20px;">
-      <div style="font-size:20px;font-weight:800;color:#2563eb;">UTAH PROS RESTORATION</div>
+    <div style="border-bottom:3px solid ${headerColor};padding-bottom:14px;margin-bottom:20px;">
+      <div style="font-size:20px;font-weight:800;color:${headerColor};">UTAH PROS RESTORATION</div>
       <div style="font-size:11px;font-weight:700;color:#444;letter-spacing:0.05em;margin-top:2px;">DEMOLITION SHEET</div>
-      <div style="font-size:11px;color:#888;margin-top:4px;">Floor plan: ${hasSketchDone?'Encircle / DocuSketch ✓':'No sketch — dimensions recorded per room'}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Floor plan: ${hasSketchDone ? 'Encircle / DocuSketch ✓' : 'No sketch — dimensions recorded per room'}</div>
       <table style="width:100%;margin-top:10px;font-size:12px;">
-        <tr><td style="color:#888;width:80px;">Date</td><td style="font-weight:600;">${displayDate}</td><td style="color:#888;width:90px;">Technician</td><td style="font-weight:600;">${jobInfo.techName||'—'}</td></tr>
-        <tr><td style="color:#888;">Job #</td><td style="font-weight:600;">${jobInfo.jobNumber||'—'}</td><td style="color:#888;">Address</td><td style="font-weight:600;">${jobInfo.address||'—'}</td></tr>
-        <tr><td style="color:#888;">Insured</td><td style="font-weight:600;" colspan="3">${jobInfo.insuredName||'—'}</td></tr>
+        <tr><td style="color:#888;width:80px;">Date</td><td style="font-weight:600;">${escHtml(displayDate)}</td><td style="color:#888;width:90px;">Technician</td><td style="font-weight:600;">${escHtml(jobInfo.techName || '—')}</td></tr>
+        <tr><td style="color:#888;">Job #</td><td style="font-weight:600;">${escHtml(jobInfo.jobNumber || '—')}</td><td style="color:#888;">Address</td><td style="font-weight:600;">${escHtml(jobInfo.address || '—')}</td></tr>
+        <tr><td style="color:#888;">Insured</td><td style="font-weight:600;" colspan="3">${escHtml(jobInfo.insuredName || '—')}</td></tr>
       </table>
     </div>
     ${roomsHTML}
 
-    <div style="margin-top:8px;border:2px solid #2563eb;border-radius:6px;overflow:hidden;">
-      <div style="background:#2563eb;color:#fff;padding:8px 12px;">
+    ${totalsRows ? `
+    <div style="margin-top:8px;border:2px solid ${headerColor};border-radius:6px;overflow:hidden;">
+      <div style="background:${headerColor};color:#fff;padding:8px 12px;">
         <span style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">∑ Job Totals — All Rooms</span>
       </div>
       <table style="width:100%;border-collapse:collapse;">
-        <tbody>${totalsHTML}</tbody>
+        <tbody>${totalsRows}</tbody>
       </table>
-    </div>
+    </div>` : ''}
   </div>`;
 }
 
-function buildNoteText(rooms, jobInfo, hasSketchDone) {
-  const line = (label, val, unit) => val>0?`  ${label}: ${typeof val==='number'?val.toLocaleString():val}${unit?' '+unit:''}\n`:'';
-  const bool = (label, show) => show?`  ${label}: Yes\n`:'';
-  const displayDate = jobInfo.date?new Date(jobInfo.date+'T12:00:00').toLocaleDateString('en-US',{ month:'long',day:'numeric',year:'numeric' }):'N/A';
+function buildNoteText(rooms, jobInfo, hasSketchDone, schema) {
+  const sections = schema?.sections || [];
+  const displayDate = jobInfo.date
+    ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'N/A';
   let out = '';
   out += `UTAH PROS RESTORATION — DEMOLITION SHEET\n`;
   out += `${'='.repeat(44)}\n`;
   out += `Date: ${displayDate}\n`;
-  out += `Technician: ${jobInfo.techName||'—'}\n`;
-  out += `Job #: ${jobInfo.jobNumber||'—'}\n`;
-  out += `Address: ${jobInfo.address||'—'}\n`;
-  out += `Floor Plan: ${hasSketchDone?'Encircle / DocuSketch':'No sketch — dimensions per room'}\n\n`;
-  rooms.forEach((r,i) => {
-    const dim = (r.lengthFt&&r.widthFt&&r.heightFt)?` (${r.lengthFt}x${r.widthFt}x${r.heightFt}ft)`:'';
-    out += `ROOM ${i+1}: ${(r.name||'Unnamed').toUpperCase()}${dim}\n${'-'.repeat(32)}\n`;
-    if (r.contentsMoveHrs>0) { out+=`Contents Move:\n`; out+=line('  Hours',r.contentsMoveHrs,'hrs'); out+=line('  Techs',r.contentsTechs,'techs'); }
-    if (r.appliances===true&&r.appliancesList.length>0) { out+=`Appliances:\n`; r.appliancesList.forEach(a=>{out+=`  ${a}\n`;}); }
-    if (r.fixtures===true) {
-      const hasF = r.toiletRemoved||r.registers>0||r.ceilingFans>0||r.lights>0||r.outletCoversCount>0;
-      if (hasF) { out+=`Plumbing & Fixtures:\n`; out+=bool('  Toilet — Remove',r.toiletRemoved); out+=line('  Registers',r.registers,'ea'); out+=line('  Ceiling Fans',r.ceilingFans,'ea'); out+=line('  Light Fixtures',r.lights,'ea'); out+=line('  Outlet Covers',r.outletCoversCount,'ea'); }
-    }
-    if (r.cabinets===true) {
-      if (r.cabinetsList.length>0||r.countertopLF>0||r.countertopSF>0||r.backsplashLF>0) {
-        out+=`Cabinetry & Countertops:\n`;
-        r.cabinetsList.forEach(c=>{ if(c.lf>0)out+=`  ${c.type}: ${c.lf} LF\n`; });
-        if (r.countertopLF>0) out+=`  Countertop${r.countertopMaterial?` (${r.countertopMaterial})`:''}: ${r.countertopLF} LF\n`;
-        if (r.countertopSF>0) out+=`  Countertop${r.countertopMaterial?` (${r.countertopMaterial})`:''}: ${r.countertopSF} SF\n`;
-        if (r.backsplashLF>0) out+=`  Backsplash${r.backsplashMaterial?` (${r.backsplashMaterial})`:''}: ${r.backsplashLF} LF\n`;
-      }
-    }
-    const hasTrim = r.baseboardLF>0||r.casingLF>0||r.quarterRoundLF>0||(r.doors===true&&r.doorsList.length>0);
-    if (hasTrim) {
-      out += `Carpentry & Trim:\n`;
-      out += line('  Baseboard',r.baseboardLF,'LF'); out += line('  Door Casing',r.casingLF,'LF'); out += line('  Quarter Round',r.quarterRoundLF,'LF');
-      if (r.doors===true) r.doorsList.forEach(d=>{ if(d.detach>0)out+=`  ${d.type} Door — Detach: ${d.detach} ea\n`; if(d.tearOut>0)out+=`  ${d.type} Door — Tear Out: ${d.tearOut} ea\n`; });
-    }
-    const hasFloor = r.floors.some(f=>f.sf>0)||r.subfloorSF>0;
-    if (hasFloor) {
-      out += `Flooring:\n`;
-      r.floors.filter(f=>f.sf>0).forEach(f=>{ const ft=f.type==='Other'?(f.typeOther||'Other'):f.type||'—'; out+=`  ${ft}: ${f.sf} SF\n`; });
-      out += line('  Subfloor',r.subfloorSF,'SF');
-    }
-    const hasDW = r.floodCuts===true||r.drywallCeilingSF>0||r.drywallWallsSF>0;
-    if (hasDW) {
-      out += `Drywall:\n`;
-      if (r.floodCuts===true) r.floodCutsList.forEach(c=>{ const u=c.height==='Full wall (SF)'?'SF':'LF'; out+=`  Flood Cut (${c.height}): ${c.lf||0} ${u}\n`; });
-      out += line('  Ceiling',r.drywallCeilingSF,'SF'); out += line('  Walls',r.drywallWallsSF,'SF');
-      if (r.drywallCeilingSF>0||r.drywallWallsSF>0) out+=`  Total: ${(r.drywallCeilingSF||0)+(r.drywallWallsSF||0)} SF\n`;
-    }
-    if (r.insulation===true&&r.insulationSF>0) out += `Insulation:\n  ${r.insulationTypes.join(', ')||'—'}: ${r.insulationSF} SF\n`;
-    if (r.equipment===true&&r.equipmentList.length>0) { out+=`Drying Equipment:\n`; r.equipmentList.forEach(e=>{ out+=`  ${e.type}: ${e.qty} ea x ${e.days} days\n`; }); }
-    if (r.notes) out += `Notes: ${r.notes}\n`;
+  out += `Technician: ${jobInfo.techName || '—'}\n`;
+  out += `Job #: ${jobInfo.jobNumber || '—'}\n`;
+  out += `Address: ${jobInfo.address || '—'}\n`;
+  out += `Floor Plan: ${hasSketchDone ? 'Encircle / DocuSketch' : 'No sketch — dimensions per room'}\n\n`;
+
+  rooms.forEach((r, i) => {
+    const dim = (r.lengthFt && r.widthFt && r.heightFt) ? ` (${r.lengthFt}x${r.widthFt}x${r.heightFt}ft)` : '';
+    const populatedSections = sections
+      .map(sec => ({ sec, entries: sectionHasContent(sec, r) ? collectSectionEntries(sec, r) : null }))
+      .filter(x => x.entries !== null);
+    if (populatedSections.length === 0) return;
+
+    out += `ROOM ${i+1}: ${(r.name || 'Unnamed').toUpperCase()}${dim}\n${'-'.repeat(32)}\n`;
+    populatedSections.forEach(({ sec, entries }) => {
+      out += `${sec.label}:\n`;
+      entries.forEach(e => {
+        if (e.kind === 'group') out += `  [${e.label}]\n`;
+        else                    out += `  ${e.label}: ${e.value}\n`;
+      });
+    });
     out += '\n';
   });
+
+  const totals = computeSummary(rooms, schema);
+  const totalRows = Object.entries(totals).filter(([, v]) => v && v !== 0);
+  if (totalRows.length > 0) {
+    out += `JOB TOTALS\n${'='.repeat(44)}\n`;
+    totalRows.forEach(([k, v]) => {
+      out += `  ${prettySummaryKey(k)}: ${typeof v === 'number' ? v.toLocaleString() : v}\n`;
+    });
+  }
   return out.trim();
 }
 
-// Roll up rooms into the totals shape the demo_sheets VIEW exposes via summary
-function computeSummary(rooms) {
-  return rooms.reduce((a, r) => {
-    const fcLF    = r.floodCuts===true ? r.floodCutsList.filter(c=>c.height!=='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0) : 0;
-    const fcSF    = r.floodCuts===true ? r.floodCutsList.filter(c=>c.height==='Full wall (SF)').reduce((s,c)=>s+(c.lf||0),0) : 0;
-    const cabLF   = r.cabinets===true  ? r.cabinetsList.reduce((s,c)=>s+(c.lf||0),0) : 0;
-    const floorSF = r.floors.reduce((s,f)=>s+(f.sf||0),0);
-    const eqList  = r.equipment===true ? r.equipmentList : [];
-    return {
-      baseboardLF:    a.baseboardLF    + (r.baseboardLF || 0),
-      casingLF:       a.casingLF       + (r.casingLF || 0),
-      quarterRoundLF: a.quarterRoundLF + (r.quarterRoundLF || 0),
-      floorSF:        a.floorSF        + floorSF,
-      subfloorSF:     a.subfloorSF     + (r.subfloorSF || 0),
-      drywallSF:      a.drywallSF      + (r.drywallCeilingSF || 0) + (r.drywallWallsSF || 0),
-      floodCutsLF:    a.floodCutsLF    + fcLF,
-      floodCutsSF:    a.floodCutsSF    + fcSF,
-      insulationSF:   a.insulationSF   + (r.insulation===true ? (r.insulationSF || 0) : 0),
-      cabinetsLF:     a.cabinetsLF     + cabLF,
-      countertopLF:   a.countertopLF   + (r.cabinets===true ? (r.countertopLF || 0) : 0),
-      contentsHrs:    a.contentsHrs    + (r.contentsMoveHrs || 0),
-      airMovers:      a.airMovers      + eqList.filter(e=>e.type==='Air Mover').reduce((s,e)=>s+(e.qty||0), 0),
-      dehumidifiers:  a.dehumidifiers  + eqList.filter(e=>e.type==='Dehumidifier').reduce((s,e)=>s+(e.qty||0), 0),
-      airScrubbers:   a.airScrubbers   + eqList.filter(e=>e.type==='Air Scrubber').reduce((s,e)=>s+(e.qty||0), 0),
-    };
-  }, {
-    baseboardLF:0, casingLF:0, quarterRoundLF:0, floorSF:0, subfloorSF:0,
-    drywallSF:0, floodCutsLF:0, floodCutsSF:0, insulationSF:0, cabinetsLF:0,
-    countertopLF:0, contentsHrs:0, airMovers:0, dehumidifiers:0, airScrubbers:0,
-  });
+// Cosmetic conversion of a summary key (e.g. drywallSF) to a label (e.g.
+// "Drywall SF"). Camel/snake split + first-letter capitalize.
+function prettySummaryKey(key) {
+  return String(key)
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^([a-z])/, (_, c) => c.toUpperCase());
 }
+
+
+
+// ── Review Screen (schema-driven) ────────────────────────────────────────────
+//
+// Iterates schema.sections per room, using collectSectionEntries from the
+// shared renderer. Sections that aren't populated for a given room are
+// skipped; gated sections answered "No" show as N/A pills. Job totals come
+// from computeSummary.
+function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+  const sections = schema?.sections || [];
+  const [expandedRooms, setExpandedRooms] = useState(new Set([rooms[0]?.id]));
+  const toggleRoom = id => setExpandedRooms(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const displayDate = jobInfo.date
+    ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—';
+
+  const totals = computeSummary(rooms, schema);
+  const totalRows = Object.entries(totals).filter(([, v]) => v && v !== 0);
+
+  const lastDoneFlag = (() => {
+    for (let i = sections.length - 1; i >= 0; i--) if (sections[i].doneFlag) return sections[i].doneFlag;
+    return null;
+  })();
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:'calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))' }}>
+      <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', position:'sticky', top:0, zIndex:10, display:'flex', alignItems:'center', gap:12 }}>
+        <button onClick={onBack} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', flexShrink:0, fontFamily:'var(--font-sans)' }}>← Edit</button>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:9, color:C.accent, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.14em' }}>Review Before Sending</div>
+          <div style={{ fontSize:14, fontWeight:800, color:C.text }}>
+            {rooms.length} Room{rooms.length !== 1 ? 's' : ''} · {jobInfo.jobNumber || 'No Job #'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding:'14px 13px 0' }}>
+        {/* Job info card */}
+        <div style={{ ...sCard, border:`1px solid ${C.accent}` }}>
+          <div style={{ fontSize:9, color:C.accent, textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:800, marginBottom:12 }}>Job Info</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            {[['Date', displayDate], ['Tech', jobInfo.techName || '—'], ['Job #', jobInfo.jobNumber || '—'], ['Insured', jobInfo.insuredName || '—'], ['Floor Plan', hasSketchDone ? 'Encircle/DocuSketch ✓' : 'No sketch']].map(([l, v]) => (
+              <div key={l}>
+                <div style={{ fontSize:10, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:2 }}>{l}</div>
+                <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {jobInfo.address && <div style={{ marginTop:10, fontSize:12, color:C.muted }}>📍 {jobInfo.address}</div>}
+        </div>
+
+        {/* Per-room summary cards */}
+        {rooms.map((r, i) => {
+          const isOpen = expandedRooms.has(r.id);
+          const dim = (r.lengthFt && r.widthFt && r.heightFt) ? `${r.lengthFt}×${r.widthFt}×${r.heightFt}ft` : '';
+          const isComplete = !!(lastDoneFlag && r[lastDoneFlag]);
+
+          // Quick "headline" summary line: pick the first 2-3 stepper-summed things.
+          const populatedSections = sections
+            .map(sec => ({ sec, entries: sectionHasContent(sec, r) ? collectSectionEntries(sec, r) : null }))
+            .filter(x => x.entries !== null);
+          const naSections = sections.filter(s => !s.alwaysOn && s.gateField && r[s.gateField] === false);
+
+          return (
+            <div key={r.id} style={{ ...sCard, border:`1px solid ${isComplete ? C.greenBd : C.accent}` }}>
+              <button onClick={() => toggleRoom(r.id)} style={{ width:'100%', background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', gap:10, fontFamily:'var(--font-sans)' }}>
+                <div style={{ background:isComplete ? C.green : C.accent, color:'#fff', fontWeight:900, fontSize:11, width:28, height:28, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {isComplete ? '✓' : i + 1}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:C.text }}>{r.name || `Room ${i + 1}`}</div>
+                  <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>
+                    {[dim, populatedSections.length > 0 ? `${populatedSections.length} section${populatedSections.length === 1 ? '' : 's'} populated` : 'No quantities entered'].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <span style={{ fontSize:12, color:C.muted }}>{isOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {isOpen && (
+                <div style={{ marginTop:14, borderTop:`1px solid ${C.border}`, paddingTop:14 }}>
+                  {populatedSections.map(({ sec, entries }) => (
+                    <div key={sec.key} style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:10, color:C.accent, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>
+                        {sec.icon || ''} {sec.label}
+                      </div>
+                      {entries.length === 0 && (
+                        <div style={{ fontSize:12, color:C.muted, padding:'6px 0' }}>Marked Yes — no details entered.</div>
+                      )}
+                      {entries.map((e, ei) => e.kind === 'group' ? (
+                        <div key={ei} style={{ fontSize:10, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', padding:'8px 0 2px' }}>{e.label}</div>
+                      ) : (
+                        <div key={ei} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:`1px solid ${C.borderLt}` }}>
+                          <span style={{ fontSize:13, color:C.muted }}>{e.label}</span>
+                          <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{e.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+
+                  {/* N/A pills for "No" answers on gated sections */}
+                  {naSections.length > 0 && (
+                    <div style={{ marginTop:8, flexWrap:'wrap', display:'flex', gap:4 }}>
+                      {naSections.map(s => (
+                        <span key={s.key} style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:12, display:'inline-block', background:C.cardAlt, color:C.muted, border:`1px solid ${C.border}` }}>
+                          — {s.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Job totals */}
+        {totalRows.length > 0 && (
+          <div style={{ ...sCard, border:`1px solid ${C.accent}`, marginBottom:16 }}>
+            <div style={{ fontSize:9, color:C.accent, textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:800, marginBottom:12 }}>∑ Job Totals</div>
+            {totalRows.map(([k, v]) => (
+              <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:`1px solid ${C.borderLt}` }}>
+                <span style={{ fontSize:13, color:C.text }}>{prettySummaryKey(k)}</span>
+                <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{typeof v === 'number' ? v.toLocaleString() : v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ position:'fixed', bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
+        <div style={{ fontSize:11, color:C.muted, textAlign:'center', marginBottom:8 }}>
+          {encircleLinked ? '⛓ Will email + post note to Encircle' : 'Will email to restoration@utah-pros.com'}
+        </div>
+        <button onClick={onSubmit} disabled={sending} style={{ width:'100%', background:sending ? C.cardAlt : C.green, border:'none', borderRadius:10, color:sending ? C.muted : '#fff', fontSize:17, fontWeight:800, padding:17, cursor:sending ? 'default' : 'pointer', opacity:sending ? 0.8 : 1, fontFamily:'var(--font-sans)' }}>
+          {sending ? <span>⏳ Submitting…</span> : <span>✓ Submit Demo Sheet</span>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultScreen({ result, onStartNew, onBack, onClose }) {
+  const saveOk = result.saveOk;
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, textAlign:'center' }}>
+      <div style={{ fontSize:72, marginBottom:20, lineHeight:1 }}>{saveOk ? '✅' : '❌'}</div>
+      <div style={{ fontSize:22, fontWeight:800, color:saveOk ? C.green : C.red, marginBottom:8 }}>
+        {saveOk ? 'Demo Sheet Saved!' : 'Save Failed'}
+      </div>
+      <div style={{ fontSize:13, color:C.muted, marginBottom:32, lineHeight:1.5 }}>
+        {saveOk
+          ? 'Stored in UPR and visible from this claim.'
+          : (result.saveErr || 'Could not save — check connection.')
+        }
+      </div>
+
+      {saveOk && (
+        <div style={{ width:'100%', maxWidth:360, marginBottom:32 }}>
+          {/* Email — best effort, secondary status */}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.emailOk ? C.greenDim : C.cardAlt, border:`1.5px solid ${result.emailOk ? C.greenBd : C.border}`, borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+            <span style={{ fontSize:20, flexShrink:0 }}>📧</span>
+            <div style={{ textAlign:'left', minWidth:0, flex:1 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:result.emailOk ? C.green : C.muted }}>
+                {result.emailOk ? 'Email sent' : 'Email skipped'}
+              </div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:2, wordBreak:'break-word' }}>
+                {result.emailOk
+                  ? 'restoration@utah-pros.com'
+                  : (result.emailErr || 'Could not send — sheet saved anyway')
+                }
+              </div>
+            </div>
+          </div>
+
+          {/* Encircle — only show if there was an attempt */}
+          {!result.encircleSkipped && (
+            <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.encircleOk ? C.greenDim : C.cardAlt, border:`1.5px solid ${result.encircleOk ? C.greenBd : C.border}`, borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+              <span style={{ fontSize:20, flexShrink:0 }}>⛓</span>
+              <div style={{ textAlign:'left' }}>
+                <div style={{ fontSize:12, fontWeight:700, color:result.encircleOk ? C.green : C.muted }}>
+                  {result.encircleOk ? 'Posted to Encircle' : 'Encircle skipped'}
+                </div>
+                <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+                  {result.encircleOk ? 'General note saved to job' : 'Could not post note — sheet saved anyway'}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ width:'100%', maxWidth:360, display:'flex', flexDirection:'column', gap:10 }}>
+        {saveOk ? (
+          <>
+            <button onClick={onClose} style={{ background:C.green, border:'none', borderRadius:10, color:'#fff', fontSize:15, fontWeight:800, padding:15, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              ✓ Done
+            </button>
+            <button onClick={onStartNew} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:10, color:C.muted, fontSize:13, fontWeight:600, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              + Start New Demo Sheet
+            </button>
+            <button onClick={onBack} style={{ background:'transparent', border:'none', color:C.muted, fontSize:12, fontWeight:600, padding:8, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+              ← Back to Sheet
+            </button>
+          </>
+        ) : (
+          <button onClick={onBack} style={{ background:C.accent, border:'none', borderRadius:10, color:'#fff', fontSize:15, fontWeight:800, padding:15, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+            ← Go Back & Retry
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function TechDemoSheet() {
@@ -574,7 +645,7 @@ export default function TechDemoSheet() {
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
           p_status: 'draft',
           p_job_id: jobId || null,
-          p_summary: computeSummary(rooms),
+          p_summary: computeSummary(rooms, schema),
           p_schema_id: schema?._id || null,
         };
         const newId = await db.rpc('save_demo_sheet', payload);
@@ -658,7 +729,7 @@ export default function TechDemoSheet() {
       p_status: status,
       p_encircle_note_id: encircleNoteId,
       p_job_id: jobId || null,
-      p_summary: computeSummary(rooms),
+      p_summary: computeSummary(rooms, schema),
       p_email_sent: emailOk,
       p_schema_id: schema?._id || null,
     });
@@ -682,7 +753,7 @@ export default function TechDemoSheet() {
   const doSubmit = async () => {
     setSending(true);
     setSubmitResult(null);
-    const html = buildEmailHTML(rooms, jobInfo, hasSketchDone);
+    const html = buildEmailHTML(rooms, jobInfo, hasSketchDone, schema);
     const subject = `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'} | ${jobInfo.address||'No Address'}`;
 
     // ── 1. Persist to UPR first — this is the source of truth ──
@@ -739,7 +810,7 @@ export default function TechDemoSheet() {
             body: JSON.stringify({
               claim_id: encircleLinked.id,
               title: `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
-              text: buildNoteText(rooms, jobInfo, hasSketchDone),
+              text: buildNoteText(rooms, jobInfo, hasSketchDone, schema),
             }),
           })
             .then(async r => {
