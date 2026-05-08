@@ -620,14 +620,17 @@ function ResultScreen({ result, onStartNew, onBack }) {
       </div>
 
       <div style={{ width:'100%', maxWidth:360, marginBottom:32 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12, background:result.emailOk?C.greenDim:C.redDim, border:`1.5px solid ${result.emailOk?C.greenBd:C.redBd}`, borderRadius:10, padding:'14px 16px', marginBottom:10 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.emailOk?C.greenDim:C.redDim, border:`1.5px solid ${result.emailOk?C.greenBd:C.redBd}`, borderRadius:10, padding:'14px 16px', marginBottom:10 }}>
           <span style={{ fontSize:24, flexShrink:0 }}>📧</span>
-          <div style={{ textAlign:'left' }}>
+          <div style={{ textAlign:'left', minWidth:0, flex:1 }}>
             <div style={{ fontSize:13, fontWeight:700, color:result.emailOk?C.green:C.red }}>
               {result.emailOk?'Email Sent ✓':'Email Failed ✗'}
             </div>
-            <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
-              {result.emailOk?'restoration@utah-pros.com':'Could not send email — check connection'}
+            <div style={{ fontSize:11, color:C.muted, marginTop:2, wordBreak:'break-word' }}>
+              {result.emailOk
+                ? 'restoration@utah-pros.com'
+                : (result.errors?.find(e => e.startsWith('Email:'))?.replace(/^Email:\s*/, '') || 'Could not send email — check connection')
+              }
             </div>
           </div>
         </div>
@@ -1467,8 +1470,22 @@ export default function TechDemoSheet() {
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ subject, message: html }),
       })
-        .then(r => { emailOk = r.ok; if (!r.ok) errors.push('Email failed'); })
-        .catch(() => errors.push('Email failed')),
+        .then(async r => {
+          emailOk = r.ok;
+          if (!r.ok) {
+            let detail = `HTTP ${r.status}`;
+            try {
+              const body = await r.json();
+              if (body?.error) detail = body.error + (body.detail ? ` — ${body.detail}` : '');
+            } catch { /* not JSON */ }
+            console.error('[demo-sheet] send-demo-sheet failed:', detail);
+            errors.push(`Email: ${detail}`);
+          }
+        })
+        .catch(e => {
+          console.error('[demo-sheet] send-demo-sheet network error:', e);
+          errors.push(`Email: ${e.message || 'network error'}`);
+        }),
     ];
 
     if (!encircleSkipped) {
