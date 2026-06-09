@@ -27,6 +27,23 @@ function normalizePhone(phone) {
   return null;
 }
 
+// claims.loss_type has a CHECK constraint — only these values are accepted.
+// Encircle's type_of_loss is free text ("Water Damage", "FLOOD", ...), so map
+// it down to a valid value or fall back to 'other'. Null stays null.
+const VALID_LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'vandalism', 'sewer', 'contents', 'wind'];
+function normalizeLossType(raw) {
+  if (!raw) return null;
+  const v = String(raw).toLowerCase();
+  for (const t of VALID_LOSS_TYPES) {
+    if (v.includes(t)) return t;
+  }
+  if (v.includes('flood') || v.includes('pipe') || v.includes('leak')) return 'water';
+  if (v.includes('smoke')) return 'fire';
+  if (v.includes('hail') || v.includes('snow') || v.includes('ice') || v.includes('rain')) return 'storm';
+  if (v.includes('sewage') || v.includes('backup')) return 'sewer';
+  return 'other';
+}
+
 function parseAddressParts(fullAddress) {
   if (!fullAddress) return { address: null, city: null, state: null, zip: null };
   const parts = fullAddress.split(',').map(s => s.trim());
@@ -221,7 +238,7 @@ async function handleImport(body, request, env) {
       loss_city: city || null,
       loss_state: state || null,
       loss_zip: zip || null,
-      loss_type: type_of_loss || null,
+      loss_type: normalizeLossType(type_of_loss),
     }),
   });
 

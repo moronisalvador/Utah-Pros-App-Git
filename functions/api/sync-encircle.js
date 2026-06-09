@@ -120,7 +120,9 @@ async function doSync(request, env) {
 
   // 3. Upsert jobs
   const upsertRes = await fetch(
-    `${sbUrl}/rest/v1/jobs?on_conflict=encircle_claim_id`,
+    // The unique index on jobs is (encircle_claim_id, division) — on_conflict
+    // must name both columns or PostgREST's upsert fails with 42P10.
+    `${sbUrl}/rest/v1/jobs?on_conflict=encircle_claim_id,division`,
     {
       method: 'POST',
       headers: {
