@@ -524,6 +524,12 @@ export default function TechDemoSheet() {
 
   const [jobId, setJobIdState] = useState(null);
   const saveTimerRef = useRef(null);
+  // The first save has no id yet (INSERT). On slow connections a second save
+  // can fire before the first returns, inserting a duplicate draft. These refs
+  // let in-flight saves share the row id instead of racing.
+  const sheetIdRef = useRef(null);
+  const createInFlightRef = useRef(null);
+  const applySheetId = (id) => { sheetIdRef.current = id; setSheetId(id); };
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
 
   // Active techs dropdown — replaces the original hardcoded list
@@ -580,7 +586,7 @@ export default function TechDemoSheet() {
         .then(rows => {
           const row = Array.isArray(rows) ? rows[0] : rows;
           if (row && row.form_data) {
-            setSheetId(row.id);
+            applySheetId(row.id);
             if (row.job_id) setJobIdState(row.job_id);
             const d = row.form_data;
             setRooms((d.rooms || [defaultRoom()]).map(r => ({ ...defaultRoom(), ...r })));
@@ -633,9 +639,12 @@ export default function TechDemoSheet() {
     if (showResult) return;
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
+      // First INSERT still in flight — saving again without an id would
+      // create a duplicate draft. The next change re-arms the timer.
+      if (!sheetIdRef.current && createInFlightRef.current) return;
       try {
         const payload = {
-          p_id: sheetId,
+          p_id: sheetIdRef.current,
           p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
           p_job_date: jobInfo.date || null,
           p_tech_id:  jobInfo.tech || null,
@@ -648,9 +657,11 @@ export default function TechDemoSheet() {
           p_summary: computeSummary(rooms, schema),
           p_schema_id: schema?._id || null,
         };
-        const newId = await db.rpc('save_demo_sheet', payload);
-        if (!sheetId && newId) {
-          setSheetId(newId);
+        const savePromise = db.rpc('save_demo_sheet', payload);
+        if (!sheetIdRef.current) createInFlightRef.current = savePromise;
+        const newId = await savePromise;
+        if (!sheetIdRef.current && newId) {
+          applySheetId(newId);
           const next = new URLSearchParams(searchParams);
           next.set('id', newId);
           // Strip prefill params now that we have a draft id
@@ -659,6 +670,8 @@ export default function TechDemoSheet() {
         }
       } catch {
         /* autosave is best-effort; surface only on submit */
+      } finally {
+        createInFlightRef.current = null;
       }
     }, 2000);
     return () => clearTimeout(saveTimerRef.current);
@@ -717,8 +730,16 @@ export default function TechDemoSheet() {
   // Returns the final sheet id, or throws.
   const flushSave = async ({ status = 'draft', emailOk = null, encircleNoteId = null } = {}) => {
     clearTimeout(saveTimerRef.current);
+    // If the first INSERT is still in flight, wait for its id so this save
+    // UPDATEs that row instead of inserting a duplicate draft.
+    if (!sheetIdRef.current && createInFlightRef.current) {
+      try {
+        const id = await createInFlightRef.current;
+        if (id) applySheetId(id);
+      } catch { /* fall through — save below will insert */ }
+    }
     const newId = await db.rpc('save_demo_sheet', {
-      p_id: sheetId,
+      p_id: sheetIdRef.current,
       p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
       p_job_date: jobInfo.date || null,
       p_tech_id:  jobInfo.tech || null,
@@ -733,8 +754,8 @@ export default function TechDemoSheet() {
       p_email_sent: emailOk,
       p_schema_id: schema?._id || null,
     });
-    if (!sheetId && newId) setSheetId(newId);
-    return newId || sheetId;
+    if (!sheetIdRef.current && newId) applySheetId(newId);
+    return newId || sheetIdRef.current;
   };
 
   const handleSaveAndClose = async () => {
@@ -849,7 +870,7 @@ export default function TechDemoSheet() {
     setEncircleRooms([]);
     setSubmitResult(null);
     setShowResult(false);
-    setSheetId(null);
+    applySheetId(null);
     setSearchParams({}, { replace: true });
   };
 
