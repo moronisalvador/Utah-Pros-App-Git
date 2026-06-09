@@ -91,6 +91,7 @@ src/
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
+    TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (SendGrid HTML email) + /api/encircle-upload (general note posted to the linked claim) in parallel; ResultScreen shows per-channel success/fail; final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon.
     tech/Hero.jsx                 — Shared division-gradient hero. Prop-configurable: { division, topLabel, title, address, statusText, statusColors, meta[], onBack, backLabel, showMenu, onMenu }. Used by TechClaimDetail and TechJobDetail.
@@ -143,6 +144,10 @@ functions/
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
     twilio-webhook.js             — Inbound SMS handler
+    encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
+    encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
+    encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
+    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via SendGrid v3. From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
@@ -221,8 +226,24 @@ sign_requests           — Esign requests (token, status, open tracking). Recon
 document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_pay, change_order,
                           recon_agreement×16 legal sections with sort_order 1–16)
 document_requests       — Document request records
-forms                   — Form definitions
-demo_sheets             — Demo sheet records
+forms                   — Multi-form storage (form_type enum: demo_sheet, mold_protocol, fire_scope,
+                          contents_inventory, reconstruction_scope, inspection, custom). Columns:
+                          id, created_at, updated_at, job_id, submitted_by, form_type, form_version,
+                          form_date, technician_name, status (draft|submitted), encircle_claim_id,
+                          encircle_note_id, encircle_synced_at, email_sent, email_sent_at,
+                          form_data JSONB, summary JSONB. RLS permissive (allow_authenticated_forms).
+demo_sheets             — VIEW over forms WHERE form_type='demo_sheet' (legacy flat shape, read-only).
+                          The TechDemoSheet page reads/writes `forms` directly via RPCs.
+rooms                   — Per-CLAIM physical rooms (water/mold/recon share same structure).
+                          Columns: id, claim_id (FK claims, CASCADE), name, area_sqft, ceiling_height_ft,
+                          sort_order, client_id UUID UNIQUE (offline idempotency key),
+                          created_by (FK employees), created_at, deleted_at (soft).
+                          Added Apr 17 2026 as part of Encircle replacement Phase 1.
+                          NOTE: Earlier draft had job_id; refactored to claim_id on Apr 17 so jobs
+                          under the same claim share rooms.
+job_documents           — Extended Apr 17 with `room_id UUID` (FK rooms, ON DELETE SET NULL).
+                          Tags photos/notes to a specific room for Encircle-style grouping.
+                          `insert_job_document` RPC accepts p_room_id as final optional param.
 ```
 
 **Supported eSign doc_types:** `coc`, `work_auth`, `direction_pay`, `change_order`, `recon_agreement`.
@@ -261,7 +282,7 @@ sub_confirmations       — Subcontractor job confirmations
 ```
 employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
-feature_flags           — 8 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins)
+feature_flags           — 13 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue.
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
 automation_rules        — Workflow automation rules
@@ -403,6 +424,33 @@ upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p
 delete_feature_flag(p_key)
 ```
 
+### Rooms & Encircle Replacement (Phase 1 + 1.5 — Apr 17 2026)
+All claim-scoped. Frontend passes p_job_id where convenient; function resolves claim_id internally.
+```
+get_job_rooms(p_job_id)         — Resolves job→claim, returns rooms for that claim.
+                                  Row shape: id, claim_id, name, area_sqft, ceiling_height_ft,
+                                  sort_order, client_id, created_by, created_at, deleted_at,
+                                  photo_count INT (job_documents WHERE room_id=r.id AND category='photo'),
+                                  reading_count INT (stub 0, wired in Phase 2 Hydro).
+get_claim_rooms(p_claim_id)     — Direct claim-level lookup. Same shape as get_job_rooms.
+create_room(p_job_id, p_name,
+            p_area_sqft, p_ceiling_height_ft, p_sort_order,
+            p_client_id, p_created_by)
+                                — Resolves claim from job, INSERT … ON CONFLICT (client_id)
+                                  DO UPDATE (idempotent for offline retries).
+create_room_for_claim(p_claim_id, p_name, …same optional params…)
+                                — Direct claim-level variant.
+update_room(p_room_id, p_name, p_area_sqft, p_ceiling_height_ft, p_sort_order)
+delete_room(p_room_id)          — Soft delete (sets deleted_at=now) + nulls
+                                  job_documents.room_id that pointed at it.
+move_photo_to_room(p_document_id, p_room_id DEFAULT NULL)
+                                — p_room_id NULL untags the photo.
+insert_job_document(…, p_room_id UUID DEFAULT NULL)
+                                — MODIFIED Apr 17. Older 7-param and 8-param overloads dropped.
+                                  Single canonical 9-param version; all existing callers use named
+                                  args via db.rpc() so backward compatibility is preserved.
+```
+
 ### Data Integrity (Phase 4 — complete)
 ```
 get_orphan_jobs_no_claim()      — Jobs with no claim_id
@@ -471,6 +519,98 @@ get_oop_quote(p_id)             — Returns single full oop_quotes row for the c
                                    to hydrate on load.
 delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
 ```
+
+### Demo Sheet (May 8 2026 — port of standalone Netlify app)
+```
+save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
+                p_insured_name, p_encircle_claim_id, p_status, p_encircle_note_id,
+                p_job_id, p_summary, p_email_sent, p_schema_id)
+                                — Insert/update a forms row with form_type='demo_sheet'.
+                                  When p_id is NULL inserts; otherwise updates only rows
+                                  where form_type='demo_sheet'. Resolves technician_name
+                                  from employees.display_name||full_name based on p_tech_id.
+                                  May 8 2026: added p_schema_id (snapshot of the
+                                  demo_sheet_schemas row this sheet was filled against —
+                                  defaults to the active schema on insert; never changes
+                                  on update). p_job_id writes forms.job_id so the sheet
+                                  is reachable from a claim via jobs.claim_id; p_summary
+                                  JSONB stores rolled-up totals; p_email_sent flips
+                                  forms.email_sent + email_sent_at on submit. Sets
+                                  encircle_synced_at=now() the first time encircle_note_id
+                                  is supplied. Returns the row UUID.
+get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
+                                  job_number, address, insured_name, encircle_claim_id) for
+                                  the resume-draft banner. Sorted by updated_at DESC.
+get_demo_sheet(p_id)            — Single demo_sheet row including form_data, summary,
+                                  job_id, and schema_id. Used to rehydrate state when the
+                                  page loads with ?id=…
+get_claim_demo_sheets(p_claim_id) — All demo sheets attached to ANY job under the claim
+                                  (joins forms.job_id → jobs.claim_id). Returns id, status,
+                                  email_sent, job_id, job_number, division, technician_name,
+                                  form_date, insured_name, address, room_count, summary.
+                                  Sorted by updated_at DESC. Powers the Demo Sheets list
+                                  on TechClaimDetail (mobile) and ClaimPage (desktop).
+get_job_demo_sheets(p_job_id)   — Same shape but scoped to a single job.
+get_active_techs()              — UUID + display_name for all is_active employees with role
+                                  in (field_tech, supervisor, project_manager, admin).
+                                  Replaces the demo's hardcoded TECHS array.
+```
+
+### Demo Sheet Builder (May 8 2026 — Phase 1: DB foundation)
+```
+demo_sheet_schemas              — Versioned JSONB definitions of the demo sheet's
+                                  sections + fields + room presets. One row is is_active
+                                  at a time (partial unique index). Each forms row
+                                  (form_type='demo_sheet') is FK'd to the schema_id it
+                                  was filled against — snapshot semantics, so editing
+                                  the schema later doesn't reshape old sheets. Seeded
+                                  with v1 mirroring the previously-hardcoded constants
+                                  (12 sections, 12 room presets, full field tree).
+                                  Inline updated_at trigger via
+                                  public.demo_sheet_schemas_touch_updated_at().
+
+get_active_demo_schema()        — Returns id/version/name/definition/updated_at for the
+                                  currently-active schema. Used by TechDemoSheet to
+                                  render new sheets and by the builder.
+get_demo_schema(p_id)           — One row by id (includes is_active + notes).
+list_demo_schemas()             — All versions newest-first plus per-version sheet_count
+                                  (how many forms are pinned to each).
+upsert_demo_schema(p_id, p_name, p_definition, p_notes, p_created_by)
+                                — Insert (auto-bumps version) or update an existing row.
+                                  Never flips is_active — use publish_demo_schema for that.
+publish_demo_schema(p_id)       — Atomically deactivate the current active row and
+                                  activate this one. New sheets created after publish
+                                  pick up this schema; existing sheets keep their
+                                  schema_id snapshot.
+```
+
+**Schema definition shape (JSONB):**
+```jsonc
+{
+  "version": 1,
+  "name": "v1 — initial port",
+  "roomPresets": ["Living Room", "Kitchen", ...],
+  "sections": [
+    {
+      "key": "trim", "label": "Baseboard & Trim", "icon": "📏",
+      "alwaysOn": true,                    // OR { "gateField": "floodCuts" }
+      "doneFlag": "trimDone",              // boolean key set when "Done → Next" is tapped
+      "fields": [
+        { "key": "baseboardLF", "type": "stepper", "label": "...",
+          "unit": "LF", "step": 1, "small": true, "summaryKey": "baseboardLF" },
+        // field types: stepper | single-chip | multi-chip | text | textarea |
+        //              checkbox | select | list (nested itemFields)
+        // showWhen: { field, equals } | { field, includes }
+        // unitWhen: { field, equals, thenLabel, thenUnit }   (dynamic unit)
+        // summaryKey + summaryAggregate: 'sum' | 'tally' (for rollup totals)
+      ]
+    }
+  ]
+}
+```
+
+`forms.schema_id` (UUID, nullable, FK to demo_sheet_schemas) — every demo_sheet form
+points back to its schema. Backfilled to v1 for all pre-existing rows.
 
 ---
 
@@ -618,6 +758,8 @@ VITE_SUPABASE_ANON_KEY          — Same (Vite build)
 VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
 SENDGRID_API_KEY                — SendGrid v3
 ENCIRCLE_API_KEY                — Encircle integration
+DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
+DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
 TWILIO_*                        — 7 vars (pending go-live)
 APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
@@ -739,3 +881,208 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 11. **Desktop ClaimPage photo URL bug** — noticed during TechClaimDetail build: desktop `ClaimPage.jsx` builds photo URLs as `${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}` but `doc.file_path` already starts with `job-files/`, producing a double prefix. TechClaimDetail uses the correct pattern: `${db.baseUrl}/storage/v1/object/public/${doc.file_path}`. Desktop photos may not be loading — verify.
 12. **In-app SMS** — TechClaimDetail + TechAppointment Message buttons open native `sms:` compose; swap to in-app Messages flow when available (search `TODO: switch to in-app SMS` in tech files).
 13. **Claim-level photo attachments** — TechClaimDetail uploads with `p_appointment_id: null`. On multi-job claims, the tech is prompted to pick which job the photo attaches to. Single-job claims direct-fire to `jobs[0].id`.
+
+---
+
+## Encircle Replacement — Phase 1 + 1.5 (Apr 17 2026)
+
+The Encircle replacement build is scoped as a 6-8 week effort ending with Hydro
+(moisture readings, IICRC S500) and a Water Loss Report PDF. Phase 1 + 1.5
+landed Apr 17 and covers rooms + offline-first photo capture.
+
+### What's live
+- **Rooms** — claim-scoped per `rooms` table. UI: Rooms grid on TechClaimDetail,
+  dedicated TechRoomDetail page with Photos/Notes tabs. Add Room sheet with 16
+  starter templates + custom name. All feature-gated behind `page:tech_rooms`.
+- **PhotoNoteSheet** — shared bottom sheet used post-upload. Two tabs (Note +
+  Room). Extracted from duplicated JSX in TechAppointment.jsx and TechDash.jsx.
+- **Offline queue** — IDB-backed write queue. All four photo capture surfaces
+  (TechAppointment, TechDash ActiveCard, TechClaimDetail, TechRoomDetail) route
+  through it when `offline:queue` is enabled. Sync runner drains on online/
+  visibilitychange/30s poll with exponential backoff (1s/4s/15s/1m/5m). Max 5
+  retries before status=error. OfflineStatusPill in TechLayout shows
+  "Syncing N" / "N failed" (tap to retry) / brief "Synced" flash.
+- **Service worker** — `public/sw.js` CacheFirst for /assets and Supabase
+  Storage reads under job-files/; NetworkFirst (3s timeout → cache) for the
+  three cacheable RPCs: get_job_rooms, get_appointment_detail,
+  get_my_appointments_today. Cache name `upr-v1`.
+- **5 feature flags** seeded dev-only for Moroni Salvador admin
+  (`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`):
+  - `page:tech_rooms` — Rooms UI + PhotoNoteSheet Room tab
+  - `page:tech_moisture` — Phase 2 Hydro (placeholder)
+  - `page:tech_equipment` — Phase 2 equipment placements (placeholder)
+  - `page:water_loss_report` — Phase 3 PDF (placeholder)
+  - `offline:queue` — Queue kill-switch; on = enqueue path, off = inline path
+
+### New files
+```
+src/components/tech/
+  PhotoNoteSheet.jsx       — shared bottom sheet, Note + Room tabs
+  RoomCard.jsx             — cover-photo tile, scrim + name overlay, photo-count chip
+  AddRoomSheet.jsx         — template grid + custom name
+  OfflineStatusPill.jsx    — mounted in TechLayout header, floating top-right
+src/pages/tech/
+  TechRoomDetail.jsx       — /tech/claims/:claimId/rooms/:roomId — Photos/Notes tabs
+src/lib/
+  offlineDb.js             — idb wrapper, 7 stores: queue, photos, rooms, readings,
+                             equipment, cacheMeta, idSwaps
+  syncRunner.js            — drain/dispatch/backoff/emit
+  syncRunnerSingleton.js   — one runner per (db, employee.id)
+  registerSW.js            — SW registration helper (unused; main.jsx already registers)
+  dispatchers/
+    roomDispatcher.js      — create_room RPC + temp→server UUID swap
+    photoDispatcher.js     — Storage upload + insert_job_document, resolves roomId swap
+src/hooks/
+  useOfflineQueue.js       — useSyncExternalStore-based hook, lazy-inits singleton
+supabase/migrations/
+  20260420_phase1_rooms.sql               — table, RPCs, insert_job_document extension
+  20260417_phase1_rooms_claim_scoped.sql  — job_id → claim_id refactor + get_claim_rooms
+```
+
+### Client ID idempotency contract
+- Every new table has `client_id UUID UNIQUE`.
+- Every write RPC takes `p_client_id` and does `ON CONFLICT (client_id) DO UPDATE`.
+- Retries are safe. Photo dispatcher uses `resolveIdSwap` to turn a temp
+  room UUID (queued before `room.create` synced) into the real server UUID
+  before calling `insert_job_document`.
+
+### Pending follow-ups
+- Web admin parity (`ClaimPage.jsx` desktop) — rooms section not yet added
+- Photo capture auto-open PhotoNoteSheet after enqueue to allow note + room
+  tagging pre-sync (currently only possible after sync completes)
+- Rename / delete room UI on TechRoomDetail (currently create-only)
+- Offline app-shell bootstrap — SW doesn't cache index.html for cold-offline-launch
+- Phase 3: Water Loss Report PDF (extend pdf-lib engine from submit-esign.js)
+
+---
+
+## Encircle Replacement — Phase 2 Hydro (Apr 18 2026)
+
+IICRC S500 drying workflow: moisture readings, equipment placements, stall
+detection. All feature-gated (`page:tech_moisture`, `page:tech_equipment`)
+to Moroni's admin account — team sees zero change.
+
+### Schema additions
+```
+material_type enum   — 'drywall','wood_subfloor','wood_framing','wood_hardwood',
+                       'wood_engineered','concrete','carpet','carpet_pad',
+                       'tile','laminate','vinyl','insulation','other'
+equipment_type enum  — 'dehu_lgr','dehu_conventional','dehu_desiccant',
+                       'air_mover','air_mover_axial','afd','hepa','heater','other'
+
+moisture_readings    — id UUID, job_id, room_id, equipment_id (FK set after
+                       equipment_placements exists), reading_date,
+                       material material_type, location_description,
+                       mc_pct, rh_pct, temp_f, gpp, dew_point_f,
+                       dry_standard_pct, drying_goal_pct,
+                       is_affected BOOL DEFAULT true,
+                       taken_by, taken_at, edited_at, edited_by, notes,
+                       client_id UUID UNIQUE (offline), created_at
+                       Indexes: (job_id, reading_date DESC),
+                                (room_id, material, reading_date DESC)
+
+equipment_placements — id UUID, job_id, room_id, equipment_type,
+                       nickname, serial_number,
+                       status TEXT CHECK('active','removed'),
+                       placed_at, removed_at, placed_by, removed_by,
+                       notes, client_id UUID UNIQUE, created_at
+                       Partial index: (job_id) WHERE status='active'
+```
+
+### RPCs
+```
+insert_reading(p_job_id, p_room_id, p_material, p_location, p_mc, p_rh,
+               p_temp_f, p_gpp, p_dew_point, p_is_affected, p_equipment_id,
+               p_taken_by, p_notes, p_client_id, p_taken_at DEFAULT now())
+  — Idempotent upsert on client_id. Establishes dry_standard when the
+    first unaffected reading for a (job, material) pair lands; backfills
+    prior affected rows in the same pair; copies standard forward for
+    future ones. drying_goal defaults to dry_standard + 2.
+
+update_reading(p_reading_id, ...)  — 10-minute edit window; RAISES after
+delete_reading(p_reading_id)       — 10-minute delete window; RAISES after
+
+get_job_readings(p_job_id)
+  — Joins room_name, computes per-row is_stalled via CTE: latest row for
+    each (room, material) is stalled if mc_pct > drying_goal_pct AND a
+    prior reading ≥36h older shows (prior.mc − latest.mc) < 1.0.
+
+get_job_equipment(p_job_id, p_include_removed DEFAULT false)
+  — Joins room_name + days_onsite.
+
+place_equipment(p_job_id, p_room_id, p_equipment_type, p_nickname,
+                p_serial, p_placed_by, p_client_id, p_notes)
+  — Idempotent on client_id.
+
+remove_equipment(p_equipment_id, p_removed_by)
+  — No-op if already removed.
+
+get_stalled_materials(p_job_id)
+  — One row per stalled (room, material) pair on the job.
+
+get_stalled_materials_for_employee(p_employee_id)
+  — Aggregates stalled materials across every job the tech has touched via
+    appointment_crew in the last 30 days. Joins job_number + latest
+    appointment_id per job. Powers the StalledWidget on TechDash.
+```
+
+### New files
+```
+src/lib/
+  psychrometric.js              — pure calcs: calcSaturationPressure_inHg,
+                                   calcDewPoint, calcVaporPressure, calcGPP.
+                                   Magnus-Tetens + ASHRAE humidity-ratio.
+                                   Guards NaN on out-of-range input.
+  psychrometric.test.js         — 27 vitest assertions covering ASHRAE
+                                   checkpoints at ±2% (±5% for 90°F/80%
+                                   where fixed-Pa Magnus under-predicts).
+  dispatchers/
+    readingDispatcher.js        — insert_reading RPC; resolveIdSwap on
+                                   room + equipment ids.
+    equipmentDispatcher.js      — dispatchEquipmentPlace (resolveIdSwap
+                                   on room) + dispatchEquipmentRemove.
+
+src/components/tech/
+  MaterialIcon.jsx              — 10 SVG icons (one per material group) +
+                                   MATERIAL_LABELS export.
+  ReadingEntrySheet.jsx         — 4-step bottom sheet: Room → Material →
+                                   MC/RH/Temp with live GPP + dew-point
+                                   readout → Affected/location/equipment/
+                                   notes. Auto-advance on material tap.
+                                   Default-room skips step 1.
+  EquipmentPlacementSheet.jsx   — 2-step sheet: type picker → details.
+                                   Exports EQUIPMENT_LABELS.
+  StalledWidget.jsx             — Red banner on TechDash, polled every
+                                   2 min. Tap row → navigate to latest
+                                   appointment on that job.
+
+supabase/migrations/
+  20260418_phase2_hydro.sql             — tables, enums, 8 RPCs
+  20260418_get_stalled_for_employee.sql — employee-scoped aggregator
+
+package.json  — added "test": "vitest run" and vitest devDependency.
+```
+
+### TechAppointment integration
+- New sections between Tasks and Photos: **Moisture** and **Equipment**,
+  both flag-gated.
+- Moisture rows: material icon, name + (unaffected) marker, room /
+  location / relativeTime, mono MC% color-coded (green ≤ goal, amber
+  within 2, red above), goal% subline, STALLED chip when flagged.
+  "N stalled" red pill in section header.
+- Equipment rows: 3-letter type badge, nickname || type, room · Day N,
+  inline two-click Remove.
+- Save via `handleSaveReading` / `handlePlaceEquipment` / `handleRemoveEquipment`
+  — route through offline queue when `offline:queue` is on, else call
+  RPC inline + loadHydro(). sync:item-done listener triggers loadHydro
+  when a Hydro item for this job finishes draining.
+
+### TechDash integration
+- StalledWidget mounted at the top of the scrollable PullToRefresh region.
+  Returns null when nothing is stalled (zero footprint on clean days).
+
+### Known dev-server quirk (not blocking)
+`npm run dev` intermittently hits a Vite deps-cache version-hash mismatch
+that manifests as "Invalid hook call" in OfflineStatusPill. Clearing
+`node_modules/.vite` and restarting usually fixes it. Production bundle
+(`npm run build` / Cloudflare Pages) is unaffected.

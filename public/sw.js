@@ -1,57 +1,43 @@
-const CACHE = 'upr-v9';
+// KILL-SWITCH SERVICE WORKER (Apr 18 2026)
+//
+// The previous SW (upr-v2 and earlier) did CacheFirst on /assets/*.js. When
+// Cloudflare's edge cached index.html with Content-Type: text/html under a
+// hashed JS URL (SPA fallback race), the SW served that poisoned response
+// forever. iOS Safari strictly refuses text/html for <script type="module">,
+// so affected users got a blank page with no way out — the old SW kept
+// intercepting the request and serving the bad body.
+//
+// This version replaces the old SW with a no-op that:
+//   1. on install: skipWaiting so the browser picks it up immediately
+//   2. on activate: deletes every cache, claims all clients, unregisters
+//      itself, and forces each open window to navigate(url) to refetch
+//      everything fresh from the network (no SW in the path anymore)
+//   3. on fetch: passes every request through unchanged (no caching)
+//
+// Combined with main.jsx no longer registering a SW, this returns the app
+// to a plain network-first PWA until we add back a safer caching strategy
+// that avoids the hashed-asset/HTML MIME trap.
 
-// Static assets that rarely change — cache-first
-const CACHE_FIRST_PATTERNS = [
-  /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
-  /\.(woff2?|ttf|otf|eot)(\?|$)/,
-  /\.(png|jpg|jpeg|gif|webp|svg|ico)(\?|$)/,
-];
-
-self.addEventListener('install', e => {
-  e.waitUntil(self.skipWaiting());
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-
-  const url = e.request.url;
-
-  // API/REST calls — network-only (never cache)
-  if (url.includes('/rest/v1/') || url.includes('/api/') || url.includes('/storage/v1/')) return;
-
-  // Fonts, images, icons — cache-first
-  if (CACHE_FIRST_PATTERNS.some(p => p.test(url))) {
-    e.respondWith(
-      caches.match(e.request).then(cached => {
-        if (cached) return cached;
-        return fetch(e.request).then(res => {
-          if (res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE).then(c => c.put(e.request, clone));
-          }
-          return res;
-        });
-      })
-    );
-    return;
-  }
-
-  // HTML, JS, CSS — network-first, cache fallback
-  e.respondWith(
-    fetch(e.request).then(res => {
-      if (res.ok) {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (err) { /* best-effort */ }
+    try { await self.clients.claim(); } catch (err) { /* ignore */ }
+    try { await self.registration.unregister(); } catch (err) { /* ignore */ }
+    try {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const c of clients) {
+        try { await c.navigate(c.url); } catch (err) { /* ignore */ }
       }
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
+    } catch (err) { /* ignore */ }
+  })());
 });
+
+// Pass-through: do not intercept any request. The browser handles it directly.
+self.addEventListener('fetch', () => { /* intentionally no respondWith */ });

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
+import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
@@ -15,7 +15,12 @@ import NowNextTile, { pickNowNext } from '@/components/tech/NowNextTile';
 import PhotosGroup from '@/components/tech/PhotosGroup';
 import Lightbox from '@/components/tech/Lightbox';
 import DetailRow from '@/components/tech/DetailRow';
+import RoomCard from '@/components/tech/RoomCard';
+import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { savePhotoBlob } from '@/lib/offlineDb';
+import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
@@ -131,16 +136,22 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
 export default function TechClaimDetail() {
   const { claimId } = useParams();
   const navigate = useNavigate();
-  const { db, employee } = useAuth();
+  const { db, employee, isFeatureEnabled } = useAuth();
+  const { enqueue } = useOfflineQueue();
+  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
 
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [taskSummaries, setTaskSummaries] = useState({});
   const [docs, setDocs] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [demoSheets, setDemoSheets] = useState([]);
+  const [addRoomOpen, setAddRoomOpen] = useState(false);
   const [lightbox, setLightbox] = useState(null); // { jobId, index }
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+
+  const roomsEnabled = isFeatureEnabled('page:tech_rooms');
 
   // Add Photo / Add Note state
   const [jobPicker, setJobPicker] = useState(null); // { action: 'photo'|'note' }
@@ -172,9 +183,12 @@ export default function TechClaimDetail() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [data, appts, sheets] = await Promise.all([
+      const [data, appts, roomList, sheets] = await Promise.all([
         db.rpc('get_claim_detail', { p_claim_id: claimId }),
         db.rpc('get_claim_appointments', { p_claim_id: claimId }).catch(() => []),
+        roomsEnabled
+          ? db.rpc('get_claim_rooms', { p_claim_id: claimId }).catch(() => [])
+          : Promise.resolve([]),
         db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }).catch(() => []),
       ]);
       if (!data?.claim) {
@@ -183,6 +197,7 @@ export default function TechClaimDetail() {
       }
       setDetail(data);
       setAppointments(appts || []);
+      setRooms(roomList || []);
       setDemoSheets(sheets || []);
 
       const jobIds = (data.jobs || []).map(j => j.id);
@@ -205,7 +220,30 @@ export default function TechClaimDetail() {
     } finally {
       setLoading(false);
     }
-  }, [db, claimId]);
+  }, [db, claimId, roomsEnabled]);
+
+  const handleCreateRoom = useCallback(async (name) => {
+    const created = await db.rpc('create_room_for_claim', {
+      p_claim_id: claimId,
+      p_name: name,
+      p_created_by: employee?.id || null,
+      p_client_id: crypto?.randomUUID?.() || null,
+    });
+    const r = await db.rpc('get_claim_rooms', { p_claim_id: claimId });
+    setRooms(r || []);
+    return created;
+  }, [db, claimId, employee?.id]);
+
+  // Cover photo per room — docs is already newest-first.
+  const coverByRoom = useMemo(() => {
+    const m = {};
+    for (const d of docs) {
+      if (d.category === 'photo' && d.room_id && !m[d.room_id]) {
+        m[d.room_id] = d.file_path;
+      }
+    }
+    return m;
+  }, [docs]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -213,6 +251,46 @@ export default function TechClaimDetail() {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+
+    // ── Offline-queue path (gated) ────────────────────────────────────────
+    if (offlineQueueEnabled) {
+      try {
+        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+        await savePhotoBlob(clientId, {
+          blob: file,
+          mimeType: file.type,
+          name: file.name,
+          jobId,
+          appointmentId: null,
+          uploadedBy: employee?.id || null,
+          roomId: null,
+          description: null,
+        });
+        await enqueue({
+          type: 'photo.upload',
+          clientId,
+          payload: {
+            clientId,
+            jobId,
+            appointmentId: null,
+            roomId: null,
+            description: null,
+            name: file.name,
+          },
+        });
+        impact('light');
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          toast('Photo queued — will upload when online', 'success');
+        } else {
+          toast('Photo uploading…');
+        }
+      } catch (err) {
+        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+      }
+      return;
+    }
+
+    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -240,7 +318,20 @@ export default function TechClaimDetail() {
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, load]);
+  }, [db, employee?.id, load, offlineQueueEnabled, enqueue]);
+
+  // Reload when a queued photo for one of this claim's jobs finishes syncing.
+  useEffect(() => {
+    if (!offlineQueueEnabled) return;
+    const runner = getSyncRunner();
+    if (!runner) return;
+    const jobIds = new Set((detail?.jobs || []).map(j => j.id));
+    return runner.on('sync:item-done', ({ item }) => {
+      if (item?.type !== 'photo.upload') return;
+      if (!jobIds.has(item?.payload?.jobId)) return;
+      load();
+    });
+  }, [offlineQueueEnabled, detail?.jobs, load]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];
@@ -428,6 +519,78 @@ export default function TechClaimDetail() {
             />
           ))}
         </>
+      )}
+
+      {/* ── Rooms grid (feature-gated) ─────────────────────────────── */}
+      {roomsEnabled && (
+        <div style={{ padding: '22px var(--space-4) 0' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: 10,
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+            }}>
+              {rooms.length === 0 ? 'Rooms' : `${rooms.length} Room${rooms.length === 1 ? '' : 's'}`}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setAddRoomOpen(true)}
+              style={{
+                position: 'relative',
+                aspectRatio: '1 / 1',
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: 0,
+                borderRadius: 14,
+                border: '2px dashed var(--border-color)',
+                background: 'var(--bg-secondary)',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+              aria-label="Add a room"
+            >
+              <div
+                style={{
+                  width: 56, height: 56, borderRadius: '50%',
+                  background: 'var(--accent-light)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Add Room</div>
+            </button>
+
+            {rooms.map(room => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                coverFilePath={coverByRoom[room.id]}
+                divisionGradient={DIV_GRADIENTS[jobs[0]?.division] || DIV_GRADIENTS.water}
+                onClick={() => navigate(`/tech/claims/${claimId}/rooms/${room.id}`)}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       <div style={{ padding: '22px var(--space-4) 0' }}>
@@ -697,7 +860,7 @@ export default function TechClaimDetail() {
                   <div style={{
                     width: 36, height: 36, borderRadius: 8,
                     background: isSubmitted ? '#f0fdf4' : 'var(--accent-light)',
-                    color:      isSubmitted ? '#16a34a' : 'var(--accent)',
+                    color: isSubmitted ? '#16a34a' : 'var(--accent)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 16, flexShrink: 0,
                   }}>
@@ -808,6 +971,13 @@ export default function TechClaimDetail() {
           db={db}
         />
       )}
+
+      <AddRoomSheet
+        open={addRoomOpen}
+        onClose={() => setAddRoomOpen(false)}
+        onCreate={handleCreateRoom}
+        existingNames={rooms.map(r => r.name)}
+      />
 
       {menuOpen && (
         <div

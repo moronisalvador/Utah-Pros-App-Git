@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LookupSelect } from './AddContactModal';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -114,7 +115,17 @@ export default function EditContactModal({ contact, onClose, onSave, carriers })
           <div className="add-contact-row"><EditSelect label="Preferred Contact" field="preferred_contact_method" options={CMO} form={form} set={set} /><EditSelect label="Language" field="preferred_language" options={LANG} form={form} set={set} /></div>
 
           <div className="cp-edit-section-label">Billing Address</div>
-          <div className="add-contact-row"><EditField label="Street" field="billing_address" placeholder="1422 E Maple Ridge Dr" form={form} set={set} /></div>
+          <div className="add-contact-row">
+            <div className="form-group" style={{flex:1,marginBottom:0}}>
+              <label className="label">Street</label>
+              <AddressAutocomplete
+                value={form.billing_address}
+                onChange={v => set('billing_address', v)}
+                onSelect={p => setForm(prev => ({ ...prev, billing_address: p.address, billing_city: p.city, billing_state: p.state || prev.billing_state, billing_zip: p.zip }))}
+                placeholder="1422 E Maple Ridge Dr"
+              />
+            </div>
+          </div>
           <div className="add-contact-row"><EditField label="City" field="billing_city" placeholder="Lehi" form={form} set={set} /><EditField label="State" field="billing_state" placeholder="UT" form={form} set={set} /><EditField label="ZIP" field="billing_zip" placeholder="84043" form={form} set={set} /></div>
 
           <div className="cp-edit-section-label">Insurance</div>

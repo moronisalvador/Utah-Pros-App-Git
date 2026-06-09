@@ -82,6 +82,8 @@ export async function onRequestPost(context) {
     if (!emailRes.ok) {
       const errBody = await emailRes.text().catch(() => '');
       console.error('send-demo-sheet SendGrid error:', emailRes.status, errBody.slice(0, 500));
+      // Match send-esign.js: 200 with explicit email_error fields so the
+      // frontend can always parse the body and surface the real reason.
       return jsonResponse({
         ok: false,
         error: `SendGrid ${emailRes.status}`,

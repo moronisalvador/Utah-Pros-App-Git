@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AddContactModal from '@/components/AddContactModal';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
@@ -278,7 +279,13 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
           {/* ADDRESS */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Loss / Service Address</div>
-            <input className="input" value={address} onChange={e => setAddress(e.target.value)} placeholder="Street address" style={{ height: 34, fontSize: 13, marginBottom: 6 }} />
+            <AddressAutocomplete
+              value={address}
+              onChange={setAddress}
+              onSelect={p => { setAddress(p.address); setCity(p.city); if (p.state) setState(p.state); setZip(p.zip); }}
+              placeholder="Street address"
+              style={{ height: 34, fontSize: 13, marginBottom: 6 }}
+            />
             <div style={{ display: 'flex', gap: 6 }}>
               <input className="input" value={city}  onChange={e => setCity(e.target.value)}  placeholder="City" style={{ flex: 1, height: 34, fontSize: 13 }} />
               <input className="input" value={state} onChange={e => setState(e.target.value)} placeholder="UT"   style={{ width: 56, height: 34, fontSize: 13 }} />

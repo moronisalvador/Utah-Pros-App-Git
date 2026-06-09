@@ -39,6 +39,7 @@ import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
 import DevTools from '@/pages/DevTools';
 import AdminFeedback from '@/pages/AdminFeedback';
 import OOPPricing from '@/pages/OOPPricing';
+import AdminDemoSheetBuilder from '@/pages/AdminDemoSheetBuilder';
 
 import EncircleImport from '@/pages/EncircleImport';
 
@@ -50,6 +51,7 @@ import TechTasks from '@/pages/tech/TechTasks';
 import TechClaims from '@/pages/tech/TechClaims';
 import TechClaimDetail from '@/pages/tech/TechClaimDetail';
 import TechClaimAlbum from '@/pages/tech/TechClaimAlbum';
+import TechRoomDetail from '@/pages/tech/TechRoomDetail';
 import TechJobDetail from '@/pages/tech/TechJobDetail';
 import TechJobAlbum from '@/pages/tech/TechJobAlbum';
 import TechAppointment from '@/pages/tech/TechAppointment';
@@ -123,6 +125,7 @@ function TechRoutes() {
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
+      <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
@@ -234,6 +237,7 @@ function WebRoutes() {
 
         {/* Admin-only */}
         <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
+        <Route path="admin/demo-sheet-builder" element={<AdminRoute><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AdminRoute>} />
         <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
         <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
 

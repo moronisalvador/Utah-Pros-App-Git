@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 
@@ -217,12 +218,13 @@ export default function TechNewCustomer() {
               Billing Address
             </div>
             <div style={{ marginBottom: 12 }}>
-              <input
-                type="text"
+              <AddressAutocomplete
                 value={form.billing_address}
-                onChange={e => set('billing_address', e.target.value)}
+                onChange={v => set('billing_address', v)}
+                onSelect={p => setForm(prev => ({ ...prev, billing_address: p.address, billing_city: p.city, billing_state: p.state || prev.billing_state, billing_zip: p.zip }))}
                 placeholder="Street address"
                 style={inputStyle}
+                touchTarget
               />
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
