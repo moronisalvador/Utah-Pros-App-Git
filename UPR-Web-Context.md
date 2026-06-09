@@ -538,6 +538,14 @@ save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
                                   forms.email_sent + email_sent_at on submit. Sets
                                   encircle_synced_at=now() the first time encircle_note_id
                                   is supplied. Returns the row UUID.
+                                  Jun 9 2026 frontend fix: the first save (INSERT, no id)
+                                  is now guarded against concurrent saves on the client —
+                                  racing autosaves used to create duplicate draft rows on
+                                  slow connections (18 orphaned duplicates were purged from
+                                  forms that day). Known issue: SendGrid emails (demo sheet
+                                  AND esign) have not delivered since mid-April 2026 —
+                                  every forms.email_sent and sign_requests.email_opened_at
+                                  since then is false/null. Account/key-level, not code.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
