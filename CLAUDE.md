@@ -436,7 +436,7 @@ CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 - `process-scheduled.js` — cron, processes scheduled_messages
 - `sync-encircle.js` — pulls Encircle claims → jobs + contacts
 - `admin-users.js` — employee invite / auth management
-- `send-esign.js` — create sign request + send email via SendGrid
+- `send-esign.js` — create sign request + send email via Resend (`functions/lib/email.js` — all email goes through this; SendGrid retired Jun 2026)
 - `submit-esign.js` — process signature, generate PDF, upload to storage
 - `resend-esign.js` — resend esign email for existing pending request
 - `track-open.js` — email open tracking pixel

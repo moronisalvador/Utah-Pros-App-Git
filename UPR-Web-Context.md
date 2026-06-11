@@ -18,7 +18,7 @@ Owner/developer: Moroni Salvador.
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
-- **Email:** SendGrid v3 API
+- **Email:** Resend API via `functions/lib/email.js` (replaced SendGrid Jun 11 2026 — account ran out of credits)
 - **SMS:** Twilio (pending go-live — ID verification blocked)
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
@@ -133,7 +133,7 @@ functions/
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
     process-scheduled.js          — Cron: process scheduled SMS messages (60s)
     resend-esign.js               — Resend esign email for existing pending request
-    send-esign.js                 — Create sign request + send email via SendGrid
+    send-esign.js                 — Create sign request + send email via Resend
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage
@@ -147,9 +147,10 @@ functions/
     encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
     encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
     encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
-    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via SendGrid v3. From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
+    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via Resend. From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
+    email.js                      — Shared Resend sender: sendEmail(env, {to, subject, html, text, from?, replyTo?, attachments?}) → { ok, id } | { ok:false, status, error }; never throws. namedAddress(name, email) helper. All 5 email workers use it (send-esign, resend-esign, submit-esign, send-demo-sheet, generate-water-loss-report).
     supabase.js                   — Supabase REST helper for workers
     twilio.js                     — Twilio helpers
 ```
@@ -556,6 +557,12 @@ save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
                                   no code or env change needed; emails resume immediately.
                                   8 sign_requests sent after Apr 17 are still pending and
                                   may need resend (resend-esign) once billing is fixed.
+                                  RESOLVED Jun 11 2026: switched provider to Resend —
+                                  shared sender functions/lib/email.js, all 5 email
+                                  workers migrated, response fields renamed to
+                                  email_status/email_error_detail (frontend updated).
+                                  Requires RESEND_API_KEY in Cloudflare Pages env +
+                                  utah-pros.com verified as a Resend sending domain.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
@@ -731,7 +738,7 @@ points back to its schema. Backfilled to v1 for all pre-existing rows.
 ---
 
 ## Esign System (recon_agreement added Apr 16 2026)
-- **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via SendGrid
+- **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via Resend
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)
   - Desktop defaults to Type mode, Mobile defaults to Draw mode
 - **PDF generation:** `/api/submit-esign` — pdf-lib, fetches template from DB, substitutes `{{variables}}`, multi-page
@@ -774,7 +781,9 @@ SUPABASE_ANON_KEY               — Anon key
 VITE_SUPABASE_URL               — Same (Vite build)
 VITE_SUPABASE_ANON_KEY          — Same (Vite build)
 VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
-SENDGRID_API_KEY                — SendGrid v3
+RESEND_API_KEY                  — Resend (replaced SENDGRID_API_KEY Jun 11 2026; the SendGrid var is dead and can be removed)
+EMAIL_FROM                      — Optional override (default "Utah Pros Restoration <restoration@utah-pros.com>")
+EMAIL_REPLY_TO                  — Optional override (default restoration@utah-pros.com)
 ENCIRCLE_API_KEY                — Encircle integration
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
