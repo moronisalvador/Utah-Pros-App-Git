@@ -807,9 +807,9 @@ export default function TechDemoSheet() {
             if (parsed && typeof parsed === 'object') {
               emailOk = parsed.ok === true;
               if (!emailOk) {
-                const sg = parsed.sendgrid_error ? ` — ${String(parsed.sendgrid_error).slice(0, 200)}` : '';
+                const provider = parsed.email_error_detail ? ` — ${String(parsed.email_error_detail).slice(0, 200)}` : '';
                 const det = parsed.detail ? ` — ${parsed.detail}` : '';
-                emailErr = (parsed.error || `HTTP ${r.status}`) + sg + det;
+                emailErr = (parsed.error || `HTTP ${r.status}`) + provider + det;
                 console.error('[demo-sheet] send-demo-sheet failed:', emailErr, parsed);
               }
             } else {
