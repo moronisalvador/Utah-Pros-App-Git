@@ -6,6 +6,7 @@
 // Body: { sign_request_id }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { sendEmail, namedAddress } from '../lib/email.js';
 
 const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
 
@@ -48,8 +49,8 @@ export async function onRequestPost(context) {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
   }
-  if (!env.SENDGRID_API_KEY) {
-    return jsonResponse({ error: 'SENDGRID_API_KEY missing' }, 500, request, env);
+  if (!env.RESEND_API_KEY) {
+    return jsonResponse({ error: 'RESEND_API_KEY missing' }, 500, request, env);
   }
 
   const sbHeaders = {
@@ -84,36 +85,22 @@ export async function onRequestPost(context) {
     const docLabel   = DOC_LABELS[sr.doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
 
-    // ── Send email ──
-    const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        personalizations: [{
-          to: [{ email: sr.signer_email, name: sr.signer_name }],
-          subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
-        }],
-        from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-        reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-        content: [
-          { type: 'text/plain', value: buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
-          { type: 'text/html',  value: buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token }) },
-        ],
-      }),
+    // ── Send email via Resend ──
+    const email = await sendEmail(env, {
+      to:      namedAddress(sr.signer_name, sr.signer_email),
+      subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
+      text:    buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
+      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }),
     });
 
-    if (!emailRes.ok) {
-      const errBody = await emailRes.text();
-      console.error('SendGrid resend error:', errBody);
+    if (!email.ok) {
+      console.error('Resend resend-esign error:', email.status, email.error);
       return jsonResponse({
-        success:         true,
-        email_error:     true,
-        sendgrid_status: emailRes.status,
-        sendgrid_error:  errBody,
-        signing_url:     signingUrl,
+        success:            true,
+        email_error:        true,
+        email_status:       email.status,
+        email_error_detail: email.error,
+        signing_url:        signingUrl,
       }, 200, request, env);
     }
 
@@ -138,7 +125,7 @@ export async function onRequestPost(context) {
   }
 }
 
-function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token }) {
+function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, env }) {
   const first = escHtml(signer_name.split(' ')[0]);
   return `<!DOCTYPE html>
 <html>

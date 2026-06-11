@@ -4,6 +4,7 @@
 // Body: { job_id, contact_id, signer_name, signer_email, sent_by, doc_type?, divisions?, mode? }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { sendEmail, namedAddress } from '../lib/email.js';
 
 // APP_URL: set APP_URL env var in Cloudflare Pages for each environment
 // (dev branch → https://dev.utahpros.app, main branch → https://utahpros.app)
@@ -49,8 +50,8 @@ export async function onRequestPost(context) {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     return jsonResponse({ error: `Supabase env vars missing. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Cloudflare Pages → Settings → Variables and Secrets` }, 500, request, env);
   }
-  if (!env.SENDGRID_API_KEY) {
-    return jsonResponse({ error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);
+  if (!env.RESEND_API_KEY) {
+    return jsonResponse({ error: 'RESEND_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);
   }
 
   const sbHeaders = {
@@ -123,36 +124,22 @@ export async function onRequestPost(context) {
       return jsonResponse({ success: true, sign_request_id, token, signing_url: signingUrl, mode: 'collect' }, 200, request, env);
     }
 
-    // ── Send email via SendGrid ──
-    const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        personalizations: [{
-          to: [{ email: signer_email, name: signer_name }],
-          subject: `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
-        }],
-        from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-        reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-        content: [
-          { type: 'text/plain', value: buildEmailText({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }) },
-          { type: 'text/html',  value: buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }) },
-        ],
-      }),
+    // ── Send email via Resend ──
+    const email = await sendEmail(env, {
+      to:      namedAddress(signer_name, signer_email),
+      subject: `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
+      text:    buildEmailText({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
+      html:    buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }),
     });
 
-    if (!emailRes.ok) {
-      const errBody = await emailRes.text();
-      console.error('SendGrid error:', errBody);
+    if (!email.ok) {
+      console.error('Resend error:', email.status, email.error);
       // Surface the actual error so we can diagnose — remove after fix
       return jsonResponse({
         success: true, email_error: true,
         sign_request_id, token,
-        sendgrid_status: emailRes.status,
-        sendgrid_error: errBody,
+        email_status: email.status,
+        email_error_detail: email.error,
         message: 'Sign request created but email failed to send. Copy the signing link below and send it manually.',
         signing_url: signingUrl,
       }, 200, request, env);
