@@ -546,6 +546,16 @@ save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
                                   AND esign) have not delivered since mid-April 2026 —
                                   every forms.email_sent and sign_requests.email_opened_at
                                   since then is false/null. Account/key-level, not code.
+                                  Jun 11 2026 ROOT CAUSE CONFIRMED: live test against
+                                  /api/send-demo-sheet captured SendGrid's response —
+                                  HTTP 401 {"errors":[{"message":"Maximum credits
+                                  exceeded"}]}. API key is valid; the SendGrid ACCOUNT has
+                                  zero sending credits (expired trial / sunset free plan /
+                                  lapsed billing). Last good email: Apr 16 2026. Fix in the
+                                  SendGrid dashboard (Billing → upgrade/reactivate plan) —
+                                  no code or env change needed; emails resume immediately.
+                                  8 sign_requests sent after Apr 17 are still pending and
+                                  may need resend (resend-esign) once billing is fixed.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
