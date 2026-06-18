@@ -43,6 +43,7 @@ import OOPPricing from '@/pages/OOPPricing';
 import AdminDemoSheetBuilder from '@/pages/AdminDemoSheetBuilder';
 
 import EncircleImport from '@/pages/EncircleImport';
+import Help from '@/pages/Help';
 
 // Tech pages (field_tech role)
 import TechLayout from '@/components/TechLayout';
@@ -200,6 +201,7 @@ function WebRoutes() {
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
+        <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
 
         {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
         <Route path="leads" element={

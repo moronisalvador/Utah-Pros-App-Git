@@ -16,6 +16,8 @@ function IconImport(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="curre
 function IconFeedback(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>);}
 function IconCalculator(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10.01"/><line x1="12" y1="10" x2="12" y2="10.01"/><line x1="16" y1="10" x2="16" y2="10.01"/><line x1="8" y1="14" x2="8" y2="14.01"/><line x1="12" y1="14" x2="12" y2="14.01"/><line x1="16" y1="14" x2="16" y2="14.01"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="16" y1="18" x2="16" y2="18.01"/></svg>);}
 
+function IconHelp(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>);}
+
 // featureFlag: if set, this nav item is hidden when that flag is disabled
 // No featureFlag = always show (existing pages are unrestricted)
 const NAV_ITEMS = [
@@ -115,6 +117,16 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
             </NavLink>
           );
         })}
+
+        {/* Help & Guides — always visible to every logged-in user (not role-gated) */}
+        <NavLink
+          to="/help"
+          className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+          onClick={onNavClick}
+        >
+          <IconHelp className="nav-icon" />
+          Help &amp; Guides
+        </NavLink>
 
         {/* Dev Tools — only visible to Moroni, not in NAV_ITEMS so never role-gated */}
         {isMoroni && (
