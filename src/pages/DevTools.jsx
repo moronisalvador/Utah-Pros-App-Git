@@ -22,6 +22,7 @@ function IconCode(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="cu
 function IconX(p)       { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
 function IconSend(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>; }
 function IconDatabase(p){ return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>; }
+function IconLink(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>; }
 
 /* ── Tab config ── */
 const TABS = [
@@ -29,6 +30,7 @@ const TABS = [
   { key: 'health',     label: 'Health',        icon: IconHeart    },
   { key: 'employees',  label: 'Employees',     icon: IconUsers    },
   { key: 'workers',    label: 'Workers',       icon: IconZap      },
+  { key: 'integrations', label: 'Integrations', icon: IconLink    },
   { key: 'backfill',   label: 'Backfill',      icon: IconDatabase },
   { key: 'integrity',  label: 'Integrity',     icon: IconShield   },
   { key: 'messaging',  label: 'Messaging',     icon: IconMsg      },
@@ -2473,6 +2475,210 @@ function ResultCard({ result }) {
 }
 
 /* ════════════════════════════════════════════════════
+   INTEGRATIONS TAB — QuickBooks Online customer sync
+   ════════════════════════════════════════════════════ */
+function IntegrationsTab() {
+  const { db } = useAuth();
+  const [status, setStatus]         = useState(null);
+  const [stats, setStats]           = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing]       = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [st, sx] = await Promise.all([
+        db.rpc('get_integration_status', { p_provider: 'quickbooks' }),
+        db.rpc('get_qbo_sync_stats'),
+      ]);
+      setStatus(Array.isArray(st) ? st[0] : st);
+      setStats(Array.isArray(sx) ? sx[0] : sx);
+    } catch (e) {
+      err('Failed to load integration status');
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Surface the OAuth result (?qbo=connected|error|badstate) then clean the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qbo = params.get('qbo');
+    if (!qbo) return;
+    if (qbo === 'connected')      ok('QuickBooks connected');
+    else if (qbo === 'badstate')  err('QuickBooks connect failed: state mismatch — try again');
+    else                          err('QuickBooks connect failed' + (params.get('msg') ? `: ${params.get('msg')}` : ''));
+    params.delete('qbo'); params.delete('msg');
+    window.history.replaceState({}, '', window.location.pathname + (params.toString() ? `?${params}` : ''));
+    load();
+  }, [load]);
+
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/quickbooks-connect', { method: 'GET', headers: auth });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || res.statusText);
+      window.location.href = data.url;
+    } catch (e) {
+      err('Could not start QuickBooks connect: ' + e.message);
+      setConnecting(false);
+    }
+  };
+
+  const preview = async () => {
+    setPreviewing(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/qbo-sync-customer', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backfill: true, dry_run: true, limit: 100 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setPreviewResult(data);
+      ok(`Preview: would create ${data.would_create ?? 0}, link ${data.would_link ?? 0}`);
+    } catch (e) {
+      err('Preview failed: ' + e.message);
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const backfill = async () => {
+    setSyncing(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/qbo-sync-customer', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backfill: true, limit: 100 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      const created = data.created ?? 0, linked = data.linked ?? 0;
+      ok(`Synced ${data.synced ?? 0} (${created} created, ${linked} linked)` + (data.errored ? ` · ${data.errored} failed` : ''));
+      setPreviewResult(null);
+      load();
+    } catch (e) {
+      err('Backfill failed: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  if (loading) return <TabLoading />;
+
+  const connected = !!status?.connected;
+  const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+
+  const StatBox = ({ label, value, color }) => (
+    <div style={{ flex: 1, padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: color || 'var(--text-primary)' }}>{value}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Integrations</div>
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 20 }}>
+        New homeowner, property manager &amp; tenant contacts sync to QuickBooks Online as customers.
+      </div>
+
+      <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border-light)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', background: '#2ca01c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18 }}>qb</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>QuickBooks Online</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {connected ? (status.company_name || 'Connected') : 'Not connected'}
+                {connected && status.environment === 'sandbox' && (
+                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--radius-full)', background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>SANDBOX</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 'var(--radius-full)',
+            background: connected ? '#f0fdf4' : 'var(--bg-tertiary)',
+            color:      connected ? '#16a34a' : 'var(--text-tertiary)',
+            border: `1px solid ${connected ? '#bbf7d0' : 'var(--border-light)'}` }}>
+            {connected ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
+
+        <div style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+            <StatBox label="Synced"  value={stats?.synced  ?? 0} color="#16a34a" />
+            <StatBox label="Pending" value={stats?.pending ?? 0} color="#d97706" />
+            <StatBox label="Errors"  value={stats?.errored ?? 0} color={Number(stats?.errored) > 0 ? '#dc2626' : 'var(--text-tertiary)'} />
+          </div>
+
+          {connected && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16 }}>
+              Connected {fmtDate(status.connected_at)} · token refreshes automatically
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary btn-sm" onClick={connect} disabled={connecting}>
+              {connecting ? 'Opening QuickBooks…' : connected ? 'Reconnect' : 'Connect QuickBooks'}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={preview} disabled={!connected || previewing}>
+              {previewing ? 'Previewing…' : 'Preview sync'}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={backfill} disabled={!connected || syncing}>
+              <IconRefresh style={{ width: 13, height: 13 }} />
+              {syncing ? 'Syncing…' : 'Sync existing customers'}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => load()} disabled={loading}>Refresh</button>
+          </div>
+
+          {previewResult && (
+            <div style={{ marginTop: 16, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Dry run · would <span style={{ color: '#d97706' }}>create {previewResult.would_create ?? 0}</span> · <span style={{ color: '#16a34a' }}>link {previewResult.would_link ?? 0}</span>
+                </div>
+                <button onClick={() => setPreviewResult(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 12 }}>Dismiss</button>
+              </div>
+              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                {(previewResult.results || []).filter(r => !r.skipped).map((r, i) => (
+                  <div key={r.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
+                    <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.id}</span>
+                    {r.error ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', whiteSpace: 'nowrap' }}>error</span>
+                    ) : r.action === 'link' ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>link · {r.matched_by}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>create</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!connected && (
+            <div style={{ marginTop: 16, padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
+              Needs Cloudflare env vars (<code>QBO_CLIENT_ID</code>, <code>QBO_CLIENT_SECRET</code>, <code>QBO_REDIRECT_URI</code>, <code>QBO_WEBHOOK_SECRET</code>) and the Intuit app redirect URI pointing at <code>/api/quickbooks-callback</code>. Setup steps are in UPR-Web-Context.md.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════
    MAIN PAGE
    ════════════════════════════════════════════════════ */
 const TAB_COMPONENTS = {
@@ -2480,6 +2686,7 @@ const TAB_COMPONENTS = {
   health:    HealthTab,
   employees: EmployeesTab,
   workers:   WorkersTab,
+  integrations: IntegrationsTab,
   backfill:  EncircleBackfillTab,
   integrity: IntegrityTab,
   messaging: MessagingTab,
