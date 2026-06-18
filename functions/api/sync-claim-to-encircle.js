@@ -21,6 +21,31 @@ async function requireAuth(request, env) {
   return { ok: true };
 }
 
+// Internal trigger auth — lets server-side callers (e.g. a pg_net backfill from
+// the database) invoke this worker without a user session. The caller sends an
+// `x-webhook-secret` header; we compare it to `integration_config.encircle_sweep_secret`,
+// readable only with the service-role key (RLS-locked table). Mirrors the QuickBooks
+// customer-sync trigger pattern — no new env var and no shared QBO secret.
+async function isValidInternalSecret(request, env) {
+  const provided = request.headers.get('x-webhook-secret');
+  if (!provided) return false;
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY;
+  if (!url || !sbKey) return false;
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/integration_config?key=eq.encircle_sweep_secret&select=value`,
+      { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    const expected = rows?.[0]?.value;
+    return !!expected && provided === expected;
+  } catch {
+    return false;
+  }
+}
+
 function sbHeaders(sbKey) {
   return { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' };
 }
@@ -76,6 +101,30 @@ async function linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId) {
       body: JSON.stringify({ encircle_claim_id: encircleId }),
     }
   );
+}
+
+// Duplicate guard: our CLM number is written to Encircle's contractor_identifier
+// on create, so before creating we can search Encircle for that CLM. If a claim
+// with our exact CLM already exists (e.g. a prior push whose write-back failed,
+// a double-submit, or a manual retry racing the auto-sync), we link to it instead
+// of creating a second one. Search failures never block the create path.
+async function findExistingEncircleClaimByClm(env, clm) {
+  if (!clm) return null;
+  try {
+    const res = await fetch(
+      `https://api.encircleapp.com/v1/property_claims?contractor_identifier=${encodeURIComponent(clm)}&limit=10`,
+      { headers: encircleHeaders(env) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list = Array.isArray(data)
+      ? data
+      : (data.list || data.property_claims || data.results || data.data || []);
+    const target = String(clm).trim();
+    return list.find(c => String(c.contractor_identifier || '').trim() === target) || null;
+  } catch {
+    return null;
+  }
 }
 
 async function logWorkerRun(sbUrl, sbKey, status, records, errorMessage) {
@@ -159,6 +208,28 @@ async function doSync(request, env) {
     return jsonResponse({ error: errMsg, claim_id: claimId }, 400, request, env);
   }
 
+  // Duplicate guard — link to an existing Encircle claim with our CLM rather than
+  // creating a second one (handles retries, double-submits, and failed write-backs).
+  const existing = await findExistingEncircleClaimByClm(env, claim.claim_number);
+  if (existing) {
+    const encircleId = String(existing.id);
+    await updateClaimSync(sbUrl, sbKey, claimId, {
+      encircle_claim_id:   encircleId,
+      encircle_synced_at:  new Date().toISOString(),
+      encircle_sync_error: null,
+    });
+    await linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId);
+    await logWorkerRun(sbUrl, sbKey, 'completed', 1, null);
+    return jsonResponse({
+      ok: true,
+      deduped: true,
+      claim_id: claimId,
+      claim_number: claim.claim_number,
+      encircle_claim_id: encircleId,
+      encircle_permalink: existing.permalink_url || null,
+    }, 200, request, env);
+  }
+
   // POST to Encircle
   let encircleRes;
   try {
@@ -211,8 +282,11 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireAuth(context.request, context.env);
-  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  // Accept either a logged-in user (UI) or a valid internal trigger secret (server-side backfill).
+  if (!(await isValidInternalSecret(context.request, context.env))) {
+    const auth = await requireAuth(context.request, context.env);
+    if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  }
   try {
     return await doSync(context.request, context.env);
   } catch (e) {

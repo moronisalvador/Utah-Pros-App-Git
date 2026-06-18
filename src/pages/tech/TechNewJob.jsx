@@ -7,22 +7,33 @@ import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
 
+// Push a new claim up to Encircle. Awaited by the caller (with an internal
+// timeout) BEFORE navigating away — a fire-and-forget request was being
+// abandoned when this screen tore down on mobile, leaving claims unsynced with
+// no error recorded. Always resolves so the caller can proceed regardless.
 async function syncClaimToEncircle(claimId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const auth = await getAuthHeader();
     const res = await fetch('/api/sync-claim-to-encircle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth },
       body: JSON.stringify({ claim_id: claimId }),
+      signal: controller.signal,
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok) {
-      if (!data.skipped) toast(`Synced to Encircle`, 'success');
+      if (!data.skipped) toast('Synced to Encircle', 'success');
     } else {
       toast('Encircle sync failed — retry from Dev Tools', 'error');
     }
   } catch (e) {
-    toast('Encircle sync failed: ' + e.message, 'error');
+    // AbortError = request likely still completing server-side; stay quiet so we
+    // don't show a false failure. Real network errors surface to the user.
+    if (e.name !== 'AbortError') toast('Encircle sync failed: ' + e.message, 'error');
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -247,8 +258,10 @@ export default function TechNewJob() {
       });
       const jobNum = result?.job?.job_number || '';
       toast(jobNum ? `Job #${jobNum} created` : 'Job created');
-      // Fire-and-forget push to Encircle
-      if (result?.claim_id) syncClaimToEncircle(result.claim_id);
+      // Await the Encircle push (bounded by an internal timeout) so the request
+      // completes while this screen is still alive — navigating immediately was
+      // abandoning the fire-and-forget call on mobile and silently losing the sync.
+      if (result?.claim_id) await syncClaimToEncircle(result.claim_id);
       navigate(-1);
     } catch (err) {
       toast('Failed to create job: ' + (err.message || ''), 'error');

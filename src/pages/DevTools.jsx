@@ -1896,6 +1896,8 @@ function UnsyncedClaimsPanel() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(null); // claim_id currently being retried
+  const [selected, setSelected] = useState(() => new Set()); // claim ids checked for bulk sync
+  const [bulk, setBulk] = useState(null); // { done, total } while a Sync Selected run is in progress
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1911,7 +1913,9 @@ function UnsyncedClaimsPanel() {
         const contacts = await db.select('contacts', `id=in.(${contactIds.join(',')})&select=id,name`);
         contactsById = Object.fromEntries((contacts || []).map(c => [c.id, c]));
       }
-      setRows(claims.map(c => ({ ...c, contact_name: contactsById[c.contact_id]?.name || null })));
+      const mapped = claims.map(c => ({ ...c, contact_name: contactsById[c.contact_id]?.name || null }));
+      setRows(mapped);
+      setSelected(new Set(mapped.map(c => c.id))); // default every claim to selected
     } catch (e) {
       err('Failed to load unsynced claims');
     } finally {
@@ -1921,8 +1925,8 @@ function UnsyncedClaimsPanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  const retry = async (claimId) => {
-    setRetrying(claimId);
+  // Push a single claim to Encircle. Returns { ok, message }. Never throws.
+  const pushOne = async (claimId) => {
     try {
       const auth = await getAuthHeader();
       const res = await fetch('/api/sync-claim-to-encircle', {
@@ -1930,19 +1934,46 @@ function UnsyncedClaimsPanel() {
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ claim_id: claimId }),
       });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        ok(`Synced: ${data.encircle_claim_id || 'done'}`);
-        await load();
-      } else {
-        err(data.error || data.detail || `Sync failed (${res.status})`);
-        await load();
-      }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) return { ok: true, message: data.encircle_claim_id || 'done' };
+      return { ok: false, message: data.error || data.detail || `Sync failed (${res.status})` };
     } catch (e) {
-      err('Retry failed: ' + e.message);
-    } finally {
-      setRetrying(null);
+      return { ok: false, message: e.message };
     }
+  };
+
+  const retry = async (claimId) => {
+    setRetrying(claimId);
+    const r = await pushOne(claimId);
+    if (r.ok) ok(`Synced: ${r.message}`); else err(r.message);
+    setRetrying(null);
+    await load();
+  };
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allSelected = rows.length > 0 && selected.size === rows.length;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)));
+
+  // Push every selected claim sequentially (gentle on the Encircle API; the
+  // worker's CLM dedup guard makes repeats safe). Shows progress, then reloads.
+  const syncSelected = async () => {
+    const ids = rows.filter(r => selected.has(r.id)).map(r => r.id);
+    if (ids.length === 0 || bulk) return;
+    setBulk({ done: 0, total: ids.length });
+    let okCount = 0, failCount = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const r = await pushOne(ids[i]);
+      if (r.ok) okCount++; else failCount++;
+      setBulk({ done: i + 1, total: ids.length });
+    }
+    setBulk(null);
+    if (failCount === 0) ok(`Synced ${okCount} claim${okCount !== 1 ? 's' : ''} to Encircle`);
+    else err(`Synced ${okCount}, ${failCount} failed — still listed below`);
+    await load();
   };
 
   if (loading) return null;
@@ -1974,21 +2005,45 @@ function UnsyncedClaimsPanel() {
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
             {withErrors.length > 0 ? `${withErrors.length} with errors · ` : ''}
-            Click Retry to push to Encircle
+            Select claims then Sync, or Retry individually
           </div>
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={load}>Refresh</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={syncSelected}
+            disabled={!!bulk || selected.size === 0}
+          >
+            {bulk ? `Syncing ${bulk.done}/${bulk.total}…` : `Sync Selected (${selected.size})`}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={load} disabled={!!bulk}>Refresh</button>
+        </div>
       </div>
+
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
+        fontSize: 11, color: 'var(--text-secondary)', cursor: bulk ? 'default' : 'pointer', userSelect: 'none',
+      }}>
+        <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!!bulk} />
+        {allSelected ? 'Deselect all' : 'Select all'}
+      </label>
+
       <div style={{ maxHeight: 280, overflowY: 'auto' }}>
         {rows.map(r => (
           <div key={r.id} style={{
-            display: 'grid', gridTemplateColumns: '110px 1fr 80px',
+            display: 'grid', gridTemplateColumns: '24px 110px 1fr 80px',
             gap: 10, alignItems: 'center',
             padding: '8px 10px', marginBottom: 4,
             background: 'var(--bg-primary)', borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-color)',
             fontSize: 12,
           }}>
+            <input
+              type="checkbox"
+              checked={selected.has(r.id)}
+              onChange={() => toggle(r.id)}
+              disabled={!!bulk}
+            />
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
               {r.claim_number}
             </span>
@@ -2005,7 +2060,7 @@ function UnsyncedClaimsPanel() {
             <button
               className="btn btn-primary btn-sm"
               onClick={() => retry(r.id)}
-              disabled={retrying === r.id}
+              disabled={retrying === r.id || !!bulk}
               style={{ fontSize: 11, padding: '4px 10px' }}
             >
               {retrying === r.id ? 'Syncing…' : 'Retry'}

@@ -5,13 +5,18 @@ import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
 
+// Awaited by the caller (with an internal timeout) before the modal closes, so
+// the request isn't abandoned mid-flight. Always resolves.
 async function syncClaimToEncircle(claimId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const auth = await getAuthHeader();
     const res = await fetch('/api/sync-claim-to-encircle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth },
       body: JSON.stringify({ claim_id: claimId }),
+      signal: controller.signal,
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok) {
@@ -21,7 +26,9 @@ async function syncClaimToEncircle(claimId) {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed — retry from Dev Tools → Backfill', type: 'error' } }));
     }
   } catch (e) {
-    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed: ' + e.message, type: 'error' } }));
+    if (e.name !== 'AbortError') window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed: ' + e.message, type: 'error' } }));
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -177,9 +184,11 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
         p_claim_number:    claimNumber   || null,
         p_internal_notes:  internalNotes || null,
       });
+      // Await the Encircle push (bounded by an internal timeout) BEFORE onCreated
+      // closes/navigates away — a fire-and-forget call here was being abandoned
+      // mid-flight, leaving the claim unsynced with no error recorded.
+      if (result?.claim_id) await syncClaimToEncircle(result.claim_id);
       onCreated?.(result);
-      // Fire-and-forget push to Encircle — don't block the UI on the response
-      if (result?.claim_id) syncClaimToEncircle(result.claim_id);
     } catch (err) {
       console.error(err); setError('Failed: ' + err.message);
     } finally { setSaving(false); }
