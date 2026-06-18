@@ -227,3 +227,54 @@ export async function createCustomer(env, payload) {
   console.log('QBO customer created', JSON.stringify({ id: data.Customer?.Id, intuit_tid: tid }));
   return data.Customer;
 }
+
+// ── Invoices (Phase 2) ───────────────────────────────────────────────────────
+// UPR division → QBO line mapping (Item Id + Class name). Item Ids are stable in
+// QBO; Class Id is resolved at runtime by name. Class only for mit/recon for now.
+export function divisionToQbo(division) {
+  const d = (division || '').toLowerCase();
+  if (d.includes('recon'))                                  return { itemId: '1010000201', className: 'Reconstruction' };
+  if (d.includes('mold'))                                   return { itemId: '1010000131', className: null };
+  if (d.includes('content'))                                return { itemId: '38',         className: null };
+  if (d.includes('mit') || d.includes('water') || d.includes('dry'))
+                                                            return { itemId: '1010000071', className: 'Mitigation' };
+  return null;
+}
+
+export const QBO_INSURANCE_ADJUSTMENT_ITEM_ID = '1010000231'; // Discounts:Insurance Adjustments
+
+export async function findClassId(env, name) {
+  const safe = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id FROM Class WHERE Name = '${safe}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) return null;
+  const d = await res.json().catch(() => ({}));
+  return d?.QueryResponse?.Class?.[0]?.Id || null;
+}
+
+export async function createInvoice(env, payload) {
+  const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify(payload),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO create invoice ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Invoice;
+}
+
+// Delete a QBO invoice (used for test cleanup). Looks up SyncToken first.
+export async function deleteInvoice(env, qboInvoiceId) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const syncToken = qd?.QueryResponse?.Invoice?.[0]?.SyncToken;
+  if (syncToken == null) throw new Error('Invoice not found in QBO for delete');
+  const res = await qboFetch(env, `/invoice?operation=delete&minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
+  });
+  if (!res.ok) throw new Error(`QBO delete invoice ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
+}
