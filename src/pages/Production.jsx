@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
 import JobDetailPanel from '@/components/JobDetailPanel';
 import PullToRefresh from '@/components/PullToRefresh';
+import { withJobFinancials } from '@/lib/claimUtils';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -86,7 +87,7 @@ export default function Production() {
         db.select('job_phases', 'is_active=eq.true&order=display_order.asc'),
         db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
       ]);
-      setJobs(jobsData);
+      setJobs(await withJobFinancials(db, jobsData));
       setPhases(phasesData);
       setEmployees(empsData);
     } catch (err) {

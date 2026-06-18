@@ -11,6 +11,7 @@ import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
 import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
+import { withJobFinancials } from '@/lib/claimUtils';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -70,7 +71,7 @@ export default function JobPage(){
       ]);
       if(jobReqRef.current!==reqId)return;
       if(jobsData.length===0){navigate(isTech?'/tech/claims':'/jobs',{replace:true});return;}
-      setJob(jobsData[0]);setPhases(phasesData);setEmployees(empsData);
+      setJob((await withJobFinancials(db,jobsData))[0]);setPhases(phasesData);setEmployees(empsData);
       setDocuments(docsData);setNotes(notesData);setHistory(histData);
       db.rpc('get_job_task_summary',{p_job_id:jobId}).then(d=>setTaskSummary(d)).catch(()=>setTaskSummary(null));
       if(jobsData[0]?.claim_id){
