@@ -344,9 +344,9 @@ toggle_appointment_task(...)    — Toggle task complete
 get_job_schedule(p_job_id)      — Schedule for one job
 get_job_schedules(...)          — All job schedules
 get_my_appointments_today(...)  — Today's appointments for employee
-get_dispatch_board(...)         — Dispatch board data (kind='job' appointments only — joins to jobs so events naturally excluded)
+get_dispatch_board(...)         — Dispatch board data (kind='job' appointments only — joins to jobs so events naturally excluded). Each job row includes claim_id + date_of_loss (from the linked claim, via j.claim_id; added Jun 18 2026 for the schedule job picker).
 get_dispatch_events(p_start_date, p_end_date) — Returns non-job calendar events (kind='event') with assigned crew; shape mirrors per-appointment object in get_dispatch_board. Added Apr 17 2026.
-get_dispatch_panel_jobs(...)    — Jobs panel for dispatch
+get_dispatch_panel_jobs(...)    — Jobs panel for dispatch. Returns id, insured_name, job_number, division, phase, address, date_of_loss (from linked claim, added Jun 18 2026), on_board, in_production, appointment_count.
 get_schedule_templates()        — All schedule templates
 get_schedule_template(p_id)     — Single template detail
 apply_schedule_plan(...)        — Create tasks/phases from template
