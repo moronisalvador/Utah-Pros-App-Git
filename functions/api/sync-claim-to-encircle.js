@@ -21,6 +21,31 @@ async function requireAuth(request, env) {
   return { ok: true };
 }
 
+// Internal trigger auth — lets server-side callers (e.g. a pg_net backfill from
+// the database) invoke this worker without a user session. The caller sends an
+// `x-webhook-secret` header; we compare it to `integration_config.encircle_sweep_secret`,
+// readable only with the service-role key (RLS-locked table). Mirrors the QuickBooks
+// customer-sync trigger pattern — no new env var and no shared QBO secret.
+async function isValidInternalSecret(request, env) {
+  const provided = request.headers.get('x-webhook-secret');
+  if (!provided) return false;
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY;
+  if (!url || !sbKey) return false;
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/integration_config?key=eq.encircle_sweep_secret&select=value`,
+      { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    const expected = rows?.[0]?.value;
+    return !!expected && provided === expected;
+  } catch {
+    return false;
+  }
+}
+
 function sbHeaders(sbKey) {
   return { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' };
 }
@@ -257,8 +282,11 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireAuth(context.request, context.env);
-  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  // Accept either a logged-in user (UI) or a valid internal trigger secret (server-side backfill).
+  if (!(await isValidInternalSecret(context.request, context.env))) {
+    const auth = await requireAuth(context.request, context.env);
+    if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  }
   try {
     return await doSync(context.request, context.env);
   } catch (e) {
