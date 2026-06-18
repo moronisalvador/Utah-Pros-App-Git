@@ -278,3 +278,28 @@ export async function deleteInvoice(env, qboInvoiceId) {
   if (!res.ok) throw new Error(`QBO delete invoice ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return true;
 }
+
+// Sparse-update an existing QBO invoice (used by auto-push when the UPR invoice is
+// edited after it was first pushed). Looks up the current SyncToken, then sends a
+// sparse update — `fields` typically { Line: [...], PrivateNote }. Sparse semantics
+// preserve everything we don't send (CustomerRef, etc.); a provided Line array
+// replaces the line set, which is how the amount changes.
+export async function updateInvoice(env, qboInvoiceId, fields) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const existing = qd?.QueryResponse?.Invoice?.[0];
+  if (existing?.SyncToken == null) throw new Error('Invoice not found in QBO for update');
+  const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
+    method: 'POST',
+    body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO update invoice ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Invoice;
+}
