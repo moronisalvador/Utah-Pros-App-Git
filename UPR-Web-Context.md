@@ -766,6 +766,12 @@ VITE_SUPABASE_ANON_KEY          — Same (Vite build)
 VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
 SENDGRID_API_KEY                — SendGrid v3
 ENCIRCLE_API_KEY                — Encircle integration
+QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit Developer app)
+QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
+QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
+QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
+QBO_WEBHOOK_SECRET              — Shared secret; must equal integration_config.qbo_webhook_secret (DB trigger → worker auth)
+APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
 TWILIO_*                        — 7 vars (pending go-live)
@@ -777,6 +783,51 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
+
+---
+
+## QuickBooks Online Integration (Jun 18 2026 — Phase 1: customer sync)
+
+One-directional push: when a paying-party contact (`role` in homeowner /
+property_manager / tenant, with a non-empty name) is inserted into `contacts`,
+it is created as a Customer in QuickBooks Online. Same worker + service-role
+pattern as the Encircle sync.
+
+**Data flow:**
+`contacts` INSERT → trigger `trg_qbo_customer_sync` → `notify_qbo_customer_sync()`
+fires `net.http_post` (pg_net, async, non-blocking) to `/api/qbo-sync-customer`
+with `{ contact_id }` + an `x-webhook-secret` header → worker creates the QBO
+customer → writes `qbo_customer_id` / `qbo_synced_at` back on the contact. The
+trigger no-ops unless QuickBooks is connected, so it is safe to ship before
+setup is finished.
+
+**Tables (RLS-locked — service-role only; NO anon/authenticated policies):**
+- `integration_credentials` — `provider PK, access_token, refresh_token, realm_id, environment ('sandbox'|'production'), token_expires_at, company_name, connected_by UUID→employees, connected_at, updated_at`. One row per provider (`'quickbooks'`). Access token auto-refreshes (~1h) inside the worker; refresh token rolls forward.
+- `integration_config` — `key PK, value, updated_at`. Keys: `qbo_worker_url`, `qbo_webhook_secret`, plus transient `qbo_oauth_state` / `qbo_oauth_user` during connect.
+
+**Columns added to `contacts`:** `qbo_customer_id TEXT`, `qbo_synced_at TIMESTAMPTZ`, `qbo_sync_error TEXT` (+ partial index `idx_contacts_qbo_unsynced`).
+
+**RPCs (SECURITY DEFINER, granted to authenticated — never return tokens):**
+- `get_integration_status(p_provider DEFAULT 'quickbooks')` → provider, connected, environment, company_name, realm_id, token_expires_at, connected_at
+- `get_qbo_sync_stats()` → synced, pending, errored (counts over contacts)
+
+**Workers:**
+- `quickbooks-connect.js` — GET, authed (Supabase Bearer). Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`.
+- `quickbooks-callback.js` — GET. Intuit redirect target; exchanges code→tokens, stores connection + company name, redirects to `/dev-tools?qbo=connected`.
+- `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }` or `{ backfill:true, limit }`. Dedups by DisplayName; handles QBO 6240 duplicate-name by appending the phone's last 4. Logs to `worker_runs` as `qbo-sync-customer`.
+
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer`, `findCustomerByDisplayName`, `createCustomer`.
+
+**UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, "Sync existing customers" backfill.
+
+**One-time setup checklist:**
+1. Create an app at developer.intuit.com → get Client ID + Secret. Under Keys & OAuth add redirect URI `https://dev.utahpros.app/api/quickbooks-callback` (and the sandbox equivalent while testing).
+2. Set Cloudflare Pages env vars: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT` (use `sandbox` to test), `QBO_REDIRECT_URI`, `QBO_WEBHOOK_SECRET`.
+3. Apply migration `20260618_quickbooks_customer_sync.sql`, then read the generated secret: `SELECT value FROM integration_config WHERE key='qbo_webhook_secret';` and set `QBO_WEBHOOK_SECRET` to that exact value (both sides must match).
+4. DevTools → Integrations → Connect QuickBooks → authorize. Status flips to Connected.
+5. (Optional) "Sync existing customers" to backfill existing paying-party contacts.
+
+**Scope / future:** Customers only, one-way (UPR→QBO). Payment terms, invoices, and payment write-back are not yet mapped. Phone-only stubs later edited to add a name+role are NOT caught by the INSERT trigger — use the backfill, or extend the trigger to also fire on UPDATE.
 
 ---
 
