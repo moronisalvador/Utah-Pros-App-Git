@@ -6,7 +6,7 @@ import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import MergeModal from '@/components/MergeModal';
 import ClaimBilling from '@/components/ClaimBilling';
-import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances } from '@/lib/claimUtils';
+import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -66,7 +66,7 @@ export default function ClaimPage() {
         return;
       }
       setClaim(data.claim);
-      setJobs(data.jobs || []);
+      setJobs(await withJobFinancials(db, data.jobs || []));
       setContact(data.contact || null);
       setAdjuster(data.adjuster || null);
     } catch (e) {

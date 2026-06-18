@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-page.css';
 import { LossIcon, LOSS_CONFIG, DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import MergeModal from '@/components/MergeModal';
-import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, AR_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances } from '@/lib/claimUtils';
+import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, AR_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge, KPI } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -37,7 +37,7 @@ export default function ClaimCollectionPage() {
       const data = await db.rpc('get_claim_detail', { p_claim_id: claimId });
       if (!data?.claim) { navigate('/collections', { replace: true }); return; }
       setClaim(data.claim);
-      setJobs(data.jobs || []);
+      setJobs(await withJobFinancials(db, data.jobs || []));
       setContact(data.contact || null);
       setAdjuster(data.adjuster || null);
     } catch (e) {
