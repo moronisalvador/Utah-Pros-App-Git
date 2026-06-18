@@ -820,12 +820,19 @@ setup is finished.
 
 **UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill.
 
-**One-time setup checklist:**
-1. Create an app at developer.intuit.com → get Client ID + Secret. Under Keys & OAuth add redirect URI `https://dev.utahpros.app/api/quickbooks-callback` (and the sandbox equivalent while testing).
-2. Set Cloudflare Pages env vars: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT` (use `sandbox` to test), `QBO_REDIRECT_URI`, `QBO_WEBHOOK_SECRET`.
-3. Apply migration `20260618_quickbooks_customer_sync.sql`, then read the generated secret: `SELECT value FROM integration_config WHERE key='qbo_webhook_secret';` and set `QBO_WEBHOOK_SECRET` to that exact value (both sides must match).
-4. DevTools → Integrations → Connect QuickBooks → authorize. Status flips to Connected.
-5. (Optional) "Sync existing customers" to backfill existing paying-party contacts.
+**Environments / domains (IMPORTANT):**
+- **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
+- **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
+- `integration_config.qbo_worker_url` is the DB trigger's target; set to the **production** worker `https://utahpros.app/api/qbo-sync-customer`. Env vars must live in the matching Cloudflare environment (Preview for dev, Production for main).
+- Public EULA/Privacy pages (required by the Intuit production profile) are served at `https://utahpros.app/terms` and `/privacy` (`src/pages/Legal.jsx`). Connecting your own company needs production keys but **no marketplace review**.
+
+**Production setup checklist:**
+1. developer.intuit.com → get **Production** Client ID + Secret. Add redirect URI `https://utahpros.app/api/quickbooks-callback` under the **Production** Redirect URIs tab; set EULA=`/terms`, Privacy=`/privacy`, host domain=`utahpros.app`.
+2. Cloudflare **Production** env vars: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT=production`, `QBO_REDIRECT_URI=https://utahpros.app/api/quickbooks-callback`, `QBO_WEBHOOK_SECRET` (must equal `integration_config.qbo_webhook_secret`). Redeploy.
+3. https://utahpros.app/dev-tools → Integrations → Connect QuickBooks → authorize your real company.
+4. Preview sync → review → "Sync existing customers" to backfill the existing paying-party contacts.
+
+(Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
 
 **Scope / future:** Customers only, one-way (UPR→QBO). Payment terms, invoices, and payment write-back are not yet mapped. Dedup matches on email + exact (normalized, case-insensitive) name; true fuzzy/spelling variants ("Jon" vs "John") are still not caught. Phone-only stubs later edited to add a name+role are NOT caught by the INSERT trigger — use the backfill, or extend the trigger to also fire on UPDATE.
 
