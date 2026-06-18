@@ -81,12 +81,13 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
     return { id: contact.id, name: contact.name, action: linked ? 'linked' : 'created',
              matched_by: match?.matchedBy, qbo_customer_id: customer.Id };
   } catch (e) {
+    const tid = e.intuitTid ? ` [intuit_tid: ${e.intuitTid}]` : '';
     if (!dryRun) {
       await db.update('contacts', `id=eq.${contact.id}`, {
-        qbo_sync_error: (e.message || 'sync failed').slice(0, 500),
+        qbo_sync_error: ((e.message || 'sync failed') + tid).slice(0, 500),
       });
     }
-    return { id: contact.id, name: contact.name, error: e.message };
+    return { id: contact.id, name: contact.name, error: e.message, intuit_tid: e.intuitTid || null };
   }
 }
 
