@@ -53,7 +53,8 @@ async function postToken(env, params) {
     body: new URLSearchParams(params).toString(),
   });
   if (!res.ok) {
-    throw new Error(`QBO token endpoint ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const tid = res.headers.get('intuit_tid') || '';
+    throw new Error(`QBO token endpoint ${res.status}${tid ? ` [intuit_tid ${tid}]` : ''}: ${(await res.text()).slice(0, 300)}`);
   }
   return res.json();
 }
@@ -185,7 +186,10 @@ function escQ(s) {
 export async function queryCustomer(env, whereClause) {
   const q = `SELECT Id, DisplayName, PrimaryEmailAddr FROM Customer WHERE ${whereClause}`;
   const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.warn('QBO customer query failed', JSON.stringify({ status: res.status, intuit_tid: res.headers.get('intuit_tid') || null }));
+    return null;
+  }
   const data = await res.json().catch(() => ({}));
   return data?.QueryResponse?.Customer?.[0] || null;
 }
@@ -210,13 +214,16 @@ export async function createCustomer(env, payload) {
     method: 'POST',
     body:   JSON.stringify(payload),
   });
+  const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const fault = data?.Fault?.Error?.[0];
     const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO create customer ${res.status}`);
     e.qboCode = fault?.code;
     e.status  = res.status;
+    e.intuitTid = tid;
     throw e;
   }
+  console.log('QBO customer created', JSON.stringify({ id: data.Customer?.Id, intuit_tid: tid }));
   return data.Customer;
 }
