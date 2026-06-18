@@ -814,11 +814,11 @@ setup is finished.
 **Workers:**
 - `quickbooks-connect.js` — GET, authed (Supabase Bearer). Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`.
 - `quickbooks-callback.js` — GET. Intuit redirect target; exchanges code→tokens, stores connection + company name, redirects to `/dev-tools?qbo=connected`.
-- `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }` or `{ backfill:true, limit }`. Dedups by DisplayName; handles QBO 6240 duplicate-name by appending the phone's last 4. Logs to `worker_runs` as `qbo-sync-customer`.
+- `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer`, `findCustomerByDisplayName`, `createCustomer`.
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`.
 
-**UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, "Sync existing customers" backfill.
+**UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill.
 
 **One-time setup checklist:**
 1. Create an app at developer.intuit.com → get Client ID + Secret. Under Keys & OAuth add redirect URI `https://dev.utahpros.app/api/quickbooks-callback` (and the sandbox equivalent while testing).
@@ -827,7 +827,7 @@ setup is finished.
 4. DevTools → Integrations → Connect QuickBooks → authorize. Status flips to Connected.
 5. (Optional) "Sync existing customers" to backfill existing paying-party contacts.
 
-**Scope / future:** Customers only, one-way (UPR→QBO). Payment terms, invoices, and payment write-back are not yet mapped. Phone-only stubs later edited to add a name+role are NOT caught by the INSERT trigger — use the backfill, or extend the trigger to also fire on UPDATE.
+**Scope / future:** Customers only, one-way (UPR→QBO). Payment terms, invoices, and payment write-back are not yet mapped. Dedup matches on email + exact (normalized, case-insensitive) name; true fuzzy/spelling variants ("Jon" vs "John") are still not caught. Phone-only stubs later edited to add a name+role are NOT caught by the INSERT trigger — use the backfill, or extend the trigger to also fire on UPDATE.
 
 ---
 

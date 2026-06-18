@@ -2484,6 +2484,8 @@ function IntegrationsTab() {
   const [loading, setLoading]       = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing]       = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2530,6 +2532,26 @@ function IntegrationsTab() {
     }
   };
 
+  const preview = async () => {
+    setPreviewing(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/qbo-sync-customer', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backfill: true, dry_run: true, limit: 100 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setPreviewResult(data);
+      ok(`Preview: would create ${data.would_create ?? 0}, link ${data.would_link ?? 0}`);
+    } catch (e) {
+      err('Preview failed: ' + e.message);
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const backfill = async () => {
     setSyncing(true);
     try {
@@ -2541,7 +2563,9 @@ function IntegrationsTab() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
-      ok(`Synced ${data.synced ?? 0} customer${data.synced === 1 ? '' : 's'}` + (data.errored ? ` · ${data.errored} failed` : ''));
+      const created = data.created ?? 0, linked = data.linked ?? 0;
+      ok(`Synced ${data.synced ?? 0} (${created} created, ${linked} linked)` + (data.errored ? ` · ${data.errored} failed` : ''));
+      setPreviewResult(null);
       load();
     } catch (e) {
       err('Backfill failed: ' + e.message);
@@ -2608,12 +2632,40 @@ function IntegrationsTab() {
             <button className="btn btn-primary btn-sm" onClick={connect} disabled={connecting}>
               {connecting ? 'Opening QuickBooks…' : connected ? 'Reconnect' : 'Connect QuickBooks'}
             </button>
+            <button className="btn btn-secondary btn-sm" onClick={preview} disabled={!connected || previewing}>
+              {previewing ? 'Previewing…' : 'Preview sync'}
+            </button>
             <button className="btn btn-secondary btn-sm" onClick={backfill} disabled={!connected || syncing}>
               <IconRefresh style={{ width: 13, height: 13 }} />
               {syncing ? 'Syncing…' : 'Sync existing customers'}
             </button>
             <button className="btn btn-secondary btn-sm" onClick={() => load()} disabled={loading}>Refresh</button>
           </div>
+
+          {previewResult && (
+            <div style={{ marginTop: 16, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Dry run · would <span style={{ color: '#d97706' }}>create {previewResult.would_create ?? 0}</span> · <span style={{ color: '#16a34a' }}>link {previewResult.would_link ?? 0}</span>
+                </div>
+                <button onClick={() => setPreviewResult(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 12 }}>Dismiss</button>
+              </div>
+              <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                {(previewResult.results || []).filter(r => !r.skipped).map((r, i) => (
+                  <div key={r.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', fontSize: 13 }}>
+                    <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.id}</span>
+                    {r.error ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', whiteSpace: 'nowrap' }}>error</span>
+                    ) : r.action === 'link' ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>link · {r.matched_by}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', whiteSpace: 'nowrap' }}>create</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!connected && (
             <div style={{ marginTop: 16, padding: '12px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
