@@ -62,16 +62,14 @@
 
 ---
 
-## Phase 0.5 — Auto-push invoice edits (outbound, immediate) ⭐ (locked decision)
+## Phase 0.5 — Auto-push invoice edits (outbound, immediate) ⭐ ✅ SHIPPED (dev, Jun 18)
 **Objective:** the moment an invoice's content changes in UPR, it is pushed to QBO automatically — no manual button.
-**Build:**
-- `AFTER INSERT/UPDATE` trigger on `invoices` (+ `invoice_line_items`, `invoice_adjustments`) → calls the existing `qbo-invoice` worker via `pg_net` (same pattern as the `contacts → qbo-sync-customer` trigger). **Scope the trigger to content columns only** (`total` / `adjusted_total` / line items / adjustments) — never fire on `amount_paid` / `balance_due` / `qbo_*` fields that *sync* writes, or it self-triggers.
-- **Debounce / coalesce** rapid edits (e.g. editing several line items) into one push per invoice (short delay or a "dirty" flag drained by a tiny cron) so we don't hammer the QBO API or hit rate limits.
-- **First push:** a brand-new invoice goes to QBO on its **first priced save** (total > 0); empty `$0` drafts stay local until priced — avoids junk `$0` invoices in QBO. *(confirm)*
-- **Billing UI (`ClaimBilling.jsx`):** replace the manual `Save amount` + `Push to QuickBooks` two-step with **autosave → auto-push** plus a live status chip (`Syncing… / Synced ✓ / Error`). Keep `Remove from QuickBooks`.
-- **Loop guard:** when inbound invoice sync (Phase 3) is live, the push trigger must **skip** rows whose latest change came from a QBO webhook (a `last_sync_source` marker or matching `qbo_sync_token`). Until Phase 3 ships there is no loop, so 0.5 can land first.
-**Acceptance:** edit an amount or a line item → the QBO invoice updates within seconds with no button press; rapid edits coalesce into one push; `$0` drafts never hit QBO; errors surface on the row.
-**Size: M. Dependency: none for outbound. Coordinate the loop guard with Phase 3.**
+**Shipped (UI-driven):**
+- `qbo-invoice` worker now **creates _or_ updates** (was create-only — it skipped already-synced invoices). New `updateInvoice()` in `lib/quickbooks.js`: GET SyncToken → sparse update. The UI calls the worker with just `{ invoice_id }`; create vs. update is auto-detected server-side.
+- `ClaimBilling.jsx`: manual `Save amount` + `Push to QuickBooks` replaced by **autosave-on-blur → auto-push** with a live status chip (`Syncing… / QuickBooks #… / Error / Draft`). `$0` drafts stay local; `Remove from QuickBooks` kept.
+- **Why UI-driven, not a DB trigger:** the Billing UI is the only invoice-edit path today, so a UI call gives immediate Synced/Error feedback and avoids the loop where the worker's own writeback (`qbo_synced_at`, etc.) would re-fire a trigger.
+**Deferred until needed (with Phase 5 / Phase 3):** a content-scoped `AFTER UPDATE OF total, adjusted_total` DB trigger for non-UI edit paths (e.g. bulk line-item edits), debounce/coalesce, and the loop guard (echo-suppression) once inbound invoice sync exists.
+**Size: M. Status: done on `dev`.**
 
 ---
 
@@ -142,7 +140,7 @@
 | Order | Phase | Delivers | Size |
 |---|---|---|---|
 | 1 | **0** Auto-draft on | Drafts auto-created | XS |
-| 2 | **0.5** Auto-push edits | ⭐ UPR invoice edits → QBO instantly | M |
+| 2 | **0.5** Auto-push edits ✅ | ⭐ UPR invoice edits → QBO instantly (shipped) | M |
 | 3 | **1** Inbound infra | The pipe (webhook+CDC+queue) | M |
 | 4 | **2** Payments → UPR (QBO-only) | ⭐ payments show in UPR; manual entry retired | M–L |
 | 5 | **3** Invoice changes → UPR | ⭐ QBO invoice edits show in UPR + echo-suppression | M |

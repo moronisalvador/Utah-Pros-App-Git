@@ -72,20 +72,20 @@ story.append(Paragraph("How we create invoices, push them to QuickBooks, and tra
 
 # 1
 h2("1. The Big Picture")
-box("<font name='Courier'>JOB &nbsp;&rarr;&nbsp; CREATE INVOICE &nbsp;&rarr;&nbsp; PUSH TO QUICKBOOKS &nbsp;&rarr;&nbsp; COLLECTIONS</font><br/>"
+box("<font name='Courier'>JOB &nbsp;&rarr;&nbsp; CREATE INVOICE &nbsp;&rarr;&nbsp; SYNCS TO QUICKBOOKS &nbsp;&rarr;&nbsp; COLLECTIONS</font><br/>"
     "<font name='Courier' size='8' color='#5f6672'>(the work)&nbsp;&nbsp;&nbsp;&nbsp;(draft in UPR)&nbsp;&nbsp;&nbsp;&nbsp;(real QBO invoice)&nbsp;&nbsp;&nbsp;&nbsp;(get paid + track)</font>",
     colors.HexColor("#f8f9fb"), LINE)
 bullets([
     "<b>One invoice per job &mdash; and a job is one division.</b> A claim with Mitigation and Reconstruction is two jobs = two invoices. Insurance pays each category on a separate check, so each check matches its own invoice.",
-    "<b>“Invoiced” means pushed to QuickBooks.</b> A new invoice starts as a <b>draft</b> and doesn’t count as billed yet. The moment you <b>Push to QuickBooks</b>, it becomes real, the balance “clock” starts, and it appears in Collections.",
+    "<b>“Invoiced” means it’s in QuickBooks.</b> A new invoice starts as a <b>draft</b> ($0, local). The moment you enter an amount it <b>syncs to QuickBooks automatically</b> &mdash; then it’s real, the balance “clock” starts, and it appears in Collections.",
     "<b>QuickBooks is the official record. UPR is where you build the invoice and chase payment.</b>",
-    "<b>The financial numbers come straight from your invoices.</b> Once a job has a pushed invoice, its Invoiced / Balance update automatically &mdash; you don’t type them by hand.",
+    "<b>The financial numbers come straight from your invoices.</b> Once a job has a synced invoice, its Invoiced / Balance update automatically &mdash; you don’t type them by hand.",
 ])
 
 # 2
 h2("2. Who Can Do What")
 bullets([
-    "<b>Create invoices, set amounts, push to QuickBooks, log payments:</b> Admins, Managers, Project Managers, Supervisors.",
+    "<b>Create &amp; price invoices (they auto-sync to QuickBooks), log payments:</b> Admins, Managers, Project Managers, Supervisors.",
     "<b>Everyone else:</b> can see the info (read-only). Edit buttons simply won’t show.",
 ])
 
@@ -95,13 +95,12 @@ story.append(Paragraph("<b>Where:</b> Open the <b>Claim</b>, then find the <b>Bi
 steps([
     "Open the claim (from Claims, or a job’s “View Job”).",
     "Go to <b>Billing</b>. You’ll see one row per job/division, e.g. <i>“Reconstruction · J-1042”</i>.",
-    "Click <b>Create invoice</b>. The row shows a draft with an invoice number and status <b>draft</b>.",
-    "Type the amount and click <b>Save amount</b>.",
-    "<b>Double-check the amount</b> &mdash; this is what goes to QuickBooks.",
-    "Click <b>Push to QuickBooks</b>.",
-    "Confirm the green <b>QuickBooks #…</b> badge appears. That means it’s officially invoiced.",
+    "Click <b>Create invoice</b>. The row shows a draft with an invoice number.",
+    "Type the amount and click away (or press Enter). <b>It saves and syncs to QuickBooks automatically</b> &mdash; no buttons to press.",
+    "Watch the status chip go <b>Syncing…</b> &rarr; green <b>QuickBooks #…</b>. That means it’s officially invoiced.",
+    "Need to change it later? Just edit the amount &mdash; it re-syncs to QuickBooks instantly.",
 ])
-box("<b>Fixing mistakes:</b> A red <b>Error</b> badge? Hover to read why (usually the customer isn’t linked in QuickBooks yet) &mdash; fix it and push again. Pushed the wrong amount? Click <b>Remove from QuickBooks</b>, correct the amount, and push again.",
+box("<b>Fixing mistakes:</b> A red <b>Error</b> badge? Hover to read why (usually the customer isn’t linked in QuickBooks yet) &mdash; fix it and re-enter the amount to retry. Wrong amount? Just retype it; the invoice re-syncs automatically. To pull it out of QuickBooks entirely, use <b>Remove from QuickBooks</b>.",
     colors.HexColor("#fffbeb"), colors.HexColor("#fde68a"))
 
 # 4
@@ -120,7 +119,7 @@ rows = [
     [Paragraph("Term", s_cellh), Paragraph("What it means", s_cellh)],
     [Paragraph("<b>Estimated</b>", s_cell), Paragraph("What we expected the job to be worth early on.", s_cell)],
     [Paragraph("<b>Approved</b>", s_cell), Paragraph("What the carrier approved.", s_cell)],
-    [Paragraph("<b>Invoiced</b>", s_cell), Paragraph("Total pushed to QuickBooks. What we’ve officially billed.", s_cell)],
+    [Paragraph("<b>Invoiced</b>", s_cell), Paragraph("Total synced to QuickBooks. What we’ve officially billed.", s_cell)],
     [Paragraph("<b>Collected</b>", s_cell), Paragraph("Payments you’ve logged as received.", s_cell)],
     [Paragraph("<b>Balance</b>", s_cell), Paragraph("Invoiced − Collected. What’s still owed.", s_cell)],
     [Paragraph("<b>Deductible Owed</b>", s_cell), Paragraph("The customer’s deductible not yet collected.", s_cell)],
@@ -137,15 +136,15 @@ t.setStyle(TableStyle([
 ]))
 story.append(t)
 story.append(Spacer(1, 6))
-story.append(Paragraph("Rule of thumb: <b>Invoiced − Collected = Balance.</b> If the Balance looks wrong, it’s almost always an invoice that wasn’t pushed, or a payment that wasn’t logged.", s_body))
+story.append(Paragraph("Rule of thumb: <b>Invoiced − Collected = Balance.</b> If the Balance looks wrong, it’s almost always an invoice with no amount entered yet, or a payment that wasn’t logged.", s_body))
 
 # 6
 h2("6. Good Practices")
 story.append(Paragraph("<font color='#16a34a'><b>DO</b></font>", s_h3))
 bullets([
     "One invoice per division (Mitigation and Reconstruction each get their own).",
-    "Only push when the amount is final &mdash; pushing creates the real QuickBooks invoice and starts the A/R clock. Not sure yet? Leave it as a saved draft.",
-    "Verify the amount before pushing; confirm the green badge after.",
+    "Enter the amount only when it’s final &mdash; saving an amount creates the real QuickBooks invoice and starts the A/R clock. Not sure yet? Leave the draft at $0.",
+    "Double-check the amount; confirm the green badge appears.",
     "Log payments the day they arrive, with the correct source.",
     "Mark the deductible received as soon as it’s collected.",
     "Keep the Collections Log current &mdash; note every follow-up.",
@@ -153,9 +152,9 @@ bullets([
 story.append(Paragraph("<font color='#dc2626'><b>DON’T</b></font>", s_h3))
 bullets([
     "Don’t try to make several invoices for the same job &mdash; create it once and edit the amount.",
-    "Don’t push a guess. A pushed invoice is a real bill in QuickBooks.",
+    "Don’t enter a guess. Saving an amount sends a real bill to QuickBooks; leave the draft at $0 until you know the number.",
     "Don’t hand-edit the old Revenue numbers on a job that already has a real invoice &mdash; the invoice is the source of truth.",
-    "Don’t “Remove from QuickBooks” unless you mean to pull it back to correct and re-push.",
+    "Don’t “Remove from QuickBooks” just to fix an amount &mdash; edit the amount instead (it re-syncs). Only remove it if it shouldn’t be in QuickBooks at all.",
 ])
 
 # 7
@@ -168,9 +167,9 @@ faq = [
     ("Q: Does QuickBooks payment info flow back automatically?",
      "Not yet. For now, log payments by hand in Collections. Automatic QuickBooks payment sync is planned for a later update."),
     ("Q: I got a red “Error” badge.",
-     "Hover it to see why &mdash; usually the contact needs to be linked to a QuickBooks customer first. Fix that, then push again."),
+     "Hover it to see why &mdash; usually the contact needs to be linked to a QuickBooks customer first. Fix that, then re-enter the amount to retry."),
     ("Q: Can I undo a push?",
-     "Yes &mdash; Remove from QuickBooks pulls it back so you can correct the amount and re-push."),
+     "Yes &mdash; Remove from QuickBooks pulls it out of QuickBooks entirely. (Just fixing an amount? You don’t need to remove it &mdash; editing the amount re-syncs automatically.)"),
 ]
 for q, a in faq:
     story.append(Paragraph(q, s_q))
@@ -178,7 +177,7 @@ for q, a in faq:
 
 # 8
 h2("8. Quick Cheat-Sheet")
-box("<b>To bill a job:</b> Claim &rarr; Billing &rarr; <i>Create invoice</i> &rarr; enter amount &rarr; <i>Save amount</i> &rarr; <i>Push to QuickBooks</i> &rarr; confirm green badge.",
+box("<b>To bill a job:</b> Claim &rarr; Billing &rarr; <i>Create invoice</i> &rarr; type the amount &rarr; it saves &amp; syncs to QuickBooks automatically (green badge = done).",
     colors.HexColor("#f0fdf4"), colors.HexColor("#bbf7d0"))
 box("<b>To collect:</b> Collections &rarr; open claim &rarr; <i>+ Log Payment</i> (and mark the deductible Rcvd) &rarr; update A/R status &rarr; add a Notes entry.",
     colors.HexColor("#f0fdf4"), colors.HexColor("#bbf7d0"))

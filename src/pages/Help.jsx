@@ -101,7 +101,7 @@ const FAQ = [
   ['I got a red “Error” badge.',
    'Hover it to see why — usually the contact needs to be linked to a QuickBooks customer first. Fix that, then <b>Push to QuickBooks</b> again.'],
   ['Can I undo a push?',
-   'Yes — <b>Remove from QuickBooks</b> pulls it back so you can correct the amount and re-push.'],
+   'Yes — <b>Remove from QuickBooks</b> pulls it out of QuickBooks entirely. (Just fixing an amount? You don’t need to remove it — editing the amount re-syncs automatically.)'],
 ];
 
 export default function Help() {
@@ -135,12 +135,12 @@ export default function Help() {
           fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.8,
           overflowX: 'auto',
         }}>
-          JOB&nbsp; → &nbsp;CREATE INVOICE&nbsp; → &nbsp;PUSH TO QUICKBOOKS&nbsp; → &nbsp;COLLECTIONS<br />
+          JOB&nbsp; → &nbsp;CREATE INVOICE&nbsp; → &nbsp;SYNCS TO QUICKBOOKS&nbsp; → &nbsp;COLLECTIONS<br />
           <span style={{ color: 'var(--text-tertiary)' }}>(the work)&nbsp;&nbsp;&nbsp;(draft in UPR)&nbsp;&nbsp;&nbsp;(real QBO invoice)&nbsp;&nbsp;&nbsp;(get paid + track)</span>
         </div>
         <Bullets items={[
           '<b>One invoice per job — and a job is one division.</b> A claim with Mitigation and Reconstruction is two jobs = two invoices. Insurance pays each category on a separate check, so each check matches its own invoice.',
-          '<b>“Invoiced” means pushed to QuickBooks.</b> A new invoice starts as a <b>draft</b> and doesn’t count as billed yet. The moment you <b>Push to QuickBooks</b>, it becomes real, the balance clock starts, and it appears in Collections.',
+          '<b>“Invoiced” means it’s in QuickBooks.</b> A new invoice starts as a <b>draft</b> ($0, local). The moment you enter an amount it <b>syncs to QuickBooks automatically</b> — then it’s real, the balance clock starts, and it appears in Collections.',
           '<b>QuickBooks is the official record. UPR is where you build the invoice and chase payment.</b>',
           '<b>The financial numbers come straight from your invoices.</b> Once a job has a pushed invoice, its Invoiced / Balance update automatically — you don’t type them by hand.',
         ]} />
@@ -165,15 +165,14 @@ export default function Help() {
         <Steps items={[
           'Open the claim (from Claims, or a job’s “View Job”).',
           'Go to <b>Billing</b>. You’ll see one row per job/division, e.g. “Reconstruction · J-1042”.',
-          'Click <b>Create invoice</b>. The row shows a draft with an invoice number and status <b>draft</b>.',
-          'Type the amount and click <b>Save amount</b>.',
-          '<b>Double-check the amount</b> — this is what goes to QuickBooks.',
-          'Click <b>Push to QuickBooks</b>.',
-          'Confirm the green <b>QuickBooks #…</b> badge appears. That means it’s officially invoiced.',
+          'Click <b>Create invoice</b>. The row shows a draft with an invoice number.',
+          'Type the amount and click away (or press Enter). <b>It saves and syncs to QuickBooks automatically</b> — no buttons to press.',
+          'Watch the status chip go <b>Syncing…</b> → green <b>QuickBooks #…</b>. That means it’s officially invoiced.',
+          'Need to change it later? Just edit the amount — it re-syncs to QuickBooks instantly.',
         ]} />
         <div style={{ marginTop: 12 }}>
           <Callout tone="amber">
-            <b>Fixing mistakes:</b> A red <b>Error</b> badge? Hover to read why (usually the customer isn’t linked in QuickBooks yet) — fix it and push again. Pushed the wrong amount? Click <b>Remove from QuickBooks</b>, correct the amount, and push again.
+            <b>Fixing mistakes:</b> A red <b>Error</b> badge? Hover to read why (usually the customer isn’t linked in QuickBooks yet) — fix it and re-enter the amount to retry. Wrong amount? Just retype it; the invoice re-syncs automatically. To pull it out of QuickBooks entirely, use <b>Remove from QuickBooks</b>.
           </Callout>
         </div>
       </Card>
@@ -271,7 +270,7 @@ export default function Help() {
       <Card style={{ marginBottom: 0 }}>
         <SectionTitle n="8">Quick Cheat-Sheet</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Callout tone="blue"><b>To bill a job:</b> Claim → Billing → <i>Create invoice</i> → enter amount → <i>Save amount</i> → <i>Push to QuickBooks</i> → confirm green badge.</Callout>
+          <Callout tone="blue"><b>To bill a job:</b> Claim → Billing → <i>Create invoice</i> → type the amount → it saves &amp; syncs to QuickBooks automatically (green badge = done).</Callout>
           <Callout tone="green"><b>To collect:</b> Collections → open claim → <i>+ Log Payment</i> (and mark the deductible Rcvd) → update A/R status → add a Notes entry.</Callout>
         </div>
       </Card>

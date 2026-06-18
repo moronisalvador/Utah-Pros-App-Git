@@ -9,7 +9,7 @@ track collections inside the UPR app. Read the **Big Picture** once, then keep t
 ## 1. The Big Picture (how it all fits together)
 
 ```
-   JOB  ──►  CREATE INVOICE  ──►  PUSH TO QUICKBOOKS  ──►  COLLECTIONS
+   JOB  ──►  CREATE INVOICE  ──►  SYNCS TO QUICKBOOKS  ──►  COLLECTIONS
  (the work)     (draft in UPR)      (real QBO invoice)     (get paid + track)
 ```
 
@@ -18,10 +18,10 @@ A few core ideas that make everything else make sense:
 - **One invoice per job — and a job is one division.** A claim with both Mitigation
   and Reconstruction is **two jobs = two invoices**. That's on purpose: insurance pays
   each category on a separate check, so each check matches its own invoice.
-- **"Invoiced" means *pushed to QuickBooks*.** When you first create an invoice it's a
-  **draft** — it doesn't count as billed yet. The moment you **Push to QuickBooks**, it
-  becomes a real invoice, the customer's balance "clock" starts, and it shows up in
-  Collections.
+- **"Invoiced" means *it's in QuickBooks*.** When you first create an invoice it's a
+  **draft** ($0, local). The moment you **enter an amount it syncs to QuickBooks
+  automatically** — then it's a real invoice, the customer's balance "clock" starts, and
+  it shows up in Collections.
 - **QuickBooks is the official record of the invoice. UPR is where you build it and
   chase payment.** You create and price the invoice in UPR, push it to QuickBooks, then
   manage getting paid from the Collections screen.
@@ -33,7 +33,7 @@ A few core ideas that make everything else make sense:
 
 ## 2. Who Can Do What
 
-- **Create invoices, set amounts, push to QuickBooks, log payments:** Admins, Managers,
+- **Create & price invoices (they auto-sync to QuickBooks), log payments:** Admins, Managers,
   Project Managers, and Supervisors.
 - **Everyone else:** can *see* the billing and financial info (read-only). The edit
   buttons simply won't show.
@@ -48,19 +48,19 @@ A few core ideas that make everything else make sense:
 1. **Open the claim** (from Claims, or from a job's "View Job" → claim).
 2. Go to the **Billing** section. You'll see **one row per job/division**, e.g.
    *"Reconstruction · J-1042"*.
-3. Click **Create invoice**. The row now shows a draft with an invoice number and the
-   status **draft** (e.g. *"INV-000123 · $0.00 · draft"*).
-4. Type the invoice amount in the box and click **Save amount**.
-5. **Double-check the amount.** This is the number that goes to QuickBooks.
-6. Click **Push to QuickBooks**.
-7. Confirm you see the green **QuickBooks #…** badge. ✅ That means it's officially
-   invoiced.
+3. Click **Create invoice**. The row now shows a draft with an invoice number
+   (e.g. *"INV-000123 · $0.00 · draft"*).
+4. Type the invoice amount in the box and **click away (or press Enter)**. It **saves and
+   syncs to QuickBooks automatically** — there's no button to press.
+5. Watch the status chip go **Syncing…** → green **QuickBooks #…**. ✅ That means it's
+   officially invoiced.
+6. **Need to change it later?** Just edit the amount — it re-syncs to QuickBooks instantly.
 
 **Fixing mistakes:**
 - 🔴 **Red "Error" badge?** Hover over it to read the reason (most often the customer
-  isn't linked in QuickBooks yet). Fix the cause, then push again.
-- **Pushed the wrong amount?** Click **Remove from QuickBooks**, correct the amount, and
-  **Push to QuickBooks** again.
+  isn't linked in QuickBooks yet). Fix the cause, then re-enter the amount to retry.
+- **Wrong amount?** Just retype it — the invoice re-syncs automatically. To pull it out of
+  QuickBooks entirely, use **Remove from QuickBooks**.
 
 ---
 
@@ -97,7 +97,7 @@ and an **A/R status**.
 | **Insurance A/R** | What insurance still owes after the deductible. |
 
 Rule of thumb: **Invoiced − Collected = Balance.** If the Balance looks wrong, the fix is
-almost always (a) an invoice that hasn't been pushed, or (b) a payment that hasn't been
+almost always (a) an invoice with no amount entered yet, or (b) a payment that hasn't been
 logged.
 
 ---
@@ -106,10 +106,9 @@ logged.
 
 **Do:**
 - ✅ **One invoice per division.** Mitigation and Reconstruction get their own invoices.
-- ✅ **Only push when the amount is final.** Pushing creates the real QuickBooks invoice
-  and starts the A/R clock. If you're not sure yet, leave it as a saved **draft**.
-- ✅ **Verify the amount before pushing**, and confirm the green **QuickBooks #…** badge
-  after.
+- ✅ **Enter the amount only when it's final.** Saving an amount creates the real
+  QuickBooks invoice and starts the A/R clock. Not sure yet? Leave the draft at $0.
+- ✅ **Double-check the amount**, then confirm the green **QuickBooks #…** badge appears.
 - ✅ **Log payments the day they arrive**, with the correct source.
 - ✅ **Mark the deductible received** as soon as it's collected.
 - ✅ **Keep the Collections Log current** — note every follow-up.
@@ -117,12 +116,12 @@ logged.
 **Don't:**
 - ❌ **Don't try to make several invoices for the same job.** The system keeps one per
   job; create it once and edit the amount.
-- ❌ **Don't push a guess.** A pushed invoice is a real bill in QuickBooks. Save the draft
-  and push when you know the number.
+- ❌ **Don't enter a guess.** Saving an amount sends a real bill to QuickBooks. Leave the
+  draft at $0 until you know the number.
 - ❌ **Don't hand-edit the old Revenue numbers on a job that already has a real invoice.**
   The invoice is now the source of truth — editing the old field will just be overwritten.
-- ❌ **Don't "Remove from QuickBooks"** unless you genuinely mean to pull the invoice back
-  to correct and re-push it.
+- ❌ **Don't "Remove from QuickBooks"** just to fix an amount — edit the amount instead (it
+  re-syncs). Only remove it if the invoice shouldn't be in QuickBooks at all.
 
 ---
 
@@ -143,17 +142,18 @@ sync is planned for a later update.
 
 **Q: I got a red "Error" badge.**
 Hover it to see why. Usually the contact needs to be linked to a QuickBooks customer
-first. Fix that, then **Push to QuickBooks** again.
+first. Fix that, then re-enter the amount to retry the sync.
 
 **Q: Can I undo a push?**
-Yes — **Remove from QuickBooks** pulls it back so you can correct the amount and re-push.
+Yes — **Remove from QuickBooks** pulls it out of QuickBooks entirely. (Just fixing an
+amount? You don't need to remove it — editing the amount re-syncs automatically.)
 
 ---
 
 ## 8. Quick Cheat-Sheet
 
-**To bill a job:** Claim → **Billing** → *Create invoice* → enter amount → *Save amount* →
-*Push to QuickBooks* → confirm green badge.
+**To bill a job:** Claim → **Billing** → *Create invoice* → type the amount → it saves &
+syncs to QuickBooks automatically (green badge = done).
 
 **To collect:** **Collections** → open claim → *+ Log Payment* (and mark the deductible
 **Rcvd**) → update **A/R status** → add a **Notes** entry.
