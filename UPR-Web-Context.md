@@ -834,7 +834,23 @@ setup is finished.
 
 (Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
 
-**Scope / future:** Customers only, one-way (UPR→QBO). Payment terms, invoices, and payment write-back are not yet mapped. Dedup matches on email + exact (normalized, case-insensitive) name; true fuzzy/spelling variants ("Jon" vs "John") are still not caught. Phone-only stubs later edited to add a name+role are NOT caught by the INSERT trigger — use the backfill, or extend the trigger to also fire on UPDATE.
+**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact (normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Phone-only stubs later given a name+role are NOT caught by the contacts INSERT trigger — use the backfill.
+
+---
+
+## QuickBooks Online — Invoices (Jun 18 2026 — Phase 2a)
+
+**One invoice per job (= per division)** — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
+
+**Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough (Items/Classes/Invoices); auth via `x-webhook-secret` or Supabase Bearer; tokens stay server-side.
+
+**Foundation (`migrations/20260618_invoice_qbo_foundation.sql`):** `invoices.qbo_invoice_id/qbo_synced_at/qbo_sync_error`; `generate_invoice_number()` (seq `invoice_number_seq` → `INV-######`); `create_draft_invoice_for_job()` AFTER INSERT trigger on `jobs` (one draft per job), **gated by `integration_config.auto_draft_invoices` (default `'false'` = dormant)**.
+
+**Push worker:** `functions/api/qbo-invoice.js` — POST `{ invoice_id }` creates the QBO invoice (one line: division→Item+Class via `divisionToQbo`, amount = `adjusted_total`/`total`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote); idempotent on `qbo_invoice_id`. `{ invoice_id, action:'delete' }` removes it from QBO. Logs `worker_runs` as `qbo-invoice`.
+
+**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. Invoice numbering = QBO auto-numbers; linkage via `qbo_invoice_id` + claim/job in the note.
+
+**Status:** foundation + push worker live on prod, validated end-to-end (created a real QBO invoice with correct customer/item/class/amount, then deleted). **Remaining 2a:** "Push to QuickBooks" UI button + invoice view, then flip `auto_draft_invoices` → `'true'`. **2b:** UPR invoice editing UI (line items, adjustments) + two-way sync. **2c:** payments sync (per-category collected/outstanding).
 
 ---
 
