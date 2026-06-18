@@ -5,6 +5,7 @@ import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import MergeModal from '@/components/MergeModal';
+import ClaimBilling from '@/components/ClaimBilling';
 import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
@@ -51,7 +52,7 @@ export default function ClaimPage() {
   const [saving, setSaving] = useState(null);
 
   // Mobile collapsible sections
-  const [openSections, setOpenSections] = useState({ jobs: true, schedule: false, documents: false, info: false, activity: false, demoSheets: false });
+  const [openSections, setOpenSections] = useState({ jobs: true, schedule: false, documents: false, info: false, activity: false, demoSheets: false, billing: false });
   const toggleSection = (key) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
   // ── Load claim detail ──
@@ -404,6 +405,11 @@ export default function ClaimPage() {
             </SectionCard>
           )}
 
+          {/* Full-width: Billing (invoices → QuickBooks) */}
+          <SectionCard title="Billing">
+            <ClaimBilling jobs={jobs} db={db} canEdit={canEdit} />
+          </SectionCard>
+
           {/* Financials link */}
           <button
             className="btn btn-secondary btn-sm"
@@ -435,6 +441,9 @@ export default function ClaimPage() {
           </CollapsibleSection>
           <CollapsibleSection title="Activity" open={openSections.activity} onToggle={() => toggleSection('activity')}>
             {activityContent}
+          </CollapsibleSection>
+          <CollapsibleSection title="Billing" open={openSections.billing} onToggle={() => toggleSection('billing')}>
+            <ClaimBilling jobs={jobs} db={db} canEdit={canEdit} />
           </CollapsibleSection>
         </div>
       )}
