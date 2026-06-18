@@ -1,19 +1,21 @@
 // POST /api/qbo-sync-customer
-// Creates a QuickBooks Online customer from a UPR contact.
+// Creates (or links) a QuickBooks Online customer from a UPR contact.
 //
 // Auth: either the DB trigger's shared secret (x-webhook-secret header matching
 // QBO_WEBHOOK_SECRET) or a logged-in Supabase user (Authorization: Bearer …).
 //
 // Body:
-//   { "contact_id": "<uuid>" }      — sync one contact (used by the trigger)
-//   { "backfill": true, "limit": N } — sync up to N pending paying-party contacts
+//   { "contact_id": "<uuid>" }                — sync one contact (used by the trigger)
+//   { "backfill": true, "limit": N }          — sync up to N pending paying-party contacts
+//   { "backfill": true, "dry_run": true }     — preview only: report would-create vs
+//                                               would-link, writing nothing
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import {
   getConnection,
   mapContactToCustomer,
-  findCustomerByDisplayName,
+  findExistingCustomer,
   createCustomer,
 } from '../lib/quickbooks.js';
 
@@ -36,14 +38,26 @@ function qualifies(c) {
   return !!(c && QUALIFYING_ROLES.includes(c.role) && c.name && c.name.trim() && !c.qbo_customer_id);
 }
 
-async function syncOne(env, db, contact) {
-  if (!qualifies(contact)) return { id: contact.id, skipped: true };
+// dryRun: report the intended action (create/link) without creating or writing back.
+async function syncOne(env, db, contact, { dryRun = false } = {}) {
+  if (!qualifies(contact)) return { id: contact.id, name: contact.name, skipped: true };
+
+  const payload = mapContactToCustomer(contact);
 
   try {
-    const payload = mapContactToCustomer(contact);
+    // Dedup: match an existing customer by email, then by exact display name.
+    const match = await findExistingCustomer(env, contact, payload);
 
-    // Dedup: reuse an existing QuickBooks customer with the same display name.
-    let customer = await findCustomerByDisplayName(env, payload.DisplayName);
+    if (dryRun) {
+      return match
+        ? { id: contact.id, name: contact.name, action: 'link', matched_by: match.matchedBy,
+            qbo_customer_id: match.customer.Id, qbo_display_name: match.customer.DisplayName }
+        : { id: contact.id, name: contact.name, action: 'create', qbo_display_name: payload.DisplayName };
+    }
+
+    let customer = match?.customer;
+    const linked = !!customer;
+
     if (!customer) {
       try {
         customer = await createCustomer(env, payload);
@@ -64,12 +78,15 @@ async function syncOne(env, db, contact) {
       qbo_synced_at:   new Date().toISOString(),
       qbo_sync_error:  null,
     });
-    return { id: contact.id, qbo_customer_id: customer.Id, name: contact.name };
+    return { id: contact.id, name: contact.name, action: linked ? 'linked' : 'created',
+             matched_by: match?.matchedBy, qbo_customer_id: customer.Id };
   } catch (e) {
-    await db.update('contacts', `id=eq.${contact.id}`, {
-      qbo_sync_error: (e.message || 'sync failed').slice(0, 500),
-    });
-    return { id: contact.id, error: e.message };
+    if (!dryRun) {
+      await db.update('contacts', `id=eq.${contact.id}`, {
+        qbo_sync_error: (e.message || 'sync failed').slice(0, 500),
+      });
+    }
+    return { id: contact.id, name: contact.name, error: e.message };
   }
 }
 
@@ -84,6 +101,14 @@ async function logRun(db, status, processed, errorMessage, startedAt) {
       completed_at:      new Date().toISOString(),
     });
   } catch (_) { /* logging is best-effort */ }
+}
+
+function loadPending(db, limit) {
+  return db.select(
+    'contacts',
+    `qbo_customer_id=is.null&role=in.(${QUALIFYING_ROLES.join(',')})&name=not.is.null` +
+      `&order=created_at.desc&limit=${limit}`,
+  );
 }
 
 export async function onRequestOptions(context) {
@@ -107,35 +132,42 @@ export async function onRequestPost(context) {
   let body = {};
   try { body = await request.json(); } catch (_) { /* empty body */ }
 
+  const dryRun = !!body.dry_run;
+
   try {
     const results = [];
 
     if (body.backfill) {
-      const limit = Math.min(Number(body.limit) || 50, 200);
-      const rows = await db.select(
-        'contacts',
-        `qbo_customer_id=is.null&role=in.(${QUALIFYING_ROLES.join(',')})&name=not.is.null` +
-          `&order=created_at.desc&limit=${limit}`,
-      );
+      const limit = Math.min(Number(body.limit) || 50, 100);
+      const rows = await loadPending(db, limit);
       for (const c of (rows || [])) {
-        results.push(await syncOne(env, db, c));
+        results.push(await syncOne(env, db, c, { dryRun }));
       }
     } else if (body.contact_id) {
       const rows = await db.select('contacts', `id=eq.${body.contact_id}&limit=1`);
       if (!rows || !rows[0]) return jsonResponse({ error: 'Contact not found' }, 404, request, env);
-      results.push(await syncOne(env, db, rows[0]));
+      results.push(await syncOne(env, db, rows[0], { dryRun }));
     } else {
       return jsonResponse({ error: 'Provide contact_id or backfill:true' }, 400, request, env);
     }
 
-    const synced  = results.filter(r => r.qbo_customer_id).length;
+    if (dryRun) {
+      const would_create = results.filter(r => r.action === 'create').length;
+      const would_link   = results.filter(r => r.action === 'link').length;
+      const skipped      = results.filter(r => r.skipped).length;
+      return jsonResponse({ dry_run: true, would_create, would_link, skipped, results }, 200, request, env);
+    }
+
+    const created = results.filter(r => r.action === 'created').length;
+    const linked  = results.filter(r => r.action === 'linked').length;
     const errored = results.filter(r => r.error).length;
     const skipped = results.filter(r => r.skipped).length;
+    const synced  = created + linked;
 
     await logRun(db, errored ? 'error' : 'completed', synced, errored ? `${errored} failed` : null, startedAt);
-    return jsonResponse({ synced, errored, skipped, results }, 200, request, env);
+    return jsonResponse({ synced, created, linked, errored, skipped, results }, 200, request, env);
   } catch (e) {
-    await logRun(db, 'error', 0, e.message, startedAt);
+    if (!dryRun) await logRun(db, 'error', 0, e.message, startedAt);
     return jsonResponse({ error: e.message }, 500, request, env);
   }
 }

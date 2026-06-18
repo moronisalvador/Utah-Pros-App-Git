@@ -146,7 +146,7 @@ export async function fetchCompanyName(env) {
 // ── Customer mapping + create ────────────────────────────────────────────────────
 // Maps a UPR contacts row → a QuickBooks Customer payload.
 export function mapContactToCustomer(contact) {
-  const name = (contact.name || '').trim();
+  const name = normalizeWhitespace(contact.name);
   const parts = name ? name.split(/\s+/) : [];
   const cust = {
     DisplayName: name || contact.company || `UPR contact ${String(contact.id).slice(0, 8)}`,
@@ -172,14 +172,37 @@ export function mapContactToCustomer(contact) {
 }
 
 // Looks up an existing customer by exact DisplayName (dedup before create).
-export async function findCustomerByDisplayName(env, displayName) {
-  const safe = displayName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const q = `SELECT Id, DisplayName FROM Customer WHERE DisplayName = '${safe}'`;
+// Collapses repeated whitespace and trims — normalizes names before matching.
+export function normalizeWhitespace(s) {
+  return (s || '').replace(/\s+/g, ' ').trim();
+}
+
+function escQ(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Runs a Customer query, returns the first match (or null on no match / error).
+export async function queryCustomer(env, whereClause) {
+  const q = `SELECT Id, DisplayName, PrimaryEmailAddr FROM Customer WHERE ${whereClause}`;
   const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
   if (!res.ok) return null;
   const data = await res.json().catch(() => ({}));
-  const list = data?.QueryResponse?.Customer || [];
-  return list[0] || null;
+  return data?.QueryResponse?.Customer?.[0] || null;
+}
+
+// Dedup lookup before creating: match on email first, then exact (normalized,
+// case-insensitive) display name. Returns { customer, matchedBy } or null.
+export async function findExistingCustomer(env, contact, payload) {
+  const email = (contact.email || '').trim();
+  if (email) {
+    const byEmail = await queryCustomer(env, `PrimaryEmailAddr = '${escQ(email)}'`);
+    if (byEmail) return { customer: byEmail, matchedBy: 'email' };
+  }
+  if (payload.DisplayName) {
+    const byName = await queryCustomer(env, `DisplayName = '${escQ(payload.DisplayName)}'`);
+    if (byName) return { customer: byName, matchedBy: 'name' };
+  }
+  return null;
 }
 
 export async function createCustomer(env, payload) {
