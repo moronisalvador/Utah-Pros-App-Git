@@ -3,6 +3,8 @@
 **Goal:** a fully functional billing / A/R / invoicing platform in UPR that is **fully connected to QuickBooks Online — in both directions.** The headline requirement: **any time an invoice changes in QuickBooks, or a payment is received in QuickBooks, it shows and updates in UPR automatically.**
 
 > This is a roadmap spanning several phases. When we start a phase, lift that phase's section into a focused `*-TASK.md` and build it. Phases 1–3 are the priority (they deliver the QBO → UPR sync).
+>
+> **Resuming cold? Start with `QBO-BILLING-STATUS.md`** (done / not-done index), then this file for detail.
 
 **Locked decisions (Jun 18, 2026):**
 - **Payments are QBO-only.** The manual "Log Payment" UI in UPR is **retired** — QuickBooks is the only place a payment is processed, and it syncs *back* to UPR (Phase 2). UPR never originates payments.
