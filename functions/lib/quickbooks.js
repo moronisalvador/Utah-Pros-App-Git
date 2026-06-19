@@ -303,3 +303,44 @@ export async function updateInvoice(env, qboInvoiceId, fields) {
   }
   return data.Invoice;
 }
+
+// ── Payments (one-way UPR → QBO) ─────────────────────────────────────────────
+// Create a QBO Payment applied to an invoice. UPR records the payment first; this
+// mirrors it into QBO so the QBO invoice shows paid/partial. `txnDate` = 'YYYY-MM-DD'.
+export async function createPayment(env, { customerId, qboInvoiceId, amount, txnDate, privateNote }) {
+  const payload = {
+    CustomerRef: { value: String(customerId) },
+    TotalAmt: Number(amount),
+    ...(txnDate ? { TxnDate: txnDate } : {}),
+    ...(privateNote ? { PrivateNote: privateNote } : {}),
+    Line: [{
+      Amount: Number(amount),
+      LinkedTxn: [{ TxnId: String(qboInvoiceId), TxnType: 'Invoice' }],
+    }],
+  };
+  const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify(payload),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO create payment ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Payment;
+}
+
+// Delete a QBO Payment (used when a UPR payment is removed). Looks up SyncToken first.
+export async function deletePayment(env, qboPaymentId) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Payment WHERE Id = '${qboPaymentId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const syncToken = qd?.QueryResponse?.Payment?.[0]?.SyncToken;
+  if (syncToken == null) throw new Error('Payment not found in QBO for delete');
+  const res = await qboFetch(env, `/payment?operation=delete&minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify({ Id: String(qboPaymentId), SyncToken: syncToken }),
+  });
+  if (!res.ok) throw new Error(`QBO delete payment ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
+}

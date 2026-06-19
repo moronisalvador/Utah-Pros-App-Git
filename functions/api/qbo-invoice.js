@@ -117,9 +117,18 @@ export async function onRequestPost(context) {
       mode = 'created';
     }
 
-    await db.update('invoices', `id=eq.${invoiceId}`, {
-      qbo_invoice_id: String(qboInv.Id), qbo_synced_at: new Date().toISOString(), qbo_sync_error: null,
-    });
+    const nowIso = new Date().toISOString();
+    const patch = { qbo_invoice_id: String(qboInv.Id), qbo_synced_at: nowIso, qbo_sync_error: null };
+    if (mode === 'created') {
+      // First time it reaches QBO: stamp "sent" + a default Net-30 due date (drives aging).
+      if (!inv.sent_at) patch.sent_at = nowIso;
+      if (!inv.due_date) {
+        const base = inv.invoice_date ? new Date(inv.invoice_date + 'T00:00:00Z') : new Date();
+        base.setUTCDate(base.getUTCDate() + 30);
+        patch.due_date = base.toISOString().slice(0, 10);
+      }
+    }
+    await db.update('invoices', `id=eq.${invoiceId}`, patch);
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt }, 200, request, env);
   } catch (e) {
