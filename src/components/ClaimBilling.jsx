@@ -59,15 +59,19 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
 
   // Autosave + auto-push: fired on blur / Enter. Saves the amount, then pushes to
   // QBO (creating or updating). A $0 draft is saved locally but not sent to QBO.
+  // Autosave on blur. If the invoice is ALREADY in QuickBooks, edits sync immediately
+  // (frictionless). A brand-new invoice is only saved locally here — the first push to
+  // QuickBooks is a deliberate click on "Send to QuickBooks", so a typo can't instantly
+  // become a real bill.
   const saveAndSync = async (inv) => {
     const raw = amounts[inv.id];
     if (raw == null || raw === '') return;
     const amt = Number(raw);
     if (!(amt >= 0)) { toast('Enter a valid amount', 'error'); return; }
 
-    const changed = Number(inv.total) !== amt;
     const synced = !!inv.qbo_invoice_id;
-    if (!changed && synced && !inv.qbo_sync_error) {     // nothing to do
+    const changed = Number(inv.total) !== amt;
+    if (!changed && !(synced && inv.qbo_sync_error)) {   // nothing to do
       setAmounts(a => { const n = { ...a }; delete n[inv.id]; return n; });
       return;
     }
@@ -76,11 +80,11 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
     try {
       if (changed) await db.update('invoices', `id=eq.${inv.id}`, { subtotal: amt, total: amt });
       setAmounts(a => { const n = { ...a }; delete n[inv.id]; return n; });
-      if (amt > 0) {
-        const data = await postInvoice(inv, {});
+      if (synced) {
+        const data = await postInvoice(inv, {});          // already in QBO → auto-update
         toast(data.mode === 'updated' ? 'Updated in QuickBooks' : `Pushed to QuickBooks (#${data.qbo_invoice_id})`);
-      } else {
-        toast('Saved as draft — enter an amount above $0 to sync to QuickBooks');
+      } else if (amt > 0) {
+        toast('Amount saved — click “Send to QuickBooks” to create the invoice');
       }
       await load();
     } catch (e) {
@@ -89,6 +93,22 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
     } finally {
       setBusy(null);
     }
+  };
+
+  // Deliberate first push of a NEW invoice to QuickBooks (create).
+  const sendToQbo = async (inv) => {
+    const raw = amounts[inv.id];
+    const amt = (raw != null && raw !== '') ? Number(raw) : Number(inv.total);
+    if (!(amt > 0)) { toast('Enter an amount above $0 first', 'error'); return; }
+    setBusy(inv.id);
+    try {
+      if (Number(inv.total) !== amt) await db.update('invoices', `id=eq.${inv.id}`, { subtotal: amt, total: amt });
+      setAmounts(a => { const n = { ...a }; delete n[inv.id]; return n; });
+      const data = await postInvoice(inv, {});
+      toast(`Pushed to QuickBooks (#${data.qbo_invoice_id})`);
+      await load();
+    } catch (e) { toast('QuickBooks: ' + e.message, 'error'); await load(); }
+    finally { setBusy(null); }
   };
 
   const removeFromQbo = async (inv) => {
@@ -160,6 +180,11 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
                       onBlur={() => saveAndSync(inv)}
                       style={{ width: 120, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                     />
+                    {!synced && Number(amounts[inv.id] ?? inv.total) > 0 && (
+                      <button className="btn btn-primary btn-sm" disabled={isBusy} onClick={() => sendToQbo(inv)}>
+                        {isBusy ? 'Sending…' : 'Send to QuickBooks'}
+                      </button>
+                    )}
                     {synced && (
                       <button
                         className="btn btn-sm" disabled={isBusy}
@@ -183,7 +208,7 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
 
       {canEdit && (
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '2px 2px 0' }}>
-          Amounts save and sync to QuickBooks automatically — edits to a synced invoice update it in QuickBooks.
+          New invoice: enter the amount, then click <b>Send to QuickBooks</b>. After that, edits sync to QuickBooks automatically.
         </div>
       )}
     </div>

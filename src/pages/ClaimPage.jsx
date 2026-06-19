@@ -6,7 +6,7 @@ import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import MergeModal from '@/components/MergeModal';
 import ClaimBilling from '@/components/ClaimBilling';
-import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials } from '@/lib/claimUtils';
+import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -17,7 +17,7 @@ export default function ClaimPage() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { db, employee: currentUser } = useAuth();
+  const { db, employee: currentUser, isFeatureEnabled } = useAuth();
 
   // Detect if we're in the tech mobile layout
   const isTech = location.pathname.startsWith('/tech/');
@@ -188,6 +188,7 @@ export default function ClaimPage() {
   // ── Computed ──
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
   const canEdit = isAdmin || currentUser?.role === 'project_manager' || currentUser?.role === 'supervisor';
+  const canEditBill = canEditBilling(currentUser?.role);   // billing/QBO: admin + manager only
   const totals = useMemo(() => {
     let invoiced = 0, collected = 0, balance = 0;
     for (const j of jobs) {
@@ -405,10 +406,12 @@ export default function ClaimPage() {
             </SectionCard>
           )}
 
-          {/* Full-width: Billing (invoices → QuickBooks) */}
-          <SectionCard title="Billing">
-            <ClaimBilling jobs={jobs} db={db} canEdit={canEdit} />
-          </SectionCard>
+          {/* Full-width: Billing (invoices → QuickBooks) — master switch: feature:billing */}
+          {isFeatureEnabled('feature:billing') && (
+            <SectionCard title="Billing">
+              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+            </SectionCard>
+          )}
 
           {/* Financials link */}
           <button
@@ -442,9 +445,11 @@ export default function ClaimPage() {
           <CollapsibleSection title="Activity" open={openSections.activity} onToggle={() => toggleSection('activity')}>
             {activityContent}
           </CollapsibleSection>
-          <CollapsibleSection title="Billing" open={openSections.billing} onToggle={() => toggleSection('billing')}>
-            <ClaimBilling jobs={jobs} db={db} canEdit={canEdit} />
-          </CollapsibleSection>
+          {isFeatureEnabled('feature:billing') && (
+            <CollapsibleSection title="Billing" open={openSections.billing} onToggle={() => toggleSection('billing')}>
+              <ClaimBilling jobs={jobs} db={db} canEdit={canEditBill} />
+            </CollapsibleSection>
+          )}
         </div>
       )}
 

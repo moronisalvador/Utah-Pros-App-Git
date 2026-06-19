@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import '@/claim-page.css';
 import { LossIcon, LOSS_CONFIG, DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import MergeModal from '@/components/MergeModal';
-import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, AR_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials } from '@/lib/claimUtils';
+import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, AR_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge, KPI } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -16,6 +16,7 @@ export default function ClaimCollectionPage() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee: currentUser } = useAuth();
+  const canEdit = canEditBilling(currentUser?.role);   // gate A/R edits — admin + manager only
 
   const [claim,     setClaim]     = useState(null);
   const [jobs,      setJobs]      = useState([]);
@@ -230,7 +231,7 @@ export default function ClaimCollectionPage() {
       <div className="claim-body">
         {activeTab === 'overview'    && <OverviewTab    claim={claim} jobs={jobs} contact={contact} adjuster={adjuster} patchClaim={patchClaim} saving={saving} navigate={navigate} />}
         {activeTab === 'financial'   && <FinancialTab   jobs={jobs} totals={totals} isInsurance={isInsurance} navigate={navigate} />}
-        {activeTab === 'collections' && <CollectionsTab jobs={jobs} saving={saving} patchJob={patchJob} onPay={setPayModal} onNotes={setNotesModal} onMarkDed={markDedPaid} navigate={navigate} />}
+        {activeTab === 'collections' && <CollectionsTab jobs={jobs} saving={saving} patchJob={patchJob} onPay={setPayModal} onNotes={setNotesModal} onMarkDed={markDedPaid} navigate={navigate} canEdit={canEdit} />}
         {activeTab === 'documents'   && <DocumentsTab   jobs={jobs} documents={documents} docsLoaded={docsLoaded} db={db} navigate={navigate} />}
       </div>
 
@@ -532,7 +533,7 @@ function FinKPI({ label, value, color }) {
 // ═══════════════════════════════════════════════════════════════════════
 // COLLECTIONS TAB
 // ═══════════════════════════════════════════════════════════════════════
-function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, navigate }) {
+function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, navigate, canEdit }) {
   const totalBalance   = jobs.reduce((s, j) => s + getBalances(j).balance, 0);
   const totalCollected = jobs.reduce((s, j) => s + Number(j.collected_value || 0), 0);
   const totalInvoiced  = jobs.reduce((s, j) => s + getBalances(j).invoiced, 0);
@@ -581,9 +582,9 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
                 <div className="ar-mobile-card-row">
                   <span>Deductible</span>
                   <button
-                    onClick={() => !job.deductible_collected && !isSaving && onMarkDed(job)}
-                    disabled={job.deductible_collected || isSaving}
-                    style={{ fontWeight: 700, fontSize: 11, padding: '2px 10px', borderRadius: 99, border: `1px solid ${job.deductible_collected ? '#a7f3d0' : '#fde68a'}`, background: job.deductible_collected ? '#ecfdf5' : '#fffbeb', color: job.deductible_collected ? '#059669' : '#d97706', cursor: job.deductible_collected ? 'default' : 'pointer', fontFamily: 'var(--font-sans)' }}>
+                    onClick={() => canEdit && !job.deductible_collected && !isSaving && onMarkDed(job)}
+                    disabled={!canEdit || job.deductible_collected || isSaving}
+                    style={{ fontWeight: 700, fontSize: 11, padding: '2px 10px', borderRadius: 99, border: `1px solid ${job.deductible_collected ? '#a7f3d0' : '#fde68a'}`, background: job.deductible_collected ? '#ecfdf5' : '#fffbeb', color: job.deductible_collected ? '#059669' : '#d97706', cursor: (!canEdit || job.deductible_collected) ? 'default' : 'pointer', fontFamily: 'var(--font-sans)' }}>
                     {job.deductible_collected ? `✓ Rcvd${job.deductible_collected_date ? ' ' + fmtDateShort(job.deductible_collected_date) : ''}` : `○ ${fmt$(b.deductible)} owed`}
                   </button>
                 </div>
@@ -619,18 +620,20 @@ function CollectionsTab({ jobs, saving, patchJob, onPay, onNotes, onMarkDed, nav
                 className="input"
                 value={job.ar_status || 'open'}
                 onChange={e => patchJob(job.id, { ar_status: e.target.value })}
-                disabled={isSaving}
+                disabled={isSaving || !canEdit}
                 style={{ height: 30, fontSize: 11, fontWeight: 700, color: arObj.color, background: arObj.bg, borderColor: arObj.color + '50', width: 'auto', minWidth: 100 }}>
                 {AR_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
-              {b.balance > 0 && (
+              {canEdit && b.balance > 0 && (
                 <button className="btn btn-secondary btn-sm" onClick={() => onPay(job)} disabled={isSaving} style={{ fontSize: 12 }}>
                   + Log Payment
                 </button>
               )}
-              <button className="btn btn-ghost btn-sm" onClick={() => onNotes(job)} style={{ fontSize: 12 }}>
-                📝 Notes
-              </button>
+              {canEdit && (
+                <button className="btn btn-ghost btn-sm" onClick={() => onNotes(job)} style={{ fontSize: 12 }}>
+                  📝 Notes
+                </button>
+              )}
               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/jobs/${job.id}`)} style={{ fontSize: 12, marginLeft: 'auto' }}>
                 View Job →
               </button>

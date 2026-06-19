@@ -10,6 +10,10 @@ export const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Recon
 export const DIV_EMOJI  = { water: '\u{1F4A7}', mold: '\u{1F344}', reconstruction: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}', general: '\u{1F4C1}' };
 export const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
 export const CLAIM_STATUSES = ['open', 'in_progress', 'closed', 'denied', 'settled', 'supplementing'];
+// Who may edit billing / A/R (QuickBooks-affecting actions). Deliberately narrower than
+// general claim editing — admin + manager only. Edit this list to change access.
+export const BILLING_EDIT_ROLES = ['admin', 'manager'];
+export const canEditBilling = (role) => BILLING_EDIT_ROLES.includes(role);
 export const AR_STATUSES = [
   { value: 'open',        label: 'Open',        color: '#6b7280', bg: '#f9fafb' },
   { value: 'invoiced',    label: 'Invoiced',    color: '#2563eb', bg: '#eff6ff' },
