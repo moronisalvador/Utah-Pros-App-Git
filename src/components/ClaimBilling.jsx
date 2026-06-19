@@ -12,6 +12,7 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);            // id currently acting on
   const [amounts, setAmounts] = useState({});        // invoice_id -> input value
+  const [confirmRemove, setConfirmRemove] = useState(null); // invoice id pending remove-confirm
 
   const jobIds = (jobs || []).map(j => j.id);
   const jobIdsKey = jobIds.join(',');
@@ -91,6 +92,8 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
   };
 
   const removeFromQbo = async (inv) => {
+    if (confirmRemove !== inv.id) { setConfirmRemove(inv.id); return; }   // first click arms the confirm
+    setConfirmRemove(null);
     setBusy(inv.id);
     try {
       await postInvoice(inv, { action: 'delete' });
@@ -158,8 +161,16 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
                       style={{ width: 120, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                     />
                     {synced && (
-                      <button className="btn btn-secondary btn-sm" disabled={isBusy} onClick={() => removeFromQbo(inv)}>
-                        {isBusy ? '…' : 'Remove from QuickBooks'}
+                      <button
+                        className="btn btn-sm" disabled={isBusy}
+                        onClick={() => removeFromQbo(inv)}
+                        onBlur={() => setConfirmRemove(null)}
+                        style={{
+                          background: confirmRemove === inv.id ? '#fef2f2' : 'var(--bg-tertiary)',
+                          color:      confirmRemove === inv.id ? '#dc2626' : 'var(--text-tertiary)',
+                          border:     `1px solid ${confirmRemove === inv.id ? '#fecaca' : 'var(--border-light)'}`,
+                        }}>
+                        {isBusy ? '…' : confirmRemove === inv.id ? 'Confirm remove' : 'Remove from QuickBooks'}
                       </button>
                     )}
                   </>
