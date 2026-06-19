@@ -1,5 +1,13 @@
 # QBO ↔ UPR — Phase 2 Build Plan (Two-Way Sync)
 
+> ⚠️ **DIRECTION CHANGED (Jun 19, 2026) — this plan is partly SUPERSEDED.** We're doing
+> **one-way UPR → QuickBooks only**: all invoices *and* payments are entered in UPR and
+> pushed to QBO; QuickBooks is never edited by hand. The **inbound / webhook / CDC** parts
+> below (Phase 1, and the QBO→UPR halves of Phases 2 & 3) are **dropped**. Still valid:
+> outbound auto-push, the new **payments → QBO** push, invoice sent/due + aging, and the
+> A/R views. Optional later: **card processing** (Stripe or QuickBooks Payments).
+> **Current direction + next steps: `QBO-BILLING-STATUS.md`.**
+
 **Goal:** a fully functional billing / A/R / invoicing platform in UPR that is **fully connected to QuickBooks Online — in both directions.** The headline requirement: **any time an invoice changes in QuickBooks, or a payment is received in QuickBooks, it shows and updates in UPR automatically.**
 
 > This is a roadmap spanning several phases. When we start a phase, lift that phase's section into a focused `*-TASK.md` and build it. Phases 1–3 are the priority (they deliver the QBO → UPR sync).

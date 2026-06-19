@@ -9,11 +9,15 @@
 ---
 
 ## TL;DR — where things stand (Jun 2026)
-The **outbound** direction is built and live on `dev`: you create an invoice on a Claim,
-the amount **auto-syncs to QuickBooks**, and the dashboard/Collections read from invoices.
-It's **safeguarded** (master switch + tight roles + confirms). The **inbound** direction
-(QuickBooks → UPR: payments and invoice changes flowing *back*) is **planned but NOT built**
-— that's the next major effort and needs a one-time Intuit setup first.
+**Direction (decided Jun 19): one-way, UPR → QuickBooks.** UPR is the system of record;
+QuickBooks is a downstream mirror. **All** invoices *and* payments are entered in UPR and
+pushed to QBO — we never enter payments in QuickBooks. One-way keeps QBO current **as long
+as nobody edits invoices/payments directly in QBO.** No inbound sync / webhooks needed
+(that earlier plan is dropped).
+Built & live on `dev`: invoice create + **auto-push** to QBO, safeguarded (master switch +
+tight roles + confirms). **Not yet built:** recording payments in UPR + **pushing them to
+QBO** (today the Log Payment flow does NOT reach QBO), invoice **sent/due-date + aging**,
+and a proper invoice-centric **A/R view** (redesign).
 
 ---
 
@@ -35,32 +39,41 @@ It's **safeguarded** (master switch + tight roles + confirms). The **inbound** d
 - In-app **Help page** at `/help` (`src/pages/Help.jsx`, sidebar "Help & Guides", visible to everyone).
 - Markdown guide `UPR-Invoicing-Financials-Employee-Guide.md` + downloadable PDF `public/UPR-Invoicing-Financials-Guide.pdf` (regenerate with `scripts/build-invoicing-guide-pdf.py`).
 
-**Decisions locked** (commit `650a67d`)
-- Payments will be **QBO-only** (manual "Log Payment" to be retired in Phase 2).
-- Invoice edits **auto-push immediately** (done for outbound; inbound needs echo-suppression).
+**Decisions** (updated Jun 19 — supersedes commit `650a67d`)
+- ~~Payments QBO-only / inbound webhooks~~ → **Payments are entered in UPR and pushed to QBO** (one-way, like Housecall Pro / Albiware). **Keep** the "Log Payment" UI; build its QBO push. **No inbound webhooks.**
+- Invoice edits **auto-push immediately** (built).
+- Billing / A/R edit roles stay **admin + manager only** (keep restricted).
 
 ---
 
-## ⏳ NOT DONE YET — next work (detail in `QBO-PHASE-2-PLAN.md`)
+## ⏳ NOT DONE YET — next work
 
-| Phase | What | Notes |
+**Foundation (needed regardless of card processor):**
+| Item | What | Notes |
 |---|---|---|
-| **0** | Flip `integration_config.auto_draft_invoices` → `true` | After a real prod test of the Billing UI. Config flip, no code. |
-| **1** | **Inbound webhook infra** | `qbo-webhook` + `qbo_sync_events` queue + CDC reconcile. **Needs Intuit setup first (see blockers).** |
-| **2** | **Payments QBO→UPR** + retire manual Log Payment | The "payment received in QBO shows in UPR" requirement. |
-| **3** | **Invoice changes QBO→UPR** + echo-suppression | The "invoice edited in QBO shows in UPR" requirement. |
-| **4** | Customer two-way sync | Incl. "edit email in UPR updates QBO" (today it does NOT). |
-| **5** | Invoice editing depth | Line items / adjustments / deductible-depreciation splits (tables exist; mostly UI). |
-| **6** | A/R ops & polish | Aging, statements, sync-error/retry panel, realtime. |
-| **—** | **Deeper security** | Current safeguards are **UI-level only**. Add RLS / RPC role enforcement on financial tables so the restriction can't be bypassed via the API. |
+| **Record payments in UPR → push to QBO** | Wire Log Payment to insert a `payments` row AND push a QBO Payment applied to the invoice. Add `payments.qbo_payment_id` + a `qbo-payment` worker (create/delete), retries, no double-post, void/refund handling. | **Core gap — today payments never reach QBO.** Most UPR revenue is insurance checks/EFT entered by hand. |
+| **Invoice lifecycle fields** | `sent_at` + `due_date` (terms, e.g. Net 30) on invoices → enables "when sent" + aging/overdue. | Pure UPR data; the views need no QBO round-trip. |
+| **A/R views (redesign)** | Invoice-centric view per **claim / job / client** + global aging dashboard: #, sent, age, total, collected, balance, status. | Current UI doesn't show this — redesign pending direction. |
+| **Rollups + reliability** | collected = Σ payments, balance, status (paid/partial/overdue); payment-push error/retry surfacing; optional periodic read-back reconcile to catch QBO drift. | One-way is only correct if QBO isn't hand-edited. |
+
+**Card payments (collect by credit card) — processor TBD:**
+| Item | What |
+|---|---|
+| **Choose processor** | **Stripe** (best UX/dev; UPR stays system-of-record; push payment → QBO) vs **QuickBooks Payments** (native to QBO books, but collecting via QBO's invoice makes the payment originate in QBO → mild inbound). |
+| **Send invoice + pay link** | Email the client an invoice with a "Pay now" (card/ACH) link; on payment, record in UPR → push Payment to QBO. Needs the processor's payment-confirmation webhook (small, well-defined). |
+| **Reconciliation** | Record processing fees + match payouts/deposits in QBO. |
+
+**Other:** Phase 0 (flip `auto_draft_invoices` after prod test) · invoice editing depth (line items/adjustments — tables exist) · **deeper security** (RLS/RPC role enforcement; safeguards are UI-level today) · customer-edit → QBO push (e.g. email change; today it doesn't sync).
 
 ---
 
-## 🚧 Blockers / open decisions (before inbound, Phases 1–3)
-- **Intuit setup (you must do once):** subscribe the **production** QBO app to **Invoice / Payment / Customer** webhooks; add **`QBO_WEBHOOK_VERIFIER_TOKEN`** in Cloudflare (distinct from the existing internal `QBO_WEBHOOK_SECRET`). Webhook URL: `https://utahpros.app/api/qbo-webhook`.
-- **CDC cadence:** default plan = webhooks + a 15-min safety reconcile (confirm or change).
-- **Field-collected deductibles:** if a tech ever collects a deductible check that never touches QBO, that's the one case that would keep a manual "deductible received" control. Otherwise everything comes from QBO.
-- **Untested:** the live QBO invoice **update** path (Phase 0.5) couldn't be end-to-end tested from the build environment — worth a quick real test on `dev` (edit a synced invoice's amount → confirm QBO updates).
+## 🚧 Key rule & decisions
+- **QuickBooks must be treated as read-only by people.** One-way only stays correct if nobody enters/edits payments or invoices directly in QBO. (A periodic read-back reconcile can flag drift.)
+- **Card processor (open):** Stripe (recommended — UPR stays system-of-record) vs QuickBooks Payments. NOT needed for the recording + A/R foundation — can be chosen later.
+- **"Sent" definition:** for now = invoice issued/pushed date; full "emailed with a pay link" arrives with the processor work.
+- **Default payment terms** (e.g. Net 30 / due on receipt) to drive aging.
+- **Untested:** live QBO invoice **update** path (Phase 0.5) — verify on `dev` (edit a synced invoice's amount → confirm QBO updates).
+- The earlier Intuit **accounting** webhook + `QBO_WEBHOOK_VERIFIER_TOKEN` is **no longer needed** (inbound dropped). A **processor** webhook (Stripe / QBO Payments) is needed only if/when we add card collection.
 
 ---
 
