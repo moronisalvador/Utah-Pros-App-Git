@@ -79,7 +79,8 @@ export default function InvoiceEditor() {
   // ── Line handlers ──
   const addLine = async () => {
     setBusy(true);
-    try { await db.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, line_total: 0, sort_order: lines.length }); await load(); }
+    // line_total is a generated column (quantity * unit_price) — never write it.
+    try { await db.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
@@ -93,14 +94,15 @@ export default function InvoiceEditor() {
   };
   const saveLine = async (line) => {
     try {
+      // description is NOT NULL; line_total is generated (quantity * unit_price) — don't write it.
       await db.update('invoice_line_items', `id=eq.${line.id}`, {
-        description: line.description || null,
+        description: line.description || '',
         qbo_item_id: line.qbo_item_id || null, qbo_item_name: line.qbo_item_name || null,
         qbo_class_id: line.qbo_class_id || null, qbo_class_name: line.qbo_class_name || null,
-        quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0), line_total: round2(line.line_total),
+        quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0),
       });
       await load();
-    } catch { toast('Failed to save line', 'error'); }
+    } catch (e) { toast('Failed to save line: ' + (e.message || e), 'error'); }
   };
   const removeLine = async (line) => {
     setBusy(true);
