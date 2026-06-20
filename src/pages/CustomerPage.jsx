@@ -7,6 +7,8 @@ import { LookupSelect } from '@/components/AddContactModal';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import CreateJobModal from '@/components/CreateJobModal';
 import MergeModal from '@/components/MergeModal';
+import ClaimBilling from '@/components/ClaimBilling';
+import { canEditBilling } from '@/lib/claimUtils';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -57,7 +59,7 @@ function TileHeader({title,editing,onEdit,onSave,onCancel,saving,children}){
 }
 
 export default function CustomerPage(){
-  const{contactId}=useParams();const navigate=useNavigate();const{db,employee:currentUser}=useAuth();
+  const{contactId}=useParams();const navigate=useNavigate();const{db,employee:currentUser,isFeatureEnabled}=useAuth();
   const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
   const[activeTab,setActiveTab]=useState('overview');const[carriers,setCarriers]=useState([]);const[employees,setEmployees]=useState([]);
   const[addRelatedSource,setAddRelatedSource]=useState(null);
@@ -89,6 +91,8 @@ export default function CustomerPage(){
   const initials=c.name?c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2):'?';
   const totalJobs=claims.reduce((s,cl)=>s+(cl.jobs?.length||0),0);
   const TABS=[{key:'overview',label:'Overview'},{key:'claims',label:'Claims & Jobs',count:totalJobs},{key:'financial',label:'Financial'},{key:'files',label:'Files',count:files.length},{key:'activity',label:'Activity',count:activity.length}];
+  const canEditBill=canEditBilling(currentUser?.role);
+  const billingOn=isFeatureEnabled('feature:billing');
 
   return(
     <div className="job-page">
@@ -131,7 +135,7 @@ export default function CustomerPage(){
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
         {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
-        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`)}/>}
+        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`)} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
       </PullToRefresh>
@@ -413,7 +417,7 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
 }
 
 /* ═══ FINANCIAL TAB ═══ */
-function FinancialTab({fin,claims,fmtC2,onNav}){
+function FinancialTab({fin,claims,fmtC2,onNav,db,canEdit,billingOn}){
   const tc=Number(fin.total_labor_cost||0)+Number(fin.total_material_cost||0)+Number(fin.total_equipment_cost||0)+Number(fin.total_sub_cost||0)+Number(fin.total_other_cost||0);
   const rb=Number(fin.total_approved||0)>0?Number(fin.total_approved):Number(fin.total_estimated||0);const gp=rb-tc;const mg=rb>0?((gp/rb)*100).toFixed(1):'0.0';
   const os=Number(fin.total_invoiced||0)-Number(fin.total_collected||0);
@@ -425,6 +429,7 @@ function FinancialTab({fin,claims,fmtC2,onNav}){
         <SC l="Invoiced" v={fmtC2(fin.total_invoiced)}/><SC l="Collected" v={fmtC2(fin.total_collected)} c="#059669"/>
         {os>0&&<SC l="Outstanding" v={fmtC2(os)} c="#d97706"/>}
       </div>
+      {billingOn&&allJ.length>0&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">{'Invoices & Payments'}</div><ClaimBilling jobs={allJ} db={db} canEdit={canEdit}/></div>)}
       <div className="job-page-section"><div className="job-page-section-title">Revenue</div><FR l="Estimated" v={fmtC2(fin.total_estimated)}/><FR l="Approved" v={fmtC2(fin.total_approved)}/><FR l="Invoiced" v={fmtC2(fin.total_invoiced)}/><FR l="Collected" v={fmtC2(fin.total_collected)}/></div>
       <div className="job-page-section"><div className="job-page-section-title">Insurance</div><FR l="Deductible" v={fmtC2(fin.total_deductible)}/><FR l="Depreciation Held" v={fmtC2(fin.total_depreciation_held)}/><FR l="Depreciation Released" v={fmtC2(fin.total_depreciation_released)}/><FR l="Supplement" v={fmtC2(fin.total_supplement)}/></div>
       <div className="job-page-section"><div className="job-page-section-title">Costs</div><FR l="Labor" v={fmtC2(fin.total_labor_cost)}/><FR l="Materials" v={fmtC2(fin.total_material_cost)}/><FR l="Equipment" v={fmtC2(fin.total_equipment_cost)}/><FR l="Subs" v={fmtC2(fin.total_sub_cost)}/><FR l="Other" v={fmtC2(fin.total_other_cost)}/><div className="job-page-fin-divider"/><FR l="Total Cost" v={fmtC2(tc)} b/></div>
