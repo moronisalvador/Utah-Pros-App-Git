@@ -17,6 +17,9 @@ export default function PaymentSettings() {
   const [accounts, setAccounts] = useState([]);
   const [loadingAcct, setLoadingAcct] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [stripeDest, setStripeDest] = useState(null);   // { banks, cards } from Stripe
+  const [loadingDest, setLoadingDest] = useState(false);
+  const [payingOut, setPayingOut] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +54,41 @@ export default function PaymentSettings() {
     save(idKey, id);
     save(nameKey, a?.name || '');
   };
+  const pickDest = (list, idKey, nameKey, id) => {
+    const a = (list || []).find(x => x.id === id);
+    save(idKey, id);
+    save(nameKey, a?.label || '');
+  };
+
+  // Loads the Stripe account's external accounts (banks + debit cards) for the payout
+  // selectors. Also probes the connection — the worker flips stripe_connected on success.
+  const loadStripeDestinations = async () => {
+    setLoadingDest(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/stripe-accounts', { headers: { ...auth } });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 503) { toast('Add Stripe keys in Cloudflare to enable payouts.', 'error'); return; }
+      if (!res.ok) throw new Error(d.error || res.statusText);
+      setStripeDest({ banks: d.banks || [], cards: d.cards || [] });
+      setS(prev => ({ ...prev, stripe_connected: 'true' }));
+      toast('Loaded Stripe payout destinations');
+    } catch (e) { toast('Failed to load Stripe: ' + (e.message || e), 'error'); }
+    finally { setLoadingDest(false); }
+  };
+
+  const doInstantPayout = async () => {
+    setPayingOut(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/stripe-payout', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 503) { toast('Add Stripe keys in Cloudflare to enable payouts.', 'error'); return; }
+      if (!res.ok) throw new Error(d.error || res.statusText);
+      toast(`Instant payout of $${Number(d.amount || 0).toLocaleString()} initiated (${d.status})`);
+    } catch (e) { toast('Payout failed: ' + (e.message || e), 'error'); }
+    finally { setPayingOut(false); }
+  };
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
@@ -74,16 +112,38 @@ export default function PaymentSettings() {
 
       {/* Stripe */}
       <Section title="Stripe — card & ACH payments">
-        <Row label="Connection" hint="Connect via API keys during Stripe setup.">
-          <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--radius-full)', background: stripeConnected ? '#f0fdf4' : 'var(--bg-tertiary)', color: stripeConnected ? '#16a34a' : 'var(--text-tertiary)', border: `1px solid ${stripeConnected ? '#bbf7d0' : 'var(--border-light)'}` }}>
-            {stripeConnected ? 'Connected' : 'Not connected'}
-          </span>
+        <Row label="Connection" hint="Set STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET in Cloudflare, then load to verify.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--radius-full)', background: stripeConnected ? '#f0fdf4' : 'var(--bg-tertiary)', color: stripeConnected ? '#16a34a' : 'var(--text-tertiary)', border: `1px solid ${stripeConnected ? '#bbf7d0' : 'var(--border-light)'}` }}>
+              {stripeConnected ? 'Connected' : 'Not connected'}
+            </span>
+            <button className="btn btn-secondary btn-sm" disabled={loadingDest} onClick={loadStripeDestinations}>{loadingDest ? 'Checking…' : 'Load from Stripe'}</button>
+          </div>
         </Row>
         <Row label="Accept credit cards"><Toggle on={on('accept_card')} onClick={() => save('accept_card', !on('accept_card'))} /></Row>
         <Row label="Accept ACH / bank transfer" hint="~0.8% capped — cheaper for large insurance payments."><Toggle on={on('accept_ach')} onClick={() => save('accept_ach', !on('accept_ach'))} /></Row>
-        <Row label="Same-day deposit (Instant Payout)" hint="Push your Stripe balance to the bank now (~1.5% fee).">
-          <button className="btn btn-secondary btn-sm" disabled title={stripeConnected ? '' : 'Available once Stripe is connected'} onClick={() => toast('Instant payout will be available once Stripe is connected.', 'error')} style={{ opacity: 0.6 }}>⚡ Pay out now</button>
+
+        {/* Payout destinations — list + select only; add new in the Stripe Dashboard. */}
+        <Row label="Standard payout — checking account" hint="Where regular Stripe payouts deposit.">
+          {stripeDest?.banks?.length ? (
+            <select className="input" value={s.stripe_payout_bank_id || ''} onChange={e => pickDest(stripeDest.banks, 'stripe_payout_bank_id', 'stripe_payout_bank_name', e.target.value)} style={{ width: 240, height: 34 }}>
+              <option value="">Select account…</option>
+              {stripeDest.banks.map(b => <option key={b.id} value={b.id}>{b.label}{b.default_for_currency ? ' (default)' : ''}</option>)}
+            </select>
+          ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.stripe_payout_bank_name || (stripeConnected ? 'Load from Stripe to choose' : '—')}</span>}
         </Row>
+        <Row label="Instant payout — debit card" hint="Same-day deposit destination (~1.5% fee).">
+          {stripeDest?.cards?.length ? (
+            <select className="input" value={s.stripe_instant_card_id || ''} onChange={e => pickDest(stripeDest.cards, 'stripe_instant_card_id', 'stripe_instant_card_name', e.target.value)} style={{ width: 240, height: 34 }}>
+              <option value="">Select card…</option>
+              {stripeDest.cards.map(c => <option key={c.id} value={c.id}>{c.label}{c.instant ? '' : ' (not instant-eligible)'}</option>)}
+            </select>
+          ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.stripe_instant_card_name || (stripeConnected ? 'Load from Stripe to choose' : '—')}</span>}
+        </Row>
+        <Row label="Same-day deposit (Instant Payout)" hint="Push your Stripe balance to the bank now (~1.5% fee).">
+          <button className="btn btn-secondary btn-sm" disabled={!stripeConnected || payingOut} title={stripeConnected ? '' : 'Available once Stripe is connected'} onClick={doInstantPayout} style={{ opacity: stripeConnected ? 1 : 0.6 }}>{payingOut ? 'Paying…' : '⚡ Pay out now'}</button>
+        </Row>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingTop: 6 }}>Add a new bank or debit card in the Stripe Dashboard (Financial Connections) — UPR only selects from existing ones.</div>
       </Section>
 
       {/* Invoicing defaults */}
@@ -124,9 +184,17 @@ export default function PaymentSettings() {
             </select>
           ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.qbo_fee_expense_account_name || 'Load accounts to choose'}</span>}
         </Row>
+        <Row label="Deposit bank account" hint="Real bank where Stripe payouts land — clearing transfers the net here.">
+          {accounts.length ? (
+            <select className="input" value={s.qbo_bank_account_id || ''} onChange={e => pickAccount('qbo_bank_account_id', 'qbo_bank_account_name', e.target.value)} style={{ width: 240, height: 34 }}>
+              <option value="">Select account…</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
+            </select>
+          ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.qbo_bank_account_name || 'Load accounts to choose'}</span>}
+        </Row>
       </Section>
 
-      <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Stripe connection and the live Instant-Payout button activate once Stripe keys are added (next phase). Settings save automatically.</p>
+      <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Card collection, payout destinations, and Instant Payout activate once the Stripe keys are set in Cloudflare and you click <b>Load from Stripe</b>. Settings save automatically.</p>
     </div>
   );
 }

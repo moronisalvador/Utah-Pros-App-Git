@@ -141,6 +141,26 @@ export default function InvoiceEditor() {
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
+  // ── Stripe pay-by-link (dormant until Stripe keys exist → worker returns 503) ──
+  const createPayLink = async () => {
+    setBusy(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/stripe-pay-link', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 503) { toast('Stripe is not set up yet — add keys in Payment Settings.', 'error'); return; }
+      if (!res.ok) throw new Error(d.error || res.statusText);
+      try { await navigator.clipboard.writeText(d.url); toast('Pay link created & copied'); }
+      catch { toast('Pay link created'); }
+      await load();
+    } catch (e) { toast('Pay link: ' + (e.message || e), 'error'); }
+    finally { setBusy(false); }
+  };
+  const copyPayLink = async () => {
+    try { await navigator.clipboard.writeText(inv.stripe_payment_link_url); toast('Pay link copied'); }
+    catch { toast('Copy failed — long-press the link to copy', 'error'); }
+  };
+
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
   if (!inv) return null;
 
@@ -177,6 +197,7 @@ export default function InvoiceEditor() {
 
       {inv.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>QuickBooks sync error: {inv.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#d97706', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{catalogMsg}</div>}
+      {inv.stripe_payment_link_url && <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', color: 'var(--accent)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
       {/* Line items */}
       <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginTop: 6 }}>
@@ -231,6 +252,11 @@ export default function InvoiceEditor() {
           <button className="btn btn-primary" disabled={busy || total <= 0} onClick={syncToQbo}>
             {busy ? 'Working…' : synced ? 'Update in QuickBooks' : 'Send to QuickBooks'}
           </button>
+          {total > 0 && (
+            inv.stripe_payment_link_url
+              ? <button className="btn btn-secondary" disabled={busy} onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</button>
+              : <button className="btn btn-secondary" disabled={busy} onClick={createPayLink}>💳 Create pay link</button>
+          )}
           {synced && (
             <button className="btn btn-sm" disabled={busy} onClick={removeFromQbo} onBlur={() => setConfirmRemove(false)}
               style={{ background: confirmRemove ? '#fef2f2' : 'var(--bg-tertiary)', color: confirmRemove ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmRemove ? '#fecaca' : 'var(--border-light)'}` }}>
