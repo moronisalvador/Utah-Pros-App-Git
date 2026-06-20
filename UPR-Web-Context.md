@@ -940,13 +940,25 @@ connected; the QBO deposit bank-account selector; and a **locked "🔒 Payout de
 panel** whose Edit flow emails a verification code (via `billing-2fa`) before saving the
 bank/card (manual label, or live dropdown once Stripe is connected).
 
-**Status:** built + builds/lints clean; migration applied & verified (columns, RLS-locked
-ledger, idempotency true→false). **Activation pending owner Stripe setup** (keys + QBO
-"Stripe Clearing"/"Merchant Fees"/deposit-bank accounts mapped on `/payments/settings` +
-webhook endpoint registered → `STRIPE_WEBHOOK_SECRET`). Then a live test on dev. **S4
-(refunds/disputes)** — reverse payment + fee via `deleteEntity` on `charge.refunded` /
-`charge.dispute.created` — not yet built. See `QBO-BILLING-STATUS.md` §4 for the exact
-click-path.
+**S4 — refunds & disputes (`migrations/20260620_stripe_s4.sql`, applied):** `payments`
+gains `refunded_amount` / `refunded_at` / `dispute_status`, and `update_invoice_paid` was
+rewritten to net `refunded_amount` out of collected (defaults 0 → no change for existing
+rows) and to reopen a paid invoice's status when collected drops to 0. The `stripe-webhook`
+now handles **`charge.refunded`** (net the refund; on a FULL refund reverse the QBO Payment
++ fee Purchase via `deletePayment`/`deleteEntity`; partial refunds net in UPR and flag QBO
+for a manual reduction) and **`charge.dispute.created`** (reopen A/R + reverse the QBO
+Payment + stamp `dispute_status`). `ClaimBilling` shows a red **Refunded/Disputed** chip on
+the payment. *Follow-ups: dispute fee + won/lost resolution (re-record on win), and
+auto-reducing a QBO payment on partial refund.* **Also fixed in S4:** the S3 webhook mapped
+ACH to `'eft'`, which violates the `payments_payment_method_check` — now `'ach'`.
+
+**Status:** S3 + S4 built; builds/lints clean; both migrations applied & verified
+(columns, RLS-locked ledgers, idempotency true→false, trigger nets refunds). **Activation
+pending owner Stripe setup** (keys + QBO "Stripe Clearing"/"Merchant Fees"/deposit-bank
+accounts mapped on `/payments/settings` + webhook endpoint registered →
+`STRIPE_WEBHOOK_SECRET`, subscribing `payment_intent.succeeded`, `payout.paid`,
+`charge.refunded`, `charge.dispute.created`). Then a live test on dev. See
+`QBO-BILLING-STATUS.md` §4 for the exact click-path.
 
 ---
 
