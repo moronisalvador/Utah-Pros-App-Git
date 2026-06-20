@@ -426,7 +426,9 @@ function FinancialTab({fin,claims,fmtC2,onNav,db,canEdit,billingOn}){
   const tc=Number(fin.total_labor_cost||0)+Number(fin.total_material_cost||0)+Number(fin.total_equipment_cost||0)+Number(fin.total_sub_cost||0)+Number(fin.total_other_cost||0);
   const rb=Number(fin.total_approved||0)>0?Number(fin.total_approved):Number(fin.total_estimated||0);const gp=rb-tc;const mg=rb>0?((gp/rb)*100).toFixed(1):'0.0';
   const os=Number(fin.total_invoiced||0)-Number(fin.total_collected||0);
-  const allJ=claims.flatMap(cl=>(cl.jobs||[]).map(j=>({...j})));
+  // Carry each claim's loss date + address onto its jobs so the billing rows can show
+  // which job is which (this tab spans all the client's claims).
+  const allJ=claims.flatMap(cl=>(cl.jobs||[]).map(j=>({...j,date_of_loss:j.date_of_loss||cl.date_of_loss,loss_address:j.loss_address||cl.loss_address,loss_city:j.loss_city||cl.loss_city})));
   return(
     <div className="job-page-financial">
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(130px, 1fr))',gap:10,marginBottom:16}}>

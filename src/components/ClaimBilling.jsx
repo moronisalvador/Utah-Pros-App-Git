@@ -168,6 +168,11 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{division} · {job.job_number || '—'}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv ? `${inv.invoice_number}${synced ? ' · QuickBooks #' + inv.qbo_invoice_id : ''}` : 'No invoice yet'}</div>
+                {(job.date_of_loss || job.loss_address) && (
+                  <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {[job.date_of_loss ? `Loss ${fmtDate(job.date_of_loss)}` : null, job.loss_address ? `${job.loss_address}${job.loss_city ? ', ' + job.loss_city : ''}` : null].filter(Boolean).join(' · ')}
+                  </div>
+                )}
               </div>
               {chip && <span title={chip.title} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: chip.bg, color: chip.color, border: `1px solid ${chip.border}`, cursor: chip.title ? 'help' : 'default', whiteSpace: 'nowrap' }}>{chip.label}</span>}
             </div>
