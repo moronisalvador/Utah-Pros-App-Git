@@ -27,7 +27,8 @@ and a proper invoice-centric **A/R view** (redesign).
 - QBO connect (OAuth), customer create/link, invoice push worker, division→Item/Class mapping. *(pre-existing foundation)*
 - Dashboard/Collections read invoices as source of truth (`get_job_financials`, legacy fallback for historical jobs).
 - **Phase 0.5 — auto-push invoice edits** (commit `22466ad`): `qbo-invoice` worker now **creates _or_ updates** (new `updateInvoice()` in `functions/lib/quickbooks.js`, sparse update via SyncToken). Billing UI (`ClaimBilling.jsx`) autosaves the amount and pushes automatically; editing a synced invoice re-syncs it.
-- **Payment → QBO foundation** (commit `40099b0`): `qbo-payment` worker + `createPayment`/`deletePayment` (applies a Payment to the QBO invoice); `payments.qbo_payment_id/qbo_synced_at/qbo_sync_error` (migration applied); invoice push now stamps `sent_at` + a default Net-30 `due_date`. **Plumbing only — not yet wired to the payment UI.**
+- **Payment → QBO foundation** (commit `40099b0`): `qbo-payment` worker + `createPayment`/`deletePayment` (applies a Payment to the QBO invoice); `payments.qbo_payment_id/qbo_synced_at/qbo_sync_error` (migration applied); invoice push now stamps `sent_at` + a default Net-30 `due_date`.
+- **Invoice-centric A/R panel on the CLAIM PAGE** (commit `df8effb`): the claim section is now **"Invoices & Payments"** — per-invoice **Sent / Due-aging / Total / Collected / Balance / status** + a claim Invoiced/Collected/Balance summary, and **invoice-linked payment recording that pushes to QBO** (`qbo-payment` wired, insert + delete), with payment history + two-click delete. Edits gated by admin+manager; section behind `feature:billing`.
 
 **Safeguards** (commits `5f9df11`, `d2713fb`)
 - **Master on/off switch:** Billing section gated by feature flag **`feature:billing`** (enabled). Dev Tools → Feature Flags → "Billing & Invoicing": off = hidden for all; set a dev-only user = limit to one person.
@@ -52,9 +53,9 @@ and a proper invoice-centric **A/R view** (redesign).
 **Foundation (needed regardless of card processor):**
 | Item | What | Notes |
 |---|---|---|
-| **Wire payments → QBO (invoice-centric)** | Worker + columns + sent/due stamping **DONE** (`40099b0`). Remaining: payment entry must record **`invoice_id`** (today's payments are job-level only), then call `qbo-payment` on insert/delete. | Invoice-centric is required both for per-invoice collected/balance AND to apply the payment to a QBO invoice. |
-| **Invoice lifecycle fields** | `sent_at` + `due_date` columns exist; now **stamped on push** (Net-30 default). | Aging = today − due_date. Terms configurable later. |
-| **A/R views (redesign)** | Invoice-centric panel (#, sent, age, total, collected, balance, status) reused on **claim page**, **client profile**, + global dashboard; record-payment against a specific invoice. | Existing A/R is **job/claim-centric** (`ARPage` + `billing_overview` view + `ClaimCollectionPage`, plus stale `COLLECTIONS_*.md`) — consolidate to invoice-centric. |
+| **Payments → QBO (invoice-centric)** | **DONE on the claim page** (`df8effb`): payment entry records `invoice_id` + pushes via `qbo-payment` (insert & delete). Remaining: same flow on the client profile + global dashboard; retire the old job-level `ARPage` entry. | |
+| **Invoice lifecycle fields** | `sent_at` + `due_date` columns exist; **stamped on push** (Net-30 default); surfaced in the claim panel. | Aging = today − due_date. Terms configurable later. |
+| **A/R views (redesign)** | **Claim page DONE** (`df8effb`). Remaining: extract the panel into a reusable component for the **client profile** (`CustomerPage`) + a **global A/R dashboard**; then consolidate/retire the job-centric `ARPage` + `billing_overview` + `ClaimCollectionPage` + stale `COLLECTIONS_*.md`. | |
 | **Rollups + reliability** | collected = Σ payments, balance, status (paid/partial/overdue); payment-push error/retry surfacing; optional periodic read-back reconcile to catch QBO drift. | One-way is only correct if QBO isn't hand-edited. |
 
 **Card payments (collect by credit card) — processor TBD:**
