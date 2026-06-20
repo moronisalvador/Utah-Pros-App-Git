@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
 
   const db = supabase(env);
   try {
-    const inv = (await db.select('invoices', `id=eq.${body.invoice_id}&select=id,invoice_number,total,adjusted_total,amount_paid,job_id,contact_id&limit=1`))?.[0];
+    const inv = (await db.select('invoices', `id=eq.${body.invoice_id}&select=id,invoice_number,qbo_doc_number,total,adjusted_total,amount_paid,job_id,contact_id&limit=1`))?.[0];
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
 
     const total = Number(inv.adjusted_total ?? inv.total ?? 0);
@@ -55,7 +55,7 @@ export async function onRequestPost(context) {
     const session = await createCheckoutSession(env, {
       amountCents: balance,
       invoiceId: inv.id,
-      invoiceNumber: inv.invoice_number,
+      invoiceNumber: inv.qbo_doc_number || inv.invoice_number,
       customerEmail: contact?.email || null,
       successUrl: `${base}/invoices/${inv.id}?paid=1`,
       cancelUrl: `${base}/invoices/${inv.id}?canceled=1`,

@@ -178,13 +178,14 @@ export default function InvoiceEditor() {
       {/* Top bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <button className="btn btn-ghost btn-sm" onClick={() => (job?.claim_id ? navigate(`/collections/${job.claim_id}`) : navigate(-1))} style={{ gap: 4 }}>← Back</button>
-        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>QuickBooks #{inv.qbo_invoice_id}{inv.qbo_synced_at ? ' · synced ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>QuickBooks #{inv.qbo_doc_number || inv.qbo_invoice_id}{inv.qbo_synced_at ? ' · synced ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
       </div>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{inv.invoice_number}</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{inv.qbo_doc_number || inv.invoice_number}</div>
+          {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>UPR ref {inv.invoice_number}</div>}
           <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
             {contact?.name || 'Client'} · <span style={{ textTransform: 'capitalize' }}>{division}</span> {job?.job_number || ''}{claim?.claim_number ? ` · ${claim.claim_number}` : ''}
           </div>

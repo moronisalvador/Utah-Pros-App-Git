@@ -167,7 +167,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{division} · {job.job_number || '—'}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv ? `${inv.invoice_number}${synced ? ' · QuickBooks #' + inv.qbo_invoice_id : ''}` : 'No invoice yet'}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv ? `${inv.qbo_doc_number || inv.invoice_number}${synced ? ' · QB' : ''}` : 'No invoice yet'}</div>
                 {(job.date_of_loss || job.loss_address) && (
                   <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>
                     {[job.date_of_loss ? `Loss ${fmtDate(job.date_of_loss)}` : null, job.loss_address ? `${job.loss_address}${job.loss_city ? ', ' + job.loss_city : ''}` : null].filter(Boolean).join(' · ')}

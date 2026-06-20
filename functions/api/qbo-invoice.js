@@ -136,7 +136,8 @@ export async function onRequestPost(context) {
     }
 
     const nowIso = new Date().toISOString();
-    const patch = { qbo_invoice_id: String(qboInv.Id), qbo_synced_at: nowIso, qbo_sync_error: null };
+    // Capture QBO's own invoice number (DocNumber) so UPR can display the matching number.
+    const patch = { qbo_invoice_id: String(qboInv.Id), qbo_synced_at: nowIso, qbo_sync_error: null, qbo_doc_number: qboInv.DocNumber != null ? String(qboInv.DocNumber) : null };
     if (mode === 'created') {
       // First time it reaches QBO: stamp "sent" + a default Net-30 due date (drives aging).
       if (!inv.sent_at) patch.sent_at = nowIso;
