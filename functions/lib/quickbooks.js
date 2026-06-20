@@ -307,12 +307,16 @@ export async function updateInvoice(env, qboInvoiceId, fields) {
 // ── Payments (one-way UPR → QBO) ─────────────────────────────────────────────
 // Create a QBO Payment applied to an invoice. UPR records the payment first; this
 // mirrors it into QBO so the QBO invoice shows paid/partial. `txnDate` = 'YYYY-MM-DD'.
-export async function createPayment(env, { customerId, qboInvoiceId, amount, txnDate, privateNote }) {
+// `depositAccountId` (optional) sets DepositToAccountRef — used for Stripe payments so
+// the gross deposits into the "Stripe Clearing" bank account (fee + payout reconcile
+// against it). Omitted for hand-entered payments → QBO uses its default (Undeposited Funds).
+export async function createPayment(env, { customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId }) {
   const payload = {
     CustomerRef: { value: String(customerId) },
     TotalAmt: Number(amount),
     ...(txnDate ? { TxnDate: txnDate } : {}),
     ...(privateNote ? { PrivateNote: privateNote } : {}),
+    ...(depositAccountId ? { DepositToAccountRef: { value: String(depositAccountId) } } : {}),
     Line: [{
       Amount: Number(amount),
       LinkedTxn: [{ TxnId: String(qboInvoiceId), TxnType: 'Invoice' }],
@@ -342,5 +346,65 @@ export async function deletePayment(env, qboPaymentId) {
     method: 'POST', body: JSON.stringify({ Id: String(qboPaymentId), SyncToken: syncToken }),
   });
   if (!res.ok) throw new Error(`QBO delete payment ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
+}
+
+// ── Stripe fee automation (Purchase + Transfer against the clearing account) ────
+// Shared POST helper for the entities below (mirrors the error handling of create*).
+async function postEntity(env, path, payload, label) {
+  const res = await qboFetch(env, `${path}?minorversion=${MINOR_VERSION}`, { method: 'POST', body: JSON.stringify(payload) });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO ${label} ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data;
+}
+
+// Book the Stripe processing fee as an expense: paid FROM the Stripe-clearing bank
+// account, categorized TO the Merchant-Fees expense account. Net effect: the clearing
+// account holds (gross − fee) = the eventual payout. `amount` is the exact fee.
+export async function createPurchase(env, { paidFromAccountId, expenseAccountId, amount, txnDate, privateNote }) {
+  const payload = {
+    AccountRef: { value: String(paidFromAccountId) },
+    PaymentType: 'Cash',
+    ...(txnDate ? { TxnDate: txnDate } : {}),
+    ...(privateNote ? { PrivateNote: privateNote } : {}),
+    Line: [{
+      Amount: Number(amount),
+      DetailType: 'AccountBasedExpenseLineDetail',
+      AccountBasedExpenseLineDetail: { AccountRef: { value: String(expenseAccountId) } },
+    }],
+  };
+  return (await postEntity(env, '/purchase', payload, 'create purchase')).Purchase;
+}
+
+// Move the net payout from the Stripe-clearing account to the real bank account, so
+// the clearing account self-zeroes and the bank reconciles to the Stripe payout.
+export async function createTransfer(env, { fromAccountId, toAccountId, amount, txnDate, privateNote }) {
+  const payload = {
+    FromAccountRef: { value: String(fromAccountId) },
+    ToAccountRef: { value: String(toAccountId) },
+    Amount: Number(amount),
+    ...(txnDate ? { TxnDate: txnDate } : {}),
+    ...(privateNote ? { PrivateNote: privateNote } : {}),
+  };
+  return (await postEntity(env, '/transfer', payload, 'create transfer')).Transfer;
+}
+
+// Delete a QBO Purchase/Transfer (S4 refund/dispute reversal). Looks up SyncToken first.
+export async function deleteEntity(env, entity, id) {
+  const cap = entity.charAt(0).toUpperCase() + entity.slice(1);
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM ${cap} WHERE Id = '${id}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const syncToken = qd?.QueryResponse?.[cap]?.[0]?.SyncToken;
+  if (syncToken == null) throw new Error(`${cap} not found in QBO for delete`);
+  const res = await qboFetch(env, `/${entity}?operation=delete&minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify({ Id: String(id), SyncToken: syncToken }),
+  });
+  if (!res.ok) throw new Error(`QBO delete ${entity} ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return true;
 }
