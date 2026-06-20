@@ -36,7 +36,7 @@ function dueLabel(inv) {
 
 // Claim-page A/R panel: one invoice per job (= division) → QuickBooks, with sent/aging/
 // collected/balance and invoice-linked payment recording that pushes to QBO (one-way).
-export default function ClaimBilling({ jobs, db, canEdit }) {
+export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   const { employee } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [paysByInv, setPaysByInv] = useState({});
@@ -230,7 +230,7 @@ export default function ClaimBilling({ jobs, db, canEdit }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {/* Claim A/R summary */}
-      {invoices.length > 0 && (
+      {!hideSummary && invoices.length > 0 && (
         <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           <div style={{ background: 'var(--bg-secondary)', flex: 1 }}>{kpi('Invoiced', fmt$(sums.invoiced))}</div>
           <div style={{ background: 'var(--bg-secondary)', flex: 1 }}>{kpi('Collected', fmt$(sums.collected), '#16a34a')}</div>

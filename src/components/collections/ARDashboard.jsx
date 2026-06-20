@@ -152,7 +152,7 @@ export default function ARDashboard({ db, navigate }) {
                 const st = statusOf(r, today);
                 const age = ageLabel(r, today);
                 return (
-                  <div key={r.invoice_id} onClick={() => r.claim_id && navigate(`/claims/${r.claim_id}`)}
+                  <div key={r.invoice_id} onClick={() => r.claim_id && navigate(`/collections/${r.claim_id}`)}
                     style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid var(--border-light)', cursor: r.claim_id ? 'pointer' : 'default', background: 'var(--bg-primary)' }}>
                     <Cell>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.client_name || '—'}</div>
