@@ -15,7 +15,7 @@
 import { jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { stripeConfigured, constructEvent, retrieveCharge } from '../lib/stripe.js';
-import { getConnection, createPayment, createPurchase, createTransfer } from '../lib/quickbooks.js';
+import { getConnection, createPayment, createPurchase, createTransfer, deletePayment, deleteEntity } from '../lib/quickbooks.js';
 
 const ymd = (unixSec) => new Date((unixSec ? unixSec * 1000 : Date.now())).toISOString().slice(0, 10);
 
@@ -84,6 +84,20 @@ export async function onRequestPost(context) {
       return jsonResponse({ ok: true, ...result }, 200, request, env);
     }
 
+    if (event.type === 'charge.refunded') {
+      const result = await handleRefund(env, db, event.data.object);
+      await finalize(result.skipped ? 'skipped' : 'processed', result, result.qbo_error || null);
+      await logRun(db, 'completed', result.skipped ? 0 : 1, result.qbo_error || null, startedAt);
+      return jsonResponse({ ok: true, ...result }, 200, request, env);
+    }
+
+    if (event.type === 'charge.dispute.created') {
+      const result = await handleDispute(env, db, event.data.object);
+      await finalize(result.skipped ? 'skipped' : 'processed', result, result.qbo_error || null);
+      await logRun(db, 'completed', result.skipped ? 0 : 1, result.qbo_error || null, startedAt);
+      return jsonResponse({ ok: true, ...result }, 200, request, env);
+    }
+
     // Not a type we act on (e.g. charge.succeeded — handled via payment_intent.succeeded).
     await finalize('skipped', { reason: 'unhandled type' });
     return jsonResponse({ ok: true, ignored: event.type }, 200, request, env);
@@ -111,7 +125,7 @@ async function handlePaymentIntent(env, db, pi) {
   const gross = grossCents / 100;
   const fee = feeCents / 100;
   const txnDate = ymd(charge.created);
-  const method = charge.payment_method_details?.type === 'us_bank_account' ? 'eft' : 'credit_card';
+  const method = charge.payment_method_details?.type === 'us_bank_account' ? 'ach' : 'credit_card';
 
   const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=id,invoice_number,job_id,contact_id,qbo_invoice_id&limit=1`))?.[0];
   if (!inv) return { skipped: true, reason: 'invoice not found', invoice_id: invoiceId };
@@ -195,4 +209,66 @@ async function handlePayout(env, db, payout) {
     privateNote: `Stripe payout ${payout.id}`,
   });
   return { payout_id: payout.id, net, qbo_transfer_id: String(transfer.Id) };
+}
+
+// charge.refunded → net the refund out of collected (UPR), and on a FULL refund reverse
+// the QBO Payment + fee Purchase so the invoice reopens cleanly. The trigger reopens A/R
+// from refunded_amount. Partial refunds net in UPR but flag QBO for a manual reduction.
+async function handleRefund(env, db, charge) {
+  const pay = (await db.select('payments', `stripe_charge_id=eq.${charge.id}&select=*&limit=1`))?.[0];
+  if (!pay) return { skipped: true, reason: 'no matching payment', charge: charge.id };
+
+  const refundedCents = Number(charge.amount_refunded || 0);
+  const refunded = refundedCents / 100;
+  const full = charge.refunded === true || refundedCents >= Number(charge.amount || 0);
+
+  await db.update('payments', `id=eq.${pay.id}`, { refunded_amount: refunded, refunded_at: new Date().toISOString() });
+
+  let qbo_error = null, reversed = null;
+  try {
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token) throw new Error('QuickBooks not connected');
+    if (full) {
+      if (pay.qbo_payment_id) await deletePayment(env, pay.qbo_payment_id);
+      if (pay.stripe_fee_qbo_purchase_id) await deleteEntity(env, 'purchase', pay.stripe_fee_qbo_purchase_id);
+      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, stripe_fee_qbo_purchase_id: null, qbo_synced_at: null, qbo_sync_error: null });
+      reversed = 'full';
+    } else {
+      // UPR balance is already correct (netted); QBO payment needs a manual reduction —
+      // we don't auto-edit it to avoid mis-stating cash on a partial.
+      await db.update('payments', `id=eq.${pay.id}`, { qbo_sync_error: `Partial refund $${refunded.toFixed(2)} — reduce the QuickBooks payment manually` });
+      reversed = 'partial-flagged';
+    }
+  } catch (e) {
+    qbo_error = e.message;
+    await db.update('payments', `id=eq.${pay.id}`, { qbo_sync_error: String(e.message).slice(0, 500) }).catch(() => {});
+  }
+  return { payment_id: pay.id, refunded, full, reversed, qbo_error };
+}
+
+// charge.dispute.created → funds are withheld; reopen A/R (net via refunded_amount) + flag
+// the dispute, and reverse the QBO Payment. Dispute fee and won/lost resolution are
+// follow-ups (S5) — a won dispute would need the payment re-recorded.
+async function handleDispute(env, db, dispute) {
+  const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge?.id;
+  if (!chargeId) return { skipped: true, reason: 'no charge on dispute' };
+  const pay = (await db.select('payments', `stripe_charge_id=eq.${chargeId}&select=*&limit=1`))?.[0];
+  if (!pay) return { skipped: true, reason: 'no matching payment', charge: chargeId };
+
+  const withheld = Math.min(Number(dispute.amount || 0) / 100, Number(pay.amount || 0));
+  await db.update('payments', `id=eq.${pay.id}`, { dispute_status: dispute.status || 'created', refunded_amount: withheld, refunded_at: new Date().toISOString() });
+
+  let qbo_error = null;
+  try {
+    const conn = await getConnection(env);
+    if (!conn?.refresh_token) throw new Error('QuickBooks not connected');
+    if (pay.qbo_payment_id) {
+      await deletePayment(env, pay.qbo_payment_id);
+      await db.update('payments', `id=eq.${pay.id}`, { qbo_payment_id: null, qbo_synced_at: null, qbo_sync_error: null });
+    }
+  } catch (e) {
+    qbo_error = e.message;
+    await db.update('payments', `id=eq.${pay.id}`, { qbo_sync_error: String(e.message).slice(0, 500) }).catch(() => {});
+  }
+  return { payment_id: pay.id, dispute_status: dispute.status, withheld, qbo_error };
 }
