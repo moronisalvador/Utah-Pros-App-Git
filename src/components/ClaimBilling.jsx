@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
 const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
-const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['other', 'Other']];
 const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
@@ -33,24 +33,20 @@ function dueLabel(inv) {
   return { text: `Due in ${-days}d`, color: 'var(--text-secondary)' };
 }
 
-// Claim-page A/R panel + full invoice builder: one invoice per job (= division), built
-// from line items (each line carries a QBO Item + Class), pushed itemized to QuickBooks.
-// Plus invoice-linked payment recording that pushes to QBO. One-way: UPR is source of truth.
+// Claim/client A/R panel: per-invoice A/R (sent/aging/collected/balance), a read-only line
+// summary, payment history + record-payment. Invoice BUILDING happens on the dedicated
+// editor page (/invoices/:id) — "Create/Edit invoice" opens it.
 export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
   const { employee } = useAuth();
+  const navigate = useNavigate();
   const [invoices, setInvoices] = useState([]);
   const [paysByInv, setPaysByInv] = useState({});
   const [linesByInv, setLinesByInv] = useState({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
-  const [confirmRemove, setConfirmRemove] = useState(null);
   const [confirmDelPay, setConfirmDelPay] = useState(null);
   const [payOpen, setPayOpen] = useState(null);
   const [payDraft, setPayDraft] = useState({});
-  const [editOpen, setEditOpen] = useState(null);          // invoice_id whose line editor is open
-  const [qboItems, setQboItems] = useState([]);
-  const [qboClasses, setQboClasses] = useState([]);
-  const [catalogMsg, setCatalogMsg] = useState('');
 
   const jobIds = (jobs || []).map(j => j.id);
   const jobIdsKey = jobIds.join(',');
@@ -81,115 +77,22 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // QBO Item + Class catalog (mirrors QuickBooks; powers the per-line dropdowns).
-  const loadCatalog = useCallback(async () => {
-    try {
-      const auth = await getAuthHeader();
-      const run = async (query) => {
-        const res = await fetch('/api/qbo-query', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d.error || res.statusText);
-        return d.queryResponse || {};
-      };
-      const [itemsR, classesR] = await Promise.all([
-        run('SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 200'),
-        run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
-      ]);
-      setQboItems((itemsR.Item || []).map(i => ({ id: String(i.Id), name: i.Name })));
-      setQboClasses((classesR.Class || []).map(c => ({ id: String(c.Id), name: c.Name })));
-      setCatalogMsg('');
-    } catch (e) {
-      setCatalogMsg(/not connected/i.test(e.message || '') ? 'Connect QuickBooks (Dev Tools) to load items & classes.' : 'QuickBooks catalog unavailable.');
-    }
-  }, []);
-
-  useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
-
   const invByJob = {};
   invoices.forEach(inv => { if (!invByJob[inv.job_id]) invByJob[inv.job_id] = inv; });
 
-  // ── Invoice actions ──
+  // Create a draft, then open the dedicated editor to build it.
   const createInvoice = async (jobId) => {
     setBusy(jobId);
     try {
-      const inv = await db.rpc('create_invoice_for_job', { p_job_id: jobId });
-      await load();
-      const newId = Array.isArray(inv) ? inv[0]?.id : inv?.id;
-      if (newId) setEditOpen(newId);                       // open the builder right away
-      toast('Draft invoice created — add line items, then sync to QuickBooks');
+      const created = await db.rpc('create_invoice_for_job', { p_job_id: jobId });
+      const newId = Array.isArray(created) ? created[0]?.id : created?.id;
+      if (newId) navigate(`/invoices/${newId}`);
+      else await load();
     } catch (e) { toast('Failed to create invoice: ' + (e.message || e), 'error'); }
     finally { setBusy(null); }
   };
 
-  const postInvoice = async (inv, body) => {
-    const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: inv.id, ...body }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
-  };
-
-  const syncToQbo = async (inv) => {
-    setBusy(inv.id);
-    try {
-      const data = await postInvoice(inv, {});
-      toast(data.mode === 'updated' ? 'Updated in QuickBooks' : `Sent to QuickBooks (#${data.qbo_invoice_id})`);
-      await load();
-    } catch (e) { toast('QuickBooks: ' + e.message, 'error'); await load(); }
-    finally { setBusy(null); }
-  };
-
-  const removeFromQbo = async (inv) => {
-    if (confirmRemove !== inv.id) { setConfirmRemove(inv.id); return; }
-    setConfirmRemove(null);
-    setBusy(inv.id);
-    try { await postInvoice(inv, { action: 'delete' }); toast('Removed from QuickBooks'); await load(); }
-    catch (e) { toast('QuickBooks: ' + e.message, 'error'); }
-    finally { setBusy(null); }
-  };
-
-  // ── Line-item editing ──
-  const addLine = async (inv) => {
-    setBusy(inv.id);
-    try {
-      await db.insert('invoice_line_items', { invoice_id: inv.id, description: '', quantity: 1, unit_price: 0, line_total: 0, sort_order: (linesByInv[inv.id] || []).length });
-      await load();
-    } catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
-    finally { setBusy(null); }
-  };
-
-  const setLineLocal = (invId, lineId, patch) => {
-    setLinesByInv(prev => ({
-      ...prev,
-      [invId]: (prev[invId] || []).map(l => {
-        if (l.id !== lineId) return l;
-        const next = { ...l, ...patch };
-        if ('quantity' in patch || 'unit_price' in patch) next.line_total = round2(Number(next.quantity || 0) * Number(next.unit_price || 0));
-        return next;
-      }),
-    }));
-  };
-
-  const saveLine = async (line) => {
-    try {
-      await db.update('invoice_line_items', `id=eq.${line.id}`, {
-        description: line.description || null,
-        qbo_item_id: line.qbo_item_id || null, qbo_item_name: line.qbo_item_name || null,
-        qbo_class_id: line.qbo_class_id || null, qbo_class_name: line.qbo_class_name || null,
-        quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0), line_total: round2(line.line_total),
-      });
-      await load();
-    } catch { toast('Failed to save line', 'error'); }
-  };
-
-  const removeLine = async (line) => {
-    setBusy('line-' + line.id);
-    try { await db.delete('invoice_line_items', `id=eq.${line.id}`); await load(); }
-    catch { toast('Failed to remove line', 'error'); }
-    finally { setBusy(null); }
-  };
-
-  // ── Payments ──
+  // ── Payments (quick inline action) ──
   const openPay = (inv) => { setPayOpen(inv.id); setPayDraft({ amount: invBal(inv) > 0 ? String(invBal(inv).toFixed(2)) : '', date: new Date().toISOString().slice(0, 10), payer_type: 'insurance', method: 'check', reference: '' }); };
 
   const recordPayment = async (inv, job) => {
@@ -208,7 +111,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
           toast(`Payment of ${fmt$(amt)} recorded & synced to QuickBooks`);
         } catch (e) { toast('Payment recorded — QuickBooks sync failed: ' + e.message, 'error'); }
       } else {
-        toast(`Payment of ${fmt$(amt)} recorded${inv.qbo_invoice_id ? '' : ' (sync the invoice to QuickBooks first)'}`);
+        toast(`Payment of ${fmt$(amt)} recorded${inv.qbo_invoice_id ? '' : ' (send the invoice to QuickBooks first)'}`);
       }
       setPayOpen(null); setPayDraft({}); await load();
     } catch (e) { toast('Failed to record payment: ' + (e.message || e), 'error'); }
@@ -252,13 +155,12 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
         const synced = !!inv?.qbo_invoice_id;
         const isBusy = busy === inv?.id;
         const division = job.division ? String(job.division).replace(/_/g, ' ') : 'Job';
-        const chip = isBusy ? { label: 'Syncing…', bg: 'var(--accent-light)', color: 'var(--accent)', border: '#bfdbfe' }
+        const chip = isBusy ? { label: 'Working…', bg: 'var(--accent-light)', color: 'var(--accent)', border: '#bfdbfe' }
           : inv?.qbo_sync_error ? { label: 'Sync error', bg: '#fef2f2', color: '#dc2626', border: '#fecaca', title: inv.qbo_sync_error }
           : inv ? statusChip(inv) : null;
         const due = inv ? dueLabel(inv) : null;
         const pays = (inv && paysByInv[inv.id]) || [];
         const lines = (inv && linesByInv[inv.id]) || [];
-        const editing = inv && editOpen === inv.id;
 
         return (
           <div key={job.id} style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
@@ -280,8 +182,8 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
               </div>
             )}
 
-            {/* Line items (read-only summary when not editing) */}
-            {inv && lines.length > 0 && !editing && (
+            {/* Read-only line summary */}
+            {inv && lines.length > 0 && (
               <div style={{ marginTop: 8, borderTop: '1px solid var(--border-light)', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {lines.map(l => (
                   <div key={l.id} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -290,42 +192,6 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
                     <span style={{ fontWeight: 600, minWidth: 80, textAlign: 'right' }}>{fmt$(l.line_total)}</span>
                   </div>
                 ))}
-              </div>
-            )}
-
-            {/* Line-item editor */}
-            {inv && editing && canEdit && (
-              <div style={{ marginTop: 8, padding: '10px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                {catalogMsg && <div style={{ fontSize: 11, color: '#d97706', marginBottom: 6 }}>{catalogMsg}</div>}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.1fr 1fr 60px 90px 90px 28px', gap: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)', padding: '0 2px 4px' }}>
-                  <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Total</span><span />
-                </div>
-                {lines.map(l => (
-                  <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.1fr 1fr 60px 90px 90px 28px', gap: 6, alignItems: 'center', marginBottom: 5 }}>
-                    <select value={l.qbo_item_id || ''} disabled={!qboItems.length}
-                      onChange={e => { const it = qboItems.find(i => i.id === e.target.value); const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(inv.id, l.id, patch); saveLine({ ...l, ...patch }); }}
-                      style={selStyle}>
-                      <option value="">{qboItems.length ? 'Select item…' : '—'}</option>
-                      {qboItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </select>
-                    <input type="text" value={l.description || ''} placeholder="Description"
-                      onChange={e => setLineLocal(inv.id, l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={inpStyle} />
-                    <select value={l.qbo_class_id || ''} disabled={!qboClasses.length}
-                      onChange={e => { const cl = qboClasses.find(c => c.id === e.target.value); const patch = { qbo_class_id: cl?.id || null, qbo_class_name: cl?.name || null }; setLineLocal(inv.id, l.id, patch); saveLine({ ...l, ...patch }); }}
-                      style={selStyle}>
-                      <option value="">{qboClasses.length ? 'Class…' : '—'}</option>
-                      {qboClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={e => setLineLocal(inv.id, l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={inpStyle} />
-                    <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={e => setLineLocal(inv.id, l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={inpStyle} />
-                    <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmt$(l.line_total)}</span>
-                    <button onClick={() => removeLine(l)} disabled={busy === 'line-' + l.id} title="Remove line" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 15 }}>✕</button>
-                  </div>
-                ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                  <button className="btn btn-secondary btn-sm" disabled={isBusy} onClick={() => addLine(inv)}>+ Add line</button>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>Total: {fmt$(invTotal(inv))}</div>
-                </div>
               </div>
             )}
 
@@ -351,16 +217,8 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
                   <button className="btn btn-secondary btn-sm" disabled={busy === job.id} onClick={() => createInvoice(job.id)}>{busy === job.id ? 'Creating…' : 'Create invoice'}</button>
                 ) : (
                   <>
-                    <button className="btn btn-secondary btn-sm" disabled={isBusy} onClick={() => setEditOpen(editing ? null : inv.id)}>{editing ? 'Done editing' : (lines.length ? 'Edit line items' : 'Add line items')}</button>
-                    {invTotal(inv) > 0 && (
-                      <button className="btn btn-primary btn-sm" disabled={isBusy} onClick={() => syncToQbo(inv)}>{isBusy ? 'Syncing…' : synced ? 'Update in QuickBooks' : 'Send to QuickBooks'}</button>
-                    )}
-                    {invTotal(inv) > 0 && (
-                      <button className="btn btn-secondary btn-sm" disabled={isBusy} onClick={() => (payOpen === inv.id ? setPayOpen(null) : openPay(inv))}>+ Record payment</button>
-                    )}
-                    {synced && (
-                      <button className="btn btn-sm" disabled={isBusy} onClick={() => removeFromQbo(inv)} onBlur={() => setConfirmRemove(null)} style={{ background: confirmRemove === inv.id ? '#fef2f2' : 'var(--bg-tertiary)', color: confirmRemove === inv.id ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmRemove === inv.id ? '#fecaca' : 'var(--border-light)'}` }}>{isBusy ? '…' : confirmRemove === inv.id ? 'Confirm remove' : 'Remove from QuickBooks'}</button>
-                    )}
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)}>{lines.length ? 'Edit invoice →' : 'Build invoice →'}</button>
+                    {invTotal(inv) > 0 && <button className="btn btn-secondary btn-sm" disabled={isBusy} onClick={() => (payOpen === inv.id ? setPayOpen(null) : openPay(inv))}>+ Record payment</button>}
                   </>
                 )}
               </div>
@@ -384,7 +242,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
 
       {canEdit && (
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '2px 2px 0' }}>
-          Build each invoice from line items (item + class + qty × rate), then <b>Send to QuickBooks</b>. Record payments here — they post to QuickBooks against the invoice.
+          <b>Create / Edit invoice</b> opens the invoice editor (build line items → send to QuickBooks). Record payments here — they post to QuickBooks against the invoice.
         </div>
       )}
     </div>
@@ -408,5 +266,3 @@ function PayInput({ label, children }) {
   );
 }
 const inputStyle = (w) => ({ width: w, padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' });
-const inpStyle = { width: '100%', padding: '5px 6px', fontSize: 12, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' };
-const selStyle = { ...inpStyle, cursor: 'pointer' };

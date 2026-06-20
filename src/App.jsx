@@ -44,6 +44,7 @@ import AdminDemoSheetBuilder from '@/pages/AdminDemoSheetBuilder';
 
 import EncircleImport from '@/pages/EncircleImport';
 import Help from '@/pages/Help';
+import InvoiceEditor from '@/pages/InvoiceEditor';
 
 // Tech pages (field_tech role)
 import TechLayout from '@/components/TechLayout';
@@ -202,6 +203,7 @@ function WebRoutes() {
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
         <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
+        <Route path="invoices/:invoiceId" element={<ErrorBoundary section="Invoice"><InvoiceEditor /></ErrorBoundary>} />
 
         {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
         <Route path="leads" element={
