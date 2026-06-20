@@ -104,10 +104,7 @@ export default function ARDashboard({ db, navigate }) {
   if (loading) return <div style={{ padding: 24, color: 'var(--text-tertiary)' }}>Loading A/R…</div>;
 
   return (
-    <div style={{ padding: '20px', maxWidth: 1200, margin: '0 auto' }}>
-      <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>Collections — A/R</h1>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-secondary)' }}>Outstanding invoices across all clients. Click a row to open the claim.</p>
-
+    <div>
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
         <KPI label="Outstanding" value={fmt$(totals.outstanding)} color={totals.outstanding > 0 ? '#dc2626' : '#16a34a'} sub={`${totals.openCount} open`} />
