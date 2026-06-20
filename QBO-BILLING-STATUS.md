@@ -1,5 +1,5 @@
 # UPR Billing · Invoicing · A/R · QuickBooks · Stripe — Handoff & Status
-**Last updated:** 2026-06-19 · **Branches:** `dev` and `main` are **in sync** (both auto-deploy via Cloudflare Pages) · **Supabase project:** `glsmljpabrwonfiltiqm`
+**Last updated:** 2026-06-20 · **Branches:** `dev` has A (+New-invoice picker) + Stripe S3 (dormant); `main` not yet synced (both auto-deploy via Cloudflare Pages) · **Supabase project:** `glsmljpabrwonfiltiqm`
 
 > **READ THIS FIRST if you're a new chat picking up this work.** This is the complete brief
 > for the billing/invoicing/A/R + QuickBooks + Stripe initiative. **Do not change the locked
@@ -68,17 +68,19 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 
 **Employee docs:** in-app **Help** page (`/help`), `UPR-Invoicing-Financials-Employee-Guide.md`, downloadable `public/UPR-Invoicing-Financials-Guide.pdf` (regen via `scripts/build-invoicing-guide-pdf.py`). ⚠️ These describe the *pre-builder* flow ("Save amount / Push") — **update them** to the line-item builder + dedicated editor when convenient.
 
+**"+ New invoice" job picker** (Jun 20 2026): shared `NewInvoiceModal` → idempotent `create_invoice_for_job` → `/invoices/:id`. Customer page header button (customer-scoped, reuses loaded claims) + global **+ New invoice** on the Collections header (customer typeahead → claims→jobs). Rows badge "Has invoice"/"New". Gated `feature:billing` + `canEditBilling`.
+
+**Stripe S3 — card collection + fee automation (Jun 20 2026, BUILT but DORMANT):** full code shipped, inert until `STRIPE_*` keys exist (workers 503; UI shows "not set up yet"). Migration `20260620_stripe_s3.sql` **applied** (invoice pay-link cols; payments `source`/`stripe_*`/fee cols + charge-unique index; `stripe_events` RLS-locked idempotency ledger + `claim_stripe_event`; `qbo_bank_account` + Stripe payout-destination keys in billing settings). `functions/lib/stripe.js` (signature verify, balance_transaction, Checkout, external accounts, instant payout). `quickbooks.js` extended (`createPayment` `depositAccountId`; new `createPurchase`/`createTransfer`/`deleteEntity`). Workers: `stripe-webhook` (payment_intent.succeeded → gross payment deposited to clearing + fee Purchase; payout.paid → net Transfer), `stripe-pay-link`, `stripe-payout`, `stripe-accounts`. UI: pay-link on `InvoiceEditor`; payout-destination selectors + live Instant Payout + QBO deposit-bank selector on `PaymentSettings`. **Needs owner setup + live test — see §4.**
+
 **Cleanup done:** removed the old job-centric `ARPage` cluster + stale `COLLECTIONS_*.md`. Legacy `billing_overview` view + `get_ar_jobs` RPC remain in the DB (harmless, unused) — drop later if desired.
 
 ---
 
-## 3. NEXT — build in this order (in the new chat)
+## 3. NEXT
 
-**A) "+ New invoice" with job picker** *(small, do first; owner-requested)*
-- A "**+ New invoice**" button on the **Customer page** (header) and optionally a global one on **Collections**.
-- Opens a **job picker** (customer page → that customer's jobs; global → search customer/claim/job). On choose → `create_invoice_for_job(job_id)` → navigate to `/invoices/:id`. If the job already has an invoice, it opens that one (RPC handles it). Respects one-invoice-per-job. Reuse `CreateJobModal`/`LookupSelect` patterns for the picker.
+**A) "+ New invoice" with job picker — ✅ DONE (Jun 20 2026).** Shipped on `dev` (see §2). Customer-page + Collections entry points; idempotent `create_invoice_for_job` → `/invoices/:id`.
 
-**B) Stripe S3 — live card collection + fee automation** *(needs owner setup — see §4)*
+**B) Stripe S3 — ✅ CODE DONE / DORMANT (Jun 20 2026).** Built and applied (see §2). **Remaining = owner activation, not code:** do the §4 setup checklist (Stripe keys + QBO accounts + webhook), then run the live test. Until then it's inert.
 
 **C) Stripe S4 — refunds/disputes** → reverse the payment (+ fee) in QBO on `charge.refunded` / `charge.dispute.created`.
 
@@ -92,37 +94,65 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 
 ---
 
-## 4. Stripe S3 — build spec (for the new chat)
+## 4. Stripe S3 — ACTIVATION click-path (code is built & dormant)
 
-**Owner setup checklist (prerequisite — can't build/test without it):**
-1. Stripe account → **test-mode** API keys (publishable + secret).
-2. Cloudflare Pages env: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` (after registering the webhook).
-3. QBO: create a **bank-type "Stripe Clearing"** account + a **"Merchant Fees"** expense account → map them on **`/payments/settings`** (already built; "Load accounts from QuickBooks").
+The code (workers, lib, migration, UI) is shipped and inert. To turn it on, do the
+setup below. Test on **dev** first (`dev.utahpros.app`, Cloudflare **Preview** env,
+Stripe **test mode**); repeat for **main**/Production with live keys.
 
-**Build:**
-- **Pay-by-link on invoices**: from `InvoiceEditor` (and/or invoice send), create a Stripe Checkout/Payment Link / hosted invoice for the balance; email the client. Store the link/session on the invoice (add a column or a `stripe_*` field).
-- **`functions/api/stripe-webhook.js`**: verify `STRIPE_WEBHOOK_SECRET`; on `payment_intent.succeeded`/`charge.succeeded`, read the charge's **`balance_transaction`** for exact `amount`/`fee`/`net`; then:
-  1. insert a `payments` row (method `credit_card`/`ach`, `qbo_payment_id` set after push) and call the existing `qbo-payment` rail — BUT deposit to the **Stripe clearing account** (extend `createPayment` to set `DepositToAccountRef` from the mapped clearing account).
-  2. post a **fee Purchase/Expense** (from clearing account → Merchant Fees account, both from `get_billing_settings`) for the exact fee.
-  3. on `payout.paid`, post a **Transfer** clearing→bank for the net.
-- **Instant Payout button** (Payment Settings): `POST /v1/payouts {method:'instant', destination: <instant card>}` via a small `functions/api/stripe-payout.js`.
-- **Payout-destination selectors in Payment Settings** (owner-requested): read the account's external accounts from Stripe (bank accounts + debit cards), let the user set the **default payout checking account** (standard deposits) and the **instant-payout debit card** (`destination` for instant payouts). "Add new" → Stripe Dashboard / Financial Connections (no raw entry in UPR). Persist chosen ids in `integration_config` (e.g. `stripe_payout_bank_id`, `stripe_instant_card_id`) — add these keys to the `set_billing_setting` whitelist.
-- Mark `stripe_connected` setting true when keys present (so the settings page + button activate).
-- **Idempotency:** key on Stripe event id / `qbo_payment_id`; never double-post. **Refunds/disputes (S4):** reverse payment + fee.
+**1 — Stripe keys.** Stripe Dashboard (Test mode) → **Developers → API keys** → copy the
+**Publishable** (`pk_test_…`) and **Secret** (`sk_test_…`) keys.
 
-Extend `lib/quickbooks.js` with `createPurchase`/`createTransfer` helpers (mirror existing). New Stripe lib `functions/lib/stripe.js` (verify signature, fetch balance_transaction).
+**2 — Register the webhook + get its signing secret.** Stripe Dashboard → **Developers →
+Webhooks → Add endpoint**:
+- Endpoint URL: `https://dev.utahpros.app/api/stripe-webhook` (Production: `https://utahpros.app/api/stripe-webhook`).
+- Events to send: **`payment_intent.succeeded`** and **`payout.paid`** (add `charge.refunded` + `charge.dispute.created` later for S4).
+- Save → reveal the **Signing secret** (`whsec_…`).
+
+**3 — Cloudflare Pages env vars** (Settings → Environment variables; **Preview** for dev,
+**Production** for main — then redeploy that branch):
+`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`. (Optional
+`APP_BASE_URL` for Checkout return URLs — defaults to the request origin.)
+
+**4 — QBO accounts** (QuickBooks → Chart of Accounts → New):
+- a **Bank**-type account "**Stripe Clearing**",
+- an **Expense**-type account "**Merchant Fees**",
+- confirm your real **checking/bank** account exists (payout destination).
+
+**5 — Map them in UPR** → `/payments/settings` (admin/manager): click **Load accounts
+from QuickBooks** and pick **Stripe clearing account**, **Merchant fees expense account**,
+and **Deposit bank account**. Then click **Load from Stripe** and pick the **standard
+payout checking account** + **instant-payout debit card**. (Connection flips to
+"Connected" automatically.)
+
+**6 — Live test on dev** (Stripe test mode): open an invoice in `/invoices/:id` → **Send
+to QuickBooks** → **Create pay link** → pay it with a Stripe **test card**
+(`4242 4242 4242 4242`). Verify: a `payments` row (source `stripe`) appears with the
+gross + a synced QBO Payment **deposited to Stripe Clearing**; a QBO **Purchase** booked
+the fee to Merchant Fees; the invoice balance drops. Then trigger/await a **payout** in
+test mode and confirm a QBO **Transfer** (clearing → bank) for the net. Try the **⚡ Pay
+out now** button. Re-deliver the same webhook event from the Stripe Dashboard and confirm
+it **no-ops** (idempotency).
+
+**Built artifacts (reference):** `functions/lib/stripe.js`; `quickbooks.js`
+(`createPayment` `depositAccountId`, `createPurchase`, `createTransfer`, `deleteEntity`);
+workers `stripe-webhook` / `stripe-pay-link` / `stripe-payout` / `stripe-accounts`;
+migration `20260620_stripe_s3.sql` (applied). **Idempotency:** event id via
+`claim_stripe_event` + unique `payments.stripe_charge_id`. **S4 (refunds/disputes):**
+on `charge.refunded` / `charge.dispute.created`, reverse the payment + fee Purchase via
+`deleteEntity` (not yet built).
 
 ---
 
 ## 5. Reference map
 
 **Routes:** `/collections` (hub) · `/collections/:claimId` (claim A/R workspace) · `/invoices/:invoiceId` (editor) · `/payments/settings` · `/help` · claim page Billing section · customer Financial tab.
-**Frontend:** `src/components/ClaimBilling.jsx` (A/R panel + payments; opens editor) · `src/pages/InvoiceEditor.jsx` · `src/pages/Collections.jsx` (hub shell) · `src/components/collections/ARDashboard.jsx` · `src/components/collections/PaymentsLedger.jsx` · `src/pages/ClaimCollectionPage.jsx` (workspace) · `src/pages/PaymentSettings.jsx` · `src/pages/Help.jsx` · gate helper `src/lib/claimUtils.js` (`canEditBilling`, `BILLING_EDIT_ROLES`, `getBalances`, `withJobFinancials`).
-**Workers (`functions/api/`):** `qbo-invoice` (create/update/delete invoice, itemized) · `qbo-payment` (create/delete payment) · `qbo-query` (read-only SELECT passthrough) · `qbo-sync-customer` · `quickbooks-connect`/`-callback`. Lib: `functions/lib/quickbooks.js`.
-**RPCs:** `create_invoice_for_job` · `get_job_financials` · `get_ar_invoices` · `get_payments_ledger` · `get_billing_settings` / `set_billing_setting` · `get_claim_detail` · `get_customer_detail`. **Triggers:** `recompute_invoice_from_lines` (lines→invoice total) · `update_invoice_paid` (payments→invoice/job) · invoices→jobs A/R sync.
-**Key tables/cols:** `invoices` (qbo_invoice_id/qbo_synced_at/qbo_sync_error, total/adjusted_total/amount_paid/balance_due, sent_at/due_date/paid_at, status, insurance/homeowner/deductible/depreciation split cols) · `invoice_line_items` (+ qbo_item_id/name, qbo_class_id/name) · `invoice_adjustments` (unused UI) · `payments` (invoice_id/job_id/contact_id, amount, payment_date, payer_type, payment_method, reference_number, is_deductible, qbo_payment_id/qbo_synced_at/qbo_sync_error) · `integration_config` (key/value — billing-settings keys + `auto_draft_invoices`) · `contacts.qbo_customer_id` · `jobs.invoiced_value/collected_value` (legacy mirror).
-**Migrations (this initiative):** `supabase/migrations/2026061{8,9}_*` (invoice qbo foundation, invoice→job AR sync, get_job_financials, payments_qbo_sync, get_ar_invoices, invoice_line_items_qbo, get_payments_ledger, billing_settings).
-**Feature flag:** `feature:billing`. **Env (set):** `QBO_CLIENT_ID/SECRET/ENVIRONMENT/REDIRECT_URI`, `QBO_WEBHOOK_SECRET` (internal trigger secret — NOT a QBO webhook), `SUPABASE_*`. **Env (to add for Stripe):** `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
+**Frontend:** `src/components/ClaimBilling.jsx` (A/R panel + payments; opens editor) · `src/components/NewInvoiceModal.jsx` (+ New invoice job picker) · `src/pages/InvoiceEditor.jsx` (+ pay-by-link) · `src/pages/Collections.jsx` (hub shell + global + New invoice) · `src/components/collections/ARDashboard.jsx` · `src/components/collections/PaymentsLedger.jsx` · `src/pages/ClaimCollectionPage.jsx` (workspace) · `src/pages/PaymentSettings.jsx` (+ Stripe payout dest + Instant Payout) · `src/pages/CustomerPage.jsx` (header + New invoice) · `src/pages/Help.jsx` · gate helper `src/lib/claimUtils.js` (`canEditBilling`, `BILLING_EDIT_ROLES`, `getBalances`, `withJobFinancials`).
+**Workers (`functions/api/`):** `qbo-invoice` (create/update/delete invoice, itemized) · `qbo-payment` (create/delete payment) · `qbo-query` (read-only SELECT passthrough) · `qbo-sync-customer` · `quickbooks-connect`/`-callback` · **`stripe-webhook`** (payment_intent.succeeded → payment+fee; payout.paid → transfer) · **`stripe-pay-link`** · **`stripe-payout`** · **`stripe-accounts`**. Libs: `functions/lib/quickbooks.js`, **`functions/lib/stripe.js`**.
+**RPCs:** `create_invoice_for_job` · `get_job_financials` · `get_ar_invoices` · `get_payments_ledger` · `get_billing_settings` / `set_billing_setting` · **`claim_stripe_event`** (webhook idempotency) · `get_claim_detail` · `get_customer_detail` · `search_contacts_for_job` (picker). **Triggers:** `recompute_invoice_from_lines` (lines→invoice total) · `update_invoice_paid` (payments→invoice/job) · invoices→jobs A/R sync.
+**Key tables/cols:** `invoices` (qbo_invoice_id/synced_at/sync_error, total/adjusted_total/amount_paid/balance_due, sent_at/due_date/paid_at, status, insurance/homeowner/deductible/depreciation split cols, **stripe_payment_link_url/checkout_session_id/created_at**) · `invoice_line_items` (+ qbo_item_id/name, qbo_class_id/name) · `invoice_adjustments` (unused UI) · `payments` (invoice_id/job_id/contact_id, amount, payment_date, payer_type, payment_method, reference_number, is_deductible, qbo_payment_id/synced_at/sync_error, **source, stripe_payment_intent_id, stripe_charge_id [uniq], stripe_fee, stripe_fee_qbo_purchase_id**) · **`stripe_events`** (RLS-locked idempotency ledger) · `integration_config` (key/value — billing-settings keys [+ `qbo_bank_account_*`, `stripe_payout_bank_*`, `stripe_instant_card_*`, `stripe_connected`] + `auto_draft_invoices`) · `contacts.qbo_customer_id` · `jobs.invoiced_value/collected_value` (legacy mirror).
+**Migrations (this initiative):** `supabase/migrations/2026061{8,9}_*` + **`20260620_stripe_s3.sql`** (applied — Stripe cols, stripe_events + claim_stripe_event, billing-settings payout keys).
+**Feature flag:** `feature:billing`. **Env (set):** `QBO_CLIENT_ID/SECRET/ENVIRONMENT/REDIRECT_URI`, `QBO_WEBHOOK_SECRET` (internal trigger secret — NOT a QBO webhook), `SUPABASE_*`. **Env (to add for Stripe — §4):** `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` (+ optional `APP_BASE_URL`).
 **Division→QBO map** (`divisionToQbo`): recon→Item 1010000201/Class Reconstruction · mit|water|dry→1010000071/Mitigation · mold→1010000131 · contents→38.
 
 ---
@@ -131,6 +161,8 @@ Extend `lib/quickbooks.js` with `createPurchase`/`createTransfer` helpers (mirro
 - **0 invoices exist** in the DB — all A/R views are empty until one is built. A couple of legacy **job-level payments (~$11.3k)** show in the ledger (no invoice link, not synced).
 - The **Item/Class dropdowns + QBO account picker need QuickBooks connected** (they read the live catalog via `qbo-query`).
 - I **could not exercise live QBO** from the build environment — the invoice/payment push code follows the proven delete-path pattern and builds clean, but do a **real test on `dev`** (create invoice → add lines → Send → record payment → confirm itemized + applied in QBO).
-- Every change this session was committed in small steps and pushed; `dev` and `main` are synced. Production build passes; new code is lint-clean (repo has some pre-existing unused-import lint debt unrelated to this work).
+- **Stripe S3 is built but never run live** (no keys existed at build time). The webhook/payout/fee code follows Stripe's documented API + the proven QBO patterns and builds/lints clean, the migration is applied & verified, but it **must be live-tested per §4** before relying on it (real money: instant payouts + QBO transfers). The external-account list + instant-payout destination behavior especially should be eyeballed on first real connect.
+- Stripe `accept_card`/`accept_ach`/`surcharge` toggles already persisted (pre-S3); they gate intent only — nothing charges until keys + a pay-link exist.
+- This session (Jun 20): shipped **A (+ New invoice picker)** and **B (Stripe S3, dormant)** to `dev`; `main` not touched (sync on request). Production build passes; changed files lint clean (one pre-existing `loadData` exhaustive-deps warning in `CustomerPage.jsx`, unrelated).
 
 *When the whole initiative is steady-state, fold the essentials into `UPR-Web-Context.md` and delete this file + `QBO-PHASE-2-PLAN.md` (per the Task File Protocol in CLAUDE.md).*
