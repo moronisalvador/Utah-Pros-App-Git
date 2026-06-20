@@ -8,6 +8,9 @@ const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:to
 
 const TERMS = [['due_on_receipt', 'Due on receipt'], ['net_15', 'Net 15'], ['net_30', 'Net 30'], ['net_60', 'Net 60']];
 
+const kLabel = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', display: 'block', marginBottom: 3 };
+const kVal = { fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' };
+
 export default function PaymentSettings() {
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
@@ -20,6 +23,12 @@ export default function PaymentSettings() {
   const [stripeDest, setStripeDest] = useState(null);   // { banks, cards } from Stripe
   const [loadingDest, setLoadingDest] = useState(false);
   const [payingOut, setPayingOut] = useState(false);
+  // Email-2FA edit of payout destinations
+  const [destEdit, setDestEdit] = useState(false);
+  const [destStage, setDestStage] = useState('idle');   // sending | ready | saving
+  const [destSentTo, setDestSentTo] = useState('');
+  const [destCode, setDestCode] = useState('');
+  const [destForm, setDestForm] = useState({ bankName: '', bankId: '', cardName: '', cardId: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,10 +63,37 @@ export default function PaymentSettings() {
     save(idKey, id);
     save(nameKey, a?.name || '');
   };
-  const pickDest = (list, idKey, nameKey, id) => {
-    const a = (list || []).find(x => x.id === id);
-    save(idKey, id);
-    save(nameKey, a?.label || '');
+  // Payout destinations are money-movement settings — gated by a code emailed to the
+  // owner (never a plain click-and-edit field). Opening the editor requests a code.
+  const openDestEdit = async () => {
+    setDestForm({ bankName: s.stripe_payout_bank_name || '', bankId: s.stripe_payout_bank_id || '', cardName: s.stripe_instant_card_name || '', cardId: s.stripe_instant_card_id || '' });
+    setDestCode(''); setDestSentTo(''); setDestEdit(true); setDestStage('sending');
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/billing-2fa', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'request' }) });
+      const d = await res.json().catch(() => ({}));
+      if (!d.ok) { toast(d.error || 'Could not send the verification code', 'error'); setDestStage('ready'); return; }
+      setDestSentTo(d.to || ''); setDestStage('ready');
+      toast(`Verification code emailed to ${d.to || 'the owner'}`);
+    } catch (e) { toast('Could not send code: ' + (e.message || e), 'error'); setDestStage('ready'); }
+  };
+
+  const commitDest = async () => {
+    if (!/^\d{6}$/.test(destCode.trim())) { toast('Enter the 6-digit code from the email', 'error'); return; }
+    setDestStage('saving');
+    try {
+      const auth = await getAuthHeader();
+      const changes = {
+        stripe_payout_bank_name: destForm.bankName.trim(), stripe_payout_bank_id: destForm.bankId || '',
+        stripe_instant_card_name: destForm.cardName.trim(), stripe_instant_card_id: destForm.cardId || '',
+      };
+      const res = await fetch('/api/billing-2fa', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'commit', code: destCode.trim(), changes }) });
+      const d = await res.json().catch(() => ({}));
+      if (!d.ok) { toast(d.error || 'Verification failed', 'error'); setDestStage('ready'); return; }
+      setS(prev => ({ ...prev, ...changes }));
+      setDestEdit(false); setDestCode(''); setDestStage('idle');
+      toast('Payout destinations updated');
+    } catch (e) { toast('Save failed: ' + (e.message || e), 'error'); setDestStage('ready'); }
   };
 
   // Loads the Stripe account's external accounts (banks + debit cards) for the payout
@@ -123,27 +159,64 @@ export default function PaymentSettings() {
         <Row label="Accept credit cards"><Toggle on={on('accept_card')} onClick={() => save('accept_card', !on('accept_card'))} /></Row>
         <Row label="Accept ACH / bank transfer" hint="~0.8% capped — cheaper for large insurance payments."><Toggle on={on('accept_ach')} onClick={() => save('accept_ach', !on('accept_ach'))} /></Row>
 
-        {/* Payout destinations — list + select only; add new in the Stripe Dashboard. */}
-        <Row label="Standard payout — checking account" hint="Where regular Stripe payouts deposit.">
-          {stripeDest?.banks?.length ? (
-            <select className="input" value={s.stripe_payout_bank_id || ''} onChange={e => pickDest(stripeDest.banks, 'stripe_payout_bank_id', 'stripe_payout_bank_name', e.target.value)} style={{ width: 240, height: 34 }}>
-              <option value="">Select account…</option>
-              {stripeDest.banks.map(b => <option key={b.id} value={b.id}>{b.label}{b.default_for_currency ? ' (default)' : ''}</option>)}
-            </select>
-          ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.stripe_payout_bank_name || (stripeConnected ? 'Load from Stripe to choose' : '—')}</span>}
-        </Row>
-        <Row label="Instant payout — debit card" hint="Same-day deposit destination (~1.5% fee).">
-          {stripeDest?.cards?.length ? (
-            <select className="input" value={s.stripe_instant_card_id || ''} onChange={e => pickDest(stripeDest.cards, 'stripe_instant_card_id', 'stripe_instant_card_name', e.target.value)} style={{ width: 240, height: 34 }}>
-              <option value="">Select card…</option>
-              {stripeDest.cards.map(c => <option key={c.id} value={c.id}>{c.label}{c.instant ? '' : ' (not instant-eligible)'}</option>)}
-            </select>
-          ) : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{s.stripe_instant_card_name || (stripeConnected ? 'Load from Stripe to choose' : '—')}</span>}
-        </Row>
+        {/* Payout destinations — money-movement setting, gated by a code emailed to the owner. */}
+        <div style={{ padding: '9px 0', borderTop: '1px solid var(--border-light)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>🔒 Payout destinations</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 1 }}>Where Stripe deposits land. Changing these requires a code emailed to the owner.</div>
+            </div>
+            {!destEdit && <button className="btn btn-secondary btn-sm" onClick={openDestEdit}>Edit</button>}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginTop: 8 }}>
+            <div><span style={kLabel}>Standard payout — checking</span><span style={kVal}>{s.stripe_payout_bank_name || '—'}</span></div>
+            <div><span style={kLabel}>Instant payout — debit card</span><span style={kVal}>{s.stripe_instant_card_name || '—'}</span></div>
+          </div>
+
+          {destEdit && (
+            <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                {destStage === 'sending' ? 'Emailing a verification code to the owner…'
+                  : destSentTo ? <>We emailed a 6-digit code to <b>{destSentTo}</b>. Enter it below to confirm — the change won’t save without it.</>
+                  : 'Enter the code from the verification email to confirm.'}
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <span style={kLabel}>Standard payout — checking account</span>
+                {stripeDest?.banks?.length ? (
+                  <select className="input" value={destForm.bankId} onChange={e => { const b = stripeDest.banks.find(x => x.id === e.target.value); setDestForm(f => ({ ...f, bankId: e.target.value, bankName: b?.label || '' })); }} style={{ width: '100%', maxWidth: 320, height: 34 }}>
+                    <option value="">Select account…</option>
+                    {stripeDest.banks.map(b => <option key={b.id} value={b.id}>{b.label}{b.default_for_currency ? ' (default)' : ''}</option>)}
+                  </select>
+                ) : (
+                  <input className="input" value={destForm.bankName} onChange={e => setDestForm(f => ({ ...f, bankName: e.target.value, bankId: '' }))} placeholder="e.g. Wells Fargo ••1234" style={{ width: '100%', maxWidth: 320, height: 34, fontSize: 13 }} />
+                )}
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <span style={kLabel}>Instant payout — debit card</span>
+                {stripeDest?.cards?.length ? (
+                  <select className="input" value={destForm.cardId} onChange={e => { const c = stripeDest.cards.find(x => x.id === e.target.value); setDestForm(f => ({ ...f, cardId: e.target.value, cardName: c?.label || '' })); }} style={{ width: '100%', maxWidth: 320, height: 34 }}>
+                    <option value="">Select card…</option>
+                    {stripeDest.cards.map(c => <option key={c.id} value={c.id}>{c.label}{c.instant ? '' : ' (not instant-eligible)'}</option>)}
+                  </select>
+                ) : (
+                  <input className="input" value={destForm.cardName} onChange={e => setDestForm(f => ({ ...f, cardName: e.target.value, cardId: '' }))} placeholder="e.g. Visa debit ••4321" style={{ width: '100%', maxWidth: 320, height: 34, fontSize: 13 }} />
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <input className="input" value={destCode} onChange={e => setDestCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="6-digit code" style={{ width: 130, height: 34, fontSize: 13, letterSpacing: '2px' }} />
+                <button className="btn btn-primary btn-sm" disabled={destStage === 'saving' || destStage === 'sending'} onClick={commitDest}>{destStage === 'saving' ? 'Saving…' : 'Verify & save'}</button>
+                <button className="btn btn-ghost btn-sm" disabled={destStage === 'sending'} onClick={openDestEdit}>Resend code</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setDestEdit(false); setDestCode(''); setDestStage('idle'); }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <Row label="Same-day deposit (Instant Payout)" hint="Push your Stripe balance to the bank now (~1.5% fee).">
           <button className="btn btn-secondary btn-sm" disabled={!stripeConnected || payingOut} title={stripeConnected ? '' : 'Available once Stripe is connected'} onClick={doInstantPayout} style={{ opacity: stripeConnected ? 1 : 0.6 }}>{payingOut ? 'Paying…' : '⚡ Pay out now'}</button>
         </Row>
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingTop: 6 }}>Add a new bank or debit card in the Stripe Dashboard (Financial Connections) — UPR only selects from existing ones.</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingTop: 6 }}>Payout destinations are protected — editing them emails a verification code to the owner first. Once Stripe is connected, <b>Load from Stripe</b> lets you pick the live account/card inside that verified edit. Add or change the actual bank/card in the Stripe Dashboard (Financial Connections) — never entered raw in UPR.</div>
       </Section>
 
       {/* Invoicing defaults */}
