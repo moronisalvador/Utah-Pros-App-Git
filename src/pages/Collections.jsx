@@ -1,9 +1,9 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import ARPage from '@/components/collections/ARPage';
+import ARDashboard from '@/components/collections/ARDashboard';
 
 export default function Collections() {
   const { db } = useAuth();
   const navigate = useNavigate();
-  return <ARPage db={db} navigate={navigate} />;
+  return <ARDashboard db={db} navigate={navigate} />;
 }
