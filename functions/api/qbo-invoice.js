@@ -82,35 +82,53 @@ export async function onRequestPost(context) {
     const map = divisionToQbo(job.division);
     if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
 
-    const amount = Number(inv.adjusted_total ?? inv.total ?? 0);
-    if (!(amount > 0)) throw new Error('Invoice total is 0 — add an amount before syncing');
-
     let claimNo = inv.claim_number;
     if (!claimNo && job.claim_id) {
       claimNo = (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number&limit=1`))?.[0]?.claim_number || null;
     }
 
-    const classId = map.className ? await findClassId(env, map.className) : null;
+    const divClassId = map.className ? await findClassId(env, map.className) : null;
 
-    const line = {
-      DetailType: 'SalesItemLineDetail',
-      Amount: amount,
-      SalesItemLineDetail: {
-        ItemRef: { value: map.itemId },
-        ...(classId ? { ClassRef: { value: classId } } : {}),
-      },
-    };
+    // Build QBO lines from the invoice's line items (itemized — each line carries its
+    // own QBO Item + Class). Fall back to a single division-summary line for invoices
+    // that have no line items yet.
+    const items = await db.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc.nullslast,created_at.asc`) || [];
+    let lines;
+    if (items.length) {
+      lines = items.map(li => {
+        const amt = Number(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
+        const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
+        const cls = li.qbo_class_id || divClassId;
+        if (cls) detail.ClassRef = { value: String(cls) };
+        if (li.quantity != null) detail.Qty = Number(li.quantity);
+        if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
+        return {
+          DetailType: 'SalesItemLineDetail',
+          Amount: amt,
+          ...(li.description ? { Description: li.description } : {}),
+          SalesItemLineDetail: detail,
+        };
+      });
+    } else {
+      const amount = Number(inv.adjusted_total ?? inv.total ?? 0);
+      const detail = { ItemRef: { value: map.itemId } };
+      if (divClassId) detail.ClassRef = { value: divClassId };
+      lines = [{ DetailType: 'SalesItemLineDetail', Amount: amount, SalesItemLineDetail: detail }];
+    }
+    const lineTotal = lines.reduce((s, l) => s + Number(l.Amount || 0), 0);
+    if (!(lineTotal > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
+
     const privateNote = `UPR ${inv.invoice_number} · job ${job.job_number || ''}${claimNo ? ' · claim ' + claimNo : ''}`;
 
     // Update in place if already synced, else create.
     let qboInv, mode;
     if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: [line], PrivateNote: privateNote });
+      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote });
       mode = 'updated';
     } else {
       const payload = {
         CustomerRef: { value: String(contact.qbo_customer_id) },
-        Line: [line],
+        Line: lines,
         PrivateNote: privateNote,
       };
       qboInv = await createInvoice(env, payload);
