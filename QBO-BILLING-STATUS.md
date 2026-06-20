@@ -32,6 +32,7 @@ and a proper invoice-centric **A/R view** (redesign).
 - **Same A/R panel on the CLIENT PROFILE** (commit `098a25e`): `CustomerPage` → **Financial** tab now shows all the client's invoices + a client-level Invoiced/Collected/Balance, with the same payment recording (reuses `ClaimBilling`).
 - **Global A/R dashboard** (commits `24f8834`, `dbf9a9f`): `/collections` is now the invoice-centric **`ARDashboard`** — Outstanding/Overdue/Collected/Invoiced KPIs, **aging buckets** (Current / 1-30 / 31-60 / 61-90 / 90+), search + Open/Overdue/All, and an overdue worklist that drills into the claim. New `get_ar_invoices()` RPC. Removed the orphaned job-centric `ARPage` cluster + stale `COLLECTIONS_*.md`.
 - **Per-claim A/R workspace** (commit `c99a704`): `/collections/:claimId` (`ClaimCollectionPage`) rebuilt into a lean collections desk — client/carrier header, contact quick-actions (call/text/email), A/R KPIs (Balance / Collected / Invoiced / Deductible Owed), and the shared Invoices & Payments panel covering every job in the claim. Global dashboard rows + the claim "Financials" button drill here. (~700 lines of legacy removed.)
+- **Full invoice builder** (commits `ea5ba87`, `8374dea`): invoices are built from **line items** — per line an **Item + Class** (dropdowns pulled live from QuickBooks via `qbo-query`, mirroring the QBO catalog), description, qty × rate. Total rolls up via the `recompute_invoice_from_lines()` trigger; push to QBO is **itemized** (each line → SalesItemLine w/ ItemRef + ClassRef). Builder-only (lump-sum removed). New `invoice_line_items.qbo_*` columns.
 
 **Safeguards** (commits `5f9df11`, `d2713fb`)
 - **Master on/off switch:** Billing section gated by feature flag **`feature:billing`** (enabled). Dev Tools → Feature Flags → "Billing & Invoicing": off = hidden for all; set a dev-only user = limit to one person.
@@ -68,7 +69,7 @@ and a proper invoice-centric **A/R view** (redesign).
 | **Send invoice + pay link** | Email the client an invoice with a "Pay now" (card/ACH) link; on payment, record in UPR → push Payment to QBO. Needs the processor's payment-confirmation webhook (small, well-defined). |
 | **Reconciliation** | Record processing fees + match payouts/deposits in QBO. |
 
-**Other:** Phase 0 (flip `auto_draft_invoices` after prod test) · invoice editing depth (line items/adjustments — tables exist) · **deeper security** (RLS/RPC role enforcement; safeguards are UI-level today) · customer-edit → QBO push (e.g. email change; today it doesn't sync).
+**Other:** Phase 0 (flip `auto_draft_invoices` after prod test) · ✅ invoice builder shipped (line items + itemized QBO push, `8374dea`; **invoice_adjustments** UI still optional) · **deeper security** (RLS/RPC role enforcement; safeguards are UI-level today) · customer-edit → QBO push (e.g. email change; today it doesn't sync).
 
 ---
 
