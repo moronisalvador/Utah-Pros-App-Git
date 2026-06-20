@@ -29,6 +29,7 @@ and a proper invoice-centric **A/R view** (redesign).
 - **Phase 0.5 — auto-push invoice edits** (commit `22466ad`): `qbo-invoice` worker now **creates _or_ updates** (new `updateInvoice()` in `functions/lib/quickbooks.js`, sparse update via SyncToken). Billing UI (`ClaimBilling.jsx`) autosaves the amount and pushes automatically; editing a synced invoice re-syncs it.
 - **Payment → QBO foundation** (commit `40099b0`): `qbo-payment` worker + `createPayment`/`deletePayment` (applies a Payment to the QBO invoice); `payments.qbo_payment_id/qbo_synced_at/qbo_sync_error` (migration applied); invoice push now stamps `sent_at` + a default Net-30 `due_date`.
 - **Invoice-centric A/R panel on the CLAIM PAGE** (commit `df8effb`): the claim section is now **"Invoices & Payments"** — per-invoice **Sent / Due-aging / Total / Collected / Balance / status** + a claim Invoiced/Collected/Balance summary, and **invoice-linked payment recording that pushes to QBO** (`qbo-payment` wired, insert + delete), with payment history + two-click delete. Edits gated by admin+manager; section behind `feature:billing`.
+- **Same A/R panel on the CLIENT PROFILE** (commit `098a25e`): `CustomerPage` → **Financial** tab now shows all the client's invoices + a client-level Invoiced/Collected/Balance, with the same payment recording (reuses `ClaimBilling`).
 
 **Safeguards** (commits `5f9df11`, `d2713fb`)
 - **Master on/off switch:** Billing section gated by feature flag **`feature:billing`** (enabled). Dev Tools → Feature Flags → "Billing & Invoicing": off = hidden for all; set a dev-only user = limit to one person.
@@ -55,7 +56,7 @@ and a proper invoice-centric **A/R view** (redesign).
 |---|---|---|
 | **Payments → QBO (invoice-centric)** | **DONE on the claim page** (`df8effb`): payment entry records `invoice_id` + pushes via `qbo-payment` (insert & delete). Remaining: same flow on the client profile + global dashboard; retire the old job-level `ARPage` entry. | |
 | **Invoice lifecycle fields** | `sent_at` + `due_date` columns exist; **stamped on push** (Net-30 default); surfaced in the claim panel. | Aging = today − due_date. Terms configurable later. |
-| **A/R views (redesign)** | **Claim page DONE** (`df8effb`). Remaining: extract the panel into a reusable component for the **client profile** (`CustomerPage`) + a **global A/R dashboard**; then consolidate/retire the job-centric `ARPage` + `billing_overview` + `ClaimCollectionPage` + stale `COLLECTIONS_*.md`. | |
+| **A/R views (redesign)** | **Claim page + client profile DONE** (`df8effb`, `098a25e` — `ClaimBilling` reused on `CustomerPage` Financial tab). Remaining: a **global A/R dashboard** (total outstanding + aging buckets + overdue worklist); then consolidate/retire the job-centric `ARPage` + `billing_overview` + `ClaimCollectionPage` + stale `COLLECTIONS_*.md`. | |
 | **Rollups + reliability** | collected = Σ payments, balance, status (paid/partial/overdue); payment-push error/retry surfacing; optional periodic read-back reconcile to catch QBO drift. | One-way is only correct if QBO isn't hand-edited. |
 
 **Card payments (collect by credit card) — processor TBD:**
