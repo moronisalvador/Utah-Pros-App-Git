@@ -1,0 +1,8 @@
+# Copy to `.dev.vars` for local `wrangler dev`. NEVER commit the real .dev.vars.
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+QBO_CLIENT_ID=
+QBO_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+COOKIE_ENCRYPTION_KEY=
