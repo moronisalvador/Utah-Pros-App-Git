@@ -1,16 +1,16 @@
 # UPR Invoicing & Financials — Employee Guide
 
-A plain-English walkthrough of how we create invoices, push them to QuickBooks, and
-track collections inside the UPR app. Read the **Big Picture** once, then keep the
-**Step-by-Step** and **Good Practices** sections handy.
+A plain-English walkthrough of how we build invoices, send them to QuickBooks, take
+payments, and track collections inside the UPR app. Read the **Big Picture** once, then
+keep the **Step-by-Step** and **Good Practices** sections handy.
 
 ---
 
 ## 1. The Big Picture (how it all fits together)
 
 ```
-   JOB  ──►  CREATE INVOICE  ──►  SYNCS TO QUICKBOOKS  ──►  COLLECTIONS
- (the work)     (draft in UPR)      (real QBO invoice)     (get paid + track)
+   JOB  ──►  BUILD INVOICE  ──►  SEND TO QUICKBOOKS  ──►  GET PAID  ──►  COLLECTIONS
+ (the work)  (line items in UPR)   (real QBO invoice)   (payments sync to QBO)  (track A/R)
 ```
 
 A few core ideas that make everything else make sense:
@@ -18,145 +18,176 @@ A few core ideas that make everything else make sense:
 - **One invoice per job — and a job is one division.** A claim with both Mitigation
   and Reconstruction is **two jobs = two invoices**. That's on purpose: insurance pays
   each category on a separate check, so each check matches its own invoice.
-- **"Invoiced" means *it's in QuickBooks*.** When you first create an invoice it's a
-  **draft** ($0, local). The moment you **enter an amount it syncs to QuickBooks
-  automatically** — then it's a real invoice, the customer's balance "clock" starts, and
-  it shows up in Collections.
-- **QuickBooks is the official record of the invoice. UPR is where you build it and
-  chase payment.** You create and price the invoice in UPR, push it to QuickBooks, then
-  manage getting paid from the Collections screen.
-- **The Financials/Collections numbers come straight from your invoices now.** Once a
-  job has a pushed invoice, its Invoiced / Balance figures update automatically — you
-  don't type them in by hand anymore.
+- **Invoices are built line by line.** On the invoice editor each line carries a
+  QuickBooks **Item** + **Class**, a description, and quantity × rate. The invoice total
+  adds itself up from the lines — there's no single lump-sum box.
+- **"Invoiced" means *it's in QuickBooks*.** A new invoice starts as a **draft** in UPR.
+  You add the lines, then click **Send to QuickBooks** — now it's real, the balance
+  "clock" starts, and it shows up in Collections.
+- **Everything flows one way: UPR → QuickBooks.** QuickBooks is the official record; UPR
+  is where you build the invoice, send it, take payment, and chase the balance. Nobody
+  edits invoices or payments directly in QuickBooks.
+- **Payments you record in UPR post to QuickBooks automatically**, applied against the
+  invoice.
+- **The Financials/Collections numbers come straight from your invoices.** Once a job has
+  a sent invoice, its Invoiced / Balance figures update automatically — you don't type
+  them in by hand.
 
 ---
 
 ## 2. Who Can Do What
 
-- **Create & price invoices (they auto-sync to QuickBooks), log payments:** Admins, Managers,
-  Project Managers, and Supervisors.
+- **Build invoices, send to QuickBooks, record payments, manage Payment Settings:**
+  Admins and Managers.
 - **Everyone else:** can *see* the billing and financial info (read-only). The edit
   buttons simply won't show.
+- Billing is also behind the **Billing** feature switch — if it's off, the billing areas
+  are hidden for everyone.
 
 ---
 
-## 3. Step-by-Step: Create & Send an Invoice
+## 3. Start an Invoice
 
-**Where:** Open the **Claim**, then find the **Billing** section.
-*(Desktop: it's the "Billing" card near the bottom. Phone: tap **Billing** to expand it.)*
+Two ways to begin — both open the same invoice editor. **One invoice per job**: if the
+job already has one, you land right back on it (never a duplicate).
 
-1. **Open the claim** (from Claims, or from a job's "View Job" → claim).
-2. Go to the **Billing** section. You'll see **one row per job/division**, e.g.
-   *"Reconstruction · J-1042"*.
-3. Click **Create invoice**. The row now shows a draft with an invoice number
-   (e.g. *"INV-000123 · $0.00 · draft"*).
-4. Type the invoice amount in the box and **click away (or press Enter)**. It **saves and
-   syncs to QuickBooks automatically** — there's no button to press.
-5. Watch the status chip go **Syncing…** → green **QuickBooks #…**. ✅ That means it's
-   officially invoiced.
-6. **Need to change it later?** Just edit the amount — it re-syncs to QuickBooks instantly.
+- **"+ New invoice" button** — on a **Customer's page** (top of the page) or on the
+  **Collections** screen. Pick the job to bill and it opens the editor.
+- **From the claim or customer** — open the claim's **Invoices & Payments** panel (or a
+  customer's **Financial** tab) and click **Create invoice** on the job's row.
+
+---
+
+## 4. Step-by-Step: Build & Send to QuickBooks
+
+**Where:** the invoice editor (the page that opens after you start an invoice).
+
+1. Click **+ Add line**. Choose the QuickBooks **Item** and **Class**, type a
+   **description**, then the **quantity** and **rate**. The line amount and the invoice
+   **Total** fill in automatically.
+2. Add as many lines as the job needs. **Line edits save by themselves** — there's no
+   save button.
+3. When the total is right, click **Send to QuickBooks**. The status goes
+   **Draft → Sent** with a green **QuickBooks #** — now it's officially invoiced and shows
+   in Collections.
+4. **Need to change it after sending?** Edit the lines and click **Update in QuickBooks**
+   to re-push.
+5. The **Item** and **Class** lists come live from QuickBooks, so QuickBooks must be
+   connected.
 
 **Fixing mistakes:**
-- 🔴 **Red "Error" badge?** Hover over it to read the reason (most often the customer
-  isn't linked in QuickBooks yet). Fix the cause, then re-enter the amount to retry.
-- **Wrong amount?** Just retype it — the invoice re-syncs automatically. To pull it out of
-  QuickBooks entirely, use **Remove from QuickBooks**.
+- 🔴 **Red "Error" badge?** Hover to read the reason (usually the customer isn't linked in
+  QuickBooks yet). Fix it, then click **Send / Update** again.
+- **Sent the wrong thing?** Edit the lines and **Update**, or use **Remove from
+  QuickBooks** to pull it out. An unsent draft can be removed with **Delete draft**.
 
 ---
 
-## 4. Step-by-Step: Track Payments & Collections
+## 5. Step-by-Step: Get Paid
 
-**Where:** **Collections** in the main menu → click the claim you want.
+**Where:** the claim's **Invoices & Payments** panel, a customer's **Financial** tab, or
+**Collections** → open the claim.
 
-Each job shows a quick summary like *"$8,500 billed / $2,000 in"* plus its **Balance**
-and an **A/R status**.
+1. **A payment comes in?** Click **+ Record payment**, enter the amount and date, choose
+   who paid (insurance / homeowner / other) and the method, add a reference (check #,
+   etc.), and save.
+2. The payment **posts to QuickBooks automatically**, applied to that invoice — a green
+   **✓ QB** appears next to it. (If you see **! QB**, the invoice isn't in QuickBooks yet
+   — send it first.)
+3. **Collected** and **Balance** update right away; **Invoiced** doesn't change (it only
+   reflects the invoice itself).
 
-1. **A payment comes in?** Click **+ Log Payment**.
-   - Choose where it came from (e.g. **insurance**, **deductible**, **homeowner/out-of-pocket**).
-   - Enter the **amount** and the **date**, then save. The Balance updates automatically.
-2. **Deductible collected?** Click the amber **"○ $X owed"** button next to *Deductible*.
-   It flips to green **"✓ Rcvd"** with the date.
-3. **Update the A/R status** with the dropdown as the file moves along:
-   **Open → Invoiced → Partial → Paid** (or **Disputed** / **Written Off**).
-4. **Log every follow-up.** Click **📝 Notes** to record calls, voicemails, and
-   promised-payment dates. This builds the **Collections Log** so anyone can pick up
-   where you left off.
+**💳 Card payments (Stripe pay-link):** On the invoice editor click **Create pay link** to
+generate a secure Stripe link for the balance, then send it to the customer. When they pay
+by card, the payment is recorded and synced to QuickBooks automatically — including the
+processing fee, which is booked for you. *Available once Stripe is connected (Collections
+→ ⚙ Payment Settings).*
 
 ---
 
-## 5. Reading the Numbers
+## 6. Collections & Reading the Numbers
+
+**Collections** in the menu has two tabs: **A/R · Outstanding** (totals, aging buckets,
+and an overdue worklist) and **Payments** (cash-in history). Click any row to open that
+claim's A/R workspace. The same per-invoice detail also lives on each claim's **Invoices &
+Payments** panel and each customer's **Financial** tab.
 
 | Term | What it means |
 |---|---|
-| **Estimated** | What we expected the job to be worth (early on). |
-| **Approved** | What the carrier approved. |
-| **Invoiced** | Total **pushed to QuickBooks**. This is what we've officially billed. |
-| **Collected** | Payments you've **logged** as received. |
+| **Invoiced** | Total of the invoice's line items, once it's **sent to QuickBooks**. What we've officially billed. |
+| **Collected** | Payments you've **recorded** as received (they also post to QuickBooks). |
 | **Balance** | Invoiced − Collected. What's still owed. |
+| **Aging** | How overdue the balance is vs. the due date — Current, 1–30, 31–60, 61–90, 90+ days. |
 | **Deductible Owed** | The customer's deductible that hasn't been collected yet. |
 | **Insurance A/R** | What insurance still owes after the deductible. |
 
-Rule of thumb: **Invoiced − Collected = Balance.** If the Balance looks wrong, the fix is
-almost always (a) an invoice with no amount entered yet, or (b) a payment that hasn't been
-logged.
+Rule of thumb: **Invoiced − Collected = Balance.** If the Balance looks wrong, it's almost
+always an invoice that wasn't sent, or a payment that wasn't recorded.
 
 ---
 
-## 6. Good Practices ✅ / ❌
+## 7. Good Practices ✅ / ❌
 
 **Do:**
 - ✅ **One invoice per division.** Mitigation and Reconstruction get their own invoices.
-- ✅ **Enter the amount only when it's final.** Saving an amount creates the real
-  QuickBooks invoice and starts the A/R clock. Not sure yet? Leave the draft at $0.
-- ✅ **Double-check the amount**, then confirm the green **QuickBooks #…** badge appears.
-- ✅ **Log payments the day they arrive**, with the correct source.
+- ✅ **Build the lines with the right Item + Class** so the numbers land in the correct
+  QuickBooks buckets.
+- ✅ **Only Send to QuickBooks when the total is final.** Sending creates the real bill and
+  starts the A/R clock. Not ready? Leave it a draft.
+- ✅ **Record payments the day they arrive**, with the correct payer and method.
+- ✅ **Use the card pay link** for deductibles / out-of-pocket — it reconciles itself.
 - ✅ **Mark the deductible received** as soon as it's collected.
-- ✅ **Keep the Collections Log current** — note every follow-up.
 
 **Don't:**
-- ❌ **Don't try to make several invoices for the same job.** The system keeps one per
-  job; create it once and edit the amount.
-- ❌ **Don't enter a guess.** Saving an amount sends a real bill to QuickBooks. Leave the
-  draft at $0 until you know the number.
-- ❌ **Don't hand-edit the old Revenue numbers on a job that already has a real invoice.**
-  The invoice is now the source of truth — editing the old field will just be overwritten.
-- ❌ **Don't "Remove from QuickBooks"** just to fix an amount — edit the amount instead (it
-  re-syncs). Only remove it if the invoice shouldn't be in QuickBooks at all.
+- ❌ **Don't try to make a second invoice for the same job** — open the existing one and
+  edit its lines.
+- ❌ **Don't send a guess.** A sent invoice is a real bill in QuickBooks.
+- ❌ **Don't enter invoices or payments directly in QuickBooks** — always do it in UPR so
+  the two stay in sync.
+- ❌ **Don't "Remove from QuickBooks"** unless you mean to pull it back to correct and
+  re-send.
 
 ---
 
-## 7. FAQ / Troubleshooting
+## 8. FAQ / Troubleshooting
+
+**Q: How do I take a card payment from a customer?**
+Open the invoice editor and click **Create pay link** — a secure Stripe link for the
+balance. Send it; when they pay, the payment is recorded and synced to QuickBooks
+automatically. *(Available once Stripe is connected in Payment Settings.)*
+
+**Q: I recorded a payment — did it reach QuickBooks?**
+Yes, automatically — as long as the invoice was already **sent to QuickBooks**. A green
+**✓ QB** shows next to the payment. A **! QB** means the invoice isn't in QuickBooks yet;
+send it first.
 
 **Q: The Collections balance still shows an old number.**
 That job probably predates this system. **Older jobs keep their existing numbers** and
-don't need to be re-invoiced. Only jobs with a freshly **pushed** invoice switch to the
-new invoice-based figures.
-
-**Q: I logged a payment but Invoiced didn't change.**
-Correct — logging a payment changes **Collected** and **Balance**, never **Invoiced**.
-Invoiced only changes when you push (or adjust) the invoice itself.
-
-**Q: Does QuickBooks payment info flow back automatically?**
-Not yet. **For now, log payments by hand** in Collections. Automatic QuickBooks payment
-sync is planned for a later update.
+don't need to be re-invoiced. Only jobs with a freshly **sent** invoice switch to the new
+invoice-based figures.
 
 **Q: I got a red "Error" badge.**
 Hover it to see why. Usually the contact needs to be linked to a QuickBooks customer
-first. Fix that, then re-enter the amount to retry the sync.
+first. Fix that, then **Send / Update to QuickBooks** again.
 
-**Q: Can I undo a push?**
-Yes — **Remove from QuickBooks** pulls it out of QuickBooks entirely. (Just fixing an
-amount? You don't need to remove it — editing the amount re-syncs automatically.)
+**Q: Can I undo a send?**
+Yes — on the invoice editor, **Remove from QuickBooks** pulls it out entirely. Just fixing
+line items? Edit the lines and click **Update in QuickBooks**.
+
+**Q: Why don't I see the Item / Class dropdowns?**
+They load **live from QuickBooks**, so QuickBooks must be connected (Dev Tools →
+Integrations).
 
 ---
 
-## 8. Quick Cheat-Sheet
+## 9. Quick Cheat-Sheet
 
-**To bill a job:** Claim → **Billing** → *Create invoice* → type the amount → it saves &
-syncs to QuickBooks automatically (green badge = done).
+**To bill a job:** *+ New invoice* (or Claim → **Invoices & Payments** → *Create invoice*)
+→ add line items (Item + Class, qty × rate) → *Send to QuickBooks* (green QuickBooks # =
+done).
 
-**To collect:** **Collections** → open claim → *+ Log Payment* (and mark the deductible
-**Rcvd**) → update **A/R status** → add a **Notes** entry.
+**To collect:** **Collections** → open claim → *+ Record payment* (it posts to
+QuickBooks) — or open the invoice and *Create pay link* for a card payment.
 
 ---
 

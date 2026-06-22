@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: April 20, 2026 (OOP Pricing Calculator)
+Last updated: June 20, 2026 (Stripe S3 — card payments & fee automation, dormant)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -252,9 +252,11 @@ Only `recon_agreement` uses the four separately-attested consent columns + the e
 ### Financial
 ```
 invoices                — Invoice records
-invoice_line_items      — Line items per invoice
+invoice_line_items      — Line items per invoice (line_total is a GENERATED column = quantity*unit_price — never write it)
 invoice_adjustments     — Invoice adjustment audit log
 payments                — Payment records
+stripe_events           — Stripe webhook idempotency ledger (RLS-locked, service-role only). Added Jun 20 2026 (Stripe S3)
+billing_2fa_codes       — One-time email-2FA codes for editing payout destinations (RLS-locked). Added Jun 20 2026
 estimates               — Estimate records
 vendor_invoices         — Vendor invoice tracking (also used by Netlify vendor app)
 vendors                 — Vendor records
@@ -856,17 +858,109 @@ setup is finished.
 
 **Read-time repoint (`migrations/20260618_get_job_financials.sql` + `lib/claimUtils.js`):** the `invoices` table is the **source of truth** for the Financials/Collections views. RPC `get_job_financials(p_job_ids uuid[] DEFAULT NULL) RETURNS TABLE(job_id, invoice_count, invoiced, collected, balance_due, deductible, insurance_responsibility, homeowner_responsibility, depreciation_withheld, depreciation_released, invoiced_date)` rolls up **pushed** invoices per job (`qbo_invoice_id IS NOT NULL`; granted `anon, authenticated`). `claimUtils.withJobFinancials(db, jobs)` overlays that rollup onto job objects (attaches `job._fin`, overrides `invoiced_value`; `collected_value` only when invoice `amount_paid > 0`) with **COALESCE fallback** to the legacy `jobs` fields — a job with no pushed invoices renders exactly as before. `getBalances()` prefers `job._fin` (invoiced + deductible) when present, else legacy. Wired into `ClaimCollectionPage`, `ClaimPage`, `Jobs`, `Production`, `JobPage`. `CustomerPage` (`get_customer_detail`) and `MergeModal` still read `jobs.invoiced_value`, kept accurate by the AR-sync trigger. The trigger is **retained** as a denormalized projection (belt-and-suspenders + covers the non-overlaid consumers); read-time and trigger use identical definitions so they always agree. Rollup failures degrade silently to legacy values.
 
-**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. Invoice numbering = QBO auto-numbers; linkage via `qbo_invoice_id` + claim/job in the note.
+**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. **Invoice numbering (Jun 20 2026):** the worker sends the **job number as the QBO `DocNumber`** (on create + update; unique since one invoice per job, ≤21 chars). The QBO company has *Custom transaction numbers* ON — so when we sent no DocNumber, QBO left the invoice number **blank**; supplying the job number fixes that and makes the QBO invoice number == the job number. (If that QBO setting is ever OFF, QBO ignores the supplied number and auto-numbers — still safe.) The worker captures `qboInv.DocNumber` back into **`invoices.qbo_doc_number`**, and the UI displays that (UPR's `INV-######` is only the pre-send draft handle). **QBO PrivateNote (standard memo):** `Date of loss: <dol> · Job: <job#> · Claim: <claim#> · Service Address: <full addr>`. The job's **service address** (`jobs.address/city/state/zip`, falling back to the claim loss address — it can differ from billing) + date of loss come from the job (claim fallback). The address is also written to the QBO **legacy custom field "Service Address" (DefinitionId 1)** — that field caps StringValue at **31 chars**, so the worker sends the full address if it fits, else the street, else a truncation (the full address is always in the memo). `get_ar_invoices` / `get_payments_ledger` return `qbo_doc_number`; linkage is by `qbo_invoice_id` (internal id).
 
 **Status:** foundation + push worker + Billing UI + AR mapping trigger + **read-time repoint** (dashboard reads `invoices` via `get_job_financials`, legacy fallback) live on prod, validated (real QBO invoice created/deleted; AR-sync trigger verified; `get_job_financials` applied + returns clean with the table empty; full Vite build passes). **Remaining 2a:** flip `auto_draft_invoices` → `'true'` once Moroni has tested the Billing UI on prod. **2b:** UPR invoice editing UI (line items, adjustments) + two-way sync — then surface the richer rollup fields the dashboard now has access to (insurance/homeowner split, depreciation). **2c:** payments sync → invoice `amount_paid` (`collected` auto-switches to invoice-sourced once `> 0`). **Future:** once invoicing is steady-state, retire the hand-entered Revenue editor + `jobs.invoiced_value` mirror and drop the trigger.
 
-**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via reportlab — keep the two in sync if content changes). In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
+**Employee guide / in-app tutorial:** `UPR-Invoicing-Financials-Employee-Guide.md` (markdown source) → `public/UPR-Invoicing-Financials-Guide.pdf` (downloadable; generated by `scripts/build-invoicing-guide-pdf.py` via reportlab — keep the two in sync if content changes). **Jun 20 2026: Help page, markdown guide, and PDF all rewritten to the current flow** — line-item builder on the dedicated `/invoices/:id` editor, "+ New invoice" picker, Send/Update to QuickBooks, payment recording that auto-syncs to QBO, and the Stripe card pay-link. In-app tutorial `src/pages/Help.jsx` at route `/help` (App.jsx), with a Download-PDF button. Linked from `Sidebar.jsx` as **Help & Guides** rendered as a **standalone NavLink outside the `canAccess` gate** (canAccess is default-deny for keys without a `nav_permissions` row, so a normal NAV_ITEMS entry would show for admins only) — this makes it visible to every logged-in office user.
 
 **Phase 0.5 shipped (auto-push invoice edits):** `qbo-invoice` worker now creates **or** updates a QBO invoice (was create-only; new `updateInvoice()` in `functions/lib/quickbooks.js` does GET-SyncToken → sparse update). `ClaimBilling.jsx` autosaves the amount on blur and auto-pushes (no manual Save/Push buttons) with a Syncing/QuickBooks #/Error/Draft chip; editing a synced invoice re-syncs it; `$0` drafts stay local. UI-driven (only edit path today) to give immediate feedback and avoid a worker-writeback trigger loop. Employee tutorial (Help page + guide + PDF) updated to match.
 
 **Billing safeguards (Jun 18):** Billing section gated by feature flag `feature:billing` (in `feature_flags`, enabled; OFF = hidden for everyone, or set `dev_only_user_id` to limit to one person — all from Dev Tools). New helper `canEditBilling(role)` in `claimUtils` = **admin + manager only**, used for Billing edit (`ClaimPage` → `canEditBill`) and Collections A/R edits (`ClaimCollectionPage`: Log Payment / A/R status / mark-deductible / Notes hidden or disabled for other roles → read-only A/R). `ClaimBilling`: "Remove from QuickBooks" now needs a two-click confirm; the first push of a new invoice is an explicit **Send to QuickBooks** click (edits to an already-synced invoice still auto-sync). These are UI-level gates — deeper enforcement (RLS / RPC role checks) is future hardening.
 
 **Active initiative status/handoff (start here when resuming): `QBO-BILLING-STATUS.md`.** **Next phases — see `QBO-PHASE-2-PLAN.md`** (repo root): two-way QBO↔UPR sync roadmap. Priority Phases 1–3 = inbound webhook infra (`qbo-webhook` + `qbo_sync_events` queue + CDC reconcile cron) → **payments QBO→UPR** → **invoice changes QBO→UPR**, then customer two-way, invoice-editing depth (2b), and A/R ops. Key planned schema: `qbo_sync_events`, `invoices.qbo_sync_token`, `payments.qbo_payment_id`+`source`; new env `QBO_WEBHOOK_VERIFIER_TOKEN` (distinct from the internal `QBO_WEBHOOK_SECRET`).
+
+---
+
+## "+ New invoice" job picker (Jun 20 2026)
+
+`src/components/NewInvoiceModal.jsx` — shared job-picker that calls the idempotent
+`create_invoice_for_job(p_job_id)` RPC and opens `/invoices/:id` (one invoice per job;
+opens the existing invoice if the job already has one). Two modes: **customer-scoped**
+(pass `{ contact, claims }` — reuses already-loaded `get_customer_detail` data, no extra
+query) and **global** (no props — customer typeahead via `search_contacts_for_job`, then
+that customer's claims→jobs). Rows badge "Has invoice" vs "New". Entry points: Customer
+page header button (gated `feature:billing` + `canEditBilling`) and a global **+ New
+invoice** button on the Collections hub header.
+
+---
+
+## Stripe — Card Payments & Fee Automation (S3 — Jun 20 2026, DORMANT)
+
+Live card/ACH collection + automated QuickBooks fee reconciliation. **All code is shipped
+but inert until the `STRIPE_*` keys exist in Cloudflare** — every Stripe worker returns
+`503 {error:'Stripe not configured'}` when unconfigured, and the UI shows "not set up yet"
+toasts. One-way UPR→QBO is preserved; **UPR is the only writer to QBO** (do NOT also run
+Stripe's QBO connector / Synder — it would double-post).
+
+**Pattern (clearing-account fee automation):** customer pays via a UPR pay-link →
+Stripe's webhook records the **gross** as a UPR payment and pushes it to QBO **deposited
+to a "Stripe Clearing" bank account** → the exact `balance_transaction.fee` is booked as a
+QBO **Purchase** (clearing → Merchant Fees) → on `payout.paid` a QBO **Transfer** moves the
+**net** (clearing → real bank). Clearing self-zeroes; the bank reconciles to the Stripe
+payout exactly.
+
+**Env to add (Cloudflare Pages — Preview for dev, Production for main):**
+`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` (the last from the
+registered webhook endpoint). Optional `APP_BASE_URL` for Checkout success/cancel return
+URLs (defaults to the request origin).
+
+**Migration `20260620_stripe_s3.sql` (applied):**
+- `invoices`: `stripe_payment_link_url`, `stripe_checkout_session_id`, `stripe_payment_link_created_at`.
+- `payments`: `source` ('manual'|'stripe', default 'manual'), `stripe_payment_intent_id`, `stripe_charge_id`, `stripe_fee`, `stripe_fee_qbo_purchase_id`; unique index `payments_stripe_charge_uniq` on `stripe_charge_id` (charge-level idempotency).
+- `stripe_events` — webhook idempotency ledger (`id` PK = Stripe event id, type, status, payload, error, timestamps). **RLS enabled, NO policies** (service-role only, like `integration_credentials`).
+- `claim_stripe_event(p_id, p_type) RETURNS boolean` — race-safe `INSERT … ON CONFLICT DO NOTHING` claim (TRUE = new/process, FALSE = duplicate/skip). Granted to `service_role`.
+- `get_billing_settings`/`set_billing_setting` — added keys: `qbo_bank_account_id/name` (QBO deposit bank = Transfer destination), `stripe_payout_bank_id/name` (standard payout checking account), `stripe_instant_card_id/name` (instant-payout debit card). `stripe_connected` stays read-only here (workers set it).
+
+**Lib `functions/lib/stripe.js`** (fetch-only, V8-safe): `stripeConfigured`, `stripeFetch` (form-encoding + idempotency key), `constructEvent` (Web Crypto HMAC-SHA256 signature verify over the raw body + tolerance), `retrieveCharge`/`getBalanceTransaction`/`retrievePaymentIntent`, `createCheckoutSession`, `listExternalAccounts` (banks+cards via `GET /v1/accounts/{id}/external_accounts`), `getInstantAvailable` (`/v1/balance`), `createPayout`.
+
+**Lib `functions/lib/quickbooks.js`** (extended): `createPayment` gains optional
+`depositAccountId` → `DepositToAccountRef` (Stripe deposits to clearing; manual payments
+unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant Fees),
+`createTransfer` (clearing → bank), `deleteEntity(entity, id)` (S4 reversal helper).
+
+**Workers (`functions/api/`):**
+- `stripe-webhook.js` — Stripe signature auth (no Bearer). `payment_intent.succeeded` → record gross UPR payment (source 'stripe') + push to QBO (deposit to clearing) + book fee Purchase. `payout.paid` → Transfer net (clearing → `qbo_bank_account_id`). Event-level idempotency via `claim_stripe_event`; charge-level via the unique index. Returns 200 even on QBO sub-failure (payment still recorded; error stored on the payment + event) so Stripe doesn't retry into the guard. Logs `worker_runs` as `stripe-webhook`.
+- `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
+- `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
+- `stripe-accounts.js` — GET (Supabase Bearer); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
+- `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (SendGrid); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
+
+**Payout-destination email-2FA (`migrations/20260620_payout_2fa.sql`):** changing the
+Stripe deposit bank / instant-payout debit card is a money-movement action, so it is NOT a
+plain edit field. The four payout keys (`stripe_payout_bank_id/name`,
+`stripe_instant_card_id/name`) were **removed from the open `set_billing_setting`
+whitelist** — only the `billing-2fa` worker (service role) writes them, after verifying a
+one-time code emailed to the owner (`integration_config.billing_2fa_email`, default
+`moroni.s@utah-pros.com`). Codes are single-use, 10-min, SHA-256-hashed in the RLS-locked
+`billing_2fa_codes` table. ⚠️ **Depends on SendGrid delivering** (broken since mid-April
+per Demo Sheet notes) — if email is down, these fields can't be changed until it's fixed.
+
+**Frontend:** `InvoiceEditor.jsx` — Create/Copy pay-link action + active-link banner.
+`PaymentSettings.jsx` — "Load from Stripe" probe; live Instant Payout button once
+connected; the QBO deposit bank-account selector; and a **locked "🔒 Payout destinations"
+panel** whose Edit flow emails a verification code (via `billing-2fa`) before saving the
+bank/card (manual label, or live dropdown once Stripe is connected).
+
+**S4 — refunds & disputes (`migrations/20260620_stripe_s4.sql`, applied):** `payments`
+gains `refunded_amount` / `refunded_at` / `dispute_status`, and `update_invoice_paid` was
+rewritten to net `refunded_amount` out of collected (defaults 0 → no change for existing
+rows) and to reopen a paid invoice's status when collected drops to 0. The `stripe-webhook`
+now handles **`charge.refunded`** (net the refund; on a FULL refund reverse the QBO Payment
++ fee Purchase via `deletePayment`/`deleteEntity`; partial refunds net in UPR and flag QBO
+for a manual reduction) and **`charge.dispute.created`** (reopen A/R + reverse the QBO
+Payment + stamp `dispute_status`). `ClaimBilling` shows a red **Refunded/Disputed** chip on
+the payment. *Follow-ups: dispute fee + won/lost resolution (re-record on win), and
+auto-reducing a QBO payment on partial refund.* **Also fixed in S4:** the S3 webhook mapped
+ACH to `'eft'`, which violates the `payments_payment_method_check` — now `'ach'`.
+
+**Status:** S3 + S4 built; builds/lints clean; both migrations applied & verified
+(columns, RLS-locked ledgers, idempotency true→false, trigger nets refunds). **Activation
+pending owner Stripe setup** (keys + QBO "Stripe Clearing"/"Merchant Fees"/deposit-bank
+accounts mapped on `/payments/settings` + webhook endpoint registered →
+`STRIPE_WEBHOOK_SECRET`, subscribing `payment_intent.succeeded`, `payout.paid`,
+`charge.refunded`, `charge.dispute.created`). Then a live test on dev. See
+`QBO-BILLING-STATUS.md` §4 for the exact click-path.
 
 ---
 

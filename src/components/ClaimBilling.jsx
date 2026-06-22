@@ -167,7 +167,12 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{division} · {job.job_number || '—'}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv ? `${inv.invoice_number}${synced ? ' · QuickBooks #' + inv.qbo_invoice_id : ''}` : 'No invoice yet'}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{inv ? `${inv.qbo_doc_number || inv.invoice_number}${synced ? ' · QB' : ''}` : 'No invoice yet'}</div>
+                {(job.date_of_loss || job.loss_address) && (
+                  <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {[job.date_of_loss ? `Loss ${fmtDate(job.date_of_loss)}` : null, job.loss_address ? `${job.loss_address}${job.loss_city ? ', ' + job.loss_city : ''}` : null].filter(Boolean).join(' · ')}
+                  </div>
+                )}
               </div>
               {chip && <span title={chip.title} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: chip.bg, color: chip.color, border: `1px solid ${chip.border}`, cursor: chip.title ? 'help' : 'default', whiteSpace: 'nowrap' }}>{chip.label}</span>}
             </div>
@@ -203,6 +208,7 @@ export default function ClaimBilling({ jobs, db, canEdit, hideSummary }) {
                     <span style={{ color: '#16a34a', fontWeight: 700 }}>{fmt$(p.amount)}</span>
                     <span>{fmtDate(p.payment_date)}</span>
                     <span style={{ textTransform: 'capitalize' }}>{(p.payer_type || '').replace(/_/g, ' ')}{p.payment_method ? ' · ' + String(p.payment_method).replace(/_/g, ' ') : ''}</span>
+                    {Number(p.refunded_amount) > 0 && <span title={p.dispute_status ? `Dispute: ${p.dispute_status}` : 'Refunded'} style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--radius-full)', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', whiteSpace: 'nowrap' }}>{p.dispute_status ? 'Disputed' : 'Refunded'} {fmt$(p.refunded_amount)}</span>}
                     {p.qbo_payment_id ? <span title="Synced to QuickBooks" style={{ color: '#16a34a' }}>✓ QB</span> : p.qbo_sync_error ? <span title={p.qbo_sync_error} style={{ color: '#dc2626', cursor: 'help' }}>! QB</span> : null}
                     {canEdit && <button onClick={() => deletePayment(p)} onBlur={() => setConfirmDelPay(null)} disabled={busy === 'pay-' + p.id} style={{ marginLeft: 'auto', fontSize: 10.5, fontFamily: 'var(--font-sans)', cursor: 'pointer', padding: '1px 7px', borderRadius: 'var(--radius-full)', border: `1px solid ${confirmDelPay === p.id ? '#fecaca' : 'var(--border-light)'}`, background: confirmDelPay === p.id ? '#fef2f2' : 'transparent', color: confirmDelPay === p.id ? '#dc2626' : 'var(--text-tertiary)' }}>{confirmDelPay === p.id ? 'Confirm' : 'Delete'}</button>}
                   </div>

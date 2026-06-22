@@ -50,6 +50,7 @@ export default function PaymentsLedger({ db, navigate }) {
       (r.claim_number || '').toLowerCase().includes(q) ||
       (r.job_number || '').toLowerCase().includes(q) ||
       (r.invoice_number || '').toLowerCase().includes(q) ||
+      (r.qbo_doc_number || '').toLowerCase().includes(q) ||
       (r.reference_number || '').toLowerCase().includes(q));
   }, [rows, search]);
 
@@ -87,7 +88,7 @@ export default function PaymentsLedger({ db, navigate }) {
                     <div>{r.claim_number || '—'}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{(r.division || '').replace(/_/g, ' ')} {r.job_number || ''}</div>
                   </div>
-                  <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{r.invoice_number || '—'}</div>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{r.qbo_doc_number || r.invoice_number || '—'}</div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
                     {r.payment_method ? cap(r.payment_method) : '—'}{r.payer_type ? <span style={{ color: 'var(--text-tertiary)' }}> · {cap(r.payer_type)}</span> : ''}
                     {r.is_deductible ? <span style={{ color: '#d97706' }}> · Deductible</span> : ''}

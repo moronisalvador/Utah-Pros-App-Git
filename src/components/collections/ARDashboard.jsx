@@ -153,7 +153,7 @@ export default function ARDashboard({ db, navigate }) {
                     style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid var(--border-light)', cursor: r.claim_id ? 'pointer' : 'default', background: 'var(--bg-primary)' }}>
                     <Cell>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.client_name || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.invoice_number}{r.qbo_sync_error ? ' · ⚠ QB' : r.qbo_invoice_id ? ' · ✓ QB' : ''}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.qbo_doc_number || r.invoice_number}{r.qbo_sync_error ? ' · ⚠ QB' : r.qbo_invoice_id ? ' · ✓ QB' : ''}</div>
                     </Cell>
                     <Cell>
                       <div style={{ color: 'var(--text-secondary)' }}>{r.claim_number || '—'}</div>
