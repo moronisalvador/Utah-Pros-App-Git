@@ -120,16 +120,23 @@ export async function onRequestPost(context) {
 
     const privateNote = `UPR ${inv.invoice_number} · job ${job.job_number || ''}${claimNo ? ' · claim ' + claimNo : ''}`;
 
+    // Use the job number as the QBO invoice number (DocNumber): unique (one invoice per
+    // job), short, and the most traceable reference. Requires "Custom transaction numbers"
+    // ON in QBO to take effect; if it's OFF, QBO ignores it and auto-numbers instead.
+    // (QBO DocNumber max is 21 chars.)
+    const docNumber = job.job_number ? String(job.job_number).slice(0, 21) : null;
+
     // Update in place if already synced, else create.
     let qboInv, mode;
     if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote });
+      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote, ...(docNumber ? { DocNumber: docNumber } : {}) });
       mode = 'updated';
     } else {
       const payload = {
         CustomerRef: { value: String(contact.qbo_customer_id) },
         Line: lines,
         PrivateNote: privateNote,
+        ...(docNumber ? { DocNumber: docNumber } : {}),
       };
       qboInv = await createInvoice(env, payload);
       mode = 'created';
