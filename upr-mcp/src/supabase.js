@@ -51,5 +51,12 @@ export function supabase(env) {
       if (res.status === 204) return null;
       return res.json();
     },
+    // PostgREST OpenAPI root — enumerates every exposed table and RPC. Lets the
+    // MCP self-describe the UPR database from a fresh chat (no external context).
+    async openapi() {
+      const res = await fetch(`${url}/rest/v1/`, { headers });
+      if (!res.ok) throw new Error(`Supabase OpenAPI: ${res.status} ${await res.text()}`);
+      return res.json();
+    },
   };
 }

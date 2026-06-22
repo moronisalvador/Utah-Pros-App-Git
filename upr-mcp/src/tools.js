@@ -281,6 +281,17 @@ export const TOOLS = {
     inputSchema: { type: 'object', properties: { fn: { type: 'string' }, params: { type: 'object' } }, required: ['fn'] },
     run: (env, a) => supabase(env).rpc(a.fn, a.params || {}),
   },
+  upr_schema: {
+    write: false,
+    description: 'Discover what exists in UPR: returns the list of database tables and callable RPC functions (then use upr_select / upr_rpc). Good first call when grabbing info about claims, clients, jobs, schedule, etc.',
+    inputSchema: { type: 'object', properties: {} },
+    run: async (env) => {
+      const doc = await supabase(env).openapi();
+      const tables = Object.keys(doc.definitions || {}).sort();
+      const functions = Object.keys(doc.paths || {}).filter((p) => p.startsWith('/rpc/')).map((p) => p.slice(5)).sort();
+      return { tables, functions };
+    },
+  },
   upr_insert: {
     write: true,
     description: 'Insert row(s) into a UPR table. data is an object or an array of objects.',
