@@ -16,7 +16,7 @@ compatibility_flags = ["nodejs_compat"]
 # then paste the returned id below.
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "2e1efc4288844d358253978b849c14be"
 
 [vars]
 # Non-secret config. Secrets are set separately with `wrangler secret put` (see README).
