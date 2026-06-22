@@ -124,12 +124,17 @@ export async function onRequestPost(context) {
     const dol = fmtDol(job.date_of_loss || claim?.date_of_loss);
     const serviceAddr = ([job.address, job.city, job.state, job.zip].filter(Boolean).join(', '))
       || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
-    const privateNote = `Date of loss: ${dol} · Job: ${job.job_number || ''} · Claim: ${claimNo || ''} · Service Address: ${serviceAddr}`;
-    // QBO legacy custom field "Service Address" (DefinitionId 1) caps StringValue at 31 chars —
-    // use the full address if it fits, else the street, else a truncation. (Full address is in the memo.)
-    let svcCustom = serviceAddr;
-    if (svcCustom.length > 31) svcCustom = (job.address && job.address.length <= 31) ? job.address : svcCustom.slice(0, 31);
-    const customFields = svcCustom ? [{ DefinitionId: '1', Name: 'Service Address', Type: 'StringType', StringValue: svcCustom }] : null;
+    // Printed on the invoice (CustomerMemo) + kept internally (PrivateNote).
+    const memo = `Date of loss: ${dol} · Job: ${job.job_number || ''} · Claim: ${claimNo || ''} · Service Address: ${serviceAddr}`;
+    // Service address → the invoice's structured Ship To (no length limit; prints when QBO's
+    // Sales > Shipping toggle is on). Per-field: job first, then the claim's loss address.
+    const shipAddr = Object.fromEntries(Object.entries({
+      Line1: job.address || claim?.loss_address || null,
+      City: job.city || claim?.loss_city || null,
+      CountrySubDivisionCode: job.state || claim?.loss_state || null,
+      PostalCode: job.zip || claim?.loss_zip || null,
+    }).filter(([, v]) => v));
+    const hasShip = Object.keys(shipAddr).length > 0;
 
     // Use the job number as the QBO invoice number (DocNumber): unique (one invoice per
     // job), short, and the most traceable reference. Requires "Custom transaction numbers"
@@ -140,15 +145,16 @@ export async function onRequestPost(context) {
     // Update in place if already synced, else create.
     let qboInv, mode;
     if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote, ...(docNumber ? { DocNumber: docNumber } : {}), ...(customFields ? { CustomField: customFields } : {}) });
+      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}) });
       mode = 'updated';
     } else {
       const payload = {
         CustomerRef: { value: String(contact.qbo_customer_id) },
         Line: lines,
-        PrivateNote: privateNote,
+        PrivateNote: memo,
+        CustomerMemo: { value: memo },
         ...(docNumber ? { DocNumber: docNumber } : {}),
-        ...(customFields ? { CustomField: customFields } : {}),
+        ...(hasShip ? { ShipAddr: shipAddr } : {}),
       };
       qboInv = await createInvoice(env, payload);
       mode = 'created';
