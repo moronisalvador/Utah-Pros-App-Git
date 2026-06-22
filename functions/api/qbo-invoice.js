@@ -71,7 +71,7 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id&limit=1`))?.[0];
+    const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
     if (!job) throw new Error('Job not found for invoice');
 
     const contact = inv.contact_id
@@ -82,10 +82,10 @@ export async function onRequestPost(context) {
     const map = divisionToQbo(job.division);
     if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
 
-    let claimNo = inv.claim_number;
-    if (!claimNo && job.claim_id) {
-      claimNo = (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number&limit=1`))?.[0]?.claim_number || null;
-    }
+    const claim = job.claim_id
+      ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null
+      : null;
+    const claimNo = inv.claim_number || claim?.claim_number || null;
 
     const divClassId = map.className ? await findClassId(env, map.className) : null;
 
@@ -118,7 +118,18 @@ export async function onRequestPost(context) {
     const lineTotal = lines.reduce((s, l) => s + Number(l.Amount || 0), 0);
     if (!(lineTotal > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
 
-    const privateNote = `UPR ${inv.invoice_number} · job ${job.job_number || ''}${claimNo ? ' · claim ' + claimNo : ''}`;
+    // Standard memo + the job's service/loss address (can differ from billing). Address from
+    // the job, falling back to the claim's loss address; date of loss likewise.
+    const fmtDol = (d) => { if (!d) return ''; const p = String(d).split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : String(d); };
+    const dol = fmtDol(job.date_of_loss || claim?.date_of_loss);
+    const serviceAddr = ([job.address, job.city, job.state, job.zip].filter(Boolean).join(', '))
+      || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
+    const privateNote = `Date of loss: ${dol} · Job: ${job.job_number || ''} · Claim: ${claimNo || ''} · Service Address: ${serviceAddr}`;
+    // QBO legacy custom field "Service Address" (DefinitionId 1) caps StringValue at 31 chars —
+    // use the full address if it fits, else the street, else a truncation. (Full address is in the memo.)
+    let svcCustom = serviceAddr;
+    if (svcCustom.length > 31) svcCustom = (job.address && job.address.length <= 31) ? job.address : svcCustom.slice(0, 31);
+    const customFields = svcCustom ? [{ DefinitionId: '1', Name: 'Service Address', Type: 'StringType', StringValue: svcCustom }] : null;
 
     // Use the job number as the QBO invoice number (DocNumber): unique (one invoice per
     // job), short, and the most traceable reference. Requires "Custom transaction numbers"
@@ -129,7 +140,7 @@ export async function onRequestPost(context) {
     // Update in place if already synced, else create.
     let qboInv, mode;
     if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote, ...(docNumber ? { DocNumber: docNumber } : {}) });
+      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: privateNote, ...(docNumber ? { DocNumber: docNumber } : {}), ...(customFields ? { CustomField: customFields } : {}) });
       mode = 'updated';
     } else {
       const payload = {
@@ -137,6 +148,7 @@ export async function onRequestPost(context) {
         Line: lines,
         PrivateNote: privateNote,
         ...(docNumber ? { DocNumber: docNumber } : {}),
+        ...(customFields ? { CustomField: customFields } : {}),
       };
       qboInv = await createInvoice(env, payload);
       mode = 'created';
