@@ -1,0 +1,35 @@
+# UPR MCP — standalone Cloudflare Worker (NOT part of the Pages project).
+# Deploy with:  cd upr-mcp && npm install && npx wrangler deploy
+#
+# This worker is your private remote MCP server for QuickBooks Online AND the UPR
+# (Supabase) database. It is OAuth-locked (Google login, allowlisted to
+# ALLOWED_EMAIL) and reuses the existing UPR<->QBO connection (tokens in Supabase
+# `integration_credentials`). See README.md for full setup.
+
+name = "upr-mcp"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace used by @cloudflare/workers-oauth-provider to store grants/tokens.
+# Create it once:  npx wrangler kv namespace create OAUTH_KV
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "2e1efc4288844d358253978b849c14be"
+
+[vars]
+# Non-secret config. Secrets are set separately with `wrangler secret put` (see README).
+QBO_ENVIRONMENT = "production"
+# Only this Google account can authenticate to the MCP server. No one else.
+ALLOWED_EMAIL = "moroni.s@utah-pros.com"
+# Default-on. Set the integration_config row `upr_mcp_enabled` = 'false' to kill instantly.
+
+# ── Secrets to set (wrangler secret put <NAME>) ────────────────────────────────
+#   SUPABASE_URL                 e.g. https://glsmljpabrwonfiltiqm.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY    Supabase service-role key (server-only)
+#   QBO_CLIENT_ID                Intuit app client id (same as UPR uses)
+#   QBO_CLIENT_SECRET            Intuit app client secret (same as UPR uses)
+#   GOOGLE_CLIENT_ID             Google OAuth client (for the login screen)
+#   GOOGLE_CLIENT_SECRET         Google OAuth client secret
+#   COOKIE_ENCRYPTION_KEY        random 32+ char string (openssl rand -hex 32)
