@@ -252,9 +252,11 @@ Only `recon_agreement` uses the four separately-attested consent columns + the e
 ### Financial
 ```
 invoices                — Invoice records
-invoice_line_items      — Line items per invoice
+invoice_line_items      — Line items per invoice (line_total is a GENERATED column = quantity*unit_price — never write it)
 invoice_adjustments     — Invoice adjustment audit log
 payments                — Payment records
+stripe_events           — Stripe webhook idempotency ledger (RLS-locked, service-role only). Added Jun 20 2026 (Stripe S3)
+billing_2fa_codes       — One-time email-2FA codes for editing payout destinations (RLS-locked). Added Jun 20 2026
 estimates               — Estimate records
 vendor_invoices         — Vendor invoice tracking (also used by Netlify vendor app)
 vendors                 — Vendor records
