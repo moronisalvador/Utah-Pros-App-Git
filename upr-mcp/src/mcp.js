@@ -1,15 +1,32 @@
-// MCP API handler — stateless JSON-RPC over HTTP (Streamable HTTP transport).
+// MCP API handler — Streamable HTTP transport.
 // Mounted by OAuthProvider at /mcp. Only requests carrying a valid OAuth token
 // reach here; the authenticated owner's identity arrives on ctx.props.email.
+//
+// IMPORTANT: Claude's connector opens `GET /mcp` and expects a 200
+// text/event-stream (SSE) channel to be established BEFORE it will send the
+// `POST initialize` JSON-RPC request. Returning 405 on GET makes the client loop
+// and fail to connect. So GET returns an open SSE stream; POST handles JSON-RPC.
 
 import { TOOLS, toolList } from './tools.js';
 import { assertAllowed, assertEnabled, logAudit } from './audit.js';
+import { supabase } from './supabase.js';
 
 const SERVER_INFO = { name: 'upr-mcp', version: '1.0.0' };
-const PROTOCOL_VERSION = '2024-11-05';
+const PROTOCOL_VERSION = '2025-06-18';
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
+
+// Lightweight connect diagnostics → upr_mcp_audit (tool='__connect__').
+// Lets us confirm the handshake from the DB. Safe to remove once stable.
+async function dbg(env, email, status, data) {
+  try {
+    await supabase(env).insert('upr_mcp_audit', {
+      actor_email: email || null, tool: '__connect__', status,
+      result: data ? JSON.stringify(data).slice(0, 1500) : null,
+    });
+  } catch { /* never break on logging */ }
+}
 
 async function handleMessage(msg, env, ctx) {
   const { id, method, params } = msg || {};
@@ -57,27 +74,45 @@ async function handleMessage(msg, env, ctx) {
 
 export const mcpApiHandler = {
   async fetch(request, env, ctx) {
+    const email = ctx.props && ctx.props.email;
+
+    // GET → open an SSE stream so the client proceeds to POST initialize.
     if (request.method === 'GET') {
-      // We don't offer a server-initiated SSE stream; tool calls are request/response.
-      return new Response('Method Not Allowed', { status: 405 });
+      await dbg(env, email, 'GET open-sse');
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(': connected\n\n'));
+          // Keep the stream open for server→client messages (we have none).
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
     }
-    if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+
+    if (request.method !== 'POST') {
+      return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, POST' } });
+    }
 
     let body;
     try { body = await request.json(); }
     catch { return Response.json(rpcError(null, -32700, 'Parse error'), { status: 400 }); }
 
-    // Support a single message or a JSON-RPC batch.
-    if (Array.isArray(body)) {
-      const out = [];
-      for (const m of body) {
-        const r = await handleMessage(m, env, ctx);
-        if (r) out.push(r);
-      }
-      return out.length ? Response.json(out) : new Response(null, { status: 202 });
+    const messages = Array.isArray(body) ? body : [body];
+    const responses = [];
+    for (const m of messages) {
+      const r = await handleMessage(m, env, ctx);
+      if (r) responses.push(r);
     }
+    await dbg(env, email, 'POST', { methods: messages.map((m) => m && m.method), n: responses.length });
 
-    const r = await handleMessage(body, env, ctx);
-    return r ? Response.json(r) : new Response(null, { status: 202 });
+    if (responses.length === 0) return new Response(null, { status: 202 });
+    return Response.json(Array.isArray(body) ? responses : responses[0]);
   },
 };
