@@ -1,3 +1,40 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechNewCustomer.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen form a field technician uses to add a new customer (or other
+ *   contact) from their phone. They pick a type (homeowner, tenant, adjuster,
+ *   other), type in a name and phone, and optionally an email, billing address,
+ *   carrier, and notes. Saving creates the contact and jumps to that customer's
+ *   page. If the phone number already belongs to someone, it quietly opens that
+ *   existing customer instead of showing an error.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/new-customer
+ *   Rendered by:  src/App.jsx (the "tech/new-customer" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/AddressAutocomplete,
+ *              @/lib/toast, @/lib/phone
+ *   Data:      All access goes through the db client from useAuth (REST).
+ *              reads  → contacts (only on the duplicate-phone lookup fallback)
+ *              writes → contacts (db.insert)
+ *
+ * NOTES / GOTCHAS:
+ *   - Duplicate phone numbers are not treated as failures: a unique-constraint
+ *     error (contacts_phone_key / Postgres 23505) is caught, the existing
+ *     contact is looked up by phone, and the user is navigated to that customer
+ *     with a "already exists" toast.
+ *   - Billing address fields are only saved for homeowners/tenants; the
+ *     company/carrier field is only saved for adjusters.
+ *   - Fires a window 'upr:contact-created' event after a successful save so
+ *     other open screens can refresh their contact lists.
+ * ════════════════════════════════════════════════
+ */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -5,6 +42,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 
+// ─── SECTION: Constants ──────────────
 const ROLES = [
   { value: 'homeowner', emoji: '\u{1F3E0}', label: 'Homeowner' },
   { value: 'tenant', emoji: '\u{1F6CF}\uFE0F', label: 'Tenant' },
@@ -25,6 +63,7 @@ const labelStyle = {
 };
 
 export default function TechNewCustomer() {
+  // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const { db } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -40,6 +79,7 @@ export default function TechNewCustomer() {
   const isAddress = role === 'homeowner' || role === 'tenant';
   const isAdjuster = role === 'adjuster';
 
+  // ─── SECTION: Event handlers ──────────────
   const handleSave = async () => {
     if (!canSave || saving) return;
     const phone = normalizePhone(form.phone);
@@ -99,6 +139,7 @@ export default function TechNewCustomer() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Header */}

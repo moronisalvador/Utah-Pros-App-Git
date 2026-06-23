@@ -1,28 +1,44 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EquipmentPlacementSheet.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A two-step slide-up panel for recording that a piece of drying equipment
+ *   (a dehumidifier, air mover, scrubber, etc.) was placed in a room. Step one
+ *   is picking the equipment type from an icon grid; step two is choosing the
+ *   room (or creating one) and optionally adding a nickname and serial number.
+ *   When finished it hands the collected data to the parent to save. Also
+ *   exports EQUIPMENT_LABELS, the shared map of equipment-type keys to display
+ *   names used elsewhere in the tech app.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (bottom sheet)
+ *   Rendered by:  src/pages/tech/TechAppointment.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ./RoomChip, @/pages/tech/techConstants (ROOM_TEMPLATES)
+ *   Data:      reads  → none
+ *              writes → none directly — the parent's onSave callback performs
+ *                        the place_equipment RPC (writes equipment_placements),
+ *                        or queues it offline; onCreateRoom performs the room RPC
+ *
+ * NOTES / GOTCHAS:
+ *   - Exports a named constant EQUIPMENT_LABELS (imported by TechAppointment.jsx
+ *     and ReadingEntrySheet's equipment dropdown) plus the default component.
+ *   - defaultRoomId prefills the room but does NOT skip a step, since step 1 is
+ *     always the equipment type.
+ *   - Equipment icons are inline SVGs defined at the bottom (EquipmentIcon),
+ *     styled to match the app's DivisionIcon stroke look.
+ *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect } from 'react';
 import RoomChip from './RoomChip';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
-/**
- * EquipmentPlacementSheet — 2-step bottom sheet for placing a piece of
- * drying equipment in a room.
- *
- * Steps:
- *   1. Type    — 2-col icon + label grid of equipment types.
- *   2. Details — room picker (RoomChip), optional nickname, optional serial.
- *
- * Parent handles the place_equipment RPC call (directly or via offline
- * queue). This component just collects data and calls onSave.
- *
- * Props:
- *   open           — boolean
- *   onClose        — () => void
- *   onSave         — async (payload) => void
- *   jobId          — string
- *   rooms          — [{id, name}] | null  (null = loading)
- *   defaultRoomId? — string (prefills but doesn't skip, since step 1 is type)
- *   onCreateRoom   — async (name) => { id, name }
- */
-
+// ─── SECTION: Constants ──────────────
 export const EQUIPMENT_LABELS = {
   dehu_lgr:          'LGR Dehumidifier',
   dehu_conventional: 'Conventional Dehu',
@@ -44,6 +60,7 @@ export default function EquipmentPlacementSheet({
   defaultRoomId,
   onCreateRoom,
 }) {
+  // ─── SECTION: State & hooks ──────────────
   const [step, setStep] = useState(1);
   const [equipmentType, setEquipmentType] = useState('');
   const [roomId, setRoomId] = useState(defaultRoomId || null);
@@ -71,6 +88,7 @@ export default function EquipmentPlacementSheet({
     }
   }, [open, defaultRoomId]);
 
+  // ─── SECTION: Event handlers ──────────────
   const fireToast = (message, type = 'success') => {
     window.dispatchEvent(
       new CustomEvent('upr:toast', { detail: { message, type } })
@@ -134,6 +152,7 @@ export default function EquipmentPlacementSheet({
   const typeKeys = Object.keys(EQUIPMENT_LABELS);
   const canSave = !!equipmentType && !!roomId;
 
+  // ─── SECTION: Render ──────────────
   return (
     <div
       onClick={onClose}

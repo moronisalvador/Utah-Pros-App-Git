@@ -1,19 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: StalledWidget.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A red warning banner on the tech dashboard that lists building materials
+ *   which are not drying out fast enough across any job the tech has worked
+ *   recently (a 30-day window). Each row shows the material, room, job number,
+ *   current moisture reading versus the drying goal, and how many days it has
+ *   been stuck. Tapping a row jumps to that job's latest appointment. When
+ *   nothing is stalled, the banner shows nothing and takes up no space.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (banner widget)
+ *   Rendered by:  src/pages/tech/TechDash.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom (useNavigate)
+ *   Internal:  @/contexts/AuthContext (useAuth), ./MaterialIcon (icon + labels)
+ *   Data:      reads  → get_stalled_materials_for_employee → appointment_crew,
+ *                        appointments, jobs
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Hidden entirely unless the page:tech_moisture feature flag is on AND at
+ *     least one material is stalled.
+ *   - Re-polls every 2 minutes so it reflects freshly-synced readings; load
+ *     failures are swallowed so the widget simply stays hidden.
+ *   - Collapses to the first 3 rows with a "Show all (N)" toggle.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
 
-/**
- * StalledWidget — red-banner summary of materials that aren't drying fast
- * enough across every job the tech has been on recently (30-day window).
- *
- * Backed by get_stalled_materials_for_employee(p_employee_id). Hidden
- * entirely when nothing is stalled or when page:tech_moisture is off,
- * so it takes zero vertical space on healthy days.
- *
- * Tapping a row navigates to the latest appointment on that job.
- */
 export default function StalledWidget() {
+  // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   const enabled = isFeatureEnabled('page:tech_moisture');
@@ -21,6 +44,7 @@ export default function StalledWidget() {
   const [rows, setRows] = useState([]);
   const [expanded, setExpanded] = useState(false);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     if (!enabled || !employee?.id) { setRows([]); return; }
     try {
@@ -46,6 +70,7 @@ export default function StalledWidget() {
   const jobCount = new Set(rows.map(r => r.job_id)).size;
   const visible = expanded ? rows : rows.slice(0, 3);
 
+  // ─── SECTION: Render ──────────────
   return (
     <div
       style={{

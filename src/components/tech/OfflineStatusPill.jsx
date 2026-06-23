@@ -1,11 +1,37 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: OfflineStatusPill.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The little sync-status badge in the field-app header. It watches the
+ *   offline upload queue and shows one of three things: an amber "Syncing N"
+ *   while uploads are pending, a red "N failed" the tech can tap to retry, or
+ *   a brief green "Synced" flash once everything finishes. When there's
+ *   nothing to report, it shows nothing at all.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (header status component)
+ *   Rendered by:  src/components/TechLayout.jsx (the field-app shell header)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/hooks/useOfflineQueue
+ *   Data:      reads  → none (Supabase); reflects the local IndexedDB-backed
+ *                        upload queue via useOfflineQueue (pending / error counts)
+ *              writes → none (retryAll re-runs queued uploads; no direct DB here)
+ *
+ * NOTES / GOTCHAS:
+ *   - Precedence: the error state wins over pending, which wins over "Synced".
+ *   - The "Synced" flash only fires on a >0 → 0 transition with no errors,
+ *     and auto-hides after 2s.
+ *   - Injects its spin keyframes inline (stable id, dedup-safe) only while visible.
+ * ════════════════════════════════════════════════
+ */
 import { useEffect, useRef, useState } from 'react';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 
-// Small status pill for the TechLayout header. Three visual states:
-//   - pending > 0  → amber "Syncing N" with spinner
-//   - error   > 0  → red "N failed" (tap retries)
-//   - idle         → briefly flashes "Synced" for 2s after the last item lands, then hides
-
+// ─── SECTION: Icon helpers ──────────────
 function SpinnerIcon({ size = 12 }) {
   return (
     <svg
@@ -44,6 +70,7 @@ function CheckIcon({ size = 12 }) {
   );
 }
 
+// ─── SECTION: Render ──────────────
 export default function OfflineStatusPill() {
   const { pendingCount, errorCount, retryAll } = useOfflineQueue();
   const [showSynced, setShowSynced] = useState(false);

@@ -1,3 +1,52 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechEditAppointment.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen form a field technician uses on their phone to edit an
+ *   appointment that already exists. It loads the appointment's current details,
+ *   then lets them change the date and time, swap which crew members are on it,
+ *   check off tasks that are done, add more tasks from the job's task list (or
+ *   create a new one), edit notes, and delete the appointment. It also shows the
+ *   other appointments already on the chosen day so they don't double-book.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/appointment/:id/edit
+ *   Rendered by:  src/App.jsx (the "tech/appointment/:id/edit" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/components/DatePicker,
+ *              ./techFormConstants
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
+ *              Tables below were resolved from each RPC's SQL definition.
+ *              reads  → appointment_crew + appointments + employees + jobs
+ *                        (get_appointment_detail, get_appointments_range);
+ *                        employees + job_tasks (get_appointment_tasks);
+ *                        employees (db.select, active crew list); job_tasks
+ *                        (get_unassigned_tasks)
+ *              writes → appointments (update_appointment for core fields;
+ *                        db.update for the is_private column; delete_appointment
+ *                        removes it); appointment_crew (db.delete then db.insert
+ *                        to re-sync the crew; also cleared by delete_appointment);
+ *                        job_tasks (add_adhoc_job_task creates a task;
+ *                        assign_tasks_to_appointment links them;
+ *                        toggle_appointment_task flips completion;
+ *                        delete_appointment unlinks them)
+ *
+ * NOTES / GOTCHAS:
+ *   - is_private is NOT part of update_appointment; it is written separately via
+ *     a direct db.update, and only when an admin/PM actually changed it.
+ *   - Crew editing is destructive-then-rebuild: every appointment_crew row for
+ *     this appointment is deleted, then the current selection is re-inserted.
+ *   - Delete uses the two-tap confirm pattern (no native dialog): first tap arms
+ *     it for 3 seconds, second tap deletes; blur cancels.
+ *   - An optional ?section=tasks query param auto-opens and scrolls to the
+ *     "Add Tasks" section.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,6 +55,7 @@ import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
 
 export default function TechEditAppointment() {
+  // ─── SECTION: State & hooks ──────────────
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -47,6 +97,7 @@ export default function TechEditAppointment() {
   const [deleting, setDeleting] = useState(false);
   const deleteTimer = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   /* ── Load appointment data ── */
   const load = useCallback(async () => {
     try {
@@ -112,6 +163,7 @@ export default function TechEditAppointment() {
     })();
   }, [db, date, id]);
 
+  // ─── SECTION: Helpers ──────────────
   /* ── Task pool helpers ── */
   const allPoolTasks = useMemo(() => {
     const map = {};
@@ -119,6 +171,7 @@ export default function TechEditAppointment() {
     return map;
   }, [taskPool]);
 
+  // ─── SECTION: Event handlers ──────────────
   const toggleNewTask = (taskId) => {
     setSelectedNewTasks(prev => prev.includes(taskId) ? prev.filter(i => i !== taskId) : [...prev, taskId]);
   };
@@ -244,6 +297,7 @@ export default function TechEditAppointment() {
   const totalCount = currentTasks.length;
   const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Header */}

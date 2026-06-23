@@ -1,23 +1,44 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: PhotoNoteSheet.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A slide-up panel that opens after a tech taps a photo. It has up to two
+ *   tabs: "Note" (type or edit a caption for the photo) and "Room" (tag the
+ *   photo to a room in the building, or create a new room on the spot). It is
+ *   the shared version of what used to be copy-pasted sheets inside the
+ *   appointment and dashboard screens.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (bottom sheet)
+ *   Rendered by:  src/pages/tech/TechDash.jsx and
+ *                 src/pages/tech/TechAppointment.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/contexts/AuthContext (useAuth — db.baseUrl for the thumbnail
+ *              URL only), @/pages/tech/techConstants (ROOM_TEMPLATES),
+ *              ./RoomChip
+ *   Data:      reads  → none (builds the photo thumbnail from the public
+ *                        job-files storage path)
+ *              writes → none directly — saving a note, assigning a room, and
+ *                        creating a room are all done by the parent's
+ *                        onSaveNote / onAssignRoom / onCreateRoom callbacks
+ *
+ * NOTES / GOTCHAS:
+ *   - The "Room" tab only appears when the roomsEnabled prop (page:tech_rooms
+ *     feature flag) is true; otherwise it is note-only.
+ *   - Creating a room auto-assigns the photo to that freshly-created room.
+ *   - Local state resets each time a different photo is opened (keyed on
+ *     photo.id). Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 import RoomChip from './RoomChip';
 
-/**
- * PhotoNoteSheet — shared bottom-sheet for adding a note and/or assigning a
- * photo to a room. Extracted from the duplicated inline sheets in
- * TechAppointment.jsx and TechDash.jsx.
- *
- * Props:
- *   photo            — { id, filePath, description? } | null   (null = closed)
- *   rooms            — [{ id, name, photo_count? }] | null     (null while loading)
- *   roomsEnabled     — boolean (page:tech_rooms feature flag)
- *   currentRoomId    — string | null   (currently assigned room)
- *   onSaveNote       — async (text) => void
- *   onAssignRoom     — async (roomId) => void
- *   onCreateRoom     — async (name)   => { id, name }
- *   onClose          — () => void
- */
 export default function PhotoNoteSheet({
   photo,
   rooms,
@@ -28,6 +49,7 @@ export default function PhotoNoteSheet({
   onCreateRoom,
   onClose,
 }) {
+  // ─── SECTION: State & hooks ──────────────
   const { db } = useAuth();
 
   // Internal state
@@ -62,6 +84,7 @@ export default function PhotoNoteSheet({
   const initialDescription = photo.description || '';
   const noteDirty = noteText.trim() !== initialDescription.trim();
 
+  // ─── SECTION: Event handlers ──────────────
   const fireToast = (message, type = 'success') => {
     window.dispatchEvent(
       new CustomEvent('upr:toast', { detail: { message, type } })
@@ -125,7 +148,7 @@ export default function PhotoNoteSheet({
     return r?.name || null;
   })();
 
-  // ── Render ──────────────────────────────────────────────────────────────
+  // ─── SECTION: Render ──────────────
   return (
     <div
       onClick={onClose}

@@ -1,3 +1,69 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechAppointment.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The full detail screen for one appointment in the field-tech app. It opens
+ *   with a colored banner (the color tells you which division — water, fire,
+ *   etc.) and quick buttons to navigate there, call or text the customer, snap
+ *   a photo, or edit the visit. Below that a tech can run the job timer, see who
+ *   else is on the crew, check off tasks, log moisture readings, place and pull
+ *   drying equipment, browse the photo gallery, and jot notes. Almost everything
+ *   on the page can be done with one tap and no typing.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/appointment/:id
+ *   Rendered by:  src/App.jsx (the "tech/appointment/:id" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
+ *              @/components/tech/ReadingEntrySheet,
+ *              @/components/tech/EquipmentPlacementSheet,
+ *              @/components/tech/MaterialIcon,
+ *              @/components/tech/GenerateReportButton, ./techConstants,
+ *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
+ *              @/lib/nativeAppearance, @/hooks/useOfflineQueue, @/lib/offlineDb,
+ *              @/lib/syncRunnerSingleton
+ *   Data:      All access goes through the db client from useAuth (RPC + REST),
+ *              never raw .from(). Tables below were resolved from each RPC's
+ *              SQL definition (not guessed):
+ *              reads  → appointment_crew, appointments, employees, jobs
+ *                        (get_appointment_detail); employees, job_tasks
+ *                        (get_appointment_tasks); job_documents, jobs, rooms
+ *                        (get_job_rooms); moisture_readings, rooms
+ *                        (get_job_readings); equipment_placements, rooms
+ *                        (get_job_equipment); job_documents (direct db.select)
+ *              writes → job_tasks (toggle_appointment_task); job_documents
+ *                        (insert_job_document, move_photo_to_room, + a direct
+ *                         db.update for the photo caption); rooms (create_room);
+ *                        moisture_readings (insert_reading); equipment_placements
+ *                        (place_equipment, remove_equipment) + job-files storage
+ *                        bucket (direct REST upload)
+ *
+ * NOTES / GOTCHAS:
+ *   - Photos have two upload paths: an offline-queue path (gated by the
+ *     'offline:queue' feature flag — stores the blob in IndexedDB and enqueues a
+ *     sync job) and the default inline path (uploads to Storage, then records it
+ *     via insert_job_document). Snap-first: never blocks the camera flow.
+ *   - The doc gallery is fetched by appointment_id OR job_id so older photos and
+ *     notes saved before appointment tagging existed still show up.
+ *   - Whole Moisture/Equipment/Report sections are feature-gated
+ *     ('page:tech_moisture', 'page:tech_equipment', plus 'page:tech_rooms' for
+ *     room tagging). The reading/equipment sheets are mounted unconditionally so
+ *     flipping a flag on does not require a remount; they self-gate on `open`.
+ *   - When the offline queue is on, save handlers enqueue work instead of calling
+ *     the RPC directly, and a sync:item-done listener reloads the matching
+ *     section when that queued item finishes uploading.
+ *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
+ *     after 3s) — no modal or native confirm dialog.
+ *   - The hero banner uses light text, so the screen forces a light status bar on
+ *     mount and restores the dark one on unmount (statusBarLight/statusBarDark).
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +84,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
+// ─── SECTION: Helpers ──────────────
 function relativeTime(isoStr) {
   if (!isoStr) return '';
   const diff = Date.now() - new Date(isoStr).getTime();
@@ -32,6 +99,7 @@ function relativeTime(isoStr) {
 }
 
 export default function TechAppointment() {
+  // ─── SECTION: State & hooks ──────────────
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
@@ -70,6 +138,7 @@ export default function TechAppointment() {
     return () => statusBarDark();
   }, []);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     try {
       const [detail, taskList] = await Promise.all([
@@ -92,6 +161,7 @@ export default function TechAppointment() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const toggleTask = async (task) => {
     if (togglingRef.current.has(task.id)) return;
     togglingRef.current.add(task.id);
@@ -499,6 +569,7 @@ export default function TechAppointment() {
   const divPill = DIV_PILL_COLORS[division] || DIV_PILL_COLORS.water;
   const divPillColor = divPill?.color || '#1e40af';
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       {/* ── Division-colored hero header ── */}
@@ -1245,6 +1316,7 @@ export default function TechAppointment() {
 
 /* ── Helpers ── */
 
+// ─── SECTION: Helpers ──────────────
 function groupPhotosByDate(photos) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -1,31 +1,46 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: ReadingEntrySheet.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A step-by-step slide-up panel for recording a moisture reading on a drying
+ *   job. The tech walks through four screens: pick a room, pick the material
+ *   (drywall, carpet, etc.), type the numbers (moisture %, humidity,
+ *   temperature — with grains-per-pound and dew point calculated live), and add
+ *   optional details (affected toggle, location, linked equipment, notes). When
+ *   finished it hands the collected data to the parent to save.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (bottom sheet)
+ *   Rendered by:  src/pages/tech/TechAppointment.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ./RoomChip, ./MaterialIcon (icon + labels),
+ *              @/pages/tech/techConstants (ROOM_TEMPLATES),
+ *              @/lib/psychrometric (calcGPP, calcDewPoint)
+ *   Data:      reads  → none
+ *              writes → none directly — the parent's onSave callback performs
+ *                        the insert_reading RPC (writes moisture_readings), or
+ *                        queues it offline; onCreateRoom performs the room RPC
+ *
+ * NOTES / GOTCHAS:
+ *   - When defaultRoomId is provided, step 1 (room picker) is skipped and the
+ *     flow starts on step 2.
+ *   - Moisture content (MC %) is the only required field; Save is blocked until
+ *     a valid number is entered.
+ *   - GPP and dew point are derived on the fly from RH + Temp via the
+ *     psychrometric helpers; they show "—" until both inputs are valid.
+ *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useMemo } from 'react';
 import RoomChip from './RoomChip';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 import { calcGPP, calcDewPoint } from '@/lib/psychrometric';
 
-/**
- * ReadingEntrySheet — multi-step bottom sheet for logging a moisture reading.
- *
- * Steps:
- *   1. Room       — pick existing chip or create new.   Skipped if defaultRoomId.
- *   2. Material   — 2-col tile grid of material types.
- *   3. Readings   — MC % (required), RH %, Temp °F with live GPP/Dew point.
- *   4. Details    — affected toggle, location text, equipment dropdown, notes.
- *
- * Parent handles the actual RPC (insert_reading or offline queue). This
- * component only collects data and calls onSave with the payload.
- *
- * Props:
- *   open           — boolean
- *   onClose        — () => void
- *   onSave         — async (payload) => void
- *   jobId          — string
- *   rooms          — [{id, name, photo_count?}] | null  (null = loading)
- *   defaultRoomId? — string   (when set, step 1 is skipped)
- *   onCreateRoom   — async (name) => { id, name }
- *   equipmentList  — [{id, label}]  for the optional equipment dropdown
- */
 export default function ReadingEntrySheet({
   open,
   onClose,
@@ -36,7 +51,7 @@ export default function ReadingEntrySheet({
   onCreateRoom,
   equipmentList = [],
 }) {
-  // ── Step + internal state ────────────────────────────────────────────────
+  // ─── SECTION: State & hooks ──────────────
   const firstStep = defaultRoomId ? 2 : 1;
   const [step, setStep] = useState(firstStep);
 
@@ -105,7 +120,7 @@ export default function ReadingEntrySheet({
     return Number.isFinite(v) ? v : null;
   }, [rhNum, tempNum]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  // ─── SECTION: Helpers ──────────────
   const fireToast = (message, type = 'success') => {
     window.dispatchEvent(
       new CustomEvent('upr:toast', { detail: { message, type } })
@@ -121,6 +136,7 @@ export default function ReadingEntrySheet({
     return true;
   };
 
+  // ─── SECTION: Event handlers ──────────────
   const handleBack = () => {
     if (step === firstStep) {
       onClose?.();
@@ -214,7 +230,7 @@ export default function ReadingEntrySheet({
   // Materials in display order (keys come straight from MATERIAL_LABELS).
   const materialKeys = Object.keys(MATERIAL_LABELS);
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ─── SECTION: Render ──────────────
   return (
     <div
       onClick={onClose}

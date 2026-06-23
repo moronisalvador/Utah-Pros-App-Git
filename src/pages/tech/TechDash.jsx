@@ -1,3 +1,55 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechDash.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The home screen a field technician sees when they open the app. It greets
+ *   them by name, then shows today's appointments as cards they can act on —
+ *   snap a photo, see task progress, or tap "Clock In" to head out. If they
+ *   walk away from an active job without pausing it, a banner reminds them.
+ *   When nothing is scheduled today, it shows the next 7 days so they can prep
+ *   the night before. A "+" button starts a new job or customer.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech
+ *   Rendered by:  src/App.jsx (the "tech" route, inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
+ *              @/components/tech/StalledWidget, @/lib/toast, @/lib/nativeCamera,
+ *              @/lib/nativeGeolocation, @/lib/nativeHaptics,
+ *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *   Data:      All access goes through the db client from useAuth (RPC + REST),
+ *              never raw .from(). Tables below were resolved from each RPC's
+ *              SQL definition (not guessed):
+ *              reads  → appointments, appointment_crew, jobs, employees
+ *                        (get_my_appointments_today, get_appointments_range,
+ *                         get_active_appointment_geo); job_tasks
+ *                        (get_appointment_tasks); rooms + job_documents
+ *                        (get_job_rooms); job_time_entries (get_active_appointment_geo)
+ *              writes → job_time_entries, appointments.status & system_events
+ *                        (clock_appointment_action — also auto-closes stale time
+ *                         entries and logs a system_event); job_documents
+ *                        (insert_job_document, move_photo_to_room, + a direct
+ *                         db.update for the photo caption); rooms (create_room)
+ *                        + job-files storage bucket (direct REST upload)
+ *
+ * NOTES / GOTCHAS:
+ *   - Photos have two upload paths: an offline-queue path (gated by the
+ *     'offline:queue' feature flag — stores the blob in IndexedDB and enqueues
+ *     a sync job) and the default inline path (uploads to Storage, then records
+ *     it via insert_job_document). Snap-first: never blocks the camera flow.
+ *   - The greeting header sits OUTSIDE <PullToRefresh> on purpose so it stays
+ *     put when the tech pulls to refresh (only the content below reloads).
+ *   - "Away from jobsite" uses geolocation, runs foreground-only, is debounced
+ *     to once per 20s, and fails silently — it must never block the dashboard.
+ *   - Several sub-components live in this same file: CreateFAB, ActiveCard,
+ *     FutureRow, UpcomingSection, DashSkeleton.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -600,6 +652,7 @@ function DashSkeleton() {
 /* ── TechDash Page ── */
 
 export default function TechDash() {
+  // ─── SECTION: State & hooks ──────────────
   const { employee, db, logout } = useAuth();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
@@ -614,6 +667,7 @@ export default function TechDash() {
   const awayConfirmTimer = useRef(null);
   const lastAwayCheck = useRef(0);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -734,6 +788,7 @@ export default function TechDash() {
 
   const isAdmin = employee?.role === 'admin';
 
+  // ─── SECTION: Event handlers ──────────────
   const handleLogoutTap = () => {
     if (!confirmLogout) {
       setConfirmLogout(true);
@@ -750,6 +805,7 @@ export default function TechDash() {
   const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = (employee.display_name || employee.full_name || '').split(' ')[0];
 
+  // ─── SECTION: Render ──────────────
   if (loading) return <DashSkeleton />;
 
   const activeStatuses = ['scheduled', 'en_route', 'in_progress', 'paused', 'confirmed'];

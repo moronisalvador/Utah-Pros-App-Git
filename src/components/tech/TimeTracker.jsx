@@ -1,8 +1,50 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TimeTracker.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The clock-in panel a field tech sees on an appointment. It shows three big
+ *   round buttons — "On my way", "Start", and "Finish" — that the tech taps in
+ *   order as the visit progresses, plus a Pause/Resume button while on site.
+ *   It records the timestamps for each step, shows how long travel and on-site
+ *   time took, and lets a tech re-open a finished job with a "Return to Job"
+ *   button (asking for a short reason).
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (panel embedded in an appointment screen)
+ *   Rendered by:  src/pages/tech/TechDash.jsx and
+ *                 src/pages/tech/TechAppointment.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/lib/toast, @/lib/nativeGeolocation (getCurrentCoords),
+ *              @/lib/nativeHaptics (impact, notify)
+ *   Data:      reads  → job_time_entries (lists this tech's entries for the
+ *                        appointment); clock_appointment_action also reads
+ *                        appointments, job_time_entries
+ *              writes → clock_appointment_action → appointments,
+ *                        job_time_entries, system_events;
+ *                        insert_job_document → job_documents (the return reason
+ *                        note)
+ *
+ * NOTES / GOTCHAS:
+ *   - The timer starts from "On my way" (travel_start), not "Start" (clock_in).
+ *     Travel minutes and on-site hours are stored separately on the backend.
+ *   - GPS coordinates are captured only on the "omw" and "start" actions so the
+ *     UI never stalls asking for location when it would not add value.
+ *   - "Finish" and "Return to Job" use a two-tap confirm (no native dialogs);
+ *     the return-confirm auto-cancels after 3 seconds.
+ *   - An appointment can have multiple visits; prior completed entries render as
+ *     a "Visit N" history summary above the active station row.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '@/lib/toast';
 import { getCurrentCoords } from '@/lib/nativeGeolocation';
 import { impact, notify } from '@/lib/nativeHaptics';
 
+// ─── SECTION: Helpers ──────────────
 export function fmtTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -145,6 +187,7 @@ function VisitSummary({ n, travelMin, onsiteMin }) {
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════
 export default function TimeTracker({ appt, employee, db, onUpdate }) {
+  // ─── SECTION: State & hooks ──────────────
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -155,6 +198,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const [returningJob, setReturningJob] = useState(false);
   const confirmReturnTimer = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const loadEntries = useCallback(async () => {
     try {
       const rows = await db.select(
@@ -187,6 +231,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   const visitNumber = entries.length > 1 ? entries.indexOf(currentEntry) + 1 : null;
 
+  // ─── SECTION: Event handlers ──────────────
   const doAction = async (action) => {
     if (action === 'finish') {
       if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
@@ -305,6 +350,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const startActive  = status === 'omw';
   const finishActive = status === 'on_site';
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-tracker" style={{ background: BG, padding: '14px 16px' }}>
       {/* Status label + visit number */}

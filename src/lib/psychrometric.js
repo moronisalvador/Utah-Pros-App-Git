@@ -1,4 +1,35 @@
 /**
+ * ════════════════════════════════════════════════
+ * FILE: psychrometric.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A small math helper for the moisture / drying ("Hydro") feature. Give it a
+ *   temperature and a humidity reading and it works out the moisture numbers
+ *   restoration techs care about — dew point, vapor pressure, and grains of
+ *   moisture per pound of air (GPP) — so the app can tell whether a room is
+ *   actually drying out. Pure math: no database, no network, no side effects.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  none
+ *   Data:      none (pure calculation)
+ *
+ * EXPORTS:
+ *   calcSaturationPressure_inHg, calcVaporPressure, calcDewPoint, calcGPP
+ *
+ * NOTES / GOTCHAS:
+ *   - Imperial units only (°F, inHg, GPP) to match how techs work on site.
+ *   - Atmospheric pressure is hard-coded to 29.92 inHg (sea level) — no
+ *     altitude correction in v1.
+ *   - Invalid inputs return NaN (not exceptions) so callers can detect bad
+ *     sensor data without try/catch.
+ *   - Uses the ASHRAE-consistent GPP constant (~4354.8), NOT the "2700" field
+ *     shorthand. Full formula sources are in the JSDoc directly below.
+ * ════════════════════════════════════════════════
+ */
+
+/**
  * Psychrometric calculations for the UPR Hydro (moisture / drying) feature.
  *
  * Pure functions, no imports, no side effects. Imperial units only (°F, inHg,
@@ -39,6 +70,7 @@
  * ------------------------------------------------------------------
  */
 
+// ─── SECTION: Constants ──────────────
 // Magnus coefficients (over water), Alduchov-Eskridge form.
 const MAGNUS_A = 17.625;
 const MAGNUS_B = 243.04; // °C
@@ -51,6 +83,8 @@ const GPP_CONSTANT = 7000 * 0.62198; // ≈ 4353.86
 
 // 1 hPa = 0.02953 inHg (NIST). Used to convert Magnus output (hPa) → inHg.
 const HPA_TO_INHG = 0.02953;
+
+// ─── SECTION: Helpers ──────────────
 
 /**
  * Internal: round to 2 decimal places for clean storage/display.
@@ -97,6 +131,7 @@ function validRH(rh) {
   return Number.isFinite(rh) && rh >= 0 && rh <= 100;
 }
 
+// ─── SECTION: Calculations (exports) ──────────────
 /**
  * Saturation vapor pressure in inches of mercury (inHg) at a given
  * dry-bulb temperature. Uses the Magnus-Tetens approximation in hPa
