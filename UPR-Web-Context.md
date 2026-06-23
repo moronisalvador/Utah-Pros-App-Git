@@ -486,6 +486,63 @@ delete_device_token(p_token TEXT)                                        — Rem
 get_active_appointment_geo(p_employee_id UUID)                           — Returns jsonb of the tech's in_progress/paused appointment with clock_in_lat/lng, or NULL. Powers the "away from jobsite" nudge. Fixed Jun 9 2026: ordered by nonexistent a.start_at (errored on every call since creation); now orders by a.date DESC, a.time_start DESC.
 ```
 
+### RPC Data-Flow Reference — tech area (reads / writes)
+Derived from each function's SQL body (reads = FROM/JOIN, writes =
+INSERT/UPDATE/DELETE), intersected with real `public` tables to drop CTE/alias
+noise. Use these directly in the `DEPENDS ON → Data` header field instead of
+re-introspecting. Built Jun 23 2026 during the tech-area doc backfill; extend
+this table per area as the backfill continues.
+
+| RPC | reads | writes |
+|-----|-------|--------|
+| add_adhoc_job_task | job_schedule_phases, job_schedules | job_tasks |
+| assign_tasks_to_appointment | — | job_tasks |
+| clock_appointment_action | appointments, job_time_entries | appointments, job_time_entries, system_events |
+| create_job_with_contact | contact_addresses, contacts, jobs | claims, contact_addresses, contact_jobs, contacts, jobs |
+| create_room | jobs | rooms |
+| create_room_for_claim | — | rooms |
+| delete_appointment | appointment_crew, appointments | appointment_crew, appointments, job_tasks |
+| delete_oop_quote | oop_quotes | oop_quotes |
+| get_active_appointment_geo | appointment_crew, appointments, job_time_entries, jobs | — |
+| get_active_demo_schema | demo_sheet_schemas | — |
+| get_active_techs | employees | — |
+| get_appointment_detail | appointment_crew, appointments, employees, jobs | — |
+| get_appointment_tasks | employees, job_tasks | — |
+| get_appointments_range | appointment_crew, appointments, employees, jobs | — |
+| get_assigned_tasks | appointment_crew, appointments, contacts, job_tasks, jobs | — |
+| get_claim_appointments | appointment_crew, appointments, employees, job_tasks, jobs | — |
+| get_claim_demo_sheets | forms, jobs | — |
+| get_claim_detail | claims, contacts, jobs | — |
+| get_claim_jobs | claims, jobs | — |
+| get_claim_rooms | job_documents, rooms | — |
+| get_claims_list | appointments, claims, contacts, job_documents, job_time_entries, jobs, system_events | — |
+| get_demo_schema | demo_sheet_schemas | — |
+| get_demo_sheet | forms | — |
+| get_demo_sheet_drafts | forms | — |
+| get_insurance_carriers | insurance_carriers | — |
+| get_job_contacts | contact_jobs, contacts | — |
+| get_job_equipment | equipment_placements, rooms | — |
+| get_job_readings | moisture_readings, rooms | — |
+| get_job_rooms | job_documents, jobs, rooms | — |
+| get_job_task_summary | job_tasks | — |
+| get_my_appointments_today | appointment_crew, appointments, employees, jobs | — |
+| get_oop_quote | oop_quotes | — |
+| get_stalled_materials_for_employee | appointment_crew, appointments, jobs | — |
+| get_tech_claims | appointment_crew, appointments, claims, contacts, job_documents, job_time_entries, jobs, system_events | — |
+| get_unassigned_tasks | job_tasks | — |
+| insert_job_document | — | job_documents |
+| insert_reading | moisture_readings | moisture_readings |
+| insert_tech_feedback | — | tech_feedback |
+| move_photo_to_room | — | job_documents |
+| place_equipment | — | equipment_placements |
+| remove_equipment | equipment_placements | equipment_placements |
+| save_demo_sheet | demo_sheet_schemas, employees | forms |
+| search_contacts_for_job | contact_jobs, contacts | — |
+| toggle_appointment_task | employees, job_tasks | job_tasks |
+| update_appointment | — | appointments |
+| upsert_insurance_carrier | — | insurance_carriers |
+| upsert_oop_quote | — | oop_quotes |
+
 ### Dashboard
 ```
 get_dashboard_stats()           — Dashboard stat counts
