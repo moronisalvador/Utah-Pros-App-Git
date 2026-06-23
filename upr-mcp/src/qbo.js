@@ -164,3 +164,14 @@ export async function qboReport(env, name, params = {}) {
   if (!res.ok) throw await asError(res, data, `QBO report ${name} failed`);
   return data;
 }
+
+// Email a transaction (Invoice/Estimate) to the customer. Omitting sendTo uses
+// the transaction's billing email. If QBO Payments is enabled, the emailed
+// invoice includes a pay-now link.
+export async function qboSend(env, entity, id, sendTo) {
+  const path = `${ENTITY_PATH(entity)}/${id}/send?minorversion=${MINOR_VERSION}${sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : ''}`;
+  const res = await qboFetch(env, path, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw await asError(res, data, `QBO send ${entity} failed`);
+  return data[ENTITY_NAME(entity)];
+}
