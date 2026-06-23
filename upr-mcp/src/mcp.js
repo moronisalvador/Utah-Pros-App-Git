@@ -9,24 +9,12 @@
 
 import { TOOLS, toolList } from './tools.js';
 import { assertAllowed, assertEnabled, logAudit } from './audit.js';
-import { supabase } from './supabase.js';
 
 const SERVER_INFO = { name: 'upr-mcp', version: '1.0.0' };
 const PROTOCOL_VERSION = '2025-06-18';
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
-
-// Lightweight connect diagnostics → upr_mcp_audit (tool='__connect__').
-// Lets us confirm the handshake from the DB. Safe to remove once stable.
-async function dbg(env, email, status, data) {
-  try {
-    await supabase(env).insert('upr_mcp_audit', {
-      actor_email: email || null, tool: '__connect__', status,
-      result: data ? JSON.stringify(data).slice(0, 1500) : null,
-    });
-  } catch { /* never break on logging */ }
-}
 
 async function handleMessage(msg, env, ctx) {
   const { id, method, params } = msg || {};
@@ -74,11 +62,8 @@ async function handleMessage(msg, env, ctx) {
 
 export const mcpApiHandler = {
   async fetch(request, env, ctx) {
-    const email = ctx.props && ctx.props.email;
-
     // GET → open an SSE stream so the client proceeds to POST initialize.
     if (request.method === 'GET') {
-      await dbg(env, email, 'GET open-sse');
       const stream = new ReadableStream({
         start(controller) {
           controller.enqueue(new TextEncoder().encode(': connected\n\n'));
@@ -110,8 +95,6 @@ export const mcpApiHandler = {
       const r = await handleMessage(m, env, ctx);
       if (r) responses.push(r);
     }
-    await dbg(env, email, 'POST', { methods: messages.map((m) => m && m.method), n: responses.length });
-
     if (responses.length === 0) return new Response(null, { status: 202 });
     return Response.json(Array.isArray(body) ? responses : responses[0]);
   },
