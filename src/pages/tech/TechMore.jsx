@@ -1,7 +1,40 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechMore.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "More" screen in the field-tech app — a simple menu of extra tools and
+ *   resources grouped under headings. Each row links to another screen (like
+ *   Tasks or the pricing calculator); rows that aren't built yet show a "Soon"
+ *   tag and don't tap through. The Tasks row shows a red badge with how many of
+ *   today's tasks are still open.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/more
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext
+ *   Data:      All access goes through the db client from useAuth.
+ *              reads  → appointment_crew, appointments, contacts, job_tasks,
+ *                        jobs (get_assigned_tasks — only the today count is used)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The "OOP Pricing" row only appears when the "tool:oop_pricing" feature
+ *     flag is on for the current user; the route itself is also flag-gated.
+ *   - The task-count fetch fails silently — a hiccup there must never break the
+ *     menu, the badge just stays at 0.
+ *   - "Coming soon" rows render as a plain div (no Link) so they're not tappable.
+ * ════════════════════════════════════════════════
+ */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
+// ─── SECTION: Helpers ──────────────
 /* ── Row icons ── */
 
 function IconChecklist(props) {
@@ -168,8 +201,11 @@ function MoreRow({ item, isLast }) {
 
 export default function TechMore() {
   const { db, employee, isFeatureEnabled } = useAuth();
+
+  // ─── SECTION: State & hooks ──────────────
   const [taskCount, setTaskCount] = useState(0);
 
+  // ─── SECTION: Data fetching ──────────────
   // Fetch today's incomplete task count for the Tasks row badge
   useEffect(() => {
     if (!employee?.id || !db) return;
@@ -207,6 +243,7 @@ export default function TechMore() {
     },
   ];
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-page" style={{ padding: 0 }}>
       <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6)' }}>

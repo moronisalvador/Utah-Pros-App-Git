@@ -1,3 +1,54 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechJobDetail.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The detail screen for a single job, as a field technician sees it. Up top
+ *   it shows the customer, address, and a Navigate/Call action bar; below that,
+ *   a breadcrumb back to the parent claim, the next/now appointment, the job's
+ *   appointments (split into Upcoming and Past), and a grid of photos & notes
+ *   with buttons to add more. A collapsible "Job details" panel at the bottom
+ *   holds reference info (carrier, policy, adjuster, etc.). Admins/managers get
+ *   a menu to merge or archive the job.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/jobs/:jobId
+ *   Rendered by:  src/App.jsx (the "tech/jobs/:jobId" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  ./techConstants, @/lib/toast, @/lib/nativeAppearance,
+ *              @/lib/nativeCamera, @/lib/nativeHaptics, @/lib/techDateUtils,
+ *              @/contexts/AuthContext, @/components/tech/Hero,
+ *              @/components/tech/ActionBar, @/components/tech/NowNextTile,
+ *              @/components/tech/PhotosGroup, @/components/tech/Lightbox,
+ *              @/components/tech/DetailRow, @/components/MergeModal,
+ *              @/components/PullToRefresh
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
+ *              Tables below were resolved from each call/RPC, not guessed:
+ *              reads  → jobs, claims, job_documents (direct db.select);
+ *                        contact_jobs, contacts (get_job_contacts);
+ *                        appointment_crew, appointments, employees, job_tasks,
+ *                        jobs (get_claim_appointments)
+ *              writes → job_documents (insert_job_document — photos and notes)
+ *                        + job-files storage bucket (direct REST upload);
+ *                        jobs (direct db.update — soft-delete/archive). Merging
+ *                        a job is handled inside MergeModal.
+ *
+ * NOTES / GOTCHAS:
+ *   - Photo upload is a direct Storage POST followed by insert_job_document;
+ *     there is no offline-queue path here (unlike TechDash / TechRoomDetail).
+ *   - Delete is a SOFT delete: it sets jobs.status = 'deleted' (archive,
+ *     restorable), not a hard row delete, and is gated behind a typed "DELETE"
+ *     confirmation. Only admins/managers see the kebab menu.
+ *   - Appointments come from the claim-wide get_claim_appointments, then are
+ *     filtered down to this job's id client-side.
+ *   - Sets a light status bar on mount and restores the dark one on unmount.
+ *   - Sub-components in this file: formatLossDate, titleCase, AppointmentCard.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +67,7 @@ import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
+// ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -80,6 +132,7 @@ function AppointmentCard({ appt, onOpen }) {
 }
 
 export default function TechJobDetail() {
+  // ─── SECTION: State & hooks ──────────────
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { db, employee } = useAuth();
@@ -113,6 +166,7 @@ export default function TechJobDetail() {
     return () => statusBarDark();
   }, []);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -152,6 +206,7 @@ export default function TechJobDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const uploadPhoto = useCallback(async (file) => {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -247,6 +302,7 @@ export default function TechJobDetail() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }

@@ -1,5 +1,33 @@
-/* Shared color constants for tech pages — single source of truth */
+/**
+ * ════════════════════════════════════════════════
+ * FILE: techConstants.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A shared lookup sheet of colors and labels for the field-tech screens.
+ *   It holds the color sets for appointment and claim status badges, the
+ *   background gradients, pill colors, and border colors for each division
+ *   (water, fire, mold, etc.), the label/color/icon for each appointment
+ *   type, and a starter list of common room names. Keeping these in one place
+ *   means every tech screen shows the same colors and wording.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  none
+ *   Data:      none (static constants only)
+ *
+ * EXPORTS:
+ *   APPT_STATUS_COLORS, CLAIM_STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS,
+ *   DIV_BORDER_COLORS, TYPE_CONFIG, ROOM_TEMPLATES
+ *
+ * NOTES / GOTCHAS:
+ *   - Single source of truth for tech-screen colors — change a color here and
+ *     every tech screen updates. Components that need the same colors import
+ *     from here (e.g. Hero, PhotosGroup) rather than hardcoding their own.
+ * ════════════════════════════════════════════════
+ */
 
+// ─── SECTION: Constants ──────────────
 export const APPT_STATUS_COLORS = {
   scheduled:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
   confirmed:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },

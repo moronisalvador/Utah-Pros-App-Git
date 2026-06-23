@@ -1,3 +1,51 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechNewJob.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen form a field technician uses on their phone to start a new
+ *   job. First they find an existing client by name or phone (or quick-add a
+ *   new one right inline), then they pick the division (water, mold, etc.), the
+ *   referral source, the loss/service address, the insurance carrier, and a few
+ *   optional details. Saving creates the job (and its claim + contact links) in
+ *   one step, then pushes the new claim up to Encircle before leaving the screen.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/new-job
+ *   Rendered by:  src/App.jsx (the "tech/new-job" route, inside the TechLayout
+ *                  shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/CarrierSelect,
+ *              @/components/AddressAutocomplete, @/lib/toast, @/lib/phone,
+ *              @/lib/realtime
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
+ *              Tables below were resolved from each RPC's SQL definition.
+ *              reads  → insurance_carriers (get_insurance_carriers);
+ *                        contact_jobs + contacts (search_contacts_for_job);
+ *                        contact_addresses + contacts + jobs
+ *                        (create_job_with_contact); contacts (db.select on the
+ *                        duplicate-phone fallback)
+ *              writes → contacts (db.insert for inline quick-add);
+ *                        insurance_carriers (upsert_insurance_carrier);
+ *                        claims + contact_addresses + contact_jobs + contacts +
+ *                        jobs (create_job_with_contact)
+ *
+ * NOTES / GOTCHAS:
+ *   - After the job is created, syncClaimToEncircle() POSTs to the
+ *     /api/sync-claim-to-encircle worker and is AWAITED (with an 8s internal
+ *     timeout) before navigating away — a fire-and-forget call was being torn
+ *     down on mobile, leaving claims unsynced with no error recorded.
+ *   - Inline quick-add: a duplicate phone (contacts_phone_key / Postgres 23505)
+ *     is caught and the existing contact is auto-selected instead of erroring.
+ *   - "Out of pocket" (OOP) carrier selection stores NULL for insurance_company
+ *     and hides the claim-number field.
+ *   - Fires a window 'upr:contact-created' event after an inline quick-add so
+ *     other open screens can refresh their contact lists.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +55,7 @@ import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
 
+// ─── SECTION: Helpers ──────────────
 // Push a new claim up to Encircle. Awaited by the caller (with an internal
 // timeout) BEFORE navigating away — a fire-and-forget request was being
 // abandoned when this screen tore down on mobile, leaving claims unsynced with
@@ -37,6 +86,7 @@ async function syncClaimToEncircle(claimId) {
   }
 }
 
+// ─── SECTION: Constants ──────────────
 const DIVISIONS = [
   { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
   { value: 'mold', emoji: '\u{1F9A0}', label: 'Mold', color: '#9d174d' },
@@ -75,6 +125,7 @@ const labelStyle = {
 };
 
 export default function TechNewJob() {
+  // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const { db, employee } = useAuth();
   const searchRef = useRef(null);
@@ -109,6 +160,7 @@ export default function TechNewJob() {
   /* ── Cleanup search debounce timer on unmount ── */
   useEffect(() => () => clearTimeout(searchTimer.current), []);
 
+  // ─── SECTION: Data fetching ──────────────
   /* ── Load carriers ── */
   useEffect(() => {
     db.rpc('get_insurance_carriers').then(c => setCarriers(c || [])).catch(() => {});
@@ -125,6 +177,7 @@ export default function TechNewJob() {
     } catch { setResults([]); } finally { setSearching(false); }
   }, [db]);
 
+  // ─── SECTION: Event handlers ──────────────
   const onSearch = e => {
     const v = e.target.value;
     setContactSearch(v);
@@ -270,6 +323,7 @@ export default function TechNewJob() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Header */}
