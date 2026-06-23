@@ -1,11 +1,45 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: PhotosGroup.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Shows the photos and notes for one job, grouped together on a claim or
+ *   job screen. It displays up to three photo thumbnails in a row, plus a
+ *   "+N more" tile if there are extras, and lists up to three notes
+ *   underneath. When a claim has more than one job, it also shows a small
+ *   division-colored header with the job number and counts. Tapping a
+ *   thumbnail opens the full-screen photo viewer.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable group block, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx,
+ *                 src/pages/tech/TechJobDetail.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/pages/tech/techConstants (DIV_BORDER_COLORS — division
+ *              header color), @/components/DivisionIcons (DivisionIcon),
+ *              @/lib/techDateUtils (fileUrl — builds a public Storage URL
+ *              from a stored file path)
+ *   Data:      reads  → none (photos + notes arrive as props; only builds
+ *                        public Storage URLs from the paths)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: job, photos (array), notes (array), isSingleJob (hides the
+ *     mini-header when true), db (used by fileUrl), onOpenAlbum (jobId, index),
+ *     onSeeAllForJob (jobId).
+ *   - Renders nothing (returns null) when there are no photos AND no notes.
+ *   - The caller decides whether the division-colored mini-header shows by
+ *     passing isSingleJob.
+ * ════════════════════════════════════════════════
+ */
 import { DIV_BORDER_COLORS } from '@/pages/tech/techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { fileUrl } from '@/lib/techDateUtils';
 
-// A per-job group of photos + notes on the parent entity's detail page
-// (claim or job). Includes a 3-up thumbnail strip + overflow cell, plus
-// up to 3 notes rendered below. Caller decides whether to show the
-// division-colored mini-header by passing `isSingleJob`.
+// ─── SECTION: Render ──────────────
 export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
   if (photos.length === 0 && notes.length === 0) return null;
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';

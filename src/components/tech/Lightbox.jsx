@@ -1,8 +1,41 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Lightbox.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen photo viewer. When the tech taps a photo, this fills the
+ *   screen with a dark backdrop and the picture, with left/right arrows to
+ *   flip through the set, a counter (like "3 / 12"), an optional caption at
+ *   the bottom, and an X to close. Tapping the backdrop also closes it.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable overlay, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx,
+ *                 src/pages/tech/TechClaimAlbum.jsx,
+ *                 src/pages/tech/TechJobDetail.jsx,
+ *                 src/pages/tech/TechJobAlbum.jsx,
+ *                 src/pages/tech/TechRoomDetail.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/lib/techDateUtils (fileUrl — builds a public Storage URL
+ *              from a stored file path)
+ *   Data:      reads  → none (the photo list arrives as props; only builds
+ *                        public Storage URLs from the paths)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: photos (array), index (current photo, null = hidden), onClose,
+ *     onIndex (called with the new index), db (used by fileUrl).
+ *   - Self-contained on purpose — no entity-specific props — so any photo
+ *     screen can reuse it.
+ *   - Returns null (renders nothing) when there are no photos or index is null.
+ * ════════════════════════════════════════════════
+ */
 import { fileUrl } from '@/lib/techDateUtils';
 
-// Full-screen photo pager. Used by TechClaimDetail, TechClaimAlbum,
-// TechJobDetail, TechJobAlbum. Keep it self-contained — no entity-specific
-// props.
+// ─── SECTION: Render ──────────────
 export default function Lightbox({ photos, index, onClose, onIndex, db }) {
   if (!photos || photos.length === 0 || index == null) return null;
   const current = photos[index];

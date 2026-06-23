@@ -1,27 +1,51 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: GenerateReportButton.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A small "Reports" section on a job that lists any water-loss-report PDFs
+ *   already made for that job and gives the tech a button to generate a fresh
+ *   one. Generating sends a request to the report worker, waits for it to
+ *   finish, then refreshes the list. Tapping an existing report opens the PDF
+ *   in a new browser tab.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (section embedded in an appointment screen)
+ *   Rendered by:  src/pages/tech/TechAppointment.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/contexts/AuthContext (useAuth), @/lib/toast,
+ *              @/lib/nativeHaptics (impact)
+ *   Data:      reads  → job_documents (existing PDFs, category
+ *                        water_loss_report)
+ *              writes → none directly from this file — generation is performed
+ *                        by the /api/generate-water-loss-report worker (the
+ *                        worker writes the PDF + job_documents row). PDFs open
+ *                        via the public job-files storage path.
+ *
+ * NOTES / GOTCHAS:
+ *   - Hidden entirely unless the page:water_loss_report feature flag is on.
+ *   - The worker POST is authorized with the db anon apiKey (Bearer header).
+ *   - "Generating…" disables the button; the worker call is awaited inline, so
+ *     a slow worker keeps the spinner up until it returns.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import { impact } from '@/lib/nativeHaptics';
 
-/**
- * GenerateReportButton — renders a compact "Reports" section with existing
- * water-loss-report PDFs for this job plus a button to generate a new one.
- *
- * POSTs to `/api/generate-water-loss-report`, waits for the worker to
- * return, then refreshes the list. Previously-generated reports open in a
- * new tab via signed Supabase Storage URLs.
- *
- * Props:
- *   jobId — string (required)
- *   jobNumber — optional, displayed in the download name
- */
 export default function GenerateReportButton({ jobId, jobNumber }) {
+  // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
   const enabled = isFeatureEnabled('page:water_loss_report');
 
   const [reports, setReports] = useState([]);
   const [generating, setGenerating] = useState(false);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     if (!enabled || !jobId) { setReports([]); return; }
     try {
@@ -37,6 +61,7 @@ export default function GenerateReportButton({ jobId, jobNumber }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const handleGenerate = async () => {
     if (generating || !jobId) return;
     setGenerating(true);
@@ -72,6 +97,7 @@ export default function GenerateReportButton({ jobId, jobNumber }) {
 
   if (!enabled) return null;
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
       <div
