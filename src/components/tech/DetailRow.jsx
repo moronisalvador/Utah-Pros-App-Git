@@ -1,7 +1,28 @@
-// One line inside a collapsed details panel (Claim / Job).
-// Hides itself when value is empty. Supports optional tappable href
-// (tel:, mailto:), mono formatting (for ID numbers), capitalize,
-// and multiline (for notes).
+/**
+ * ════════════════════════════════════════════════
+ * FILE: DetailRow.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   One labeled line (e.g. "Phone: 801-555-…") inside a Claim or Job details
+ *   panel. If there's no value it shows nothing. The value can be a tappable
+ *   link (call / email), monospaced (for ID numbers), capitalized, or wrapped
+ *   across multiple lines (for notes).
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable row component)
+ *   Rendered by:  TechJobDetail.jsx, TechClaimDetail.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  none
+ *   Data:      none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: label, value, href (tel:/mailto:), mono, capitalize, multiline.
+ *   - Renders null when value is falsy — callers don't need to guard.
+ * ════════════════════════════════════════════════
+ */
 export default function DetailRow({ label, value, href, mono, capitalize, multiline }) {
   if (!value) return null;
   const valueStyle = {
@@ -14,6 +35,7 @@ export default function DetailRow({ label, value, href, mono, capitalize, multil
     textOverflow: multiline ? 'clip' : 'ellipsis',
     wordBreak: multiline ? 'break-word' : 'normal',
   };
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{
       display: 'flex', alignItems: multiline ? 'flex-start' : 'center',

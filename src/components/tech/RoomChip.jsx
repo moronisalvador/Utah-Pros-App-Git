@@ -1,17 +1,32 @@
 /**
- * RoomChip.jsx
- * Reusable chip for a single room — used in PhotoNoteSheet's room list
- * and later by moisture/equipment sheets in Phase 2.
+ * ════════════════════════════════════════════════
+ * FILE: RoomChip.jsx
+ * ════════════════════════════════════════════════
  *
- * Props:
- *   room      — { id, name, photo_count? }
- *   selected  — boolean (shows check + accent border)
- *   onClick   — click handler
- *   style     — optional style overrides
+ * WHAT THIS DOES (plain language):
+ *   A small tappable "chip" button showing a room's name (and an optional
+ *   photo count). When selected it gets a checkmark and an accent border.
+ *   Used in lists where a tech picks which room something belongs to.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable chip component)
+ *   Rendered by:  PhotoNoteSheet.jsx, EquipmentPlacementSheet.jsx,
+ *                 ReadingEntrySheet.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  none
+ *   Data:      none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: room { id, name, photo_count? }, selected, onClick, style.
+ *   - Min height honors --tech-min-tap (48px) for gloved-hand taps.
+ * ════════════════════════════════════════════════
  */
 export default function RoomChip({ room, selected = false, onClick, style }) {
   const hasCount = typeof room?.photo_count === 'number' && room.photo_count > 0;
 
+  // ─── SECTION: Render ──────────────
   return (
     <button
       type="button"
