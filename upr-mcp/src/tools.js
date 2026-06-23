@@ -7,7 +7,7 @@
 //   - Reads never mutate and don't need confirm.
 //   - Every call (read + write, preview + execute) is audit-logged by the caller.
 
-import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport } from './qbo.js';
+import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend } from './qbo.js';
 import { supabase } from './supabase.js';
 
 const n = (v) => (v == null ? v : Number(v));
@@ -268,6 +268,38 @@ export const TOOLS = {
     },
   },
 
+  // ── QBO convenience: send + estimates ────────────────────────────────────────
+  qbo_list_estimates: {
+    write: false,
+    description: 'List QBO estimates, optionally filtered by customer_id.',
+    inputSchema: { type: 'object', properties: { customer_id: { type: 'string' }, limit: { type: 'number' } } },
+    run: async (env, a) => {
+      const where = a.customer_id ? ` WHERE CustomerRef = '${esc(a.customer_id)}'` : '';
+      const qr = await qboQuery(env, `SELECT * FROM Estimate${where} ORDERBY TxnDate DESC MAXRESULTS ${Math.min(a.limit || 50, 200)}`);
+      return (qr.Estimate || []).map((e) => ({ id: e.Id, doc_number: e.DocNumber, total: e.TotalAmt, status: e.TxnStatus, customer: e.CustomerRef, txn_date: e.TxnDate }));
+    },
+  },
+  qbo_send_invoice: {
+    write: true,
+    description: 'Email a QBO invoice to the customer (uses the invoice billing email, or send_to to override). If QBO Payments is enabled, the email includes a pay-now link. Sends a real email — confirm carefully.',
+    inputSchema: { type: 'object', properties: { invoice_id: { type: 'string' }, send_to: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['invoice_id'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Email invoice ${a.invoice_id} to the customer${a.send_to ? ' at ' + a.send_to : ''}.`, { invoice_id: a.invoice_id, send_to: a.send_to || '(billing email on file)' });
+      const inv = await qboSend(env, 'invoice', a.invoice_id, a.send_to);
+      return { ok: true, sent_invoice_id: a.invoice_id, email_status: inv?.EmailStatus };
+    },
+  },
+  qbo_create_estimate: {
+    write: true,
+    description: 'Create a QBO estimate. lines = [{item_id, amount, description?, qty?, unit_price?, class_id?}].',
+    inputSchema: { type: 'object', properties: { customer_id: { type: 'string' }, lines: { type: 'array' }, memo: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['customer_id', 'lines'] },
+    run: async (env, a) => {
+      const payload = { CustomerRef: { value: String(a.customer_id) }, Line: buildInvoiceLines(a.lines), ...(a.memo ? { PrivateNote: a.memo } : {}) };
+      if (!a.confirm) return preview(`Create estimate for customer ${a.customer_id} with ${payload.Line.length} line(s).`, payload);
+      return qboCreate(env, 'Estimate', payload);
+    },
+  },
+
   // ── UPR (Supabase) — read + write the app's own database ─────────────────────
   upr_select: {
     write: false,
@@ -277,9 +309,14 @@ export const TOOLS = {
   },
   upr_rpc: {
     write: false,
-    description: 'Call a UPR Supabase RPC (database function) by name. Example: fn="get_dashboard_stats". NOTE: some RPCs mutate data — choose the function deliberately. Every call is audit-logged.',
-    inputSchema: { type: 'object', properties: { fn: { type: 'string' }, params: { type: 'object' } }, required: ['fn'] },
-    run: (env, a) => supabase(env).rpc(a.fn, a.params || {}),
+    description: 'Call a UPR Supabase RPC by name. Read functions (names starting get_/list_/search_/preview_/count_/fetch_) run immediately. Any other (mutating) function requires confirm:true and returns a preview first. Every call is audit-logged.',
+    inputSchema: { type: 'object', properties: { fn: { type: 'string' }, params: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['fn'] },
+    run: async (env, a) => {
+      const fn = String(a.fn || '');
+      const isRead = /^(get_|list_|search_|preview_|count_|fetch_)/.test(fn);
+      if (!isRead && !a.confirm) return preview(`Call mutating RPC ${fn}(...) — this may change data.`, { fn, params: a.params || {} });
+      return supabase(env).rpc(fn, a.params || {});
+    },
   },
   upr_schema: {
     write: false,
@@ -290,6 +327,56 @@ export const TOOLS = {
       const tables = Object.keys(doc.definitions || {}).sort();
       const functions = Object.keys(doc.paths || {}).filter((p) => p.startsWith('/rpc/')).map((p) => p.slice(5)).sort();
       return { tables, functions };
+    },
+  },
+  upr_describe: {
+    write: false,
+    description: 'Describe a UPR table (its columns) or an RPC function (its parameters), so you can build correct upr_select/upr_insert/upr_update queries and upr_rpc calls. Pass the exact table or function name.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    run: async (env, a) => {
+      const doc = await supabase(env).openapi();
+      const name = String(a.name || '');
+      const def = (doc.definitions || {})[name];
+      if (def && def.properties) {
+        return {
+          type: 'table', name, required: def.required || [],
+          columns: Object.entries(def.properties).map(([col, p]) => ({ name: col, type: p.format || p.type, description: p.description })),
+        };
+      }
+      const rpc = (doc.paths || {})['/rpc/' + name];
+      if (rpc && rpc.post) {
+        const params = [];
+        for (const p of (rpc.post.parameters || [])) {
+          if (p.in === 'body' && p.schema) {
+            const schema = p.schema.$ref ? (doc.definitions || {})[p.schema.$ref.split('/').pop()] : p.schema;
+            for (const [pn, pp] of Object.entries((schema && schema.properties) || {})) params.push({ name: pn, type: pp.format || pp.type });
+          } else if (p.name) {
+            params.push({ name: p.name, type: p.type, required: !!p.required });
+          }
+        }
+        return { type: 'function', name, parameters: params };
+      }
+      const tables = Object.keys(doc.definitions || {}).filter((t) => t.toLowerCase().includes(name.toLowerCase())).slice(0, 8);
+      const functions = Object.keys(doc.paths || {}).filter((p) => p.startsWith('/rpc/') && p.toLowerCase().includes(name.toLowerCase())).map((p) => p.slice(5)).slice(0, 8);
+      return { type: 'not_found', name, suggestions: { tables, functions } };
+    },
+  },
+  upr_search: {
+    write: false,
+    description: 'Quick cross-entity search by a free-text term: contacts (name/phone/email), jobs (job_number), claims (claim_number). Returns matches grouped by type.',
+    inputSchema: { type: 'object', properties: { term: { type: 'string' }, limit: { type: 'number' } }, required: ['term'] },
+    run: async (env, a) => {
+      const term = String(a.term || '').trim();
+      if (!term) throw new Error('term is required');
+      const t = encodeURIComponent(term);
+      const lim = Math.min(a.limit || 10, 50);
+      const db = supabase(env);
+      const [contacts, jobs, claims] = await Promise.all([
+        db.select('contacts', `or=(name.ilike.*${t}*,phone.ilike.*${t}*,email.ilike.*${t}*)&select=id,name,phone,email&limit=${lim}`).catch(() => []),
+        db.select('jobs', `job_number.ilike.*${t}*&select=id,job_number,division,status&limit=${lim}`).catch(() => []),
+        db.select('claims', `claim_number.ilike.*${t}*&select=id,claim_number,status&limit=${lim}`).catch(() => []),
+      ]);
+      return { contacts, jobs, claims };
     },
   },
   upr_insert: {
