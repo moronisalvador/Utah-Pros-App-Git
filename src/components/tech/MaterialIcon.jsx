@@ -1,15 +1,34 @@
 /**
- * MaterialIcon.jsx
- * Pure SVG icon per material type used in the Hydro reading flow.
- * Inline SVG, currentColor stroke/fill where appropriate so callers can
- * restyle with `color`. Kept legible from 18–28px.
+ * ════════════════════════════════════════════════
+ * FILE: MaterialIcon.jsx
+ * ════════════════════════════════════════════════
  *
- * Props:
- *   type  — one of the MATERIAL_LABELS keys
- *   size  — pixel size (default 18)
- *   ...rest — any extra SVG attrs (title, aria-*, etc.)
+ * WHAT THIS DOES (plain language):
+ *   Draws a small picture (icon) for each type of building material — drywall,
+ *   carpet, concrete, tile, and so on — used in the moisture-reading screens.
+ *   Also exports the list of material names those icons pair with. Pure
+ *   drawing: no data, just picks the right icon for the given type.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable icon component)
+ *   Rendered by:  TechAppointment.jsx, ReadingEntrySheet.jsx, StalledWidget.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  none
+ *   Data:      none
+ *
+ * EXPORTS:
+ *   MATERIAL_LABELS (key→label map); default MaterialIcon({ type, size, ...rest })
+ *
+ * NOTES / GOTCHAS:
+ *   - SVGs use currentColor, so callers restyle via `color`. Legible 18–28px.
+ *   - The four wood_* types intentionally share one grain icon.
+ *   - Unknown / 'other' types fall through to a generic layered-square icon.
+ * ════════════════════════════════════════════════
  */
 
+// ─── SECTION: Material labels ──────────────
 export const MATERIAL_LABELS = {
   drywall:          'Drywall',
   wood_subfloor:    'Wood Subfloor',
@@ -26,6 +45,7 @@ export const MATERIAL_LABELS = {
   other:            'Other',
 };
 
+// ─── SECTION: Render ──────────────
 export default function MaterialIcon({ type, size = 18, style, ...rest }) {
   const s = {
     width: size,
