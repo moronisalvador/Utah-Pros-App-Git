@@ -1,3 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechClaims.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The list of insurance claims a field technician browses on their phone.
+ *   They can switch between "My Claims" (claims they've worked) and "All
+ *   Claims", and type in a search box to filter by claim number, customer
+ *   name, city, or insurance company. Each row shows the customer, address,
+ *   and a few colored tags; tapping a row opens that claim's detail screen.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/claims
+ *   Rendered by:  src/App.jsx (the "tech/claims" route, inside the TechLayout
+ *                  shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              @/components/Icons, ./techConstants, @/lib/toast
+ *   Data:      All access goes through the db client from useAuth (RPC only).
+ *              Tables below were resolved from each RPC, not guessed:
+ *              reads  → appointment_crew, appointments, claims, contacts,
+ *                        job_documents, job_time_entries, jobs, system_events
+ *                        ("My Claims" → get_tech_claims); appointments, claims,
+ *                        contacts, job_documents, job_time_entries, jobs,
+ *                        system_events ("All Claims" → get_claims_list)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - "My Claims" calls get_tech_claims, but falls back to get_claims_list if
+ *     that RPC isn't deployed yet (wrapped in try/catch).
+ *   - The scope toggle (mine/all) is remembered per device in localStorage
+ *     under 'upr:tech-claims-scope'.
+ *   - Search is debounced 200ms and runs purely in memory over the already
+ *     loaded claims — it does not re-query the database.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +46,7 @@ import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techCon
 import { toast } from '@/lib/toast';
 
 export default function TechClaims() {
+  // ─── SECTION: State & hooks ──────────────
   const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
@@ -26,6 +66,7 @@ export default function TechClaims() {
     try { localStorage.setItem('upr:tech-claims-scope', scope); } catch { /* ignore */ }
   }, [scope]);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     if (!employee?.id) return;
     setLoading(true);
@@ -65,11 +106,13 @@ export default function TechClaims() {
     return () => clearTimeout(timer);
   }, [query, claims]);
 
+  // ─── SECTION: Helpers ──────────────
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
     return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }

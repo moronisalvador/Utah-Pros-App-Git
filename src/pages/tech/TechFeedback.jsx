@@ -1,8 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechFeedback.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A simple form where a field technician can report a bug or ask for a new
+ *   feature in the app. They pick "Bug" or "Feature", type a short title and
+ *   optional details, and can attach up to three screenshots. Submitting sends
+ *   it to the office and bounces the tech back to their dashboard.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/feedback
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast
+ *   Data:      All access goes through the db client from useAuth.
+ *              reads  → none
+ *              writes → tech_feedback (insert_tech_feedback)
+ *                        + job-files storage bucket (direct REST upload of
+ *                          screenshots under a feedback/… path)
+ *
+ * NOTES / GOTCHAS:
+ *   - Screenshots upload as soon as they're picked (max 3, 10 MB each,
+ *     image/* only); their storage paths are passed to the RPC as a JSON array.
+ *   - Submit stays disabled until a type is chosen, the title is at least 3
+ *     characters, and no screenshot is still uploading.
+ *   - Local preview URLs are created with URL.createObjectURL and revoked when
+ *     a photo is removed or its upload fails.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 
+// ─── SECTION: Constants ──────────────
 const MAX_PHOTOS = 3;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -24,12 +58,14 @@ export default function TechFeedback() {
   const { employee, db } = useAuth();
   const fileRef = useRef(null);
 
+  // ─── SECTION: State & hooks ──────────────
   const [type, setType] = useState(null);       // 'bug' | 'feature'
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState([]);      // [{ path, url, uploading }]
   const [submitting, setSubmitting] = useState(false);
 
+  // ─── SECTION: Event handlers ──────────────
   /* ── Photo capture ── */
   const handleAddPhoto = () => {
     if (photos.length >= MAX_PHOTOS) {
@@ -111,6 +147,7 @@ export default function TechFeedback() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-page" style={{ padding: 'var(--space-4)', paddingBottom: 'calc(var(--tech-nav-height) + 40px)' }}>
       {/* Header */}

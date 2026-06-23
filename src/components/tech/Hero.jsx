@@ -1,23 +1,45 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Hero.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The big colored banner at the top of a claim or job screen. It shows the
+ *   customer's name, the claim or job number, a tappable address, a status
+ *   pill, and a row of small detail text. The banner's color and watermark
+ *   icon change based on the division (water, fire, mold, etc.) so the tech
+ *   can tell what kind of job it is at a glance. It also holds the back
+ *   button and an optional "more actions" (•••) menu.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable banner, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx,
+ *                 src/pages/tech/TechJobDetail.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/pages/tech/techConstants (DIV_GRADIENTS — division colors),
+ *              @/components/DivisionIcons (DivisionIcon — watermark icon),
+ *              @/lib/techDateUtils (openMap — opens the maps app)
+ *   Data:      reads  → none (everything arrives as props)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: division ('water' | 'fire' | 'mold' | ... — drives gradient +
+ *     icon), eyebrow (tiny uppercase tag, e.g. "CLAIM" / "JOB"), topLabel
+ *     (mono claim/job number), title (insured name), address (tappable,
+ *     opens Maps), statusText (pill text), statusColors ({ color, bg?,
+ *     border? }), meta (array of strings joined with ' · '), onBack,
+ *     backLabel (back-button aria-label), showMenu (admin-only ••• menu),
+ *     onMenu.
+ *   - The address line opens the maps app via openMap().
+ * ════════════════════════════════════════════════
+ */
 import { DIV_GRADIENTS } from '@/pages/tech/techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { openMap } from '@/lib/techDateUtils';
 
-// Division-gradient hero used by TechClaimDetail and TechJobDetail.
-//
-// Props:
-//   division        — 'water' | 'fire' | 'mold' | ... (drives gradient + emoji)
-//   eyebrow         — tiny uppercase tag above the mono number ("CLAIM", "JOB")
-//                     — distinguishes entity type at a glance
-//   topLabel        — mono label above title (claim number or job number)
-//   title           — big insured name (24/700)
-//   address         — tappable address (opens Maps)
-//   statusText      — pill text (e.g. 'Open', 'Lead')
-//   statusColors    — { color, bg?, border? } for pill text color on white bg
-//   meta            — array of strings for the meta row (joined with ' · ')
-//   onBack          — function
-//   backLabel       — aria-label for back button
-//   showMenu        — boolean (admin-only kebab visibility)
-//   onMenu          — function
+// ─── SECTION: Render ──────────────
 export default function Hero({
   division, eyebrow, topLabel, title, address, statusText, statusColors,
   meta = [], onBack, backLabel = 'Back', showMenu, onMenu,

@@ -1,3 +1,62 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechDemoSheet.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The big form a field technician fills out on their phone after demolition
+ *   work — what was torn out of each room (drywall, flooring, cabinets, etc.).
+ *   The tech fills in job info, optionally links the job to an Encircle claim,
+ *   then adds a card per room and records quantities. The exact questions are
+ *   not hard-coded — they come from a "schema" loaded from the database, so the
+ *   form can change without changing this file. As they type, the sheet quietly
+ *   saves itself as a draft so nothing is lost. When done, "Review & Submit"
+ *   shows a read-only summary, saves the final sheet, emails it to the office,
+ *   and (if linked) posts a note back to Encircle.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/tools/demo-sheet
+ *   Rendered by:  src/App.jsx (the "tech/tools/demo-sheet" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast,
+ *              @/components/AddressAutocomplete,
+ *              @/components/demo-sheet/DemoSheetRenderer (shared schema-driven
+ *              renderer + design tokens, also used by the desktop builder)
+ *   Data:      All access goes through the db client from useAuth (RPC only),
+ *              never raw .from(). Tables below were resolved from each RPC's
+ *              SQL definition (not guessed):
+ *              reads  → employees (get_active_techs); demo_sheet_schemas
+ *                        (get_active_demo_schema, get_demo_schema); forms
+ *                        (get_demo_sheet, get_demo_sheet_drafts)
+ *              writes → forms (save_demo_sheet — also reads demo_sheet_schemas
+ *                        and employees while saving)
+ *
+ * NOTES / GOTCHAS:
+ *   - Schema-first: the page renders nothing until a schema loads. An existing
+ *     draft (?id=…) renders with the schema it was saved under (snapshotted via
+ *     schema_id) so old drafts keep their original fields; a fresh sheet uses
+ *     the currently-active schema.
+ *   - Autosave is debounced (2s) and best-effort — failures are swallowed and
+ *     only surfaced on submit. sheetIdRef / createInFlightRef guard against a
+ *     race where two saves fire before the first INSERT returns an id, which
+ *     would otherwise create duplicate drafts.
+ *   - Email and Encircle posting are best-effort and never block submit success;
+ *     the saved row in `forms` is the source of truth. The result screen shows
+ *     each side channel's status separately.
+ *   - Several `/api/…` calls hit Cloudflare worker endpoints, NOT Supabase
+ *     tables directly: /api/encircle-search, /api/encircle-rooms (Encircle job +
+ *     room lookup), /api/send-demo-sheet (emails the sheet), /api/encircle-upload
+ *     (posts the note to Encircle).
+ *   - resumeDraft() forces a full window.location.reload() to fully reset state
+ *     rather than relying on the bootstrap effect to re-hydrate.
+ *   - This file defines several helper components (EncircleSearchModal,
+ *     ReviewScreen, ResultScreen) and pure builders (buildEmailHTML,
+ *     buildNoteText) above the default-exported TechDemoSheet page.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,8 +74,10 @@ import {
   sectionHasContent,
 } from '@/components/demo-sheet/DemoSheetRenderer';
 
+// ─── SECTION: Encircle search modal (component) ──────────────
 // ── Encircle Job Search Sheet ────────────────────────────────────────────────
 function EncircleSearchModal({ onSelect, onClose }) {
+  // ─── SECTION: State & hooks ──────────────
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('policyholder_name');
   const [results, setResults] = useState([]);
@@ -25,6 +86,7 @@ function EncircleSearchModal({ onSelect, onClose }) {
   const [searched, setSearched] = useState(false);
   const debounceRef = useRef();
 
+  // ─── SECTION: Data fetching ──────────────
   const doSearch = useCallback(async (q) => {
     if (!q.trim()) { setResults([]); setSearched(false); return; }
     setLoading(true); setError(null);
@@ -39,6 +101,7 @@ function EncircleSearchModal({ onSelect, onClose }) {
     setLoading(false);
   }, [searchType]);
 
+  // ─── SECTION: Event handlers ──────────────
   const handleInput = (val) => {
     setQuery(val);
     clearTimeout(debounceRef.current);
@@ -51,6 +114,7 @@ function EncircleSearchModal({ onSelect, onClose }) {
     { key:'assignment_identifier', label:'Assignment #' },
   ];
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex', flexDirection:'column', background:C.bg }}>
       <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
@@ -129,6 +193,7 @@ function EncircleSearchModal({ onSelect, onClose }) {
 }
 
 
+// ─── SECTION: Helpers — email / note builders ──────────────
 // ── Email HTML / Encircle note builders (schema-driven) ──────────────────────
 //
 // Walks the active schema's sections per room, listing only fields that have
@@ -326,6 +391,7 @@ function prettySummaryKey(key) {
 
 
 
+// ─── SECTION: Review screen (component) ──────────────
 // ── Review Screen (schema-driven) ────────────────────────────────────────────
 //
 // Iterates schema.sections per room, using collectSectionEntries from the
@@ -333,6 +399,7 @@ function prettySummaryKey(key) {
 // skipped; gated sections answered "No" show as N/A pills. Job totals come
 // from computeSummary.
 function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+  // ─── SECTION: State & hooks ──────────────
   const sections = schema?.sections || [];
   const [expandedRooms, setExpandedRooms] = useState(new Set([rooms[0]?.id]));
   const toggleRoom = id => setExpandedRooms(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -349,6 +416,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
     return null;
   })();
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:'calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))' }}>
       <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', position:'sticky', top:0, zIndex:10, display:'flex', alignItems:'center', gap:12 }}>
@@ -466,9 +534,11 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
   );
 }
 
+// ─── SECTION: Result screen (component) ──────────────
 function ResultScreen({ result, onStartNew, onBack, onClose }) {
   const saveOk = result.saveOk;
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, textAlign:'center' }}>
       <div style={{ fontSize:72, marginBottom:20, lineHeight:1 }}>{saveOk ? '✅' : '❌'}</div>
@@ -556,8 +626,10 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
 }
 
 
+// ─── SECTION: Main page (component) ──────────────
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function TechDemoSheet() {
+  // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { db, employee } = useAuth();
@@ -591,6 +663,7 @@ export default function TechDemoSheet() {
   const applySheetId = (id) => { sheetIdRef.current = id; setSheetId(id); };
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
 
+  // ─── SECTION: Data fetching ──────────────
   // Active techs dropdown — replaces the original hardcoded list
   useEffect(() => {
     db.rpc('get_active_techs').then(rows => setTechs(rows || [])).catch(() => setTechs([]));
@@ -736,6 +809,7 @@ export default function TechDemoSheet() {
     return () => clearTimeout(saveTimerRef.current);
   }, [hydrated, rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone, sheetId, jobId, db, searchParams, setSearchParams, showResult]);
 
+  // ─── SECTION: Event handlers ──────────────
   const handleEncircleSelect = async (claim) => {
     setJobInfo(p => ({
       ...p,
@@ -772,6 +846,7 @@ export default function TechDemoSheet() {
     setRooms(p => [...p.slice(0, idx+1), copy, ...p.slice(idx+1)]);
   };
 
+  // ─── SECTION: Helpers — room completion (derived) ──────────────
   // A room is "complete" when the last section's doneFlag is set (e.g.
   // notesDone in v1). Schema-driven so future schemas with a different
   // final section keep working.
@@ -785,6 +860,7 @@ export default function TechDemoSheet() {
   const isRoomComplete = (r) => !!(lastDoneFlag && r[lastDoneFlag]);
   const allComplete = rooms.length > 0 && rooms.every(isRoomComplete);
 
+  // ─── SECTION: Event handlers — save & submit ──────────────
   // Flush any pending autosave then save the current state synchronously.
   // Returns the final sheet id, or throws.
   const flushSave = async ({ status = 'draft', emailOk = null, encircleNoteId = null } = {}) => {
@@ -977,6 +1053,7 @@ export default function TechDemoSheet() {
 
   const visibleDrafts = drafts.filter(d => d.id !== sheetId);
 
+  // ─── SECTION: Render ──────────────
   // Block render until the schema is loaded — otherwise rooms / sections
   // can't be built.
   if (!schema) {

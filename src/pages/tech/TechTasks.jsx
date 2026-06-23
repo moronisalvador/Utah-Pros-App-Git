@@ -1,14 +1,54 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechTasks.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The checklist screen where a field technician sees the tasks assigned to
+ *   them. They can switch between "Today" and "All", search, and tick tasks off
+ *   either by tapping the circle or swiping the row to the right (which shows a
+ *   green "Done"). Tasks are grouped by job, each group has its own little
+ *   progress bar, and the Today tab shows a ring with how many are finished.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/tasks
+ *   Rendered by:  src/App.jsx (the "tech/tasks" route, inside the TechLayout
+ *                  shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              @/lib/toast, @/lib/nativeHaptics
+ *   Data:      All access goes through the db client from useAuth (RPC only).
+ *              Tables below were resolved from each RPC, not guessed:
+ *              reads  → appointment_crew, appointments, contacts, job_tasks,
+ *                        jobs (get_assigned_tasks)
+ *              writes → job_tasks (toggle_appointment_task — also reads
+ *                        employees, job_tasks)
+ *
+ * NOTES / GOTCHAS:
+ *   - Tasks are NOT assigned to a tech directly: get_assigned_tasks joins
+ *     employee → appointment_crew → appointments → tasks internally.
+ *   - Toggling is optimistic — the checkbox flips immediately, then reverts if
+ *     the RPC fails. A togglingRef guards against double-fires on one task.
+ *   - Tab/search filtering and the job grouping all run in memory over the
+ *     already-loaded task list.
+ *   - Two sub-components live in this same file: CompletionRing, SwipeTaskRow.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { toast } from '@/lib/toast';
 import { impact } from '@/lib/nativeHaptics';
 
+// ─── SECTION: Constants ──────────────
 const TABS = [
   { key: 'today', label: 'Today' },
   { key: 'all', label: 'All' },
 ];
 
+// ─── SECTION: Helpers ──────────────
 /* ── Completion Ring SVG ── */
 
 function CompletionRing({ done, total }) {
@@ -118,6 +158,7 @@ function SwipeTaskRow({ task, onToggle }) {
 /* ── TechTasks Page ── */
 
 export default function TechTasks() {
+  // ─── SECTION: State & hooks ──────────────
   const { employee, db } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +167,7 @@ export default function TechTasks() {
   const [collapsed, setCollapsed] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -139,6 +181,7 @@ export default function TechTasks() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const toggleTask = async (task) => {
     if (togglingRef.current.has(task.task_id)) return;
     togglingRef.current.add(task.task_id);
@@ -180,6 +223,7 @@ export default function TechTasks() {
   });
   const groups = Object.entries(grouped);
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }

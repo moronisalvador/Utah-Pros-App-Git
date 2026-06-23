@@ -1,3 +1,38 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechJobAlbum.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A photo gallery for a single job, seen by a field technician. It shows all
+ *   of that job's photos in a grid, newest first, with the date and time under
+ *   each one. Tapping a photo opens it full-screen for zooming. An "Add Photo"
+ *   button lets the tech snap and upload a new picture right from the page.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/jobs/:jobId/photos
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, ./techConstants, @/lib/toast,
+ *              @/lib/nativeCamera, @/lib/nativeHaptics,
+ *              @/components/tech/Lightbox, @/lib/techDateUtils
+ *   Data:      All access goes through the db client from useAuth.
+ *              reads  → jobs (direct db.select); job_documents
+ *                        (direct db.select, photos only)
+ *              writes → job_documents (insert_job_document)
+ *                        + job-files storage bucket (direct REST upload)
+ *
+ * NOTES / GOTCHAS:
+ *   - This is the single-job version of TechClaimAlbum (no job grouping, no
+ *     job-picker sheet) — the photo upload + lightbox logic mirrors it.
+ *   - Photos are fetched by job_id only; appointment_id is always passed as
+ *     null on upload here.
+ *   - Uploads cap at 10 MB and must be image/*; the native camera path is used
+ *     on device, a hidden file input on web.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +48,7 @@ export default function TechJobAlbum() {
   const navigate = useNavigate();
   const { db, employee } = useAuth();
 
+  // ─── SECTION: State & hooks ──────────────
   const [job, setJob] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +57,7 @@ export default function TechJobAlbum() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -46,6 +83,7 @@ export default function TechJobAlbum() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const uploadPhoto = useCallback(async (file) => {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -126,6 +164,7 @@ export default function TechJobAlbum() {
   const tint = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
   const insuredName = job.insured_name || 'Unknown';
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-page tech-page-enter" style={{ padding: 0 }}>
       {/* Slim top bar */}

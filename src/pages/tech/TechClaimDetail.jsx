@@ -1,3 +1,60 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechClaimDetail.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The screen a field technician sees when they tap into a single insurance
+ *   claim. It shows who the claim is for, the loss address, and one big tile
+ *   per job tied to that claim (with task progress and the next appointment).
+ *   From here a tech can snap photos, jot notes, open rooms, view demo sheets,
+ *   and read the full claim details (carrier, policy, adjuster, homeowner).
+ *   Admins also get a menu to merge the claim into another or archive it.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/claims/:claimId
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, ./techConstants, @/components/DivisionIcons,
+ *              @/lib/toast, @/lib/nativeAppearance, @/lib/nativeCamera,
+ *              @/lib/nativeHaptics, @/components/MergeModal,
+ *              @/components/PullToRefresh, @/components/tech/Hero,
+ *              @/components/tech/ActionBar, @/components/tech/NowNextTile,
+ *              @/components/tech/PhotosGroup, @/components/tech/Lightbox,
+ *              @/components/tech/DetailRow, @/components/tech/RoomCard,
+ *              @/components/tech/AddRoomSheet, @/lib/techDateUtils,
+ *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *   Data:      All access goes through the db client from useAuth (RPC + REST),
+ *              never raw .from(). Tables below come from the RPC Data-Flow
+ *              Reference in UPR-Web-Context.md (not guessed):
+ *              reads  → claims, contacts, jobs (get_claim_detail);
+ *                        appointment_crew, appointments, employees, job_tasks, jobs
+ *                        (get_claim_appointments); job_documents, rooms
+ *                        (get_claim_rooms); forms, jobs (get_claim_demo_sheets);
+ *                        job_tasks (get_job_task_summary); job_documents
+ *                        (direct db.select)
+ *              writes → rooms (create_room_for_claim); job_documents
+ *                        (insert_job_document — used for both photos and notes);
+ *                        claims (direct db.update — soft-delete sets status
+ *                        'deleted'); job-files storage bucket (direct REST upload)
+ *
+ * NOTES / GOTCHAS:
+ *   - Photos have two upload paths: an offline-queue path (gated by the
+ *     'offline:queue' feature flag — stores the blob in IndexedDB and enqueues
+ *     a sync job) and the default inline path (uploads to Storage, then records
+ *     it via insert_job_document). Snap-first: never blocks the camera flow.
+ *   - The Rooms grid is feature-gated behind the 'page:tech_rooms' flag; when
+ *     off, get_claim_rooms is skipped entirely.
+ *   - When the offline queue is on, a sync listener reloads the page once a
+ *     queued photo for one of THIS claim's jobs finishes uploading.
+ *   - "Delete claim" is a soft delete (status → 'deleted'), gated to admins /
+ *     managers, and requires typing the word DELETE to confirm.
+ *   - JobTile is a sub-component defined in this same file (claim-specific —
+ *     the job detail page never renders multiple jobs, so it stays local).
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +79,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
+// ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -134,6 +192,7 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
 // Page
 // ───────────────────────────────────────────────────────────────
 export default function TechClaimDetail() {
+  // ─── SECTION: State & hooks ──────────────
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
@@ -179,6 +238,7 @@ export default function TechClaimDetail() {
     return () => statusBarDark();
   }, []);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -247,6 +307,7 @@ export default function TechClaimDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── SECTION: Event handlers ──────────────
   const uploadPhotoForJob = useCallback(async (file, jobId) => {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -420,6 +481,7 @@ export default function TechClaimDetail() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }

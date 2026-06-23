@@ -27,6 +27,7 @@
 11. **Always update `UPR-Web-Context.md` after any session that creates or modifies tables, RPCs, components, pages, or workers.** This applies whether or not a `*-TASK.md` file exists. The context doc is the permanent source of truth — if it's not documented there, the next session won't know it exists.
 12. **`viewport-fit=cover` is required in `index.html`.** This enables `env(safe-area-inset-bottom)` on iOS Safari. Without it, all safe area CSS evaluates to `0px` and bottom nav bars touch the home indicator. Never remove it.
 13. **Bottom nav safe area:** `.tech-nav` must use `padding-bottom: max(12px, env(safe-area-inset-bottom, 12px))` — the `max()` with 12px minimum ensures spacing even on devices where `env()` returns 0.
+14. **Every new code file ships with a Documentation Standard header.** Apply the header from the [Documentation Standard](#documentation-standard) section to every new `.js`/`.jsx` file under `src/` and `functions/`, and to every existing file you substantially edit (add the header if it's missing). Divide long files with `// ─── SECTION: … ──────────────` markers. This is enforced by a Stop hook (`.claude/hooks/check-doc-headers.sh`) that surfaces a non-blocking reminder if any changed code file is missing its header — it never blocks a session or a push.
 
 ---
 
@@ -461,3 +462,85 @@ When a `*-TASK.md` file exists in the repo root, it defines the active build tas
    - Commit with message: `docs: update UPR-Web-Context.md, remove completed <TASKFILE>.md`
 4. **Never leave a completed task file in the repo** — it becomes stale and misleads future sessions.
 5. **`UPR-Web-Context.md` is the permanent source of truth** — always up to date, never deleted.
+
+---
+
+## Documentation Standard
+
+When asked to document a file, apply this format exactly and identically
+across every file. Consistency is the priority — the labels below are used
+as search anchors by humans and AI tools, so do not reword them.
+
+### File header (top of every file)
+
+```
+/**
+ * ════════════════════════════════════════════════
+ * FILE: [filename]
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   [2-4 sentences, zero jargon. Explain it as if the reader has never
+ *    written code. What is this file, and what does it do?]
+ *
+ * WHERE IT LIVES:
+ *   Route:        [URL route if a routed page, else "n/a"]
+ *   Rendered by:  [best-effort: the file that renders this, if obvious,
+ *                  else "n/a" — do not guess]
+ *
+ * DEPENDS ON:
+ *   Packages:  [npm packages imported]
+ *   Internal:  [other project files imported]
+ *   Data:      reads  → [Supabase tables this READS from]
+ *              writes → [Supabase tables this WRITES to]
+ *
+ * NOTES / GOTCHAS:
+ *   - [non-obvious behavior, side effects, DB triggers, anything
+ *      that would surprise someone editing this later]
+ * ════════════════════════════════════════════════
+ */
+```
+
+### Field rules
+
+- **WHAT THIS DOES**: plain English only, no technical terms a non-developer
+  wouldn't know.
+  - Bad:  "Manages state via useState and dispatches async calls on mount."
+  - Good: "Keeps track of what's on the screen and loads the job's data
+           from the database when the screen opens."
+- **DEPENDS ON → Data**: derive reads/writes from the actual Supabase calls
+  (`.from('table').select` = read; `.insert` / `.update` / `.delete` = write).
+  Never invent a table name. If unsure whether something is a read or write,
+  write `UNCERTAIN — verify` rather than guessing. A wrong data-flow note is
+  worse than no note.
+
+### Non-component files
+
+For files that are NOT React components (utility modules, API clients,
+config, the Encircle reference, etc.): keep FILE, WHAT THIS DOES, DEPENDS ON,
+and NOTES — they apply to everything. Drop the component-only fields (Route,
+Rendered by) instead of filling them with "n/a", and adapt section names to
+fit the file (e.g. `Exports`, `Config`, `API calls`).
+
+### Section markers (inside longer files)
+
+Divide long files into logical sections using this exact marker so each file
+has a searchable outline. Keep section names consistent across files.
+
+```
+// ─── SECTION: [name] ──────────────
+```
+
+Standard section names: `State & hooks`, `Data fetching`, `Event handlers`,
+`Helpers`, `Render`.
+
+### Comment syntax (important)
+
+Inside JSX / `return ( ... )` blocks, use `{/* ... */}` — never `//`.
+A `//` comment inside JSX breaks rendering. Place `SECTION` markers above
+the return statement, outside the markup.
+
+### Inline comments
+
+Only on non-obvious logic. Explain WHY, not what. Never comment
+self-explanatory lines (no `// set loading to true`).

@@ -1,10 +1,37 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: ActionBar.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A row of three big buttons — Call, Navigate, and Message — that sits at
+ *   the top of a claim or job screen. Tapping Call opens the phone dialer,
+ *   Navigate opens the maps app pointed at the address, and Message opens the
+ *   phone's text-message app. If there is no phone number or address, the
+ *   matching button is shown greyed out and can't be tapped.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable button bar, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx,
+ *                 src/pages/tech/TechJobDetail.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/lib/techDateUtils (openMap — opens the maps app)
+ *   Data:      reads  → none (phone + address arrive as props)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: phone, address.
+ *   - TechAppointment has its own 5-button variant — this one was NOT
+ *     refactored to cover it.
+ *   - Message button uses the native sms:{phone} link. TODO: switch to
+ *     in-app SMS when available.
+ * ════════════════════════════════════════════════
+ */
 import { openMap } from '@/lib/techDateUtils';
 
-// 3-button action bar: Call · Navigate · Message.
-// Used by TechClaimDetail and TechJobDetail.
-// TechAppointment has its own (5-button) variant — not refactored here.
-//
-// Message button → native sms:{phone}. TODO: switch to in-app SMS when available.
+// ─── SECTION: Render ──────────────
 export default function ActionBar({ phone, address }) {
   const btnBase = {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',

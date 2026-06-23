@@ -1,20 +1,37 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AddRoomSheet.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A slide-up panel for adding a new room to a claim. The tech either taps one
+ *   of the common room names (Kitchen, Bathroom, etc.) or types a custom name,
+ *   and the room is created. Rooms are shared across every job on the claim.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (bottom sheet)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx (create room from the grid)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/pages/tech/techConstants (ROOM_TEMPLATES list)
+ *   Data:      reads  → none
+ *              writes → none directly — the parent's onCreate callback performs
+ *                        the create_room / create_room_for_claim RPC (writes
+ *                        rooms)
+ *
+ * NOTES / GOTCHAS:
+ *   - Common room names already on the claim are filtered out of the template
+ *     grid (case-insensitive) via the existingNames prop.
+ *   - Props: open, onClose, onCreate(name) => { id, name }, existingNames[].
+ *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect } from 'react';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
-/**
- * AddRoomSheet — bottom sheet for creating a new room on a claim.
- *
- * Simpler than PhotoNoteSheet: one purpose, one tap to create from template
- * or type a custom name. Used by TechClaimDetail (create room from grid) and
- * later by TechRoomDetail when changing room assignment.
- *
- * Props:
- *   open       — boolean
- *   onClose    — () => void
- *   onCreate   — async (name) => { id, name } — parent calls create_room* RPC
- *   existingNames — optional array of names to exclude from the template grid
- */
 export default function AddRoomSheet({ open, onClose, onCreate, existingNames = [] }) {
+  // ─── SECTION: State & hooks ──────────────
   const [creating, setCreating] = useState(false);
   const [customName, setCustomName] = useState('');
 
@@ -32,6 +49,7 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
     (t) => !existingSet.has(t.toLowerCase().trim())
   );
 
+  // ─── SECTION: Event handlers ──────────────
   const fireToast = (message, type = 'success') => {
     window.dispatchEvent(
       new CustomEvent('upr:toast', { detail: { message, type } })
@@ -53,6 +71,7 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div
       onClick={onClose}

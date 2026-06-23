@@ -1,3 +1,50 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechRoomDetail.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The screen that shows every photo and note for one room on a claim. Rooms
+ *   belong to the whole claim (not a single job), so a "Kitchen" room gathers
+ *   the full water + mold + reconstruction story in one place. The tech flips
+ *   between a Photos tab (grouped by day) and a Notes tab, taps a photo to view
+ *   it full-screen, and uses "Add Photo" to snap a new one — if the claim has
+ *   more than one job, they pick which job the photo belongs to first.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/claims/:claimId/rooms/:roomId
+ *   Rendered by:  src/App.jsx (the "tech/claims/:claimId/rooms/:roomId" route,
+ *                  inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  ./techConstants, @/components/DivisionIcons, @/lib/toast,
+ *              @/lib/nativeCamera, @/lib/nativeHaptics,
+ *              @/components/tech/Lightbox, @/lib/techDateUtils,
+ *              @/contexts/AuthContext, @/hooks/useOfflineQueue,
+ *              @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
+ *              Tables below were resolved from each call/RPC, not guessed:
+ *              reads  → claims, contacts, jobs (get_claim_detail);
+ *                        job_documents, rooms (get_claim_rooms);
+ *                        job_documents (direct db.select by room_id)
+ *              writes → job_documents (insert_job_document) + job-files storage
+ *                        bucket (direct REST upload) on the inline path; on the
+ *                        offline path the photo blob goes to IndexedDB
+ *                        (savePhotoBlob) and is enqueued for later sync
+ *
+ * NOTES / GOTCHAS:
+ *   - Every upload is pre-tagged with this room_id so the photo lands in the
+ *     right room even if it syncs hours later.
+ *   - Two upload paths: an offline-queue path gated by the 'offline:queue'
+ *     feature flag (stores blob + enqueues), and the default inline path
+ *     (Storage POST + insert_job_document). A sync:item-done listener reloads
+ *     the page when a queued photo for THIS room finishes uploading.
+ *   - Rooms are claim-scoped, so the room is found by matching roomId within
+ *     get_claim_rooms rather than fetched on its own.
+ *   - Sub-components in this file: TabButton, EmptyState, JobPicker.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,14 +59,8 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
-/**
- * TechRoomDetail — view photos + notes tagged to a single room, spanning
- * every job on the claim. Rooms are claim-scoped so a "Kitchen" tile shows
- * the full water + mold + recon story in one place.
- *
- * Route: /tech/claims/:claimId/rooms/:roomId
- */
 export default function TechRoomDetail() {
+  // ─── SECTION: State & hooks ──────────────
   const { claimId, roomId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
@@ -41,6 +82,7 @@ export default function TechRoomDetail() {
   const fileRef = useRef(null);
   const pendingJobRef = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -98,6 +140,7 @@ export default function TechRoomDetail() {
     return groups;
   }, [photos]);
 
+  // ─── SECTION: Event handlers ──────────────
   const uploadPhotoForJob = useCallback(async (file, jobId) => {
     if (!file || !jobId || !room) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -215,6 +258,7 @@ export default function TechRoomDetail() {
     else setJobPicker(true);
   };
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return <div className="tech-page"><div className="loading-page"><div className="spinner" /></div></div>;
   }
@@ -487,6 +531,7 @@ export default function TechRoomDetail() {
   );
 }
 
+// ─── SECTION: Helpers ──────────────
 function TabButton({ active, onClick, badge, children }) {
   return (
     <button
