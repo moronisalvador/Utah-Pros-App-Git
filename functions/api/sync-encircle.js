@@ -1,9 +1,46 @@
-// POST /api/sync-encircle
-// GET  /api/sync-encircle (for easy browser testing)
-// Fetches recent claims from Encircle, upserts into Supabase jobs + creates contacts.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: sync-encircle.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A backend endpoint (Cloudflare Pages Function) that pulls the 15 most
+ *   recent property claims from Encircle (our claims system) and copies them
+ *   into our database. Each claim becomes (or updates) a row in the jobs
+ *   table, and any claim with a reachable name also gets a contact record and
+ *   a service address. It's how the app stays in sync with Encircle.
+ *
+ * ENDPOINT:
+ *   POST /api/sync-encircle  — runs the sync (unauthenticated)
+ *   GET  /api/sync-encircle  — same, for quick browser testing (requires a
+ *                              Bearer token; verified against Supabase auth)
+ *
+ * DEPENDS ON:
+ *   Packages:      none (uses the platform fetch)
+ *   Internal:      ../lib/cors.js (handleOptions, jsonResponse)
+ *   External API:  Encircle REST API (api.encircleapp.com/v1/property_claims)
+ *   Env:           SUPABASE_URL / VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ *                  (falls back to anon key), ENCIRCLE_API_KEY
+ *   Data:          Direct PostgREST REST calls with the service key — does NOT
+ *                  use the frontend db client.
+ *                  reads  → contacts (dedup check by phone)
+ *                  writes → jobs (upsert on conflict (encircle_claim_id, division)),
+ *                            contacts (insert when missing),
+ *                            contact_addresses (insert)
+ *
+ * NOTES / GOTCHAS:
+ *   - The jobs upsert relies on a unique index on (encircle_claim_id, division);
+ *     on_conflict MUST name both columns or PostgREST fails with 42P10.
+ *   - division is hard-coded to 'reconstruction'.
+ *   - Contact dedup is by phone only — email-only contacts can still duplicate.
+ *   - POST is unauthenticated; only GET runs requireAuth. City/state/zip are
+ *     parsed heuristically from Encircle's single full_address string.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
+// ─── SECTION: Helpers ──────────────
 async function requireAuth(request, env) {
   const authHeader = request.headers.get('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -54,6 +91,7 @@ function parseAddressParts(fullAddress) {
   return { address: fullAddress, city: null, state: null, zip: null };
 }
 
+// ─── SECTION: Request handlers ──────────────
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
