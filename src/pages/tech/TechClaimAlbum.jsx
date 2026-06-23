@@ -1,3 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechClaimAlbum.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A photo gallery for one insurance claim, seen by a field technician. It
+ *   pulls every photo across all the jobs on that claim and lays them out in a
+ *   grid, grouped by job. Tapping a photo opens it full-screen so it can be
+ *   zoomed. An "Add Photo" button lets the tech snap a new picture — if the
+ *   claim has several jobs, a small sheet pops up first to ask which job the
+ *   photo belongs to.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/claims/:claimId/photos
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, ./techConstants,
+ *              @/components/DivisionIcons, @/lib/toast, @/lib/nativeCamera,
+ *              @/lib/nativeHaptics, @/components/tech/Lightbox,
+ *              @/lib/techDateUtils
+ *   Data:      All access goes through the db client from useAuth.
+ *              reads  → claims, contacts, jobs (get_claim_detail);
+ *                        job_documents (direct db.select, photos only)
+ *              writes → job_documents (insert_job_document)
+ *                        + job-files storage bucket (direct REST upload)
+ *
+ * NOTES / GOTCHAS:
+ *   - Photos are fetched by job_id (not appointment_id) for every job on the
+ *     claim, then grouped in-memory; the job headers only show when there's
+ *     more than one job.
+ *   - Opening with router state { focusJobId } scrolls that job's group into
+ *     view on mount.
+ *   - Uploads cap at 10 MB and must be image/*; the native camera path is used
+ *     on device, a hidden file input on web.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +57,7 @@ export default function TechClaimAlbum() {
   // Optional: open the page with a specific job's photos emphasized
   const focusJobId = location.state?.focusJobId || null;
 
+  // ─── SECTION: State & hooks ──────────────
   const [detail, setDetail] = useState(null);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +70,7 @@ export default function TechClaimAlbum() {
   const fileRef = useRef(null);
   const pendingPhotoJobIdRef = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -66,6 +107,7 @@ export default function TechClaimAlbum() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [focusJobId, loading]);
 
+  // ─── SECTION: Event handlers ──────────────
   const uploadPhotoForJob = useCallback(async (file, jobId) => {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
@@ -129,6 +171,7 @@ export default function TechClaimAlbum() {
     else setJobPicker(true);
   };
 
+  // ─── SECTION: Helpers ──────────────
   // Group docs by job (all already filtered to photos + newest first)
   const jobs = detail?.jobs || [];
   const photosByJob = useMemo(() => {
@@ -170,6 +213,7 @@ export default function TechClaimAlbum() {
   const { claim, contact } = detail;
   const insuredName = contact?.name || jobs[0]?.insured_name || 'Unknown';
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-page tech-page-enter" style={{ padding: 0 }}>
       {/* Slim top bar */}

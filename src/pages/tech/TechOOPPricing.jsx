@@ -1,3 +1,46 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechOOPPricing.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A mobile price calculator for "out of pocket" jobs (work a homeowner pays
+ *   for directly, not through insurance). The tech enters labor hours, how much
+ *   drying equipment is on site and for how long, materials, and fees; the page
+ *   adds it all up live into a customer quote and shows the profit margin with a
+ *   color warning if it's too thin. Quotes can be saved, reopened, linked to a
+ *   claim or job, and deleted.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/tools/oop-pricing
+ *                 (gated behind the "tool:oop_pricing" feature flag)
+ *   Rendered by:  src/App.jsx (inside the TechLayout shell, wrapped by FeatureRoute)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              @/components/ClaimPicker, @/lib/claimUtils, @/lib/toast,
+ *              @/lib/oopPricing (rates + all the math/formatting helpers)
+ *   Data:      All access goes through the db client from useAuth.
+ *              reads  → oop_quotes (get_oop_quote); claims, jobs
+ *                        (get_claim_jobs); jobs (direct db.select to prefill)
+ *              writes → oop_quotes (upsert_oop_quote, delete_oop_quote)
+ *
+ * NOTES / GOTCHAS:
+ *   - All the dollar math lives in @/lib/oopPricing (calcQuote) — this file is
+ *     just inputs + display, so changing rates means editing that lib, not here.
+ *   - Two entry modes via query string: ?quoteId=… hydrates an existing quote;
+ *     ?jobId=… prefills a fresh quote from that job. After a first save it
+ *     redirects to ?quoteId=… so reloads reopen the saved quote.
+ *   - Reset and Delete both use the two-click inline confirm pattern (no native
+ *     dialogs); onBlur cancels the armed state.
+ *   - Equipment steppers default to 3 drying days on the first increment.
+ *   - Mold job type reveals extra fields (negative-air setup, containment, PRV).
+ *   - Several sub-components live in this file: LiveTotalStrip, TotalCard,
+ *     InternalPanel, BR, Section, PillToggle, TextField, NumField, StepperRow,
+ *     LineHint.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,6 +70,7 @@ export default function TechOOPPricing() {
   const jobId = search.get('jobId') || null;
   const quoteId = search.get('quoteId') || null;
 
+  // ─── SECTION: State & hooks ──────────────
   const [loading, setLoading] = useState(!!(jobId || quoteId));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -38,6 +82,7 @@ export default function TechOOPPricing() {
   const [linkedClaim, setLinkedClaim] = useState(null);
   const [quote, setQuote] = useState(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const loadJob = async (id) => {
     const jobs = await db.select('jobs', `id=eq.${id}&select=id,job_number,insured_name,address,division,city,state`);
     return jobs?.[0] || null;
@@ -100,6 +145,7 @@ export default function TechOOPPricing() {
     }
   };
 
+  // ─── SECTION: Event handlers ──────────────
   const calc = useMemo(() => calcQuote(form), [form]);
   const isMold = form.jobType === 'mold';
   const marginTier = tierFor(calc.internal.netMarginPct);
@@ -205,6 +251,7 @@ export default function TechOOPPricing() {
     navigate('/tech/tools/oop-pricing', { replace: true });
   };
 
+  // ─── SECTION: Render ──────────────
   if (loading) {
     return (
       <div className="tech-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50dvh' }}>
@@ -429,6 +476,7 @@ export default function TechOOPPricing() {
   );
 }
 
+// ─── SECTION: Helpers ──────────────
 /* ── Sub-components ───────────────────────────────────────────────────── */
 
 /* Compact non-tappable strip shown at the top so the tech can see the

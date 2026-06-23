@@ -1,3 +1,43 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechNewAppointment.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen form a field technician uses on their phone to schedule a new
+ *   appointment for a job. They search for the job, pick a date and start/end
+ *   time, choose a type, optionally pick which crew members go and which of the
+ *   job's tasks to attach (and can add a new task on the spot), and add notes.
+ *   Saving creates the appointment, assigns the crew, and links the chosen tasks.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/new-appointment
+ *   Rendered by:  src/App.jsx (the "tech/new-appointment" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/components/DatePicker,
+ *              ./techFormConstants
+ *   Data:      All access goes through the db client from useAuth (RPC + REST).
+ *              Tables below were resolved from each RPC's SQL definition.
+ *              reads  → employees (db.select, active crew list); jobs (db.select,
+ *                        job search); job_tasks (get_unassigned_tasks);
+ *                        job_schedule_phases + job_schedules (add_adhoc_job_task)
+ *              writes → appointments (db.insert); appointment_crew (db.insert,
+ *                        one row per crew member); job_tasks (add_adhoc_job_task
+ *                        creates a task; assign_tasks_to_appointment links them)
+ *
+ * NOTES / GOTCHAS:
+ *   - The appointment title is auto-generated from the selected tasks' phase
+ *     names (e.g. "demo + dryout"); if no tasks are picked it falls back to
+ *     "Appointment <month day>".
+ *   - "Private" is only shown/saved for admins and project managers
+ *     (canTogglePrivate); the is_private column is only set when checked.
+ *   - An optional ?date= query param pre-fills the date (used when launched from
+ *     a specific day on the schedule).
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,6 +46,7 @@ import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
 
 export default function TechNewAppointment() {
+  // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
@@ -43,6 +84,7 @@ export default function TechNewAppointment() {
   const [showTasks, setShowTasks] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
+  // ─── SECTION: Data fetching ──────────────
   /* ── Load employees ── */
   useEffect(() => {
     db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role')
@@ -74,6 +116,7 @@ export default function TechNewAppointment() {
     } catch { setJobResults([]); } finally { setSearching(false); }
   }, [db]);
 
+  // ─── SECTION: Event handlers ──────────────
   const onJobSearch = e => {
     const v = e.target.value;
     setJobSearch(v);
@@ -189,6 +232,7 @@ export default function TechNewAppointment() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Header */}

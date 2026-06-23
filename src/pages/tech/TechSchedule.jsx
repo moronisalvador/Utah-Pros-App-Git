@@ -1,3 +1,46 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechSchedule.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The calendar screen a field technician uses to see their appointments. A
+ *   scrolling strip of dates runs across the top (tap the month to open a full
+ *   calendar), and below it the appointments show either as a continuous list
+ *   or one day at a time. They can search, filter to just their own work or to
+ *   a chosen crew member, and filter by division (mitigation vs reconstruction).
+ *   A "+" button starts a new job appointment or a personal event.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/schedule
+ *   Rendered by:  src/App.jsx (the "tech/schedule" route, inside the TechLayout
+ *                  shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *              ./techConstants, @/lib/toast, @/lib/scheduleUtils
+ *   Data:      All access goes through the db client from useAuth (RPC only).
+ *              Tables below were resolved from the RPC, not guessed:
+ *              reads  → appointment_crew, appointments, employees, jobs
+ *                        (get_appointments_range)
+ *              writes → none (creating appointments/events happens on the
+ *                        separate /tech/new-appointment and /tech/new-event
+ *                        screens this navigates to)
+ *
+ * NOTES / GOTCHAS:
+ *   - Loads one wide date window around the selected day, then does all
+ *     filtering (crew, division, search) and grouping in memory.
+ *   - Crew + division filter choices are saved per employee in localStorage
+ *     under `tech_schedule_filters_{employeeId}` (with a migration for the old
+ *     single-string employee filter format).
+ *   - In list view the page auto-scrolls so today's section lands at the top on
+ *     first render (todayScrollRef + a trailing 70vh spacer make this work even
+ *     when today is the last date with appointments).
+ *   - Several sub-components live in this same file: DateStrip, MonthPicker,
+ *     ApptRow.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,12 +49,14 @@ import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_BORDER_COLORS, TYPE_CONFIG } f
 import { toast } from '@/lib/toast';
 import { fmtDate } from '@/lib/scheduleUtils';
 
+// ─── SECTION: Constants ──────────────
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const STRIP_DAYS = 61; // ~1 month each side of today
 const STRIP_CENTER = 30; // index of today in the strip
 const DAY_WIDTH = 52; // px per day cell
 
+// ─── SECTION: Helpers ──────────────
 /* ── helpers ── */
 
 function addDays(d, n) {
@@ -390,6 +435,7 @@ function saveFilters(empId, filters) {
 /* ── Main Component ── */
 
 export default function TechSchedule() {
+  // ─── SECTION: State & hooks ──────────────
   const { employee, db } = useAuth();
   const navigate = useNavigate();
   const [allAppointments, setAllAppointments] = useState([]);
@@ -444,6 +490,7 @@ export default function TechSchedule() {
     return { start, end };
   }, [selectedDay]);
 
+  // ─── SECTION: Data fetching ──────────────
   const hasFetched = useRef(false);
   const load = useCallback(async () => {
     if (!hasFetched.current) setLoading(true);
@@ -509,6 +556,7 @@ export default function TechSchedule() {
 
   const hasActiveFilters = filterEmployee !== 'me' || filterDivision !== 'all';
 
+  // ─── SECTION: Event handlers ──────────────
   // Toggle an individual crew member in/out of multi-select
   const toggleCrewFilter = (id) => {
     setFilterEmployee(prev => {
@@ -582,6 +630,7 @@ export default function TechSchedule() {
     }
   };
 
+  // ─── SECTION: Render ──────────────
   return (
     <div className="tech-page" style={{ padding: 0, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Header — sticky, does not scroll with content */}

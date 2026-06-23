@@ -1,3 +1,39 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechNewEvent.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A full-screen form a field technician (or manager) uses on their phone to
+ *   put a non-job event on the schedule — things like a BNI meeting, PTO, or
+ *   team training. They give it a title, a date, a start/end time, optional
+ *   notes, and choose who it's for. Leaving the "Assigned to" list empty makes
+ *   it a company-wide block that everyone sees on the schedule board.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /tech/new-event
+ *   Rendered by:  src/App.jsx (the "tech/new-event" route, inside the
+ *                  TechLayout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/components/DatePicker,
+ *              ./techFormConstants
+ *   Data:      All access goes through the db client from useAuth (REST).
+ *              reads  → employees (active list, for the crew picker)
+ *              writes → appointments (db.insert, with kind='event' and no
+ *                        job_id), appointment_crew (one row per selected person)
+ *
+ * NOTES / GOTCHAS:
+ *   - This is the tech-side counterpart to the desktop EventModal. It creates an
+ *     appointments row with kind='event' and no job_id — intentionally thin: no
+ *     job picker, no tasks, no division.
+ *   - "Private" is only shown/saved for admins and project managers
+ *     (canTogglePrivate); the is_private column is only set when checked.
+ *   - An optional ?date= query param pre-fills the date (used when launched from
+ *     a specific day on the schedule).
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -5,12 +41,8 @@ import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormConstants';
 
-// Mobile full-page "New Event" — the tech-side counterpart to the desktop
-// EventModal. Creates an appointments row with kind='event' and no job_id.
-// Keep this form intentionally thin: title, date, start/end, notes, and
-// one-or-more crew. No job picker, no tasks, no division. Leaving crew
-// empty makes it a company-wide block (visible to all on the board).
 export default function TechNewEvent() {
+  // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
@@ -32,12 +64,14 @@ export default function TechNewEvent() {
   const [crewSearch, setCrewSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // ─── SECTION: Data fetching ──────────────
   useEffect(() => {
     db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,display_name,role,color')
       .then(e => setEmployees(e || []))
       .catch(() => {});
   }, [db]);
 
+  // ─── SECTION: Event handlers ──────────────
   const toggleCrew = (empId) => {
     setSelectedCrew(prev => {
       const exists = prev.find(c => c.employee_id === empId);
@@ -84,6 +118,7 @@ export default function TechNewEvent() {
     }
   };
 
+  // ─── SECTION: Helpers ──────────────
   // Visible crew = selected (always) + search matches
   const visibleEmployees = useMemo(() => employees.filter(emp => {
     if (selectedCrew.find(c => c.employee_id === emp.id)) return true;
@@ -93,6 +128,7 @@ export default function TechNewEvent() {
            (emp.full_name || '').toLowerCase().includes(q);
   }), [employees, selectedCrew, crewSearch]);
 
+  // ─── SECTION: Render ──────────────
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
