@@ -30,12 +30,14 @@
  */
 import { useAuth } from '@/contexts/AuthContext';
 export default function RoomCard({ room, coverFilePath = null, divisionGradient, onClick }) {
+  // ─── SECTION: State & hooks ──────────────
   const { db } = useAuth();
   const coverUrl =
     coverFilePath && db?.baseUrl
       ? `${db.baseUrl}/storage/v1/object/public/${coverFilePath}`
       : null;
 
+  // ─── SECTION: Render ──────────────
   return (
     <button
       type="button"

@@ -70,6 +70,7 @@
  * ------------------------------------------------------------------
  */
 
+// ─── SECTION: Constants ──────────────
 // Magnus coefficients (over water), Alduchov-Eskridge form.
 const MAGNUS_A = 17.625;
 const MAGNUS_B = 243.04; // °C
@@ -82,6 +83,8 @@ const GPP_CONSTANT = 7000 * 0.62198; // ≈ 4353.86
 
 // 1 hPa = 0.02953 inHg (NIST). Used to convert Magnus output (hPa) → inHg.
 const HPA_TO_INHG = 0.02953;
+
+// ─── SECTION: Helpers ──────────────
 
 /**
  * Internal: round to 2 decimal places for clean storage/display.
@@ -128,6 +131,7 @@ function validRH(rh) {
   return Number.isFinite(rh) && rh >= 0 && rh <= 100;
 }
 
+// ─── SECTION: Calculations (exports) ──────────────
 /**
  * Saturation vapor pressure in inches of mercury (inHg) at a given
  * dry-bulb temperature. Uses the Magnus-Tetens approximation in hPa
