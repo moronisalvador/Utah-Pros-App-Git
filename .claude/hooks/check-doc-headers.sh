@@ -4,11 +4,11 @@
 # ════════════════════════════════════════════════
 #
 # WHAT THIS DOES (plain language):
-#   A safety net that runs automatically whenever Claude finishes. It looks at
-#   the code files we created or changed since we adopted the documentation
+#   A gentle reminder that runs automatically whenever Claude finishes. It looks
+#   at the code files we created or changed since we adopted the documentation
 #   standard and checks that each one starts with the standard header. If any
-#   are missing it, it lists them and refuses to let the session end until
-#   they're documented.
+#   are missing it, it surfaces a warning listing them — but it NEVER blocks the
+#   session or a push (warn-only by design).
 #
 # DEPENDS ON:
 #   Tools:  git, jq, grep, head  (all present in the Claude Code environment)
@@ -16,8 +16,10 @@
 #           standard — everything at or before it is grandfathered)
 #
 # NOTES / GOTCHAS:
-#   - Mirrors stop-hook-git-check.sh: prints to stderr + exits 2 to surface
-#     actionable feedback to Claude; honors stop_hook_active to avoid recursion.
+#   - WARN-ONLY: prints a non-blocking warning (systemMessage) and ALWAYS exits 0
+#     — it must never block a session or push. (It was a hard block (exit 2)
+#     until Jun 23 2026, which bit other concurrent sessions/branches.) Honors
+#     stop_hook_active to avoid recursion.
 #   - Scope is "from now on", NOT the whole repo: it checks .js/.jsx under src/
 #     and functions/ that changed AFTER the baseline commit (baseline..HEAD) plus
 #     the current working tree. The large pre-existing backlog of un-headered
@@ -73,14 +75,15 @@ done < <(
 )
 
 if [[ ${#missing[@]} -gt 0 ]]; then
-  {
-    echo "Documentation Standard check failed — these code files were added or modified since the doc-standard baseline but are missing the required header (see the 'Documentation Standard' section in CLAUDE.md; the header must contain the anchor 'WHAT THIS DOES'):"
-    for f in "${missing[@]}"; do
-      echo "  - $f"
-    done
-    echo "Add the file header (and '// ─── SECTION: ... ──────────────' markers for long files), then commit. Do not finish until every changed code file under src/ and functions/ has a header."
-  } >&2
-  exit 2
+  # WARN-ONLY: surface a reminder to the user, then exit 0. Never block a push.
+  files_list="$(printf '  - %s\n' "${missing[@]}")"
+  warning="$(printf '⚠ Documentation Standard reminder — %d changed code file(s) under src/ or functions/ are missing a header (anchor "WHAT THIS DOES"):\n%s\nNon-blocking: add headers when convenient (see CLAUDE.md → Documentation Standard).' "${#missing[@]}" "$files_list")"
+  if command -v jq >/dev/null 2>&1; then
+    jq -n --arg m "$warning" '{systemMessage: $m}'
+  else
+    printf '%s\n' "$warning" >&2
+  fi
+  exit 0
 fi
 
 exit 0
