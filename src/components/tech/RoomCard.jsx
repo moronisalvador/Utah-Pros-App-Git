@@ -1,18 +1,34 @@
-import { useAuth } from '@/contexts/AuthContext';
-
 /**
- * RoomCard — tile in the claim-level Rooms grid.
+ * ════════════════════════════════════════════════
+ * FILE: RoomCard.jsx
+ * ════════════════════════════════════════════════
  *
- * Shows a cover photo (most recent photo tagged to this room across all
- * jobs on the claim) with the room name overlay at the bottom. Falls back
- * to a gradient empty state when no photos have been tagged yet.
+ * WHAT THIS DOES (plain language):
+ *   One square tile in the claim's "Rooms" grid. It shows the room's cover
+ *   photo (the most recent photo tagged to that room) with the room's name
+ *   across the bottom. If the room has no photos yet, it shows a colored
+ *   gradient instead. Tapping the tile opens that room.
  *
- * Props:
- *   room             — { id, name, photo_count }
- *   coverFilePath    — string | null (already resolved by parent)
- *   divisionGradient — optional gradient for the empty-state fallback
- *   onClick          — tap handler
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable tile, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx (the claim Rooms grid)
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/contexts/AuthContext (for db.baseUrl, to build the image URL)
+ *   Data:      reads  → none (the cover photo path is resolved by the parent;
+ *                        this only builds a public Storage URL from it)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Props: room { id, name, photo_count }, coverFilePath (string | null,
+ *     pre-resolved by the parent), divisionGradient (empty-state fallback),
+ *     onClick (tap handler).
+ *   - The cover image points at the PUBLIC job-files Storage path; on a load
+ *     error the <img> hides itself so the gradient + name show through.
+ * ════════════════════════════════════════════════
  */
+import { useAuth } from '@/contexts/AuthContext';
 export default function RoomCard({ room, coverFilePath = null, divisionGradient, onClick }) {
   const { db } = useAuth();
   const coverUrl =
