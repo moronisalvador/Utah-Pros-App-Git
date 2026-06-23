@@ -1,8 +1,44 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: NowNextTile.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   A single tappable tile that tells the tech what's happening on this claim
+ *   or job right now. Depending on the situation it reads "ON MY WAY",
+ *   "WORKING", "PAUSED", "TODAY", or "NEXT", with the appointment time, title,
+ *   job number, and crew first names. The tile's color matches the status so
+ *   it's readable at a glance. Tapping it opens that appointment. This file
+ *   also exports a small helper, pickNowNext, that decides which appointment
+ *   (if any) the tile should show.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (reusable tile + helper, not a routed page)
+ *   Rendered by:  src/pages/tech/TechClaimDetail.jsx (scope: whole claim),
+ *                 src/pages/tech/TechJobDetail.jsx (scope: single job)
+ *
+ * DEPENDS ON:
+ *   Packages:  none (React 19 automatic JSX runtime)
+ *   Internal:  @/lib/techDateUtils (formatTime, relativeDate)
+ *   Data:      reads  → none (appointments arrive as props/arguments)
+ *              writes → none
+ *
+ * EXPORTS:
+ *   NowNextTile (default) — the tile component.
+ *   pickNowNext(appointments, employeeId) — picks which appointment to show;
+ *     returns { ctxType, appt } or null. Priority: a live appointment the tech
+ *     is on (en_route / in_progress / paused) → today's → the soonest upcoming.
+ *
+ * NOTES / GOTCHAS:
+ *   - Tile props: appt, ctxType ('now_active' | 'today' | 'next', computed by
+ *     the caller via pickNowNext), onOpen.
+ *   - "now_active" only matches appointments whose crew includes this tech
+ *     (employeeId); completed/cancelled appointments are skipped.
+ * ════════════════════════════════════════════════
+ */
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
-// Context-aware "what's happening on this entity" tile.
-// ctxType: 'now_active' | 'today' | 'next' — computed by the caller.
-// Used by TechClaimDetail (scope: claim) and TechJobDetail (scope: single job).
+// ─── SECTION: Render ──────────────
 export default function NowNextTile({ appt, ctxType, onOpen }) {
   let label, bg, border, color;
   if (ctxType === 'now_active') {
@@ -58,6 +94,7 @@ export default function NowNextTile({ appt, ctxType, onOpen }) {
   );
 }
 
+// ─── SECTION: Helpers ──────────────
 // Helper: choose which appointment (if any) to show.
 // Returns { ctxType, appt } or null.
 export function pickNowNext(appointments, employeeId) {
