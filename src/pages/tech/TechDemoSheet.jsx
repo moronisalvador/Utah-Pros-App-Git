@@ -336,6 +336,50 @@ function buildNoteText(rooms, jobInfo, hasSketchDone, schema) {
   return out.trim();
 }
 
+// Structured render model handed to the /api/demo-sheet-pdf worker. All the
+// schema-walking lives here (client-side) so the worker stays a dumb layout
+// engine. Mirrors the content of buildEmailHTML / buildNoteText.
+function buildPdfModel(rooms, jobInfo, hasSketchDone, schema) {
+  const sections = schema?.sections || [];
+  const displayDate = jobInfo.date
+    ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'N/A';
+
+  const roomModels = rooms.map((r, i) => {
+    const dim = (r.lengthFt && r.widthFt && r.heightFt) ? `${r.lengthFt}' × ${r.widthFt}' × ${r.heightFt}'` : '';
+    const secModels = sections.map(sec => {
+      if (!sectionHasContent(sec, r)) return null;
+      const entries = collectSectionEntries(sec, r);
+      return {
+        label: `${sec.icon || ''} ${sec.label}`.trim(),
+        entries: entries.map(e => e.kind === 'group'
+          ? { kind: 'group', label: e.label }
+          : { kind: 'row', label: e.label, value: e.value == null ? '' : String(e.value) }),
+      };
+    }).filter(Boolean);
+    if (secModels.length === 0) return null;
+    return { index: i + 1, name: r.name || `Room ${i + 1}`, dim, sections: secModels };
+  }).filter(Boolean);
+
+  const totals = computeSummary(rooms, schema);
+  const totalRows = Object.entries(totals)
+    .filter(([, v]) => v && v !== 0)
+    .map(([k, v]) => ({ label: prettySummaryKey(k), value: typeof v === 'number' ? v.toLocaleString() : String(v) }));
+
+  return {
+    jobInfo: {
+      date: displayDate,
+      techName: jobInfo.techName || '',
+      jobNumber: jobInfo.jobNumber || '',
+      address: jobInfo.address || '',
+      insuredName: jobInfo.insuredName || '',
+    },
+    floorPlan: hasSketchDone ? 'Encircle / DocuSketch' : 'No sketch — dimensions recorded per room',
+    rooms: roomModels,
+    totals: totalRows,
+  };
+}
+
 // Cosmetic conversion of a summary key (e.g. drywallSF) to a label (e.g.
 // "Drywall SF"). Camel/snake split + first-letter capitalize.
 function prettySummaryKey(key) {
@@ -540,6 +584,21 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
               </div>
             </div>
           )}
+
+          {/* PDF — attached to the job's Files section (+ customer page) */}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:12, background:result.pdfAttached ? C.greenDim : C.cardAlt, border:`1.5px solid ${result.pdfAttached ? C.greenBd : C.border}`, borderRadius:10, padding:'12px 14px' }}>
+            <span style={{ fontSize:20, flexShrink:0 }}>📄</span>
+            <div style={{ textAlign:'left', minWidth:0, flex:1 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:result.pdfAttached ? C.green : C.muted }}>
+                {result.pdfAttached ? 'PDF saved to job files' : 'PDF not attached'}
+              </div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:2, wordBreak:'break-word' }}>
+                {result.pdfAttached
+                  ? 'Visible under the job + customer Files'
+                  : (result.pdfErr || 'Sheet isn’t linked to a job — saved anyway')}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -863,11 +922,13 @@ export default function TechDemoSheet() {
       saveErr = e?.message || 'Failed to save';
     }
 
-    // ── 2. Best-effort email + Encircle (don't block submit success) ──
+    // ── 2. Best-effort email + Encircle + job-file PDF (don't block submit) ──
     let emailOk = false;
     let emailErr = null;
     let encircleOk = false;
     let encircleNoteId = null;
+    let pdfAttached = false;
+    let pdfErr = null;
     const encircleSkipped = !encircleLinked?.id;
 
     if (saveOk) {
@@ -920,6 +981,40 @@ export default function TechDemoSheet() {
         );
       }
 
+      // Render the sheet to a PDF and attach it to the job's Files section.
+      // The worker resolves the job from jobId (or job_number) and is a no-op
+      // when the sheet isn't linked to a UPR job.
+      tasks.push(
+        fetch('/api/demo-sheet-pdf', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${db.apiKey}` },
+          body: JSON.stringify({
+            p_job_id: jobId || null,
+            job_number: jobInfo.jobNumber || null,
+            sheet_id: sheetIdRef.current || null,
+            requested_by: employee?.id || null,
+            model: buildPdfModel(rooms, jobInfo, hasSketchDone, schema),
+          }),
+        })
+          .then(async r => {
+            let parsed = null;
+            try { parsed = await r.json(); } catch { /* not JSON */ }
+            if (r.ok && parsed?.success) {
+              pdfAttached = parsed.attached === true;
+              if (!pdfAttached && parsed.reason !== 'no_matching_job') {
+                pdfErr = parsed.reason || 'not attached';
+              }
+            } else {
+              pdfErr = parsed?.error || `HTTP ${r.status}`;
+              console.error('[demo-sheet] demo-sheet-pdf failed:', pdfErr, parsed);
+            }
+          })
+          .catch(e => {
+            pdfErr = e?.message || 'network error';
+            console.error('[demo-sheet] demo-sheet-pdf network error:', e);
+          }),
+      );
+
       await Promise.all(tasks);
 
       // Update email_sent + encircle_note_id flags on the saved row (best effort).
@@ -931,7 +1026,7 @@ export default function TechDemoSheet() {
     }
 
     setSending(false);
-    setSubmitResult({ saveOk, saveErr, emailOk, emailErr, encircleOk, encircleSkipped });
+    setSubmitResult({ saveOk, saveErr, emailOk, emailErr, encircleOk, encircleSkipped, pdfAttached, pdfErr });
     setShowReview(false);
     setShowResult(true);
     if (saveOk) toast('Demo sheet saved', 'success');
