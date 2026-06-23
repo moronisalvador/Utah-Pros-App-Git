@@ -23,15 +23,19 @@
  *              @/lib/nativeGeolocation, @/lib/nativeHaptics,
  *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton
  *   Data:      All access goes through the db client from useAuth (RPC + REST),
- *              never raw .from(); the real tables are resolved inside each RPC.
- *              reads  → appointments / tasks / rooms, via get_my_appointments_today,
- *                        get_appointments_range, get_appointment_tasks,
- *                        get_active_appointment_geo, get_job_rooms
- *              writes → job_documents (db.update + insert_job_document &
- *                        move_photo_to_room RPCs); rooms (create_room RPC);
- *                        time tracking via clock_appointment_action RPC
- *                        (→ job_time_entries / appointments — verify exact tables);
- *                        + the job-files storage bucket (direct REST upload)
+ *              never raw .from(). Tables below were resolved from each RPC's
+ *              SQL definition (not guessed):
+ *              reads  → appointments, appointment_crew, jobs, employees
+ *                        (get_my_appointments_today, get_appointments_range,
+ *                         get_active_appointment_geo); job_tasks
+ *                        (get_appointment_tasks); rooms + job_documents
+ *                        (get_job_rooms); job_time_entries (get_active_appointment_geo)
+ *              writes → job_time_entries, appointments.status & system_events
+ *                        (clock_appointment_action — also auto-closes stale time
+ *                         entries and logs a system_event); job_documents
+ *                        (insert_job_document, move_photo_to_room, + a direct
+ *                         db.update for the photo caption); rooms (create_room)
+ *                        + job-files storage bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
  *   - Photos have two upload paths: an offline-queue path (gated by the
