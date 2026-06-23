@@ -411,9 +411,20 @@ export const TOOLS = {
 };
 
 export function toolList() {
-  return Object.entries(TOOLS).map(([name, t]) => ({
-    name,
-    description: (t.write ? '[WRITE] ' : '[read] ') + t.description,
-    inputSchema: t.inputSchema,
-  }));
+  return Object.entries(TOOLS).map(([name, t]) => {
+    // MCP annotations let Claude classify tools (and enable "Always allow" on reads).
+    // upr_rpc is read-capable but can also call mutating functions → not read-only.
+    const readOnly = name === 'upr_rpc' ? false : !t.write;
+    return {
+      name,
+      description: (t.write ? '[WRITE] ' : '[read] ') + t.description,
+      inputSchema: t.inputSchema,
+      annotations: {
+        title: name,
+        readOnlyHint: readOnly,
+        destructiveHint: readOnly ? false : /delete|relink|send|update|rpc/i.test(name),
+        openWorldHint: true,
+      },
+    };
+  });
 }
