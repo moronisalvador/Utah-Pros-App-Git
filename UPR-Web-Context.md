@@ -228,6 +228,8 @@ separate future project (Phase 4 below, decision pending).
   `localStorage` instant-apply mirror + Reset. RGL CSS is inlined + themed in `index.css`. Responsive: 12-col
   ≥996px, 1-col below.
 - **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+  **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
+  "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
 
 **Plan file (this session):** `/root/.claude/plans/yes-record-it-but-steady-kitten.md`.
 
