@@ -5095,7 +5095,7 @@ tr:hover td { background: var(--bg-secondary); }
 /* Hide app shell + input column + internal margin panel when printing.
    Keep only the customer-facing breakdown visible. */
 @media print {
-  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop { display: none !important; }
+  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop, .topnav, .overflow-drawer, .overflow-backdrop { display: none !important; }
   .oop-no-print { display: none !important; }
   .oop-print-only { display: block !important; }
   .oop-layout { grid-template-columns: 1fr !important; }
@@ -5108,4 +5108,158 @@ tr:hover td { background: var(--bg-secondary); }
 @media (max-width: 900px) {
   .oop-layout { grid-template-columns: 1fr !important; }
   .oop-breakdown { position: static !important; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Desktop top-nav shell — BIG SCREENS ONLY (≥1280px)
+   ───────────────────────────────────────────────────
+   Phones (≤768px) and iPads (769–1279px) are untouched:
+   they keep the dark sidebar + mobile bottom bar. Every
+   rule that actually changes the app shell lives in the
+   @media (min-width:1280px) block at the very bottom of
+   this section. The component styles before it are inert
+   on small screens because `.topnav` is display:none.
+   ═══════════════════════════════════════════════════ */
+.topnav {
+  display: none; /* shown only in the min-width:1280px block below */
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--topnav-h);
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  z-index: 60;
+}
+
+.topnav-menu-btn,
+.topnav-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-secondary); border-radius: var(--radius-md);
+  text-decoration: none; transition: background var(--transition-fast), color var(--transition-fast);
+}
+.topnav-menu-btn:hover,
+.topnav-icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.topnav-icon-btn.active { color: var(--accent); }
+
+.topnav-logo-link { display: inline-flex; align-items: center; flex-shrink: 0; text-decoration: none; }
+.topnav-logo {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: var(--text-sm);
+}
+
+.topnav-primary {
+  display: flex; align-items: stretch; gap: 2px;
+  height: 100%; margin-left: var(--space-2);
+  min-width: 0; overflow: hidden;
+}
+.topnav-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 100%; padding: 0 var(--space-3);
+  font-size: var(--text-base); font-weight: 500;
+  color: var(--text-secondary); text-decoration: none;
+  border-bottom: 2px solid transparent; white-space: nowrap;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.topnav-link:hover { color: var(--text-primary); text-decoration: none; }
+.topnav-link.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.topnav-badge {
+  background: var(--status-needs-response); color: #fff;
+  font-size: 10px; font-weight: 700; min-width: 16px; height: 16px;
+  border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px;
+}
+
+.topnav-right { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; flex-shrink: 0; }
+
+/* Global search box */
+.topnav-search { position: relative; display: flex; align-items: center; width: 240px; max-width: 26vw; }
+.topnav-search-icon { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--text-tertiary); pointer-events: none; }
+.topnav-search-input {
+  width: 100%; height: 36px; padding: 0 12px 0 32px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-full);
+  background: var(--bg-secondary); font-family: var(--font-sans);
+  font-size: var(--text-sm); color: var(--text-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.topnav-search-input:focus { outline: none; border-color: var(--accent); background: var(--bg-primary); box-shadow: 0 0 0 3px var(--accent-light); }
+.topnav-search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  max-height: 70vh; overflow-y: auto; z-index: 200; padding: var(--space-1);
+}
+.topnav-search-empty, .topnav-search-loading { padding: 14px; font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
+.topnav-search-group-label {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary); padding: 8px 10px 4px;
+}
+.topnav-search-item {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+  padding: 7px 10px; border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-md); color: var(--text-primary);
+}
+.topnav-search-item:hover, .topnav-search-item.active { background: var(--bg-tertiary); }
+.topnav-search-item-title { font-size: var(--text-sm); font-weight: 600; }
+.topnav-search-item-sub { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* "New" button + its dropdown */
+.topnav-new { position: relative; flex-shrink: 0; }
+.topnav-new-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 36px; padding: 0 14px; border: none; cursor: pointer;
+  background: var(--text-primary); color: #fff;
+  border-radius: var(--radius-full); font-family: var(--font-sans);
+  font-size: var(--text-sm); font-weight: 600; white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+.topnav-new-btn:hover, .topnav-new-btn.active { background: #000; }
+
+/* Shared dropdown menu (New + User) */
+.topnav-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 220px; background: var(--bg-primary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md); padding: var(--space-1); z-index: 200;
+}
+.topnav-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 8px 10px; border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-md); color: var(--text-primary);
+  font-family: var(--font-sans); font-size: var(--text-sm); text-decoration: none;
+}
+.topnav-menu-item:hover { background: var(--bg-tertiary); text-decoration: none; }
+.topnav-menu-item--danger { color: #dc2626; }
+.topnav-menu-item--danger:hover { background: #fef2f2; }
+.topnav-menu-emoji { font-size: 18px; flex-shrink: 0; width: 22px; text-align: center; }
+.topnav-menu-text { display: flex; flex-direction: column; min-width: 0; }
+.topnav-menu-label { font-size: var(--text-sm); font-weight: 600; }
+.topnav-menu-desc { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* User avatar + menu */
+.topnav-user { position: relative; flex-shrink: 0; }
+.topnav-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: 700;
+}
+.topnav-user-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--border-light); margin-bottom: var(--space-1); }
+.topnav-user-name { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.topnav-user-role { font-size: var(--text-xs); color: var(--text-tertiary); text-transform: capitalize; }
+
+/* ── Desktop activation — the ONLY rules that reshape the shell ── */
+@media (min-width: 1280px) {
+  :root { --topnav-h: 56px; }
+  .app-layout { flex-direction: column; }
+  .sidebar { display: none; }
+  .topnav { display: flex; }
+  /* Full-viewport pages use 100dvh and must now subtract the top bar */
+  .conversations-layout,
+  .jobs-page,
+  .job-page { height: calc(100dvh - var(--topnav-h)); }
 }

@@ -4,7 +4,7 @@ import NotificationBell from '@/components/NotificationBell';
 import { IconLogout } from './Icons';
 import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools } from '@/lib/navItems';
 
-export default function Sidebar({ isOpen, onNavClick, onAction }) {
+export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
 
   const initials = employee?.full_name
@@ -23,7 +23,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
       <div className="sidebar-header">
         <div className="sidebar-logo">U</div>
         <span className="sidebar-title">UPR Platform</span>
-        <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>
+        {showBell && <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>}
       </div>
 
       {/* Quick create buttons */}

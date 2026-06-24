@@ -56,7 +56,7 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ align = 'left' }) {
   const { db } = useAuth();
   const navigate = useNavigate();
   const dbRef = useRef(db);
@@ -161,7 +161,7 @@ export default function NotificationBell() {
           {/* click-away backdrop */}
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
           <div style={{
-            position: 'fixed', top: 56, left: 12, width: 340, maxWidth: 'calc(100vw - 24px)',
+            position: 'fixed', top: 56, [align === 'right' ? 'right' : 'left']: 12, width: 340, maxWidth: 'calc(100vw - 24px)',
             maxHeight: '70vh', display: 'flex', flexDirection: 'column', zIndex: 9999,
             background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)', overflow: 'hidden',
