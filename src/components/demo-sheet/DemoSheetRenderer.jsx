@@ -173,10 +173,11 @@ export function buildUnlocked(room, sections) {
 }
 
 // ── Required-field enforcement ───────────────────────────────────────────────
-// A field marked `required: true` must have an acceptable value before its
-// section's "Done → Next" unlocks. Measurements (stepper) and checkboxes are
-// ALWAYS acceptable — 0 / unchecked are valid answers — so they never block;
-// only choice/text fields must be non-empty.
+// Whether a field marked `required: true` is considered answered. Only ever
+// evaluated for required fields (see sectionRequiredMet), so the semantics are
+// "must have a real value": a required number must be > 0 and a required
+// checkbox must be checked. Fields NOT marked required are never checked here,
+// so an optional measurement left at 0 is still fine.
 export function fieldHasValue(field, ctx) {
   const v = ctx?.[field?.key];
   switch (field?.type) {
@@ -187,8 +188,12 @@ export function fieldHasValue(field, ctx) {
       return typeof v === 'string' ? v.trim().length > 0 : (v !== null && v !== undefined && v !== '');
     case 'multi-chip':
       return Array.isArray(v) && v.length > 0;
+    case 'stepper':
+      return Number(v) > 0;
+    case 'checkbox':
+      return v === true;
     default:
-      return true; // stepper / checkbox / computed / list → 0/unchecked/derived are valid
+      return true; // computed / list / unknown → treated as satisfied
   }
 }
 

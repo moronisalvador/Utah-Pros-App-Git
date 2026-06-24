@@ -847,9 +847,10 @@ function FieldEditor({ field, onChange }) {
   const update = (patch) => onChange({ ...field, ...patch });
   const t = field.type;
 
-  // "Required" only enforces for choice/text fields — steppers (0 OK) and
-  // checkboxes (unchecked OK) are always satisfied, so we don't offer it there.
-  const canRequire = ['single-chip', 'multi-chip', 'select', 'text', 'textarea'].includes(t);
+  // "Required" applies to every answerable field. For a number it means the
+  // tech must enter > 0; for a checkbox it must be checked; for a choice/text
+  // it must be non-empty. Not offered for layout-only `row` or derived `computed`.
+  const canRequire = t !== 'row' && t !== 'computed';
 
   // Type selector + universal fields
   const typeRow = (

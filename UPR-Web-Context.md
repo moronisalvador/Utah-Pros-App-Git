@@ -27,6 +27,8 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 **Single shared Supabase (dev + main).** One project (`glsmljpabrwonfiltiqm`) backs both environments, so migrations and data changes — e.g. **publishing a new `demo_sheet_schemas` version** — affect staging AND production at once. Sequence so production code is live before the schema it needs: seed new schema versions as a **draft** (`is_active=false`, inert), merge code to `main`, then call the activating RPC (`publish_demo_schema`). This prevents old production code from rendering a schema it can't handle.
 
+**Scope Sheet rollback (≈60s).** Schema and code revert independently — see CLAUDE.md → *Scope Sheet rollback runbook* for full steps. Fast paths: (1) **schema** — `SELECT publish_demo_schema('6b14aefb-4591-47ee-b00f-e12ddb8f956a');` reactivates v1 instantly (new code renders v1 via the hardcoded-sketch fallback); (2) **code** — `git revert -m 1 <merge-sha>` → `dev` → `dev → main` PR → Cloudflare redeploys. Old saved sheets keep their `schema_id` snapshot, so historical sheets are never affected. Prefer new schema *versions* over in-place edits for granular rollback.
+
 ---
 
 ## Stack
@@ -718,6 +720,20 @@ doc-category keys unchanged). Two new schema capabilities:
   the room list). Plus a per-room `containment` section (6 mil SF + tension posts + days +
   computed post-days). The tech page keeps the legacy hardcoded sketch card as a fallback for
   v1 schemas (no jobSections), so old drafts render unchanged.
+- **Required fields + enforcement** — fields carry an optional `required: true` (toggled per
+  question in the builder). A section's "Done → Next" is disabled until its visible required
+  fields are answered (`sectionRequiredMet`/`fieldHasValue`: required number > 0, required
+  checkbox checked, choice/text non-empty; non-required fields never block). v2 marks
+  category/class/source, emergency timing, and floor-protection type required (+ a "None used"
+  protection option). Because job sections are sequential and floor-plan is last, this makes the
+  required answers mandatory to submit.
+- **Autosave safety net** — TechDemoSheet mirrors the live draft to `localStorage`
+  (`scopesheet:draft:<id|pending>`) on every change; a header status shows Saving/Saved/Failed;
+  failed saves retry (~8s) and the mirror is restored on next load (cleared on confirmed save /
+  submit). Prevents field data loss on poor signal.
+- **Perf:** page routes are `React.lazy` + `Suspense` code-split (App.jsx) — initial JS dropped
+  from one ~1.9 MB chunk to ~335 KB + per-page chunks. Draft load fetches `get_demo_sheet` once
+  (deduped between the schema + bootstrap effects); job totals are `useMemo`-ized.
 
 ---
 
