@@ -29,6 +29,7 @@ export default function InvoiceEditor() {
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,7 +41,7 @@ export default function InvoiceEditor() {
       setJob(j || null);
       setClaim(j?.claim_id ? (await db.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await db.select('contacts', `id=eq.${cid}&select=name&limit=1`))?.[0] || null : null);
+      setContact(cid ? (await db.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       setLines(await db.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
     } catch (e) {
       toast('Failed to load invoice: ' + (e.message || e), 'error');
@@ -125,6 +126,15 @@ export default function InvoiceEditor() {
     catch (e) { toast('QuickBooks: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
+  // Ask QuickBooks to email the invoice to the customer. Two-click confirm — it's an
+  // outward-facing send to the client. Requires the invoice to already be in QBO.
+  const emailInvoice = async () => {
+    if (!confirmEmail) { setConfirmEmail(true); return; }
+    setConfirmEmail(false); setBusy(true);
+    try { const d = await callWorker({ action: 'send' }); toast(`Invoice emailed to ${d.emailed_to}`); await load(); }
+    catch (e) { toast('Email failed: ' + e.message, 'error'); }
+    finally { setBusy(false); }
+  };
   const removeFromQbo = async () => {
     if (!confirmRemove) { setConfirmRemove(true); return; }
     setConfirmRemove(false); setBusy(true);
@@ -193,6 +203,7 @@ export default function InvoiceEditor() {
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
             Sent {inv.sent_at ? fmtDate(inv.sent_at) : '—'} · Due {inv.due_date ? fmtDate(inv.due_date) : '—'}
+            {inv.qbo_emailed_at && <> · Emailed {fmtDate(inv.qbo_emailed_at)}</>}
           </div>
         </div>
         <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
@@ -255,6 +266,13 @@ export default function InvoiceEditor() {
           <button className="btn btn-primary" disabled={busy || total <= 0} onClick={syncToQbo}>
             {busy ? 'Working…' : synced ? 'Update in QuickBooks' : 'Send to QuickBooks'}
           </button>
+          {synced && (
+            <button className="btn btn-secondary" disabled={busy} onClick={emailInvoice} onBlur={() => setConfirmEmail(false)}
+              title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+              style={confirmEmail ? { background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe' } : undefined}>
+              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Re-email invoice' : '✉ Email to customer'}
+            </button>
+          )}
           {total > 0 && (
             inv.stripe_payment_link_url
               ? <button className="btn btn-secondary" disabled={busy} onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</button>
@@ -274,7 +292,7 @@ export default function InvoiceEditor() {
           )}
         </div>
       )}
-      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save automatically. Click <b>{synced ? 'Update' : 'Send'} in QuickBooks</b> to push the invoice. Record payments from the claim's A/R panel.</div>}
+      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save automatically. Click <b>{synced ? 'Update' : 'Send'} in QuickBooks</b> to push the invoice{synced ? <>, then <b>Email to customer</b> to have QuickBooks send it</> : ''}. Record payments from the claim's A/R panel.</div>}
     </div>
   );
 }

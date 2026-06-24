@@ -304,6 +304,29 @@ export async function updateInvoice(env, qboInvoiceId, fields) {
   return data.Invoice;
 }
 
+// Ask QuickBooks to EMAIL the invoice to the customer (QBO sends the email, with a
+// pay-now link if QBO Payments is on). `sendTo` overrides the recipient; if omitted,
+// QBO uses the customer's billing email (BillEmail / PrimaryEmailAddr) on the invoice.
+// QBO's send endpoint wants an empty octet-stream body; the response echoes the invoice
+// with EmailStatus = 'EmailSent'.
+export async function sendInvoice(env, qboInvoiceId, sendTo) {
+  const path = `/invoice/${qboInvoiceId}/send?minorversion=${MINOR_VERSION}`
+    + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
+  const res = await qboFetch(env, path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO send invoice ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Invoice;
+}
+
 // ── Payments (one-way UPR → QBO) ─────────────────────────────────────────────
 // Create a QBO Payment applied to an invoice. UPR records the payment first; this
 // mirrors it into QBO so the QBO invoice shows paid/partial. `txnDate` = 'YYYY-MM-DD'.
