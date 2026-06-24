@@ -5252,6 +5252,48 @@ tr:hover td { background: var(--bg-secondary); }
 .topnav-user-name { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
 .topnav-user-role { font-size: var(--text-xs); color: var(--text-tertiary); text-transform: capitalize; }
 
+/* Overflow "More" drawer (opened from the top-nav hamburger). Controlled by the
+   .open class (not a breakpoint), and only ever triggered on desktop; off-screen
+   + inert otherwise, so it's harmless on phones/iPads. */
+.overflow-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  z-index: 70; opacity: 0; pointer-events: none; transition: opacity 200ms ease;
+}
+.overflow-backdrop.open { opacity: 1; pointer-events: auto; }
+.overflow-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
+  background: var(--sidebar-bg); z-index: 71;
+  display: flex; flex-direction: column;
+  transform: translateX(-100%); transition: transform 250ms ease;
+  box-shadow: var(--shadow-lg);
+}
+.overflow-drawer.open { transform: translateX(0); }
+.overflow-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-4); border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.overflow-drawer-title { font-size: var(--text-base); font-weight: 600; color: var(--sidebar-text-active); }
+.overflow-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: none; background: none; cursor: pointer;
+  color: var(--sidebar-text); border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.overflow-drawer-close:hover { background: rgba(255,255,255,0.08); color: var(--sidebar-text-active); }
+.overflow-drawer-nav { flex: 1; overflow-y: auto; padding: var(--space-2); display: flex; flex-direction: column; gap: 1px; }
+.overflow-drawer-link {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3); border-radius: var(--radius-md);
+  color: var(--sidebar-text); font-size: var(--text-sm); font-weight: 500;
+  text-decoration: none; min-height: 44px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.overflow-drawer-link:hover { background: var(--sidebar-hover); color: var(--sidebar-text-active); text-decoration: none; }
+.overflow-drawer-link.active { background: var(--sidebar-active); color: var(--sidebar-accent); }
+.overflow-drawer-link .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+.overflow-drawer-link.active .nav-icon { opacity: 1; }
+.overflow-drawer-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--sidebar-text); }
+
 /* ── Desktop activation — the ONLY rules that reshape the shell ── */
 @media (min-width: 1280px) {
   :root { --topnav-h: 56px; }

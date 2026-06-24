@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
+import OverflowDrawer from './OverflowDrawer';
 import CreateJobModal from './CreateJobModal';
 import AddContactModal from './AddContactModal';
 import NewInvoiceModal from './NewInvoiceModal';
@@ -62,7 +63,10 @@ export default function Layout() {
   // ── Track the ≥1280px top-nav breakpoint (bell placement only) ──
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1280px)');
-    const handler = (e) => setIsDesktopNav(e.matches);
+    const handler = (e) => {
+      setIsDesktopNav(e.matches);
+      if (!e.matches) setOverflowOpen(false); // don't leave the desktop drawer stuck open after shrinking
+    };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
@@ -203,6 +207,9 @@ export default function Layout() {
       />
 
       <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleCreateAction} showBell={!isDesktopNav} />
+
+      {/* Desktop "More" drawer (≥1280px) — opened by the TopNav hamburger */}
+      <OverflowDrawer open={overflowOpen} onClose={() => setOverflowOpen(false)} />
 
       <main className="app-content">
         <Outlet />
