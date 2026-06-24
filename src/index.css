@@ -70,6 +70,9 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --bottom-bar-h: 72px;
+  /* Desktop top-nav height — 0 by default so mobile/iPad layout math is unchanged;
+     set to a real value only inside the @media (min-width:1280px) desktop block. */
+  --topnav-h: 0px;
 }
 
 html {
