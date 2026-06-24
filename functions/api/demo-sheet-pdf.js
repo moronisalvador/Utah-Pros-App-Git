@@ -198,6 +198,22 @@ async function buildDemoPdf(rawModel) {
   let curPage = null;
   let curY    = 0;
 
+  // Small colored accent square before each section label — a print-safe substitute
+  // for the on-screen emoji icons (WinAnsi can't encode emoji). Color cycles by the
+  // section's index so a given position is consistent across rooms.
+  const dotPalette = [
+    blue,
+    rgb(0.086, 0.639, 0.290), // green
+    rgb(0.851, 0.467, 0.024), // amber
+    rgb(0.486, 0.227, 0.929), // purple
+    rgb(0.020, 0.522, 0.620), // cyan
+    rgb(0.863, 0.149, 0.149), // red
+  ];
+  const drawSectionLabel = (label, idx) => {
+    curPage.drawRectangle({ x: M, y: curY - 1, width: 6, height: 6, color: dotPalette[idx % dotPalette.length] });
+    drawText(String(label || '').toUpperCase(), M + 11, curY, { font: fBold, size: 8.5, color: blue });
+  };
+
   const jobInfo = model.jobInfo || {};
   const jobNumLabel = jobInfo.jobNumber || '';
 
@@ -273,9 +289,10 @@ async function buildDemoPdf(rawModel) {
     curPage.drawRectangle({ x: M, y: curY - jbH + 4, width: CW, height: jbH, color: navy });
     drawText('LOSS & SITE DETAILS', M + 8, curY - 11, { font: fBold, size: 11, color: white });
     curY -= jbH + 10;
+    let secIdx = 0;
     for (const sec of jobSections) {
       needY(26);
-      drawText(String(sec.label || '').toUpperCase(), M, curY, { font: fBold, size: 8.5, color: blue });
+      drawSectionLabel(sec.label, secIdx++);
       curY -= 14;
       const entries = Array.isArray(sec.entries) ? sec.entries : [];
       for (const e of entries) {
@@ -319,10 +336,11 @@ async function buildDemoPdf(rawModel) {
     curY -= barH + 8;
 
     const sections = Array.isArray(room.sections) ? room.sections : [];
+    let rsi = 0;
     for (const sec of sections) {
       needY(26);
-      // Section label
-      drawText(String(sec.label || '').toUpperCase(), M, curY, { font: fBold, size: 8.5, color: blue });
+      // Section label — colored accent dot + label
+      drawSectionLabel(sec.label, rsi++);
       curY -= 14;
       const entries = Array.isArray(sec.entries) ? sec.entries : [];
       for (const e of entries) {
