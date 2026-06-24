@@ -660,6 +660,7 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
   "version": 1,
   "name": "v1 — initial port",
   "roomPresets": ["Living Room", "Kitchen", ...],
+  "jobSections": [ /* v2+ — JOB-LEVEL sections, asked once per sheet (see below) */ ],
   "sections": [
     {
       "key": "trim", "label": "Baseboard & Trim", "icon": "📏",
@@ -669,10 +670,12 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
         { "key": "baseboardLF", "type": "stepper", "label": "...",
           "unit": "LF", "step": 1, "small": true, "summaryKey": "baseboardLF" },
         // field types: stepper | single-chip | multi-chip | text | textarea |
-        //              checkbox | select | list (nested itemFields)
+        //              checkbox | select | list (nested itemFields) | row | computed
         // showWhen: { field, equals } | { field, includes }
         // unitWhen: { field, equals, thenLabel, thenUnit }   (dynamic unit)
         // summaryKey + summaryAggregate: 'sum' | 'tally' (for rollup totals)
+        // computed: { type:'computed', formula:{op:'multiply', a:<key>, b:<key>},
+        //            unit, summaryKey }  — read-only value = a×b, summed across contexts
       ]
     }
   ]
@@ -681,6 +684,24 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
 
 `forms.schema_id` (UUID, nullable, FK to demo_sheet_schemas) — every demo_sheet form
 points back to its schema. Backfilled to v1 for all pre-existing rows.
+
+**v2 — Scope Sheet (Jun 24 2026):** the demo sheet was extended into a fuller "scope sheet"
+for Xactimate estimating (user-facing label renamed Demo → **Scope Sheet**; route/table/RPC/
+doc-category keys unchanged). Two new schema capabilities:
+- **`jobSections`** — a top-level array of JOB-LEVEL sections (answered once per sheet, not
+  per room). Rendered FIRST in the tech page by the new `JobSections` component (shares
+  `Section`/`FieldRenderer` with `RoomCard`), guided/sequential like rooms. Job-section
+  answers persist in `forms.form_data.jobData`; their `summaryKey` fields roll into the same
+  `summary` totals. `computeSummary(rooms, jobData, schema)` now walks jobSections too.
+- **`computed` field type** — `formula:{op:'multiply', a, b}` displays a read-only product of
+  two sibling fields and aggregates via `summaryKey` (e.g. tension posts × days = post-days).
+- v2 seed (`9ff2566c-…`, **draft until published**) adds jobSections: Loss Details
+  (category/class/source of loss), Emergency Call (after-hours/business-hours), Floor
+  Protection (types + SF), Tests & Itel (asbestos/lead/Itel checkboxes), Scope Notes, and the
+  **folded floor-plan/sketch question** (gateField `hasSketchDone`, placed last so it gates
+  the room list). Plus a per-room `containment` section (6 mil SF + tension posts + days +
+  computed post-days). The tech page keeps the legacy hardcoded sketch card as a fallback for
+  v1 schemas (no jobSections), so old drafts render unchanged.
 
 ---
 
