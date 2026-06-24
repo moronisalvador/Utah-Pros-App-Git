@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
@@ -17,6 +17,12 @@ export default function InvoiceEditor() {
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
 
+  // Keep the latest db client in a ref. Supabase swaps the db object on every token
+  // refresh / tab refocus (SIGNED_IN / TOKEN_REFRESHED); without this, load() below
+  // would re-run on each swap and overwrite in-progress edits when you switch tabs.
+  const dbRef = useRef(db);
+  dbRef.current = db;
+
   const [inv, setInv] = useState(null);
   const [job, setJob] = useState(null);
   const [claim, setClaim] = useState(null);
@@ -31,24 +37,28 @@ export default function InvoiceEditor() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
 
+  // Reads via dbRef.current (not db) and depends only on invoiceId — so it runs once per
+  // invoice, not every time the auth token refreshes. That's what keeps your edits from
+  // being wiped when you leave and return to the tab.
   const load = useCallback(async () => {
+    const d = dbRef.current;
     setLoading(true);
     try {
-      const i = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
+      const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       setInv(i);
-      const j = i.job_id ? (await db.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await db.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
+      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
-      setContact(cid ? (await db.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await db.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
+      setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
+      setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
     } catch (e) {
       toast('Failed to load invoice: ' + (e.message || e), 'error');
     } finally {
       setLoading(false);
     }
-  }, [db, invoiceId, navigate]);
+  }, [invoiceId, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -93,6 +103,9 @@ export default function InvoiceEditor() {
       return next;
     }));
   };
+  // Persist a line on blur WITHOUT reloading — local state already reflects the edit
+  // (setLineLocal computes line_total), so a refetch would only cause the page to blink
+  // and could clobber the field you tab into next.
   const saveLine = async (line) => {
     try {
       // description is NOT NULL; line_total is generated (quantity * unit_price) — don't write it.
@@ -102,7 +115,6 @@ export default function InvoiceEditor() {
         qbo_class_id: line.qbo_class_id || null, qbo_class_name: line.qbo_class_name || null,
         quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0),
       });
-      await load();
     } catch (e) { toast('Failed to save line: ' + (e.message || e), 'error'); }
   };
   const removeLine = async (line) => {
