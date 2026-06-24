@@ -46,7 +46,7 @@ export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.
       title="Revenue recognized"
       suffix={periodLabel}
       showHandle={showHandle}
-      right={<DeltaPill dir={data.delta.dir} pct={data.delta.pct} />}
+      right={data.delta ? <DeltaPill dir={data.delta.dir} pct={data.delta.pct} /> : null}
     >
       <div style={{ fontSize: 33, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>
         {data.total}
@@ -101,7 +101,10 @@ export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicke
 }
 
 export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
-  const conic = `conic-gradient(${data.slices.map(s => `${s.color} ${s.from}% ${s.to}%`).join(', ')})`;
+  const hasData = data.slices.length > 0;
+  const conic = hasData
+    ? `conic-gradient(${data.slices.map(s => `${s.color} ${s.from}% ${s.to}%`).join(', ')})`
+    : C.track;
   return (
     <Card spanClass="ovw-span-4" title="Open estimates" showHandle={showHandle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -113,7 +116,7 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
           </div>
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}>
-          {data.slices.map(s => (
+          {hasData ? data.slices.map(s => (
             <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flex: 'none' }} />
               <div style={{ minWidth: 0 }}>
@@ -122,7 +125,9 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
               </div>
               <span style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: C.ink, ...tnum }}>{s.value}</span>
             </div>
-          ))}
+          )) : (
+            <div style={{ fontSize: 12.5, color: C.faint, fontWeight: 500 }}>No open estimates right now</div>
+          )}
         </div>
       </div>
       <CardFooter>
@@ -192,6 +197,11 @@ export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying }) {
       headGap={6}
       right={<FootLink>View all</FootLink>}
     >
+      {data.rows.length === 0 && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, color: C.faint, fontSize: 13, fontWeight: 500 }}>
+          No active drying jobs right now
+        </div>
+      )}
       {data.rows.map(r => {
         const s = STATUS[r.status] || STATUS.info;
         return (

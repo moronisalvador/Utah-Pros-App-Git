@@ -47,6 +47,12 @@ import {
 import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
 import { useCollections } from '@/components/overview/hooks/useCollections';
 import { useNewClaims } from '@/components/overview/hooks/useNewClaims';
+import { useRevenue } from '@/components/overview/hooks/useRevenue';
+import { useAvgTicket } from '@/components/overview/hooks/useAvgTicket';
+import { useOpenEstimates } from '@/components/overview/hooks/useOpenEstimates';
+import { usePipeline } from '@/components/overview/hooks/usePipeline';
+import { useActiveDrying } from '@/components/overview/hooks/useActiveDrying';
+import { useActionItems } from '@/components/overview/hooks/useActionItems';
 
 export default function Dashboard() {
   // ─── SECTION: State & hooks ──────────────
@@ -57,10 +63,18 @@ export default function Dashboard() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  // Phase 2 live widgets (the rest still render placeholder data).
+  // Phase 2 live-data hooks (one per widget). Jobs completed stays placeholder
+  // (no completion signal in the data yet). Open estimates / Active drying are
+  // wired but currently empty (estimates + Hydro not in use).
   const emp = useEmployeeStatus();
   const coll = useCollections();
   const claims = useNewClaims(period);
+  const rev = useRevenue(period);
+  const avg = useAvgTicket(period);
+  const est = useOpenEstimates();
+  const pipeline = usePipeline();
+  const drying = useActiveDrying();
+  const actions = useActionItems();
 
   // ─── SECTION: Event handlers ──────────────
   const handleEditLayout = () => {
@@ -114,16 +128,16 @@ export default function Dashboard() {
       </header>
 
       <main className="ovw-grid">
-        <RevenueRecognized periodLabel={periodLabel} showHandle={showHandles} />
-        <AvgTicket periodLabel={periodLabel} showHandle={showHandles} />
-        <OpenEstimates showHandle={showHandles} />
+        <RevenueRecognized periodLabel={periodLabel} showHandle={showHandles} data={rev.data ?? undefined} />
+        <AvgTicket periodLabel={periodLabel} showHandle={showHandles} data={avg.data ?? undefined} />
+        <OpenEstimates showHandle={showHandles} data={est.data ?? undefined} />
         <NewClaimsBooked periodLabel={periodLabel} showHandle={showHandles} data={claims.data ?? undefined} />
         <JobsCompleted periodLabel={periodLabel} showHandle={showHandles} />
-        <ActiveDrying showHandle={showHandles} />
+        <ActiveDrying showHandle={showHandles} data={drying.data ?? undefined} />
         <Collections showHandle={showHandles} data={coll.data ?? undefined} />
-        <ActionRequired showHandle={showHandles} />
+        <ActionRequired showHandle={showHandles} data={actions.data?.items ?? undefined} summary={actions.data?.summary ?? undefined} />
         <EmployeeStatus data={emp.data ?? undefined} summary={emp.summary ?? undefined} showHandle={showHandles} />
-        <ProductionPipeline showHandle={showHandles} />
+        <ProductionPipeline showHandle={showHandles} data={pipeline.data ?? undefined} />
       </main>
 
       <div style={{ marginTop: 20, fontSize: 11.5, color: '#a4abb6', textAlign: 'center', lineHeight: 1.6 }}>
