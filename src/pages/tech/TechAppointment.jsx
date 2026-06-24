@@ -1267,7 +1267,7 @@ export default function TechAppointment() {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Demo Sheet
+                Scope Sheet
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                 Capture scope of work room-by-room and email it

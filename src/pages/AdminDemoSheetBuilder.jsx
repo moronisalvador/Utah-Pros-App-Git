@@ -11,12 +11,12 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
-import { RoomCard, makeDefaultRoom, C as RC } from '@/components/demo-sheet/DemoSheetRenderer';
+import { RoomCard, JobSections, makeDefaultRoom, makeDefaultJobData, C as RC } from '@/components/demo-sheet/DemoSheetRenderer';
 
 // Allowed field types (kept in sync with TechDemoSheet's FieldRenderer).
 const FIELD_TYPES = [
   'stepper', 'single-chip', 'multi-chip', 'text', 'textarea',
-  'checkbox', 'select', 'list', 'row',
+  'checkbox', 'select', 'list', 'row', 'computed',
 ];
 
 const FIELD_TYPE_LABELS = {
@@ -29,6 +29,7 @@ const FIELD_TYPE_LABELS = {
   'select':      'Dropdown',
   'list':        'Repeating list',
   'row':         'Row layout (group N fields)',
+  'computed':    'Computed (a × b)',
 };
 
 // ── Schema-mutation helpers ──────────────────────────────────────────────────
@@ -66,6 +67,7 @@ function emptyField(type = 'stepper') {
     case 'select':      return { ...base, options: ['', 'Option A', 'Option B'] };
     case 'list':        return { ...base, addLabel: 'Add item', itemLabel: 'Item', defaultItem: {}, itemFields: [] };
     case 'row':         return { type: 'row', cols: 2, fields: [] };
+    case 'computed':    return { ...base, formula: { op: 'multiply', a: '', b: '' }, unit: '', summaryKey: '' };
     default:            return base;
   }
 }
@@ -84,30 +86,46 @@ function validateSchemaShape(def) {
   if (!def || typeof def !== 'object') return ['Definition must be an object'];
   if (!Array.isArray(def.roomPresets)) errors.push('roomPresets must be an array of strings');
   if (!Array.isArray(def.sections))    errors.push('sections must be an array');
-  (def.sections || []).forEach((s, i) => {
-    if (!s.key)   errors.push(`sections[${i}]: missing "key"`);
-    if (!s.label) errors.push(`sections[${i}]: missing "label"`);
+
+  // Validates one section (used for both per-room `sections` and job-level
+  // `jobSections`). `group` is the array name used in error prefixes.
+  const validateSection = (s, i, group) => {
+    if (!s.key)   errors.push(`${group}[${i}]: missing "key"`);
+    if (!s.label) errors.push(`${group}[${i}]: missing "label"`);
     if (!s.alwaysOn && !s.gateField) {
-      errors.push(`sections[${i}] (${s.key || 'unnamed'}): must have alwaysOn=true or a gateField`);
+      errors.push(`${group}[${i}] (${s.key || 'unnamed'}): must have alwaysOn=true or a gateField`);
     }
     if (s.alwaysOn && !s.doneFlag) {
-      errors.push(`sections[${i}] (${s.key || 'unnamed'}): alwaysOn=true requires a doneFlag`);
+      errors.push(`${group}[${i}] (${s.key || 'unnamed'}): alwaysOn=true requires a doneFlag`);
     }
-    if (!Array.isArray(s.fields)) errors.push(`sections[${i}] (${s.key || 'unnamed'}): fields must be an array`);
+    if (!Array.isArray(s.fields)) errors.push(`${group}[${i}] (${s.key || 'unnamed'}): fields must be an array`);
     walkFields(s.fields || [], (f, path) => {
       if (f.type === 'row') {
-        if (!Array.isArray(f.fields)) errors.push(`${path}: row must have a "fields" array`);
-        if (typeof f.cols !== 'number') errors.push(`${path}: row missing numeric "cols"`);
+        if (!Array.isArray(f.fields)) errors.push(`${group}${path}: row must have a "fields" array`);
+        if (typeof f.cols !== 'number') errors.push(`${group}${path}: row missing numeric "cols"`);
         return;
       }
-      if (!f.key) errors.push(`${path}: missing "key"`);
-      if (!f.type) errors.push(`${path}: missing "type"`);
-      else if (!FIELD_TYPES.includes(f.type)) errors.push(`${path}: unknown type "${f.type}"`);
+      if (!f.key) errors.push(`${group}${path}: missing "key"`);
+      if (!f.type) errors.push(`${group}${path}: missing "type"`);
+      else if (!FIELD_TYPES.includes(f.type)) errors.push(`${group}${path}: unknown type "${f.type}"`);
       if (f.type === 'list' && !Array.isArray(f.itemFields)) {
-        errors.push(`${path}: list field needs "itemFields"`);
+        errors.push(`${group}${path}: list field needs "itemFields"`);
+      }
+      if (f.type === 'computed') {
+        if (!f.formula || !f.formula.a || !f.formula.b) {
+          errors.push(`${group}${path}: computed field needs formula.a and formula.b (sibling field keys)`);
+        }
       }
     });
-  });
+  };
+
+  (def.sections || []).forEach((s, i) => validateSection(s, i, 'sections'));
+
+  // jobSections is OPTIONAL (v1 schemas don't have it). Only validate when present.
+  if (def.jobSections !== undefined) {
+    if (!Array.isArray(def.jobSections)) errors.push('jobSections must be an array');
+    else (def.jobSections).forEach((s, i) => validateSection(s, i, 'jobSections'));
+  }
   return errors;
 }
 
@@ -541,12 +559,45 @@ function JsonView({ text, onChange }) {
 function VisualEditor({ def, onChange }) {
   const updateRoomPresets = (presets) => onChange({ ...def, roomPresets: presets });
   const updateSections    = (sections) => onChange({ ...def, sections });
+  const updateJobSections = (jobSections) => onChange({ ...def, jobSections });
 
   const addSection = () => updateSections([...(def.sections || []), emptySection()]);
+  const addJobSection = () => updateJobSections([...(def.jobSections || []), emptySection()]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       <RoomPresetsCard presets={def.roomPresets || []} onChange={updateRoomPresets} />
+
+      {/* Job-level sections (asked once per sheet — loss details, tests/Itel, etc.) */}
+      <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+            Job sections ({(def.jobSections || []).length}) — asked once
+          </div>
+          <button onClick={addJobSection} className="btn btn-secondary btn-sm" style={{ padding: '4px 10px', fontSize: 12 }}>+ Job section</button>
+        </div>
+        <div>
+          {(def.jobSections || []).map((sec, i) => (
+            <SectionCard
+              key={i}
+              section={sec}
+              onChange={next => updateJobSections(replaceAt(def.jobSections, i, next))}
+              onMoveUp={i > 0 ? () => updateJobSections(move(def.jobSections, i, i - 1)) : null}
+              onMoveDown={i < def.jobSections.length - 1 ? () => updateJobSections(move(def.jobSections, i, i + 1)) : null}
+              onRemove={() => {
+                if (window.confirm(`Remove job section "${sec.label}"?`)) {
+                  updateJobSections(removeAt(def.jobSections, i));
+                }
+              }}
+            />
+          ))}
+          {(!def.jobSections || def.jobSections.length === 0) && (
+            <div style={{ padding: '24px 14px', fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+              No job sections. These show first in the sheet (loss details, tests, etc.).
+            </div>
+          )}
+        </div>
+      </div>
 
       <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -954,6 +1005,42 @@ function FieldEditor({ field, onChange }) {
     );
   }
 
+  if (t === 'computed') {
+    const formula = field.formula || { op: 'multiply', a: '', b: '' };
+    const setFormula = (patch) => update({ formula: { ...formula, ...patch } });
+    return (
+      <>
+        {typeRow}
+        <div style={{ fontSize: 12, color: RC.muted, marginBottom: 10 }}>
+          Read-only value that multiplies two sibling field keys in the same section
+          (e.g. tension posts × days). Not entered by the tech.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 40px 1fr', gap: 12, alignItems: 'end', marginBottom: 12 }}>
+          <div>
+            <FieldLabel>Field A (key)</FieldLabel>
+            <input className="input" value={formula.a || ''} onChange={e => setFormula({ a: e.target.value })} placeholder="tensionPosts" />
+          </div>
+          <div style={{ textAlign: 'center', paddingBottom: 10, fontWeight: 700, color: RC.muted }}>×</div>
+          <div>
+            <FieldLabel>Field B (key)</FieldLabel>
+            <input className="input" value={formula.b || ''} onChange={e => setFormula({ b: e.target.value })} placeholder="daysInPlace" />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <FieldLabel>Unit</FieldLabel>
+            <input className="input" value={field.unit || ''} onChange={e => update({ unit: e.target.value || undefined })} placeholder="post-days" />
+          </div>
+          <div>
+            <FieldLabel>Summary key (for totals)</FieldLabel>
+            <input className="input" value={field.summaryKey || ''} onChange={e => update({ summaryKey: e.target.value || undefined })} placeholder="(optional)" />
+          </div>
+        </div>
+        <ShowWhenEditor field={field} onChange={onChange} />
+      </>
+    );
+  }
+
   return typeRow;
 }
 
@@ -1113,7 +1200,12 @@ function LivePreview({ def }) {
   const [room, setRoom] = useState(sampleRoom);
   useEffect(() => { setRoom(sampleRoom); }, [sampleRoom]);
 
+  const sampleJobData = useMemo(() => makeDefaultJobData(def), [def]);
+  const [jobData, setJobData] = useState(sampleJobData);
+  useEffect(() => { setJobData(sampleJobData); }, [sampleJobData]);
+
   const sectionCount = (def?.sections || []).length;
+  const jobSectionCount = (def?.jobSections || []).length;
 
   return (
     <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
@@ -1122,7 +1214,7 @@ function LivePreview({ def }) {
           Preview · how a tech sees it
         </div>
         <button
-          onClick={() => setRoom(makeDefaultRoom(def))}
+          onClick={() => { setRoom(makeDefaultRoom(def)); setJobData(makeDefaultJobData(def)); }}
           className="btn btn-secondary btn-sm"
           style={{ padding: '4px 10px', fontSize: 12 }}
         >
@@ -1130,20 +1222,25 @@ function LivePreview({ def }) {
         </button>
       </div>
       <div style={{ padding: 'var(--space-3)', background: RC.bg, minHeight: 320 }}>
-        {sectionCount === 0 ? (
+        {sectionCount === 0 && jobSectionCount === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center', padding: '40px 0' }}>
             No sections in this schema yet — add some in the Visual editor to see them here.
           </div>
         ) : (
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
-            <RoomCard
-              room={room}
-              index={0}
-              onChange={setRoom}
-              totalRooms={1}
-              needsDimensions={false}
-              schema={def}
-            />
+            {jobSectionCount > 0 && (
+              <JobSections jobData={jobData} onChange={setJobData} schema={def} />
+            )}
+            {sectionCount > 0 && (
+              <RoomCard
+                room={room}
+                index={0}
+                onChange={setRoom}
+                totalRooms={1}
+                needsDimensions={false}
+                schema={def}
+              />
+            )}
           </div>
         )}
       </div>

@@ -68,7 +68,9 @@ import {
   C, sLabel, sInput, sCard,
   today, newRowId,
   makeDefaultRoom,
+  makeDefaultJobData,
   RoomCard,
+  JobSections,
   computeSummary,
   collectSectionEntries,
   sectionHasContent,
@@ -208,8 +210,9 @@ const escHtml = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
+function buildEmailHTML(rooms, jobInfo, jobData, hasSketchDone, schema) {
   const sections = schema?.sections || [];
+  const jobSections = schema?.jobSections || [];
   const displayDate = jobInfo.date
     ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'N/A';
@@ -260,8 +263,32 @@ function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
       </div>`;
   }).filter(Boolean).join('');
 
+  // Job-level "Loss & Site Details" block (schema.jobSections over jobData).
+  const jobSectionsHTML = jobSections.map((sec, sIdx) => {
+    if (!sectionHasContent(sec, jobData)) return '';
+    const entries = collectSectionEntries(sec, jobData);
+    if (entries.length === 0) return mkCat(`${sec.icon || ''} ${sec.label}`, sectionColor(sec, sIdx));
+    return [
+      mkCat(`${sec.icon || ''} ${sec.label}`, sectionColor(sec, sIdx)),
+      ...entries.map(e => e.kind === 'group'
+        ? `<tr><td colspan="3" style="padding:4px 10px 2px 18px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(e.label)}</td></tr>`
+        : mkRow(e.label, e.value)
+      ),
+    ].join('');
+  }).join('');
+  const jobBlockColor = sectionColor(sections[0] || jobSections[0], 0);
+  const jobBlockHTML = jobSectionsHTML ? `
+    <div style="margin-bottom:24px;">
+      <div style="background:${jobBlockColor};color:#fff;padding:8px 12px;border-radius:6px 6px 0 0;">
+        <span style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">Loss &amp; Site Details</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;border:1px solid #e0e0e0;border-top:none;">
+        <tbody>${jobSectionsHTML}</tbody>
+      </table>
+    </div>` : '';
+
   // Job-totals card (schema-driven via summaryKey aggregation).
-  const totals = computeSummary(rooms, schema);
+  const totals = computeSummary(rooms, jobData, schema);
   const totalsRows = Object.entries(totals)
     .filter(([, v]) => v && v !== 0)
     .map(([k, v]) => mkRow(prettySummaryKey(k), typeof v === 'number' ? v.toLocaleString() : v))
@@ -271,7 +298,7 @@ function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
   return `<div style="font-family:system-ui,sans-serif;max-width:660px;margin:0 auto;padding:20px;">
     <div style="border-bottom:3px solid ${headerColor};padding-bottom:14px;margin-bottom:20px;">
       <div style="font-size:20px;font-weight:800;color:${headerColor};">UTAH PROS RESTORATION</div>
-      <div style="font-size:11px;font-weight:700;color:#444;letter-spacing:0.05em;margin-top:2px;">DEMOLITION SHEET</div>
+      <div style="font-size:11px;font-weight:700;color:#444;letter-spacing:0.05em;margin-top:2px;">SCOPE SHEET</div>
       <div style="font-size:11px;color:#888;margin-top:4px;">Floor plan: ${hasSketchDone ? 'Encircle / DocuSketch ✓' : 'No sketch — dimensions recorded per room'}</div>
       <table style="width:100%;margin-top:10px;font-size:12px;">
         <tr><td style="color:#888;width:80px;">Date</td><td style="font-weight:600;">${escHtml(displayDate)}</td><td style="color:#888;width:90px;">Technician</td><td style="font-weight:600;">${escHtml(jobInfo.techName || '—')}</td></tr>
@@ -279,6 +306,7 @@ function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
         <tr><td style="color:#888;">Insured</td><td style="font-weight:600;" colspan="3">${escHtml(jobInfo.insuredName || '—')}</td></tr>
       </table>
     </div>
+    ${jobBlockHTML}
     ${roomsHTML}
 
     ${totalsRows ? `
@@ -293,19 +321,36 @@ function buildEmailHTML(rooms, jobInfo, hasSketchDone, schema) {
   </div>`;
 }
 
-function buildNoteText(rooms, jobInfo, hasSketchDone, schema) {
+function buildNoteText(rooms, jobInfo, jobData, hasSketchDone, schema) {
   const sections = schema?.sections || [];
+  const jobSections = schema?.jobSections || [];
   const displayDate = jobInfo.date
     ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'N/A';
   let out = '';
-  out += `UTAH PROS RESTORATION — DEMOLITION SHEET\n`;
+  out += `UTAH PROS RESTORATION — SCOPE SHEET\n`;
   out += `${'='.repeat(44)}\n`;
   out += `Date: ${displayDate}\n`;
   out += `Technician: ${jobInfo.techName || '—'}\n`;
   out += `Job #: ${jobInfo.jobNumber || '—'}\n`;
   out += `Address: ${jobInfo.address || '—'}\n`;
   out += `Floor Plan: ${hasSketchDone ? 'Encircle / DocuSketch' : 'No sketch — dimensions per room'}\n\n`;
+
+  // Job-level "Loss & Site Details" block.
+  const populatedJobSections = jobSections
+    .map(sec => ({ sec, entries: sectionHasContent(sec, jobData) ? collectSectionEntries(sec, jobData) : null }))
+    .filter(x => x.entries !== null);
+  if (populatedJobSections.length > 0) {
+    out += `LOSS & SITE DETAILS\n${'-'.repeat(32)}\n`;
+    populatedJobSections.forEach(({ sec, entries }) => {
+      out += `${sec.label}:\n`;
+      entries.forEach(e => {
+        if (e.kind === 'group') out += `  [${e.label}]\n`;
+        else                    out += `  ${e.label}: ${e.value}\n`;
+      });
+    });
+    out += '\n';
+  }
 
   rooms.forEach((r, i) => {
     const dim = (r.lengthFt && r.widthFt && r.heightFt) ? ` (${r.lengthFt}x${r.widthFt}x${r.heightFt}ft)` : '';
@@ -325,7 +370,7 @@ function buildNoteText(rooms, jobInfo, hasSketchDone, schema) {
     out += '\n';
   });
 
-  const totals = computeSummary(rooms, schema);
+  const totals = computeSummary(rooms, jobData, schema);
   const totalRows = Object.entries(totals).filter(([, v]) => v && v !== 0);
   if (totalRows.length > 0) {
     out += `JOB TOTALS\n${'='.repeat(44)}\n`;
@@ -339,8 +384,9 @@ function buildNoteText(rooms, jobInfo, hasSketchDone, schema) {
 // Structured render model handed to the /api/demo-sheet-pdf worker. All the
 // schema-walking lives here (client-side) so the worker stays a dumb layout
 // engine. Mirrors the content of buildEmailHTML / buildNoteText.
-function buildPdfModel(rooms, jobInfo, hasSketchDone, schema) {
+function buildPdfModel(rooms, jobInfo, jobData, hasSketchDone, schema) {
   const sections = schema?.sections || [];
+  const jobSections = schema?.jobSections || [];
   const displayDate = jobInfo.date
     ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'N/A';
@@ -361,7 +407,19 @@ function buildPdfModel(rooms, jobInfo, hasSketchDone, schema) {
     return { index: i + 1, name: r.name || `Room ${i + 1}`, dim, sections: secModels };
   }).filter(Boolean);
 
-  const totals = computeSummary(rooms, schema);
+  // Job-level "Loss & Site Details" — same {label, entries} shape as room sections.
+  const jobSectionModels = jobSections.map(sec => {
+    if (!sectionHasContent(sec, jobData)) return null;
+    const entries = collectSectionEntries(sec, jobData);
+    return {
+      label: `${sec.icon || ''} ${sec.label}`.trim(),
+      entries: entries.map(e => e.kind === 'group'
+        ? { kind: 'group', label: e.label }
+        : { kind: 'row', label: e.label, value: e.value == null ? '' : String(e.value) }),
+    };
+  }).filter(Boolean);
+
+  const totals = computeSummary(rooms, jobData, schema);
   const totalRows = Object.entries(totals)
     .filter(([, v]) => v && v !== 0)
     .map(([k, v]) => ({ label: prettySummaryKey(k), value: typeof v === 'number' ? v.toLocaleString() : String(v) }));
@@ -375,6 +433,7 @@ function buildPdfModel(rooms, jobInfo, hasSketchDone, schema) {
       insuredName: jobInfo.insuredName || '',
     },
     floorPlan: hasSketchDone ? 'Encircle / DocuSketch' : 'No sketch — dimensions recorded per room',
+    jobSections: jobSectionModels,
     rooms: roomModels,
     totals: totalRows,
   };
@@ -398,9 +457,13 @@ function prettySummaryKey(key) {
 // shared renderer. Sections that aren't populated for a given room are
 // skipped; gated sections answered "No" show as N/A pills. Job totals come
 // from computeSummary.
-function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
   // ─── SECTION: State & hooks ──────────────
   const sections = schema?.sections || [];
+  const jobSections = schema?.jobSections || [];
+  const populatedJobSections = jobSections
+    .map(sec => ({ sec, entries: sectionHasContent(sec, jobData) ? collectSectionEntries(sec, jobData) : null }))
+    .filter(x => x.entries !== null);
   const [expandedRooms, setExpandedRooms] = useState(new Set([rooms[0]?.id]));
   const toggleRoom = id => setExpandedRooms(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -408,7 +471,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
     ? new Date(jobInfo.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
 
-  const totals = computeSummary(rooms, schema);
+  const totals = computeSummary(rooms, jobData, schema);
   const totalRows = Object.entries(totals).filter(([, v]) => v && v !== 0);
 
   const lastDoneFlag = (() => {
@@ -443,6 +506,31 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
           </div>
           {jobInfo.address && <div style={{ marginTop:10, fontSize:12, color:C.muted }}>📍 {jobInfo.address}</div>}
         </div>
+
+        {/* Job-level Loss & Site Details */}
+        {populatedJobSections.length > 0 && (
+          <div style={{ ...sCard, border:`1px solid ${C.accent}` }}>
+            <div style={{ fontSize:9, color:C.accent, textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:800, marginBottom:12 }}>Loss &amp; Site Details</div>
+            {populatedJobSections.map(({ sec, entries }) => (
+              <div key={sec.key} style={{ marginBottom:14 }}>
+                <div style={{ fontSize:10, color:C.accent, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>
+                  {sec.icon || ''} {sec.label}
+                </div>
+                {entries.length === 0 && (
+                  <div style={{ fontSize:12, color:C.muted, padding:'6px 0' }}>Marked Yes — no details entered.</div>
+                )}
+                {entries.map((e, ei) => e.kind === 'group' ? (
+                  <div key={ei} style={{ fontSize:10, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', padding:'8px 0 2px' }}>{e.label}</div>
+                ) : (
+                  <div key={ei} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:`1px solid ${C.borderLt}` }}>
+                    <span style={{ fontSize:13, color:C.muted }}>{e.label}</span>
+                    <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{e.value}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Per-room summary cards */}
         {rooms.map((r, i) => {
@@ -527,7 +615,7 @@ function ReviewScreen({ rooms, jobInfo, hasSketchDone, onBack, onSubmit, sending
           {encircleLinked ? '⛓ Will email + post note to Encircle' : 'Will email to restoration@utah-pros.com'}
         </div>
         <button onClick={onSubmit} disabled={sending} style={{ width:'100%', background:sending ? C.cardAlt : C.green, border:'none', borderRadius:10, color:sending ? C.muted : '#fff', fontSize:17, fontWeight:800, padding:17, cursor:sending ? 'default' : 'pointer', opacity:sending ? 0.8 : 1, fontFamily:'var(--font-sans)' }}>
-          {sending ? <span>⏳ Submitting…</span> : <span>✓ Submit Demo Sheet</span>}
+          {sending ? <span>⏳ Submitting…</span> : <span>✓ Submit Scope Sheet</span>}
         </button>
       </div>
     </div>
@@ -543,7 +631,7 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
     <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, textAlign:'center' }}>
       <div style={{ fontSize:72, marginBottom:20, lineHeight:1 }}>{saveOk ? '✅' : '❌'}</div>
       <div style={{ fontSize:22, fontWeight:800, color:saveOk ? C.green : C.red, marginBottom:8 }}>
-        {saveOk ? 'Demo Sheet Saved!' : 'Save Failed'}
+        {saveOk ? 'Scope Sheet Saved!' : 'Save Failed'}
       </div>
       <div style={{ fontSize:13, color:C.muted, marginBottom:32, lineHeight:1.5 }}>
         {saveOk
@@ -609,7 +697,7 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
               ✓ Done
             </button>
             <button onClick={onStartNew} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:10, color:C.muted, fontSize:13, fontWeight:600, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
-              + Start New Demo Sheet
+              + Start New Scope Sheet
             </button>
             <button onClick={onBack} style={{ background:'transparent', border:'none', color:C.muted, fontSize:12, fontWeight:600, padding:8, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
               ← Back to Sheet
@@ -643,6 +731,9 @@ export default function TechDemoSheet() {
 
   const [rooms, setRooms] = useState([]);
   const [jobInfo, setJobInfo] = useState({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
+  // Job-level section answers (v2+ schemas). null until schema loads.
+  const [jobData, setJobData] = useState(null);
+  // Legacy hardcoded sketch answer — only used for v1 schemas (no jobSections).
   const [hasSketchDone, setHasSketchDone] = useState(null);
   const [showReview, setShowReview] = useState(false);
   const [sending, setSending] = useState(false);
@@ -698,7 +789,7 @@ export default function TechDemoSheet() {
         if (!schemaToUse) schemaToUse = await loadActiveSchema();
         if (!cancelled) {
           if (schemaToUse) setSchema(schemaToUse);
-          else setSchemaError('No active demo sheet schema found.');
+          else setSchemaError('No active scope sheet schema found.');
         }
       } catch (e) {
         if (!cancelled) setSchemaError(e?.message || 'Failed to load schema');
@@ -723,15 +814,24 @@ export default function TechDemoSheet() {
             const d = row.form_data;
             setRooms((d.rooms || [defaultRoom()]).map(r => ({ ...defaultRoom(), ...r })));
             setJobInfo(d.jobInfo || { date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
+            // Spread-merge so newly-added job fields backfill on older drafts.
+            const mergedJob = { ...makeDefaultJobData(schema), ...(d.jobData || {}) };
+            // Legacy migration: pre-jobData drafts stored the sketch answer at
+            // form_data.hasSketchDone — fold it into the floorPlan gate if present.
+            if (!d.jobData && d.hasSketchDone !== undefined && 'hasSketchDone' in mergedJob) {
+              mergedJob.hasSketchDone = d.hasSketchDone;
+            }
+            setJobData(mergedJob);
             setHasSketchDone(d.hasSketchDone ?? null);
             if (d.encircleLinked) setEncircleLinked(d.encircleLinked);
             if (Array.isArray(d.encircleRooms)) setEncircleRooms(d.encircleRooms);
           } else {
             setRooms([defaultRoom()]);
+            setJobData(makeDefaultJobData(schema));
           }
           setHydrated(true);
         })
-        .catch(() => { setRooms([defaultRoom()]); setHydrated(true); });
+        .catch(() => { setRooms([defaultRoom()]); setJobData(makeDefaultJobData(schema)); setHydrated(true); });
     } else {
       // Optional appt prefill via query params
       const apptJobId     = searchParams.get('jobId')      || '';
@@ -752,6 +852,7 @@ export default function TechDemoSheet() {
         setEncircleLinked({ id: apptClaim, policyholder_name: apptInsured });
       }
       setRooms([defaultRoom()]);
+      setJobData(makeDefaultJobData(schema));
       setHydrated(true);
     }
     db.rpc('get_demo_sheet_drafts').then(d => setDrafts(d || [])).catch(() => {});
@@ -777,7 +878,7 @@ export default function TechDemoSheet() {
       try {
         const payload = {
           p_id: sheetIdRef.current,
-          p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
+          p_data: { rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone: sketchAnswer },
           p_job_date: jobInfo.date || null,
           p_tech_id:  jobInfo.tech || null,
           p_job_number: jobInfo.jobNumber || null,
@@ -786,7 +887,7 @@ export default function TechDemoSheet() {
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
           p_status: 'draft',
           p_job_id: jobId || null,
-          p_summary: computeSummary(rooms, schema),
+          p_summary: computeSummary(rooms, jobData, schema),
           p_schema_id: schema?._id || null,
         };
         const savePromise = db.rpc('save_demo_sheet', payload);
@@ -807,7 +908,7 @@ export default function TechDemoSheet() {
       }
     }, 2000);
     return () => clearTimeout(saveTimerRef.current);
-  }, [hydrated, rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone, sheetId, jobId, db, searchParams, setSearchParams, showResult]);
+  }, [hydrated, rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone, sheetId, jobId, db, searchParams, setSearchParams, showResult]);
 
   // ─── SECTION: Event handlers ──────────────
   const handleEncircleSelect = async (claim) => {
@@ -834,7 +935,12 @@ export default function TechDemoSheet() {
     setEncircleRoomsLoading(false);
   };
 
-  const needsDimensions = hasSketchDone === false;
+  // Sketch answer is schema-driven (floorPlan job section, gateField
+  // `hasSketchDone`) for v2+ schemas; v1 schemas fall back to the legacy
+  // hardcoded state so old drafts keep working.
+  const schemaHasJobSections = (schema?.jobSections?.length || 0) > 0;
+  const sketchAnswer = schemaHasJobSections ? (jobData?.hasSketchDone ?? null) : hasSketchDone;
+  const needsDimensions = sketchAnswer === false;
   const addRoom = () => setRooms(p => [...p, makeDefaultRoom(schema)]);
   const updateRoom = (id, u) => setRooms(p => p.map(r => r.id===id?u:r));
   const removeRoom = id => setRooms(p => p.filter(r => r.id !== id));
@@ -875,7 +981,7 @@ export default function TechDemoSheet() {
     }
     const newId = await db.rpc('save_demo_sheet', {
       p_id: sheetIdRef.current,
-      p_data: { rooms, jobInfo, encircleLinked, encircleRooms, hasSketchDone },
+      p_data: { rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone: sketchAnswer },
       p_job_date: jobInfo.date || null,
       p_tech_id:  jobInfo.tech || null,
       p_job_number: jobInfo.jobNumber || null,
@@ -885,7 +991,7 @@ export default function TechDemoSheet() {
       p_status: status,
       p_encircle_note_id: encircleNoteId,
       p_job_id: jobId || null,
-      p_summary: computeSummary(rooms, schema),
+      p_summary: computeSummary(rooms, jobData, schema),
       p_email_sent: emailOk,
       p_schema_id: schema?._id || null,
     });
@@ -909,8 +1015,8 @@ export default function TechDemoSheet() {
   const doSubmit = async () => {
     setSending(true);
     setSubmitResult(null);
-    const html = buildEmailHTML(rooms, jobInfo, hasSketchDone, schema);
-    const subject = `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'} | ${jobInfo.address||'No Address'}`;
+    const html = buildEmailHTML(rooms, jobInfo, jobData, sketchAnswer, schema);
+    const subject = `Scope Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'} | ${jobInfo.address||'No Address'}`;
 
     // ── 1. Persist to UPR first — this is the source of truth ──
     let saveOk = false;
@@ -967,8 +1073,8 @@ export default function TechDemoSheet() {
             headers:{ 'Content-Type':'application/json' },
             body: JSON.stringify({
               claim_id: encircleLinked.id,
-              title: `Demo Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
-              text: buildNoteText(rooms, jobInfo, hasSketchDone, schema),
+              title: `Scope Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
+              text: buildNoteText(rooms, jobInfo, jobData, sketchAnswer, schema),
             }),
           })
             .then(async r => {
@@ -993,7 +1099,7 @@ export default function TechDemoSheet() {
             job_number: jobInfo.jobNumber || null,
             sheet_id: sheetIdRef.current || null,
             requested_by: employee?.id || null,
-            model: buildPdfModel(rooms, jobInfo, hasSketchDone, schema),
+            model: buildPdfModel(rooms, jobInfo, jobData, sketchAnswer, schema),
           }),
         })
           .then(async r => {
@@ -1036,6 +1142,7 @@ export default function TechDemoSheet() {
   const startNew = () => {
     setRooms([makeDefaultRoom(schema)]);
     setJobInfo({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
+    setJobData(makeDefaultJobData(schema));
     setHasSketchDone(null);
     setEncircleLinked(null);
     setEncircleRooms([]);
@@ -1061,7 +1168,7 @@ export default function TechDemoSheet() {
       <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, fontFamily:'var(--font-sans)' }}>
         <div style={{ fontSize:32, marginBottom:12 }}>📋</div>
         <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:6 }}>
-          {schemaError ? 'Could not load demo sheet' : 'Loading demo sheet…'}
+          {schemaError ? 'Could not load scope sheet' : 'Loading scope sheet…'}
         </div>
         {schemaError && (
           <div style={{ fontSize:12, color:C.muted, marginBottom:16, textAlign:'center', maxWidth:320 }}>
@@ -1096,7 +1203,7 @@ export default function TechDemoSheet() {
             </button>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:9, color:C.accent, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.14em', marginBottom:1 }}>Utah Pros Restoration</div>
-              <div style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', color:C.text }}>Demo Sheet</div>
+              <div style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', color:C.text }}>Scope Sheet</div>
             </div>
             {rooms.length>0 && (
               <div style={{ textAlign:'right' }}>
@@ -1193,17 +1300,26 @@ export default function TechDemoSheet() {
               />
             </div>
 
-            <div style={{ background:C.cardAlt, border:`1.5px solid ${hasSketchDone===null?C.redBd:hasSketchDone?C.greenBd:C.accent}`, borderRadius:10, padding:14 }}>
-              <div style={{ fontSize:12, color:C.text, fontWeight:700, marginBottom:10, lineHeight:1.4 }}>Was an Encircle floor plan or DocuSketch sketch completed for this property?</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                <button onClick={() => setHasSketchDone(false)} style={{ background:hasSketchDone===false?C.accentDim:C.input, border:`1.5px solid ${hasSketchDone===false?C.accent:C.border}`, borderRadius:8, color:hasSketchDone===false?C.accent:C.muted, fontSize:13, fontWeight:hasSketchDone===false?700:400, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>✗ No — enter dimensions</button>
-                <button onClick={() => setHasSketchDone(true)} style={{ background:hasSketchDone===true?C.greenDim:C.input, border:`1.5px solid ${hasSketchDone===true?C.green:C.border}`, borderRadius:8, color:hasSketchDone===true?C.green:C.muted, fontSize:13, fontWeight:hasSketchDone===true?700:400, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>✓ Yes — skip dimensions</button>
+            {/* Legacy hardcoded sketch question — only for v1 schemas without
+                a floorPlan job section. v2+ asks this inside Loss & Site Details. */}
+            {!schemaHasJobSections && (
+              <div style={{ background:C.cardAlt, border:`1.5px solid ${hasSketchDone===null?C.redBd:hasSketchDone?C.greenBd:C.accent}`, borderRadius:10, padding:14 }}>
+                <div style={{ fontSize:12, color:C.text, fontWeight:700, marginBottom:10, lineHeight:1.4 }}>Was an Encircle floor plan or DocuSketch sketch completed for this property?</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <button onClick={() => setHasSketchDone(false)} style={{ background:hasSketchDone===false?C.accentDim:C.input, border:`1.5px solid ${hasSketchDone===false?C.accent:C.border}`, borderRadius:8, color:hasSketchDone===false?C.accent:C.muted, fontSize:13, fontWeight:hasSketchDone===false?700:400, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>✗ No — enter dimensions</button>
+                  <button onClick={() => setHasSketchDone(true)} style={{ background:hasSketchDone===true?C.greenDim:C.input, border:`1.5px solid ${hasSketchDone===true?C.green:C.border}`, borderRadius:8, color:hasSketchDone===true?C.green:C.muted, fontSize:13, fontWeight:hasSketchDone===true?700:400, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>✓ Yes — skip dimensions</button>
+                </div>
+                {hasSketchDone===null && <div style={{ fontSize:10, color:C.red, marginTop:6, textAlign:'center' }}>Answer required to continue</div>}
               </div>
-              {hasSketchDone===null && <div style={{ fontSize:10, color:C.red, marginTop:6, textAlign:'center' }}>Answer required to continue</div>}
-            </div>
+            )}
           </div>
 
-          {hasSketchDone!==null && (
+          {/* Job-level Loss & Site Details (v2+ schema-driven sections) */}
+          {schemaHasJobSections && jobData && (
+            <JobSections jobData={jobData} onChange={setJobData} schema={schema} />
+          )}
+
+          {sketchAnswer!==null && (
             <>
               {rooms.map((room, i) => (
                 <RoomCard
@@ -1235,12 +1351,12 @@ export default function TechDemoSheet() {
           zIndex:30,
         }}>
           <div style={{ display:'flex', gap:9, marginBottom:8 }}>
-            <button onClick={addRoom} disabled={hasSketchDone===null}
-              style={{ flex:1, background:C.card, border:`1.5px solid ${C.border}`, borderRadius:10, color:hasSketchDone===null?C.muted:C.text, fontSize:14, fontWeight:600, padding:14, cursor:hasSketchDone===null?'default':'pointer', opacity:hasSketchDone===null?0.4:1, fontFamily:'var(--font-sans)' }}>
+            <button onClick={addRoom} disabled={sketchAnswer===null}
+              style={{ flex:1, background:C.card, border:`1.5px solid ${C.border}`, borderRadius:10, color:sketchAnswer===null?C.muted:C.text, fontSize:14, fontWeight:600, padding:14, cursor:sketchAnswer===null?'default':'pointer', opacity:sketchAnswer===null?0.4:1, fontFamily:'var(--font-sans)' }}>
               + Room
             </button>
-            <button onClick={() => setShowReview(true)} disabled={hasSketchDone===null || sending}
-              style={{ flex:3, background:hasSketchDone===null?C.cardAlt:allComplete?C.green:C.accent, border:'none', borderRadius:10, color:hasSketchDone===null?C.muted:'#fff', fontSize:15, fontWeight:800, padding:14, cursor:hasSketchDone===null?'default':'pointer', fontFamily:'var(--font-sans)', opacity:sending?0.6:1 }}>
+            <button onClick={() => setShowReview(true)} disabled={sketchAnswer===null || sending}
+              style={{ flex:3, background:sketchAnswer===null?C.cardAlt:allComplete?C.green:C.accent, border:'none', borderRadius:10, color:sketchAnswer===null?C.muted:'#fff', fontSize:15, fontWeight:800, padding:14, cursor:sketchAnswer===null?'default':'pointer', fontFamily:'var(--font-sans)', opacity:sending?0.6:1 }}>
               {allComplete?'✓ Review & Submit':'📋 Review & Submit'}
             </button>
           </div>
@@ -1251,7 +1367,7 @@ export default function TechDemoSheet() {
         </div>
 
         {showReview && (
-          <ReviewScreen rooms={rooms} jobInfo={jobInfo} hasSketchDone={hasSketchDone} onBack={() => setShowReview(false)} onSubmit={doSubmit} sending={sending} encircleLinked={encircleLinked} schema={schema} />
+          <ReviewScreen rooms={rooms} jobInfo={jobInfo} jobData={jobData} hasSketchDone={sketchAnswer} onBack={() => setShowReview(false)} onSubmit={doSubmit} sending={sending} encircleLinked={encircleLinked} schema={schema} />
         )}
         {showResult && submitResult && (
           <ResultScreen
