@@ -20,57 +20,80 @@ import { realtimeClient } from '@/lib/realtime';
 import Login from '@/pages/Login';
 import TechLayout from '@/components/TechLayout';
 
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Conversations = lazy(() => import('@/pages/Conversations'));
-const Jobs = lazy(() => import('@/pages/Jobs'));
-const JobPage = lazy(() => import('@/pages/JobPage'));
-const ClaimsList = lazy(() => import('@/pages/ClaimsList'));
-const ClaimPage = lazy(() => import('@/pages/ClaimPage'));
-const Production = lazy(() => import('@/pages/Production'));
-const Leads = lazy(() => import('@/pages/Leads'));
-const Customers = lazy(() => import('@/pages/Customers'));
-const CustomerPage = lazy(() => import('@/pages/CustomerPage'));
-const Schedule = lazy(() => import('@/pages/Schedule'));
-const ScheduleTemplates = lazy(() => import('@/pages/ScheduleTemplates'));
-const TimeTracking = lazy(() => import('@/pages/TimeTracking'));
-const Marketing = lazy(() => import('@/pages/Marketing'));
-const Admin = lazy(() => import('@/pages/Admin'));
-const Settings = lazy(() => import('@/pages/Settings'));
-const SignPage = lazy(() => import('@/pages/SignPage'));
-const SetPassword = lazy(() => import('@/pages/SetPassword'));
-const Collections = lazy(() => import('@/pages/Collections'));
-const ClaimCollectionPage = lazy(() => import('@/pages/ClaimCollectionPage'));
-const DevTools = lazy(() => import('@/pages/DevTools'));
-const PrivacyPolicy = lazy(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
-const TermsOfService = lazy(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
-const AdminFeedback = lazy(() => import('@/pages/AdminFeedback'));
-const OOPPricing = lazy(() => import('@/pages/OOPPricing'));
-const AdminDemoSheetBuilder = lazy(() => import('@/pages/AdminDemoSheetBuilder'));
-const EncircleImport = lazy(() => import('@/pages/EncircleImport'));
-const Help = lazy(() => import('@/pages/Help'));
-const InvoiceEditor = lazy(() => import('@/pages/InvoiceEditor'));
-const PaymentSettings = lazy(() => import('@/pages/PaymentSettings'));
+// Wrap React.lazy so a failed dynamic import — almost always a STALE CHUNK after a new
+// deploy (the hashed file this already-open tab references no longer exists on the server) —
+// triggers a single automatic page reload to fetch the current chunk map, instead of dropping
+// the user on the "ran into a problem" screen. A sessionStorage flag guards against reload
+// loops: if the import still fails after one reload (a genuine error, not a stale chunk),
+// we rethrow and let the ErrorBoundary show.
+function lazyRetry(factory) {
+  return lazy(async () => {
+    try {
+      const mod = await factory();
+      sessionStorage.removeItem('chunkReloaded'); // loaded fine → arm the guard for next time
+      return mod;
+    } catch (err) {
+      if (!sessionStorage.getItem('chunkReloaded')) {
+        sessionStorage.setItem('chunkReloaded', '1');
+        window.location.reload();
+        return new Promise(() => {}); // hold render until the reload takes over
+      }
+      throw err; // already retried once — surface it to the ErrorBoundary
+    }
+  });
+}
+
+const Dashboard = lazyRetry(() => import('@/pages/Dashboard'));
+const Conversations = lazyRetry(() => import('@/pages/Conversations'));
+const Jobs = lazyRetry(() => import('@/pages/Jobs'));
+const JobPage = lazyRetry(() => import('@/pages/JobPage'));
+const ClaimsList = lazyRetry(() => import('@/pages/ClaimsList'));
+const ClaimPage = lazyRetry(() => import('@/pages/ClaimPage'));
+const Production = lazyRetry(() => import('@/pages/Production'));
+const Leads = lazyRetry(() => import('@/pages/Leads'));
+const Customers = lazyRetry(() => import('@/pages/Customers'));
+const CustomerPage = lazyRetry(() => import('@/pages/CustomerPage'));
+const Schedule = lazyRetry(() => import('@/pages/Schedule'));
+const ScheduleTemplates = lazyRetry(() => import('@/pages/ScheduleTemplates'));
+const TimeTracking = lazyRetry(() => import('@/pages/TimeTracking'));
+const Marketing = lazyRetry(() => import('@/pages/Marketing'));
+const Admin = lazyRetry(() => import('@/pages/Admin'));
+const Settings = lazyRetry(() => import('@/pages/Settings'));
+const SignPage = lazyRetry(() => import('@/pages/SignPage'));
+const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
+const Collections = lazyRetry(() => import('@/pages/Collections'));
+const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
+const DevTools = lazyRetry(() => import('@/pages/DevTools'));
+const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
+const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
+const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
+const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
+const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
+const Help = lazyRetry(() => import('@/pages/Help'));
+const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
+const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 
 // Tech pages (field_tech role)
-const TechDash = lazy(() => import('@/pages/tech/TechDash'));
-const TechSchedule = lazy(() => import('@/pages/tech/TechSchedule'));
-const TechTasks = lazy(() => import('@/pages/tech/TechTasks'));
-const TechClaims = lazy(() => import('@/pages/tech/TechClaims'));
-const TechClaimDetail = lazy(() => import('@/pages/tech/TechClaimDetail'));
-const TechClaimAlbum = lazy(() => import('@/pages/tech/TechClaimAlbum'));
-const TechRoomDetail = lazy(() => import('@/pages/tech/TechRoomDetail'));
-const TechJobDetail = lazy(() => import('@/pages/tech/TechJobDetail'));
-const TechJobAlbum = lazy(() => import('@/pages/tech/TechJobAlbum'));
-const TechAppointment = lazy(() => import('@/pages/tech/TechAppointment'));
-const TechNewCustomer = lazy(() => import('@/pages/tech/TechNewCustomer'));
-const TechNewJob = lazy(() => import('@/pages/tech/TechNewJob'));
-const TechNewAppointment = lazy(() => import('@/pages/tech/TechNewAppointment'));
-const TechNewEvent = lazy(() => import('@/pages/tech/TechNewEvent'));
-const TechEditAppointment = lazy(() => import('@/pages/tech/TechEditAppointment'));
-const TechFeedback = lazy(() => import('@/pages/tech/TechFeedback'));
-const TechMore = lazy(() => import('@/pages/tech/TechMore'));
-const TechOOPPricing = lazy(() => import('@/pages/tech/TechOOPPricing'));
-const TechDemoSheet = lazy(() => import('@/pages/tech/TechDemoSheet'));
+const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
+const TechSchedule = lazyRetry(() => import('@/pages/tech/TechSchedule'));
+const TechTasks = lazyRetry(() => import('@/pages/tech/TechTasks'));
+const TechClaims = lazyRetry(() => import('@/pages/tech/TechClaims'));
+const TechClaimDetail = lazyRetry(() => import('@/pages/tech/TechClaimDetail'));
+const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
+const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
+const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
+const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
+const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
+const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
+const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
+const TechNewAppointment = lazyRetry(() => import('@/pages/tech/TechNewAppointment'));
+const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
+const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppointment'));
+const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
+const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
+const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
+const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
