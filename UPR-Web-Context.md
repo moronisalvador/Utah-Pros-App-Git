@@ -9,7 +9,23 @@ Owner/developer: Moroni Salvador.
 **GitHub repo:** moronisalvador/Utah-Pros-App-Git
 **Local repo:** F:\APPS\RestorationAPP\Utah-Pros-App-Git
 **Deployment:** Cloudflare Pages (auto-deploys on push to `dev` branch)
-**Rule:** Always work on `dev` branch. Merge to `main` only after testing.
+**Rule:** Always work on `dev` (or a feature branch). Ship to `main` only via a reviewed `dev → main` PR a human merges — see **Deployment & Release Workflow** below.
+
+---
+
+## Deployment & Release Workflow
+
+**Branches → environments**
+- **Feature branch / `dev`** → Cloudflare auto-deploys `dev` to **https://dev.utahpros.app** on every push. Verify here first.
+- **`main`** → production **https://utahpros.app** (and the Capacitor iOS app loads `/tech/*` from this build).
+
+**How code reaches production (sanctioned path):**
+Automated agents **cannot `git push` to `main`** — the Claude Code safety guardrail blocks direct pushes to the default branch by design, and production needs human review. To release:
+1. Land the change on **`dev`** (feature branch → `dev`, fast-forward) and test on the dev deploy.
+2. **Open a PR `dev → main`** (ask the user first — repo convention is no PRs unless requested). The **user reviews + merges**; Cloudflare deploys `main`. (Or the user merges `dev → main` locally.)
+3. The agent's last git step on a finished task is "on `dev` + request the `dev → main` merge," never a direct `main` push.
+
+**Single shared Supabase (dev + main).** One project (`glsmljpabrwonfiltiqm`) backs both environments, so migrations and data changes — e.g. **publishing a new `demo_sheet_schemas` version** — affect staging AND production at once. Sequence so production code is live before the schema it needs: seed new schema versions as a **draft** (`is_active=false`, inert), merge code to `main`, then call the activating RPC (`publish_demo_schema`). This prevents old production code from rendering a schema it can't handle.
 
 ---
 

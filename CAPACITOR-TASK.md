@@ -26,6 +26,8 @@ The tech app (`/tech/*` routes) loads inside a native iOS WKWebView container pr
 
 **Everyone gets the tech view on mobile.** No role checks, no admin menu in the app. Simpler code, clearer product: mobile = field work, browser = admin.
 
+**Branch & release workflow (same as web — see `CLAUDE.md` → Deployment & Release Workflow):** the native app's web bundle follows the identical path. Develop on a feature branch / `dev` (Cloudflare auto-deploys the dev staging URL the WKWebView can point at). Shipping to production goes through a reviewed **`dev → main` PR merged by a human** — automated agents must not `git push` to `main` (the Claude Code guardrail blocks it). For OTA, Capgo live updates push the new web bundle to installed apps after `main` is live; a native shell change still needs `npm run build && npx cap sync ios` + an App Store/TestFlight build from Moroni's Mac.
+
 **Critical constraint:** Apple requires the app to provide meaningful native value beyond a web wrapper (Guideline 4.2). We satisfy this by using native camera, push notifications, geolocation, haptics, and biometric auth — not just loading a URL.
 
 ---

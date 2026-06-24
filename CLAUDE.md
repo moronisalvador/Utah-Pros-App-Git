@@ -18,7 +18,7 @@
    ```
    For destructive actions that need confirmation, use **inline two-click confirm state** — first click turns button red + shows "Confirm", second click executes, `onBlur` cancels. Never a modal or native dialog.
 4. **Always use `const { db } = useAuth()`** in components. Never import `db` directly from `@/lib/supabase`.
-5. **Work on `dev` branch only.** Never touch `main`.
+5. **Develop on `dev` (or a feature branch) — never `git push` to `main` directly.** Direct pushes to `main` are blocked by the Claude Code safety guardrail by design. Production ships via a reviewed `dev → main` pull request that a human merges. See [Deployment & Release Workflow](#deployment--release-workflow).
 6. **CSS: mobile changes use `@media (max-width: 768px)` only.** Never change desktop layout, colors, or spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 7. **Commit after every 2–3 files.** Small commits, clear messages.
 8. **DB queries: always use `db.rpc()` for new tables.** PostgREST schema cache may not reflect new tables — `SECURITY DEFINER` RPCs always work.
@@ -420,7 +420,29 @@ const handleDelete = async (item) => {
 - `src/components/Layout.jsx` — do not modify unless explicitly instructed
 - `src/App.jsx` — only add routes, do not restructure
 - Any existing page unless explicitly instructed
-- `main` branch — dev branch only
+- `main` branch — never `git push` to it directly; ship via a reviewed `dev → main` PR (see [Deployment & Release Workflow](#deployment--release-workflow))
+
+---
+
+## Deployment & Release Workflow
+
+**Branches → environments**
+- **Feature branch / `dev`** — push freely. Cloudflare Pages **auto-deploys `dev`** to the staging URL on every push. Land + verify changes here first.
+- **`main`** — production. Cloudflare deploys `main` to the live site, and the Capacitor iOS app loads `/tech/*` from that same build (see `CAPACITOR-TASK.md`).
+
+**Shipping to production (the only sanctioned path)**
+Agents **must not** `git push` to `main` — the Claude Code safety classifier blocks direct pushes to the default branch by design, and production changes require human review. Organize the work so it ships cleanly through review instead:
+1. Get everything onto **`dev`** (feature branch → `dev`, fast-forward) and verify on the dev deploy.
+2. **Open a PR from `dev` → `main`** (GitHub) — ask the user before opening one (repo rule: no PRs unless requested). The **user reviews and merges** it. (Or the user merges `dev → main` locally.)
+3. Cloudflare deploys `main`; production + the native app pick it up.
+
+When a task is "done," the agent's final git step is **landing on `dev` and requesting the `dev → main` PR/merge** — not a direct `main` push. Do not try to work around the guardrail; route through the PR.
+
+**One shared Supabase across environments (critical)**
+There is a single Supabase project for both `dev` and `main`. Migrations and data changes — including **publishing a new `demo_sheet_schemas` version** — hit BOTH the staging and production frontends immediately. Sequence DB changes so the production code that understands them is already live before activating them:
+- Seed new schema versions as a **DRAFT** (`is_active = false`) — inert until published.
+- Merge the code to `main` and let it deploy.
+- Only then call the activating RPC (e.g. `publish_demo_schema`) so old production code never renders a schema it can't handle.
 
 ---
 
