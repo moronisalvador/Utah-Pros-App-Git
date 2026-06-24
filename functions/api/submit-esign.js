@@ -21,6 +21,8 @@ export async function onRequestPost(context) {
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  // Base URL for the "open the job" link in the internal notification email.
+  const SITE_URL = env.APP_BASE_URL || 'https://utahpros.app';
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
@@ -180,6 +182,41 @@ export async function onRequestPost(context) {
       }],
     }).catch(e => console.error('Confirmation email failed:', e.message));
     // Non-fatal — don't throw if email fails, the document is already signed and stored
+
+    // ── 7. Notify the office that the client signed ──
+    //   (a) in-app notification → sidebar bell + live toast (create_notification RPC),
+    //   (b) job activity-timeline entry (system-authored job_note),
+    //   (c) internal email to restoration@utah-pros.com with the signed PDF.
+    // All best-effort and non-fatal — the document is already signed and stored.
+    const propertyStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'Unknown property';
+    const jobUrl      = `${SITE_URL}/jobs/${job.id}`;
+    const signedDate  = signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const notifyTitle = `${signer_name} signed the ${docLabel}`;
+    const notifyBody  = [job.job_number ? `Job ${job.job_number}` : null, propertyStr].filter(Boolean).join(' · ');
+
+    await rpc('create_notification', {
+      p_type:        'esign_signed',
+      p_title:       notifyTitle,
+      p_body:        notifyBody,
+      p_link:        `/jobs/${job.id}`,
+      p_entity_type: 'job',
+      p_entity_id:   job.id,
+      p_job_id:      job.id,
+      p_payload:     { doc_type: signReq.doc_type, signer_name, job_document_id: result.job_document_id },
+    }).catch(e => console.error('create_notification failed:', e.message));
+
+    await fetch(`${SUPABASE_URL}/rest/v1/job_notes`, {
+      method: 'POST', headers: sbHeaders,
+      body: JSON.stringify({ job_id: job.id, author_name: 'E-Signature', body: `✍️ ${signer_name} signed the ${docLabel}.` }),
+    }).catch(e => console.error('job_note activity insert failed:', e.message));
+
+    await sendEmail(env, {
+      to:      { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
+      subject: `✅ ${signer_name} signed the ${docLabel}`,
+      text:    `${signer_name} just signed the ${docLabel}.\n\nDocument: ${docLabel}\nJob: ${job.job_number || '—'}\nProperty: ${propertyStr}\nSigned: ${signedDate}\n\nOpen the job: ${jobUrl}\n\nThe signed PDF is attached.`,
+      html:    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;"><tr><td align="center"><table width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);"><tr><td style="background:#166534;padding:24px 32px;"><p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;">✅ Document signed</p></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 16px;font-size:15px;color:#0f172a;line-height:1.6;"><strong>${escHtml(signer_name)}</strong> just signed the <strong>${docLabel}</strong>.</p><table cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:16px 20px;"><table cellpadding="0" cellspacing="0"><tr><td style="font-size:13px;color:#64748b;padding:3px 0;width:90px;">Document</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${docLabel}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Job</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(job.job_number || '—')}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Property</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${escHtml(propertyStr)}</td></tr><tr><td style="font-size:13px;color:#64748b;padding:3px 0;">Signed</td><td style="font-size:13px;color:#0f172a;font-weight:500;padding:3px 0;">${signedDate}</td></tr></table></td></tr></table><a href="${jobUrl}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 22px;border-radius:8px;">Open the job in UPR</a><p style="margin:20px 0 0;font-size:13px;color:#64748b;line-height:1.6;">The signed PDF is attached for your records.</p></td></tr></table></td></tr></table></body></html>`,
+      attachments: [{ content: pdfB64, filename: fileName, contentType: 'application/pdf' }],
+    }).catch(e => console.error('Internal esign notification email failed:', e.message));
 
     return jsonResponse({
       success:         true,
