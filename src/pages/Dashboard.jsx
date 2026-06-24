@@ -1,188 +1,180 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Dashboard.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The owner's home screen ("Overview"). It's a grid of cards summarizing the
+ *   business — money in, jobs drying, who's clocked in, what needs attention.
+ *   Each card pulls live data from the database. The header has the date, a
+ *   color key for the divisions, a time-period switch (MTD / Last 30 / QTD /
+ *   YTD), and an "Edit layout" button. In edit mode the owner can drag cards by
+ *   their ⠿ handle, resize them from the corner, and reorder them — and that
+ *   arrangement is saved just for them.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /  (office/admin/PM/supervisor landing — field techs go to /tech)
+ *   Rendered by:  src/App.jsx inside the Layout shell (sidebar + bottom bar)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-grid-layout
+ *   Internal:  @/components/overview/Widgets (the 10 cards) + its hooks + tokens
+ *   Data:      reads → per-widget RPCs (see each hook) + get_dashboard_layout
+ *              writes → save_dashboard_layout (the user's card arrangement)
+ *
+ * NOTES / GOTCHAS:
+ *   - Layout is react-grid-layout (responsive: 12-col ≥996px, 1-col below). The
+ *     default layout below is the seed; a saved per-user layout overrides it.
+ *   - Cards have fixed heights in the grid (rowHeight × h). Defaults are tuned to
+ *     fit content; the owner resizes to taste. Charts/lists fill their card.
+ *   - ⠿ drag handles + the resize corner only appear in edit mode.
+ * ════════════════════════════════════════════════
+ */
 
-const MITIGATION_DIVS = ['water', 'mold', 'contents'];
-const JOB_SELECT = 'id,job_number,insured_name,phase,division,insurance_company,project_manager_id,lead_tech_id,created_at';
+import { useState } from 'react';
+// v2 ships the classic v1-compatible API (WidthProvider/Responsive + draggableHandle) under /legacy
+import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
+import { DIVISIONS, PERIODS } from '@/components/overview/tokens';
+import {
+  RevenueRecognized, AvgTicket, OpenEstimates,
+  NewClaimsBooked, JobsCompleted,
+  ActiveDrying, Collections,
+  ActionRequired, EmployeeStatus,
+  ProductionPipeline,
+} from '@/components/overview/Widgets';
+import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
+import { useCollections } from '@/components/overview/hooks/useCollections';
+import { useNewClaims } from '@/components/overview/hooks/useNewClaims';
+import { useRevenue } from '@/components/overview/hooks/useRevenue';
+import { useAvgTicket } from '@/components/overview/hooks/useAvgTicket';
+import { useOpenEstimates } from '@/components/overview/hooks/useOpenEstimates';
+import { usePipeline } from '@/components/overview/hooks/usePipeline';
+import { useActiveDrying } from '@/components/overview/hooks/useActiveDrying';
+import { useActionItems } from '@/components/overview/hooks/useActionItems';
+import { useDashboardLayout } from '@/components/overview/hooks/useDashboardLayout';
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
+
+// ─── SECTION: Default layout (seed; per-user saved layout overrides it) ──────────────
+// [x, y, w, h] on the 12-col large grid. h × rowHeight(70) + gaps = card height.
+const ORDER = ['revenue', 'avgTicket', 'openEstimates', 'newClaims', 'jobsCompleted',
+  'activeDrying', 'collections', 'actionRequired', 'employeeStatus', 'pipeline'];
+const LG = {
+  revenue: [0, 0, 4, 3], avgTicket: [4, 0, 4, 3], openEstimates: [8, 0, 4, 3],
+  newClaims: [0, 3, 6, 2], jobsCompleted: [6, 3, 6, 2],
+  activeDrying: [0, 5, 7, 4], collections: [7, 5, 5, 4],
+  actionRequired: [0, 9, 6, 5], employeeStatus: [6, 9, 6, 4],
+  pipeline: [0, 14, 12, 4],
+};
+const lgLayout = ORDER.map(i => ({ i, x: LG[i][0], y: LG[i][1], w: LG[i][2], h: LG[i][3], minW: 3, minH: 2 }));
+const xsLayout = (() => {
+  let y = 0;
+  return ORDER.map(i => { const h = LG[i][3]; const it = { i, x: 0, y, w: 1, h, minW: 1, minH: 2 }; y += h; return it; });
+})();
+const DEFAULT_LAYOUTS = { lg: lgLayout, xs: xsLayout };
 
 export default function Dashboard() {
-  const { db, employee } = useAuth();
-  const navigate = useNavigate();
-  const [stats, setStats] = useState({ active_jobs: 0, needs_response: 0, total_contacts: 0, open_leads: 0 });
-  const [allJobs, setAllJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [divFilter, setDivFilter] = useState('all');
+  // ─── SECTION: State & hooks ──────────────
+  const [period, setPeriod] = useState(PERIODS[0]);
+  const [editing, setEditing] = useState(false);
+  const periodLabel = `· ${period}`;
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
 
-  useEffect(() => { loadDashboard(); }, []);
+  const emp = useEmployeeStatus();
+  const coll = useCollections();
+  const claims = useNewClaims(period);
+  const rev = useRevenue(period);
+  const avg = useAvgTicket(period);
+  const est = useOpenEstimates();
+  const pipeline = usePipeline();
+  const drying = useActiveDrying();
+  const actions = useActionItems();
+  const { layouts, persist, reset } = useDashboardLayout(DEFAULT_LAYOUTS);
 
-  const loadDashboard = async () => {
-    setError(null);
-    try {
-      const [statsData, jobs] = await Promise.all([
-        db.rpc('get_dashboard_stats'),
-        db.select('jobs', `status=neq.deleted&order=created_at.desc&select=${JOB_SELECT}`),
-      ]);
-      if (statsData) setStats(statsData);
-      setAllJobs(jobs || []);
-    } catch (err) {
-      console.error('Dashboard load error:', err);
-      setError('Failed to load dashboard data.');
-    } finally {
-      setLoading(false);
-    }
+  // ─── SECTION: Widgets (keyed by layout id) ──────────────
+  const widgets = {
+    revenue:        <RevenueRecognized periodLabel={periodLabel} showHandle={editing} data={rev.data ?? undefined} />,
+    avgTicket:      <AvgTicket periodLabel={periodLabel} showHandle={editing} data={avg.data ?? undefined} />,
+    openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} />,
+    newClaims:      <NewClaimsBooked periodLabel={periodLabel} showHandle={editing} data={claims.data ?? undefined} />,
+    jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} />,
+    activeDrying:   <ActiveDrying showHandle={editing} data={drying.data ?? undefined} />,
+    collections:    <Collections showHandle={editing} data={coll.data ?? undefined} />,
+    actionRequired: <ActionRequired showHandle={editing} data={actions.data?.items ?? undefined} summary={actions.data?.summary ?? undefined} />,
+    employeeStatus: <EmployeeStatus showHandle={editing} data={emp.data ?? undefined} summary={emp.summary ?? undefined} />,
+    pipeline:       <ProductionPipeline showHandle={editing} data={pipeline.data ?? undefined} />,
   };
 
-  // My Jobs — where I'm PM or lead tech
-  const myJobs = useMemo(() => {
-    if (!employee?.id) return [];
-    return allJobs.filter(j =>
-      j.project_manager_id === employee.id || j.lead_tech_id === employee.id
-    );
-  }, [allJobs, employee?.id]);
-
-  // All Jobs — with division filter
-  const filteredAllJobs = useMemo(() => {
-    if (divFilter === 'mitigation') return allJobs.filter(j => MITIGATION_DIVS.includes(j.division));
-    if (divFilter === 'reconstruction') return allJobs.filter(j => j.division === 'reconstruction');
-    return allJobs;
-  }, [allJobs, divFilter]);
-
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
-
+  // ─── SECTION: Render ──────────────
   return (
-    <div className="page">
-      <div className="page-header">
-        <h1 className="page-title">
-          {employee?.full_name ? `Welcome, ${employee.full_name.split(' ')[0]}` : 'Dashboard'}
-        </h1>
-        <p className="page-subtitle">Here's what's happening at UPR today.</p>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', fontSize: 13, color: '#dc2626', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{error}</span>
-          <button onClick={loadDashboard} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#dc2626', fontWeight: 600, fontFamily: 'var(--font-sans)' }}>Retry</button>
+    <div className="ovw-page">
+      <header className="ovw-header">
+        <div>
+          <h1 className="ovw-title">Overview</h1>
+          <div className="ovw-subtitle">Utah Pros Restoration · {today}</div>
         </div>
-      )}
 
-      <div className="stats-grid">
-        <StatCard label="Active Jobs" value={stats.active_jobs} />
-        <StatCard label="Needs Response" value={stats.needs_response} alert={stats.needs_response > 0} />
-        <StatCard label="Total Contacts" value={stats.total_contacts} />
-        <StatCard label="Open Leads" value={stats.open_leads} />
-      </div>
+        <div className="ovw-header-right">
+          <div className="ovw-legend">
+            {DIVISIONS.map(d => (
+              <span key={d.key} className="ovw-legend-item">
+                <span className="ovw-legend-sw" style={{ background: d.color }} />
+                {d.label}
+              </span>
+            ))}
+          </div>
 
-      {/* ── My Jobs ── */}
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-header">
-          <span className="card-title">My Jobs</span>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500 }}>{myJobs.length} jobs</span>
-        </div>
-        <div className="card-body" style={{ padding: 0 }}>
-          {myJobs.length === 0 ? (
-            <div className="empty-state" style={{ padding: '24px 16px' }}>
-              <p className="empty-state-text" style={{ margin: 0 }}>No jobs assigned to you as PM or lead tech.</p>
-            </div>
-          ) : (
-            <JobTable jobs={myJobs} navigate={navigate} />
-          )}
-        </div>
-      </div>
-
-      {/* ── All Jobs ── */}
-      <div className="card">
-        <div className="card-header" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <span className="card-title" style={{ marginRight: 'auto' }}>All Jobs</span>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'mitigation', label: 'Mitigation' },
-              { key: 'reconstruction', label: 'Reconstruction' },
-            ].map(opt => (
+          <div className="ovw-seg" role="tablist" aria-label="Time period">
+            {PERIODS.map(p => (
               <button
-                key={opt.key}
-                onClick={() => setDivFilter(opt.key)}
-                style={{
-                  height: 28, padding: '0 10px', borderRadius: 'var(--radius-full)',
-                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: divFilter === opt.key ? '1.5px solid var(--accent)' : '1px solid var(--border-color)',
-                  background: divFilter === opt.key ? 'var(--accent-light)' : 'var(--bg-primary)',
-                  color: divFilter === opt.key ? 'var(--accent)' : 'var(--text-tertiary)',
-                  fontFamily: 'var(--font-sans)',
-                }}
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={period === p}
+                className={`ovw-seg-btn${period === p ? ' active' : ''}`}
+                onClick={() => setPeriod(p)}
               >
-                {opt.label}
+                {p}
               </button>
             ))}
           </div>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500, width: '100%', textAlign: 'right' }}>{filteredAllJobs.length} jobs</span>
-        </div>
-        <div className="card-body" style={{ padding: 0 }}>
-          {filteredAllJobs.length === 0 ? (
-            <div className="empty-state" style={{ padding: '24px 16px' }}>
-              <p className="empty-state-text" style={{ margin: 0 }}>No jobs match this filter.</p>
-            </div>
-          ) : (
-            <JobTable jobs={filteredAllJobs} navigate={navigate} />
+
+          {editing && (
+            <button type="button" className="ovw-editbtn" onClick={reset}>Reset</button>
           )}
+          <button type="button" className="ovw-editbtn" onClick={() => setEditing(e => !e)}>
+            <span style={{ color: '#98a2b3', fontSize: 14, lineHeight: 1 }} aria-hidden="true">⠿</span>
+            {editing ? 'Done' : 'Edit layout'}
+          </button>
         </div>
-      </div>
-    </div>
-  );
-}
+      </header>
 
-/* ── Shared Job Table ── */
-function JobTable({ jobs, navigate }) {
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Job #</th>
-          <th>Client</th>
-          <th>Phase</th>
-          <th>Division</th>
-          <th className="dashboard-tbl-ins">Insurance</th>
-          <th className="dashboard-tbl-date">Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        {jobs.map(job => (
-          <tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/jobs/${job.id}`)}>
-            <td style={{ fontWeight: 600 }}>{job.job_number || '—'}</td>
-            <td>{job.insured_name || '—'}</td>
-            <td>
-              <span className={`status-badge status-${phaseClass(job.phase)}`}>
-                {job.phase || 'unknown'}
-              </span>
-            </td>
-            <td>{job.division || '—'}</td>
-            <td className="dashboard-tbl-ins" style={{ color: 'var(--text-secondary)' }}>{job.insurance_company || 'Out of pocket'}</td>
-            <td className="dashboard-tbl-date" style={{ color: 'var(--text-tertiary)' }}>
-              {new Date(job.created_at).toLocaleDateString()}
-            </td>
-          </tr>
+      <ResponsiveGridLayout
+        className={`ovw-grid-rgl${editing ? ' ovw-editing' : ''}`}
+        layouts={layouts}
+        breakpoints={{ lg: 996, xs: 0 }}
+        cols={{ lg: 12, xs: 1 }}
+        rowHeight={70}
+        margin={[16, 16]}
+        containerPadding={[0, 0]}
+        isDraggable={editing}
+        isResizable={editing}
+        draggableHandle=".ovw-handle"
+        resizeHandles={['se']}
+        onLayoutChange={(_, all) => { if (editing) persist(all); }}
+      >
+        {ORDER.map(id => (
+          <div key={id} className="ovw-rgl-item">{widgets[id]}</div>
         ))}
-      </tbody>
-    </table>
-  );
-}
+      </ResponsiveGridLayout>
 
-function StatCard({ label, value, alert }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={alert ? { color: 'var(--status-needs-response)' } : undefined}>
-        {value ?? '—'}
+      <div style={{ marginTop: 20, fontSize: 11.5, color: '#a4abb6', textAlign: 'center', lineHeight: 1.6 }}>
+        {editing
+          ? 'Drag a card by its ⠿ handle, resize from the bottom-right corner, then hit Done. Your layout saves automatically.'
+          : 'Live data from Supabase / QuickBooks. Tap "Edit layout" to rearrange — your layout is saved just for you.'}
       </div>
     </div>
   );
-}
-
-function phaseClass(phase) {
-  if (!phase) return 'active';
-  if (['completed', 'closed'].includes(phase)) return 'resolved';
-  if (['on_hold', 'cancelled'].includes(phase)) return 'waiting';
-  if (['lead', 'emergency'].includes(phase)) return 'needs-response';
-  return 'active';
 }

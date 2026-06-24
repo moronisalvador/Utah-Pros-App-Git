@@ -18,7 +18,7 @@
    ```
    For destructive actions that need confirmation, use **inline two-click confirm state** — first click turns button red + shows "Confirm", second click executes, `onBlur` cancels. Never a modal or native dialog.
 4. **Always use `const { db } = useAuth()`** in components. Never import `db` directly from `@/lib/supabase`.
-5. **Develop on a feature branch — never `git push` to `main` directly.** Direct pushes to `main` are blocked by the Claude Code safety guardrail by design; ship via a reviewed PR to `main`. **`dev` is now an automatic mirror of `main`** (a GitHub Action fast-forwards `dev` to `main` on every push to `main`, so staging always runs production code). **Do not commit directly to `dev`** — it gets overwritten. See [Deployment & Release Workflow](#deployment--release-workflow).
+5. **Develop on a feature branch (or `dev`) — never `git push` to `main` directly.** Direct pushes to `main` are blocked by the Claude Code safety guardrail by design; ship via a reviewed PR to `main`. **`dev` is the staging branch** (dev.utahpros.app): push work there to test it on a real deploy with staging env vars, then open a reviewed **`dev → main` PR** to release. (`dev` is an independent branch — it is **no longer** auto-mirrored from `main`.) See [Deployment & Release Workflow](#deployment--release-workflow).
 6. **CSS: mobile changes use `@media (max-width: 768px)` only.** Never change desktop layout, colors, or spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 7. **Commit after every 2–3 files.** Small commits, clear messages.
 8. **DB queries: always use `db.rpc()` for new tables.** PostgREST schema cache may not reflect new tables — `SECURITY DEFINER` RPCs always work.
@@ -429,15 +429,14 @@ const handleDelete = async (item) => {
 **Branches → environments**
 - **Feature branch** — develop here. Cloudflare Pages builds a preview deploy per branch/PR.
 - **`main`** — production (utahpros.app). Cloudflare deploys `main` to the live site, and the Capacitor iOS app loads `/tech/*` from that same build (see `CAPACITOR-TASK.md`).
-- **`dev`** — staging (dev.utahpros.app), kept as an **automatic mirror of `main`**: the `.github/workflows/sync-dev-to-main.yml` Action fast-forwards `dev` to `main` on every push to `main`. **Never commit directly to `dev`** — it gets overwritten on the next main push.
+- **`dev`** — staging (dev.utahpros.app). Cloudflare auto-deploys `dev` on every push, so push feature work here (or merge a feature branch into it) to test on a real deploy with the staging **Preview** env vars before it reaches production. `dev` is an **independent** branch — it is no longer force-synced from `main`.
 
 **Shipping to production (the only sanctioned path)**
 Agents **must not** `git push` to `main` — the Claude Code safety classifier blocks direct pushes to the default branch by design. Ship through review instead:
-1. Develop on a **feature branch** and verify on its preview deploy.
-2. **Open a PR → `main`** and merge it (once approved). Cloudflare deploys `main`; production + the native app pick it up.
-3. The sync Action mirrors `main` onto `dev`, so staging updates automatically — no separate `dev` step.
+1. Develop on a **feature branch** (preview deploy) and/or push to **`dev`** to verify on `dev.utahpros.app`.
+2. **Open a PR → `main`** (typically **`dev → main`**) and merge it once approved. Cloudflare deploys `main`; production + the native app pick it up.
 
-When a task is "done," the agent's final git step is **landing the feature branch on `main` via PR** — not a direct `main` push, and not a `dev` push. Do not try to work around the guardrail; route through the PR.
+When a task is "done," the agent's final git step is **landing the work on `main` via PR** — never a direct `main` push. Pushing to `dev` (staging) is fine and encouraged for testing.
 
 **Env vars:** Cloudflare Pages keeps separate **Production** (main) and **Preview** (dev + branches) variable sets. Any new secret (e.g. `RESEND_API_KEY`) must be added to **both** for staging and production to work, and a redeploy is required for changes to take effect.
 

@@ -71,10 +71,15 @@ src/
     realtime.js                   — Supabase realtime + auth client
     api.js                        — Misc API helpers
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
+    navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
   pages/
     Login.jsx                     — Email/password login + forgot password + dev mode selector
     SetPassword.jsx               — Password reset flow (recovery link handler)
-    Dashboard.jsx                 — Stats + recent jobs, click-through to job detail
+    Dashboard.jsx                 — Owner "Overview" dashboard: 12-col widget grid (replaced the old
+                                    stats+jobs view Jun 24 2026). See the "Overview Dashboard" section below.
+    components/overview/          — Overview dashboard pieces: tokens.js (dashboard-scoped palette +
+                                    placeholder data), Card.jsx (shared card shell + DeltaPill), Widgets.jsx
+                                    (the 10 widget components). Styles live under .ovw-* in index.css.
     Jobs.jsx                      — Job list: division tabs, sort, search, detail panel
     JobPage.jsx                   — Full job detail: Overview/Schedule/Files/Financial/Activity tabs
     Production.jsx                — Kanban pipeline (30 phases, 4 macro groups) + list view
@@ -144,7 +149,13 @@ src/
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
     SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
     ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
-    Sidebar.jsx                   — Sidebar navigation
+    Sidebar.jsx                   — Sidebar navigation (mobile + iPad ≤1279px; reads NAV_ITEMS from lib/navItems.jsx)
+    TopNav.jsx                    — Desktop top nav bar (≥1280px only): logo, primary links, GlobalSearch, NewMenu, NotificationBell, settings gear, UserMenu, overflow hamburger
+    OverflowDrawer.jsx            — Desktop "More" slide-over (secondary pages: Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing)
+    NewMenu.jsx                   — Top-nav "New" dropdown → New Claim (job creator) / New Customer / New Invoice (existing flows via Layout.handleCreateAction)
+    UserMenu.jsx                  — Top-nav avatar dropdown (admin-only Tech View + Sign Out)
+    GlobalSearch.jsx              — Top-nav global search: 300ms-debounced typeahead over the global_search RPC, grouped results routing to each record
+    SettingsLayout.jsx            — Settings hub shell: left sub-rail (desktop ≥1280px) wrapping the system pages; display:contents passthrough on mobile/iPad
 
 functions/
   api/
@@ -172,6 +183,55 @@ functions/
     supabase.js                   — Supabase REST helper for workers
     twilio.js                     — Twilio helpers
 ```
+
+---
+
+## Overview Dashboard (owner landing — Jun 24 2026)
+
+The owner's home screen at `/` (office/admin/PM/supervisor; field techs go to `/tech`). Replaced the old
+stat-cards + two-job-tables `Dashboard.jsx` with the Claude-design **"Overview"** — a responsive 12-column
+grid of 10 self-contained widget cards. Header = "Overview" title + date · division legend · period control
+(MTD/Last30/QTD/YTD) · "Edit layout". Footer fine print.
+
+**Widgets (default spans):** Revenue recognized `4` · Avg ticket `4` · Open estimates `4` · New claims booked
+`6` · Jobs completed `6` · Active drying `7` (signature) · Collections `5` · Action required `6` · Employee
+status `6` (live clock-in board) · Production pipeline `12` (future-ready, greyed recon/remodel lanes).
+
+**Files:** `src/pages/Dashboard.jsx` (header + grid assembly) · `src/components/overview/tokens.js`
+(palette + placeholder datasets; every widget takes a `data` prop defaulting to its placeholder, so live
+wiring is a drop-in) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer) ·
+`src/components/overview/Widgets.jsx` (the 10 widgets; CSS/SVG charts, no chart lib). Styles are scoped under
+`.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE pulse).
+
+**⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
+uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
+`#f2664a`, Mold pink `#ec4899` — and introduces a **"Remodeling"** division **only here**. The app-wide
+`DIVISION_COLORS` and the division enum are untouched. App-wide adoption + a real Remodeling division is a
+separate future project (Phase 4 below, decision pending).
+
+**Roadmap / status:**
+- **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
+- **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
+  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
+  (`estimates` empty), Active drying (Hydro unused). **Deferred:** Jobs completed (no completion signal —
+  `actual_completion` unpopulated). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
+  SECURITY DEFINER, granted authenticated): `get_revenue_by_division`, `get_avg_ticket`,
+  `get_open_estimates_summary`, `get_pipeline_summary`, `get_active_drying_jobs`, `get_dashboard_action_items`,
+  + helper `dash_division_bucket`. "View all →" links route to /collections, /claims, /production, /jobs.
+- **Phase 3 — DONE (drag/resize/reorder + per-user layouts):** `react-grid-layout` v2 (classic API via its
+  `/legacy` entry). "Edit layout" toggles drag (⠿ handle) + resize (bottom-right corner) + reorder; the
+  arrangement saves per user via the RLS-locked **`dashboard_layouts`** table + `get_dashboard_layout` /
+  `save_dashboard_layout` RPCs (scoped by `auth.uid()`, migration `20260624_dashboard_layouts.sql`) with a
+  `localStorage` instant-apply mirror + Reset. RGL CSS is inlined + themed in `index.css`. Responsive: 12-col
+  ≥996px, 1-col below.
+- **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+  **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
+  "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
+
+**Plan file (this session):** `/root/.claude/plans/yes-record-it-but-steady-kitten.md`.
 
 ---
 
@@ -567,6 +627,18 @@ this table per area as the backfill continues.
 ### Dashboard
 ```
 get_dashboard_stats()           — Dashboard stat counts
+```
+
+### Global Search (Jun 24 2026)
+```
+global_search(p_term TEXT, p_limit INT DEFAULT 6)
+  — Desktop top-nav search. SECURITY DEFINER, GRANT EXECUTE anon/authenticated.
+    Returns a JSONB object of grouped, read-only matches: customers (contacts),
+    claims, jobs, invoices, payments — each [{id, title, subtitle}] (payments
+    also carry invoice_id + job_id for routing). The 'estimates' key is reserved
+    (always []) until an estimates module exists. Enum cols cast to text before
+    NULLIF. Migration: supabase/migrations/20260624_global_search.sql. Does NOT
+    modify the MCP-only upr_search. Surfaced only in the desktop TopNav.
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
@@ -1120,6 +1192,19 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 **Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
 
 ---
+
+## Desktop Navigation Shell (≥1280px) — Top Nav + Overflow Drawer + Settings Hub (Jun 24 2026)
+
+A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar **on big-screen desktop browsers only**. Phones (≤768px) and iPads (769–1279px) are **unchanged** — they keep the dark `Sidebar` slide-over + mobile bottom bar. The `/tech/*` field-tech app is untouched.
+
+- **CSS-only shell:** both `<Sidebar>` and `<TopNav>` are always in the DOM; a single `@media (min-width:1280px)` block (end of `index.css`) hides `.sidebar`, shows `.topnav`, flips `.app-layout` to `flex-direction:column`, sets `--topnav-h:56px` (0 elsewhere so mobile math is unchanged), and height-corrects the three full-viewport pages (`.conversations-layout`, `.jobs-page`, `.job-page` → `calc(100dvh - var(--topnav-h))`). The `@media (max-width:768px)` block is byte-for-byte untouched.
+- **Single source of truth:** `src/lib/navItems.jsx` — `NAV_ITEMS` (legacy sidebar list, unchanged) + `PRIMARY_ITEMS`/`OVERFLOW_ITEMS`/`SYSTEM_ITEMS` + `isItemVisible(item, {canAccess,isFeatureEnabled,employee,isMoroni})` (mirrors legacy gating: adminOnly → role; moroniOnly → email; `always` skips canAccess (Help); else canAccess(key); then featureFlag).
+- **Top bar (`TopNav.jsx`):** logo · primary links [Home `/`, Inbox `/conversations` (unread badge), Schedule, Claims, Customers, My Money `/collections` (`page:collections`), Time `/time-tracking` (`page:time_tracking`)] · `GlobalSearch` · `NewMenu` · `NotificationBell` · settings gear (`/settings`) · `UserMenu`. **Home/Inbox/My Money/Time are LABEL renames only** — routes + nav_keys unchanged.
+- **Overflow drawer (`OverflowDrawer.jsx`):** hamburger-opened left slide-over (dark) — Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing.
+- **New menu (`NewMenu.jsx`):** New Claim (→ existing job+claim creator `CreateJobModal`), New Customer (`AddContactModal`), New Invoice (global `NewInvoiceModal`) — all via `Layout.handleCreateAction`. No estimate (no module).
+- **User menu (`UserMenu.jsx`):** avatar dropdown — admin-only Tech View + Sign Out.
+- **Settings hub (`SettingsLayout.jsx`):** pathless route wrapping the SYSTEM pages (`/settings`, `/help`, `/admin`, `/admin/demo-sheet-builder`, `/tech-feedback`, `/dev-tools`). Desktop shows a left sub-rail (gated via `isItemVisible`); below 1280px it's `display:contents` (passthrough — pages render exactly as before). Paths + AdminRoute/DevRoute guards unchanged. `Settings.jsx` keeps its own internal Carriers/Referrals/Templates sub-nav inside its content.
+- **Bell single-mount:** `Layout` gates the one `NotificationBell` by `matchMedia('(min-width:1280px)')` (TopNav on desktop, Sidebar header otherwise) so there are never two live notification subscriptions (no duplicate toasts). `NotificationBell` gained an optional `align` prop ('left'|'right').
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar

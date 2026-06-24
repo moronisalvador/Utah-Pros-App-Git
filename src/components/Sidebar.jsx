@@ -1,54 +1,10 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
-import {
-  IconDashboard, IconConversations, IconJobs,
-  IconCustomers, IconSchedule, IconTimeTracking,
-  IconAdmin, IconSettings, IconLogout,
-} from './Icons';
+import { IconLogout } from './Icons';
+import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools } from '@/lib/navItems';
 
-function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
-function IconTemplates(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7M17.5 14v7"/></svg>);}
-function IconProduction(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="3" width="4" height="18" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="5" width="4" height="16" rx="1"/></svg>);}
-function IconCollections(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 3.5C10 3.2 11 3 12 3"/><path d="M3.5 9C3.2 10 3 11 3 12"/></svg>);}
-function IconClaim(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>);}
-function IconDevTools(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>);}
-function IconImport(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>);}
-function IconFeedback(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>);}
-function IconCalculator(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10.01"/><line x1="12" y1="10" x2="12" y2="10.01"/><line x1="16" y1="10" x2="16" y2="10.01"/><line x1="8" y1="14" x2="8" y2="14.01"/><line x1="12" y1="14" x2="12" y2="14.01"/><line x1="16" y1="14" x2="16" y2="14.01"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="16" y1="18" x2="16" y2="18.01"/></svg>);}
-
-function IconHelp(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>);}
-
-// featureFlag: if set, this nav item is hidden when that flag is disabled
-// No featureFlag = always show (existing pages are unrestricted)
-const NAV_ITEMS = [
-  { section: 'Main' },
-  { key: 'dashboard',    label: 'Dashboard',    path: '/',             icon: IconDashboard },
-  { key: 'conversations',label: 'Conversations',path: '/conversations', icon: IconConversations, badge: true },
-  { key: 'claims',       label: 'Claims',       path: '/claims',       icon: IconClaim },
-  { key: 'jobs',         label: 'Jobs',         path: '/jobs',         icon: IconJobs },
-  { key: 'production',   label: 'Production',   path: '/production',   icon: IconProduction },
-  { key: 'customers',    label: 'Customers',    path: '/customers',    icon: IconCustomers },
-
-  { section: 'Operations' },
-  { key: 'schedule',           label: 'Schedule',           path: '/schedule',           icon: IconSchedule },
-  { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
-  { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking, featureFlag: 'page:time_tracking' },
-  { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections,  featureFlag: 'page:collections' },
-  { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,         featureFlag: 'page:leads' },
-  { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
-
-  { section: 'Tools' },
-  { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing' },
-
-  { section: 'System' },
-  { key: 'admin_panel',          label: 'Admin',              path: '/admin',                       icon: IconAdmin },
-  { key: 'demo_sheet_builder',   label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder',    icon: IconAdmin, adminOnly: true },
-  { key: 'tech_feedback',        label: 'Tech Feedback',      path: '/tech-feedback',               icon: IconFeedback },
-  { key: 'settings',             label: 'Settings',           path: '/settings',                    icon: IconSettings },
-];
-
-export default function Sidebar({ isOpen, onNavClick, onAction }) {
+export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
 
   const initials = employee?.full_name
@@ -67,7 +23,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
       <div className="sidebar-header">
         <div className="sidebar-logo">U</div>
         <span className="sidebar-title">UPR Platform</span>
-        <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>
+        {showBell && <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>}
       </div>
 
       {/* Quick create buttons */}

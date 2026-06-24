@@ -70,6 +70,9 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --bottom-bar-h: 72px;
+  /* Desktop top-nav height — 0 by default so mobile/iPad layout math is unchanged;
+     set to a real value only inside the @media (min-width:1280px) desktop block. */
+  --topnav-h: 0px;
 }
 
 html {
@@ -5092,7 +5095,7 @@ tr:hover td { background: var(--bg-secondary); }
 /* Hide app shell + input column + internal margin panel when printing.
    Keep only the customer-facing breakdown visible. */
 @media print {
-  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop { display: none !important; }
+  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop, .topnav, .overflow-drawer, .overflow-backdrop { display: none !important; }
   .oop-no-print { display: none !important; }
   .oop-print-only { display: block !important; }
   .oop-layout { grid-template-columns: 1fr !important; }
@@ -5105,4 +5108,318 @@ tr:hover td { background: var(--bg-secondary); }
 @media (max-width: 900px) {
   .oop-layout { grid-template-columns: 1fr !important; }
   .oop-breakdown { position: static !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERVIEW DASHBOARD  (owner landing — src/pages/Dashboard.jsx)
+   Self-contained, dashboard-scoped design language. Everything is prefixed
+   `.ovw-`. This intentionally uses its OWN palette (teal/purple/coral/pink
+   division colors + a softer card system) per the Claude-design handoff and
+   does NOT touch the app-wide tokens or DIVISION_COLORS. Dynamic values
+   (bar widths, chart colors, conic stops) live inline in the components;
+   only layout, hover, responsive collapse, and animation live here.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ovw-page { max-width: 1400px; margin: 0 auto; padding: 26px 30px 60px; }
+
+/* ── header ── */
+.ovw-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 22px; }
+.ovw-title { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.025em; color: #101828; }
+.ovw-subtitle { margin-top: 4px; font-size: 13px; color: #667085; font-weight: 500; }
+.ovw-header-right { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ovw-legend { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.ovw-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #475467; }
+.ovw-legend-sw { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+
+/* ── period segmented control ── */
+.ovw-seg { display: inline-flex; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 3px; gap: 2px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.ovw-seg-btn { font-family: inherit; font-size: 12.5px; font-weight: 600; color: #667085; background: transparent; border: none; border-radius: 6px; padding: 6px 13px; cursor: pointer; transition: background .12s, color .12s; }
+.ovw-seg-btn:hover { background: #f4f5f7; }
+.ovw-seg-btn.active { color: #fff; background: #101828; font-weight: 700; }
+.ovw-seg-btn.active:hover { background: #101828; }
+
+/* ── edit-layout button ── */
+.ovw-editbtn { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 7px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background .12s; }
+.ovw-editbtn:hover { background: #fafbfc; }
+
+/* ── grid + spans ── */
+.ovw-grid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 16px; align-items: stretch; }
+.ovw-span-4  { grid-column: span 4; }
+.ovw-span-5  { grid-column: span 5; }
+.ovw-span-6  { grid-column: span 6; }
+.ovw-span-7  { grid-column: span 7; }
+.ovw-span-12 { grid-column: span 12; }
+
+/* ── card shell ── */
+.ovw-card { background: #fff; border: 1px solid #e7e9ee; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05); display: flex; flex-direction: column; gap: 13px; min-width: 0; }
+.ovw-card-wide { padding: 18px 20px; }
+.ovw-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ovw-card-title { font-size: 13px; font-weight: 700; color: #344054; display: flex; align-items: center; gap: 7px; min-width: 0; }
+.ovw-card-title .ovw-suffix { font-weight: 500; color: #98a2b3; }
+.ovw-head-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.ovw-handle { font-size: 15px; line-height: 1; color: #cbd0d9; cursor: grab; user-select: none; display: inline-flex; align-items: center; }
+.ovw-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 11px; border-top: 1px solid #f0f1f4; }
+.ovw-link { font-size: 12.5px; font-weight: 600; color: #2f6bf2; text-decoration: none; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
+.ovw-link:hover { text-decoration: underline; }
+
+/* ── list rows (drying / action / employee) ── */
+.ovw-row { display: flex; align-items: center; gap: 12px; padding: 7px 6px; border-radius: 8px; text-decoration: none; transition: background .12s; }
+.ovw-row:hover { background: #f8f9fb; }
+.ovw-row-action { gap: 11px; padding: 9px 8px; }
+.ovw-row.ovw-escal { background: #fef3f2; }
+.ovw-row.ovw-escal:hover { background: #fdecea; }
+
+/* ── live pulse dot (employee status) ── */
+@keyframes ovwPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.78); } }
+.ovw-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #1f9d55; display: block; animation: ovwPulse 1.6s ease-in-out infinite; }
+
+/* ── responsive collapse: 12-col → 2-col → 1-col ── */
+@media (max-width: 1100px) {
+  .ovw-span-4, .ovw-span-5, .ovw-span-6, .ovw-span-7 { grid-column: span 6; }
+}
+@media (max-width: 680px) {
+  .ovw-page { padding: 18px 14px 32px; }
+  .ovw-grid { gap: 12px; }
+  .ovw-span-4, .ovw-span-5, .ovw-span-6, .ovw-span-7, .ovw-span-12 { grid-column: span 12; }
+  .ovw-header { margin-bottom: 16px; gap: 14px; }
+  .ovw-title { font-size: 20px; }
+}
+
+/* ── react-grid-layout (Phase 3 drag/resize/reorder) — inlined + themed ── */
+.ovw-grid-rgl { position: relative; }
+.react-grid-layout { position: relative; transition: height 200ms ease; }
+.react-grid-item { transition: all 200ms ease; transition-property: left, top, width, height; box-sizing: border-box; }
+.react-grid-item.cssTransforms { transition-property: transform, width, height; }
+.react-grid-item.resizing { transition: none; z-index: 1; will-change: width, height; }
+.react-grid-item.react-draggable-dragging { transition: none; z-index: 3; will-change: transform; }
+.react-grid-item.react-grid-placeholder { background: var(--accent); opacity: 0.12; border-radius: 14px; transition-duration: 100ms; z-index: 2; user-select: none; }
+.react-grid-item > .react-resizable-handle { position: absolute; width: 22px; height: 22px; bottom: 0; right: 0; cursor: se-resize; opacity: 0; }
+.ovw-editing .react-grid-item > .react-resizable-handle { opacity: 1; }
+.react-grid-item > .react-resizable-handle::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 7px; height: 7px; border-right: 2px solid #9aa1ad; border-bottom: 2px solid #9aa1ad; }
+.ovw-rgl-item { height: 100%; }
+.ovw-rgl-item > .ovw-card { height: 100%; overflow: hidden; }
+.ovw-editing .ovw-rgl-item > .ovw-card { outline: 1px dashed #c2c7d0; outline-offset: -1px; }
+.ovw-editing .ovw-handle { cursor: grab; }
+/* ═══════════════════════════════════════════════════
+   Desktop top-nav shell — BIG SCREENS ONLY (≥1280px)
+   ───────────────────────────────────────────────────
+   Phones (≤768px) and iPads (769–1279px) are untouched:
+   they keep the dark sidebar + mobile bottom bar. Every
+   rule that actually changes the app shell lives in the
+   @media (min-width:1280px) block at the very bottom of
+   this section. The component styles before it are inert
+   on small screens because `.topnav` is display:none.
+   ═══════════════════════════════════════════════════ */
+.topnav {
+  display: none; /* shown only in the min-width:1280px block below */
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--topnav-h);
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  z-index: 60;
+}
+
+.topnav-menu-btn,
+.topnav-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-secondary); border-radius: var(--radius-md);
+  text-decoration: none; transition: background var(--transition-fast), color var(--transition-fast);
+}
+.topnav-menu-btn:hover,
+.topnav-icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.topnav-icon-btn.active { color: var(--accent); }
+
+.topnav-logo-link { display: inline-flex; align-items: center; flex-shrink: 0; text-decoration: none; }
+.topnav-logo {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: var(--text-sm);
+}
+
+.topnav-primary {
+  display: flex; align-items: stretch; gap: 2px;
+  height: 100%; margin-left: var(--space-2);
+  min-width: 0; overflow: hidden;
+}
+.topnav-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 100%; padding: 0 var(--space-3);
+  font-size: var(--text-base); font-weight: 500;
+  color: var(--text-secondary); text-decoration: none;
+  border-bottom: 2px solid transparent; white-space: nowrap;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.topnav-link:hover { color: var(--text-primary); text-decoration: none; }
+.topnav-link.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.topnav-badge {
+  background: var(--status-needs-response); color: #fff;
+  font-size: 10px; font-weight: 700; min-width: 16px; height: 16px;
+  border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px;
+}
+
+.topnav-right { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; flex-shrink: 0; }
+
+/* Global search box */
+.topnav-search { position: relative; display: flex; align-items: center; width: 340px; max-width: 34vw; }
+.topnav-search-icon { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--text-tertiary); pointer-events: none; }
+.topnav-search-input {
+  width: 100%; height: 36px; padding: 0 12px 0 32px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-full);
+  background: var(--bg-secondary); font-family: var(--font-sans);
+  font-size: var(--text-sm); color: var(--text-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.topnav-search-input:focus { outline: none; border-color: var(--accent); background: var(--bg-primary); box-shadow: 0 0 0 3px var(--accent-light); }
+.topnav-search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  max-height: 70vh; overflow-y: auto; z-index: 200; padding: var(--space-1);
+}
+.topnav-search-empty, .topnav-search-loading { padding: 14px; font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
+.topnav-search-group-label {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-tertiary); padding: 8px 10px 4px;
+}
+.topnav-search-item {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+  padding: 7px 10px; border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-md); color: var(--text-primary);
+}
+.topnav-search-item:hover, .topnav-search-item.active { background: var(--bg-tertiary); }
+.topnav-search-item-title { font-size: var(--text-sm); font-weight: 600; }
+.topnav-search-item-sub { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* "New" button + its dropdown */
+.topnav-new { position: relative; flex-shrink: 0; }
+.topnav-new-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 36px; padding: 0 14px; border: none; cursor: pointer;
+  background: var(--text-primary); color: #fff;
+  border-radius: var(--radius-full); font-family: var(--font-sans);
+  font-size: var(--text-sm); font-weight: 600; white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+.topnav-new-btn:hover, .topnav-new-btn.active { background: #000; }
+
+/* Shared dropdown menu (New + User) */
+.topnav-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 220px; background: var(--bg-primary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md); padding: var(--space-1); z-index: 200;
+}
+.topnav-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 8px 10px; border: none; background: none; cursor: pointer;
+  border-radius: var(--radius-md); color: var(--text-primary);
+  font-family: var(--font-sans); font-size: var(--text-sm); text-decoration: none;
+}
+.topnav-menu-item:hover { background: var(--bg-tertiary); text-decoration: none; }
+.topnav-menu-item--danger { color: #dc2626; }
+.topnav-menu-item--danger:hover { background: #fef2f2; }
+.topnav-menu-emoji { font-size: 18px; flex-shrink: 0; width: 22px; text-align: center; }
+.topnav-menu-text { display: flex; flex-direction: column; min-width: 0; }
+.topnav-menu-label { font-size: var(--text-sm); font-weight: 600; }
+.topnav-menu-desc { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* User avatar + menu */
+.topnav-user { position: relative; flex-shrink: 0; }
+.topnav-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: 700;
+}
+.topnav-user-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--border-light); margin-bottom: var(--space-1); }
+.topnav-user-name { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.topnav-user-role { font-size: var(--text-xs); color: var(--text-tertiary); text-transform: capitalize; }
+
+/* Overflow "More" drawer (opened from the top-nav hamburger). Controlled by the
+   .open class (not a breakpoint), and only ever triggered on desktop; off-screen
+   + inert otherwise, so it's harmless on phones/iPads. */
+.overflow-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  z-index: 70; opacity: 0; pointer-events: none; transition: opacity 200ms ease;
+}
+.overflow-backdrop.open { opacity: 1; pointer-events: auto; }
+.overflow-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
+  background: var(--sidebar-bg); z-index: 71;
+  display: flex; flex-direction: column;
+  transform: translateX(-100%); transition: transform 250ms ease;
+  box-shadow: var(--shadow-lg);
+}
+.overflow-drawer.open { transform: translateX(0); }
+.overflow-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-4); border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.overflow-drawer-title { font-size: var(--text-base); font-weight: 600; color: var(--sidebar-text-active); }
+.overflow-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: none; background: none; cursor: pointer;
+  color: var(--sidebar-text); border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.overflow-drawer-close:hover { background: rgba(255,255,255,0.08); color: var(--sidebar-text-active); }
+.overflow-drawer-nav { flex: 1; overflow-y: auto; padding: var(--space-2); display: flex; flex-direction: column; gap: 1px; }
+.overflow-drawer-link {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3); border-radius: var(--radius-md);
+  color: var(--sidebar-text); font-size: var(--text-sm); font-weight: 500;
+  text-decoration: none; min-height: 44px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.overflow-drawer-link:hover { background: var(--sidebar-hover); color: var(--sidebar-text-active); text-decoration: none; }
+.overflow-drawer-link.active { background: var(--sidebar-active); color: var(--sidebar-accent); }
+.overflow-drawer-link .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+.overflow-drawer-link.active .nav-icon { opacity: 1; }
+.overflow-drawer-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--sidebar-text); }
+
+/* Settings hub — system pages share a left rail on desktop. Below 1280px the
+   wrapper is `display:contents` and the rail is hidden, so the wrapped page is
+   a direct child of .app-content exactly as before (no behavioral change). */
+.settings-hub { display: contents; }
+.settings-hub-content { display: contents; }
+.settings-hub-rail { display: none; }
+.settings-hub-title { font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); padding: 0 var(--space-2) var(--space-3); }
+.settings-hub-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px var(--space-3); border-radius: var(--radius-md);
+  color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500;
+  text-decoration: none; transition: background var(--transition-fast), color var(--transition-fast);
+}
+.settings-hub-link:hover { background: var(--bg-tertiary); color: var(--text-primary); text-decoration: none; }
+.settings-hub-link.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.settings-hub-link .nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.8; }
+.settings-hub-link.active .nav-icon { opacity: 1; }
+
+/* ── Desktop activation — the ONLY rules that reshape the shell ── */
+@media (min-width: 1280px) {
+  :root { --topnav-h: 56px; }
+  .app-layout { flex-direction: column; }
+  .sidebar { display: none; }
+  .topnav { display: flex; }
+  /* Center capped page content & widen the cap now the sidebar is gone (was left-pinned against the viewport edge) */
+  .page,
+  .customers-page { max-width: 1600px; margin: 0 auto; }
+  /* Full-viewport pages use 100dvh and must now subtract the top bar */
+  .conversations-layout,
+  .jobs-page,
+  .job-page { height: calc(100dvh - var(--topnav-h)); }
+  /* Settings hub becomes a two-column layout (rail + page) */
+  .settings-hub { display: flex; height: 100%; min-height: 0; }
+  .settings-hub-rail {
+    display: flex; flex-direction: column; width: 240px; flex-shrink: 0; gap: 2px;
+    background: var(--bg-primary); border-right: 1px solid var(--border-color);
+    padding: var(--space-4) var(--space-3); overflow-y: auto;
+  }
+  .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
 }

@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
+import TopNav from './TopNav';
+import OverflowDrawer from './OverflowDrawer';
 import CreateJobModal from './CreateJobModal';
 import AddContactModal from './AddContactModal';
+import NewInvoiceModal from './NewInvoiceModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -30,9 +33,17 @@ export default function Layout() {
   const [toasts, setToasts] = useState([]);
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
+  const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false); // desktop overflow drawer (≥1280px)
   const [carriers, setCarriers] = useState([]);
   const [referralSources, setReferralSources] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  // True when the desktop top-nav is active (≥1280px). Used ONLY to decide where
+  // the single NotificationBell mounts (TopNav vs Sidebar header) so we never run
+  // two live notification subscriptions at once. The shell layout itself is CSS-only.
+  const [isDesktopNav, setIsDesktopNav] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const { db } = useAuth();
@@ -47,6 +58,17 @@ export default function Layout() {
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
     };
+  }, []);
+
+  // ── Track the ≥1280px top-nav breakpoint (bell placement only) ──
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const handler = (e) => {
+      setIsDesktopNav(e.matches);
+      if (!e.matches) setOverflowOpen(false); // don't leave the desktop drawer stuck open after shrinking
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
   }, []);
 
   // ── Global toast system — fire from anywhere with:
@@ -100,11 +122,18 @@ export default function Layout() {
     return location.pathname.startsWith(path);
   };
 
-  // ── CreateMenu / Sidebar action handler ──
+  // ── Create action handler (Sidebar buttons + TopNav "New" menu) ──
   const handleCreateAction = (key) => {
     setSidebarOpen(false);
+    setOverflowOpen(false);
     if (key === 'job') { setShowCreateJob(true); return; }
     if (key === 'customer') { setShowAddContact(true); return; }
+    if (key === 'invoice') { setShowNewInvoice(true); return; }
+    if (key === 'estimate') {
+      // Placeholder until the estimate builder ships — wire the real action (modal/route) here then.
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { title: 'Coming soon', message: 'The estimate builder is being built next.', type: 'warning' } }));
+      return;
+    }
   };
 
   // After contact saved — navigate to new contact, reload customers list if on that page
@@ -174,7 +203,18 @@ export default function Layout() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleCreateAction} />
+      {/* Desktop top nav (≥1280px) — hidden on phones/iPads via CSS */}
+      <TopNav
+        unreadCount={unreadCount}
+        onAction={handleCreateAction}
+        onMenuClick={() => setOverflowOpen(true)}
+        showBell={isDesktopNav}
+      />
+
+      <Sidebar isOpen={sidebarOpen} onNavClick={handleNavClick} onAction={handleCreateAction} showBell={!isDesktopNav} />
+
+      {/* Desktop "More" drawer (≥1280px) — opened by the TopNav hamburger */}
+      <OverflowDrawer open={overflowOpen} onClose={() => setOverflowOpen(false)} />
 
       <main className="app-content">
         <Outlet />
@@ -195,6 +235,10 @@ export default function Layout() {
           carriers={carriers}
           referralSources={referralSources}
         />
+      )}
+
+      {showNewInvoice && (
+        <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />
       )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
