@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
@@ -14,60 +14,63 @@ import {
 } from '@/lib/nativeBiometric';
 import { realtimeClient } from '@/lib/realtime';
 
-// Pages
+// Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
+// small (esp. the native tech app, which never loads admin/desktop pages).
+// Login + the layout shells stay eager (critical path).
 import Login from '@/pages/Login';
-import Dashboard from '@/pages/Dashboard';
-import Conversations from '@/pages/Conversations';
-import Jobs from '@/pages/Jobs';
-import JobPage from '@/pages/JobPage';
-import ClaimsList from '@/pages/ClaimsList';
-import ClaimPage from '@/pages/ClaimPage';
-import Production from '@/pages/Production';
-import Leads from '@/pages/Leads';
-import Customers from '@/pages/Customers';
-import CustomerPage from '@/pages/CustomerPage';
-import Schedule from '@/pages/Schedule';
-import ScheduleTemplates from '@/pages/ScheduleTemplates';
-import TimeTracking from '@/pages/TimeTracking';
-import Marketing from '@/pages/Marketing';
-import Admin from '@/pages/Admin';
-import Settings from '@/pages/Settings';
-import SignPage from '@/pages/SignPage';
-import SetPassword from '@/pages/SetPassword';
-import Collections from '@/pages/Collections';
-import ClaimCollectionPage from '@/pages/ClaimCollectionPage';
-import DevTools from '@/pages/DevTools';
-import { PrivacyPolicy, TermsOfService } from '@/pages/Legal';
-import AdminFeedback from '@/pages/AdminFeedback';
-import OOPPricing from '@/pages/OOPPricing';
-import AdminDemoSheetBuilder from '@/pages/AdminDemoSheetBuilder';
+import TechLayout from '@/components/TechLayout';
 
-import EncircleImport from '@/pages/EncircleImport';
-import Help from '@/pages/Help';
-import InvoiceEditor from '@/pages/InvoiceEditor';
-import PaymentSettings from '@/pages/PaymentSettings';
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Conversations = lazy(() => import('@/pages/Conversations'));
+const Jobs = lazy(() => import('@/pages/Jobs'));
+const JobPage = lazy(() => import('@/pages/JobPage'));
+const ClaimsList = lazy(() => import('@/pages/ClaimsList'));
+const ClaimPage = lazy(() => import('@/pages/ClaimPage'));
+const Production = lazy(() => import('@/pages/Production'));
+const Leads = lazy(() => import('@/pages/Leads'));
+const Customers = lazy(() => import('@/pages/Customers'));
+const CustomerPage = lazy(() => import('@/pages/CustomerPage'));
+const Schedule = lazy(() => import('@/pages/Schedule'));
+const ScheduleTemplates = lazy(() => import('@/pages/ScheduleTemplates'));
+const TimeTracking = lazy(() => import('@/pages/TimeTracking'));
+const Marketing = lazy(() => import('@/pages/Marketing'));
+const Admin = lazy(() => import('@/pages/Admin'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const SignPage = lazy(() => import('@/pages/SignPage'));
+const SetPassword = lazy(() => import('@/pages/SetPassword'));
+const Collections = lazy(() => import('@/pages/Collections'));
+const ClaimCollectionPage = lazy(() => import('@/pages/ClaimCollectionPage'));
+const DevTools = lazy(() => import('@/pages/DevTools'));
+const PrivacyPolicy = lazy(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = lazy(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
+const AdminFeedback = lazy(() => import('@/pages/AdminFeedback'));
+const OOPPricing = lazy(() => import('@/pages/OOPPricing'));
+const AdminDemoSheetBuilder = lazy(() => import('@/pages/AdminDemoSheetBuilder'));
+const EncircleImport = lazy(() => import('@/pages/EncircleImport'));
+const Help = lazy(() => import('@/pages/Help'));
+const InvoiceEditor = lazy(() => import('@/pages/InvoiceEditor'));
+const PaymentSettings = lazy(() => import('@/pages/PaymentSettings'));
 
 // Tech pages (field_tech role)
-import TechLayout from '@/components/TechLayout';
-import TechDash from '@/pages/tech/TechDash';
-import TechSchedule from '@/pages/tech/TechSchedule';
-import TechTasks from '@/pages/tech/TechTasks';
-import TechClaims from '@/pages/tech/TechClaims';
-import TechClaimDetail from '@/pages/tech/TechClaimDetail';
-import TechClaimAlbum from '@/pages/tech/TechClaimAlbum';
-import TechRoomDetail from '@/pages/tech/TechRoomDetail';
-import TechJobDetail from '@/pages/tech/TechJobDetail';
-import TechJobAlbum from '@/pages/tech/TechJobAlbum';
-import TechAppointment from '@/pages/tech/TechAppointment';
-import TechNewCustomer from '@/pages/tech/TechNewCustomer';
-import TechNewJob from '@/pages/tech/TechNewJob';
-import TechNewAppointment from '@/pages/tech/TechNewAppointment';
-import TechNewEvent from '@/pages/tech/TechNewEvent';
-import TechEditAppointment from '@/pages/tech/TechEditAppointment';
-import TechFeedback from '@/pages/tech/TechFeedback';
-import TechMore from '@/pages/tech/TechMore';
-import TechOOPPricing from '@/pages/tech/TechOOPPricing';
-import TechDemoSheet from '@/pages/tech/TechDemoSheet';
+const TechDash = lazy(() => import('@/pages/tech/TechDash'));
+const TechSchedule = lazy(() => import('@/pages/tech/TechSchedule'));
+const TechTasks = lazy(() => import('@/pages/tech/TechTasks'));
+const TechClaims = lazy(() => import('@/pages/tech/TechClaims'));
+const TechClaimDetail = lazy(() => import('@/pages/tech/TechClaimDetail'));
+const TechClaimAlbum = lazy(() => import('@/pages/tech/TechClaimAlbum'));
+const TechRoomDetail = lazy(() => import('@/pages/tech/TechRoomDetail'));
+const TechJobDetail = lazy(() => import('@/pages/tech/TechJobDetail'));
+const TechJobAlbum = lazy(() => import('@/pages/tech/TechJobAlbum'));
+const TechAppointment = lazy(() => import('@/pages/tech/TechAppointment'));
+const TechNewCustomer = lazy(() => import('@/pages/tech/TechNewCustomer'));
+const TechNewJob = lazy(() => import('@/pages/tech/TechNewJob'));
+const TechNewAppointment = lazy(() => import('@/pages/tech/TechNewAppointment'));
+const TechNewEvent = lazy(() => import('@/pages/tech/TechNewEvent'));
+const TechEditAppointment = lazy(() => import('@/pages/tech/TechEditAppointment'));
+const TechFeedback = lazy(() => import('@/pages/tech/TechFeedback'));
+const TechMore = lazy(() => import('@/pages/tech/TechMore'));
+const TechOOPPricing = lazy(() => import('@/pages/tech/TechOOPPricing'));
+const TechDemoSheet = lazy(() => import('@/pages/tech/TechDemoSheet'));
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
@@ -119,6 +122,15 @@ function NotFound() {
   );
 }
 
+// Fallback shown while a lazy page chunk downloads.
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', color: 'var(--text-tertiary)', fontSize: 13 }}>
+      Loading…
+    </div>
+  );
+}
+
 // Shared tech routes — used by both native and web trees
 function TechRoutes() {
   return (
@@ -156,21 +168,24 @@ function TechRoutes() {
 // Native build: /login + /tech/* only. Everything else → /tech.
 function NativeRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/sign/:token" element={<SignPage />} />
-      <Route path="/set-password" element={<SetPassword />} />
-      {TechRoutes()}
-      <Route path="/" element={<Navigate to="/tech" replace />} />
-      <Route path="*" element={<Navigate to="/tech" replace />} />
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/sign/:token" element={<SignPage />} />
+        <Route path="/set-password" element={<SetPassword />} />
+        {TechRoutes()}
+        <Route path="/" element={<Navigate to="/tech" replace />} />
+        <Route path="*" element={<Navigate to="/tech" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
 // Web build: full app — tech routes + admin/settings/devtools under Layout.
 function WebRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/sign/:token" element={<SignPage />} />
@@ -257,7 +272,8 @@ function WebRoutes() {
       </Route>
 
       <Route path="*" element={<NotFound />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

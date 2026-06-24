@@ -57,7 +57,7 @@
  *     buildNoteText) above the default-exported TechDemoSheet page.
  * ════════════════════════════════════════════════
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
@@ -75,6 +75,28 @@ import {
   collectSectionEntries,
   sectionHasContent,
 } from '@/components/demo-sheet/DemoSheetRenderer';
+
+// ─── SECTION: Local draft mirror (offline safety net) ──────────────
+// Field techs often work on flaky signal. We mirror the in-progress sheet to
+// localStorage on every change so a failed network save — or a crash/close —
+// never loses work. The mirror is cleared once the server confirms a save, so
+// its presence on the next load means "unsynced edits to restore".
+const MIRROR_PREFIX = 'scopesheet:draft:';
+const mirrorKeyFor = (id) => MIRROR_PREFIX + (id || 'pending');
+function readDraftMirror(id) {
+  try { const s = localStorage.getItem(mirrorKeyFor(id)); return s ? JSON.parse(s) : null; }
+  catch { return null; }
+}
+function writeDraftMirror(id, snap) {
+  try { localStorage.setItem(mirrorKeyFor(id), JSON.stringify({ ...snap, updatedAt: new Date().toISOString() })); }
+  catch { /* storage full/unavailable — best-effort */ }
+}
+function clearDraftMirror(id) {
+  try {
+    localStorage.removeItem(mirrorKeyFor(id));
+    localStorage.removeItem(MIRROR_PREFIX + 'pending');
+  } catch { /* ignore */ }
+}
 
 // ─── SECTION: Encircle search modal (component) ──────────────
 // ── Encircle Job Search Sheet ────────────────────────────────────────────────
@@ -751,8 +773,20 @@ export default function TechDemoSheet() {
   // let in-flight saves share the row id instead of racing.
   const sheetIdRef = useRef(null);
   const createInFlightRef = useRef(null);
+  const retryTimerRef = useRef(null);
+  // Caches the draft row fetched by the schema effect so the bootstrap effect
+  // doesn't re-fetch the same get_demo_sheet on load.
+  const loadedRowRef = useRef(null);
   const applySheetId = (id) => { sheetIdRef.current = id; setSheetId(id); };
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
+
+  // Autosave status surfaced in the header: 'idle' | 'saving' | 'saved' | 'error'.
+  const [saveState, setSaveState] = useState('idle');
+  // Bumped to re-trigger a failed autosave without a user edit (retry).
+  const [retryTick, setRetryTick] = useState(0);
+
+  // Job totals — memoized so we don't re-walk every room on each render.
+  const summary = useMemo(() => computeSummary(rooms, jobData, schema), [rooms, jobData, schema]);
 
   // ─── SECTION: Data fetching ──────────────
   // Active techs dropdown — replaces the original hardcoded list
@@ -782,6 +816,9 @@ export default function TechDemoSheet() {
         if (id) {
           const sheetRows = await db.rpc('get_demo_sheet', { p_id: id });
           const sheetRow = Array.isArray(sheetRows) ? sheetRows[0] : sheetRows;
+          // Cache for the bootstrap effect so it reuses this row instead of
+          // issuing a second identical get_demo_sheet.
+          loadedRowRef.current = { id, row: sheetRow };
           if (sheetRow?.schema_id) {
             schemaToUse = await loadSchemaById(sheetRow.schema_id);
           }
@@ -805,13 +842,22 @@ export default function TechDemoSheet() {
     const defaultRoom = () => makeDefaultRoom(schema);
     const id = searchParams.get('id');
     if (id) {
-      db.rpc('get_demo_sheet', { p_id: id })
-        .then(rows => {
-          const row = Array.isArray(rows) ? rows[0] : rows;
+      // Reuse the row already fetched by the schema effect (avoids a 2nd
+      // identical get_demo_sheet); fall back to fetching if not cached.
+      const cached = loadedRowRef.current;
+      const rowPromise = (cached && cached.id === id)
+        ? Promise.resolve(cached.row)
+        : db.rpc('get_demo_sheet', { p_id: id }).then(rows => Array.isArray(rows) ? rows[0] : rows);
+      rowPromise
+        .then(row => {
           if (row && row.form_data) {
             applySheetId(row.id);
             if (row.job_id) setJobIdState(row.job_id);
-            const d = row.form_data;
+            // Prefer a local mirror (unsynced edits from a failed save / crash)
+            // over the server copy — the mirror only exists when it's unsynced.
+            const mirror = readDraftMirror(row.id);
+            const d = (mirror && mirror.rooms) ? mirror : row.form_data;
+            if (mirror && mirror.rooms) toast('Restored unsaved changes', 'info');
             setRooms((d.rooms || [defaultRoom()]).map(r => ({ ...defaultRoom(), ...r })));
             setJobInfo(d.jobInfo || { date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
             // Spread-merge so newly-added job fields backfill on older drafts.
@@ -851,8 +897,22 @@ export default function TechDemoSheet() {
       if (apptClaim) {
         setEncircleLinked({ id: apptClaim, policyholder_name: apptInsured });
       }
-      setRooms([defaultRoom()]);
-      setJobData(makeDefaultJobData(schema));
+      // Recover a never-saved sheet (edited offline, no id yet). Skip when
+      // opened from an appointment — that context should start fresh.
+      const fromAppt = apptJobId || apptJobNumber || apptAddress || apptInsured || apptClaim;
+      const mirror = !fromAppt ? readDraftMirror('pending') : null;
+      if (mirror && mirror.rooms) {
+        setRooms(mirror.rooms.map(r => ({ ...makeDefaultRoom(schema), ...r })));
+        setJobInfo(mirror.jobInfo || { date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
+        setJobData({ ...makeDefaultJobData(schema), ...(mirror.jobData || {}) });
+        setHasSketchDone(mirror.hasSketchDone ?? null);
+        if (mirror.encircleLinked) setEncircleLinked(mirror.encircleLinked);
+        if (Array.isArray(mirror.encircleRooms)) setEncircleRooms(mirror.encircleRooms);
+        toast('Restored unsaved changes', 'info');
+      } else {
+        setRooms([defaultRoom()]);
+        setJobData(makeDefaultJobData(schema));
+      }
       setHydrated(true);
     }
     db.rpc('get_demo_sheet_drafts').then(d => setDrafts(d || [])).catch(() => {});
@@ -866,7 +926,14 @@ export default function TechDemoSheet() {
     }
   }, [techs, employee, jobInfo.tech]);
 
-  // Debounced autosave on any meaningful change
+  // Mirror the live draft to localStorage on every change — synchronous and
+  // offline-safe, so a failed network save or a crash never loses work.
+  useEffect(() => {
+    if (!hydrated || showResult) return;
+    writeDraftMirror(sheetIdRef.current, { rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone: sketchAnswer });
+  }, [hydrated, showResult, rooms, jobInfo, jobData, encircleLinked, encircleRooms, sketchAnswer]);
+
+  // Debounced autosave on any meaningful change (with status + retry).
   useEffect(() => {
     if (!hydrated) return;
     if (showResult) return;
@@ -875,6 +942,7 @@ export default function TechDemoSheet() {
       // First INSERT still in flight — saving again without an id would
       // create a duplicate draft. The next change re-arms the timer.
       if (!sheetIdRef.current && createInFlightRef.current) return;
+      setSaveState('saving');
       try {
         const payload = {
           p_id: sheetIdRef.current,
@@ -887,7 +955,7 @@ export default function TechDemoSheet() {
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
           p_status: 'draft',
           p_job_id: jobId || null,
-          p_summary: computeSummary(rooms, jobData, schema),
+          p_summary: summary,
           p_schema_id: schema?._id || null,
         };
         const savePromise = db.rpc('save_demo_sheet', payload);
@@ -901,14 +969,20 @@ export default function TechDemoSheet() {
           next.delete('jobNumber'); next.delete('address'); next.delete('insuredName'); next.delete('claimId'); next.delete('jobId');
           setSearchParams(next, { replace: true });
         }
+        // Server confirmed — the local mirror is no longer "unsynced".
+        clearDraftMirror(sheetIdRef.current);
+        setSaveState('saved');
       } catch {
-        /* autosave is best-effort; surface only on submit */
+        // Keep the localStorage mirror (holds the unsynced edits) and retry.
+        setSaveState('error');
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => setRetryTick(t => t + 1), 8000);
       } finally {
         createInFlightRef.current = null;
       }
     }, 2000);
     return () => clearTimeout(saveTimerRef.current);
-  }, [hydrated, rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone, sheetId, jobId, db, searchParams, setSearchParams, showResult]);
+  }, [hydrated, rooms, jobInfo, jobData, encircleLinked, encircleRooms, sketchAnswer, summary, schema, sheetId, jobId, db, searchParams, setSearchParams, showResult, retryTick]);
 
   // ─── SECTION: Event handlers ──────────────
   const handleEncircleSelect = async (claim) => {
@@ -991,7 +1065,7 @@ export default function TechDemoSheet() {
       p_status: status,
       p_encircle_note_id: encircleNoteId,
       p_job_id: jobId || null,
-      p_summary: computeSummary(rooms, jobData, schema),
+      p_summary: summary,
       p_email_sent: emailOk,
       p_schema_id: schema?._id || null,
     });
@@ -1024,6 +1098,7 @@ export default function TechDemoSheet() {
     try {
       await flushSave({ status: 'submitted' });
       saveOk = true;
+      clearDraftMirror(sheetIdRef.current); // submitted + persisted — drop the local copy
     } catch (e) {
       saveErr = e?.message || 'Failed to save';
     }
@@ -1148,6 +1223,8 @@ export default function TechDemoSheet() {
     setEncircleRooms([]);
     setSubmitResult(null);
     setShowResult(false);
+    clearDraftMirror(sheetIdRef.current); // also drops the 'pending' mirror
+    setSaveState('idle');
     applySheetId(null);
     setSearchParams({}, { replace: true });
   };
@@ -1204,6 +1281,11 @@ export default function TechDemoSheet() {
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:9, color:C.accent, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.14em', marginBottom:1 }}>Utah Pros Restoration</div>
               <div style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', color:C.text }}>Scope Sheet</div>
+              {saveState !== 'idle' && (
+                <div style={{ fontSize:10, fontWeight:600, marginTop:1, color: saveState==='error' ? C.red : saveState==='saved' ? C.green : C.muted }}>
+                  {saveState==='saving' ? '⏳ Saving…' : saveState==='saved' ? '✓ Saved' : '⚠ Save failed — retrying'}
+                </div>
+              )}
             </div>
             {rooms.length>0 && (
               <div style={{ textAlign:'right' }}>
