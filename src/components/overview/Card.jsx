@@ -29,6 +29,7 @@
  * ════════════════════════════════════════════════
  */
 
+import { useNavigate } from 'react-router-dom';
 import { C } from './tokens';
 
 // ─── SECTION: Shared primitives ──────────────
@@ -57,10 +58,12 @@ export function DeltaPill({ dir, pct }) {
   );
 }
 
-// Footer link styled as a button (no real navigation in Phase 1).
-export function FootLink({ children, onClick }) {
+// Footer link styled as a button. Pass `to` to navigate, or `onClick` for custom.
+export function FootLink({ children, to, onClick }) {
+  const navigate = useNavigate();
+  const handle = onClick || (to ? () => navigate(to) : undefined);
   return (
-    <button type="button" className="ovw-link" onClick={onClick}>{children}</button>
+    <button type="button" className="ovw-link" onClick={handle}>{children}</button>
   );
 }
 

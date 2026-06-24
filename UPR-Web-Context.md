@@ -210,19 +210,23 @@ uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purpl
 separate future project (Phase 4 below, decision pending).
 
 **Roadmap / status:**
-- **Phase 1 — DONE:** pixel-faithful visual shell, **placeholder data**, **static** responsive grid. The ⠿
-  drag handles render but are inert; the period switch updates the card suffix only (no re-query yet).
-- **Phase 2 — pending (live data + interactions):** one data hook per widget; period re-query; wire
-  "view all →" links. **Reuse:** `get_tech_status_board()`+`StatusBoard.jsx` (employee board, 30s poll),
-  `get_ar_invoices`/`get_job_financials`/`ARDashboard` aging (Collections + DSO), Hydro RPCs
-  (`get_stalled_materials*`, `moisture_readings`) for Active drying, `Production.jsx` phase map for pipeline.
-  **New RPCs to add:** `get_revenue_by_division`, `get_avg_ticket`, `get_jobs_completed_summary`,
-  `get_new_claims_sparkline`, `get_pipeline_summary`, `get_active_drying_jobs`, `get_dashboard_action_items`,
-  and (if no live `estimates` table) `get_open_estimates_summary`. Active drying + Action required are the
-  hard ones.
-- **Phase 3 — pending (drag/resize/reorder + per-user persistence):** add `react-grid-layout` (or `dnd-kit`);
-  new `dashboard_layouts` table (`employee_id`, `layout jsonb`) + `get/save_dashboard_layout` RPCs; localStorage
-  mirror; "Edit layout" toggles edit mode.
+- **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
+- **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
+  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
+  (`estimates` empty), Active drying (Hydro unused). **Deferred:** Jobs completed (no completion signal —
+  `actual_completion` unpopulated). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
+  SECURITY DEFINER, granted authenticated): `get_revenue_by_division`, `get_avg_ticket`,
+  `get_open_estimates_summary`, `get_pipeline_summary`, `get_active_drying_jobs`, `get_dashboard_action_items`,
+  + helper `dash_division_bucket`. "View all →" links route to /collections, /claims, /production, /jobs.
+- **Phase 3 — DONE (drag/resize/reorder + per-user layouts):** `react-grid-layout` v2 (classic API via its
+  `/legacy` entry). "Edit layout" toggles drag (⠿ handle) + resize (bottom-right corner) + reorder; the
+  arrangement saves per user via the RLS-locked **`dashboard_layouts`** table + `get_dashboard_layout` /
+  `save_dashboard_layout` RPCs (scoped by `auth.uid()`, migration `20260624_dashboard_layouts.sql`) with a
+  `localStorage` instant-apply mirror + Reset. RGL CSS is inlined + themed in `index.css`. Responsive: 12-col
+  ≥996px, 1-col below.
 - **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
 
 **Plan file (this session):** `/root/.claude/plans/yes-record-it-but-steady-kitten.md`.

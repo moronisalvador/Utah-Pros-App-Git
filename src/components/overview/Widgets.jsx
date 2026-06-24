@@ -67,7 +67,7 @@ export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.
       </div>
       <CardFooter>
         <span style={{ fontSize: 11.5, color: C.faint, fontWeight: 500 }}>Insurance pays divisions separately</span>
-        <FootLink>View report →</FootLink>
+        <FootLink to="/collections">View report →</FootLink>
       </CardFooter>
     </Card>
   );
@@ -134,7 +134,7 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
         <span style={{ fontSize: 12, color: C.body, fontWeight: 600 }}>
           {data.total} open · <span style={{ color: C.ink, fontWeight: 700, ...tnum }}>{data.totalValue}</span>
         </span>
-        <FootLink>View estimates →</FootLink>
+        <FootLink to="/claims">View estimates →</FootLink>
       </CardFooter>
     </Card>
   );
@@ -195,7 +195,7 @@ export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying }) {
       showHandle={showHandle}
       gap={6}
       headGap={6}
-      right={<FootLink>View all</FootLink>}
+      right={<FootLink to="/production">View all</FootLink>}
     >
       {data.rows.length === 0 && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, color: C.faint, fontSize: 13, fontWeight: 500 }}>
@@ -260,7 +260,7 @@ export function Collections({ showHandle, data = PLACEHOLDER.collections }) {
       </div>
       <CardFooter>
         <span style={{ fontSize: 12.5, color: C.body }}>DSO <b style={{ color: C.ink, fontWeight: 800, ...tnum }}>{data.dso}</b> days</span>
-        <FootLink>View collections →</FootLink>
+        <FootLink to="/collections">View collections →</FootLink>
       </CardFooter>
     </Card>
   );
@@ -290,7 +290,7 @@ export function ActionRequired({ showHandle, data = PLACEHOLDER.actions, summary
       })}
       <CardFooter>
         <FootSummary>{summary}</FootSummary>
-        <FootLink>View all →</FootLink>
+        <FootLink to="/jobs">View all →</FootLink>
       </CardFooter>
     </Card>
   );
