@@ -489,6 +489,8 @@ CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 - `resend-esign.js` — resend esign email for existing pending request
 - `track-open.js` — email open tracking pixel
 
+**All transactional email** (esign send/resend/confirmation, scope-sheet, water-loss report, billing 2FA) routes through **Resend** via the shared `functions/lib/email.js` `sendEmail()` helper — no other email provider. For sender identity, SPF/DKIM/DMARC, and inbox-deliverability guidance see **`EMAIL-DELIVERABILITY.md`**. (Invoice emails are sent by **QuickBooks**, not Resend; auth emails — password reset/invite — are sent by **Supabase**, now via its Resend SMTP integration.)
+
 ---
 
 *For the current active task, see any `*-TASK.md` file in this repo root (if one exists).*
