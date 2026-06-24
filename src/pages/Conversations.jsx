@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
-import { subscribeToMessages, subscribeToConversations } from '@/lib/realtime';
+import { subscribeToMessages, subscribeToConversations, getAuthHeader } from '@/lib/realtime';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';
 import DatePicker from '@/components/DatePicker';
 
@@ -405,9 +405,10 @@ export default function Conversations() {
       let usedWorker = false;
 
       try {
+        const authHeader = await getAuthHeader();
         const res = await fetch('/api/send-message', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({
             conversation_id: activeId,
             body: text,

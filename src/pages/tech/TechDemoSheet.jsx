@@ -1118,7 +1118,7 @@ export default function TechDemoSheet() {
       const tasks = [
         fetch('/api/send-demo-sheet', {
           method:'POST',
-          headers:{ 'Content-Type':'application/json' },
+          headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${db.apiKey}` },
           body: JSON.stringify({ subject, message: html }),
         })
           .then(async r => {

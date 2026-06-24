@@ -35,6 +35,20 @@ import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 const MINOR_VERSION = '70';
 const LOOKBACK_DAYS = 7;
 
+// Auth: x-webhook-secret (server-side cron) or a Supabase Bearer (admin).
+// Mirrors qbo-invoice.js so manual triggers and the scheduler both work.
+async function isAuthorized(request, env) {
+  const secret = request.headers.get('x-webhook-secret');
+  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return false;
+  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
+  });
+  return res.ok;
+}
+
 // ─── SECTION: Reconcile ──────────────
 async function reconcile(env) {
   const startedAt = new Date().toISOString();
@@ -75,10 +89,14 @@ export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 export async function onRequestGet(context) {
-  return jsonResponse(await reconcile(context.env), 200, context.request, context.env);
+  const { request, env } = context;
+  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  return jsonResponse(await reconcile(env), 200, request, env);
 }
 export async function onRequestPost(context) {
-  return jsonResponse(await reconcile(context.env), 200, context.request, context.env);
+  const { request, env } = context;
+  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  return jsonResponse(await reconcile(env), 200, request, env);
 }
 // Cloudflare cron trigger (if configured in wrangler.toml [triggers] crons).
 export async function scheduled(event, env, ctx) {

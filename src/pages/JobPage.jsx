@@ -515,11 +515,11 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
     setAddingSupp(true);try{const ins=await db.insert('job_supplements',{job_id:job.id,amount:amt,description:newDesc.trim()||null,supplement_date:newDate||null});
     const updated=ins?.length>0?[...supplements,ins[0]]:await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);
     setSupplements(updated);setNewAmt('');setNewDesc('');setNewDate(new Date().toISOString().slice(0,10));
-    await syncSuppTotal(updated);toast('Supplement added');}catch(e){errToast('Failed to add supplement: '+(e.message||e));}finally{setAddingSupp(false);}};
+    await syncSuppTotal(updated);okToast('Supplement added');}catch(e){errToast('Failed to add supplement: '+(e.message||e));}finally{setAddingSupp(false);}};
 
   const deleteSupplement=async(id)=>{if(confirmDelSupp!==id){setConfirmDelSupp(id);return;}setConfirmDelSupp(null);
     try{await db.delete('job_supplements',`id=eq.${id}`);const updated=supplements.filter(s=>s.id!==id);setSupplements(updated);
-    await syncSuppTotal(updated);toast('Supplement deleted');}catch(e){errToast('Failed to delete supplement');}};
+    await syncSuppTotal(updated);okToast('Supplement deleted');}catch(e){errToast('Failed to delete supplement');}};
 
   const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||''});setEd(true);};
   const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};

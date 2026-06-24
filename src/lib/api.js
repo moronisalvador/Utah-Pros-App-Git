@@ -1,11 +1,18 @@
 // Helper for calling Cloudflare Workers at /api/*
 // In dev, Vite proxy routes these to localhost:8788
 
+import { getAuthHeader } from '@/lib/realtime';
+
 export async function api(path, options = {}) {
   const { method = 'POST', body, headers: customHeaders } = options;
 
+  // Attach the current user's Bearer token so authenticated workers
+  // (send-message, etc.) accept the request.
+  const authHeader = await getAuthHeader();
+
   const headers = {
     'Content-Type': 'application/json',
+    ...authHeader,
     ...customHeaders,
   };
 

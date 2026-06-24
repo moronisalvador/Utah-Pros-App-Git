@@ -9,6 +9,21 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { sendEmail } from '../lib/email.js';
 
+// Verify the caller is an authenticated UPR user before sending a branded
+// email. Without this, anyone could POST and send mail from our domain.
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
+  });
+  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
+  return { ok: true };
+}
+
 function htmlToText(html) {
   if (!html) return '';
   return String(html)
@@ -36,6 +51,9 @@ export async function onRequestPost(context) {
 
   // Top-level guard: anything that throws ends up as JSON 200 with ok:false
   try {
+    const auth = await requireAuth(request, env);
+    if (auth.error) return jsonResponse({ ok: false, error: auth.error }, auth.status, request, env);
+
     if (!env.RESEND_API_KEY) {
       return jsonResponse({
         ok: false,
