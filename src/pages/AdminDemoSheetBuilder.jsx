@@ -42,7 +42,6 @@ function move(arr, from, to) {
 }
 function removeAt(arr, i)        { return arr.slice(0, i).concat(arr.slice(i + 1)); }
 function replaceAt(arr, i, val)  { const next = arr.slice(); next[i] = val; return next; }
-function appendItem(arr, item)   { return (arr || []).concat([item]); }
 
 function emptySection() {
   return {
@@ -1060,7 +1059,11 @@ function FieldEditor({ field, onChange }) {
 function ShowWhenEditor({ field, onChange }) {
   const sw = field.showWhen;
   const [enabled, setEnabled] = useState(!!sw);
-  useEffect(() => { setEnabled(!!field.showWhen); }, [field.showWhen]);
+  // When this editor instance is reused for a different field, resync the
+  // toggle to that field's showWhen. Done during render (not in an effect) to
+  // avoid a cascading re-render.
+  const [prevSw, setPrevSw] = useState(sw);
+  if (sw !== prevSw) { setPrevSw(sw); setEnabled(!!sw); }
 
   const set = (patch) => {
     const next = { ...(field.showWhen || {}), ...patch };
