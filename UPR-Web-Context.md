@@ -204,7 +204,9 @@ loading-skeleton / error-retry body states) · `src/components/overview/Widgets.
 `RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`) ·
 `src/components/overview/WidgetBoundary.jsx` (per-card React error boundary so one bad RPC can't blank the
 grid) · `src/components/overview/hooks/` (one hook per widget, all built on the shared
-`usePolledRpc(load, intervalMs, enabled)` — initial load + interval refresh + `{data,loading,error,reload}`;
+`usePolledRpc(load, intervalMs, enabled)` — initial load + interval refresh that **pauses while the tab is
+hidden and refetches on return**, **cancellation-safe** so a slow prior-period response can't overwrite the
+current one, + `{data,loading,error,reload}`;
 `dashUtils.js` = period math + money fmt; `useDashboardLayout.js` = layout persistence). Styles are scoped
 under `.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE pulse + shimmer skeleton + error).
 
