@@ -585,7 +585,7 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
       const json=await res.json();
       if(!res.ok)throw new Error(json.error||'Failed to resend');
       if(json.email_error){
-        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'error',message:`Email failed: ${json.sendgrid_error||'unknown error'}`}}));
+        window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'error',message:`Email failed: ${json.email_error_detail||'unknown error'}`}}));
       }else{
         window.dispatchEvent(new CustomEvent('upr:toast',{detail:{type:'success',message:`Reminder sent to ${sr.signer_email}`}}));
       }
