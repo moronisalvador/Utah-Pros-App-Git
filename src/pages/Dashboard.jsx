@@ -6,11 +6,13 @@
  * WHAT THIS DOES (plain language):
  *   The owner's home screen ("Overview"). It's a grid of cards summarizing the
  *   business — money in, jobs drying, who's clocked in, what needs attention.
- *   Each card pulls live data from the database. The header has the date, a
- *   color key for the divisions, a time-period switch (MTD / Last 30 / QTD /
- *   YTD), and an "Edit layout" button. In edit mode the owner can drag cards by
- *   their ⠿ handle, resize them from the corner, and reorder them — and that
- *   arrangement is saved just for them.
+ *   Each card pulls live data from the database, shows a shimmer while it loads,
+ *   and a "Retry" if it fails. Many rows are tappable and jump to that job. The
+ *   header has the date, a division color key, a time-period switch (MTD / Last
+ *   30 / QTD / YTD), and an "Edit layout" button. In edit mode the owner can drag
+ *   cards by their ⠿ handle, resize from the corner, and reorder — saved per user.
+ *   Money cards (revenue, avg ticket, collections) only show to billing-privileged
+ *   roles; everyone else sees a "Restricted" placeholder in that slot.
  *
  * WHERE IT LIVES:
  *   Route:        /  (office/admin/PM/supervisor landing — field techs go to /tech)
@@ -18,7 +20,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-grid-layout
- *   Internal:  @/components/overview/Widgets (the 10 cards) + its hooks + tokens
+ *   Internal:  @/components/overview/Widgets (the 10 cards) + its hooks + tokens,
+ *              @/components/overview/WidgetBoundary (per-card crash isolation),
+ *              @/contexts/AuthContext (role + feature flag), @/lib/claimUtils
  *   Data:      reads → per-widget RPCs (see each hook) + get_dashboard_layout
  *              writes → save_dashboard_layout (the user's card arrangement)
  *
@@ -27,21 +31,31 @@
  *     default layout below is the seed; a saved per-user layout overrides it.
  *   - Cards have fixed heights in the grid (rowHeight × h). Defaults are tuned to
  *     fit content; the owner resizes to taste. Charts/lists fill their card.
- *   - ⠿ drag handles + the resize corner only appear in edit mode.
+ *   - ⠿ drag handles + the resize corner only appear in edit mode. Row deep-links
+ *     are disabled in edit mode so clicking to navigate can't fight dragging.
+ *   - The `page:overview` flag is a kill-switch handled as CONTENT here (a
+ *     placeholder), NOT a FeatureRoute redirect — the dashboard IS the home route,
+ *     so redirecting to "/" would infinite-loop. isFeatureEnabled returns true
+ *     when the flag is missing/enabled, so this only hides on an explicit disable.
+ *   - Financial widgets are gated by canEditBilling AND their hooks are passed
+ *     enabled=false for non-privileged roles, so those RPCs aren't even fetched.
  * ════════════════════════════════════════════════
  */
 
 import { useState } from 'react';
 // v2 ships the classic v1-compatible API (WidthProvider/Responsive + draggableHandle) under /legacy
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
+import { useAuth } from '@/contexts/AuthContext';
+import { canEditBilling } from '@/lib/claimUtils';
 import { DIVISIONS, PERIODS } from '@/components/overview/tokens';
 import {
   RevenueRecognized, AvgTicket, OpenEstimates,
   NewClaimsBooked, JobsCompleted,
   ActiveDrying, Collections,
   ActionRequired, EmployeeStatus,
-  ProductionPipeline,
+  ProductionPipeline, RestrictedCard,
 } from '@/components/overview/Widgets';
+import { WidgetBoundary } from '@/components/overview/WidgetBoundary';
 import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
 import { useCollections } from '@/components/overview/hooks/useCollections';
 import { useNewClaims } from '@/components/overview/hooks/useNewClaims';
@@ -51,6 +65,7 @@ import { useOpenEstimates } from '@/components/overview/hooks/useOpenEstimates';
 import { usePipeline } from '@/components/overview/hooks/usePipeline';
 import { useActiveDrying } from '@/components/overview/hooks/useActiveDrying';
 import { useActionItems } from '@/components/overview/hooks/useActionItems';
+import { useJobsCompleted } from '@/components/overview/hooks/useJobsCompleted';
 import { useDashboardLayout } from '@/components/overview/hooks/useDashboardLayout';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -75,6 +90,10 @@ const DEFAULT_LAYOUTS = { lg: lgLayout, xs: xsLayout };
 
 export default function Dashboard() {
   // ─── SECTION: State & hooks ──────────────
+  const { employee, isFeatureEnabled } = useAuth();
+  const canFin = canEditBilling(employee?.role); // who may see company money (admin/manager)
+  const overviewOn = isFeatureEnabled('page:overview'); // kill-switch (content-gated below)
+
   const [period, setPeriod] = useState(PERIODS[0]);
   const [editing, setEditing] = useState(false);
   const periodLabel = `· ${period}`;
@@ -82,29 +101,57 @@ export default function Dashboard() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
+  // Financial hooks take `canFin` as their `enabled` flag — non-privileged roles
+  // never even fetch revenue/collections (not just hidden in the UI).
   const emp = useEmployeeStatus();
-  const coll = useCollections();
+  const coll = useCollections(canFin);
   const claims = useNewClaims(period);
-  const rev = useRevenue(period);
-  const avg = useAvgTicket(period);
+  const rev = useRevenue(period, canFin);
+  const avg = useAvgTicket(period, canFin);
   const est = useOpenEstimates();
   const pipeline = usePipeline();
   const drying = useActiveDrying();
   const actions = useActionItems();
+  const jobs = useJobsCompleted(period);
   const { layouts, persist, reset } = useDashboardLayout(DEFAULT_LAYOUTS);
+
+  // ─── SECTION: Kill-switch (content-gated — see header note on the home-route loop) ──────────────
+  if (!overviewOn) {
+    return (
+      <div className="ovw-page">
+        <header className="ovw-header">
+          <div>
+            <h1 className="ovw-title">Overview</h1>
+            <div className="ovw-subtitle">Utah Pros Restoration · {today}</div>
+          </div>
+        </header>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '40vh', gap: 10, textAlign: 'center', color: '#98a2b3' }}>
+          <span style={{ fontSize: 26 }} aria-hidden="true">🛠️</span>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#475467' }}>Overview is temporarily turned off</div>
+          <div style={{ fontSize: 13 }}>The dashboard is being updated. Use the sidebar to get where you need to go.</div>
+        </div>
+      </div>
+    );
+  }
 
   // ─── SECTION: Widgets (keyed by layout id) ──────────────
   const widgets = {
-    revenue:        <RevenueRecognized periodLabel={periodLabel} showHandle={editing} data={rev.data ?? undefined} />,
-    avgTicket:      <AvgTicket periodLabel={periodLabel} showHandle={editing} data={avg.data ?? undefined} />,
-    openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} />,
-    newClaims:      <NewClaimsBooked periodLabel={periodLabel} showHandle={editing} data={claims.data ?? undefined} />,
-    jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} />,
-    activeDrying:   <ActiveDrying showHandle={editing} data={drying.data ?? undefined} />,
-    collections:    <Collections showHandle={editing} data={coll.data ?? undefined} />,
-    actionRequired: <ActionRequired showHandle={editing} data={actions.data?.items ?? undefined} summary={actions.data?.summary ?? undefined} />,
-    employeeStatus: <EmployeeStatus showHandle={editing} data={emp.data ?? undefined} summary={emp.summary ?? undefined} />,
-    pipeline:       <ProductionPipeline showHandle={editing} data={pipeline.data ?? undefined} />,
+    revenue: canFin
+      ? <RevenueRecognized periodLabel={periodLabel} showHandle={editing} data={rev.data ?? undefined} loading={rev.loading} error={rev.error} onRetry={rev.reload} />
+      : <RestrictedCard spanClass="ovw-span-4" title="Revenue recognized" showHandle={editing} />,
+    avgTicket: canFin
+      ? <AvgTicket periodLabel={periodLabel} showHandle={editing} data={avg.data ?? undefined} loading={avg.loading} error={avg.error} onRetry={avg.reload} />
+      : <RestrictedCard spanClass="ovw-span-4" title="Avg ticket" showHandle={editing} />,
+    openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} loading={est.loading} error={est.error} onRetry={est.reload} />,
+    newClaims:      <NewClaimsBooked periodLabel={periodLabel} showHandle={editing} data={claims.data ?? undefined} loading={claims.loading} error={claims.error} onRetry={claims.reload} />,
+    jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} data={jobs.data ?? undefined} loading={jobs.loading} error={jobs.error} onRetry={jobs.reload} />,
+    activeDrying:   <ActiveDrying showHandle={editing} data={drying.data ?? undefined} loading={drying.loading} error={drying.error} onRetry={drying.reload} />,
+    collections: canFin
+      ? <Collections showHandle={editing} data={coll.data ?? undefined} loading={coll.loading} error={coll.error} onRetry={coll.reload} />
+      : <RestrictedCard spanClass="ovw-span-5" title="Collections" showHandle={editing} />,
+    actionRequired: <ActionRequired showHandle={editing} data={actions.data?.items ?? undefined} summary={actions.data?.summary ?? undefined} loading={actions.loading} error={actions.error} onRetry={actions.reload} />,
+    employeeStatus: <EmployeeStatus showHandle={editing} data={emp.data ?? undefined} summary={emp.summary ?? undefined} loading={emp.loading} error={emp.error} onRetry={emp.reload} />,
+    pipeline:       <ProductionPipeline showHandle={editing} data={pipeline.data ?? undefined} loading={pipeline.loading} error={pipeline.error} onRetry={pipeline.reload} />,
   };
 
   // ─── SECTION: Render ──────────────
@@ -166,7 +213,9 @@ export default function Dashboard() {
         onLayoutChange={(_, all) => { if (editing) persist(all); }}
       >
         {ORDER.map(id => (
-          <div key={id} className="ovw-rgl-item">{widgets[id]}</div>
+          <div key={id} className="ovw-rgl-item">
+            <WidgetBoundary>{widgets[id]}</WidgetBoundary>
+          </div>
         ))}
       </ResponsiveGridLayout>
 

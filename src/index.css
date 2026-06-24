@@ -5167,6 +5167,18 @@ tr:hover td { background: var(--bg-secondary); }
 .ovw-row-action { gap: 11px; padding: 9px 8px; }
 .ovw-row.ovw-escal { background: #fef3f2; }
 .ovw-row.ovw-escal:hover { background: #fdecea; }
+.ovw-row:focus-visible { outline: 2px solid #2f6bf2; outline-offset: -2px; }
+
+/* ── loading skeleton + error states (Card body) ── */
+@keyframes ovwShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.ovw-skel { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 70px; }
+.ovw-skel-bar { border-radius: 7px; background: linear-gradient(100deg, #eef0f3 30%, #f6f7f9 50%, #eef0f3 70%); background-size: 200% 100%; animation: ovwShimmer 1.3s ease-in-out infinite; }
+.ovw-skel-bar.metric { height: 30px; width: 45%; }
+.ovw-skel-bar.grow { flex: 1; min-height: 28px; }
+.ovw-skel-bar.line { height: 11px; }
+.ovw-err { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 70px; text-align: center; }
+.ovw-err-msg { font-size: 12.5px; font-weight: 600; color: #98a2b3; }
+@media (prefers-reduced-motion: reduce) { .ovw-skel-bar { animation: none; } }
 
 /* ── live pulse dot (employee status) ── */
 @keyframes ovwPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.78); } }

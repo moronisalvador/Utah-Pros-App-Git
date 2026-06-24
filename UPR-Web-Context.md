@@ -197,11 +197,16 @@ grid of 10 self-contained widget cards. Header = "Overview" title + date · divi
 `6` · Jobs completed `6` · Active drying `7` (signature) · Collections `5` · Action required `6` · Employee
 status `6` (live clock-in board) · Production pipeline `12` (future-ready, greyed recon/remodel lanes).
 
-**Files:** `src/pages/Dashboard.jsx` (header + grid assembly) · `src/components/overview/tokens.js`
-(palette + placeholder datasets; every widget takes a `data` prop defaulting to its placeholder, so live
-wiring is a drop-in) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer) ·
-`src/components/overview/Widgets.jsx` (the 10 widgets; CSS/SVG charts, no chart lib). Styles are scoped under
-`.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE pulse).
+**Files:** `src/pages/Dashboard.jsx` (header + grid assembly + access-gating + kill-switch) ·
+`src/components/overview/tokens.js` (palette + placeholder datasets; every widget takes a `data` prop
+defaulting to its placeholder) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer +
+loading-skeleton / error-retry body states) · `src/components/overview/Widgets.jsx` (the 10 widgets +
+`RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`) ·
+`src/components/overview/WidgetBoundary.jsx` (per-card React error boundary so one bad RPC can't blank the
+grid) · `src/components/overview/hooks/` (one hook per widget, all built on the shared
+`usePolledRpc(load, intervalMs, enabled)` — initial load + interval refresh + `{data,loading,error,reload}`;
+`dashUtils.js` = period math + money fmt; `useDashboardLayout.js` = layout persistence). Styles are scoped
+under `.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE pulse + shimmer skeleton + error).
 
 **⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
 uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
@@ -216,8 +221,8 @@ separate future project (Phase 4 below, decision pending).
   (`get_tech_status_board`, 30s poll), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
   (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
-  (`estimates` empty), Active drying (Hydro unused). **Deferred:** Jobs completed (no completion signal —
-  `actual_completion` unpopulated). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
+  (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
+  reads ~0 until jobs reach a terminal phase, then lights up automatically). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
   SECURITY DEFINER, granted authenticated): `get_revenue_by_division`, `get_avg_ticket`,
   `get_open_estimates_summary`, `get_pipeline_summary`, `get_active_drying_jobs`, `get_dashboard_action_items`,
   + helper `dash_division_bucket`. "View all →" links route to /collections, /claims, /production, /jobs.
@@ -227,6 +232,20 @@ separate future project (Phase 4 below, decision pending).
   `save_dashboard_layout` RPCs (scoped by `auth.uid()`, migration `20260624_dashboard_layouts.sql`) with a
   `localStorage` instant-apply mirror + Reset. RGL CSS is inlined + themed in `index.css`. Responsive: 12-col
   ≥996px, 1-col below.
+- **Part A — DONE (interactivity + robustness + access control):** (1) **Clickable rows** — Employee
+  status / Active drying / Action required rows deep-link to `/jobs/:id` (keyboard-accessible via
+  `useJobRowNav`, guarded on a missing id, suppressed in edit mode); Production-pipeline active stages →
+  `/production`. (2) **Loading/error states** — `usePolledRpc` exposes `{loading,error,reload}`; `Card`
+  renders a shimmer skeleton while loading and a "Couldn't load · Retry" on failure (no more placeholder
+  flash, no silent failures). (3) **Jobs completed wired** to `get_jobs_completed(p_start,p_end)`. (4)
+  **Access control** — Revenue / Avg ticket / Collections gated by `canEditBilling(role)` (admin/manager;
+  see `src/lib/claimUtils.js` `BILLING_EDIT_ROLES`); non-privileged roles get a `RestrictedCard` AND their
+  hooks run with `enabled=false` so those RPCs aren't even fetched (not just UI-hidden). (5) **`page:overview`
+  feature flag** is a kill-switch handled as **content** inside `Dashboard.jsx` (a placeholder when disabled),
+  **NOT** a `FeatureRoute` redirect — the dashboard is the home route `/`, so redirecting to `/` would
+  infinite-loop. (6) **`WidgetBoundary`** wraps each card so one failing widget can't blank the grid.
+  Migration `20260624_dashboard_interactivity.sql` (adds `job_id` to `get_active_drying_jobs` +
+  `get_dashboard_action_items`, creates `get_jobs_completed`, seeds the `page:overview` flag enabled).
 - **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
   **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
   "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
