@@ -22,7 +22,9 @@
  *   - "New Claim" → onAction('job'): a claim is created as part of the job
  *     creator (CreateJobModal). New Customer → 'customer', New Invoice →
  *     'invoice'. Layout.handleCreateAction maps these to the right modal.
- *   - No "New Estimate": there is no estimates module yet (no table/RPC/editor).
+ *   - "New Estimate" → onAction('estimate'): placeholder for now — shows a
+ *     "coming soon" toast (Layout.handleCreateAction). The estimates module
+ *     (table/RPC/editor) is being built next; wire the real action there then.
  *   - Closes on outside-click and Escape (same pattern as the legacy CreateMenu).
  * ════════════════════════════════════════════════
  */
@@ -31,6 +33,7 @@ import { IconPlus } from '@/lib/navItems';
 
 const OPTIONS = [
   { key: 'job',      label: 'New Claim',    desc: 'Start a claim & job', emoji: '\u{1F4C4}' },
+  { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}' },
   { key: 'customer', label: 'New Customer', desc: 'Add a contact',       emoji: '\u{1F464}' },
   { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}' },
 ];

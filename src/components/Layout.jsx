@@ -129,6 +129,11 @@ export default function Layout() {
     if (key === 'job') { setShowCreateJob(true); return; }
     if (key === 'customer') { setShowAddContact(true); return; }
     if (key === 'invoice') { setShowNewInvoice(true); return; }
+    if (key === 'estimate') {
+      // Placeholder until the estimate builder ships — wire the real action (modal/route) here then.
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { title: 'Coming soon', message: 'The estimate builder is being built next.', type: 'warning' } }));
+      return;
+    }
   };
 
   // After contact saved — navigate to new contact, reload customers list if on that page
