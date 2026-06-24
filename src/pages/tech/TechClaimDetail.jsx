@@ -892,11 +892,11 @@ export default function TechClaimDetail() {
           textTransform: 'uppercase', letterSpacing: '0.06em',
           marginBottom: 8,
         }}>
-          Demo Sheets{demoSheets.length > 0 ? ` (${demoSheets.length})` : ''}
+          Scope Sheets{demoSheets.length > 0 ? ` (${demoSheets.length})` : ''}
         </div>
         {demoSheets.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
-            No demo sheets yet. Open one from any appointment under this claim.
+            No scope sheets yet. Open one from any appointment under this claim.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

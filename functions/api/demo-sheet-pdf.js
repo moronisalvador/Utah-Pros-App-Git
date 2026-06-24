@@ -148,6 +148,7 @@ export async function onRequestPost(context) {
 //  {
 //    jobInfo: { date, techName, jobNumber, address, insuredName },
 //    floorPlan: string,
+//    jobSections: [ { label, entries: [ {kind, label, value} ] } ],  // job-level
 //    rooms: [
 //      { index, name, dim, sections: [ { label, entries: [ {kind, label, value} ] } ] }
 //    ],
@@ -181,7 +182,7 @@ async function buildDemoPdf(model) {
     curPage.drawRectangle({ x: 0, y: PH - 48, width: PW, height: 48, color: navy });
     drawText('Utah Pros Restoration', M, PH - 22, { font: fBold, size: 12, color: white });
     drawText('Licensed · Insured · Utah · (801) 427-0582', M, PH - 36, { font: fReg, size: 8, color: rgb(0.62, 0.68, 0.76) });
-    const rightLabel = 'DEMOLITION SHEET';
+    const rightLabel = 'SCOPE SHEET';
     const rlW = fBold.widthOfTextAtSize(rightLabel, 10);
     drawText(rightLabel, PW - M - rlW, PH - 22, { font: fBold, size: 10, color: white });
     if (jobNumLabel) {
@@ -217,7 +218,7 @@ async function buildDemoPdf(model) {
   curY -= 24;
 
   // Title
-  const title = 'DEMOLITION SHEET';
+  const title = 'SCOPE SHEET';
   const titleW = fBold.widthOfTextAtSize(title, 22);
   drawText(title, (PW - titleW) / 2, curY, { font: fBold, size: 22, color: navy });
   curY -= 6;
@@ -240,6 +241,39 @@ async function buildDemoPdf(model) {
   curY = gy - 6;
   drawLine(M, curY, PW - M, { thickness: 0.5, color: lgray });
   curY -= 22;
+
+  // ── LOSS & SITE DETAILS (job-level sections) ──
+  const jobSections = Array.isArray(model.jobSections) ? model.jobSections : [];
+  if (jobSections.length > 0) {
+    needY(50);
+    const jbH = 22;
+    curPage.drawRectangle({ x: M, y: curY - jbH + 4, width: CW, height: jbH, color: navy });
+    drawText('LOSS & SITE DETAILS', M + 8, curY - 11, { font: fBold, size: 11, color: white });
+    curY -= jbH + 10;
+    for (const sec of jobSections) {
+      needY(26);
+      drawText(String(sec.label || '').toUpperCase(), M, curY, { font: fBold, size: 8.5, color: blue });
+      curY -= 14;
+      const entries = Array.isArray(sec.entries) ? sec.entries : [];
+      for (const e of entries) {
+        if (e.kind === 'group') {
+          needY(16);
+          drawText(String(e.label || '').toUpperCase(), M + 8, curY, { font: fBold, size: 7.5, color: gray });
+          curY -= 12;
+          continue;
+        }
+        needY(16);
+        const valStr = e.value == null ? '' : String(e.value);
+        const valW = fBold.widthOfTextAtSize(valStr, 9.5);
+        drawText(fit(e.label, fReg, 9.5, CW - valW - 24), M + 14, curY, { font: fReg, size: 9.5, color: rgb(0.27, 0.27, 0.27) });
+        drawText(valStr, M + CW - valW, curY, { font: fBold, size: 9.5, color: black });
+        drawLine(M + 14, curY - 4, M + CW, { thickness: 0.3, color: rgb(0.93, 0.93, 0.93) });
+        curY -= 15;
+      }
+      curY -= 6;
+    }
+    curY -= 8;
+  }
 
   // ── ROOMS ──
   const rooms = Array.isArray(model.rooms) ? model.rooms : [];

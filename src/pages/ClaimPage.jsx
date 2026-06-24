@@ -395,7 +395,7 @@ export default function ClaimPage() {
           </div>
 
           {/* Full-width: Demo Sheets */}
-          <SectionCard title="Demo Sheets" count={demoSheets.length}>
+          <SectionCard title="Scope Sheets" count={demoSheets.length}>
             {demoSheetsContent}
           </SectionCard>
 
@@ -436,7 +436,7 @@ export default function ClaimPage() {
           <CollapsibleSection title="Documents" open={openSections.documents} onToggle={() => toggleSection('documents')}>
             {documentsContent}
           </CollapsibleSection>
-          <CollapsibleSection title="Demo Sheets" count={demoSheets.length} open={openSections.demoSheets} onToggle={() => toggleSection('demoSheets')}>
+          <CollapsibleSection title="Scope Sheets" count={demoSheets.length} open={openSections.demoSheets} onToggle={() => toggleSection('demoSheets')}>
             {demoSheetsContent}
           </CollapsibleSection>
           <CollapsibleSection title="Info" open={openSections.info} onToggle={() => toggleSection('info')}>
@@ -1004,9 +1004,9 @@ function DemoSheetsSection({ sheets, loaded, navigate }) {
     return (
       <div className="claim-ops-empty">
         <div className="claim-ops-empty-icon">📋</div>
-        <div className="claim-ops-empty-text">No demo sheets for this claim yet.</div>
+        <div className="claim-ops-empty-text">No scope sheets for this claim yet.</div>
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
-          Field techs open demo sheets from inside an appointment under this claim.
+          Field techs open scope sheets from inside an appointment under this claim.
         </div>
       </div>
     );

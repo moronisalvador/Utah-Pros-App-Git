@@ -62,6 +62,7 @@ export function defaultFieldValue(field) {
     case 'checkbox':   return false;
     case 'select':     return '';
     case 'list':       return field.defaultItem ? [{ id: newRowId(), ...field.defaultItem }] : [];
+    case 'computed':   return 0; // derived (see computeFieldValue); seeded so shapes stay stable
     default:           return null;
   }
 }
@@ -88,6 +89,26 @@ export function makeDefaultRoom(schema) {
   return room;
 }
 
+// Build the default job-level data object from a schema's `jobSections`.
+// Mirrors makeDefaultRoom but for the (newer) job-level sections concept, and
+// omits the room scaffold (no name/dimensions). Job sections answer once per
+// sheet — loss details, floor protection, tests/Itel, etc.
+export function makeDefaultJobData(schema) {
+  const jobData = {};
+  const sections = schema?.jobSections || [];
+  for (const section of sections) {
+    if (section.gateField) jobData[section.gateField] = null;
+    if (section.doneFlag)  jobData[section.doneFlag]  = false;
+    for (const f of flattenLeafFields(section.fields || [])) {
+      if (f.key && jobData[f.key] === undefined) {
+        jobData[f.key] = defaultFieldValue(f);
+      }
+    }
+  }
+  jobData.openSection = sections[0]?.key || null;
+  return jobData;
+}
+
 export function fieldShouldShow(field, ctx) {
   if (!field.showWhen) return true;
   const sw = field.showWhen;
@@ -108,6 +129,24 @@ export function resolveUnitAndLabel(field, ctx) {
     }
   }
   return { label, unit };
+}
+
+// ── Computed fields ──────────────────────────────────────────────────────────
+// A `computed` field derives its value from two sibling fields in the same
+// context (e.g. tension posts × days = total post-days). It is display-only —
+// never stored as the source of truth — so every consumer (renderer, summary,
+// review/email/PDF) MUST route through this helper rather than reading
+// ctx[field.key] directly (which only holds the seeded default of 0).
+export function computeFieldValue(field, ctx) {
+  const f = field?.formula;
+  if (!f) return 0;
+  const a = Number(ctx?.[f.a] || 0);
+  const b = Number(ctx?.[f.b] || 0);
+  if (f.op === 'multiply') {
+    const v = a * b;
+    return Number.isFinite(v) ? v : 0;
+  }
+  return 0;
 }
 
 // ── Section status helpers ───────────────────────────────────────────────────
@@ -142,9 +181,13 @@ export function buildUnlocked(room, sections) {
 // by the Equipment list (Air Mover / Dehumidifier / Air Scrubber).
 //
 // Returns a flat object like { drywallSF: 240, airMovers: 4, contentsHrs: 2 }.
-export function computeSummary(rooms, schema) {
+//
+// `jobData` carries the job-level section answers (floor protection SF, etc.);
+// its fields aggregate into the same flat summary as the per-room ones.
+export function computeSummary(rooms, jobData, schema) {
   const summary = {};
   const sections = schema?.sections || [];
+  const jobSections = schema?.jobSections || [];
 
   const aggregateLeaf = (field, ctx, listItem) => {
     if (field.summaryAggregate === 'tally' && field.summaryTallyKeys && field.summaryQtyField && listItem) {
@@ -153,6 +196,11 @@ export function computeSummary(rooms, schema) {
         const qty = Number(listItem[field.summaryQtyField] || 0);
         summary[tallyKey] = (summary[tallyKey] || 0) + qty;
       }
+      return;
+    }
+    if (field.type === 'computed' && field.summaryKey) {
+      const v = computeFieldValue(field, ctx);
+      if (v) summary[field.summaryKey] = (summary[field.summaryKey] || 0) + v;
       return;
     }
     if (field.summaryKey) {
@@ -180,6 +228,13 @@ export function computeSummary(rooms, schema) {
     for (const section of sections) {
       if (!section.alwaysOn && room[section.gateField] !== true) continue;
       visit(section.fields || [], room, null);
+    }
+  }
+  // Job-level sections aggregate once over the single jobData context.
+  if (jobData) {
+    for (const section of jobSections) {
+      if (!section.alwaysOn && jobData[section.gateField] !== true) continue;
+      visit(section.fields || [], jobData, null);
     }
   }
   return summary;
@@ -212,6 +267,12 @@ export function formatFieldForReview(field, value, ctx) {
     }
     case 'checkbox':
       return value === true ? { label: label || field.key, value: 'Yes', isYes: true } : null;
+    case 'computed': {
+      const v = computeFieldValue(field, ctx);
+      if (!v) return null;
+      const { unit } = resolveUnitAndLabel(field, ctx || {});
+      return { label: label || field.key, value: `${v.toLocaleString()}${unit ? ' ' + unit : ''}` };
+    }
     default:
       return null;
   }
@@ -430,6 +491,19 @@ export function FieldRenderer({ field, ctx, onChange }) {
       );
     case 'list':
       return <ListField field={field} value={Array.isArray(value) ? value : []} onChange={setValue} />;
+    case 'computed': {
+      const { label, unit } = resolveUnitAndLabel(field, ctx);
+      const computed = computeFieldValue(field, ctx);
+      return (
+        <div>
+          {label && <label style={sLabel}>{label}</label>}
+          <div style={{ background:C.cardAlt, border:`1.5px solid ${C.border}`, borderRadius:8, padding:'12px 13px', display:'flex', alignItems:'baseline', justifyContent:'center', gap:4 }}>
+            <span style={{ fontSize:17, fontWeight:700, color:computed>0?C.text:C.muted }}>{computed.toLocaleString()}</span>
+            {unit && <span style={{ fontSize:11, color:C.muted, fontWeight:400 }}>{unit}</span>}
+          </div>
+        </div>
+      );
+    }
     default:
       return null;
   }
@@ -577,6 +651,99 @@ export function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRo
                 {(sec.fields || []).map((field, i) => (
                   <div key={field.key || `f${i}`} style={{ marginBottom: field.type === 'row' ? 0 : 8 }}>
                     <FieldRenderer field={field} ctx={room} onChange={up} />
+                  </div>
+                ))}
+                <NextBtn
+                  onClick={() => sec.alwaysOn
+                    ? markDone(sec.doneFlag, sec.key)
+                    : advance(sec.key)
+                  }
+                  label={sec.nextLabel || 'Done → Next'}
+                />
+              </>
+            );
+          }
+        }
+
+        return (
+          <Section
+            key={sec.key}
+            icon={sec.icon}
+            label={sec.label}
+            status={displayStatus}
+            open={isOpen}
+            onToggle={() => handleToggle(sec.key)}
+            locked={locked}
+          >
+            {body}
+          </Section>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── JobSections — renders the schema's JOB-LEVEL sections against a single
+//    jobData context (loss details, floor protection, tests/Itel, etc.). Same
+//    guided/sequential flow as RoomCard, but answered once per sheet. Kept as a
+//    separate component (rather than refactoring RoomCard) so the live RoomCard
+//    stays untouched. ───────────────────────────────────────────────────────
+export function JobSections({ jobData, onChange, schema }) {
+  const sections = schema?.jobSections || [];
+  if (!jobData || sections.length === 0) return null;
+
+  const up = (patch) => onChange({ ...jobData, ...patch });
+  const unlocked = buildUnlocked(jobData, sections);
+
+  const sectionIndex = (key) => sections.findIndex(s => s.key === key);
+  const nextSectionKey = (currentKey) => {
+    const idx = sectionIndex(currentKey);
+    return idx >= 0 && idx < sections.length - 1 ? sections[idx + 1].key : null;
+  };
+
+  const handleToggle = (key) => {
+    if (!unlocked.has(key)) return;
+    up({ openSection: jobData.openSection === key ? null : key });
+  };
+  const advance   = (key) => up({ openSection: nextSectionKey(key) });
+  const markDone  = (doneFlag, key) => up({ [doneFlag]: true, openSection: nextSectionKey(key) });
+  const markNo    = (gateField, key) => up({ [gateField]: false, openSection: nextSectionKey(key) });
+  const markYes   = (gateField, key) => up({ [gateField]: true, openSection: key });
+  const resetGate = (gateField, key) => up({ [gateField]: null, openSection: key });
+
+  return (
+    <div style={sCard}>
+      <div style={{ fontSize:9, color:C.accent, textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:800, marginBottom:14 }}>
+        Loss &amp; Site Details
+      </div>
+
+      {sections.map(sec => {
+        const locked = !unlocked.has(sec.key);
+        const status = locked ? null : getStatus(jobData, sec);
+        const displayStatus = locked ? null : (status === 'open' || status === 'unanswered') ? null : status;
+        const isOpen = jobData.openSection === sec.key && !locked;
+
+        let body = null;
+        if (isOpen) {
+          const isGated = !sec.alwaysOn && !!sec.gateField;
+          const gateValue = isGated ? jobData[sec.gateField] : null;
+
+          if (isGated && gateValue === null) {
+            body = <YesNo onNo={() => markNo(sec.gateField, sec.key)} onYes={() => markYes(sec.gateField, sec.key)} />;
+          } else if (isGated && gateValue === false) {
+            body = (
+              <div style={{ marginTop: 8 }}>
+                <ChangeBtn onClick={() => resetGate(sec.gateField, sec.key)} />
+              </div>
+            );
+          } else {
+            body = (
+              <>
+                {isGated && <div style={{ marginTop: 8 }}><ChangeBtn onClick={() => resetGate(sec.gateField, sec.key)} /></div>}
+                <div style={{ height: 12 }} />
+                {(sec.fields || []).map((field, i) => (
+                  <div key={field.key || `f${i}`} style={{ marginBottom: field.type === 'row' ? 0 : 8 }}>
+                    <FieldRenderer field={field} ctx={jobData} onChange={up} />
                   </div>
                 ))}
                 <NextBtn

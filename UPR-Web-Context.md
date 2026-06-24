@@ -9,7 +9,23 @@ Owner/developer: Moroni Salvador.
 **GitHub repo:** moronisalvador/Utah-Pros-App-Git
 **Local repo:** F:\APPS\RestorationAPP\Utah-Pros-App-Git
 **Deployment:** Cloudflare Pages (auto-deploys on push to `dev` branch)
-**Rule:** Always work on `dev` branch. Merge to `main` only after testing.
+**Rule:** Always work on `dev` (or a feature branch). Ship to `main` only via a reviewed `dev → main` PR a human merges — see **Deployment & Release Workflow** below.
+
+---
+
+## Deployment & Release Workflow
+
+**Branches → environments**
+- **Feature branch / `dev`** → Cloudflare auto-deploys `dev` to **https://dev.utahpros.app** on every push. Verify here first.
+- **`main`** → production **https://utahpros.app** (and the Capacitor iOS app loads `/tech/*` from this build).
+
+**How code reaches production (sanctioned path):**
+Automated agents **cannot `git push` to `main`** — the Claude Code safety guardrail blocks direct pushes to the default branch by design, and production needs human review. To release:
+1. Land the change on **`dev`** (feature branch → `dev`, fast-forward) and test on the dev deploy.
+2. **Open a PR `dev → main`** (ask the user first — repo convention is no PRs unless requested). The **user reviews + merges**; Cloudflare deploys `main`. (Or the user merges `dev → main` locally.)
+3. The agent's last git step on a finished task is "on `dev` + request the `dev → main` merge," never a direct `main` push.
+
+**Single shared Supabase (dev + main).** One project (`glsmljpabrwonfiltiqm`) backs both environments, so migrations and data changes — e.g. **publishing a new `demo_sheet_schemas` version** — affect staging AND production at once. Sequence so production code is live before the schema it needs: seed new schema versions as a **draft** (`is_active=false`, inert), merge code to `main`, then call the activating RPC (`publish_demo_schema`). This prevents old production code from rendering a schema it can't handle.
 
 ---
 
@@ -660,6 +676,7 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
   "version": 1,
   "name": "v1 — initial port",
   "roomPresets": ["Living Room", "Kitchen", ...],
+  "jobSections": [ /* v2+ — JOB-LEVEL sections, asked once per sheet (see below) */ ],
   "sections": [
     {
       "key": "trim", "label": "Baseboard & Trim", "icon": "📏",
@@ -669,10 +686,12 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
         { "key": "baseboardLF", "type": "stepper", "label": "...",
           "unit": "LF", "step": 1, "small": true, "summaryKey": "baseboardLF" },
         // field types: stepper | single-chip | multi-chip | text | textarea |
-        //              checkbox | select | list (nested itemFields)
+        //              checkbox | select | list (nested itemFields) | row | computed
         // showWhen: { field, equals } | { field, includes }
         // unitWhen: { field, equals, thenLabel, thenUnit }   (dynamic unit)
         // summaryKey + summaryAggregate: 'sum' | 'tally' (for rollup totals)
+        // computed: { type:'computed', formula:{op:'multiply', a:<key>, b:<key>},
+        //            unit, summaryKey }  — read-only value = a×b, summed across contexts
       ]
     }
   ]
@@ -681,6 +700,24 @@ publish_demo_schema(p_id)       — Atomically deactivate the current active row
 
 `forms.schema_id` (UUID, nullable, FK to demo_sheet_schemas) — every demo_sheet form
 points back to its schema. Backfilled to v1 for all pre-existing rows.
+
+**v2 — Scope Sheet (Jun 24 2026):** the demo sheet was extended into a fuller "scope sheet"
+for Xactimate estimating (user-facing label renamed Demo → **Scope Sheet**; route/table/RPC/
+doc-category keys unchanged). Two new schema capabilities:
+- **`jobSections`** — a top-level array of JOB-LEVEL sections (answered once per sheet, not
+  per room). Rendered FIRST in the tech page by the new `JobSections` component (shares
+  `Section`/`FieldRenderer` with `RoomCard`), guided/sequential like rooms. Job-section
+  answers persist in `forms.form_data.jobData`; their `summaryKey` fields roll into the same
+  `summary` totals. `computeSummary(rooms, jobData, schema)` now walks jobSections too.
+- **`computed` field type** — `formula:{op:'multiply', a, b}` displays a read-only product of
+  two sibling fields and aggregates via `summaryKey` (e.g. tension posts × days = post-days).
+- v2 seed (`9ff2566c-…`, **draft until published**) adds jobSections: Loss Details
+  (category/class/source of loss), Emergency Call (after-hours/business-hours), Floor
+  Protection (types + SF), Tests & Itel (asbestos/lead/Itel checkboxes), Scope Notes, and the
+  **folded floor-plan/sketch question** (gateField `hasSketchDone`, placed last so it gates
+  the room list). Plus a per-room `containment` section (6 mil SF + tension posts + days +
+  computed post-days). The tech page keeps the legacy hardcoded sketch card as a fallback for
+  v1 schemas (no jobSections), so old drafts render unchanged.
 
 ---
 

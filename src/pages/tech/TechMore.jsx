@@ -238,7 +238,7 @@ export default function TechMore() {
       items: [
         { key: 'training', label: 'Training Docs', Icon: IconBook, comingSoon: true },
         { key: 'checklists', label: 'Checklists', Icon: IconClipboard, comingSoon: true },
-        { key: 'demosheet', label: 'Demosheet Tool', Icon: IconDocument, comingSoon: true },
+        { key: 'demosheet', label: 'Scope Sheet Tool', Icon: IconDocument, comingSoon: true },
       ],
     },
   ];
