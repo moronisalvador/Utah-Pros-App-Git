@@ -45,6 +45,8 @@ import {
   ProductionPipeline,
 } from '@/components/overview/Widgets';
 import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
+import { useCollections } from '@/components/overview/hooks/useCollections';
+import { useNewClaims } from '@/components/overview/hooks/useNewClaims';
 
 export default function Dashboard() {
   // ─── SECTION: State & hooks ──────────────
@@ -55,8 +57,10 @@ export default function Dashboard() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  // Phase 2: first live widget — the clock-in board (others still placeholder).
+  // Phase 2 live widgets (the rest still render placeholder data).
   const emp = useEmployeeStatus();
+  const coll = useCollections();
+  const claims = useNewClaims(period);
 
   // ─── SECTION: Event handlers ──────────────
   const handleEditLayout = () => {
@@ -113,10 +117,10 @@ export default function Dashboard() {
         <RevenueRecognized periodLabel={periodLabel} showHandle={showHandles} />
         <AvgTicket periodLabel={periodLabel} showHandle={showHandles} />
         <OpenEstimates showHandle={showHandles} />
-        <NewClaimsBooked periodLabel={periodLabel} showHandle={showHandles} />
+        <NewClaimsBooked periodLabel={periodLabel} showHandle={showHandles} data={claims.data ?? undefined} />
         <JobsCompleted periodLabel={periodLabel} showHandle={showHandles} />
         <ActiveDrying showHandle={showHandles} />
-        <Collections showHandle={showHandles} />
+        <Collections showHandle={showHandles} data={coll.data ?? undefined} />
         <ActionRequired showHandle={showHandles} />
         <EmployeeStatus data={emp.data ?? undefined} summary={emp.summary ?? undefined} showHandle={showHandles} />
         <ProductionPipeline showHandle={showHandles} />

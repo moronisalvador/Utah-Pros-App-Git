@@ -143,13 +143,13 @@ export function NewClaimsBooked({ periodLabel, showHandle, data = PLACEHOLDER.ne
       <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
         <div style={{ flex: 'none' }}>
           <div style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>{data.count}</div>
-          <div style={{ fontSize: 12.5, color: C.body, fontWeight: 600, marginTop: 7 }}>{data.projected}</div>
+          {data.projected && <div style={{ fontSize: 12.5, color: C.body, fontWeight: 600, marginTop: 7 }}>{data.projected}</div>}
           <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>new claims this period</div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
             <span style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>Trailing 30 days</span>
-            <DeltaPill dir={data.delta.dir} pct={data.delta.pct} />
+            {data.delta && <DeltaPill dir={data.delta.dir} pct={data.delta.pct} />}
           </div>
           <svg viewBox="0 0 240 58" preserveAspectRatio="none" style={{ width: '100%', height: 58, display: 'block' }}>
             <polygon points={data.area} fill="rgba(47,107,242,.09)" />
@@ -227,15 +227,18 @@ const COLLECTION_BAR = {
 };
 
 export function Collections({ showHandle, data = PLACEHOLDER.collections }) {
+  const max = Math.max(...data.bars.map(b => b.amount ?? 0), 1);
   return (
     <Card spanClass="ovw-span-5" title="Collections" suffix="· My money" dotColor={STATUS.info.solid} showHandle={showHandle}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, height: 120, paddingTop: 4 }}>
+      {/* plot grows (flex:1) to fill the card so a taller row-mate doesn't leave dead space */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 18, minHeight: 140, paddingTop: 4 }}>
         {data.bars.map(b => {
           const c = COLLECTION_BAR[b.kind] || COLLECTION_BAR.gray;
+          const h = b.amount > 0 ? Math.max(4, (b.amount / max) * 80) : 0; // % of plot height; cap 80% leaves room for the value label
           return (
-            <div key={b.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 7 }}>
+            <div key={b.label} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 7 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: c.value, ...tnum }}>{b.value}</span>
-              <div style={{ width: '100%', maxWidth: 58, height: b.px, background: c.fill, borderRadius: c.radius }} />
+              <div style={{ width: '100%', maxWidth: 58, height: `${h}%`, background: c.fill, borderRadius: c.radius }} />
             </div>
           );
         })}

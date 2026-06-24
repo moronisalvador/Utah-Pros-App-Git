@@ -138,11 +138,11 @@ export const PLACEHOLDER = {
   },
 
   collections: {
-    // px = bar pixel height in the 120px-tall plot (proportional, from handoff)
+    // amount = raw dollars (drives proportional bar height); value = display label
     bars: [
-      { label: 'Past due', value: '$31.2K', px: 92, kind: 'danger' },
-      { label: 'Due',      value: '$24.1K', px: 71, kind: 'warning' },
-      { label: 'Unsent',   value: '$3.0K',  px: 13, kind: 'gray' },
+      { label: 'Past due', value: '$31.2K', amount: 31200, kind: 'danger' },
+      { label: 'Due',      value: '$24.1K', amount: 24100, kind: 'warning' },
+      { label: 'Unsent',   value: '$3.0K',  amount: 3000,  kind: 'gray' },
     ],
     dso: 52,
   },
