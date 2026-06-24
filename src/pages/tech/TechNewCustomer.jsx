@@ -122,7 +122,7 @@ export default function TechNewCustomer() {
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
         // Duplicate phone — navigate to the existing customer instead of failing
         try {
-          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=id,name&limit=1`);
+          const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(phone)}&select=id,name&limit=1`);
           if (existing?.length > 0) {
             toast(`Customer already exists: ${existing[0].name}`, 'success');
             window.dispatchEvent(new CustomEvent('upr:contact-created'));

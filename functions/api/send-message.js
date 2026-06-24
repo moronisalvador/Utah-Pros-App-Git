@@ -25,6 +25,22 @@ import { supabase } from '../lib/supabase.js';
 import { sendMessage } from '../lib/twilio.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
+// Verify the caller is an authenticated UPR user before sending SMS on the
+// company Twilio account. Without this, anyone who knows the URL could send
+// messages (cost + spam/reputation risk).
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
+  });
+  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
+  return { ok: true };
+}
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -32,6 +48,10 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
+
+  // Verify caller is authenticated before any send/compliance work.
+  const auth = await requireAuth(request, env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   try {
     const { conversation_id, body, sent_by, media_urls, is_internal_note, skip_compliance } = await request.json();
