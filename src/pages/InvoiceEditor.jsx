@@ -132,35 +132,39 @@ export default function InvoiceEditor() {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   };
-  // Save the invoice: flush any pending line edits to the DB, then record the invoice
-  // (this also syncs it to QuickBooks under the hood — create on first save, update
-  // thereafter, so existing invoices stay in sync on every save).
+  // Persist current line state to the DB (covers a field that hasn't blurred yet when the
+  // button is clicked) and push the latest amounts to QuickBooks — create on first save,
+  // update thereafter, so the QBO copy always matches what's on screen.
+  const flushAndPush = async () => {
+    for (const l of lines) {
+      await db.update('invoice_line_items', `id=eq.${l.id}`, {
+        description: l.description || '',
+        qbo_item_id: l.qbo_item_id || null, qbo_item_name: l.qbo_item_name || null,
+        qbo_class_id: l.qbo_class_id || null, qbo_class_name: l.qbo_class_name || null,
+        quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
+      });
+    }
+    await callWorker({});
+  };
+  // Save the invoice: flush any pending line edits to the DB, then record + sync to QuickBooks.
   const saveInvoice = async () => {
     setBusy(true);
-    try {
-      // Persist current line state first so the recorded invoice uses the latest amounts
-      // (covers the field that hasn't blurred yet when Save is clicked).
-      for (const l of lines) {
-        await db.update('invoice_line_items', `id=eq.${l.id}`, {
-          description: l.description || '',
-          qbo_item_id: l.qbo_item_id || null, qbo_item_name: l.qbo_item_name || null,
-          qbo_class_id: l.qbo_class_id || null, qbo_class_name: l.qbo_class_name || null,
-          quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
-        });
-      }
-      await callWorker({});
-      toast('Invoice saved');
-      await load();
-    } catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
+    try { await flushAndPush(); toast('Invoice saved'); await load(); }
+    catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
   // Send the invoice to the customer by email. Two-click confirm — it's an outward-facing
-  // send to the client. Requires the invoice to have been saved first.
+  // send. Flushes pending line edits + pushes to QuickBooks first (via flushAndPush), so the
+  // customer always receives the latest amounts whether or not Save was clicked beforehand.
   const emailInvoice = async () => {
     if (!confirmEmail) { setConfirmEmail(true); return; }
     setConfirmEmail(false); setBusy(true);
-    try { const d = await callWorker({ action: 'send' }); toast(`Invoice sent to ${d.emailed_to}`); await load(); }
-    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); }
+    try {
+      await flushAndPush();
+      const d = await callWorker({ action: 'send' });
+      toast(`Invoice sent to ${d.emailed_to}`); await load();
+    }
+    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
   // Revert a saved invoice back to a draft (unrecords it, removing the QBO copy).
