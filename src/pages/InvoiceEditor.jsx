@@ -120,26 +120,43 @@ export default function InvoiceEditor() {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   };
-  const syncToQbo = async () => {
+  // Save the invoice: flush any pending line edits to the DB, then record the invoice
+  // (this also syncs it to QuickBooks under the hood — create on first save, update
+  // thereafter, so existing invoices stay in sync on every save).
+  const saveInvoice = async () => {
     setBusy(true);
-    try { const d = await callWorker({}); toast(d.mode === 'updated' ? 'Updated in QuickBooks' : `Sent to QuickBooks (#${d.qbo_invoice_id})`); await load(); }
-    catch (e) { toast('QuickBooks: ' + e.message, 'error'); await load(); }
+    try {
+      // Persist current line state first so the recorded invoice uses the latest amounts
+      // (covers the field that hasn't blurred yet when Save is clicked).
+      for (const l of lines) {
+        await db.update('invoice_line_items', `id=eq.${l.id}`, {
+          description: l.description || '',
+          qbo_item_id: l.qbo_item_id || null, qbo_item_name: l.qbo_item_name || null,
+          qbo_class_id: l.qbo_class_id || null, qbo_class_name: l.qbo_class_name || null,
+          quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
+        });
+      }
+      await callWorker({});
+      toast('Invoice saved');
+      await load();
+    } catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Ask QuickBooks to email the invoice to the customer. Two-click confirm — it's an
-  // outward-facing send to the client. Requires the invoice to already be in QBO.
+  // Send the invoice to the customer by email. Two-click confirm — it's an outward-facing
+  // send to the client. Requires the invoice to have been saved first.
   const emailInvoice = async () => {
     if (!confirmEmail) { setConfirmEmail(true); return; }
     setConfirmEmail(false); setBusy(true);
-    try { const d = await callWorker({ action: 'send' }); toast(`Invoice emailed to ${d.emailed_to}`); await load(); }
-    catch (e) { toast('Email failed: ' + e.message, 'error'); }
+    try { const d = await callWorker({ action: 'send' }); toast(`Invoice sent to ${d.emailed_to}`); await load(); }
+    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); }
     finally { setBusy(false); }
   };
-  const removeFromQbo = async () => {
+  // Revert a saved invoice back to a draft (unrecords it, removing the QBO copy).
+  const revertToDraft = async () => {
     if (!confirmRemove) { setConfirmRemove(true); return; }
     setConfirmRemove(false); setBusy(true);
-    try { await callWorker({ action: 'delete' }); toast('Removed from QuickBooks'); await load(); }
-    catch (e) { toast('QuickBooks: ' + e.message, 'error'); }
+    try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load(); }
+    catch (e) { toast('Couldn’t revert: ' + e.message, 'error'); }
     finally { setBusy(false); }
   };
   const deleteDraft = async () => {
@@ -182,15 +199,20 @@ export default function InvoiceEditor() {
 
   const division = job?.division ? String(job.division).replace(/_/g, ' ') : 'Job';
   const paid = Number(inv.amount_paid || 0);
-  const statusLabel = synced ? (paid >= total && total > 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Sent') : 'Draft';
-  const statusColor = statusLabel === 'Paid' ? '#16a34a' : statusLabel === 'Partial' ? '#d97706' : statusLabel === 'Sent' ? 'var(--accent)' : 'var(--text-tertiary)';
+  // Draft → Saved (recorded, not yet emailed) → Sent (emailed to customer) → Partial → Paid.
+  const statusLabel = !synced ? 'Draft'
+    : (paid >= total && total > 0) ? 'Paid'
+    : paid > 0 ? 'Partial'
+    : inv.qbo_emailed_at ? 'Sent'
+    : 'Saved';
+  const statusColor = statusLabel === 'Paid' ? '#16a34a' : statusLabel === 'Partial' ? '#d97706' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
 
   return (
     <div style={{ maxWidth: 980, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
       {/* Top bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <button className="btn btn-ghost btn-sm" onClick={() => (job?.claim_id ? navigate(`/collections/${job.claim_id}`) : navigate(-1))} style={{ gap: 4 }}>← Back</button>
-        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>QuickBooks #{inv.qbo_doc_number || inv.qbo_invoice_id}{inv.qbo_synced_at ? ' · synced ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Invoice #{inv.qbo_doc_number || inv.invoice_number}{inv.qbo_synced_at ? ' · saved ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
       </div>
 
       {/* Header */}
@@ -209,7 +231,7 @@ export default function InvoiceEditor() {
         <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
       </div>
 
-      {inv.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>QuickBooks sync error: {inv.qbo_sync_error}</div>}
+      {inv.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#d97706', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{catalogMsg}</div>}
       {inv.stripe_payment_link_url && <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', color: 'var(--accent)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
@@ -263,14 +285,14 @@ export default function InvoiceEditor() {
       {/* Action bar */}
       {canEdit && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 16 }}>
-          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={syncToQbo}>
-            {busy ? 'Working…' : synced ? 'Update in QuickBooks' : 'Send to QuickBooks'}
+          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={saveInvoice}>
+            {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
           </button>
           {synced && (
             <button className="btn btn-secondary" disabled={busy} onClick={emailInvoice} onBlur={() => setConfirmEmail(false)}
               title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
               style={confirmEmail ? { background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe' } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Re-email invoice' : '✉ Email to customer'}
+              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend invoice' : '✉ Send invoice to customer'}
             </button>
           )}
           {total > 0 && (
@@ -279,9 +301,9 @@ export default function InvoiceEditor() {
               : <button className="btn btn-secondary" disabled={busy} onClick={createPayLink}>💳 Create pay link</button>
           )}
           {synced && (
-            <button className="btn btn-sm" disabled={busy} onClick={removeFromQbo} onBlur={() => setConfirmRemove(false)}
+            <button className="btn btn-sm" disabled={busy} onClick={revertToDraft} onBlur={() => setConfirmRemove(false)}
               style={{ background: confirmRemove ? '#fef2f2' : 'var(--bg-tertiary)', color: confirmRemove ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmRemove ? '#fecaca' : 'var(--border-light)'}` }}>
-              {confirmRemove ? 'Confirm remove' : 'Remove from QuickBooks'}
+              {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
             </button>
           )}
           {!synced && paid <= 0 && (
@@ -292,7 +314,7 @@ export default function InvoiceEditor() {
           )}
         </div>
       )}
-      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save automatically. Click <b>{synced ? 'Update' : 'Send'} in QuickBooks</b> to push the invoice{synced ? <>, then <b>Email to customer</b> to have QuickBooks send it</> : ''}. Record payments from the claim's A/R panel.</div>}
+      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save as you type. Click <b>Save</b> to record the invoice{synced ? <>, then <b>Send invoice to customer</b> to email it</> : ''}. Record payments from the claim's A/R panel.</div>}
     </div>
   );
 }
