@@ -31,9 +31,10 @@
  *   - Requires the RESEND_API_KEY env var (Cloudflare Pages → Variables).
  *   - `from` MUST be on a domain verified in Resend (utahpros.app). It defaults
  *     to env.EMAIL_FROM, then to a hardcoded utahpros.app sender.
- *   - `replyTo` defaults to env.EMAIL_REPLY_TO (the real monitored inbox) so
- *     customer replies still reach a human even though we send from the app
- *     domain.
+ *   - `replyTo` defaults to env.EMAIL_REPLY_TO, then to restoration@utahpros.app
+ *     — the SAME domain as `from` on purpose (a From/Reply-To mismatch to a
+ *     look-alike domain trips Gmail's spoof warning). Replies are forwarded to
+ *     the real inbox via Cloudflare Email Routing.
  *   - Attachment `content` is a base64 STRING (same encoding SendGrid used), so
  *     callers that already base64-encode a PDF can pass it through unchanged.
  *   - Resend's success response is `{ id }`; failures come back as JSON with a
@@ -44,7 +45,11 @@
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
 const DEFAULT_FROM     = 'Utah Pros Restoration <restoration@utahpros.app>';
-const DEFAULT_REPLY_TO = 'restoration@utah-pros.com';
+// Reply-To is kept on the SAME domain as From (utahpros.app) on purpose: a From/Reply-To
+// domain mismatch — especially to a look-alike domain like utah-pros.com — trips Gmail's
+// spoofing warning. Replies to restoration@utahpros.app are forwarded to the real inbox
+// via Cloudflare Email Routing. Override with the EMAIL_REPLY_TO env var if needed.
+const DEFAULT_REPLY_TO = 'restoration@utahpros.app';
 
 // ─── SECTION: Helpers ──────────────
 // Normalize a recipient into a Resend address string ("Name <email>" or "email").

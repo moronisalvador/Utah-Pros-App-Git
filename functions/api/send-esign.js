@@ -26,10 +26,11 @@ async function requireAuth(request, env) {
 }
 
 const DOC_LABELS = {
-  coc:           'Certificate of Completion',
-  work_auth:     'Work Authorization',
-  direction_pay: 'Direction of Pay',
-  change_order:  'Change Order',
+  coc:             'Certificate of Completion',
+  work_auth:       'Work Authorization',
+  direction_pay:   'Direction of Pay',
+  change_order:    'Change Order',
+  recon_agreement: 'Reconstruction Agreement',
 };
 
 export async function onRequestOptions(context) {
