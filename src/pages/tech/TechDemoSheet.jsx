@@ -1135,7 +1135,7 @@ export default function TechDemoSheet() {
     setSubmitResult({ saveOk, saveErr, emailOk, emailErr, encircleOk, encircleSkipped, pdfAttached, pdfErr });
     setShowReview(false);
     setShowResult(true);
-    if (saveOk) toast('Demo sheet saved', 'success');
+    if (saveOk) toast('Scope sheet saved', 'success');
     else        toast(`Save failed: ${saveErr}`, 'error');
   };
 

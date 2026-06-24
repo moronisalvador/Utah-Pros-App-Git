@@ -18,7 +18,7 @@ const WATER = [
   ] },
   { id: 'demo', label: 'Demo', icon: '🔨', items: [
     { id: 'w11', text: 'Photo extraction in progress (wand on floor)' },
-    { id: 'w12', text: 'Per room: what was removed + measurements', note: 'Done by demo sheet already' },
+    { id: 'w12', text: 'Per room: what was removed + measurements', note: 'Done by scope sheet already' },
     { id: 'w13', text: 'Photo exposed framing after demo (every room)' },
     { id: 'w14', text: 'Photo bagged demo materials (double-bagged if Cat 2/3)' },
     { id: 'w15', text: 'Containment + PPE photos if Cat 2/3 (each tech, poly, NAFAN, signs)' },
@@ -38,7 +38,7 @@ const WATER = [
     { id: 'w23', text: 'Final moisture readings at all materials — compare to actual dry standard' },
     { id: 'w24', text: 'Final psychrometric readings inside + outside + affected + unaffected' },
     { id: 'w25', text: 'Photo of all equipment before removal — count must match placement' },
-    { id: 'w26', text: 'Record total equipment days per unit type + total monitoring visits', note: 'Demo sheet does this already' },
+    { id: 'w26', text: 'Record total equipment days per unit type + total monitoring visits', note: 'Scope sheet does this already' },
     { id: 'w27', text: 'Post-completion photos of all areas' },
     { id: 'w28', text: 'Certificate of completion signed by homeowner' },
     { id: 'w29', text: 'Note what needs reconstruction + any mold found' },

@@ -325,7 +325,7 @@ export default function AdminDemoSheetBuilder() {
       <div style={{ padding: 24 }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Admin only</div>
         <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 6 }}>
-          The Demo Sheet Builder is restricted to admin users.
+          The Scope Sheet Builder is restricted to admin users.
         </div>
       </div>
     );
@@ -340,10 +340,10 @@ export default function AdminDemoSheetBuilder() {
             Admin · Tools
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0 0' }}>
-            Demo Sheet Builder
+            Scope Sheet Builder
           </h1>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4, maxWidth: 720 }}>
-            Edit the section + field tree the field-tech Demo Sheet renders from. Each saved
+            Edit the section + field tree the field-tech Scope Sheet renders from. Each saved
             sheet is pinned to the schema version it was filled with, so changing this
             doesn't reshape past sheets.
           </div>
@@ -460,7 +460,7 @@ export default function AdminDemoSheetBuilder() {
               Publish v{selected.version} — {selected.name}?
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-              Future demo sheets will use this schema. Existing saved sheets keep their snapshot.
+              Future scope sheets will use this schema. Existing saved sheets keep their snapshot.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setConfirmPublish(false)} disabled={publishing} className="btn btn-secondary btn-sm">Cancel</button>
