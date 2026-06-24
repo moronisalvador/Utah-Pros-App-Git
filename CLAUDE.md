@@ -18,7 +18,7 @@
    ```
    For destructive actions that need confirmation, use **inline two-click confirm state** — first click turns button red + shows "Confirm", second click executes, `onBlur` cancels. Never a modal or native dialog.
 4. **Always use `const { db } = useAuth()`** in components. Never import `db` directly from `@/lib/supabase`.
-5. **Develop on `dev` (or a feature branch) — never `git push` to `main` directly.** Direct pushes to `main` are blocked by the Claude Code safety guardrail by design. Production ships via a reviewed `dev → main` pull request that a human merges. See [Deployment & Release Workflow](#deployment--release-workflow).
+5. **Develop on a feature branch — never `git push` to `main` directly.** Direct pushes to `main` are blocked by the Claude Code safety guardrail by design; ship via a reviewed PR to `main`. **`dev` is now an automatic mirror of `main`** (a GitHub Action fast-forwards `dev` to `main` on every push to `main`, so staging always runs production code). **Do not commit directly to `dev`** — it gets overwritten. See [Deployment & Release Workflow](#deployment--release-workflow).
 6. **CSS: mobile changes use `@media (max-width: 768px)` only.** Never change desktop layout, colors, or spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 7. **Commit after every 2–3 files.** Small commits, clear messages.
 8. **DB queries: always use `db.rpc()` for new tables.** PostgREST schema cache may not reflect new tables — `SECURITY DEFINER` RPCs always work.
@@ -427,16 +427,19 @@ const handleDelete = async (item) => {
 ## Deployment & Release Workflow
 
 **Branches → environments**
-- **Feature branch / `dev`** — push freely. Cloudflare Pages **auto-deploys `dev`** to the staging URL on every push. Land + verify changes here first.
-- **`main`** — production. Cloudflare deploys `main` to the live site, and the Capacitor iOS app loads `/tech/*` from that same build (see `CAPACITOR-TASK.md`).
+- **Feature branch** — develop here. Cloudflare Pages builds a preview deploy per branch/PR.
+- **`main`** — production (utahpros.app). Cloudflare deploys `main` to the live site, and the Capacitor iOS app loads `/tech/*` from that same build (see `CAPACITOR-TASK.md`).
+- **`dev`** — staging (dev.utahpros.app), kept as an **automatic mirror of `main`**: the `.github/workflows/sync-dev-to-main.yml` Action fast-forwards `dev` to `main` on every push to `main`. **Never commit directly to `dev`** — it gets overwritten on the next main push.
 
 **Shipping to production (the only sanctioned path)**
-Agents **must not** `git push` to `main` — the Claude Code safety classifier blocks direct pushes to the default branch by design, and production changes require human review. Organize the work so it ships cleanly through review instead:
-1. Get everything onto **`dev`** (feature branch → `dev`, fast-forward) and verify on the dev deploy.
-2. **Open a PR from `dev` → `main`** (GitHub) — ask the user before opening one (repo rule: no PRs unless requested). The **user reviews and merges** it. (Or the user merges `dev → main` locally.)
-3. Cloudflare deploys `main`; production + the native app pick it up.
+Agents **must not** `git push` to `main` — the Claude Code safety classifier blocks direct pushes to the default branch by design. Ship through review instead:
+1. Develop on a **feature branch** and verify on its preview deploy.
+2. **Open a PR → `main`** and merge it (once approved). Cloudflare deploys `main`; production + the native app pick it up.
+3. The sync Action mirrors `main` onto `dev`, so staging updates automatically — no separate `dev` step.
 
-When a task is "done," the agent's final git step is **landing on `dev` and requesting the `dev → main` PR/merge** — not a direct `main` push. Do not try to work around the guardrail; route through the PR.
+When a task is "done," the agent's final git step is **landing the feature branch on `main` via PR** — not a direct `main` push, and not a `dev` push. Do not try to work around the guardrail; route through the PR.
+
+**Env vars:** Cloudflare Pages keeps separate **Production** (main) and **Preview** (dev + branches) variable sets. Any new secret (e.g. `RESEND_API_KEY`) must be added to **both** for staging and production to work, and a redeploy is required for changes to take effect.
 
 **One shared Supabase across environments (critical)**
 There is a single Supabase project for both `dev` and `main`. Migrations and data changes — including **publishing a new `demo_sheet_schemas` version** — hit BOTH the staging and production frontends immediately. Sequence DB changes so the production code that understands them is already live before activating them:

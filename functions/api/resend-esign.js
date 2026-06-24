@@ -90,7 +90,7 @@ export async function onRequestPost(context) {
       to:      { email: sr.signer_email, name: sr.signer_name },
       subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
       text:    buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
-      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token }),
+      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }),
     });
 
     if (!emailRes.ok) {
@@ -125,7 +125,7 @@ export async function onRequestPost(context) {
   }
 }
 
-function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token }) {
+function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, env }) {
   const first = escHtml(signer_name.split(' ')[0]);
   return `<!DOCTYPE html>
 <html>
