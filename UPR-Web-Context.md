@@ -36,7 +36,7 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
-- **Email:** SendGrid v3 API
+- **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper
 - **SMS:** Twilio (pending go-live — ID verification blocked)
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
@@ -109,7 +109,7 @@ src/
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
-    TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (SendGrid HTML email) + /api/encircle-upload (general note posted to the linked claim) + /api/demo-sheet-pdf (renders the sheet to a PDF and attaches it to the job's Files via job_documents, category 'demo_sheet' — also surfaces on the customer page Files section) in parallel; ResultScreen shows per-channel success/fail (email, Encircle, PDF); final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
+    TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (Resend HTML email) + /api/encircle-upload (general note posted to the linked claim) + /api/demo-sheet-pdf (renders the sheet to a PDF and attaches it to the job's Files via job_documents, category 'demo_sheet' — also surfaces on the customer page Files section) in parallel; ResultScreen shows per-channel success/fail (email, Encircle, PDF); final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon.
     tech/Hero.jsx                 — Shared division-gradient hero. Prop-configurable: { division, topLabel, title, address, statusText, statusColors, meta[], onBack, backLabel, showMenu, onMenu }. Used by TechClaimDetail and TechJobDetail.
@@ -151,7 +151,7 @@ functions/
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
     process-scheduled.js          — Cron: process scheduled SMS messages (60s)
     resend-esign.js               — Resend esign email for existing pending request
-    send-esign.js                 — Create sign request + send email via SendGrid
+    send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage
@@ -165,7 +165,7 @@ functions/
     encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
     encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
     encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
-    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via SendGrid v3. From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
+    send-demo-sheet.js            — POST /api/send-demo-sheet { subject, message } — sends the rendered demo-sheet HTML email via Resend (functions/lib/email.js). From/To are env-overridable (DEMO_SHEET_FROM_EMAIL, DEMO_SHEET_TO_EMAILS).
     demo-sheet-pdf.js             — POST /api/demo-sheet-pdf { p_job_id?, job_number?, sheet_id?, requested_by?, model } (Bearer-authed like generate-water-loss-report) — renders a submitted demo sheet to a PDF with pdf-lib (navy header, blue room bars, per-room section label/value rows, Job Totals box, page footers), uploads to job-files/{job_id}/demo-sheets/demo-sheet-{ts}.pdf, and records it in job_documents via insert_job_document (category 'demo_sheet'). Resolves the job from p_job_id, falling back to a jobs.job_number lookup; returns { success:true, attached:false, reason:'no_matching_job' } (non-error) when the sheet isn't linked to a UPR job. The PDF then shows under the job's Files tab AND the customer page Files section (get_customer_detail returns all job_documents, no category filter). The render `model` is built client-side in TechDemoSheet.buildPdfModel() so all schema-walking (collectSectionEntries/computeSummary) stays in one place.
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
@@ -622,10 +622,11 @@ save_demo_sheet(p_id, p_data, p_job_date, p_tech_id, p_job_number, p_address,
                                   is now guarded against concurrent saves on the client —
                                   racing autosaves used to create duplicate draft rows on
                                   slow connections (18 orphaned duplicates were purged from
-                                  forms that day). Known issue: SendGrid emails (demo sheet
-                                  AND esign) have not delivered since mid-April 2026 —
-                                  every forms.email_sent and sign_requests.email_opened_at
-                                  since then is false/null. Account/key-level, not code.
+                                  forms that day). Resolved Jun 24 2026: all email moved off
+                                  SendGrid (dead since mid-April 2026 — every forms.email_sent
+                                  and sign_requests.email_opened_at since then was false/null)
+                                  onto Resend via functions/lib/email.js. Requires RESEND_API_KEY
+                                  + a verified utahpros.app sending domain in Resend.
 get_demo_sheet_drafts()         — Recent 20 demo_sheet drafts (id, updated_at, job_date,
                                   job_number, address, insured_name, encircle_claim_id) for
                                   the resume-draft banner. Sorted by updated_at DESC.
@@ -836,7 +837,7 @@ doc-category keys unchanged). Two new schema capabilities:
 ---
 
 ## Esign System (recon_agreement added Apr 16 2026)
-- **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via SendGrid
+- **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via Resend (functions/lib/email.js)
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)
   - Desktop defaults to Type mode, Mobile defaults to Draw mode
 - **PDF generation:** `/api/submit-esign` — pdf-lib, fetches template from DB, substitutes `{{variables}}`, multi-page
@@ -879,7 +880,9 @@ SUPABASE_ANON_KEY               — Anon key
 VITE_SUPABASE_URL               — Same (Vite build)
 VITE_SUPABASE_ANON_KEY          — Same (Vite build)
 VITE_BUILD_TARGET               — "native" only set inside `npm run build:ios`; default web
-SENDGRID_API_KEY                — SendGrid v3
+RESEND_API_KEY                  — Resend API key (all transactional email; replaced SENDGRID_API_KEY Jun 2026)
+EMAIL_FROM                      — optional sender override; default "Utah Pros Restoration <restoration@utahpros.app>" (domain must be verified in Resend)
+EMAIL_REPLY_TO                  — optional reply-to override; default restoration@utah-pros.com
 ENCIRCLE_API_KEY                — Encircle integration
 QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit Developer app)
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
@@ -1037,7 +1040,7 @@ unchanged). New `createPurchase` (fee expense, paid-from clearing → Merchant F
 - `stripe-pay-link.js` — POST `{ invoice_id }` (Supabase Bearer); creates a Checkout session for the balance, stores link/session on the invoice, returns `{ url }`.
 - `stripe-payout.js` — POST `{ amount? }` (Supabase Bearer); instant payout to `stripe_instant_card_id` (defaults to full `instant_available`).
 - `stripe-accounts.js` — GET (Supabase Bearer); lists external accounts for the payout selectors; flips `stripe_connected=true` on first successful key use.
-- `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (SendGrid); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
+- `billing-2fa.js` — email-2FA gate for the payout destinations (below). POST `{action:'request'}` emails a 6-digit code to the owner (Resend); `{action:'commit', code, changes}` verifies and writes the protected keys via service role. Admin/manager only.
 
 **Payout-destination email-2FA (`migrations/20260620_payout_2fa.sql`):** changing the
 Stripe deposit bank / instant-payout debit card is a money-movement action, so it is NOT a
@@ -1046,8 +1049,9 @@ plain edit field. The four payout keys (`stripe_payout_bank_id/name`,
 whitelist** — only the `billing-2fa` worker (service role) writes them, after verifying a
 one-time code emailed to the owner (`integration_config.billing_2fa_email`, default
 `moroni.s@utah-pros.com`). Codes are single-use, 10-min, SHA-256-hashed in the RLS-locked
-`billing_2fa_codes` table. ⚠️ **Depends on SendGrid delivering** (broken since mid-April
-per Demo Sheet notes) — if email is down, these fields can't be changed until it's fixed.
+`billing_2fa_codes` table. **Email now sends via Resend** (functions/lib/email.js, Jun 2026 —
+replaced the dead SendGrid path). Requires RESEND_API_KEY + a verified utahpros.app sending
+domain in Resend; if email is down, these fields can't be changed until it's restored.
 
 **Frontend:** `InvoiceEditor.jsx` — Create/Copy pay-link action + active-link banner.
 `PaymentSettings.jsx` — "Load from Stripe" probe; live Instant Payout button once
