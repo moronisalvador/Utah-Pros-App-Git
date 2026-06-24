@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
 import ARDashboard from '@/components/collections/ARDashboard';
 import PaymentsLedger from '@/components/collections/PaymentsLedger';
+import InvoicesList from '@/components/collections/InvoicesList';
 import NewInvoiceModal from '@/components/NewInvoiceModal';
 
 // Collections hub: A/R worklist (outstanding invoices + aging) and the Payments ledger
@@ -26,16 +27,16 @@ export default function Collections() {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content', marginBottom: 16 }}>
-        {[['ar', 'A/R · Outstanding'], ['payments', 'Payments']].map(([v, l]) => (
+        {[['ar', 'A/R · Outstanding'], ['invoices', 'Invoices'], ['payments', 'Payments']].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
             style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: tab === v ? 'var(--accent)' : 'var(--bg-primary)', color: tab === v ? '#fff' : 'var(--text-secondary)' }}>
             {l}
           </button>
         ))}
       </div>
-      {tab === 'ar'
-        ? <ARDashboard db={db} navigate={navigate} />
-        : <PaymentsLedger db={db} navigate={navigate} />}
+      {tab === 'ar'       && <ARDashboard db={db} navigate={navigate} />}
+      {tab === 'invoices' && <InvoicesList db={db} navigate={navigate} />}
+      {tab === 'payments' && <PaymentsLedger db={db} navigate={navigate} />}
       {showNewInvoice && <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />}
     </div>
   );

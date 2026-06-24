@@ -79,7 +79,7 @@ src/
     JobPage.jsx                   — Full job detail: Overview/Schedule/Files/Financial/Activity tabs
     Production.jsx                — Kanban pipeline (30 phases, 4 macro groups) + list view
     Leads.jsx                     — Jobs in lead phase (feature-flagged: page:leads)
-    Collections.jsx               — Collections page (feature-flagged: page:collections)
+    Collections.jsx               — Collections page (feature-flagged: page:collections). Three tabs: A/R · Outstanding (ARDashboard), Invoices (InvoicesList — searchable list of ALL invoices via get_ar_invoices(), rows open the /invoices/:id editor), Payments (PaymentsLedger).
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)
