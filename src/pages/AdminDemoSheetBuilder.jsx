@@ -847,28 +847,40 @@ function FieldEditor({ field, onChange }) {
   const update = (patch) => onChange({ ...field, ...patch });
   const t = field.type;
 
+  // "Required" only enforces for choice/text fields — steppers (0 OK) and
+  // checkboxes (unchecked OK) are always satisfied, so we don't offer it there.
+  const canRequire = ['single-chip', 'multi-chip', 'select', 'text', 'textarea'].includes(t);
+
   // Type selector + universal fields
   const typeRow = (
-    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr', gap: 12, marginBottom: 12 }}>
-      <div>
-        <FieldLabel>Type</FieldLabel>
-        <select className="input" value={t} onChange={e => onChange(emptyField(e.target.value))}>
-          {FIELD_TYPES.map(x => <option key={x} value={x}>{FIELD_TYPE_LABELS[x]}</option>)}
-        </select>
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <FieldLabel>Type</FieldLabel>
+          <select className="input" value={t} onChange={e => onChange(emptyField(e.target.value))}>
+            {FIELD_TYPES.map(x => <option key={x} value={x}>{FIELD_TYPE_LABELS[x]}</option>)}
+          </select>
+        </div>
+        {t !== 'row' && (
+          <>
+            <div>
+              <FieldLabel>Key (state)</FieldLabel>
+              <input className="input" value={field.key || ''} onChange={e => update({ key: e.target.value })} />
+            </div>
+            <div>
+              <FieldLabel>Label (shown to tech)</FieldLabel>
+              <input className="input" value={field.label || ''} onChange={e => update({ label: e.target.value || undefined })} />
+            </div>
+          </>
+        )}
       </div>
-      {t !== 'row' && (
-        <>
-          <div>
-            <FieldLabel>Key (state)</FieldLabel>
-            <input className="input" value={field.key || ''} onChange={e => update({ key: e.target.value })} />
-          </div>
-          <div>
-            <FieldLabel>Label (shown to tech)</FieldLabel>
-            <input className="input" value={field.label || ''} onChange={e => update({ label: e.target.value || undefined })} />
-          </div>
-        </>
+      {canRequire && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={field.required === true} onChange={e => update({ required: e.target.checked || undefined })} />
+          Required — the tech must answer this before they can continue past the section
+        </label>
       )}
-    </div>
+    </>
   );
 
   // Stepper-specific
