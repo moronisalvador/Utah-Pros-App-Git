@@ -71,6 +71,7 @@ src/
     realtime.js                   — Supabase realtime + auth client
     api.js                        — Misc API helpers
     techDateUtils.js              — Shared helpers for tech pages: formatTime, relativeDate, photoDateTime, fileUrl, openMap.
+    navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
   pages/
     Login.jsx                     — Email/password login + forgot password + dev mode selector
     SetPassword.jsx               — Password reset flow (recovery link handler)
@@ -144,7 +145,13 @@ src/
     MergeModal.jsx                — Shared merge UI for contacts, claims, jobs (search + compare + two-click confirm)
     SendEsignModal.jsx            — Send/collect esign request modal (5 doc_types inc. recon_agreement)
     ReconAgreementContent.jsx     — Signer-side expandable layout for recon_agreement doc_type (intro, property info, authorizations, scope & estimate, payment, 16 legal sections, 4 attested consents). Rendered inside SignPage when doc_type matches. Amber branding.
-    Sidebar.jsx                   — Sidebar navigation
+    Sidebar.jsx                   — Sidebar navigation (mobile + iPad ≤1279px; reads NAV_ITEMS from lib/navItems.jsx)
+    TopNav.jsx                    — Desktop top nav bar (≥1280px only): logo, primary links, GlobalSearch, NewMenu, NotificationBell, settings gear, UserMenu, overflow hamburger
+    OverflowDrawer.jsx            — Desktop "More" slide-over (secondary pages: Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing)
+    NewMenu.jsx                   — Top-nav "New" dropdown → New Claim (job creator) / New Customer / New Invoice (existing flows via Layout.handleCreateAction)
+    UserMenu.jsx                  — Top-nav avatar dropdown (admin-only Tech View + Sign Out)
+    GlobalSearch.jsx              — Top-nav global search: 300ms-debounced typeahead over the global_search RPC, grouped results routing to each record
+    SettingsLayout.jsx            — Settings hub shell: left sub-rail (desktop ≥1280px) wrapping the system pages; display:contents passthrough on mobile/iPad
 
 functions/
   api/
@@ -567,6 +574,18 @@ this table per area as the backfill continues.
 ### Dashboard
 ```
 get_dashboard_stats()           — Dashboard stat counts
+```
+
+### Global Search (Jun 24 2026)
+```
+global_search(p_term TEXT, p_limit INT DEFAULT 6)
+  — Desktop top-nav search. SECURITY DEFINER, GRANT EXECUTE anon/authenticated.
+    Returns a JSONB object of grouped, read-only matches: customers (contacts),
+    claims, jobs, invoices, payments — each [{id, title, subtitle}] (payments
+    also carry invoice_id + job_id for routing). The 'estimates' key is reserved
+    (always []) until an estimates module exists. Enum cols cast to text before
+    NULLIF. Migration: supabase/migrations/20260624_global_search.sql. Does NOT
+    modify the MCP-only upr_search. Surfaced only in the desktop TopNav.
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
@@ -1120,6 +1139,19 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 **Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
 
 ---
+
+## Desktop Navigation Shell (≥1280px) — Top Nav + Overflow Drawer + Settings Hub (Jun 24 2026)
+
+A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar **on big-screen desktop browsers only**. Phones (≤768px) and iPads (769–1279px) are **unchanged** — they keep the dark `Sidebar` slide-over + mobile bottom bar. The `/tech/*` field-tech app is untouched.
+
+- **CSS-only shell:** both `<Sidebar>` and `<TopNav>` are always in the DOM; a single `@media (min-width:1280px)` block (end of `index.css`) hides `.sidebar`, shows `.topnav`, flips `.app-layout` to `flex-direction:column`, sets `--topnav-h:56px` (0 elsewhere so mobile math is unchanged), and height-corrects the three full-viewport pages (`.conversations-layout`, `.jobs-page`, `.job-page` → `calc(100dvh - var(--topnav-h))`). The `@media (max-width:768px)` block is byte-for-byte untouched.
+- **Single source of truth:** `src/lib/navItems.jsx` — `NAV_ITEMS` (legacy sidebar list, unchanged) + `PRIMARY_ITEMS`/`OVERFLOW_ITEMS`/`SYSTEM_ITEMS` + `isItemVisible(item, {canAccess,isFeatureEnabled,employee,isMoroni})` (mirrors legacy gating: adminOnly → role; moroniOnly → email; `always` skips canAccess (Help); else canAccess(key); then featureFlag).
+- **Top bar (`TopNav.jsx`):** logo · primary links [Home `/`, Inbox `/conversations` (unread badge), Schedule, Claims, Customers, My Money `/collections` (`page:collections`), Time `/time-tracking` (`page:time_tracking`)] · `GlobalSearch` · `NewMenu` · `NotificationBell` · settings gear (`/settings`) · `UserMenu`. **Home/Inbox/My Money/Time are LABEL renames only** — routes + nav_keys unchanged.
+- **Overflow drawer (`OverflowDrawer.jsx`):** hamburger-opened left slide-over (dark) — Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing.
+- **New menu (`NewMenu.jsx`):** New Claim (→ existing job+claim creator `CreateJobModal`), New Customer (`AddContactModal`), New Invoice (global `NewInvoiceModal`) — all via `Layout.handleCreateAction`. No estimate (no module).
+- **User menu (`UserMenu.jsx`):** avatar dropdown — admin-only Tech View + Sign Out.
+- **Settings hub (`SettingsLayout.jsx`):** pathless route wrapping the SYSTEM pages (`/settings`, `/help`, `/admin`, `/admin/demo-sheet-builder`, `/tech-feedback`, `/dev-tools`). Desktop shows a left sub-rail (gated via `isItemVisible`); below 1280px it's `display:contents` (passthrough — pages render exactly as before). Paths + AdminRoute/DevRoute guards unchanged. `Settings.jsx` keeps its own internal Carriers/Referrals/Templates sub-nav inside its content.
+- **Bell single-mount:** `Layout` gates the one `NotificationBell` by `matchMedia('(min-width:1280px)')` (TopNav on desktop, Sidebar header otherwise) so there are never two live notification subscriptions (no duplicate toasts). `NotificationBell` gained an optional `align` prop ('left'|'right').
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar
