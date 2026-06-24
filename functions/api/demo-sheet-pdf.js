@@ -155,7 +155,30 @@ export async function onRequestPost(context) {
 //    totals: [ { label, value } ],
 //  }
 // ─────────────────────────────────────────────────────────────────────────────
-async function buildDemoPdf(model) {
+// pdf-lib's StandardFonts use WinAnsi (CP1252) encoding, which throws on emoji
+// / pictographs (e.g. the section icons 💧🛡️, or an emoji a tech types into a
+// note). Strip those ranges from every string before drawing/measuring, while
+// keeping WinAnsi-safe typography (em/en dashes, curly quotes, ×, ·, …).
+function pdfSafe(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/^\s+|\s+$/g, '');
+}
+function deepPdfSafe(v) {
+  if (typeof v === 'string') return pdfSafe(v);
+  if (Array.isArray(v)) return v.map(deepPdfSafe);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const k of Object.keys(v)) out[k] = deepPdfSafe(v[k]);
+    return out;
+  }
+  return v;
+}
+
+async function buildDemoPdf(rawModel) {
+  // Sanitize all strings up front so neither drawText nor widthOfTextAtSize
+  // ever sees a character WinAnsi can't encode.
+  const model = deepPdfSafe(rawModel);
   const pdfDoc = await PDFDocument.create();
   const fBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fReg   = await pdfDoc.embedFont(StandardFonts.Helvetica);
