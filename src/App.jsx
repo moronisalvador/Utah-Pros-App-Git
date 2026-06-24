@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
+import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { statusBarDark, hideSplash } from '@/lib/nativeAppearance';
@@ -241,7 +242,6 @@ function WebRoutes() {
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
-        <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
         <Route path="invoices/:invoiceId" element={<ErrorBoundary section="Invoice"><InvoiceEditor /></ErrorBoundary>} />
         <Route path="payments/settings" element={<ErrorBoundary section="Payment Settings"><PaymentSettings /></ErrorBoundary>} />
 
@@ -282,16 +282,18 @@ function WebRoutes() {
           </FeatureRoute>
         } />
 
-        {/* Admin-only */}
-        <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
-        <Route path="admin/demo-sheet-builder" element={<AdminRoute><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AdminRoute>} />
-        <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
-        <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
-
-        {/* Dev Tools — Moroni only, not role-based */}
-        <Route path="dev-tools" element={
-          <DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>
-        } />
+        {/* Settings hub — system pages share a left sub-nav on desktop (≥1280px);
+            on mobile/iPad SettingsLayout is a passthrough so each page renders
+            exactly as before. Paths + per-route guards are unchanged. */}
+        <Route element={<SettingsLayout />}>
+          <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
+          <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
+          <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
+          <Route path="admin/demo-sheet-builder" element={<AdminRoute><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AdminRoute>} />
+          <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
+          {/* Dev Tools — Moroni only, not role-based */}
+          <Route path="dev-tools" element={<DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>} />
+        </Route>
       </Route>
 
       <Route path="*" element={<NotFound />} />
