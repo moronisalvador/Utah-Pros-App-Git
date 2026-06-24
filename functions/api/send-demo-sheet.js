@@ -1,13 +1,13 @@
 // POST /api/send-demo-sheet  body: { subject, message }
-// Sends the rendered demo-sheet HTML email via SendGrid.
-// Mirrors send-esign.js / resend-esign.js exactly: the canonical SendGrid
-// payload shape (subject inside personalizations, text+html parts, reply_to)
-// AND the canonical response shape — always returns 200 with `{ ok }` so the
+// Sends the rendered demo-sheet HTML email via Resend (through the shared
+// functions/lib/email.js helper).
+// Canonical response shape — always returns 200 with `{ ok }` so the
 // frontend can read body details cleanly. Some upstream layers strip the
 // body on 5xx responses, so we surface success/failure as a body field
 // instead of an HTTP status code.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { sendEmail } from '../lib/email.js';
 
 function htmlToText(html) {
   if (!html) return '';
@@ -36,10 +36,10 @@ export async function onRequestPost(context) {
 
   // Top-level guard: anything that throws ends up as JSON 200 with ok:false
   try {
-    if (!env.SENDGRID_API_KEY) {
+    if (!env.RESEND_API_KEY) {
       return jsonResponse({
         ok: false,
-        error: 'SENDGRID_API_KEY missing in Cloudflare Pages env vars',
+        error: 'RESEND_API_KEY missing in Cloudflare Pages env vars',
       }, 200, request, env);
     }
 
@@ -55,40 +55,30 @@ export async function onRequestPost(context) {
       return jsonResponse({ ok: false, error: 'subject and message required' }, 200, request, env);
     }
 
-    const fromEmail = env.DEMO_SHEET_FROM_EMAIL || 'restoration@utah-pros.com';
+    // DEMO_SHEET_FROM_EMAIL (bare address) overrides the default sender if set.
+    const fromEmail = env.DEMO_SHEET_FROM_EMAIL
+      ? `Utah Pros Restoration <${env.DEMO_SHEET_FROM_EMAIL}>`
+      : undefined; // undefined → helper uses EMAIL_FROM / default
     const toList = (env.DEMO_SHEET_TO_EMAILS || 'moroni.s@utah-pros.com,restoration@utah-pros.com')
       .split(',').map(s => s.trim()).filter(Boolean);
 
-    const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        personalizations: [{
-          to: toList.map(email => ({ email })),
-          subject,
-        }],
-        from:     { email: fromEmail, name: 'Utah Pros Restoration' },
-        reply_to: { email: fromEmail, name: 'Utah Pros Restoration' },
-        content: [
-          { type: 'text/plain', value: htmlToText(message) },
-          { type: 'text/html',  value: message },
-        ],
-      }),
+    const emailRes = await sendEmail(env, {
+      to:      toList,
+      from:    fromEmail,
+      subject,
+      text:    htmlToText(message),
+      html:    message,
     });
 
     if (!emailRes.ok) {
-      const errBody = await emailRes.text().catch(() => '');
-      console.error('send-demo-sheet SendGrid error:', emailRes.status, errBody.slice(0, 500));
+      console.error('send-demo-sheet Resend error:', emailRes.status, String(emailRes.error).slice(0, 500));
       // Match send-esign.js: 200 with explicit email_error fields so the
       // frontend can always parse the body and surface the real reason.
       return jsonResponse({
         ok: false,
-        error: `SendGrid ${emailRes.status}`,
-        sendgrid_status: emailRes.status,
-        sendgrid_error: errBody.slice(0, 500),
+        error: `Email send failed (${emailRes.status})`,
+        email_status: emailRes.status,
+        email_error_detail: String(emailRes.error).slice(0, 500),
       }, 200, request, env);
     }
 

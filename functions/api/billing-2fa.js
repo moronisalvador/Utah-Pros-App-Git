@@ -15,6 +15,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { sendEmail } from '../lib/email.js';
 
 const PROTECTED_KEYS = ['stripe_payout_bank_id', 'stripe_payout_bank_name', 'stripe_instant_card_id', 'stripe_instant_card_name'];
 const CODE_TTL_MIN = 10;
@@ -65,8 +66,8 @@ export async function onRequestPost(context) {
 
   // ── Request a code ──
   if (body.action === 'request') {
-    if (!env.SENDGRID_API_KEY) {
-      return jsonResponse({ ok: false, error: 'Email is not configured (SENDGRID_API_KEY missing) — cannot send a verification code.' }, 503, request, env);
+    if (!env.RESEND_API_KEY) {
+      return jsonResponse({ ok: false, error: 'Email is not configured (RESEND_API_KEY missing) — cannot send a verification code.' }, 503, request, env);
     }
     const cfg = (await db.select('integration_config', `key=eq.billing_2fa_email&select=value&limit=1`))?.[0];
     const to = cfg?.value || 'moroni.s@utah-pros.com';
@@ -77,27 +78,18 @@ export async function onRequestPost(context) {
       requested_by: actor.id, expires_at: new Date(Date.now() + CODE_TTL_MIN * 60 * 1000).toISOString(),
     });
 
-    const fromEmail = env.DEMO_SHEET_FROM_EMAIL || 'restoration@utah-pros.com';
     const html = `<p>Someone is changing the <b>Stripe payout destination</b> (deposit bank / instant-payout debit card) in UPR.</p>
       <p style="font-size:26px;font-weight:800;letter-spacing:4px;margin:14px 0">${code}</p>
       <p>Enter this code in <b>Payment Settings</b> to confirm. It expires in ${CODE_TTL_MIN} minutes. If this wasn't you, ignore this email — nothing changes without the code.</p>
       <p style="color:#888;font-size:12px">Requested by ${actor.email || actor.id}</p>`;
-    const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }], subject: 'UPR — payout settings verification code' }],
-        from: { email: fromEmail, name: 'Utah Pros Restoration' },
-        reply_to: { email: fromEmail, name: 'Utah Pros Restoration' },
-        content: [
-          { type: 'text/plain', value: `UPR payout-settings verification code: ${code} (expires in ${CODE_TTL_MIN} min). If this wasn't you, ignore it.` },
-          { type: 'text/html', value: html },
-        ],
-      }),
+    const emailRes = await sendEmail(env, {
+      to:      to,
+      subject: 'UPR — payout settings verification code',
+      text:    `UPR payout-settings verification code: ${code} (expires in ${CODE_TTL_MIN} min). If this wasn't you, ignore it.`,
+      html,
     });
     if (!emailRes.ok) {
-      const errBody = await emailRes.text().catch(() => '');
-      return jsonResponse({ ok: false, error: `Email send failed (SendGrid ${emailRes.status}) — verification code not delivered.`, sendgrid_status: emailRes.status, sendgrid_error: errBody.slice(0, 300) }, 200, request, env);
+      return jsonResponse({ ok: false, error: `Email send failed (${emailRes.status}) — verification code not delivered.`, email_status: emailRes.status, email_error_detail: String(emailRes.error).slice(0, 300) }, 200, request, env);
     }
     return jsonResponse({ ok: true, sent: true, to: maskEmail(to), expires_in_min: CODE_TTL_MIN }, 200, request, env);
   }

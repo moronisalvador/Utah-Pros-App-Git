@@ -10,6 +10,7 @@
 // Do NOT modify submit-esign.js; this file is a sibling worker.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { sendEmail } from '../lib/email.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,8 +119,8 @@ export async function onRequestPost(context) {
     });
     const jobDocumentId = Array.isArray(docResult) ? docResult[0]?.id : (docResult?.id || docResult);
 
-    // ── 6. Optional: email via SendGrid ──
-    if (email_to && env.SENDGRID_API_KEY) {
+    // ── 6. Optional: email via Resend ──
+    if (email_to && env.RESEND_API_KEY) {
       await sendReportEmail({
         env,
         toEmail:     email_to,
@@ -1218,6 +1219,7 @@ function drawSparkline({
 // ─────────────────────────────────────────────────────────────────────────────
 //  EMAIL DELIVERY (optional)
 //  Mirrors the chunked-btoa pattern from submit-esign.js for V8 safety.
+//  Sends through the shared functions/lib/email.js helper (Resend).
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendReportEmail({ env, toEmail, job, pdfBytes, dateLabel }) {
   const bytes = new Uint8Array(pdfBytes);
@@ -1235,35 +1237,15 @@ async function sendReportEmail({ env, toEmail, job, pdfBytes, dateLabel }) {
   const escHtml = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.SENDGRID_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      personalizations: [{
-        to:      [{ email: toEmail }],
-        subject: `Water Loss Report${jobNumLine} — Utah Pros Restoration`,
-      }],
-      from:     { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-      reply_to: { email: 'restoration@utah-pros.com', name: 'Utah Pros Restoration' },
-      content: [
-        {
-          type: 'text/plain',
-          value: `Attached is the Water Loss Report for ${insuredName}${propertyLine ? ` at ${propertyLine}` : ''}.\n\nReport date: ${dateLabel}\n${jobNumLine.replace(' · ', '')}\n\n— Utah Pros Restoration\n(801) 427-0582`,
-        },
-        {
-          type: 'text/html',
-          value: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;padding:24px;"><p>Attached is the <strong>Water Loss Report</strong> for ${escHtml(insuredName)}${propertyLine ? ` at ${escHtml(propertyLine)}` : ''}.</p><p style="color:#64748b;font-size:13px;">Report date: ${escHtml(dateLabel)}${jobNumLine ? ` · ${escHtml(jobNumLine.replace(' · ', ''))}` : ''}</p><p style="color:#64748b;font-size:12px;margin-top:24px;">Questions? Reply to this email or call (801) 427-0582.</p></body></html>`,
-        },
-      ],
-      attachments: [{
-        content:     pdfB64,
-        filename:    fileName,
-        type:        'application/pdf',
-        disposition: 'attachment',
-      }],
-    }),
+  await sendEmail(env, {
+    to:      toEmail,
+    subject: `Water Loss Report${jobNumLine} — Utah Pros Restoration`,
+    text:    `Attached is the Water Loss Report for ${insuredName}${propertyLine ? ` at ${propertyLine}` : ''}.\n\nReport date: ${dateLabel}\n${jobNumLine.replace(' · ', '')}\n\n— Utah Pros Restoration\n(801) 427-0582`,
+    html:    `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;padding:24px;"><p>Attached is the <strong>Water Loss Report</strong> for ${escHtml(insuredName)}${propertyLine ? ` at ${escHtml(propertyLine)}` : ''}.</p><p style="color:#64748b;font-size:13px;">Report date: ${escHtml(dateLabel)}${jobNumLine ? ` · ${escHtml(jobNumLine.replace(' · ', ''))}` : ''}</p><p style="color:#64748b;font-size:12px;margin-top:24px;">Questions? Reply to this email or call (801) 427-0582.</p></body></html>`,
+    attachments: [{
+      content:     pdfB64,
+      filename:    fileName,
+      contentType: 'application/pdf',
+    }],
   });
 }
