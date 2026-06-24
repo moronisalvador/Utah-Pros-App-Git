@@ -82,3 +82,26 @@ export function subscribeToConversations(callback) {
     realtimeClient.removeChannel(channel);
   };
 }
+
+/**
+ * Subscribe to new in-app notifications (org-wide feed).
+ * Fires the callback with the inserted row's payload. Returns unsubscribe function.
+ */
+export function subscribeToNotifications(callback) {
+  const channel = realtimeClient
+    .channel('notifications:all')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+      },
+      (payload) => callback(payload)
+    )
+    .subscribe();
+
+  return () => {
+    realtimeClient.removeChannel(channel);
+  };
+}

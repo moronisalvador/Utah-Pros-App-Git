@@ -154,7 +154,7 @@ functions/
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
-    submit-esign.js               — Process signature, generate PDF, upload to storage
+    submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-claim-to-encircle.js     — Push UPR-native claim UP to Encircle. POST { claim_id }. Idempotent (skips if claims.encircle_claim_id set). Writes encircle_claim_id back on claims AND all child jobs. On failure stores error on claims.encircle_sync_error for retry. Called automatically from CreateJobModal + TechNewJob post-RPC; manual retry via DevTools → Backfill tab → Unsynced Claims panel.
@@ -854,6 +854,17 @@ doc-category keys unchanged). Two new schema capabilities:
   - PDF includes an "ACKNOWLEDGMENTS — ATTESTED AT SIGNING" block with filled-amber checkbox rects
   - `recon_agreement` gets the company pre-authorization block (same as `work_auth` / `change_order`)
 - **Audit trail:** `complete_sign_request` emits `system_events` row with `event_type='esign.signed'`, payload includes doc_type, signer info, divisions, and (for recon) the 4 consent booleans
+- **Office notifications on signing (Jun 24 2026):** after `complete_sign_request`, `submit-esign.js` fires three best-effort (non-fatal) alerts so the office knows a client signed — see **In-App Notifications** below:
+  1. **In-app** — `create_notification('esign_signed', …, p_link='/jobs/<id>')` → sidebar bell badge + live toast.
+  2. **Activity timeline** — inserts a system-authored `job_notes` row (`author_name='E-Signature'`, body `✍️ <name> signed the <doc>.`) so it shows on the Job page activity tab (which renders `job_notes` + phase history, not `system_events`).
+  3. **Internal email** — `sendEmail` to `restoration@utah-pros.com` (Resend) with the signed PDF attached + an "Open the job in UPR" link.
+
+## In-App Notifications (Jun 24 2026)
+Lightweight **org-wide** (shared-read) notification feed surfaced by a **bell in the sidebar header**. First and only producer today is e-signature completion; designed to be reused for future events.
+- **Table `notifications`:** `id UUID PK, type TEXT, title TEXT, body TEXT, link TEXT (in-app route), entity_type TEXT, entity_id UUID, job_id UUID, payload JSONB, read_at TIMESTAMPTZ (null = unread), created_at TIMESTAMPTZ`. RLS: SELECT to anon/authenticated; **writes only via the SECURITY DEFINER RPC** (no insert policy). Added to the `supabase_realtime` publication.
+- **RPCs:** `create_notification(p_type,p_title,p_body,p_link,p_entity_type,p_entity_id,p_job_id,p_payload)` (also granted to `service_role` for workers), `get_notifications(p_limit DEFAULT 30)`, `get_unread_notification_count()`, `mark_notification_read(p_id)`, `mark_all_notifications_read()`.
+- **Frontend:** `src/components/NotificationBell.jsx` (mounted in `Sidebar.jsx` header) — bell + unread badge + dropdown; polls the count every 60s and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`) to update live and fire a `upr:toast`. Clicking an item marks it read and navigates to `link`. **Shared read state** — marking read clears it for everyone (fine for a small office; swap to a per-user read table if needed).
+- **Migration:** `supabase/migrations/20260624_notifications.sql` (applied).
 
 ---
 

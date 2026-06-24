@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import NotificationBell from '@/components/NotificationBell';
 import {
   IconDashboard, IconConversations, IconJobs,
   IconCustomers, IconSchedule, IconTimeTracking,
@@ -66,6 +67,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction }) {
       <div className="sidebar-header">
         <div className="sidebar-logo">U</div>
         <span className="sidebar-title">UPR Platform</span>
+        <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>
       </div>
 
       {/* Quick create buttons */}
