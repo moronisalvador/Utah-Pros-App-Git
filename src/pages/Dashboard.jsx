@@ -24,6 +24,8 @@
  * NOTES / GOTCHAS:
  *   - This replaced the old stat-cards + job-tables dashboard wholesale per the
  *     Claude-design "Overview Dashboard" handoff.
+ *   - Phase 2 (in progress): the Employee status board is LIVE (get_tech_status_board,
+ *     30s poll); the other 9 widgets still render placeholder data.
  *   - Phase 1 = visual only: a STATIC responsive 12-col grid (collapses to 2-col
  *     then 1-col). The ⠿ drag handles are present but inert; drag/resize/reorder
  *     with per-user saved layouts is Phase 3. The period switch updates the card
@@ -42,6 +44,7 @@ import {
   ActionRequired, EmployeeStatus,
   ProductionPipeline,
 } from '@/components/overview/Widgets';
+import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
 
 export default function Dashboard() {
   // ─── SECTION: State & hooks ──────────────
@@ -51,6 +54,9 @@ export default function Dashboard() {
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
+
+  // Phase 2: first live widget — the clock-in board (others still placeholder).
+  const emp = useEmployeeStatus();
 
   // ─── SECTION: Event handlers ──────────────
   const handleEditLayout = () => {
@@ -112,7 +118,7 @@ export default function Dashboard() {
         <ActiveDrying showHandle={showHandles} />
         <Collections showHandle={showHandles} />
         <ActionRequired showHandle={showHandles} />
-        <EmployeeStatus showHandle={showHandles} />
+        <EmployeeStatus data={emp.data ?? undefined} summary={emp.summary ?? undefined} showHandle={showHandles} />
         <ProductionPipeline showHandle={showHandles} />
       </main>
 
