@@ -788,6 +788,14 @@ export default function TechDemoSheet() {
   // Job totals — memoized so we don't re-walk every room on each render.
   const summary = useMemo(() => computeSummary(rooms, jobData, schema), [rooms, jobData, schema]);
 
+  // Sketch answer is schema-driven (floorPlan job section, gateField
+  // `hasSketchDone`) for v2+ schemas; v1 schemas fall back to the legacy
+  // hardcoded state so old drafts keep working. Declared HERE (before the
+  // autosave/mirror effects) so their dependency arrays can reference it.
+  const schemaHasJobSections = (schema?.jobSections?.length || 0) > 0;
+  const sketchAnswer = schemaHasJobSections ? (jobData?.hasSketchDone ?? null) : hasSketchDone;
+  const needsDimensions = sketchAnswer === false;
+
   // ─── SECTION: Data fetching ──────────────
   // Active techs dropdown — replaces the original hardcoded list
   useEffect(() => {
@@ -1009,12 +1017,6 @@ export default function TechDemoSheet() {
     setEncircleRoomsLoading(false);
   };
 
-  // Sketch answer is schema-driven (floorPlan job section, gateField
-  // `hasSketchDone`) for v2+ schemas; v1 schemas fall back to the legacy
-  // hardcoded state so old drafts keep working.
-  const schemaHasJobSections = (schema?.jobSections?.length || 0) > 0;
-  const sketchAnswer = schemaHasJobSections ? (jobData?.hasSketchDone ?? null) : hasSketchDone;
-  const needsDimensions = sketchAnswer === false;
   const addRoom = () => setRooms(p => [...p, makeDefaultRoom(schema)]);
   const updateRoom = (id, u) => setRooms(p => p.map(r => r.id===id?u:r));
   const removeRoom = id => setRooms(p => p.filter(r => r.id !== id));
