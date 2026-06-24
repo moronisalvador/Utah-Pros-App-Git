@@ -4,6 +4,9 @@
 // Body:
 //   { "invoice_id": "<uuid>" }                       — create OR update the QBO invoice
 //   { "invoice_id": "<uuid>", "action": "delete" }   — delete it from QBO (cleanup)
+//   { "invoice_id": "<uuid>", "action": "send",      — ask QBO to EMAIL the invoice to
+//     "send_to": "name@x.com" (optional) }             the customer (defaults to the
+//                                                       invoice contact's email)
 //
 // Builds one summary line from the job's division (Item + Class) at the invoice
 // total, customer = the contact's qbo_customer_id, with the claim/job ref in the
@@ -13,7 +16,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice } from '../lib/quickbooks.js';
 
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
@@ -67,6 +70,36 @@ export async function onRequestPost(context) {
       return jsonResponse({ deleted: inv.qbo_invoice_id }, 200, request, env);
     } catch (e) {
       return jsonResponse({ error: e.message }, 500, request, env);
+    }
+  }
+
+  // ── Send path: ask QBO to email the invoice to the customer ──
+  if (body.action === 'send') {
+    if (!inv.qbo_invoice_id) return jsonResponse({ error: 'Invoice has not been sent to QuickBooks yet — push it first, then email.' }, 400, request, env);
+
+    // Recipient: explicit override, else the invoice contact's email on file.
+    let sendTo = (body.send_to || '').trim() || null;
+    if (!sendTo && inv.contact_id) {
+      const c = (await db.select('contacts', `id=eq.${inv.contact_id}&select=email&limit=1`))?.[0];
+      sendTo = (c?.email || '').trim() || null;
+    }
+    if (!sendTo) return jsonResponse({ error: 'No email address on file for this customer — add one to the contact (or pass send_to) before emailing.' }, 400, request, env);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sendTo)) return jsonResponse({ error: `Customer email looks invalid: ${sendTo}` }, 400, request, env);
+
+    try {
+      const qboInv = await sendInvoice(env, inv.qbo_invoice_id, sendTo);
+      const nowIso = new Date().toISOString();
+      await db.update('invoices', `id=eq.${invoiceId}`, {
+        qbo_emailed_at:   nowIso,
+        qbo_email_status: qboInv?.EmailStatus || 'EmailSent',
+        sent_to_email:    sendTo,
+        qbo_sync_error:   null,
+      });
+      await logRun(db, 'completed', 1, null, startedAt);
+      return jsonResponse({ ok: true, emailed_to: sendTo, email_status: qboInv?.EmailStatus || 'EmailSent' }, 200, request, env);
+    } catch (e) {
+      await logRun(db, 'error', 0, e.message, startedAt);
+      return jsonResponse({ error: e.message, intuit_tid: e.intuitTid || null }, 500, request, env);
     }
   }
 
