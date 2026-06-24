@@ -74,7 +74,11 @@ src/
   pages/
     Login.jsx                     — Email/password login + forgot password + dev mode selector
     SetPassword.jsx               — Password reset flow (recovery link handler)
-    Dashboard.jsx                 — Stats + recent jobs, click-through to job detail
+    Dashboard.jsx                 — Owner "Overview" dashboard: 12-col widget grid (replaced the old
+                                    stats+jobs view Jun 24 2026). See the "Overview Dashboard" section below.
+    components/overview/          — Overview dashboard pieces: tokens.js (dashboard-scoped palette +
+                                    placeholder data), Card.jsx (shared card shell + DeltaPill), Widgets.jsx
+                                    (the 10 widget components). Styles live under .ovw-* in index.css.
     Jobs.jsx                      — Job list: division tabs, sort, search, detail panel
     JobPage.jsx                   — Full job detail: Overview/Schedule/Files/Financial/Activity tabs
     Production.jsx                — Kanban pipeline (30 phases, 4 macro groups) + list view
@@ -172,6 +176,49 @@ functions/
     supabase.js                   — Supabase REST helper for workers
     twilio.js                     — Twilio helpers
 ```
+
+---
+
+## Overview Dashboard (owner landing — Jun 24 2026)
+
+The owner's home screen at `/` (office/admin/PM/supervisor; field techs go to `/tech`). Replaced the old
+stat-cards + two-job-tables `Dashboard.jsx` with the Claude-design **"Overview"** — a responsive 12-column
+grid of 10 self-contained widget cards. Header = "Overview" title + date · division legend · period control
+(MTD/Last30/QTD/YTD) · "Edit layout". Footer fine print.
+
+**Widgets (default spans):** Revenue recognized `4` · Avg ticket `4` · Open estimates `4` · New claims booked
+`6` · Jobs completed `6` · Active drying `7` (signature) · Collections `5` · Action required `6` · Employee
+status `6` (live clock-in board) · Production pipeline `12` (future-ready, greyed recon/remodel lanes).
+
+**Files:** `src/pages/Dashboard.jsx` (header + grid assembly) · `src/components/overview/tokens.js`
+(palette + placeholder datasets; every widget takes a `data` prop defaulting to its placeholder, so live
+wiring is a drop-in) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer) ·
+`src/components/overview/Widgets.jsx` (the 10 widgets; CSS/SVG charts, no chart lib). Styles are scoped under
+`.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE pulse).
+
+**⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
+uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
+`#f2664a`, Mold pink `#ec4899` — and introduces a **"Remodeling"** division **only here**. The app-wide
+`DIVISION_COLORS` and the division enum are untouched. App-wide adoption + a real Remodeling division is a
+separate future project (Phase 4 below, decision pending).
+
+**Roadmap / status:**
+- **Phase 1 — DONE:** pixel-faithful visual shell, **placeholder data**, **static** responsive grid. The ⠿
+  drag handles render but are inert; the period switch updates the card suffix only (no re-query yet).
+- **Phase 2 — pending (live data + interactions):** one data hook per widget; period re-query; wire
+  "view all →" links. **Reuse:** `get_tech_status_board()`+`StatusBoard.jsx` (employee board, 30s poll),
+  `get_ar_invoices`/`get_job_financials`/`ARDashboard` aging (Collections + DSO), Hydro RPCs
+  (`get_stalled_materials*`, `moisture_readings`) for Active drying, `Production.jsx` phase map for pipeline.
+  **New RPCs to add:** `get_revenue_by_division`, `get_avg_ticket`, `get_jobs_completed_summary`,
+  `get_new_claims_sparkline`, `get_pipeline_summary`, `get_active_drying_jobs`, `get_dashboard_action_items`,
+  and (if no live `estimates` table) `get_open_estimates_summary`. Active drying + Action required are the
+  hard ones.
+- **Phase 3 — pending (drag/resize/reorder + per-user persistence):** add `react-grid-layout` (or `dnd-kit`);
+  new `dashboard_layouts` table (`employee_id`, `layout jsonb`) + `get/save_dashboard_layout` RPCs; localStorage
+  mirror; "Edit layout" toggles edit mode.
+- **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+
+**Plan file (this session):** `/root/.claude/plans/yes-record-it-but-steady-kitten.md`.
 
 ---
 
