@@ -172,6 +172,42 @@ export function buildUnlocked(room, sections) {
   return unlocked;
 }
 
+// ── Required-field enforcement ───────────────────────────────────────────────
+// A field marked `required: true` must have an acceptable value before its
+// section's "Done → Next" unlocks. Measurements (stepper) and checkboxes are
+// ALWAYS acceptable — 0 / unchecked are valid answers — so they never block;
+// only choice/text fields must be non-empty.
+export function fieldHasValue(field, ctx) {
+  const v = ctx?.[field?.key];
+  switch (field?.type) {
+    case 'single-chip':
+    case 'select':
+    case 'text':
+    case 'textarea':
+      return typeof v === 'string' ? v.trim().length > 0 : (v !== null && v !== undefined && v !== '');
+    case 'multi-chip':
+      return Array.isArray(v) && v.length > 0;
+    default:
+      return true; // stepper / checkbox / computed / list → 0/unchecked/derived are valid
+  }
+}
+
+// True iff every *visible* required leaf field in the section has a value.
+// Respects showWhen + row nesting; list-item requireds are not enforced (yet).
+export function sectionRequiredMet(section, ctx) {
+  let met = true;
+  const visit = (fields) => {
+    for (const f of fields || []) {
+      if (f.type === 'row') { visit(f.fields); continue; }
+      if (f.type === 'list') continue;
+      if (!fieldShouldShow(f, ctx)) continue;
+      if (f.required && !fieldHasValue(f, ctx)) met = false;
+    }
+  };
+  visit(section.fields || []);
+  return met;
+}
+
 // ── Schema-driven aggregation + review/email helpers ─────────────────────────
 //
 // computeSummary walks every field across every room, honoring section
@@ -375,8 +411,13 @@ export function CheckRow({ label, checked, onChange }) {
 export function AddBtn({ label, onClick }) {
   return <button onClick={onClick} style={{ width:'100%', background:'transparent', border:`1.5px dashed ${C.border}`, borderRadius:8, color:C.muted, padding:10, fontSize:13, cursor:'pointer', marginTop:4, fontFamily:'var(--font-sans)' }}>+ {label}</button>;
 }
-export function NextBtn({ onClick, label='Done → Next' }) {
-  return <button onClick={onClick} style={{ width:'100%', marginTop:14, background:C.accent, border:'none', borderRadius:8, color:'#fff', fontSize:14, fontWeight:700, padding:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>{label} →</button>;
+export function NextBtn({ onClick, label='Done → Next', disabled=false, hint }) {
+  return (
+    <>
+      {disabled && hint && <div style={{ fontSize:11, color:C.red, textAlign:'center', marginTop:14, marginBottom:-4 }}>{hint}</div>}
+      <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ width:'100%', marginTop:14, background:disabled?C.cardAlt:C.accent, border:'none', borderRadius:8, color:disabled?C.muted:'#fff', fontSize:14, fontWeight:700, padding:13, cursor:disabled?'default':'pointer', opacity:disabled?0.75:1, fontFamily:'var(--font-sans)' }}>{label} →</button>
+    </>
+  );
 }
 export function YesNo({ onNo, onYes }) {
   return (
@@ -659,6 +700,8 @@ export function RoomCard({ room, index, onChange, onRemove, onDuplicate, totalRo
                     : advance(sec.key)
                   }
                   label={sec.nextLabel || 'Done → Next'}
+                  disabled={!sectionRequiredMet(sec, room)}
+                  hint="Answer the required question(s) to continue"
                 />
               </>
             );
@@ -752,6 +795,8 @@ export function JobSections({ jobData, onChange, schema }) {
                     : advance(sec.key)
                   }
                   label={sec.nextLabel || 'Done → Next'}
+                  disabled={!sectionRequiredMet(sec, jobData)}
+                  hint="Answer the required question(s) to continue"
                 />
               </>
             );
