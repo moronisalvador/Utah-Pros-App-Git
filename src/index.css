@@ -5294,6 +5294,24 @@ tr:hover td { background: var(--bg-secondary); }
 .overflow-drawer-link.active .nav-icon { opacity: 1; }
 .overflow-drawer-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--sidebar-text); }
 
+/* Settings hub — system pages share a left rail on desktop. Below 1280px the
+   wrapper is `display:contents` and the rail is hidden, so the wrapped page is
+   a direct child of .app-content exactly as before (no behavioral change). */
+.settings-hub { display: contents; }
+.settings-hub-content { display: contents; }
+.settings-hub-rail { display: none; }
+.settings-hub-title { font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); padding: 0 var(--space-2) var(--space-3); }
+.settings-hub-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px var(--space-3); border-radius: var(--radius-md);
+  color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500;
+  text-decoration: none; transition: background var(--transition-fast), color var(--transition-fast);
+}
+.settings-hub-link:hover { background: var(--bg-tertiary); color: var(--text-primary); text-decoration: none; }
+.settings-hub-link.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.settings-hub-link .nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.8; }
+.settings-hub-link.active .nav-icon { opacity: 1; }
+
 /* ── Desktop activation — the ONLY rules that reshape the shell ── */
 @media (min-width: 1280px) {
   :root { --topnav-h: 56px; }
@@ -5304,4 +5322,12 @@ tr:hover td { background: var(--bg-secondary); }
   .conversations-layout,
   .jobs-page,
   .job-page { height: calc(100dvh - var(--topnav-h)); }
+  /* Settings hub becomes a two-column layout (rail + page) */
+  .settings-hub { display: flex; height: 100%; min-height: 0; }
+  .settings-hub-rail {
+    display: flex; flex-direction: column; width: 240px; flex-shrink: 0; gap: 2px;
+    background: var(--bg-primary); border-right: 1px solid var(--border-color);
+    padding: var(--space-4) var(--space-3); overflow-y: auto;
+  }
+  .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
 }

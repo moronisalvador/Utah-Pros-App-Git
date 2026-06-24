@@ -114,7 +114,7 @@ export const OVERFLOW_ITEMS = [
 // sidebar — the route itself is AdminRoute-gated); help is always visible;
 // dev_tools is Moroni-only.
 export const SYSTEM_ITEMS = [
-  { key: 'admin_panel',        label: 'Admin',               path: '/admin',                    icon: IconAdmin },
+  { key: 'admin_panel',        label: 'Admin',               path: '/admin',                    icon: IconAdmin,    end: true },
   { key: 'demo_sheet_builder', label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder', icon: IconAdmin,    adminOnly: true },
   { key: 'tech_feedback',      label: 'Tech Feedback',       path: '/tech-feedback',            icon: IconFeedback },
   { key: 'settings',           label: 'Settings',            path: '/settings',                 icon: IconSettings },
