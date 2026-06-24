@@ -1,5 +1,5 @@
 # UPR Billing · Invoicing · A/R · QuickBooks · Stripe — Handoff & Status
-**Last updated:** 2026-06-20 · **Branches:** `dev` and `main` are **in sync** — both carry A (+New-invoice picker) + Stripe S3 + S4 (refunds/disputes), all dormant, + payout-destination email-2FA + the refreshed Help/guide (owner asked to push all of this to both; billing is admin/manager + feature-flagged, so techs are unaffected). Both auto-deploy via Cloudflare Pages · **Supabase project:** `glsmljpabrwonfiltiqm`
+**Last updated:** 2026-06-24 · **Branches:** `main` is production; `dev` auto-mirrors `main` (sync Action). As of Jun 24 both carry A (+New-invoice picker) + Stripe S3 + S4 (refunds/disputes, dormant) + payout-destination email-2FA + the refreshed Help/guide, **plus the Jun 24 invoicing/email work and the new inbound QBO Payment webhook (#47, dormant until activated — see §3/§4B).** Billing is admin/manager + feature-flagged, so techs are unaffected. Cloudflare Pages auto-deploys · **Supabase project:** `glsmljpabrwonfiltiqm`
 
 > **READ THIS FIRST if you're a new chat picking up this work.** This is the complete brief
 > for the billing/invoicing/A/R + QuickBooks + Stripe initiative. **Do not change the locked
@@ -16,6 +16,20 @@
 downstream mirror. Everything (invoices *and* payments) is entered in UPR and pushed to QBO.
 **Nobody enters/edits invoices or payments directly in QuickBooks.** No inbound/QBO-webhook
 sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
+
+> **CARD PROCESSING — current direction (owner, Jun 24 2026): "QBO now, and it will change later."**
+> The Jun 24 work shipped a **narrow inbound path**: a QBO **Payment** webhook (`qbo-webhook` +
+> hourly `qbo-payments-sync` poller, #47) that imports payments made **online via the QuickBooks
+> invoice pay-now link (QuickBooks Payments)** back into UPR. This is a deliberate, scoped
+> exception to "no inbound QBO sync" — it covers *payments only* (not invoice/customer content)
+> so customers can pay a QBO invoice online without anyone hand-entering it in UPR. It does **not**
+> reintroduce the dropped two-way invoice/customer sync.
+>
+> **Resolution:** **QuickBooks Payments is the card path for now;** the dormant **Stripe** stack
+> (§1 "Card processing = Stripe", §4) is **not shelved** — it remains the planned future processor
+> for when the approach changes ("later will change"). Both stay documented as-is; QBO Payments is
+> the one to **activate now** (§4B), Stripe is the one to **hold ready** (§4). Treat this as a
+> known migration ahead, and keep **UPR as the only writer to QBO** under either processor.
 
 **Invoicing**
 - **One invoice per job (= per division).** A claim with Mitigation + Reconstruction = 2 jobs = 2 invoices. Driven by `create_invoice_for_job(p_job_id)` (returns the existing invoice if one exists — never duplicates).
@@ -78,6 +92,13 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 
 **Cleanup done:** removed the old job-centric `ARPage` cluster + stale `COLLECTIONS_*.md`. Legacy `billing_overview` view + `get_ar_jobs` RPC remain in the DB (harmless, unused) — drop later if desired.
 
+**Jun 24 2026 additions (all merged to `main`, PRs #40–#47):**
+- **Email invoice to customer from UPR (#40):** `qbo-invoice` worker `action:'send'` → QBO `/invoice/{id}/send` (`sendInvoice()` in `lib/quickbooks.js`); recipient from the invoice contact's email or explicit `send_to`; stamps `invoices.qbo_emailed_at` / `qbo_email_status` / `sent_to_email`. Migration `20260624_invoice_qbo_email_status.sql` (applied).
+- **Native-feel invoice editor (#41):** primary **Save** persists line edits **and** pushes to QBO (create first time, update after) in one step; QuickBooks wording removed from the UI; status line `Draft → Saved → Sent → Partial → Paid`. **Editor stability (#46):** silent line-save (no per-field blink/refetch) + `load()` reads `db` via a ref so it runs once per invoice instead of re-firing on every Supabase token refresh (was wiping in-progress edits on tab switch).
+- **Collections → Invoices tab (#42):** searchable list of all invoices (`InvoicesList.jsx`) reusing `get_ar_invoices()`; rows open `/invoices/:id`.
+- **⭐ Inbound QBO Payment sync (#47) — the scoped exception flagged in §1:** `functions/api/qbo-webhook.js` (Intuit webhook receiver; HMAC-verifies `intuit-signature` against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event`, mirrors `Payment` entities into UPR; Delete/Void/Merge removes the imported payment) + `functions/api/qbo-payments-sync.js` (hourly safety-net poller, `scheduled()`) + `functions/lib/qbo-payment-sync.js` (maps QBO Payment → `payments` rows by `qbo_invoice_id`, `source='qbo'`; **dedups** any `qbo_payment_id` already on a UPR payment so UPR-originated payments are never double-counted; the existing `update_invoice_paid` trigger rolls it up) + `functions/lib/intuit.js` (signature verify). Migration `20260624_qbo_payment_webhook.sql`: `qbo_events` idempotency table + `claim_qbo_event` RPC (service-role only, applied). **Dormant — acks 200 until the verifier token is set (see §4B).**
+- **Infra/email (#43–#45):** `sync-dev-to-main.yml` Action (fast-forwards `dev` → `main` on every main push); `resend-esign` `env`-not-defined 500 fix; esign Reply-To aligned to `utahpros.app` (+ `recon_agreement` subject label); `EMAIL-DELIVERABILITY.md` runbook.
+
 ---
 
 ## 3. NEXT
@@ -87,6 +108,8 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 **B) Stripe S3 — ✅ CODE DONE / DORMANT (Jun 20 2026).** Built and applied (see §2). **Remaining = owner activation, not code:** do the §4 setup checklist (Stripe keys + QBO accounts + webhook), then run the live test. Until then it's inert.
 
 **C) Stripe S4 — refunds/disputes — ✅ CODE DONE / DORMANT (Jun 20 2026).** `stripe-webhook` handles `charge.refunded` (net the refund; full refund → reverse QBO Payment + fee Purchase via `deletePayment`/`deleteEntity`; partial → net in UPR + flag QBO for manual reduction) and `charge.dispute.created` (reopen A/R + reverse QBO Payment + stamp dispute status). Migration `20260620_stripe_s4.sql`: `payments.refunded_amount/refunded_at/dispute_status` + `update_invoice_paid` rewritten to net refunds and reopen status. `ClaimBilling` shows a Refunded/Disputed chip. *Follow-ups (S5): dispute fee + won/lost resolution; auto-reduce QBO payment on partial refund.* Activates with the rest of Stripe — **subscribe these two events on the webhook endpoint** (see §4) and live-test.
+
+**B2) QBO Payment inbound webhook — ✅ CODE DONE / DORMANT (Jun 24 2026, #47).** Imports payments made online via the QuickBooks invoice pay-now link back into UPR (the scoped inbound exception flagged in §1). **Remaining = owner activation, not code:** do the **§4B** checklist (Intuit webhook subscription → `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare → hourly cron on `qbo-payments-sync`), then live-test. Inert until the verifier token is set.
 
 **D) Remaining / polish**
 - Flip `integration_config.auto_draft_invoices` → `'true'` after a real prod test (auto-creates a draft per job).
@@ -149,6 +172,36 @@ migration `20260620_stripe_s3.sql` (applied). **Idempotency:** event id via
 `claim_stripe_event` + unique `payments.stripe_charge_id`. **S4 (refunds/disputes):**
 on `charge.refunded` / `charge.dispute.created`, reverse the payment + fee Purchase via
 `deleteEntity` (not yet built).
+
+---
+
+## 4B. QBO Payment webhook — ACTIVATION click-path (code is built & dormant, #47)
+
+The code (`qbo-webhook`, `qbo-payments-sync`, `qbo-payment-sync.js`, `intuit.js`, migration
+`20260624_qbo_payment_webhook.sql`) is shipped and **inert** — `qbo-webhook` acks 200 and
+does nothing until the verifier token is set, so it is safe on production now. To turn it on:
+
+**1 — Intuit Developer → your app → Webhooks.** Set the endpoint to
+`https://utahpros.app/api/qbo-webhook`, subscribe to **Payment** events, **Save**, then copy
+the **Verifier Token**. (This is the production app — the same one used for OAuth.)
+
+**2 — Cloudflare Pages env var** (Settings → Environment variables; add to **both** Production
+*and* Preview, then redeploy each): `QBO_WEBHOOK_VERIFIER_TOKEN` = the token from step 1.
+(Distinct from the existing `QBO_WEBHOOK_SECRET`, which is the internal DB-trigger secret.)
+
+**3 — Hourly cron** (safety-net poller) → point an hourly trigger at
+`https://utahpros.app/api/qbo-payments-sync` (same mechanism as `process-scheduled`).
+
+**Live test:** create + send a real invoice from `/invoices/:id`, pay it online via the QBO
+pay-now link, and confirm a `payments` row (`source='qbo'`) appears within a minute, the
+invoice balance drops, and A/R advances to Partial/Paid. Then void/delete that payment in QBO
+and confirm the imported UPR payment is removed. **Idempotency:** re-deliver the same webhook
+from Intuit → no-op (`claim_qbo_event`). **No double-count:** a payment UPR pushed to QBO is
+skipped on its echo webhook (its `qbo_payment_id` already exists on a UPR payment).
+
+> **Relationship to Stripe (§1 open question):** this path activates **QuickBooks Payments**
+> (online pay-now on the QBO invoice). It is independent of the dormant Stripe stack (§4). Both
+> can be live at once, but you generally want **one** card processor — confirm direction (§1).
 
 ---
 
