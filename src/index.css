@@ -5106,3 +5106,77 @@ tr:hover td { background: var(--bg-secondary); }
   .oop-layout { grid-template-columns: 1fr !important; }
   .oop-breakdown { position: static !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERVIEW DASHBOARD  (owner landing — src/pages/Dashboard.jsx)
+   Self-contained, dashboard-scoped design language. Everything is prefixed
+   `.ovw-`. This intentionally uses its OWN palette (teal/purple/coral/pink
+   division colors + a softer card system) per the Claude-design handoff and
+   does NOT touch the app-wide tokens or DIVISION_COLORS. Dynamic values
+   (bar widths, chart colors, conic stops) live inline in the components;
+   only layout, hover, responsive collapse, and animation live here.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ovw-page { max-width: 1400px; margin: 0 auto; padding: 26px 30px 60px; }
+
+/* ── header ── */
+.ovw-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 22px; }
+.ovw-title { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.025em; color: #101828; }
+.ovw-subtitle { margin-top: 4px; font-size: 13px; color: #667085; font-weight: 500; }
+.ovw-header-right { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ovw-legend { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.ovw-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #475467; }
+.ovw-legend-sw { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+
+/* ── period segmented control ── */
+.ovw-seg { display: inline-flex; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 3px; gap: 2px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.ovw-seg-btn { font-family: inherit; font-size: 12.5px; font-weight: 600; color: #667085; background: transparent; border: none; border-radius: 6px; padding: 6px 13px; cursor: pointer; transition: background .12s, color .12s; }
+.ovw-seg-btn:hover { background: #f4f5f7; }
+.ovw-seg-btn.active { color: #fff; background: #101828; font-weight: 700; }
+.ovw-seg-btn.active:hover { background: #101828; }
+
+/* ── edit-layout button ── */
+.ovw-editbtn { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 7px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background .12s; }
+.ovw-editbtn:hover { background: #fafbfc; }
+
+/* ── grid + spans ── */
+.ovw-grid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 16px; align-items: stretch; }
+.ovw-span-4  { grid-column: span 4; }
+.ovw-span-5  { grid-column: span 5; }
+.ovw-span-6  { grid-column: span 6; }
+.ovw-span-7  { grid-column: span 7; }
+.ovw-span-12 { grid-column: span 12; }
+
+/* ── card shell ── */
+.ovw-card { background: #fff; border: 1px solid #e7e9ee; border-radius: 14px; padding: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05); display: flex; flex-direction: column; gap: 13px; min-width: 0; }
+.ovw-card-wide { padding: 18px 20px; }
+.ovw-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ovw-card-title { font-size: 13px; font-weight: 700; color: #344054; display: flex; align-items: center; gap: 7px; min-width: 0; }
+.ovw-card-title .ovw-suffix { font-weight: 500; color: #98a2b3; }
+.ovw-head-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.ovw-handle { font-size: 15px; line-height: 1; color: #cbd0d9; cursor: grab; user-select: none; display: inline-flex; align-items: center; }
+.ovw-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 11px; border-top: 1px solid #f0f1f4; }
+.ovw-link { font-size: 12.5px; font-weight: 600; color: #2f6bf2; text-decoration: none; background: none; border: none; cursor: pointer; font-family: inherit; padding: 0; }
+.ovw-link:hover { text-decoration: underline; }
+
+/* ── list rows (drying / action / employee) ── */
+.ovw-row { display: flex; align-items: center; gap: 12px; padding: 7px 6px; border-radius: 8px; text-decoration: none; transition: background .12s; }
+.ovw-row:hover { background: #f8f9fb; }
+.ovw-row-action { gap: 11px; padding: 9px 8px; }
+.ovw-row.ovw-escal { background: #fef3f2; }
+.ovw-row.ovw-escal:hover { background: #fdecea; }
+
+/* ── live pulse dot (employee status) ── */
+@keyframes ovwPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.78); } }
+.ovw-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #1f9d55; display: block; animation: ovwPulse 1.6s ease-in-out infinite; }
+
+/* ── responsive collapse: 12-col → 2-col → 1-col ── */
+@media (max-width: 1100px) {
+  .ovw-span-4, .ovw-span-5, .ovw-span-6, .ovw-span-7 { grid-column: span 6; }
+}
+@media (max-width: 680px) {
+  .ovw-page { padding: 18px 14px 32px; }
+  .ovw-grid { gap: 12px; }
+  .ovw-span-4, .ovw-span-5, .ovw-span-6, .ovw-span-7, .ovw-span-12 { grid-column: span 12; }
+  .ovw-header { margin-bottom: 16px; gap: 14px; }
+  .ovw-title { font-size: 20px; }
+}
