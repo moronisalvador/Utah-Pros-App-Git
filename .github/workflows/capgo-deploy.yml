@@ -1,8 +1,13 @@
 name: Deploy native OTA bundle (Capgo)
 
 on:
-  push:
-    branches: [main, dev]
+  # PAUSED 2026-06-24: the Capgo account hit its plan limit, so every upload was
+  # rejected ("Plan upgrade required for upload") and this Action failed on every
+  # push — pure noise + wasted CI minutes. Switched to manual-only. To re-enable
+  # native OTA deploys, upgrade the Capgo plan and uncomment the push trigger below.
+  workflow_dispatch: {}
+  # push:
+  #   branches: [main, dev]
 
 jobs:
   deploy:
