@@ -5318,6 +5318,9 @@ tr:hover td { background: var(--bg-secondary); }
   .app-layout { flex-direction: column; }
   .sidebar { display: none; }
   .topnav { display: flex; }
+  /* Center capped page content & widen the cap now the sidebar is gone (was left-pinned against the viewport edge) */
+  .page,
+  .customers-page { max-width: 1600px; margin: 0 auto; }
   /* Full-viewport pages use 100dvh and must now subtract the top bar */
   .conversations-layout,
   .jobs-page,
