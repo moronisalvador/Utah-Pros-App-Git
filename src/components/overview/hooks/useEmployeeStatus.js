@@ -76,7 +76,8 @@ function mapRow(r, now) {
   const forgot = elapsedMin != null && elapsedMin >= FORGOT_CLOCKOUT_MIN;
 
   if (forgot) {
-    return { name, dot: 'danger', job: r.job_number, detailWarn: '⚠ likely forgot to clock out', elapsed: fmtElapsed(elapsedMin), status: 'Check clock-out', statusKind: 'danger', escal: true, _sort: 2 };
+    // Still clocked in (just stale) → group with the clocked-in rows on top (_sort 0).
+    return { name, dot: 'danger', job: r.job_number, detailWarn: '⚠ likely forgot to clock out', elapsed: fmtElapsed(elapsedMin), status: 'Check clock-out', statusKind: 'danger', escal: true, _sort: 0 };
   }
 
   const detail = [cityOf(r.address), `since ${timeOfDay(r.status_since)}`].filter(Boolean).join(' · ');
