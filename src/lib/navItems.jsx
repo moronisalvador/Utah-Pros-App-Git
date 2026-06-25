@@ -98,7 +98,6 @@ export const PRIMARY_ITEMS = [
   { key: 'claims',        label: 'Claims',    path: '/claims',        icon: IconClaim },
   { key: 'customers',     label: 'Customers', path: '/customers',     icon: IconCustomers },
   { key: 'collections',   label: 'My Money',  path: '/collections',   icon: IconCollections,   featureFlag: 'page:collections' },
-  { key: 'estimates',     label: 'Estimates', path: '/estimates',     icon: IconEstimate,      featureFlag: 'page:estimates' },
   { key: 'time_tracking', label: 'Time',      path: '/time-tracking', icon: IconTimeTracking,  featureFlag: 'page:time_tracking' },
 ];
 

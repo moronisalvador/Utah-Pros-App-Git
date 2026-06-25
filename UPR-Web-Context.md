@@ -370,13 +370,14 @@ invoice_adjustments     — Invoice adjustment audit log
 payments                — Payment records
 stripe_events           — Stripe webhook idempotency ledger (RLS-locked, service-role only). Added Jun 20 2026 (Stripe S3)
 billing_2fa_codes       — One-time email-2FA codes for editing payout destinations (RLS-locked). Added Jun 20 2026
-estimates               — Estimate records. Line-item builder + QBO sync (Jun 25 2026). MULTIPLE per job
-                          (estimate_type initial/supplement/change_order/final). amount/subtotal roll up from
-                          estimate_line_items via recompute_estimate_from_lines(). QBO cols qbo_estimate_id/
-                          qbo_synced_at/qbo_sync_error/qbo_doc_number/qbo_emailed_at/qbo_email_status/
-                          sent_to_email; plus contact_id, expiration_date, converted_invoice_id (FK invoices,
-                          set on convert; status→'approved'). status draft/submitted/under_review/approved/
-                          denied/revised/paid.
+estimates               — Estimate records. PRE-SALE, line-item, QBO-synced (Jun 25 2026, decoupled same day).
+                          Owned by a CONTACT (contact_id) + intended_division + optional property_address/city/
+                          state/zip; job_id is NULLABLE and stays NULL until SOLD. amount/subtotal roll up from
+                          estimate_line_items. estimate_type initial/supplement/change_order/final. QBO cols
+                          qbo_estimate_id/synced_at/sync_error/doc_number/emailed_at/email_status/sent_to_email.
+                          converted_invoice_id (FK invoices) set on convert — which silently auto-creates a
+                          claim+job then the invoice. status draft/submitted/under_review/approved/denied/
+                          revised/paid.
 estimate_line_items     — Line items per estimate (Jun 25 2026). Clone of invoice_line_items; line_total is a
                           GENERATED column (quantity*unit_price) — never write it. qbo_item_id/name +
                           qbo_class_id/name per line. Copied into invoice_line_items on convert-to-invoice.
@@ -1142,10 +1143,12 @@ converts to an invoice. Ships **dormant** behind the `page:estimates` feature fl
 (seeded **disabled** — a missing flag would read as ON, so the OFF row is required).
 Edits gated by `canEditBilling` (admin + manager), same as invoices.
 
-**Key difference from invoices:** estimates are **multiple per job** (initial / supplement /
-change_order / final), not one-per-job. The dashboard "Open estimates" donut
-(`get_open_estimates_summary`) reads `estimates.amount`, which the recompute trigger keeps
-in sync with the line items.
+**Estimates are PRE-SALE and decoupled from jobs** (decouple migration
+`20260625_estimate_decouple.sql`): an estimate is owned by a **contact** + an **intended_division**
+(the job type it would become) + an optional property address — `job_id` stays NULL until it's
+**sold**. Multiple estimates per client (initial / supplement / change_order / final). The dashboard
+"Open estimates" donut (`get_open_estimates_summary`) buckets on
+`COALESCE(intended_division, jobs.division)`.
 
 **DB (`migrations/20260625_estimate_builder.sql`, applied):**
 - `estimate_line_items` — clone of `invoice_line_items` (line_total GENERATED; qbo_item/class per line).
@@ -1153,20 +1156,23 @@ in sync with the line items.
   (FK invoices) + the `qbo_*` sync columns.
 - `recompute_estimate_from_lines()` trigger → rolls lines into `estimates.subtotal` + `amount`.
 - `generate_estimate_number()` → `EST-NNNNNN` (own sequence).
-- `create_estimate_for_job(p_job_id, p_estimate_type DEFAULT 'initial', p_created_by)` — always
-  inserts a NEW draft (multiple per job), unlike the idempotent invoice creator.
-- `get_estimates()` — one row per estimate w/ client/claim/job context + converted invoice number
-  (mirror of `get_ar_invoices`). Granted anon, authenticated.
-- `convert_estimate_to_invoice(p_estimate_id, p_force, p_created_by)` — reuses the one-per-job
-  `create_invoice_for_job`, copies estimate lines into that invoice, sets `invoices.estimate_id` +
-  `estimates.converted_invoice_id`, marks the estimate `'approved'`. Returns `{needs_confirm:true}`
-  (UI two-click) if the target invoice already has lines, unless `p_force`.
+- `create_estimate_for_contact(p_contact_id, p_intended_division, p_estimate_type DEFAULT 'initial',
+  p_property_address/city/state/zip, p_created_by)` — makes an estimate from a CLIENT, no job.
+  (Legacy `create_estimate_for_job` kept but deprecated/unused.)
+- `get_estimates()` — one row per estimate; division = `COALESCE(intended_division, jobs.division)`;
+  client from `contact_id`; job/claim columns populated only once converted. Granted anon, authenticated.
+- `convert_estimate_to_invoice(p_estimate_id, p_force, p_created_by)` — when the estimate has no job
+  (pre-sale), **silently auto-creates a claim + job** from contact + intended_division + property
+  address (no insurance = OOP) via `create_job_with_contact`, then `create_invoice_for_job`, copies
+  lines, links `invoices.estimate_id` + `estimates.converted_invoice_id`, status→'approved'. Legacy
+  job-coupled estimates still convert as before; signature unchanged.
 
 **Worker (`functions/api/qbo-estimate.js` + `lib/quickbooks.js`):** itemized push/update/delete/send to
 the QBO `/estimate` endpoint (`createEstimate`/`updateEstimate`/`deleteEstimate`/`sendEstimate`,
-reusing `divisionToQbo`/`findClassId`). Uses the UPR `estimate_number` as the QBO DocNumber (unique —
-job number isn't, with many estimates per job), sets `TxnStatus:'Pending'` + optional `ExpirationDate`,
-and advances UPR status draft→submitted on first push.
+reusing `divisionToQbo`/`findClassId`). Division (item/class) comes from `estimates.intended_division`,
+the customer from `estimates.contact_id`, the service address from `estimates.property_*` — a job is
+optional (only once converted). Uses `estimate_number` as the QBO DocNumber, sets `TxnStatus:'Pending'`
++ optional `ExpirationDate`, advances UPR status draft→submitted on first push.
 
 **Convert → invoice in QBO (both requested directions):**
 - **UPR-initiated:** the "Convert to invoice" button runs the convert RPC then pushes the invoice;
@@ -1180,8 +1186,9 @@ and advances UPR status draft→submitted on first push.
   estimate shows converted in UPR. Activates with the QBO Payment webhook (§4B of QBO-BILLING-STATUS).
 
 **Frontend:** `src/pages/EstimateEditor.jsx` (`/estimates/:id`) · `src/pages/Estimates.jsx`
-(`/estimates`, list + KPIs + filters) · `src/components/NewEstimateModal.jsx` (job picker + type
-selector + existing-estimates list) · `src/components/AutoGrowTextarea.jsx` (shared, line-item
+(`/estimates`, list + KPIs + filters) · `src/components/NewEstimateModal.jsx` (client search/create
+via AddContactModal + intended-division picker + optional property address — NO job picker) ·
+`src/components/AutoGrowTextarea.jsx` (shared, line-item
 description grows down + accepts line breaks for scope of work — also adopted by InvoiceEditor). Nav
 entries (`navItems.jsx`: sidebar + desktop overflow) + routes (`App.jsx`) gated by `page:estimates`.
 The invoice & estimate editors were also **widened** (maxWidth 1240; Description is the widest column).
