@@ -227,5 +227,14 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION convert_estimate_to_invoice(uuid, boolean, uuid) TO authenticated;
 
--- 8. Bust PostgREST schema cache ──────────────────────────────────────────────────
+-- 8. Feature flag — ships DISABLED (dormant) ──────────────────────────────────────
+-- isFeatureEnabled treats a MISSING flag as ON, so we must seed an explicit OFF row to
+-- keep Estimates hidden until the owner flips it on in Dev Tools. Gates the nav items
+-- (page:estimates) and the /estimates routes + editor.
+INSERT INTO feature_flags (key, enabled, category, label, description)
+VALUES ('page:estimates', false, 'page', 'Estimates',
+        'Estimate builder (line-item, QuickBooks-synced) with convert-to-invoice. Off by default; turn on to reveal the Estimates page + nav.')
+ON CONFLICT (key) DO NOTHING;
+
+-- 9. Bust PostgREST schema cache ──────────────────────────────────────────────────
 NOTIFY pgrst, 'reload schema';
