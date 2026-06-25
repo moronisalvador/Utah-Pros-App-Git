@@ -201,7 +201,9 @@ status `6` (live clock-in board) · Production pipeline `12` (future-ready, grey
 `src/components/overview/tokens.js` (palette + placeholder datasets; every widget takes a `data` prop
 defaulting to its placeholder) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer +
 loading-skeleton / error-retry body states) · `src/components/overview/Widgets.jsx` (the 10 widgets +
-`RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`) ·
+`RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`; data-heavy list
+widgets — Employee status, Action required, Active drying — scroll their rows internally via `.ovw-scroll`
+(header + footer stay fixed) so long lists aren't clipped) ·
 `src/components/overview/WidgetBoundary.jsx` (per-card React error boundary so one bad RPC can't blank the
 grid) · `src/components/overview/hooks/` (one hook per widget, all built on the shared
 `usePolledRpc(load, intervalMs, enabled)` — initial load + interval refresh that **pauses while the tab is
@@ -220,7 +222,7 @@ separate future project (Phase 4 below, decision pending).
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
   switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
   (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
