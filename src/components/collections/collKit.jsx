@@ -136,6 +136,14 @@ export function StatusBadge({ kind }) {
   return <Pill color={s.text} bg={s.tint} border={s.border} style={{ letterSpacing: '.04em' }}>{s.label}</Pill>;
 }
 
+// Status as plain colored text (no pill) — calmer than a badge; the color carries
+// the meaning. Title-cases the label (PARTIAL → Partial).
+export function StatusText({ kind }) {
+  const s = BADGE[kind] || BADGE.draft;
+  const label = s.label.charAt(0) + s.label.slice(1).toLowerCase();
+  return <span style={{ fontSize: 12, fontWeight: 600, color: s.text }}>{label}</span>;
+}
+
 export function DivisionSquare({ division, size = 9 }) {
   return <span style={{ width: size, height: size, borderRadius: 3, background: divColor(division), flex: 'none', display: 'inline-block' }} />;
 }

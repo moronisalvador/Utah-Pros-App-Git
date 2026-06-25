@@ -32,7 +32,7 @@ import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel, periodRange, inPeriod,
 } from './collTokens';
 import {
-  CollCard, Kpi, KpiGrid, SegControl, SearchBox, DivisionSquare, Pill, EmptyState,
+  CollCard, Kpi, KpiGrid, SegControl, SearchBox, DivisionSquare, EmptyState,
 } from './collKit';
 
 const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -40,10 +40,10 @@ const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order:
 
 // Draft → Sent (pushed to QuickBooks) → Converted (turned into an invoice).
 function estStatus(r) {
-  if (r.converted_invoice_id) return { label: 'CONVERTED', ...STATUS.success };
-  if (r.qbo_sync_error)       return { label: 'SYNC ERROR', ...STATUS.danger };
-  if (r.qbo_estimate_id)      return { label: 'SENT', ...STATUS.info };
-  return { label: 'DRAFT', ...STATUS.neutral };
+  if (r.converted_invoice_id) return { label: 'Converted', ...STATUS.success };
+  if (r.qbo_sync_error)       return { label: 'Sync error', ...STATUS.danger };
+  if (r.qbo_estimate_id)      return { label: 'Sent', ...STATUS.info };
+  return { label: 'Draft', ...STATUS.neutral };
 }
 
 const GRID = '1fr 1.4fr 1.3fr 0.9fr 0.9fr 1fr 0.9fr';
@@ -151,7 +151,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
                     <div style={{ fontSize: 12, color: C.body }}>{TYPE_LABEL[r.estimate_type] || '—'}</div>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: C.body, ...tnum }}>{fmtDate(r.created_at)}</div>
                     <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{fmt$2(r.amount)}</div>
-                    <div><Pill color={st.text} bg={st.tint} border={st.border} style={{ letterSpacing: '.04em' }}>{st.label}</Pill></div>
+                    <div title={r.qbo_sync_error || undefined} style={{ fontSize: 12, fontWeight: 600, color: st.text }}>{st.label}</div>
                   </div>
                 );
               })}
