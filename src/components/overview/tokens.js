@@ -160,7 +160,7 @@ export const PLACEHOLDER = {
     { name: 'Matheus Almeida', dot: 'success', job: '#2241', client: 'Sebastian Garcia', address: 'Saratoga Springs, UT', elapsed: '2h 14m', status: 'Clocked in',     statusKind: 'success' },
     { name: 'Bruno Nano',    dot: 'success', job: '#2237', client: 'Taylor Foot', address: 'Orem, UT',  elapsed: '1h 11m', status: 'Clocked in',     statusKind: 'success' },
     { name: 'Juani Rivera',   dot: 'gray',                  detail: 'Not on a job',        elapsed: '—',      status: 'Not clocked in', statusKind: 'muted' },
-    { name: 'Ben Palmieri',     dot: 'danger',  job: '#2228', client: 'Marcus Lee', address: 'Lehi, UT', detailWarn: '⚠ likely forgot to clock out', elapsed: '11h 40m', status: 'Check clock-out', statusKind: 'danger', escal: true },
+    { name: 'Ben Palmieri',     dot: 'danger',  job: '#2228', client: 'Marcus Lee', address: 'Lehi, UT', elapsed: '11h 40m', status: 'Check clock-out', statusKind: 'danger', escal: true },
   ],
   employeeSummary: { left: '3 clocked in · 1 off', warn: '⚠ 1 missed clock-out' },
 

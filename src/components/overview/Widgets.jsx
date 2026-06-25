@@ -383,11 +383,9 @@ export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summa
               <span style={{ width: 9, height: 9, borderRadius: '50%', background: DOT[e.dot], flex: 'none', marginTop: 2 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: nameColor }}>{e.name}</div>
-                {e.detailWarn
-                  ? <div style={{ fontSize: 10.5, color: '#c0322c', fontWeight: 600 }}>{e.detailWarn}</div>
-                  : e.client
-                    ? <div style={{ fontSize: 11.5, color: C.title, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.client}</div>
-                    : <div style={{ fontSize: 10.5, color: C.faint }}>{e.detail}</div>}
+                {e.client
+                  ? <div style={{ fontSize: 11.5, color: C.title, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.client}</div>
+                  : <div style={{ fontSize: 10.5, color: C.faint }}>{e.detail}</div>}
                 {(e.job || e.address) && (
                   <div style={{ fontSize: 10.5, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.address || undefined}>
                     {e.job && <span style={mono}>{e.job}</span>}{e.job && e.address ? ' · ' : ''}{e.address}

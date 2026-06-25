@@ -40,7 +40,7 @@ function mapRow(r, now) {
   };
   if (elapsedMin != null && elapsedMin >= FORGOT_CLOCKOUT_MIN) {
     // Still clocked in (just stale) → group with the clocked-in rows on top (_sort 0).
-    return { ...base, dot: 'danger', detailWarn: '⚠ likely forgot to clock out', status: 'Check clock-out', statusKind: 'danger', escal: true, _sort: 0 };
+    return { ...base, dot: 'danger', status: 'Check clock-out', statusKind: 'danger', escal: true, _sort: 0 };
   }
   return { ...base, dot: 'success', status: 'Clocked in', statusKind: 'success', _sort: 0 };
 }
