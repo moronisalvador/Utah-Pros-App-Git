@@ -35,7 +35,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divColor, divLabel,
-  midnight, daysPastDue, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
+  midnight, daysPastDue, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
   CollCard, Kpi, KpiGrid, SegControl, SearchBox, StatusBadge, DivisionSquare,
@@ -76,18 +76,20 @@ const LOCKED = ['client', 'balance'];
 
 const numInput = { width: 88, padding: '6px 9px', border: `1px solid ${C.cardBorder}`, borderRadius: 7, fontSize: 12.5, fontFamily: 'inherit', color: C.ink, background: '#fff', outline: 'none' };
 
+// Plain text, not pills — let the one status badge carry the row's color. Overdue
+// is a soft red, future/today are quiet so the table reads calm at a glance.
 function AgePill({ r, today }) {
-  if (Number(r.balance || 0) <= 0.005) return <span style={{ color: C.faint2, fontSize: 12 }}>—</span>;
+  const base = { fontSize: 12.5, fontWeight: 500 };
+  if (Number(r.balance || 0) <= 0.005) return <span style={{ ...base, color: C.faint2 }}>—</span>;
   const d = daysPastDue(r.due_date, today);
-  if (d == null) return <span style={{ color: C.faint, fontSize: 12, fontWeight: 500 }}>No due date</span>;
-  const big = { fontSize: 11.5, fontWeight: 700, padding: '3px 9px' };
-  if (d > 0) return <Pill color={STATUS.danger.text} bg={STATUS.danger.tint} style={big}>{d}d overdue</Pill>;
-  if (d === 0) return <Pill color={STATUS.warning.text} bg={STATUS.warning.tint} style={big}>Due today</Pill>;
-  return <Pill color={STATUS.info.text} bg={STATUS.info.tint} style={big}>Due in {-d}d</Pill>;
+  if (d == null) return <span style={{ ...base, color: C.faint }}>No due date</span>;
+  if (d > 0) return <span style={{ ...base, color: STATUS.danger.text, fontWeight: 600 }}>{d}d overdue</span>;
+  if (d === 0) return <span style={{ ...base, color: STATUS.warning.text, fontWeight: 600 }}>Due today</span>;
+  return <span style={{ ...base, color: C.muted }}>Due in {-d}d</span>;
 }
 
 // ─── SECTION: Component ──────────────
-export default function ARDashboard({ db, navigate, period = 'MTD' }) {
+export default function ARDashboard({ db, navigate }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -114,8 +116,9 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
   // ─── SECTION: Derived totals (Outstanding/Overdue/aging = all open; Invoiced/Collected = period) ──
   const k = useMemo(() => {
     const open = rows.filter(r => Number(r.balance) > 0.005);
-    let outstanding = 0, overdue = 0, overdueCount = 0;
+    let outstanding = 0, overdue = 0, overdueCount = 0, invoiced = 0, collected = 0;
     const aging = {}; AGING.forEach(b => { aging[b.key] = { amount: 0, count: 0 }; });
+    rows.forEach(r => { invoiced += Number(r.total || 0); collected += Number(r.amount_paid || 0); });
     open.forEach(r => {
       const bal = Number(r.balance || 0);
       outstanding += bal;
@@ -123,15 +126,8 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
       if (d != null && d > 0) { overdue += bal; overdueCount += 1; }
       const bk = aging[bucketKey(d)]; bk.amount += bal; bk.count += 1;
     });
-    const range = periodRange(period);
-    let invoiced = 0, collected = 0;
-    rows.forEach(r => {
-      if (!inPeriod(r.invoice_date || r.sent_at, range)) return;
-      invoiced += Number(r.total || 0);
-      collected += Number(r.amount_paid || 0);
-    });
     return { open, outstanding, overdue, overdueCount, openCount: open.length, aging, invoiced, collected, collPct: invoiced > 0 ? (collected / invoiced) * 100 : 0 };
-  }, [rows, today, period]);
+  }, [rows, today]);
 
   const divisionOptions = useMemo(() => {
     const set = new Set();
@@ -198,7 +194,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
             : <><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS.success.solid }} /><span style={{ color: STATUS.success.text, fontWeight: 600 }}>Nothing past due</span></>}
         </Kpi>
         <Kpi label="Collected" value={fmt$(k.collected)} valueColor={STATUS.success.text} onClick={() => setMode('collected')} active={mode === 'collected'}>
-          {period === 'All' ? 'received to date' : `received · ${period}`}
+          received to date
         </Kpi>
         <Kpi label="Invoiced" value={fmt$(k.invoiced)} valueColor={C.ink} onClick={() => setMode('all')} active={mode === 'all'}>
           <div style={{ flex: 1, maxWidth: 110 }}><ProgressBar pct={k.collPct} color={STATUS.success.solid} height={6} /></div>
@@ -207,7 +203,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
       </KpiGrid>
 
       {/* A/R aging card */}
-      <CollCard pad="16px 18px 18px" style={{ marginBottom: 14 }}>
+      <CollCard pad="16px 18px 18px" style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: C.title }}>
             <span style={{ width: 8, height: 8, borderRadius: 3, background: STATUS.info.solid }} />
@@ -325,9 +321,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.client_name || '—'}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                           <span style={{ ...mono, fontSize: 11, color: C.muted }}>{r.qbo_doc_number || r.invoice_number}</span>
-                          {r.qbo_sync_error
-                            ? <Pill color={STATUS.danger.text} bg={STATUS.danger.tint}>⚠ QB</Pill>
-                            : r.qbo_invoice_id && <Pill color={STATUS.success.text} bg={STATUS.success.tint}>✓ QB</Pill>}
+                          {r.qbo_sync_error && <Pill color={STATUS.danger.text} bg={STATUS.danger.tint}>⚠ QB</Pill>}
                         </div>
                       </div>
                     );

@@ -5498,12 +5498,12 @@ tr:hover td { background: var(--bg-secondary); }
 .coll-card { background: #fff; border: 1px solid #e7e9ee; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05); min-width: 0; }
 
 /* KPI tiles */
-.coll-kpi-grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.coll-kpi-grid { display: grid; gap: 16px; margin-bottom: 18px; }
 .coll-kpi-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .coll-kpi-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
-.coll-kpi { display: flex; flex-direction: column; gap: 5px; padding: 16px 18px; }
+.coll-kpi { display: flex; flex-direction: column; gap: 6px; padding: 18px; }
 .coll-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #98a2b3; }
-.coll-kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.coll-kpi-value { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
 .coll-kpi-ctx { font-size: 12px; font-weight: 500; color: #667085; display: flex; align-items: center; gap: 6px; }
 .coll-kpi-click { cursor: pointer; transition: box-shadow .12s, border-color .12s, transform .04s; }
 .coll-kpi-click:hover { border-color: #d8dce2; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 16px rgba(16,24,40,.07); }
