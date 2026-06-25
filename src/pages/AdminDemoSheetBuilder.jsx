@@ -146,7 +146,7 @@ function emptySchema() {
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminDemoSheetBuilder() {
   const navigate = useNavigate();
-  const { db, employee } = useAuth();
+  const { db, employee, canAccess } = useAuth();
 
   const [versions, setVersions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -237,7 +237,9 @@ export default function AdminDemoSheetBuilder() {
   const dirty = jsonText !== originalSerialized;
   const summary = parsedDef ? summarize(parsedDef) : null;
   const selected = versions.find(v => v.id === selectedId) || null;
-  const canEdit = employee?.role === 'admin';
+  // Access is permission-based, not hardcoded to admin: admins pass via canAccess,
+  // and specific non-admins can be granted via a per-employee page-access override.
+  const canEdit = canAccess('demo_sheet_builder');
   const isActive = !!selected?.is_active;
 
   const handleNewDraft = async () => {
@@ -322,9 +324,9 @@ export default function AdminDemoSheetBuilder() {
   if (!canEdit) {
     return (
       <div style={{ padding: 24 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Admin only</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Access restricted</div>
         <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 6 }}>
-          The Scope Sheet Builder is restricted to admin users.
+          You don't have access to the Scope Sheet Builder. Ask an admin to grant it.
         </div>
       </div>
     );
