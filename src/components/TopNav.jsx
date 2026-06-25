@@ -7,7 +7,7 @@
  *   The horizontal navigation bar across the top of the desktop app (big screens
  *   only, ≥1280px). It shows the logo, the most-used destinations (Home, Inbox,
  *   Schedule, Claims, Customers, My Money, Time), a search box, a "New" button,
- *   the notifications bell, a settings gear, and the user avatar. A hamburger
+ *   the notifications bell, a help link, a settings gear, and the user avatar. A hamburger
  *   button on the left opens a drawer with the less-used pages. On phones and
  *   iPads this bar is hidden and the old side menu + bottom bar are used instead.
  *
@@ -18,7 +18,7 @@
  * DEPENDS ON:
  *   Packages:  react-router-dom
  *   Internal:  @/contexts/AuthContext (canAccess/isFeatureEnabled/employee),
- *              @/lib/navItems (PRIMARY_ITEMS, isItemVisible), NotificationBell,
+ *              @/lib/navItems (PRIMARY_ITEMS, isItemVisible, IconHelp), NotificationBell,
  *              NewMenu, UserMenu, GlobalSearch, @/components/Icons (IconSettings)
  *   Data:      reads → none directly (gating helpers come from AuthContext) · writes → none
  *
@@ -39,7 +39,7 @@ import NotificationBell from '@/components/NotificationBell';
 import NewMenu from '@/components/NewMenu';
 import UserMenu from '@/components/UserMenu';
 import GlobalSearch from '@/components/GlobalSearch';
-import { PRIMARY_ITEMS, isItemVisible } from '@/lib/navItems';
+import { PRIMARY_ITEMS, isItemVisible, IconHelp } from '@/lib/navItems';
 import { IconSettings } from '@/components/Icons';
 
 function IconMenu(p) {
@@ -85,6 +85,9 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <GlobalSearch />
         <NewMenu onAction={onAction} />
         {showBell && <NotificationBell align="right" />}
+        <NavLink to="/help" className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
+          <IconHelp style={{ width: 18, height: 18 }} />
+        </NavLink>
         <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
           <IconSettings style={{ width: 18, height: 18 }} />
         </NavLink>
