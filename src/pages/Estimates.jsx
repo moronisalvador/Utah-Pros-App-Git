@@ -139,7 +139,7 @@ export default function Estimates() {
         <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <div style={{ minWidth: 820 }}>
-              <Row cells={['Estimate', 'Customer', 'Claim · Job', 'Type', 'Date', 'Amount', 'Status']} />
+              <Row cells={['Estimate', 'Customer', 'Job type', 'Type', 'Date', 'Amount', 'Status']} />
               {filtered.map((r, i) => {
                 const st = statusOf(r);
                 return (
@@ -151,8 +151,8 @@ export default function Estimates() {
                     </Cell>
                     <Cell>{r.client_name || '—'}</Cell>
                     <Cell>
-                      <div style={{ color: 'var(--text-secondary)' }}>{r.claim_number || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{(r.division || '').replace(/_/g, ' ')} {r.job_number || ''}</div>
+                      <div style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{(r.division || '—').replace(/_/g, ' ')}</div>
+                      {(r.claim_number || r.job_number) && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.claim_number || ''}{r.job_number ? ` · ${r.job_number}` : ''}</div>}
                     </Cell>
                     <Cell><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{TYPE_LABEL[r.estimate_type] || '—'}</span></Cell>
                     <Cell>{fmtDate(r.created_at)}</Cell>

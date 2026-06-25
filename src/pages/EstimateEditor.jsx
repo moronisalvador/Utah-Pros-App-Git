@@ -264,7 +264,7 @@ export default function EstimateEditor() {
     return <div style={{ maxWidth: 900, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
   }
 
-  const division = job?.division ? String(job.division).replace(/_/g, ' ') : 'Job';
+  const division = (est.intended_division || job?.division) ? String(est.intended_division || job?.division).replace(/_/g, ' ') : 'Estimate';
   // Draft → Sent (in QuickBooks / emailed) → Converted (turned into an invoice).
   const statusLabel = converted ? 'Converted' : !synced ? 'Draft' : est.qbo_emailed_at ? 'Sent' : 'Saved';
   const statusColor = statusLabel === 'Converted' ? '#16a34a' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
@@ -289,6 +289,11 @@ export default function EstimateEditor() {
             {TYPE_LABEL[est.estimate_type] || 'Estimate'}{est.submitted_at ? ` · Sent ${fmtDate(est.submitted_at)}` : ''}
             {est.qbo_emailed_at && <> · Emailed {fmtDate(est.qbo_emailed_at)}</>}
           </div>
+          {est.property_address && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+              📍 {est.property_address}{est.property_city ? `, ${est.property_city}` : ''}{est.property_state ? `, ${est.property_state}` : ''}{est.property_zip ? ` ${est.property_zip}` : ''}
+            </div>
+          )}
         </div>
         <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
       </div>
