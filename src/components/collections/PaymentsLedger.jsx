@@ -143,7 +143,7 @@ export default function PaymentsLedger({ db, navigate }) {
                     {r.payer_type && <span style={{ color: C.faint }}> · {cap(r.payer_type)}</span>}
                     {r.is_deductible ? <span style={{ color: STATUS.warning.text, fontWeight: 600 }}> · Deductible</span> : ''}
                   </div>
-                  <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: STATUS.success.text, ...tnum }}>{fmt$2(r.amount)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: C.ink, ...tnum }}>{fmt$2(r.amount)}</div>
                   <div style={{ textAlign: 'center', fontSize: 13 }}>
                     {r.qbo_payment_id
                       ? <span title="Synced to QuickBooks" style={{ color: STATUS.success.solid, fontWeight: 700 }}>✓</span>
