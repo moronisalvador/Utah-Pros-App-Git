@@ -1,3 +1,43 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Schedule.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The main scheduling screen for the office. It shows the week (or day / 3-day /
+ *   month) as a calendar, plus alternate "Jobs" and "Crew" grid views, and lets a
+ *   dispatcher drag appointments around, create new ones, and filter by division or
+ *   crew member. A side panel lists jobs that can be added to the board. This file
+ *   owns the page layout, the toolbar, the filters, and all the data loading; the
+ *   actual week-calendar grid is drawn by CalendarView.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /schedule
+ *   Rendered by:  src/App.jsx (route element)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  CalendarView, JobPanel, Create/Edit/Event modals, DivisionIcons,
+ *              lib/scheduleUtils, collections/collKit + collTokens (shared design kit)
+ *   Data:      reads  → get_dispatch_board, get_dispatch_events,
+ *                       get_dispatch_panel_jobs (RPCs); employees, job_tasks (select)
+ *              writes → update_appointment, assign_tasks_to_appointment (RPCs);
+ *                       appointments, appointment_crew, dispatch_board_jobs (insert/delete)
+ *
+ * NOTES / GOTCHAS:
+ *   - Visual layer uses the shared UPR design kit (collKit/collTokens) so the page
+ *     matches Collections + Dashboard. Event-card colors come from
+ *     components/schedule/eventCardStyle.js (color encodes DIVISION, not crew).
+ *   - The `.schedule-*` classes in index.css drive ALL mobile show/hide (FAB, gear,
+ *     panel sheet, hidden view-toggle / +New). The SegControl for the view toggle is
+ *     wrapped in a `.schedule-view-toggle` div, and the +New button keeps the
+ *     `schedule-new-btn` class beside `coll-primary`, so those mobile rules still fire.
+ *   - Optimistic drag/drop + resize update local state first, then call
+ *     update_appointment and silently reload; failures roll back the snapshot.
+ *   - `days` keys are `YYYY-MM-DD` strings used everywhere (cellMaps, RPC params).
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +49,8 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 import EditAppointmentModal from '@/components/EditAppointmentModal';
 import EventModal from '@/components/EventModal';
 import CalendarView from '@/components/CalendarView';
+import { SegControl, GhostButton, ToggleChip } from '@/components/collections/collKit';
+import { C, divColor } from '@/components/collections/collTokens';
 
 const SPAN_OPTIONS = [
   { value: 'day', label: 'Day' },
@@ -658,7 +700,7 @@ export default function Schedule() {
               {subtitleText}
               <span style={S.pill}>{filteredBoardData.length} jobs</span>
               <span style={S.pill}>{totalAppts} appts</span>
-              {todayAppts > 0 && <span style={{ ...S.pill, background: '#eff6ff', color: '#2563eb' }}>{todayAppts} today</span>}
+              {todayAppts > 0 && <span style={S.pillBlue}>{todayAppts} today</span>}
             </div>
           </div>
           <div style={S.controls} className="schedule-controls">
@@ -671,56 +713,53 @@ export default function Schedule() {
               {showExtraControls ? '✕' : '⚙️'}
             </button>
             {/* #6: view toggle hidden on mobile — Calendar is the only useful mobile view */}
-            <div style={S.viewToggle} className="schedule-view-toggle">
-              <button style={{ ...S.viewBtn, ...(viewMode === 'calendar' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('calendar')}>Calendar</button>
-              <button style={{ ...S.viewBtn, ...(viewMode === 'jobs' ? S.viewBtnActive : {}) }} onClick={() => changeViewMode('jobs')}>Jobs</button>
-              <button style={{ ...S.viewBtn, ...(viewMode === 'crew' ? S.viewBtnActive : {}), borderRight: 'none' }} onClick={() => changeViewMode('crew')}>Crew</button>
+            <div className="schedule-view-toggle">
+              <SegControl size="sm" ariaLabel="View mode" value={viewMode} onChange={changeViewMode}
+                options={[{ value: 'calendar', label: 'Calendar' }, { value: 'jobs', label: 'Jobs' }, { value: 'crew', label: 'Crew' }]} />
             </div>
-            <div style={S.viewToggle}>
-              {SPAN_OPTIONS.filter(opt => viewMode === 'calendar' || opt.value !== 'month').map((opt, i, arr) => (
-                <button key={opt.value} onClick={() => changeCalSpan(opt.value)}
-                  style={{ ...S.viewBtn, ...(calSpan === opt.value ? S.viewBtnActive : {}), ...(i === arr.length - 1 ? { borderRight: 'none' } : {}) }}>{opt.label}</button>
-              ))}
-            </div>
-            <button style={S.btn} onClick={goToday}>{todayLabel}</button>
-            <button style={S.btnIcon} onClick={goPrev}>‹</button>
-            <button style={S.btnIcon} onClick={goNext}>›</button>
+            <SegControl size="sm" ariaLabel="Time span" value={calSpan} onChange={changeCalSpan}
+              options={SPAN_OPTIONS.filter(opt => viewMode === 'calendar' || opt.value !== 'month')} />
+            <GhostButton onClick={goToday}>{todayLabel}</GhostButton>
+            <GhostButton onClick={goPrev} title="Previous" style={{ padding: '8px 12px' }}>‹</GhostButton>
+            <GhostButton onClick={goNext} title="Next" style={{ padding: '8px 12px' }}>›</GhostButton>
             {/* + New button — opens Job vs Event picker. Hidden on mobile (FAB replaces it). */}
             <button
-              className="schedule-new-btn"
+              className="schedule-new-btn coll-primary"
               onClick={() => setCreationPicker({ dateKey: fmtDate(new Date()), hour: 9 })}
-              style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', gap: 4 }}
               aria-label="Create new appointment or event"
             >
-              <span style={{ fontSize: 14, lineHeight: 1 }}>+</span> New
+              <span style={{ fontSize: 15, lineHeight: 1, marginTop: -1 }}>+</span> New
             </button>
             <div className={`schedule-extra-controls${showExtraControls ? ' open' : ''}`}>
-              {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} /><span>Weekends</span></label>}
-              <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} /><span>Auto-show</span></label>
+              {calSpan !== 'day' && <label style={S.checkLabel}><input type="checkbox" checked={showWeekend} onChange={e => setShowWeekend(e.target.checked)} style={{ accentColor: '#2f6bf2', width: 14, height: 14 }} /><span>Weekends</span></label>}
+              <label style={S.checkLabel}><input type="checkbox" checked={autoShow} onChange={e => setAutoShow(e.target.checked)} style={{ accentColor: '#2f6bf2', width: 14, height: 14 }} /><span>Auto-show</span></label>
             </div>
           </div>
         </div>
 
         {/* Division + Crew filter bar */}
         <div style={S.filterBar}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Division:</span>
+          <span style={S.filterLabel}>Division</span>
           {DIV_FILTER_OPTIONS.map(opt => (
-            <button key={opt.key} onClick={() => setDivFilter(opt.key)}
-              style={{ ...S.crewPill, ...(divFilter === opt.key ? S.crewPillActive : {}), display: 'flex', alignItems: 'center', gap: 4 }}>
-              {opt.emoji && <span style={{ fontSize: 12 }}>{opt.emoji}</span>}
+            <ToggleChip key={opt.key} active={divFilter === opt.key} onClick={() => setDivFilter(opt.key)}
+              swatch={opt.key === 'all' ? undefined : divColor(opt.key)}>
               {opt.label}
-            </button>
+            </ToggleChip>
           ))}
           {divFilter !== 'all' && (
-            <button onClick={() => setDivFilter('all')} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>
+            <button onClick={() => setDivFilter('all')} style={S.clearBtn}>Clear</button>
           )}
           {crewList.length > 0 && (
             <span className="schedule-crew-filter-wrap" style={{ display: 'contents' }}>
-              <span style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 6px', flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginRight: 4, flexShrink: 0 }}>Crew:</span>
-              <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, ...(crewFilter === null ? S.crewPillActive : {}) }}>All</button>
-              {crewList.map(emp => <button key={emp.id} onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)} style={{ ...S.crewPill, ...(crewFilter === emp.id ? S.crewPillActive : {}) }}>{emp.display_name || emp.full_name}</button>)}
-              {crewFilter && <button onClick={() => setCrewFilter(null)} style={{ ...S.crewPill, color: 'var(--text-tertiary)', fontSize: 11 }}>Clear</button>}
+              <span style={{ width: 1, height: 18, background: C.cardBorder, margin: '0 5px', flexShrink: 0 }} />
+              <span style={S.filterLabel}>Crew</span>
+              <ToggleChip active={crewFilter === null} onClick={() => setCrewFilter(null)}>All</ToggleChip>
+              {crewList.map(emp => (
+                <ToggleChip key={emp.id} active={crewFilter === emp.id} onClick={() => setCrewFilter(crewFilter === emp.id ? null : emp.id)} swatch={emp.color || undefined}>
+                  {emp.display_name || emp.full_name}
+                </ToggleChip>
+              ))}
+              {crewFilter && <button onClick={() => setCrewFilter(null)} style={S.clearBtn}>Clear</button>}
             </span>
           )}
         </div>
@@ -754,7 +793,7 @@ export default function Schedule() {
             )}
             <div style={{ display: 'grid', gridTemplateColumns: `200px repeat(${gridDays.length}, minmax(140px, 1fr))`, minWidth: 200 + gridDays.length * 140 }}>
               <div style={S.corner} />
-              {gridDays.map(day => <div key={day.key} style={{ ...S.dayHead, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}><div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div><div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', marginTop: 1, fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div></div>)}
+              {gridDays.map(day => <div key={day.key} style={{ ...S.dayHead, ...(day.isToday ? { background: '#f5f8fe' } : {}) }}><div style={{ fontSize: 12, fontWeight: day.isToday ? 700 : 600, color: day.isToday ? '#2f6bf2' : '#475467' }}>{day.label}</div><div style={{ fontSize: 11, color: day.isToday ? '#2f6bf2' : '#98a2b3', marginTop: 1, fontWeight: day.isToday ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>{day.shortDate}</div></div>)}
 
               {/* ═══ JOBS VIEW ═══ */}
               {viewMode === 'jobs' && filteredBoardData.map(job => {
@@ -770,7 +809,7 @@ export default function Schedule() {
                     const appts = filteredCellMap[`${job.job_id}_${day.key}`] || [];
                     return (
                       <div key={`${job.job_id}_${day.key}`}
-                        style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
+                        style={{ ...S.cell, ...(day.isToday ? { background: '#f5f8fe' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
                         onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : setCreateModal({ jobId: job.job_id, jobName: job.insured_name, jobDivision: job.division, dateKey: day.key, prefillTaskIds: [] })}
                         onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
                         onMouseEnter={e => {
@@ -803,7 +842,7 @@ export default function Schedule() {
                   const appts = crewCellMap[`${emp.id}_${day.key}`] || [];
                   return (
                     <div key={`${emp.id}_${day.key}`}
-                      style={{ ...S.cell, ...(day.isToday ? { background: '#fafcff' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
+                      style={{ ...S.cell, ...(day.isToday ? { background: '#f5f8fe' } : {}), ...(placementMode ? { cursor: 'copy', position: 'relative' } : {}) }}
                       onClick={() => placementMode ? handleGridPlacementCellClick(day.key) : undefined}
                       onDragOver={handleGridCellDragOver} onDrop={e => handleGridCellDrop(e, day.key)}
                       onMouseEnter={e => { const ghost = e.currentTarget.querySelector('[data-ghost]'); if (ghost) ghost.style.opacity = '1'; }}
@@ -1059,31 +1098,27 @@ export default function Schedule() {
 
 // ═══════════════════════════════════════════════════════════════
 const S = {
-  page: { height: '100%', display: 'flex', overflow: 'hidden', background: 'var(--bg-secondary)' },
+  page: { height: '100%', display: 'flex', overflow: 'hidden', background: '#f4f5f7' },
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 10px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)', flexShrink: 0 },
-  title: { fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', margin: 0 },
-  subtitle: { fontSize: 13, color: 'var(--text-secondary)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 8 },
-  pill: { fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' },
-  controls: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
-  btn: { fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' },
-  btnIcon: { width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)' },
-  checkLabel: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' },
-  filterBar: { display: 'flex', alignItems: 'center', gap: 5, padding: '6px 20px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)', flexShrink: 0, overflowX: 'auto' },
-  crewPill: { fontSize: 12, fontWeight: 500, padding: '4px 10px', borderRadius: 99, border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)', transition: 'all 120ms ease' },
-  crewPillActive: { background: 'var(--accent-light)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 600 },
-  viewToggle: { display: 'flex', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  viewBtn: { fontSize: 12, fontWeight: 500, padding: '5px 14px', border: 'none', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-tertiary)', fontFamily: 'var(--font-sans)', transition: 'all 120ms ease', borderRight: '1px solid var(--border-color)' },
-  viewBtnActive: { background: 'var(--accent-light)', color: 'var(--accent)', fontWeight: 600 },
-  gridWrap: { flex: 1, overflow: 'auto' },
-  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)' },
-  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid var(--border-color)', borderRight: '1px solid var(--border-light)', background: 'var(--bg-secondary)' },
-  jobCell: { padding: '8px 10px', borderBottom: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)', background: 'var(--bg-primary)', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
-  jobCellName: { fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  jobCellNum: { fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' },
-  jobCellAddr: { fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
-  cell: { borderBottom: '1px solid var(--border-color)', borderRight: '1px solid var(--border-light)', padding: 3, minHeight: 70, cursor: 'pointer' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0 },
+  title: { fontSize: 23, fontWeight: 800, color: '#101828', margin: 0, letterSpacing: '-0.025em' },
+  subtitle: { fontSize: 13, color: '#667085', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  pill: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#fff', color: '#475467', border: '1px solid #e7e9ee' },
+  pillBlue: { fontSize: 11.5, fontWeight: 600, padding: '2px 9px', borderRadius: 999, background: '#eef2fb', color: '#2456c9', border: '1px solid #d8e4fb' },
+  controls: { display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, flexWrap: 'wrap' },
+  checkLabel: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, color: '#475467', cursor: 'pointer' },
+  filterBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: '#fff', borderBottom: '1px solid #e7e9ee', flexShrink: 0, overflowX: 'auto' },
+  filterLabel: { fontSize: 11.5, fontWeight: 600, color: '#98a2b3', marginRight: 2, flexShrink: 0 },
+  clearBtn: { fontSize: 11.5, fontWeight: 600, color: '#667085', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)', padding: '4px 6px', whiteSpace: 'nowrap', flexShrink: 0 },
+  gridWrap: { flex: 1, overflow: 'auto', background: '#f4f5f7' },
+  corner: { position: 'sticky', left: 0, top: 0, zIndex: 3, background: '#fafbfc', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee' },
+  dayHead: { padding: '8px 6px', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', background: '#fafbfc' },
+  jobCell: { padding: '8px 10px', borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #e7e9ee', background: '#fff', position: 'sticky', left: 0, zIndex: 1, minHeight: 70 },
+  jobCellName: { fontSize: 13, fontWeight: 600, color: '#101828', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  jobCellNum: { fontSize: 11, color: '#98a2b3', fontFamily: 'var(--font-mono)' },
+  jobCellAddr: { fontSize: 10, color: '#98a2b3', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 },
+  cell: { borderBottom: '1px solid #e7e9ee', borderRight: '1px solid #f0f1f4', padding: 3, minHeight: 70, cursor: 'pointer', background: '#fff' },
   plusWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 64, opacity: 0, transition: 'opacity 120ms ease' },
-  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--text-tertiary)' },
-  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: 'var(--text-tertiary)' },
+  plus: { width: 24, height: 24, borderRadius: 'var(--radius-md)', border: '1px dashed #d8dce2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#98a2b3' },
+  center: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, color: '#98a2b3' },
 };
