@@ -73,6 +73,8 @@ const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuil
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
 const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
+const Estimates = lazyRetry(() => import('@/pages/Estimates'));
+const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 
 // Tech pages (field_tech role)
@@ -264,6 +266,16 @@ function WebRoutes() {
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">
             <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="estimates" element={
+          <FeatureRoute flag="page:estimates">
+            <ErrorBoundary section="Estimates"><Estimates /></ErrorBoundary>
+          </FeatureRoute>
+        } />
+        <Route path="estimates/:estimateId" element={
+          <FeatureRoute flag="page:estimates">
+            <ErrorBoundary section="Estimate"><EstimateEditor /></ErrorBoundary>
           </FeatureRoute>
         } />
         <Route path="marketing" element={

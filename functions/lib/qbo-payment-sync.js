@@ -61,6 +61,54 @@ async function fetchPaymentMethodName(env, refValue) {
   }
 }
 
+// Estimate auto-conversion mirror (UPR side of QBO's deposit→invoice behavior).
+// When a customer pays a deposit on an estimate via QBO's online pay link, QBO turns
+// that estimate into a NEW invoice (Invoice.LinkedTxn → Estimate) and applies the
+// payment to it. That QBO invoice has no UPR counterpart, so the payment can't attach.
+// This traces the QBO invoice back to its estimate, finds the matching UPR estimate by
+// qbo_estimate_id, runs the SAME convert the UPR button uses (convert_estimate_to_invoice),
+// and ADOPTS the QBO invoice id onto the resulting UPR invoice — so the estimate shows
+// converted in UPR and the payment lands on the right invoice. Returns the UPR invoice
+// { id, job_id, contact_id } or null when it isn't an estimate conversion we can mirror.
+async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
+  let qboInv;
+  try {
+    const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    if (!r.ok) return null;
+    qboInv = (await r.json().catch(() => ({})))?.Invoice;
+  } catch { return null; }
+  if (!qboInv) return null;
+
+  const estLink = (qboInv.LinkedTxn || []).find(l => l.TxnType === 'Estimate');
+  if (!estLink) return null;                                  // not created from an estimate
+  const qboEstimateId = String(estLink.TxnId);
+
+  const est = (await db.select('estimates', `qbo_estimate_id=eq.${qboEstimateId}&select=id,job_id,converted_invoice_id&limit=1`))?.[0];
+  if (!est) return null;                                      // estimate not tracked in UPR
+
+  // Reuse an existing conversion if present; otherwise convert now (force — automatic).
+  let invoiceId = est.converted_invoice_id;
+  if (!invoiceId) {
+    const conv = await db.rpc('convert_estimate_to_invoice', { p_estimate_id: est.id, p_force: true });
+    invoiceId = conv?.invoice_id || (Array.isArray(conv) ? conv[0]?.invoice_id : null);
+    if (!invoiceId) return null;
+  }
+
+  const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id&limit=1`))?.[0];
+  if (!inv) return null;
+  // Adopt the QBO-born invoice id so the payment matches + future webhooks dedup. Never
+  // clobber a qbo_invoice_id the UPR invoice already has (it was pushed separately).
+  if (!inv.qbo_invoice_id) {
+    await db.update('invoices', `id=eq.${invoiceId}`, {
+      qbo_invoice_id: qboInvoiceId,
+      qbo_synced_at:  new Date().toISOString(),
+      qbo_doc_number: qboInv.DocNumber != null ? String(qboInv.DocNumber) : null,
+      qbo_sync_error: null,
+    });
+  }
+  return { id: inv.id, job_id: inv.job_id, contact_id: inv.contact_id };
+}
+
 // ─── SECTION: Exports ──────────────
 
 // Mirror a single QBO Payment into UPR. Idempotent: re-running is a no-op once recorded.
@@ -89,7 +137,10 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     const applied = Number(line.Amount || 0);
     if (!(applied > 0)) { results.push({ qboInvoiceId, skipped: 'zero-amount' }); continue; }
 
-    const inv = (await db.select('invoices', `qbo_invoice_id=eq.${qboInvoiceId}&select=id,job_id,contact_id&limit=1`))?.[0];
+    let inv = (await db.select('invoices', `qbo_invoice_id=eq.${qboInvoiceId}&select=id,job_id,contact_id&limit=1`))?.[0];
+    // No UPR invoice for this QBO invoice yet — it may be a QBO-side auto-conversion of an
+    // estimate (customer paid a deposit on the estimate's online pay link). Mirror it.
+    if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId);
     if (!inv) { results.push({ qboInvoiceId, skipped: 'no-upr-invoice' }); continue; }
 
     // Dedup: skip if a UPR payment already carries this qbo_payment_id for this invoice
