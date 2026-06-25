@@ -58,8 +58,10 @@ export function Kpi({ label, value, valueColor = C.ink, children, onClick, activ
       {...interactive}
     >
       <div className="coll-kpi-label">{label}</div>
-      <div className="coll-kpi-value" style={{ color: valueColor }}>{value}</div>
-      {children != null && <div className="coll-kpi-ctx">{children}</div>}
+      <div className="coll-kpi-main">
+        <div className="coll-kpi-value" style={{ color: valueColor }}>{value}</div>
+        {children != null && <div className="coll-kpi-ctx">{children}</div>}
+      </div>
     </section>
   );
 }

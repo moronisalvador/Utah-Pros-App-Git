@@ -38,7 +38,7 @@ import {
   midnight, daysPastDue, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
-  CollCard, Kpi, KpiGrid, SegControl, SearchBox, StatusBadge, DivisionSquare,
+  CollCard, SegControl, SearchBox, StatusBadge, DivisionSquare,
   ProgressBar, Pill, EmptyState, PopoverButton, FilterGroup, ToggleChip,
   FunnelIcon, ColumnsIcon,
 } from './collKit';
@@ -116,9 +116,8 @@ export default function ARDashboard({ db, navigate }) {
   // ─── SECTION: Derived totals (Outstanding/Overdue/aging = all open; Invoiced/Collected = period) ──
   const k = useMemo(() => {
     const open = rows.filter(r => Number(r.balance) > 0.005);
-    let outstanding = 0, overdue = 0, overdueCount = 0, invoiced = 0, collected = 0;
+    let outstanding = 0, overdue = 0, overdueCount = 0;
     const aging = {}; AGING.forEach(b => { aging[b.key] = { amount: 0, count: 0 }; });
-    rows.forEach(r => { invoiced += Number(r.total || 0); collected += Number(r.amount_paid || 0); });
     open.forEach(r => {
       const bal = Number(r.balance || 0);
       outstanding += bal;
@@ -126,7 +125,7 @@ export default function ARDashboard({ db, navigate }) {
       if (d != null && d > 0) { overdue += bal; overdueCount += 1; }
       const bk = aging[bucketKey(d)]; bk.amount += bal; bk.count += 1;
     });
-    return { open, outstanding, overdue, overdueCount, openCount: open.length, aging, invoiced, collected, collPct: invoiced > 0 ? (collected / invoiced) * 100 : 0 };
+    return { open, outstanding, overdue, overdueCount, openCount: open.length, aging };
   }, [rows, today]);
 
   const divisionOptions = useMemo(() => {
@@ -183,28 +182,12 @@ export default function ARDashboard({ db, navigate }) {
   // ─── SECTION: Render ──────────────
   return (
     <div>
-      {/* KPI tiles */}
-      <KpiGrid cols={4}>
-        <Kpi label="Outstanding" value={fmt$(k.outstanding)} valueColor={C.ink} onClick={() => setMode('open')} active={mode === 'open'}>
-          {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}
-        </Kpi>
-        <Kpi label="Overdue" value={fmt$(k.overdue)} valueColor={k.overdue > 0 ? STATUS.danger.solid : C.faint} onClick={() => setMode('overdue')} active={mode === 'overdue'}>
-          {k.overdue > 0
-            ? <span style={{ color: STATUS.danger.text, fontWeight: 600 }}>{k.overdueCount} past due</span>
-            : <><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS.success.solid }} /><span style={{ color: STATUS.success.text, fontWeight: 600 }}>Nothing past due</span></>}
-        </Kpi>
-        <Kpi label="Collected" value={fmt$(k.collected)} valueColor={STATUS.success.text} onClick={() => setMode('collected')} active={mode === 'collected'}>
-          received to date
-        </Kpi>
-        <Kpi label="Invoiced" value={fmt$(k.invoiced)} valueColor={C.ink} onClick={() => setMode('all')} active={mode === 'all'}>
-          <div style={{ flex: 1, maxWidth: 110 }}><ProgressBar pct={k.collPct} color={STATUS.success.solid} height={6} /></div>
-          <span style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>{Math.round(k.collPct)}% collected</span>
-        </Kpi>
-      </KpiGrid>
-
-      {/* A/R aging card */}
-      <CollCard pad="16px 18px 18px" style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+      {/* A/R summary — ONE module: Outstanding hero + Overdue callout (both
+          click-to-filter the table) over the aging bar + buckets. Replaces the
+          old 4-tile row + separate aging card, which showed the same money twice
+          (Outstanding = the aging total; Overdue = its past-due buckets). */}
+      <CollCard pad="18px 20px 20px" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: C.title }}>
             <span style={{ width: 8, height: 8, borderRadius: 3, background: STATUS.info.solid }} />
             A/R aging<span style={{ fontWeight: 500, color: C.faint }}> · days outstanding</span>
@@ -213,8 +196,21 @@ export default function ARDashboard({ db, navigate }) {
             ? <Pill color={STATUS.success.text} bg={STATUS.success.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>Nothing outstanding</Pill>
             : k.overdue <= 0
               ? <Pill color={STATUS.success.text} bg={STATUS.success.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>100% current</Pill>
-              : <Pill color={STATUS.danger.text} bg={STATUS.danger.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>{Math.round((k.overdue / k.outstanding) * 100)}% overdue</Pill>}
+              : null}
         </div>
+
+        {/* Headline — Outstanding hero + Overdue callout; both filter the table */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <button type="button" className="coll-arhead" data-active={mode === 'open'} onClick={() => setMode('open')}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', lineHeight: 1, ...tnum }}>{fmt$(k.outstanding)}</div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>outstanding · {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}</div>
+          </button>
+          <button type="button" className="coll-arhead coll-arhead-r" data-active={mode === 'overdue'} onClick={() => setMode('overdue')}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: k.overdue > 0 ? STATUS.danger.text : C.faint, ...tnum }}>{fmt$(k.overdue)}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: k.overdue > 0 ? STATUS.danger.text : C.muted }}>{k.overdue > 0 ? `${k.overdueCount} past due` : 'nothing past due'}</div>
+          </button>
+        </div>
+
         <div style={{ display: 'flex', width: '100%', height: 10, borderRadius: 6, overflow: 'hidden', background: C.track, marginBottom: 16 }}>
           {k.outstanding > 0 && AGING.map(b => k.aging[b.key].amount > 0 && (
             <div key={b.key} style={{ width: `${(k.aging[b.key].amount / k.outstanding) * 100}%`, background: b.seg }} />
@@ -227,7 +223,7 @@ export default function ARDashboard({ db, navigate }) {
             return (
               <div key={b.key} className="coll-aging-cell">
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: C.faint }}>{b.label}</div>
-                <div style={{ fontSize: 19, fontWeight: 800, margin: '4px 0 2px', color: has ? b.val : C.faint2, ...tnum }}>{fmt$(cell.amount)}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, margin: '4px 0 2px', color: has ? b.val : C.faint2, ...tnum }}>{fmt$(cell.amount)}</div>
                 <div style={{ fontSize: 11, fontWeight: 500, color: has ? C.muted : C.faintSub }}>{cell.count} invoice{cell.count === 1 ? '' : 's'}</div>
               </div>
             );
