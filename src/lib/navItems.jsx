@@ -98,6 +98,7 @@ export const PRIMARY_ITEMS = [
   { key: 'claims',        label: 'Claims',    path: '/claims',        icon: IconClaim },
   { key: 'customers',     label: 'Customers', path: '/customers',     icon: IconCustomers },
   { key: 'collections',   label: 'My Money',  path: '/collections',   icon: IconCollections,   featureFlag: 'page:collections' },
+  { key: 'estimates',     label: 'Estimates', path: '/estimates',     icon: IconEstimate,      featureFlag: 'page:estimates' },
   { key: 'time_tracking', label: 'Time',      path: '/time-tracking', icon: IconTimeTracking,  featureFlag: 'page:time_tracking' },
 ];
 
@@ -105,7 +106,6 @@ export const PRIMARY_ITEMS = [
 export const OVERFLOW_ITEMS = [
   { key: 'jobs',               label: 'Jobs',               path: '/jobs',               icon: IconJobs },
   { key: 'production',         label: 'Production',         path: '/production',         icon: IconProduction },
-  { key: 'estimates',          label: 'Estimates',          path: '/estimates',          icon: IconEstimate,   featureFlag: 'page:estimates' },
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing' },
