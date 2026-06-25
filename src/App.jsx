@@ -128,6 +128,17 @@ function DevRoute({ children }) {
   return children;
 }
 
+// Permission-gated pages — pass when canAccess(navKey) is true. Admins always
+// pass (canAccess returns true for role 'admin'); non-admins pass via a
+// role nav_permission OR a per-employee page-access override. Used for pages
+// that were once admin-only but can now be granted to specific non-admins.
+function AccessRoute({ navKey, children }) {
+  const { employee, canAccess } = useAuth();
+  if (!employee) return <Navigate to="/" replace />;
+  if (!canAccess(navKey)) return <Navigate to="/" replace />;
+  return children;
+}
+
 // Redirect field_tech users from / to /tech (web only — native always redirects)
 function HomeRedirect() {
   const { employee } = useAuth();
@@ -301,7 +312,7 @@ function WebRoutes() {
           <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
           <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
           <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
-          <Route path="admin/demo-sheet-builder" element={<AdminRoute><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AdminRoute>} />
+          <Route path="admin/demo-sheet-builder" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
           <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
           {/* Dev Tools — Moroni only, not role-based */}
           <Route path="dev-tools" element={<DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>} />
