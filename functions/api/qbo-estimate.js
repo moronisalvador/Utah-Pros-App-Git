@@ -71,10 +71,12 @@ export async function onRequestPost(context) {
     }
   }
 
-  // Resolve the billing contact (estimate's own, else the job's primary).
-  const job = (await db.select('jobs', `id=eq.${est.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss,primary_contact_id&limit=1`))?.[0];
-  if (!job) return jsonResponse({ error: 'Job not found for estimate' }, 404, request, env);
-  const contactId = est.contact_id || job.primary_contact_id;
+  // Estimates are contact-owned and pre-sale: a job is OPTIONAL (only present once the
+  // estimate has been converted). Division + address come from the estimate itself.
+  const job = est.job_id
+    ? (await db.select('jobs', `id=eq.${est.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss,primary_contact_id&limit=1`))?.[0] || null
+    : null;
+  const contactId = est.contact_id || job?.primary_contact_id;
 
   // ── Send path: ask QBO to email the estimate to the customer ──
   if (body.action === 'send') {
@@ -111,10 +113,13 @@ export async function onRequestPost(context) {
       : null;
     if (!contact?.qbo_customer_id) throw new Error('Estimate contact has no QuickBooks customer — sync the client first');
 
-    const map = divisionToQbo(job.division);
-    if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
+    // Division comes from the estimate's intended type (pre-sale); fall back to a linked
+    // job's division once the estimate has been converted.
+    const divisionVal = est.intended_division || job?.division || null;
+    const map = divisionToQbo(divisionVal);
+    if (!map) throw new Error(`No QuickBooks mapping for division "${divisionVal || ''}"`);
 
-    const claim = job.claim_id
+    const claim = job?.claim_id
       ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null
       : null;
     const claimNo = est.claim_number || claim?.claim_number || null;
@@ -149,17 +154,23 @@ export async function onRequestPost(context) {
     const lineTotal = lines.reduce((s, l) => s + Number(l.Amount || 0), 0);
     if (!(lineTotal > 0)) throw new Error('Estimate total is 0 — add a line item with an amount before saving');
 
-    // Standard memo + the job's service/loss address (can differ from billing).
+    // Service address: the estimate's own property address (pre-sale), then a linked job,
+    // then the claim's loss address. Date of loss only exists once there's a job/claim.
     const fmtDol = (d) => { if (!d) return ''; const p = String(d).split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : String(d); };
-    const dol = fmtDol(job.date_of_loss || claim?.date_of_loss);
-    const serviceAddr = ([job.address, job.city, job.state, job.zip].filter(Boolean).join(', '))
-      || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
-    const memo = `Date of loss: ${dol} · Job: ${job.job_number || ''} · Claim: ${claimNo || ''} · Service Address: ${serviceAddr}`;
+    const dol = fmtDol(job?.date_of_loss || claim?.date_of_loss);
+    const addr1     = est.property_address || job?.address || claim?.loss_address || null;
+    const addrCity  = est.property_city    || job?.city    || claim?.loss_city    || null;
+    const addrState = est.property_state   || job?.state   || claim?.loss_state   || null;
+    const addrZip   = est.property_zip     || job?.zip     || claim?.loss_zip      || null;
+    const serviceAddr = [addr1, addrCity, addrState, addrZip].filter(Boolean).join(', ');
+    const memo = [
+      dol ? `Date of loss: ${dol}` : null,
+      job?.job_number ? `Job: ${job.job_number}` : null,
+      claimNo ? `Claim: ${claimNo}` : null,
+      serviceAddr ? `Service Address: ${serviceAddr}` : null,
+    ].filter(Boolean).join(' · ') || `Estimate ${est.estimate_number || ''}`.trim();
     const shipAddr = Object.fromEntries(Object.entries({
-      Line1: job.address || claim?.loss_address || null,
-      City: job.city || claim?.loss_city || null,
-      CountrySubDivisionCode: job.state || claim?.loss_state || null,
-      PostalCode: job.zip || claim?.loss_zip || null,
+      Line1: addr1, City: addrCity, CountrySubDivisionCode: addrState, PostalCode: addrZip,
     }).filter(([, v]) => v));
     const hasShip = Object.keys(shipAddr).length > 0;
 
