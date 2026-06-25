@@ -29,7 +29,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel,
+  C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel, periodRange, inPeriod,
 } from './collTokens';
 import {
   CollCard, Kpi, KpiGrid, SegControl, SearchBox, DivisionSquare, Pill, EmptyState,
@@ -48,7 +48,7 @@ function estStatus(r) {
 
 const GRID = '1fr 1.4fr 1.3fr 0.9fr 0.9fr 1fr 0.9fr';
 
-export default function EstimatesList({ db, navigate }) {
+export default function EstimatesList({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -69,18 +69,27 @@ export default function EstimatesList({ db, navigate }) {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Derived totals + filter ──────────────
+  // Period scopes the estimate set by created date (default All).
+  const periodRows = useMemo(() => {
+    const range = periodRange(period);
+    return rows.filter(r => inPeriod(r.created_at, range));
+  }, [rows, period]);
+
   const k = useMemo(() => {
-    const open = rows.filter(r => !r.converted_invoice_id);
+    const open = periodRows.filter(r => !r.converted_invoice_id);
+    const convertedCount = periodRows.filter(r => r.converted_invoice_id).length;
     return {
       openCount: open.length,
       openValue: open.reduce((s, r) => s + Number(r.amount || 0), 0),
-      convertedCount: rows.filter(r => r.converted_invoice_id).length,
+      convertedCount,
+      total: periodRows.length,
+      convRate: periodRows.length > 0 ? (convertedCount / periodRows.length) * 100 : 0,
     };
-  }, [rows]);
+  }, [periodRows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(r => {
+    return periodRows.filter(r => {
       if (mode === 'draft' && !(!r.qbo_estimate_id && !r.converted_invoice_id)) return false;
       if (mode === 'sent' && !(r.qbo_estimate_id && !r.converted_invoice_id)) return false;
       if (mode === 'converted' && !r.converted_invoice_id) return false;
@@ -90,15 +99,16 @@ export default function EstimatesList({ db, navigate }) {
       }
       return true;
     });
-  }, [rows, mode, search]);
+  }, [periodRows, mode, search]);
 
   // ─── SECTION: Render ──────────────
   return (
     <div>
-      <KpiGrid cols={3}>
+      <KpiGrid cols={4}>
         <Kpi label="Open estimates" value={String(k.openCount)} valueColor={C.ink}>{fmt$(k.openValue)} potential</Kpi>
         <Kpi label="Open value" value={fmt$(k.openValue)} valueColor={STATUS.info.solid}>awaiting approval</Kpi>
         <Kpi label="Converted" value={String(k.convertedCount)} valueColor={STATUS.success.text}>→ invoices</Kpi>
+        <Kpi label="Conversion rate" value={k.total > 0 ? `${Math.round(k.convRate)}%` : '—'} valueColor={C.ink}>{k.convertedCount} of {k.total} converted</Kpi>
       </KpiGrid>
 
       <CollCard pad={0} style={{ overflow: 'hidden' }}>

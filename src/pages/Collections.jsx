@@ -62,6 +62,7 @@ export default function Collections() {
   const [tab, setTab] = useState('ar');
   const [arPeriod, setArPeriod] = useState('All');
   const [invPeriod, setInvPeriod] = useState('All');
+  const [estPeriod, setEstPeriod] = useState('All');
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewEstimate, setShowNewEstimate] = useState(false);
 
@@ -100,11 +101,14 @@ export default function Collections() {
         {tab === 'invoices' && (
           <SegControl options={PERIODS} value={invPeriod} onChange={setInvPeriod} size="sm" ariaLabel="Time period" />
         )}
+        {tab === 'estimates' && (
+          <SegControl options={PERIODS} value={estPeriod} onChange={setEstPeriod} size="sm" ariaLabel="Time period" />
+        )}
       </div>
 
       {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} period={arPeriod} />}
       {tab === 'invoices'  && <InvoicesList db={db} navigate={navigate} period={invPeriod} />}
-      {tab === 'estimates' && <EstimatesList db={db} navigate={navigate} />}
+      {tab === 'estimates' && <EstimatesList db={db} navigate={navigate} period={estPeriod} />}
       {tab === 'payments'  && <PaymentsLedger db={db} navigate={navigate} />}
 
       {showNewInvoice && <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />}
