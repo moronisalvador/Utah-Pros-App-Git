@@ -35,7 +35,7 @@ import {
   midnight, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
-  CollCard, SegControl, SearchBox, StatusBadge, DivisionSquare,
+  CollCard, SegControl, SearchBox, StatusText, DivisionSquare,
   EmptyState, PopoverButton, FilterGroup, ToggleChip, FunnelIcon, ColumnsIcon,
 } from './collKit';
 
@@ -219,7 +219,7 @@ export default function InvoicesList({ db, navigate, period = 'All' }) {
                   return (
                     <div key={key} style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>
-                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}><StatusBadge kind={kind} /></div>
+                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}><StatusText kind={kind} /></div>
                     </div>
                   );
                 })}
