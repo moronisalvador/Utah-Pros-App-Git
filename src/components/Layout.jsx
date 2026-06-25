@@ -40,11 +40,11 @@ export default function Layout() {
   const [carriers, setCarriers] = useState([]);
   const [referralSources, setReferralSources] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  // True when the desktop top-nav is active (≥1280px). Used ONLY to decide where
+  // True when the desktop top-nav is active (≥1024px). Used ONLY to decide where
   // the single NotificationBell mounts (TopNav vs Sidebar header) so we never run
   // two live notification subscriptions at once. The shell layout itself is CSS-only.
   const [isDesktopNav, setIsDesktopNav] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
   );
   const location = useLocation();
   const navigate = useNavigate();
@@ -62,9 +62,9 @@ export default function Layout() {
     };
   }, []);
 
-  // ── Track the ≥1280px top-nav breakpoint (bell placement only) ──
+  // ── Track the ≥1024px top-nav breakpoint (bell placement only) ──
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1280px)');
+    const mq = window.matchMedia('(min-width: 1024px)');
     const handler = (e) => {
       setIsDesktopNav(e.matches);
       if (!e.matches) setOverflowOpen(false); // don't leave the desktop drawer stuck open after shrinking

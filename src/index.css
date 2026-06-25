@@ -71,7 +71,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --bottom-bar-h: 72px;
   /* Desktop top-nav height — 0 by default so mobile/iPad layout math is unchanged;
-     set to a real value only inside the @media (min-width:1280px) desktop block. */
+     set to a real value only inside the @media (min-width:1024px) desktop/tablet block. */
   --topnav-h: 0px;
 }
 
@@ -5429,7 +5429,7 @@ tr:hover td { background: var(--bg-secondary); }
 .settings-hub-link.active .nav-icon { opacity: 1; }
 
 /* ── Desktop activation — the ONLY rules that reshape the shell ── */
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
   :root { --topnav-h: 56px; }
   .app-layout { flex-direction: column; }
   .sidebar { display: none; }
@@ -5449,4 +5449,12 @@ tr:hover td { background: var(--bg-secondary); }
     padding: var(--space-4) var(--space-3); overflow-y: auto;
   }
   .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
+}
+
+/* ── Tablet tier (1024–1279px): the top bar is tighter here, so the global search
+      collapses to just its icon and expands on focus — that keeps all 7 primary
+      links visible. ≥1280px is unchanged (full-width inline search, base rule). ── */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .topnav-search { width: 38px; transition: width var(--transition-fast); }
+  .topnav-search:focus-within { width: 300px; }
 }
