@@ -4,10 +4,10 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Shows every invoice in one searchable list — invoice number, customer, the
- *   claim/job it belongs to, the amounts, and a status badge. You can type to
- *   filter by customer, claim, job, or invoice number, narrow by status, and
- *   click any row to open that invoice (to view, edit, save, or send it).
+ *   The "Invoices" tab of the My Money page — every invoice (open, paid, or
+ *   draft) in one searchable, filterable list. You can search, narrow by status,
+ *   scope to a time period, toggle columns, and click any row to open that
+ *   invoice in the editor.
  *
  * WHERE IT LIVES:
  *   Route:        rendered inside /collections (the "Invoices" tab)
@@ -15,44 +15,51 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  receives { db, navigate } from Collections.jsx; rows navigate to
- *              the invoice editor at /invoices/:invoiceId
- *   Data:      reads  → get_ar_invoices() RPC (one row per invoice with
- *                       client/claim/job context + balance)
- *              writes → none
+ *   Internal:  ./collKit (palette, formatters, primitives), receives { db, navigate, period }
+ *   Data:      reads  → get_ar_invoices() RPC · writes → none
  *
  * NOTES / GOTCHAS:
- *   - Reuses the same get_ar_invoices() RPC the A/R tab uses, so the two tabs
- *     always agree on numbers/status. This tab shows ALL invoices (the A/R tab
- *     defaults to outstanding only).
- *   - Status mirrors ARDashboard for consistency across the Collections hub.
+ *   - Reuses get_ar_invoices() (the same RPC the A/R tab uses) so the two tabs
+ *     always agree on amounts/status. This tab shows ALL invoices; A/R defaults
+ *     to outstanding only.
+ *   - COLOR SEMANTICS: balance is neutral ink, never red. Status is carried by
+ *     the badge (PAID green / PARTIAL amber / DRAFT neutral / OVERDUE red).
+ *   - The header period switch filters this list by invoice date (drafts/undated
+ *     always show); default is "All".
  * ════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divColor, divLabel,
+  midnight, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
+} from './collTokens';
+import {
+  CollCard, SegControl, SearchBox, StatusBadge, DivisionSquare,
+  EmptyState, PopoverButton, FilterGroup, ToggleChip, FunnelIcon, ColumnsIcon,
+} from './collKit';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
-const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
-const daysPastDue = (r, today) => r.due_date ? Math.floor((today - new Date(r.due_date + 'T00:00:00')) / 86400000) : null;
+const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
-// Status badge — same rules as the A/R dashboard so both Collections tabs agree.
-function statusOf(r, today) {
-  const total = Number(r.total || 0), paid = Number(r.amount_paid || 0), bal = Number(r.balance || 0);
-  if (total > 0 && bal <= 0.005) return { label: 'Paid', bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
-  const d = daysPastDue(r, today);
-  if (bal > 0 && d != null && d > 0) return { label: 'Overdue', bg: '#fef2f2', color: '#dc2626', border: '#fecaca' };
-  if (paid > 0) return { label: 'Partial', bg: '#fffbeb', color: '#d97706', border: '#fde68a' };
-  if (r.qbo_invoice_id || r.sent_at) return { label: 'Sent', bg: 'var(--accent-light)', color: 'var(--accent)', border: '#bfdbfe' };
-  return { label: 'Draft', bg: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', border: 'var(--border-light)' };
-}
+const COL = {
+  invoice:  { label: 'Invoice',     fr: '1fr',   num: false },
+  customer: { label: 'Customer',    fr: '1.5fr', num: false },
+  claimJob: { label: 'Claim · Job', fr: '1.6fr', num: false },
+  date:     { label: 'Date',        fr: '0.9fr', num: false },
+  total:    { label: 'Total',       fr: '1fr',   num: true },
+  balance:  { label: 'Balance',     fr: '1.1fr', num: true },
+};
+const COL_ORDER = ['invoice', 'customer', 'claimJob', 'date', 'total', 'balance'];
+const LOCKED = ['invoice', 'balance'];
+const numInput = { width: 88, padding: '6px 9px', border: `1px solid ${C.cardBorder}`, borderRadius: 7, fontSize: 12.5, fontFamily: 'inherit', color: C.ink, background: '#fff', outline: 'none' };
 
-export default function InvoicesList({ db, navigate }) {
+export default function InvoicesList({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState('all');           // all | open | paid | draft
+  const [mode, setMode] = useState('all');                  // all | open | paid | draft
+  const [filters, setFilters] = useState({ divisions: [], sync: [], minAmt: '', maxAmt: '' });
+  const [cols, setCols] = useState({ invoice: true, customer: true, claimJob: true, date: true, total: true, balance: true });
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -61,99 +68,173 @@ export default function InvoicesList({ db, navigate }) {
       const data = await db.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
-      toast('Failed to load invoices: ' + (e.message || e), 'error');
+      toast('Failed to load invoices: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
   }, [db]);
-
   useEffect(() => { load(); }, [load]);
 
-  const today = midnight();
+  const today = useMemo(() => midnight(), []);
 
   // ─── SECTION: Helpers ──────────────
-  const filtered = useMemo(() => {
-    let r = rows;
-    if (mode === 'open')  r = r.filter(x => Number(x.balance) > 0.005);
-    if (mode === 'paid')  r = r.filter(x => Number(x.total) > 0 && Number(x.balance) <= 0.005);
-    if (mode === 'draft') r = r.filter(x => !x.qbo_invoice_id && !x.sent_at);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      r = r.filter(x =>
-        (x.client_name || '').toLowerCase().includes(q) ||
-        (x.claim_number || '').toLowerCase().includes(q) ||
-        (x.job_number || '').toLowerCase().includes(q) ||
-        (x.invoice_number || '').toLowerCase().includes(q) ||
-        (x.qbo_doc_number || '').toLowerCase().includes(q));
-    }
-    return r;
-  }, [rows, mode, search]);
+  const divisionOptions = useMemo(() => {
+    const set = new Set();
+    rows.forEach(r => { const d = String(r.division || '').toLowerCase(); if (d) set.add(d); });
+    return [...set];
+  }, [rows]);
 
-  if (loading) return <div style={{ padding: 24, color: 'var(--text-tertiary)' }}>Loading invoices…</div>;
+  const activeFilterCount = filters.divisions.length + filters.sync.length + ((filters.minAmt !== '' || filters.maxAmt !== '') ? 1 : 0);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const range = periodRange(period);
+    return rows.filter(r => {
+      const total = Number(r.total || 0), bal = Number(r.balance || 0);
+      if (!inPeriod(r.invoice_date || r.sent_at, range)) return false;
+      if (mode === 'open' && bal <= 0.005) return false;
+      if (mode === 'paid' && !(total > 0 && bal <= 0.005)) return false;
+      if (mode === 'draft' && !(r.status === 'draft' || (!r.qbo_invoice_id && !r.sent_at))) return false;
+      if (filters.divisions.length && !filters.divisions.includes(String(r.division || '').toLowerCase())) return false;
+      if (filters.sync.length) {
+        const st = r.qbo_sync_error ? 'error' : (r.qbo_invoice_id ? 'synced' : 'unsynced');
+        if (!filters.sync.includes(st)) return false;
+      }
+      if (filters.minAmt !== '' && total < Number(filters.minAmt)) return false;
+      if (filters.maxAmt !== '' && total > Number(filters.maxAmt)) return false;
+      if (q) {
+        const hay = `${r.client_name || ''} ${r.claim_number || ''} ${r.job_number || ''} ${r.invoice_number || ''} ${r.qbo_doc_number || ''} ${r.division || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, mode, search, filters, period]);
+
+  const billed = useMemo(() => filtered.reduce((a, r) => a + Number(r.total || 0), 0), [filtered]);
+
+  const visible = COL_ORDER.filter(key => cols[key]);
+  const gtc = visible.map(key => COL[key].fr).join(' ');
+
+  const exportCsv = () => {
+    const header = ['Invoice', 'Customer', 'Claim', 'Job', 'Division', 'Date', 'Total', 'Balance', 'Status'];
+    const data = filtered.map(r => [
+      r.qbo_doc_number || r.invoice_number || '', r.client_name || '', r.claim_number || '', r.job_number || '',
+      divLabel(r.division), (r.invoice_date || r.sent_at) ? fmtDate(r.invoice_date || r.sent_at) : '',
+      Number(r.total || 0).toFixed(2), Number(r.balance || 0).toFixed(2), invoiceStatusKind(r, today),
+    ]);
+    downloadCsv('invoices.csv', header, data);
+  };
+
+  if (loading) return <div className="coll-loading">Loading invoices…</div>;
 
   // ─── SECTION: Render ──────────────
   return (
-    <div>
-      {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, claim, job, invoice #…"
-          style={{ flex: '1 1 220px', minWidth: 180, padding: '8px 12px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-        <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-          {[['all', 'All'], ['open', 'Open'], ['paid', 'Paid'], ['draft', 'Drafts']].map(([v, l]) => (
-            <button key={v} onClick={() => setMode(v)} style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: mode === v ? 'var(--accent)' : 'var(--bg-primary)', color: mode === v ? '#fff' : 'var(--text-secondary)' }}>{l}</button>
-          ))}
-        </div>
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{filtered.length} invoice{filtered.length === 1 ? '' : 's'}</span>
-      </div>
-
-      {/* List */}
-      {filtered.length === 0 ? (
-        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-tertiary)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-          {rows.length === 0 ? 'No invoices yet. Create one from a claim, then it shows here.' : 'Nothing matches this filter.'}
-        </div>
-      ) : (
-        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: 800 }}>
-              <Row cells={['Invoice', 'Customer', 'Claim · Job', 'Date', 'Total', 'Balance', 'Status']} />
-              {filtered.map((r, i) => {
-                const st = statusOf(r, today);
+    <CollCard pad={0} style={{ overflow: 'hidden' }}>
+      <div className="coll-toolbar">
+        <SearchBox value={search} onChange={setSearch} placeholder="Search customer, claim, job, invoice #…" style={{ flex: 1, minWidth: 220 }} />
+        <SegControl options={[{ value: 'all', label: 'All' }, { value: 'open', label: 'Open' }, { value: 'paid', label: 'Paid' }, { value: 'draft', label: 'Drafts' }]} value={mode} onChange={setMode} size="sm" ariaLabel="Status filter" />
+        <span style={{ fontSize: 12, color: C.faint, fontWeight: 500, whiteSpace: 'nowrap' }}>{filtered.length} invoice{filtered.length === 1 ? '' : 's'}</span>
+        <PopoverButton label="Filters" icon={<FunnelIcon />} count={activeFilterCount} width={300}>
+          {() => (
+            <>
+              <FilterGroup label="Division">
+                <div className="coll-filter-chips">
+                  {divisionOptions.length === 0 && <span style={{ fontSize: 12, color: C.faint }}>None</span>}
+                  {divisionOptions.map(d => (
+                    <ToggleChip key={d} active={filters.divisions.includes(d)} swatch={divColor(d)}
+                      onClick={() => setFilters(f => ({ ...f, divisions: f.divisions.includes(d) ? f.divisions.filter(x => x !== d) : [...f.divisions, d] }))}>
+                      {divLabel(d)}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </FilterGroup>
+              <FilterGroup label="QuickBooks sync">
+                <div className="coll-filter-chips">
+                  {[['synced', 'Synced'], ['unsynced', 'Not synced'], ['error', 'Sync error']].map(([v, l]) => (
+                    <ToggleChip key={v} active={filters.sync.includes(v)}
+                      onClick={() => setFilters(f => ({ ...f, sync: f.sync.includes(v) ? f.sync.filter(x => x !== v) : [...f.sync, v] }))}>
+                      {l}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </FilterGroup>
+              <FilterGroup label="Invoice total">
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="number" inputMode="decimal" placeholder="Min" value={filters.minAmt} onChange={e => setFilters(f => ({ ...f, minAmt: e.target.value }))} style={numInput} />
+                  <span style={{ color: C.faint, fontSize: 12 }}>to</span>
+                  <input type="number" inputMode="decimal" placeholder="Max" value={filters.maxAmt} onChange={e => setFilters(f => ({ ...f, maxAmt: e.target.value }))} style={numInput} />
+                </div>
+              </FilterGroup>
+              <div className="coll-pop-foot">
+                <button type="button" className="coll-link" onClick={() => setFilters({ divisions: [], sync: [], minAmt: '', maxAmt: '' })}>Clear all</button>
+                <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{activeFilterCount} active</span>
+              </div>
+            </>
+          )}
+        </PopoverButton>
+        <PopoverButton label="Columns" icon={<ColumnsIcon />} width={200}>
+          {() => (
+            <>
+              {COL_ORDER.map(key => {
+                const locked = LOCKED.includes(key);
                 return (
-                  <div key={r.invoice_id} onClick={() => navigate(`/invoices/${r.invoice_id}`)}
-                    style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid var(--border-light)', cursor: 'pointer', background: 'var(--bg-primary)' }}>
-                    <Cell><span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.qbo_doc_number || r.invoice_number}</span></Cell>
-                    <Cell>{r.client_name || '—'}</Cell>
-                    <Cell>
-                      <div style={{ color: 'var(--text-secondary)' }}>{r.claim_number || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{(r.division || '').replace(/_/g, ' ')} {r.job_number || ''}</div>
-                    </Cell>
-                    <Cell>{fmtDate(r.invoice_date || r.sent_at)}</Cell>
-                    <Cell num>{fmt$(r.total)}</Cell>
-                    <Cell num><b style={{ color: Number(r.balance) > 0.005 ? '#dc2626' : '#16a34a' }}>{fmt$(r.balance)}</b></Cell>
-                    <Cell>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: st.bg, color: st.color, border: `1px solid ${st.border}`, whiteSpace: 'nowrap' }}>{st.label}</span>
-                    </Cell>
-                  </div>
+                  <label key={key} className={`coll-col-item${locked ? ' locked' : ''}`}>
+                    <input type="checkbox" checked={cols[key]} disabled={locked}
+                      onChange={() => !locked && setCols(c => ({ ...c, [key]: !c[key] }))} />
+                    {COL[key].label}
+                  </label>
                 );
               })}
-            </div>
+            </>
+          )}
+        </PopoverButton>
+      </div>
+
+      <div className="coll-tablewrap">
+        <div style={{ minWidth: 760 }}>
+          <div className="coll-thead" style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}>
+            {visible.map(key => <div key={key} style={{ textAlign: COL[key].num ? 'right' : 'left' }}>{COL[key].label}</div>)}
           </div>
+          {filtered.length === 0 ? (
+            <EmptyState title="No invoices match" sub="Try a different filter or search term." />
+          ) : filtered.map(r => {
+            const kind = invoiceStatusKind(r, today);
+            return (
+              <div key={r.invoice_id} className="coll-row" style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}
+                onClick={() => navigate(`/invoices/${r.invoice_id}`)}>
+                {visible.map(key => {
+                  if (key === 'invoice') return <div key={key} style={{ ...mono, fontSize: 12, fontWeight: 600, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.qbo_doc_number || r.invoice_number}</div>;
+                  if (key === 'customer') return <div key={key} style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.client_name || '—'}</div>;
+                  if (key === 'claimJob') return (
+                    <div key={key} style={{ display: 'flex', gap: 8, minWidth: 0, alignItems: 'flex-start' }}>
+                      <span style={{ marginTop: 3, flex: 'none' }}><DivisionSquare division={r.division} /></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ ...mono, fontSize: 12, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.claim_number || '—'}</div>
+                        <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{divLabel(r.division)}{r.job_number ? ` · ${r.job_number}` : ''}</div>
+                      </div>
+                    </div>
+                  );
+                  if (key === 'date') return <div key={key} style={{ fontSize: 12.5, fontWeight: 600, color: (r.invoice_date || r.sent_at) ? C.body : C.faint2, ...tnum }}>{fmtDate(r.invoice_date || r.sent_at)}</div>;
+                  if (key === 'total') return <div key={key} style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{fmt$2(r.total)}</div>;
+                  return (
+                    <div key={key} style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>
+                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}><StatusBadge kind={kind} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+      </div>
+
+      <div className="coll-foot">
+        <span style={{ fontSize: 12, fontWeight: 600, color: C.body }}>
+          {filtered.length === rows.length ? 'Showing all invoices' : `${filtered.length} invoice${filtered.length === 1 ? '' : 's'}`} · <b style={{ color: C.ink, fontWeight: 800, ...tnum }}>{fmt$(billed)}</b> billed
+        </span>
+        <button type="button" className="coll-link" onClick={exportCsv}>Export invoices →</button>
+      </div>
+    </CollCard>
   );
-}
-
-const GRID = 'minmax(110px,1fr) minmax(140px,1.4fr) minmax(130px,1.3fr) 90px 110px 110px 90px';
-
-function Row({ cells }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: GRID, padding: '8px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-      {cells.map((c, i) => <div key={i} style={{ textAlign: i >= 4 && i <= 5 ? 'right' : 'left' }}>{c}</div>)}
-    </div>
-  );
-}
-
-function Cell({ children, num, style }) {
-  return <div style={{ fontSize: 13, textAlign: num ? 'right' : 'left', color: 'var(--text-primary)', ...style }}>{children}</div>;
 }

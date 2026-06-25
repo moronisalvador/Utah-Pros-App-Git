@@ -1,43 +1,114 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Collections.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "My Money" page — the office's accounts-receivable workspace. It's one
+ *   screen with four tabs: A/R · Outstanding (what customers still owe + aging),
+ *   Invoices (every invoice), Estimates (pre-sale quotes), and Payments (cash
+ *   that has come in). The top has the page title, a "Payment settings" link and
+ *   a "+ New invoice / estimate" button, the four tabs, and — on the A/R and
+ *   Invoices tabs — a time-period switch (All / MTD / Last 30 / QTD / YTD).
+ *
+ * WHERE IT LIVES:
+ *   Route:        /collections  (the "My Money" nav item; feature-flagged page:collections)
+ *   Rendered by:  src/App.jsx inside the Layout shell
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/components/collections/{collKit, ARDashboard, InvoicesList,
+ *              EstimatesList, PaymentsLedger}, NewInvoiceModal, NewEstimateModal,
+ *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
+ *   Data:      reads → none directly (each tab fetches its own RPC)
+ *              writes → none (the New-invoice / New-estimate modals create)
+ *
+ * NOTES / GOTCHAS:
+ *   - Visual language is the UPR design system, scoped via `.coll-*` classes in
+ *     index.css + the collKit palette. It is intentionally separate from the
+ *     app-wide tokens (same approach as the Overview dashboard).
+ *   - Period state lives here so the switch can sit in the tab row, but it is
+ *     handed down only to the two period-aware tabs. A/R defaults to MTD,
+ *     Invoices to All (matching the design); Estimates/Payments have no period.
+ *   - "+ New invoice" requires canEditBilling AND the feature:billing flag (same
+ *     gate as before); "+ New estimate" requires canEditBilling.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
+import { PERIODS } from '@/components/collections/collTokens';
+import { SegControl, GhostButton, PrimaryButton } from '@/components/collections/collKit';
 import ARDashboard from '@/components/collections/ARDashboard';
-import PaymentsLedger from '@/components/collections/PaymentsLedger';
 import InvoicesList from '@/components/collections/InvoicesList';
+import EstimatesList from '@/components/collections/EstimatesList';
+import PaymentsLedger from '@/components/collections/PaymentsLedger';
 import NewInvoiceModal from '@/components/NewInvoiceModal';
+import NewEstimateModal from '@/components/NewEstimateModal';
 
-// Collections hub: A/R worklist (outstanding invoices + aging) and the Payments ledger
-// (cash-in). One financial surface, two tabs.
+const TABS = [
+  { value: 'ar', label: 'A/R · Outstanding' },
+  { value: 'invoices', label: 'Invoices' },
+  { value: 'estimates', label: 'Estimates' },
+  { value: 'payments', label: 'Payments' },
+];
+
 export default function Collections() {
+  // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState('ar');
+  const [arPeriod, setArPeriod] = useState('MTD');
+  const [invPeriod, setInvPeriod] = useState('All');
   const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [showNewEstimate, setShowNewEstimate] = useState(false);
+
   const canEdit = canEditBilling(employee?.role);
   const billingOn = isFeatureEnabled('feature:billing');
+  const onEstimates = tab === 'estimates';
 
+  // ─── SECTION: Render ──────────────
   return (
-    <div style={{ padding: '20px', maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>Collections</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {canEdit && billingOn && <button className="btn btn-primary btn-sm" onClick={() => setShowNewInvoice(true)} style={{ gap: 5 }}>+ New invoice</button>}
-          {canEdit && <button className="btn btn-ghost btn-sm" onClick={() => navigate('/payments/settings')} style={{ gap: 5 }}>⚙ Payment settings</button>}
+    <div className="coll-page">
+      <header className="coll-header">
+        <div>
+          <h1 className="coll-title">Collections</h1>
+          <div className="coll-subtitle">Accounts receivable · Utah Pros Restoration</div>
         </div>
+        <div className="coll-actions">
+          {canEdit && (
+            <GhostButton leftIcon={<span style={{ color: '#98a2b3' }} aria-hidden="true">⚙</span>} onClick={() => navigate('/payments/settings')}>
+              Payment settings
+            </GhostButton>
+          )}
+          {canEdit && onEstimates && (
+            <PrimaryButton onClick={() => setShowNewEstimate(true)}>+ New estimate</PrimaryButton>
+          )}
+          {canEdit && !onEstimates && billingOn && (
+            <PrimaryButton onClick={() => setShowNewInvoice(true)}>+ New invoice</PrimaryButton>
+          )}
+        </div>
+      </header>
+
+      <div className="coll-tabrow">
+        <SegControl options={TABS} value={tab} onChange={setTab} size="lg" ariaLabel="Collections section" />
+        {tab === 'ar' && (
+          <SegControl options={PERIODS} value={arPeriod} onChange={setArPeriod} size="sm" ariaLabel="Time period" />
+        )}
+        {tab === 'invoices' && (
+          <SegControl options={PERIODS} value={invPeriod} onChange={setInvPeriod} size="sm" ariaLabel="Time period" />
+        )}
       </div>
-      <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content', marginBottom: 16 }}>
-        {[['ar', 'A/R · Outstanding'], ['invoices', 'Invoices'], ['payments', 'Payments']].map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)}
-            style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: tab === v ? 'var(--accent)' : 'var(--bg-primary)', color: tab === v ? '#fff' : 'var(--text-secondary)' }}>
-            {l}
-          </button>
-        ))}
-      </div>
-      {tab === 'ar'       && <ARDashboard db={db} navigate={navigate} />}
-      {tab === 'invoices' && <InvoicesList db={db} navigate={navigate} />}
-      {tab === 'payments' && <PaymentsLedger db={db} navigate={navigate} />}
+
+      {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} period={arPeriod} />}
+      {tab === 'invoices'  && <InvoicesList db={db} navigate={navigate} period={invPeriod} />}
+      {tab === 'estimates' && <EstimatesList db={db} navigate={navigate} />}
+      {tab === 'payments'  && <PaymentsLedger db={db} navigate={navigate} />}
+
       {showNewInvoice && <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />}
+      {showNewEstimate && <NewEstimateModal db={db} onClose={() => setShowNewEstimate(false)} />}
     </div>
   );
 }
