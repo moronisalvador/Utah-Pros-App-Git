@@ -4,55 +4,57 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The "+ New estimate" picker. You search for a customer, see their claims and the
- *   jobs under each, pick the kind of estimate (initial, supplement, change order,
- *   final), and click a job to start a new estimate and open its builder. Jobs that
- *   already have estimates show them so you can open one instead of making a duplicate.
+ *   The "+ New estimate" picker. An estimate is pre-sale, so it needs only a CLIENT —
+ *   no job yet. You search for an existing customer (or create a new one right here),
+ *   pick what kind of job it would become (the division), optionally note the property
+ *   address, choose the estimate type, and it creates the estimate and opens its builder.
+ *   A job/claim is created later, only if the estimate is sold (converted to an invoice).
  *
  * WHERE IT LIVES:
- *   Rendered by:  src/pages/Estimates.jsx (and any "+ New estimate" entry point)
+ *   Rendered by:  src/pages/Estimates.jsx and the global "+ New" menu (Layout.jsx)
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/components/DivisionIcons (DIVISION_COLORS)
- *   Data:      reads  → search_contacts_for_job RPC, get_customer_detail RPC,
- *                       estimates (existing per job)
- *              writes → create_estimate_for_job RPC (inserts a new draft estimate)
+ *   Internal:  @/components/DivisionIcons (DIVISION_COLORS), @/components/AddContactModal
+ *              (inline new client), @/components/AddressAutocomplete (optional property address)
+ *   Data:      reads  → search_contacts_for_job RPC, get_insurance_carriers RPC, estimates
+ *                       (this client's existing estimates), contacts (dup-phone lookup)
+ *              writes → contacts (inline new client), create_estimate_for_contact RPC
  *
  * NOTES / GOTCHAS:
- *   - Unlike invoices (one per job), a job can have MANY estimates — so clicking a job
- *     always creates a NEW draft of the selected type; existing ones are listed to open.
- *   - Mirrors NewInvoiceModal's two modes: customer-scoped (pass { contact, claims })
- *     or global (customer typeahead).
+ *   - Estimates are CLIENT-owned, not job-owned. No claim/job is selected or created here.
+ *   - New-client creation reuses AddContactModal exactly like CreateJobModal (parent does the
+ *     insert + duplicate-phone fallback).
  * ════════════════════════════════════════════════
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
-import CreateJobModal from '@/components/CreateJobModal';
+import AddContactModal from '@/components/AddContactModal';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-const DIVISION_EMOJI = { water: '\u{1F4A7}', mold: '\u{1F9A0}', reconstruction: '\u{1F3D7}️', fire: '\u{1F525}', contents: '\u{1F4E6}' };
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 const TYPES = [['initial', 'Initial'], ['supplement', 'Supplement'], ['change_order', 'Change order'], ['final', 'Final']];
+const DIVISIONS = [['water', '\u{1F4A7}', 'Water'], ['mold', '\u{1F9A0}', 'Mold'], ['reconstruction', '\u{1F3D7}️', 'Reconstruction'], ['fire', '\u{1F525}', 'Fire'], ['contents', '\u{1F4E6}', 'Contents']];
 
 function IconSearch(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>); }
 function IconUser(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>); }
 function IconX(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>); }
 
-export default function NewEstimateModal({ db, onClose, contact = null, claims = null }) {
+export default function NewEstimateModal({ db, onClose, contact = null }) {
   const navigate = useNavigate();
   const lockToCustomer = !!contact;
 
   const [selectedContact, setSelectedContact] = useState(contact);
-  const [data, setData] = useState(claims || null);          // claims[] for the selected customer
-  const [estByJob, setEstByJob] = useState({});              // job_id → existing estimates[]
   const [estType, setEstType] = useState('initial');
-  const [loading, setLoading] = useState(false);
-  const [busyJob, setBusyJob] = useState(null);
-  const [showCreateJob, setShowCreateJob] = useState(false);   // "customer not in system yet" → full intake
+  const [division, setDivision] = useState('water');
+  const [addr, setAddr] = useState({ address: '', city: '', state: 'UT', zip: '' });
+  const [existing, setExisting] = useState([]);            // this client's existing estimates
+  const [busy, setBusy] = useState(false);
 
+  // Customer search (global mode)
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -60,31 +62,29 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
   const searchRef = useRef(null);
   const timer = useRef(null);
 
-  const loadCustomer = useCallback(async (contactId, preloaded) => {
-    setLoading(true);
+  // Inline new-client creation
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [carriers, setCarriers] = useState([]);
+
+  useEffect(() => { db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {}); }, [db]);
+
+  // ─── SECTION: Data fetching ──────────────
+  const loadExisting = useCallback(async (contactId) => {
     try {
-      let cls = preloaded;
-      if (!cls) {
-        const detail = await db.rpc('get_customer_detail', { p_contact_id: contactId });
-        cls = detail?.claims || [];
-        if (detail?.contact) setSelectedContact(detail.contact);
-      }
-      setData(cls || []);
-      const jobIds = (cls || []).flatMap(c => (c.jobs || []).map(j => j.id)).filter(Boolean);
-      if (jobIds.length) {
-        const ests = await db.select('estimates', `job_id=in.(${jobIds.join(',')})&select=id,job_id,estimate_number,estimate_type,status,qbo_estimate_id,converted_invoice_id&order=created_at.desc`) || [];
-        const m = {}; ests.forEach(e => { (m[e.job_id] ||= []).push(e); });
-        setEstByJob(m);
-      } else setEstByJob({});
-    } catch (e) {
-      toast('Failed to load jobs: ' + (e.message || e), 'error');
-    } finally { setLoading(false); }
+      const rows = await db.select('estimates', `contact_id=eq.${contactId}&select=id,estimate_number,estimate_type,status,intended_division,converted_invoice_id&order=created_at.desc`) || [];
+      setExisting(rows);
+    } catch { setExisting([]); }
   }, [db]);
 
+  // When a customer is chosen, load their estimates + prefill the property address from billing.
   useEffect(() => {
-    if (contact?.id) loadCustomer(contact.id, claims);
+    if (!selectedContact?.id) return;
+    loadExisting(selectedContact.id);
+    if (selectedContact.billing_address) {
+      setAddr({ address: selectedContact.billing_address || '', city: selectedContact.billing_city || '', state: selectedContact.billing_state || 'UT', zip: selectedContact.billing_zip || '' });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedContact?.id]);
 
   useEffect(() => {
     const h = e => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDrop(false); };
@@ -107,37 +107,51 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
     else { setResults([]); setShowDrop(false); }
   };
 
-  const selectContact = (c) => {
-    setSelectedContact(c); setSearch(''); setShowDrop(false); setResults([]); setData(null);
-    loadCustomer(c.id, null);
-  };
-  const changeCustomer = () => { setSelectedContact(null); setData(null); setEstByJob({}); };
+  // ─── SECTION: Event handlers ──────────────
+  const selectContact = (c) => { setSelectedContact(c); setSearch(''); setShowDrop(false); setResults([]); };
+  const changeCustomer = () => { setSelectedContact(null); setExisting([]); setAddr({ address: '', city: '', state: 'UT', zip: '' }); };
 
-  const handleNew = async (job) => {
-    setBusyJob(job.id);
+  // Inline new contact — mirrors CreateJobModal: parent inserts + handles duplicate phone.
+  const handleNewContact = async (data) => {
     try {
-      const created = await db.rpc('create_estimate_for_job', { p_job_id: job.id, p_estimate_type: estType });
-      const id = Array.isArray(created) ? created[0]?.id : created?.id;
-      if (id) { onClose?.(); navigate(`/estimates/${id}`); }
-      else { toast('Could not open the estimate', 'error'); setBusyJob(null); }
-    } catch (e) {
-      toast('Failed to create estimate: ' + (e.message || e), 'error');
-      setBusyJob(null);
+      const r = await db.insert('contacts', data);
+      const c = Array.isArray(r) ? r[0] : r;
+      if (c) { setSelectedContact(c); setShowAddContact(false); }
+    } catch (err) {
+      const msg = err.message || '';
+      if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        const ex = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`).catch(() => []);
+        if (ex?.length) { setSelectedContact(ex[0]); setShowAddContact(false); toast(`Found existing customer: ${ex[0].name}`); return; }
+        toast('A customer with this phone already exists — search by name.', 'error'); throw err;
+      }
+      toast('Failed to create customer: ' + msg, 'error'); throw err;
     }
   };
-  const openExisting = (estId) => { onClose?.(); navigate(`/estimates/${estId}`); };
 
-  // Customer not in the system yet → run the full intake (new contact + claim + job),
-  // then open a new estimate of the selected type for that brand-new job.
-  const handleJobCreated = (result) => {
-    setShowCreateJob(false);
-    const jobId = result?.job?.id || result?.id;
-    if (jobId) handleNew({ id: jobId });
-    else toast('Job created, but couldn’t open an estimate for it', 'error');
+  const createEstimate = async () => {
+    if (!selectedContact?.id) { toast('Pick a customer first', 'error'); return; }
+    setBusy(true);
+    try {
+      const created = await db.rpc('create_estimate_for_contact', {
+        p_contact_id: selectedContact.id,
+        p_intended_division: division,
+        p_estimate_type: estType,
+        p_property_address: addr.address || null,
+        p_property_city: addr.city || null,
+        p_property_state: addr.state || null,
+        p_property_zip: addr.zip || null,
+      });
+      const id = Array.isArray(created) ? created[0]?.id : created?.id;
+      if (id) { onClose?.(); navigate(`/estimates/${id}`); }      // navigating unmounts — leave busy set
+      else { toast('Could not open the estimate', 'error'); setBusy(false); }
+    } catch (e) {
+      toast('Failed to create estimate: ' + (e.message || e), 'error');
+      setBusy(false);
+    }
   };
+  const openExisting = (eid) => { onClose?.(); navigate(`/estimates/${eid}`); };
 
-  const allClaims = (data || []).filter(c => (c.jobs || []).length > 0);
-
+  // ─── SECTION: Render ──────────────
   return (
     <>
     <div className="conv-modal-backdrop" onClick={onClose}>
@@ -152,7 +166,7 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>
-          {/* Customer (search in global mode, chip otherwise) */}
+          {/* Customer (search, or chip once chosen) */}
           {!selectedContact ? (
             <div ref={searchRef} style={{ position: 'relative', marginBottom: 'var(--space-3)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Customer</div>
@@ -166,7 +180,7 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
                   {results.length === 0 ? (
                     <div style={{ padding: 'var(--space-3)' }}>
                       <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: search.trim().length >= 2 ? 8 : 0 }}>{search.trim().length >= 2 ? 'No customers found.' : 'Type 2+ characters'}</div>
-                      {search.trim().length >= 2 && <button onClick={() => { setShowDrop(false); setSearch(''); setShowCreateJob(true); }} className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>+ New customer &amp; job</button>}
+                      {search.trim().length >= 2 && <button onClick={() => { setShowDrop(false); setShowAddContact(true); }} className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>+ New customer</button>}
                     </div>
                   ) : results.map(c => (
                     <button key={c.id} onClick={() => selectContact(c)}
@@ -176,7 +190,6 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
                         <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{fmtPh(c.phone)}{c.email ? ` · ${c.email}` : ''}</div>
                       </div>
-                      {c.job_count > 0 && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>{c.job_count} job{c.job_count !== 1 ? 's' : ''}</span>}
                     </button>
                   ))}
                 </div>
@@ -189,97 +202,101 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{selectedContact.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Pick a job to estimate</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{fmtPh(selectedContact.phone)}</div>
               </div>
               {!lockToCustomer && <button className="btn btn-ghost btn-sm" onClick={changeCustomer} style={{ fontSize: 12 }}>Change</button>}
             </div>
           )}
 
-          {/* Estimate type selector */}
-          {selectedContact && (
-            <div style={{ marginBottom: 'var(--space-3)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>New estimate type</div>
-              <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content' }}>
-                {TYPES.map(([v, l]) => (
-                  <button key={v} onClick={() => setEstType(v)}
-                    style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: estType === v ? 'var(--accent)' : 'var(--bg-primary)', color: estType === v ? '#fff' : 'var(--text-secondary)' }}>{l}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Jobs grouped by claim */}
-          {selectedContact && (
-            loading ? (
-              <div style={{ padding: 20, color: 'var(--text-tertiary)', fontSize: 13 }}>Loading jobs…</div>
-            ) : allClaims.length === 0 ? (
-              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                No jobs for this customer yet. Create a job first, then estimate it.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {allClaims.map(cl => (
-                  <div key={cl.id} style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 12px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: 12 }}>{cl.claim_number}</span>
-                      {cl.insurance_carrier && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{cl.insurance_carrier}</span>}
-                      {cl.loss_address && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>📍 {cl.loss_address}{cl.loss_city ? `, ${cl.loss_city}` : ''}</span>}
-                    </div>
-                    <div style={{ padding: 6 }}>
-                      {(cl.jobs || []).map(j => {
-                        const dc = DIVISION_COLORS[j.division] || '#6b7280';
-                        const em = DIVISION_EMOJI[j.division] || '📁';
-                        const existing = estByJob[j.id] || [];
-                        const isBusy = busyJob === j.id;
-                        return (
-                          <div key={j.id} style={{ marginBottom: 4, background: 'var(--bg-primary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)', borderLeft: `3px solid ${dc}`, overflow: 'hidden' }}>
-                            <button onClick={() => handleNew(j)} disabled={isBusy || busyJob != null}
-                              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', width: '100%', padding: '10px 10px', background: 'none', border: 'none', cursor: isBusy || busyJob != null ? 'default' : 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', opacity: busyJob != null && !isBusy ? 0.5 : 1 }}>
-                              <span style={{ fontSize: 18 }}>{em}</span>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontSize: 13, fontWeight: 700 }}>{j.job_number || 'New job'}</span>
-                                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{(j.division || '').replace(/_/g, ' ')}</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{existing.length ? `${existing.length} estimate${existing.length !== 1 ? 's' : ''} · click to add another` : 'No estimates yet'}</div>
-                              </div>
-                              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>+ New</span>
-                              <span style={{ fontSize: 13, color: 'var(--brand-primary)', fontWeight: 700 }}>{isBusy ? '…' : '→'}</span>
-                            </button>
-                            {existing.length > 0 && (
-                              <div style={{ borderTop: '1px solid var(--border-light)', padding: '4px 10px 6px 40px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {existing.map(e => (
-                                  <button key={e.id} onClick={() => openExisting(e.id)}
-                                    style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: e.converted_invoice_id ? '#f0fdf4' : 'var(--accent-light)', color: e.converted_invoice_id ? '#16a34a' : 'var(--accent)', border: `1px solid ${e.converted_invoice_id ? '#bbf7d0' : '#bfdbfe'}`, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
-                                    {e.estimate_number || 'Draft'}{e.converted_invoice_id ? ' · converted' : ''}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          )}
-
-          {!selectedContact && (
+          {!selectedContact ? (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              <div style={{ marginBottom: 12 }}>Search for a customer, then pick the job to estimate.</div>
-              <button onClick={() => setShowCreateJob(true)} className="btn btn-secondary btn-sm">+ New customer &amp; job</button>
+              <div style={{ marginBottom: 12 }}>Search for a customer to estimate, or add a new one.</div>
+              <button onClick={() => setShowAddContact(true)} className="btn btn-secondary btn-sm">+ New customer</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {/* Intended division (what job type it would become) */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Job type (if it sells)</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {DIVISIONS.map(([v, em, label]) => {
+                    const on = division === v;
+                    const c = DIVISION_COLORS[v] || 'var(--accent)';
+                    return (
+                      <button key={v} onClick={() => setDivision(v)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 600, background: on ? c + '18' : 'var(--bg-primary)', color: on ? c : 'var(--text-secondary)', border: `1px solid ${on ? c : 'var(--border-color)'}` }}>
+                        <span style={{ fontSize: 15 }}>{em}</span>{label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Estimate type */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Estimate type</div>
+                <div style={{ display: 'flex', gap: 1, background: 'var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content' }}>
+                  {TYPES.map(([v, l]) => (
+                    <button key={v} onClick={() => setEstType(v)}
+                      style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)', cursor: 'pointer', border: 'none', background: estType === v ? 'var(--accent)' : 'var(--bg-primary)', color: estType === v ? '#fff' : 'var(--text-secondary)' }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Optional property address */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Property address <span style={{ fontWeight: 500, textTransform: 'none' }}>(optional)</span></div>
+                <AddressAutocomplete
+                  value={addr.address}
+                  onChange={(v) => setAddr(a => ({ ...a, address: v }))}
+                  onSelect={(p) => setAddr({ address: p.address, city: p.city, state: p.state || 'UT', zip: p.zip })}
+                  placeholder="Street address"
+                  style={{ height: 36, fontSize: 13, marginBottom: 6 }}
+                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input className="input" value={addr.city}  onChange={e => setAddr(a => ({ ...a, city: e.target.value }))}  placeholder="City"  style={{ flex: 1, height: 36, fontSize: 13 }} />
+                  <input className="input" value={addr.state} onChange={e => setAddr(a => ({ ...a, state: e.target.value }))} placeholder="State" style={{ width: 64, height: 36, fontSize: 13 }} />
+                  <input className="input" value={addr.zip}   onChange={e => setAddr(a => ({ ...a, zip: e.target.value }))}   placeholder="ZIP"   style={{ width: 90, height: 36, fontSize: 13 }} />
+                </div>
+              </div>
+
+              {/* This client's existing estimates */}
+              {existing.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Existing estimates</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {existing.map(e => (
+                      <button key={e.id} onClick={() => openExisting(e.id)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 'var(--radius-full)', background: e.converted_invoice_id ? '#f0fdf4' : 'var(--accent-light)', color: e.converted_invoice_id ? '#16a34a' : 'var(--accent)', border: `1px solid ${e.converted_invoice_id ? '#bbf7d0' : '#bfdbfe'}`, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                        {e.estimate_number || 'Draft'}{e.intended_division ? ` · ${e.intended_division}` : ''}{e.converted_invoice_id ? ' · sold' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div style={{ flexShrink: 0, padding: '8px var(--space-4) 12px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
-          A job can have several estimates (initial, supplements, change orders). Clicking a job creates a new one of the selected type; tap an existing estimate to open it.
+        <div style={{ flexShrink: 0, padding: '10px var(--space-4) 12px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4, flex: 1 }}>
+            An estimate needs only a client. A job &amp; claim are created only if it sells (converts to an invoice).
+          </span>
+          {selectedContact && <button className="btn btn-primary btn-sm" disabled={busy} onClick={createEstimate}>{busy ? 'Creating…' : 'Create estimate'}</button>}
         </div>
       </div>
     </div>
-    {showCreateJob && <CreateJobModal db={db} onClose={() => setShowCreateJob(false)} onCreated={handleJobCreated} />}
+
+    {showAddContact && (
+      <AddContactModal
+        onClose={() => setShowAddContact(false)}
+        onSave={handleNewContact}
+        carriers={carriers}
+        referralSources={[]}
+        defaultRole="homeowner"
+        prefillName={search.trim()}
+      />
+    )}
     </>
   );
 }
