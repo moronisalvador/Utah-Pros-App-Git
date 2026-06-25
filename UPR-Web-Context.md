@@ -84,7 +84,29 @@ src/
     JobPage.jsx                   — Full job detail: Overview/Schedule/Files/Financial/Activity tabs
     Production.jsx                — Kanban pipeline (30 phases, 4 macro groups) + list view
     Leads.jsx                     — Jobs in lead phase (feature-flagged: page:leads)
-    Collections.jsx               — Collections page (feature-flagged: page:collections). Three tabs: A/R · Outstanding (ARDashboard), Invoices (InvoicesList — searchable list of ALL invoices via get_ar_invoices(), rows open the /invoices/:id editor), Payments (PaymentsLedger).
+    Collections.jsx               — "My Money" / Collections page (feature-flagged: page:collections), redesigned to
+                                    the UPR design system (Jun 2026). FOUR tabs: A/R · Outstanding (ARDashboard),
+                                    Invoices (InvoicesList, get_ar_invoices(), rows → /invoices/:id editor),
+                                    Estimates (EstimatesList, get_estimates(), rows → /estimates/:id — a convenience
+                                    view of the standalone /estimates page), Payments (PaymentsLedger,
+                                    get_payments_ledger()). Header has Payment-settings + New-invoice/New-estimate
+                                    actions; A/R and Invoices carry a period switch (All/MTD/Last 30/QTD/YTD).
+                                    A/R + Invoices have wired Filters (division / QB-sync / amount) and a Columns
+                                    show/hide editor; footer "Export →" links download a CSV of the visible rows.
+    components/collections/       — Collections redesign pieces: collTokens.js (page-scoped UPR palette + $/date
+                                    formatters + period math + invoiceStatusKind + CSV), collKit.jsx (shared
+                                    primitives: CollCard, Kpi, SegControl, SearchBox, StatusBadge, DivisionSquare,
+                                    ProgressBar, Pill, PopoverButton + Filters/Columns, inline SVG icons),
+                                    ARDashboard.jsx, InvoicesList.jsx, EstimatesList.jsx, PaymentsLedger.jsx. Styles
+                                    live under .coll-* in index.css. Palette is page-scoped (like the dashboard's
+                                    .ovw-*), NOT the app-wide tokens. COLOR SEMANTICS: a balance is neutral ink,
+                                    never red — red is reserved for overdue/escalation; green = collected/current,
+                                    amber = aging. A/R is period-INDEPENDENT (always shows all open invoices); the
+                                    period switch there scopes only the Invoiced + Collected tiles. NOTE: the A/R
+                                    table is coded to show the job address under Claim · Job when get_ar_invoices
+                                    returns job_address/job_city (additive RPC field, not yet added — line hides
+                                    gracefully until then). The Payments "Processing/in-flight" section from the
+                                    design is omitted: get_payments_ledger returns cleared payments only.
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)
