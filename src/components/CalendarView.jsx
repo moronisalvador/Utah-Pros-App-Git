@@ -1,5 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: CalendarView.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Draws the week-style calendar grid for the Schedule page — the columns of days,
+ *   the hour lines down the side, and the colored blocks for each appointment. The
+ *   tech can drag a block to a new time, drag its bottom edge to make it longer or
+ *   shorter, click an empty slot to start creating one, and (on a phone) swipe to
+ *   change days. A red line shows the current time. It does not load any data of its
+ *   own — the Schedule page hands it the days + appointments and gets told back when
+ *   something is clicked, moved, or resized.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (presentational)
+ *   Rendered by:  src/pages/Schedule.jsx (Calendar view)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  lib/scheduleUtils (TYPE_COLORS, STATUS_LABELS, fmtTime),
+ *              components/schedule/eventCardStyle (division → card colors)
+ *   Data:      reads → none (props) · writes → none (calls onApptDrop/onApptResize/
+ *              onApptClick/onCellClick/onPlacementClick back up to Schedule.jsx)
+ *
+ * NOTES / GOTCHAS:
+ *   - Pixel math is fixed: CAL_START_HOUR 7 → CAL_END_HOUR 22, CAL_HOUR_HEIGHT 60,
+ *     snap 30 min. Block top/height are derived from these — do not change casually.
+ *   - Overlapping same-day blocks are packed into columns via a transitive overlap
+ *     graph (`_col` / `_totalCols`). The hour-line divs are clickable (create) and
+ *     carry the `.plus`/`[data-resize]` hooks — they are NOT a background gradient.
+ *   - Reskin (2026): event blocks are division-tinted (soft bg + colored left bar +
+ *     dark title) via eventCardStyle; crew is shown by avatar circles, not by color.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { TYPE_COLORS, STATUS_LABELS, fmtTime, hexToTint } from '@/lib/scheduleUtils';
+import { TYPE_COLORS, STATUS_LABELS, fmtTime } from '@/lib/scheduleUtils';
+import { eventCardStyle } from '@/components/schedule/eventCardStyle';
 
 const CAL_START_HOUR = 7;
 const CAL_END_HOUR = 22;  // 10pm — rare evening work does happen, and capping at 6:30pm was too restrictive
@@ -468,9 +505,9 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
             <div key={day.key} style={CV.dayCol}>
             {/* #10: Hide day column header on mobile single-day view — subtitle already shows the date */}
             {!(isMobile && days.length === 1) && (
-            <div style={{ ...CV.dayHeader, ...(day.isToday ? { background: '#f0f7ff' } : {}) }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: day.isToday ? '#2563eb' : 'var(--text-secondary)' }}>{day.label}</div>
-                  <div style={{ fontSize: 11, color: day.isToday ? '#2563eb' : 'var(--text-tertiary)', fontWeight: day.isToday ? 600 : 400 }}>{day.shortDate}</div>
+            <div style={{ ...CV.dayHeader, ...(day.isToday ? { background: '#f5f8fe' } : {}) }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: day.isToday ? '#2f6bf2' : '#344054' }}>{day.label}</div>
+                  <div style={{ fontSize: 11.5, color: day.isToday ? '#2f6bf2' : '#98a2b3', fontWeight: day.isToday ? 700 : 600, fontVariantNumeric: 'tabular-nums' }}>{day.shortDate}</div>
                 </div>
               )}
 
@@ -478,7 +515,8 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                 ref={el => { dayBodyRefs.current[day.key] = el; }}
                 style={{
                   ...CV.dayBody,
-                  ...(isDropTarget ? { background: 'rgba(37, 99, 235, 0.03)' } : {}),
+                  ...(day.isToday ? { background: '#f5f8fe' } : {}),
+                  ...(isDropTarget ? { background: 'rgba(37, 99, 235, 0.05)' } : {}),
                   ...(placementMode ? { cursor: 'copy' } : {}),
                 }}
                 onDragOver={e => handleDayDragOver(e, day.key)}
@@ -535,8 +573,8 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                   const top = ((mins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
                   if (top < 0 || top > CAL_TOTAL_HOURS * CAL_HOUR_HEIGHT) return null;
                   return (
-                    <div style={{ position: 'absolute', top, left: 0, right: 0, height: 2, background: '#ef4444', zIndex: 5, pointerEvents: 'none' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 4, background: '#ef4444', position: 'absolute', left: -4, top: -3 }} />
+                    <div style={{ position: 'absolute', top, left: 0, right: 0, height: 2, background: '#df3b34', zIndex: 5, pointerEvents: 'none' }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 4, background: '#df3b34', position: 'absolute', left: -4, top: -3 }} />
                     </div>
                   );
                 })()}
@@ -589,8 +627,6 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     const top = ((appt._startMins - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT;
                     const height = Math.max(((appt._endMins - appt._startMins) / 60) * CAL_HOUR_HEIGHT, 28);
                     const crew = appt.crew || [];
-                    const leadCrew = crew.find(c => c.role === 'lead');
-                    const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
                     const isEvent = appt.kind === 'event';
                     const isDone = appt.status === 'completed';
                     const canInteract = !isDone && !placementMode;
@@ -603,19 +639,17 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                     const leftPad = appt._col === 0 ? 5 : 0.5;
                     const rightPad = appt._col === appt._totalCols - 1 ? 5 : 0.5;
 
-                    // Visual palette branches on three states — completed wins over event/job:
-                    //  - done:  solid neutral gray. Reads as "already happened" from 3ft away.
-                    //  - event: pastel tint of tech color + strong tech-color text.
-                    //  - job:   solid tech color + white text (existing behavior).
-                    const bgColor = isDone ? '#e5e7eb' : (isEvent ? hexToTint(color, 0.16) : color);
-                    const borderColor = isDone ? '#9ca3af' : color;
-                    const fgColor = isDone ? '#6b7280' : (isEvent ? color : '#fff');
-                    const subFgColor = isDone ? '#9ca3af' : (isEvent ? 'rgba(17,19,24,0.55)' : 'rgba(255,255,255,0.85)');
-                    const detailColor = isDone ? '#9ca3af' : 'rgba(255,255,255,0.75)';
-                    const progressTrackColor = isDone ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.25)';
-                    const progressFillColor = isDone ? '#9ca3af' : 'rgba(255,255,255,0.8)';
-                    const crewPillBorder = isDone ? '#d1d5db' : (isEvent ? hexToTint(color, 0.4) : 'rgba(255,255,255,0.3)');
-                    const crewPillLeadBorder = isDone ? '#6b7280' : (isEvent ? color : 'rgba(255,255,255,0.9)');
+                    // New design: a division/type-tinted card — soft bg, colored left bar, dark
+                    // colored title. Color now encodes DIVISION; the assignee shows via avatars.
+                    const cs = eventCardStyle(appt);
+                    const bgColor = cs.bg;
+                    const fgColor = cs.title;
+                    const subFgColor = '#667085';
+                    const detailColor = '#667085';
+                    const progressTrackColor = 'rgba(0,0,0,0.08)';
+                    const progressFillColor = cs.accent;
+                    const crewPillBorder = cs.border;
+                    const crewPillLeadBorder = cs.accent;
                     const displayTitle = isEvent ? (appt.title || 'Event') : appt._jobName;
 
                     return (
@@ -632,11 +666,9 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                           position: 'absolute', top, height: Math.max(height - 2, isMobile ? 44 : 26),
                           left: `calc(${leftPct}% + ${leftPad}px)`, width: `calc(${colWidth}% - ${leftPad + rightPad}px)`,
                           background: bgColor,
-                          borderLeft: `3px solid ${borderColor}`,
-                          borderTop: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
-                          borderRight: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
-                          borderBottom: isDone ? '1px solid #d1d5db' : (isEvent ? `1px solid ${hexToTint(color, 0.3)}` : undefined),
-                          borderRadius: 4,
+                          border: cs.dashed ? `1.5px dashed ${cs.border}` : `1px solid ${cs.border}`,
+                          borderLeft: `3px solid ${cs.accent}`,
+                          borderRadius: 8,
                           padding: '4px 6px', overflow: 'visible',
                           cursor: placementMode ? 'copy' : isDone ? 'pointer' : 'grab',
                           zIndex: isBeingResized ? 8 : 2, opacity: placementMode ? 0.7 : 1,
@@ -663,7 +695,6 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                             {appt.is_private && (
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={fgColor} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-label="Private"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             )}
-                            {isEvent && <span aria-hidden>📅</span>}
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayTitle}</span>
                           </div>
                           {crew.length > 0 && (
@@ -671,7 +702,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                               {crew.slice(0, 4).map(c => (
                                 <span key={c.id} title={c.display_name || c.full_name} style={{
                                   width: 20, height: 20, borderRadius: 10, fontSize: 8, fontWeight: 700,
-                                  background: c.color || (isEvent ? '#9ca3af' : 'rgba(255,255,255,0.3)'), color: '#fff',
+                                  background: c.color || '#9ca3af', color: '#fff',
                                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                                   border: c.role === 'lead' ? `2px solid ${crewPillLeadBorder}` : `1px solid ${crewPillBorder}`,
                                 }}>{getInitials(c.full_name || c.display_name)}</span>
@@ -681,7 +712,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                           )}
                           {appt.time_start && (
                             <div style={{ fontSize: 10, color: subFgColor, lineHeight: 1.3 }}>
-                              🕐 {fmtTime(appt.time_start)}{appt.time_end || isBeingResized ? `-${fmtTime(isBeingResized ? minutesToTime(resizing.endMins) : appt.time_end)}` : ''}
+                              {fmtTime(appt.time_start)}{appt.time_end || isBeingResized ? `-${fmtTime(isBeingResized ? minutesToTime(resizing.endMins) : appt.time_end)}` : ''}
                             </div>
                           )}
                           {!isEvent && height > 60 && shortAddr && <div style={{ fontSize: 10, color: detailColor, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortAddr}</div>}
@@ -723,8 +754,8 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                               borderRadius: '0 0 4px 4px', background: 'linear-gradient(transparent, rgba(0,0,0,0.15))',
                             }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1.5, alignItems: 'center' }}>
-                              <div style={{ width: 16, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.7)' }} />
-                              <div style={{ width: 12, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.5)' }} />
+                              <div style={{ width: 16, height: 1.5, borderRadius: 1, background: 'rgba(0,0,0,0.32)' }} />
+                              <div style={{ width: 12, height: 1.5, borderRadius: 1, background: 'rgba(0,0,0,0.2)' }} />
                             </div>
                           </div>
                         )}
@@ -760,15 +791,16 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
 }
 
 const CV = {
-  wrap: { flex: 1, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' },
+  // The grid lives in a white design-system card (border + soft shadow), scrolling inside.
+  wrap: { flex: 1, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#fff', border: '1px solid #e7e9ee', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05)', margin: '14px 20px 20px' },
   grid: { display: 'flex', minWidth: 600, flex: 1 },
-  timeCol: { width: 52, flexShrink: 0, borderRight: '1px solid var(--border-color)' },
-  timeHeader: { height: 44, borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' },
+  timeCol: { width: 52, flexShrink: 0, borderRight: '1px solid #f0f1f4' },
+  timeHeader: { height: 44, borderBottom: '1px solid #e7e9ee', background: '#fff' },
   timeLabel: { height: CAL_HOUR_HEIGHT, position: 'relative' },
-  dayCol: { flex: 1, minWidth: 120, borderRight: '1px solid #d1d5db', background: 'var(--bg-primary)' },
-  dayHeader: { height: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 },
+  dayCol: { flex: 1, minWidth: 120, borderRight: '1px solid #f0f1f4', background: '#fff' },
+  dayHeader: { height: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #e7e9ee', background: '#fff', flexShrink: 0 },
   dayBody: { position: 'relative', height: CAL_TOTAL_HOURS * CAL_HOUR_HEIGHT },
-  hourLine: { position: 'absolute', left: 0, right: 0, height: CAL_HOUR_HEIGHT, borderBottom: '1px solid var(--border-light)', cursor: 'pointer' },
+  hourLine: { position: 'absolute', left: 0, right: 0, height: CAL_HOUR_HEIGHT, borderBottom: '1px solid #f0f1f4', cursor: 'pointer' },
 };
 
 export default CalendarView;
