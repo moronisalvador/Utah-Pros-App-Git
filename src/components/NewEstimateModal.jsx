@@ -30,6 +30,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
+import CreateJobModal from '@/components/CreateJobModal';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const DIVISION_EMOJI = { water: '\u{1F4A7}', mold: '\u{1F9A0}', reconstruction: '\u{1F3D7}️', fire: '\u{1F525}', contents: '\u{1F4E6}' };
@@ -50,6 +51,7 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
   const [estType, setEstType] = useState('initial');
   const [loading, setLoading] = useState(false);
   const [busyJob, setBusyJob] = useState(null);
+  const [showCreateJob, setShowCreateJob] = useState(false);   // "customer not in system yet" → full intake
 
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
@@ -125,9 +127,19 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
   };
   const openExisting = (estId) => { onClose?.(); navigate(`/estimates/${estId}`); };
 
+  // Customer not in the system yet → run the full intake (new contact + claim + job),
+  // then open a new estimate of the selected type for that brand-new job.
+  const handleJobCreated = (result) => {
+    setShowCreateJob(false);
+    const jobId = result?.job?.id || result?.id;
+    if (jobId) handleNew({ id: jobId });
+    else toast('Job created, but couldn’t open an estimate for it', 'error');
+  };
+
   const allClaims = (data || []).filter(c => (c.jobs || []).length > 0);
 
   return (
+    <>
     <div className="conv-modal-backdrop" onClick={onClose}>
       <div className="conv-modal" onClick={e => e.stopPropagation()}
         style={{ maxWidth: 560, height: 'min(86vh, 680px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -152,7 +164,10 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
               {showDrop && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20, background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', maxHeight: 260, overflowY: 'auto', marginTop: 4 }}>
                   {results.length === 0 ? (
-                    <div style={{ padding: 'var(--space-3)', fontSize: 13, color: 'var(--text-tertiary)' }}>{search.trim().length >= 2 ? 'No customers found.' : 'Type 2+ characters'}</div>
+                    <div style={{ padding: 'var(--space-3)' }}>
+                      <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: search.trim().length >= 2 ? 8 : 0 }}>{search.trim().length >= 2 ? 'No customers found.' : 'Type 2+ characters'}</div>
+                      {search.trim().length >= 2 && <button onClick={() => { setShowDrop(false); setSearch(''); setShowCreateJob(true); }} className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>+ New customer &amp; job</button>}
+                    </div>
                   ) : results.map(c => (
                     <button key={c.id} onClick={() => selectContact(c)}
                       style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', width: '100%', padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-sans)', borderBottom: '1px solid var(--border-light)' }}>
@@ -253,7 +268,8 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
 
           {!selectedContact && (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              Search for a customer, then pick the job to estimate.
+              <div style={{ marginBottom: 12 }}>Search for a customer, then pick the job to estimate.</div>
+              <button onClick={() => setShowCreateJob(true)} className="btn btn-secondary btn-sm">+ New customer &amp; job</button>
             </div>
           )}
         </div>
@@ -263,5 +279,7 @@ export default function NewEstimateModal({ db, onClose, contact = null, claims =
         </div>
       </div>
     </div>
+    {showCreateJob && <CreateJobModal db={db} onClose={() => setShowCreateJob(false)} onCreated={handleJobCreated} />}
+    </>
   );
 }

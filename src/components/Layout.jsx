@@ -7,6 +7,7 @@ import OverflowDrawer from './OverflowDrawer';
 import CreateJobModal from './CreateJobModal';
 import AddContactModal from './AddContactModal';
 import NewInvoiceModal from './NewInvoiceModal';
+import NewEstimateModal from './NewEstimateModal';
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -34,6 +35,7 @@ export default function Layout() {
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [showNewEstimate, setShowNewEstimate] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false); // desktop overflow drawer (≥1280px)
   const [carriers, setCarriers] = useState([]);
   const [referralSources, setReferralSources] = useState([]);
@@ -129,11 +131,7 @@ export default function Layout() {
     if (key === 'job') { setShowCreateJob(true); return; }
     if (key === 'customer') { setShowAddContact(true); return; }
     if (key === 'invoice') { setShowNewInvoice(true); return; }
-    if (key === 'estimate') {
-      // Placeholder until the estimate builder ships — wire the real action (modal/route) here then.
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { title: 'Coming soon', message: 'The estimate builder is being built next.', type: 'warning' } }));
-      return;
-    }
+    if (key === 'estimate') { setShowNewEstimate(true); return; }
   };
 
   // After contact saved — navigate to new contact, reload customers list if on that page
@@ -239,6 +237,10 @@ export default function Layout() {
 
       {showNewInvoice && (
         <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />
+      )}
+
+      {showNewEstimate && (
+        <NewEstimateModal db={db} onClose={() => setShowNewEstimate(false)} />
       )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}
