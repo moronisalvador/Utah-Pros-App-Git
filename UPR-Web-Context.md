@@ -256,6 +256,11 @@ separate future project (Phase 4 below, decision pending).
   infinite-loop. (6) **`WidgetBoundary`** wraps each card so one failing widget can't blank the grid.
   Migration `20260624_dashboard_interactivity.sql` (adds `job_id` to `get_active_drying_jobs` +
   `get_dashboard_action_items`, creates `get_jobs_completed`, seeds the `page:overview` flag enabled).
+  Migration `20260625_action_items_customer.sql` (additive) adds `client` (`jobs.insured_name`) +
+  `address` (`street, city, ST ZIP`, same derivation as `get_tech_status_board`) to each
+  `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
+  number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
+  Backward-compatible (existing keys unchanged → old code ignores the new ones).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
