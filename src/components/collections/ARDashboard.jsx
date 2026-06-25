@@ -38,9 +38,9 @@ import {
   midnight, daysPastDue, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
-  CollCard, Kpi, KpiGrid, SegControl, SearchBox, StatusBadge, DivisionSquare,
+  CollCard, SegControl, SearchBox, DivisionSquare,
   ProgressBar, Pill, EmptyState, PopoverButton, FilterGroup, ToggleChip,
-  FunnelIcon, ColumnsIcon, MapPin,
+  FunnelIcon, ColumnsIcon,
 } from './collKit';
 
 const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -76,18 +76,20 @@ const LOCKED = ['client', 'balance'];
 
 const numInput = { width: 88, padding: '6px 9px', border: `1px solid ${C.cardBorder}`, borderRadius: 7, fontSize: 12.5, fontFamily: 'inherit', color: C.ink, background: '#fff', outline: 'none' };
 
+// Plain text, not pills — let the one status badge carry the row's color. Overdue
+// is a soft red, future/today are quiet so the table reads calm at a glance.
 function AgePill({ r, today }) {
-  if (Number(r.balance || 0) <= 0.005) return <span style={{ color: C.faint2, fontSize: 12 }}>—</span>;
+  const base = { fontSize: 12.5, fontWeight: 500 };
+  if (Number(r.balance || 0) <= 0.005) return <span style={{ ...base, color: C.faint2 }}>—</span>;
   const d = daysPastDue(r.due_date, today);
-  if (d == null) return <span style={{ color: C.faint, fontSize: 12, fontWeight: 500 }}>No due date</span>;
-  const big = { fontSize: 11.5, fontWeight: 700, padding: '3px 9px' };
-  if (d > 0) return <Pill color={STATUS.danger.text} bg={STATUS.danger.tint} style={big}>{d}d overdue</Pill>;
-  if (d === 0) return <Pill color={STATUS.warning.text} bg={STATUS.warning.tint} style={big}>Due today</Pill>;
-  return <Pill color={STATUS.info.text} bg={STATUS.info.tint} style={big}>Due in {-d}d</Pill>;
+  if (d == null) return <span style={{ ...base, color: C.faint }}>No due date</span>;
+  if (d > 0) return <span style={{ ...base, color: STATUS.danger.text, fontWeight: 600 }}>{d}d overdue</span>;
+  if (d === 0) return <span style={{ ...base, color: STATUS.warning.text, fontWeight: 600 }}>Due today</span>;
+  return <span style={{ ...base, color: C.muted }}>Due in {-d}d</span>;
 }
 
 // ─── SECTION: Component ──────────────
-export default function ARDashboard({ db, navigate, period = 'MTD' }) {
+export default function ARDashboard({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -111,9 +113,15 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
 
   const today = useMemo(() => midnight(), []);
 
-  // ─── SECTION: Derived totals (Outstanding/Overdue/aging = all open; Invoiced/Collected = period) ──
+  // Period scopes the whole A/R view by invoice date (drafts / undated always shown).
+  const periodRows = useMemo(() => {
+    const range = periodRange(period);
+    return rows.filter(r => inPeriod(r.invoice_date || r.sent_at, range));
+  }, [rows, period]);
+
+  // ─── SECTION: Derived totals (Outstanding / Overdue / aging across the period) ──
   const k = useMemo(() => {
-    const open = rows.filter(r => Number(r.balance) > 0.005);
+    const open = periodRows.filter(r => Number(r.balance) > 0.005);
     let outstanding = 0, overdue = 0, overdueCount = 0;
     const aging = {}; AGING.forEach(b => { aging[b.key] = { amount: 0, count: 0 }; });
     open.forEach(r => {
@@ -123,15 +131,8 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
       if (d != null && d > 0) { overdue += bal; overdueCount += 1; }
       const bk = aging[bucketKey(d)]; bk.amount += bal; bk.count += 1;
     });
-    const range = periodRange(period);
-    let invoiced = 0, collected = 0;
-    rows.forEach(r => {
-      if (!inPeriod(r.invoice_date || r.sent_at, range)) return;
-      invoiced += Number(r.total || 0);
-      collected += Number(r.amount_paid || 0);
-    });
-    return { open, outstanding, overdue, overdueCount, openCount: open.length, aging, invoiced, collected, collPct: invoiced > 0 ? (collected / invoiced) * 100 : 0 };
-  }, [rows, today, period]);
+    return { open, outstanding, overdue, overdueCount, openCount: open.length, aging };
+  }, [periodRows, today]);
 
   const divisionOptions = useMemo(() => {
     const set = new Set();
@@ -143,10 +144,11 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(r => {
+    return periodRows.filter(r => {
       const bal = Number(r.balance || 0);
       if (mode === 'open' && bal <= 0.005) return false;
       if (mode === 'overdue' && !(bal > 0.005 && (daysPastDue(r.due_date, today) || 0) > 0)) return false;
+      if (mode === 'collected' && !(Number(r.amount_paid || 0) > 0.005)) return false;
       if (filters.divisions.length && !filters.divisions.includes(String(r.division || '').toLowerCase())) return false;
       if (filters.sync.length) {
         const st = r.qbo_sync_error ? 'error' : (r.qbo_invoice_id ? 'synced' : 'unsynced');
@@ -160,7 +162,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
       }
       return true;
     });
-  }, [rows, mode, search, filters, today]);
+  }, [periodRows, mode, search, filters, today]);
 
   const footer = useMemo(() => {
     const open = filtered.filter(r => Number(r.balance) > 0.005);
@@ -186,28 +188,12 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
   // ─── SECTION: Render ──────────────
   return (
     <div>
-      {/* KPI tiles */}
-      <KpiGrid cols={4}>
-        <Kpi label="Outstanding" value={fmt$(k.outstanding)} valueColor={C.ink}>
-          {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}
-        </Kpi>
-        <Kpi label="Overdue" value={fmt$(k.overdue)} valueColor={k.overdue > 0 ? STATUS.danger.solid : C.faint}>
-          {k.overdue > 0
-            ? <span style={{ color: STATUS.danger.text, fontWeight: 600 }}>{k.overdueCount} past due</span>
-            : <><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS.success.solid }} /><span style={{ color: STATUS.success.text, fontWeight: 600 }}>Nothing past due</span></>}
-        </Kpi>
-        <Kpi label="Collected" value={fmt$(k.collected)} valueColor={STATUS.success.text}>
-          {period === 'All' ? 'received to date' : `received · ${period}`}
-        </Kpi>
-        <Kpi label="Invoiced" value={fmt$(k.invoiced)} valueColor={C.ink}>
-          <div style={{ flex: 1, maxWidth: 110 }}><ProgressBar pct={k.collPct} color={STATUS.success.solid} height={6} /></div>
-          <span style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>{Math.round(k.collPct)}% collected</span>
-        </Kpi>
-      </KpiGrid>
-
-      {/* A/R aging card */}
-      <CollCard pad="16px 18px 18px" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+      {/* A/R summary — ONE module: Outstanding hero + Overdue callout (both
+          click-to-filter the table) over the aging bar + buckets. Replaces the
+          old 4-tile row + separate aging card, which showed the same money twice
+          (Outstanding = the aging total; Overdue = its past-due buckets). */}
+      <CollCard pad="18px 20px 20px" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: C.title }}>
             <span style={{ width: 8, height: 8, borderRadius: 3, background: STATUS.info.solid }} />
             A/R aging<span style={{ fontWeight: 500, color: C.faint }}> · days outstanding</span>
@@ -216,8 +202,21 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
             ? <Pill color={STATUS.success.text} bg={STATUS.success.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>Nothing outstanding</Pill>
             : k.overdue <= 0
               ? <Pill color={STATUS.success.text} bg={STATUS.success.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>100% current</Pill>
-              : <Pill color={STATUS.danger.text} bg={STATUS.danger.tint} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px' }}>{Math.round((k.overdue / k.outstanding) * 100)}% overdue</Pill>}
+              : null}
         </div>
+
+        {/* Headline — Outstanding hero + Overdue callout; both filter the table */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <button type="button" className="coll-arhead" data-active={mode === 'open'} onClick={() => setMode('open')}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: '-.01em', lineHeight: 1, ...tnum }}>{fmt$(k.outstanding)}</div>
+            <div style={{ fontSize: 12.5, color: C.muted }}>outstanding · {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}</div>
+          </button>
+          <button type="button" className="coll-arhead coll-arhead-r" data-active={mode === 'overdue'} onClick={() => setMode('overdue')}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: k.overdue > 0 ? STATUS.danger.text : C.faint, ...tnum }}>{fmt$(k.overdue)}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: k.overdue > 0 ? STATUS.danger.text : C.muted }}>{k.overdue > 0 ? `${k.overdueCount} past due` : 'nothing past due'}</div>
+          </button>
+        </div>
+
         <div style={{ display: 'flex', width: '100%', height: 10, borderRadius: 6, overflow: 'hidden', background: C.track, marginBottom: 16 }}>
           {k.outstanding > 0 && AGING.map(b => k.aging[b.key].amount > 0 && (
             <div key={b.key} style={{ width: `${(k.aging[b.key].amount / k.outstanding) * 100}%`, background: b.seg }} />
@@ -230,7 +229,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
             return (
               <div key={b.key} className="coll-aging-cell">
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: C.faint }}>{b.label}</div>
-                <div style={{ fontSize: 19, fontWeight: 800, margin: '4px 0 2px', color: has ? b.val : C.faint2, ...tnum }}>{fmt$(cell.amount)}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, margin: '4px 0 2px', color: has ? b.val : C.faint2, ...tnum }}>{fmt$(cell.amount)}</div>
                 <div style={{ fontSize: 11, fontWeight: 500, color: has ? C.muted : C.faintSub }}>{cell.count} invoice{cell.count === 1 ? '' : 's'}</div>
               </div>
             );
@@ -307,12 +306,14 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
             {filtered.length === 0 ? (
               <EmptyState title="No invoices match" sub="Try a different filter or search term." />
             ) : filtered.map(r => {
-              const kind = invoiceStatusKind(r, today);
               const paid = Number(r.amount_paid || 0), total = Number(r.total || 0);
-              const escal = kind === 'overdue';
-              const addr = r.job_address ? `${r.job_address}${r.job_city ? ', ' + r.job_city : ''}` : null;
+              // Append city only when the address line doesn't already contain it
+              // (job data is inconsistent — some rows pack the full address into one field).
+              const addr = r.job_address
+                ? (r.job_city && !r.job_address.toLowerCase().includes(r.job_city.toLowerCase()) ? `${r.job_address}, ${r.job_city}` : r.job_address)
+                : (r.job_city || null);
               return (
-                <div key={r.invoice_id} className={`coll-row${escal ? ' coll-escal' : ''}`}
+                <div key={r.invoice_id} className="coll-row"
                   style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}
                   onClick={() => navigate(`/invoices/${r.invoice_id}`)}>
                   {visible.map(key => {
@@ -321,9 +322,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.client_name || '—'}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                           <span style={{ ...mono, fontSize: 11, color: C.muted }}>{r.qbo_doc_number || r.invoice_number}</span>
-                          {r.qbo_sync_error
-                            ? <Pill color={STATUS.danger.text} bg={STATUS.danger.tint}>⚠ QB</Pill>
-                            : r.qbo_invoice_id && <Pill color={STATUS.success.text} bg={STATUS.success.tint}>✓ QB</Pill>}
+                          {r.qbo_sync_error && <Pill color={STATUS.danger.text} bg={STATUS.danger.tint}>⚠ QB</Pill>}
                         </div>
                       </div>
                     );
@@ -333,7 +332,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ ...mono, fontSize: 12, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.claim_number || '—'}</div>
                           <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{divLabel(r.division)}{r.job_number ? ` · ${r.job_number}` : ''}</div>
-                          {addr && <div style={{ fontSize: 11, color: C.faint, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><MapPin />{addr}</div>}
+                          {addr && <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{addr}</div>}
                         </div>
                       </div>
                     );
@@ -341,17 +340,12 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                     if (key === 'age') return <div key={key}><AgePill r={r} today={today} /></div>;
                     if (key === 'total') return <div key={key} style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{fmt$2(r.total)}</div>;
                     if (key === 'collected') return (
-                      <div key={key} style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: paid > 0 ? STATUS.success.text : C.faint, ...tnum }}>{fmt$2(paid)}</div>
-                        <div style={{ marginTop: 4 }}><ProgressBar pct={total > 0 ? (paid / total) * 100 : 0} color={STATUS.success.solid} height={4} /></div>
+                      <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: paid > 0 ? STATUS.success.text : C.faint, ...tnum }}>{fmt$2(paid)}</span>
+                        <div style={{ width: 84, maxWidth: '100%' }}><ProgressBar pct={total > 0 ? (paid / total) * 100 : 0} color={STATUS.success.solid} height={4} /></div>
                       </div>
                     );
-                    return (
-                      <div key={key} style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>
-                        <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}><StatusBadge kind={kind} /></div>
-                      </div>
-                    );
+                    return <div key={key} style={{ textAlign: 'right', fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>;
                   })}
                 </div>
               );

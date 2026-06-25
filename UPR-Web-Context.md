@@ -101,12 +101,18 @@ src/
                                     live under .coll-* in index.css. Palette is page-scoped (like the dashboard's
                                     .ovw-*), NOT the app-wide tokens. COLOR SEMANTICS: a balance is neutral ink,
                                     never red — red is reserved for overdue/escalation; green = collected/current,
-                                    amber = aging. A/R is period-INDEPENDENT (always shows all open invoices); the
-                                    period switch there scopes only the Invoiced + Collected tiles. NOTE: the A/R
-                                    table is coded to show the job address under Claim · Job when get_ar_invoices
-                                    returns job_address/job_city (additive RPC field, not yet added — line hides
-                                    gracefully until then). The Payments "Processing/in-flight" section from the
-                                    design is omitted: get_payments_ledger returns cleared payments only.
+                                    amber = aging. A/R TOP is ONE unified summary card — an Outstanding hero + an
+                                    Overdue callout (both click-to-filter the table) over the aging bar + 5 buckets —
+                                    which replaced the old 4 KPI tiles + a separate aging card (they showed the same
+                                    money twice). The A/R period switch scopes the WHOLE A/R view by invoice date
+                                    (summary + aging + table recompute; drafts/undated always shown; default All).
+                                    A/R rows are deliberately de-noised: age is plain text (red only when overdue),
+                                    QB shows only on a sync error, and there are NO per-row status pills (overdue →
+                                    Age, partial → Collected, draft/sent → Sent columns carry it); the Invoices tab
+                                    keeps its status badge (no such columns there). Job address under Claim · Job comes
+                                    from get_ar_invoices (job_address/job_city added by migration
+                                    20260625_get_ar_invoices_address.sql). The Payments "Processing/in-flight" section
+                                    from the design is omitted: get_payments_ledger returns cleared payments only.
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)

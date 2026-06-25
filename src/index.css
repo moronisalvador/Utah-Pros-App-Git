@@ -5498,13 +5498,27 @@ tr:hover td { background: var(--bg-secondary); }
 .coll-card { background: #fff; border: 1px solid #e7e9ee; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05); min-width: 0; }
 
 /* KPI tiles */
-.coll-kpi-grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.coll-kpi-grid { display: grid; gap: 16px; margin-bottom: 18px; }
 .coll-kpi-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .coll-kpi-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
-.coll-kpi { display: flex; flex-direction: column; gap: 5px; padding: 16px 18px; }
-.coll-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #98a2b3; }
-.coll-kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+/* Ramp × dashboard "marriage": our card shell, but a calm sentence-case label up
+   top and the number + sub anchored low (space-between) for an airy, refined feel. */
+.coll-kpi { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 16px 18px; min-height: 104px; }
+.coll-kpi-label { font-size: 12.5px; font-weight: 600; color: #667085; }
+.coll-kpi-main { display: flex; flex-direction: column; gap: 6px; }
+.coll-kpi-value { font-size: 23px; font-weight: 800; letter-spacing: -0.01em; line-height: 1; font-variant-numeric: tabular-nums; }
 .coll-kpi-ctx { font-size: 12px; font-weight: 500; color: #667085; display: flex; align-items: center; gap: 6px; }
+.coll-kpi-click { cursor: pointer; transition: box-shadow .12s, border-color .12s, transform .04s; }
+.coll-kpi-click:hover { border-color: #d8dce2; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 16px rgba(16,24,40,.07); }
+.coll-kpi-click:active { transform: translateY(1px); }
+.coll-kpi-click:focus-visible { outline: 2px solid #2f6bf2; outline-offset: 2px; }
+.coll-kpi-active { border-color: #2f6bf2; box-shadow: 0 0 0 1px #2f6bf2; }
+
+/* A/R summary headline figures — Outstanding / Overdue as click-to-filter chips */
+.coll-arhead { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; background: none; border: none; font-family: inherit; text-align: left; padding: 8px 10px; margin: -8px -10px; border-radius: 10px; cursor: pointer; transition: background .12s; }
+.coll-arhead:hover { background: #f8f9fb; }
+.coll-arhead:focus-visible { outline: 2px solid #2f6bf2; outline-offset: 1px; }
+.coll-arhead-r { align-items: flex-end; text-align: right; }
 
 /* Search box */
 .coll-search { display: flex; align-items: center; gap: 8px; background: #f4f5f7; border: 1px solid #eceef2; border-radius: 9px; padding: 8px 12px; min-width: 0; }

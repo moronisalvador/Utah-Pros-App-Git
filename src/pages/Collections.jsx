@@ -60,7 +60,7 @@ export default function Collections() {
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState('ar');
-  const [arPeriod, setArPeriod] = useState('MTD');
+  const [arPeriod, setArPeriod] = useState('All');
   const [invPeriod, setInvPeriod] = useState('All');
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewEstimate, setShowNewEstimate] = useState(false);
