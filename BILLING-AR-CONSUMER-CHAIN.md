@@ -217,6 +217,33 @@ customer + division). Tiers (full review list was delivered separately as an art
 Import uses **direct, controlled inserts** (NOT `create_invoice_for_job` / `convert_estimate_to_invoice`)
 specifically so it doesn't couple to the estimate/invoice code the other chat is editing (§7).
 
+### 6a. EXECUTED — Confident batch imported (2026-06-25)
+
+The **19 confident invoices are now in UPR** (`INV-000010`–`INV-000028`), reconciling to QuickBooks
+exactly: **$98,577.21 billed · $84,537.61 collected · $14,039.60 open**, 29 line items, 26 payments.
+All carry `qbo_invoice_id`/`qbo_doc_number`/`qbo_payment_id` + `qbo_synced_at` so they are treated as
+**already in QBO** (no re-push) and the inbound cron dedups them.
+
+Per your rule (revenue must sit in a division-matched job), **6 new jobs were created** for invoices
+whose trade had no matching-division job in the claim:
+`R-2606-001` (Kelly Dewey recon, inv 1232), `R-2606-002` (Marc Jackson recon, 1265),
+`M-2606-001` (Pauline Bradford mold/testing, 1266), `C-2606-001` (Angela Duty contents, 1267),
+`M-2606-002` (Jacob Speakman mold, 1269), `M-2606-003` (Jaren Pope mold, 1272).
+
+Per-service revenue (from line items, the figures the rewired KPI will surface): reconstruction
+$79,234.63 · mitigation $10,195.93 · contents $5,143.09 · mold $2,500.00 · testing $1,986.06 ·
+gratuity $17.50 · discount −$500.00.
+
+Mechanics confirmed: inserting line items auto-set each invoice `total`; inserting payments auto-set
+`amount_paid`/`status`/`balance_due` (generated col `total − amount_paid`) and `jobs.collected_value`;
+`trg_invoices_sync_job_ar` set `jobs.invoiced_value`. Collections aging now populates from these.
+
+**Still pending:** (a) the `get_revenue_by_division` line-item rewire (§3c/§5) — held until the
+estimates/payment-sync chat lands (the per-service line data is already in place, so the rewire is
+purely a reporting change); (b) the remaining review tiers — 5 probable, 2 name-differs, 12 pick-the-job
+(incl. A2Z), 3 no-UPR-job. Minor: new job `M-2606-003` (unpaid) shows `ar_status='open'` rather than
+`'invoiced'` until its first payment fires `update_invoice_paid` — cosmetic, self-corrects.
+
 ---
 
 ## 7. Conflict & coordination status (IMPORTANT)
