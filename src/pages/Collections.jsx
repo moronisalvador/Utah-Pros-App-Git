@@ -60,6 +60,7 @@ export default function Collections() {
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState('ar');
+  const [arPeriod, setArPeriod] = useState('All');
   const [invPeriod, setInvPeriod] = useState('All');
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewEstimate, setShowNewEstimate] = useState(false);
@@ -93,12 +94,15 @@ export default function Collections() {
 
       <div className="coll-tabrow">
         <SegControl options={TABS} value={tab} onChange={setTab} size="lg" ariaLabel="Collections section" />
+        {tab === 'ar' && (
+          <SegControl options={PERIODS} value={arPeriod} onChange={setArPeriod} size="sm" ariaLabel="Time period" />
+        )}
         {tab === 'invoices' && (
           <SegControl options={PERIODS} value={invPeriod} onChange={setInvPeriod} size="sm" ariaLabel="Time period" />
         )}
       </div>
 
-      {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} />}
+      {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} period={arPeriod} />}
       {tab === 'invoices'  && <InvoicesList db={db} navigate={navigate} period={invPeriod} />}
       {tab === 'estimates' && <EstimatesList db={db} navigate={navigate} />}
       {tab === 'payments'  && <PaymentsLedger db={db} navigate={navigate} />}

@@ -35,7 +35,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divColor, divLabel,
-  midnight, daysPastDue, downloadCsv, invoiceStatusKind,
+  midnight, daysPastDue, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
   CollCard, SegControl, SearchBox, DivisionSquare,
@@ -89,7 +89,7 @@ function AgePill({ r, today }) {
 }
 
 // ─── SECTION: Component ──────────────
-export default function ARDashboard({ db, navigate }) {
+export default function ARDashboard({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -113,9 +113,15 @@ export default function ARDashboard({ db, navigate }) {
 
   const today = useMemo(() => midnight(), []);
 
-  // ─── SECTION: Derived totals (Outstanding/Overdue/aging = all open; Invoiced/Collected = period) ──
+  // Period scopes the whole A/R view by invoice date (drafts / undated always shown).
+  const periodRows = useMemo(() => {
+    const range = periodRange(period);
+    return rows.filter(r => inPeriod(r.invoice_date || r.sent_at, range));
+  }, [rows, period]);
+
+  // ─── SECTION: Derived totals (Outstanding / Overdue / aging across the period) ──
   const k = useMemo(() => {
-    const open = rows.filter(r => Number(r.balance) > 0.005);
+    const open = periodRows.filter(r => Number(r.balance) > 0.005);
     let outstanding = 0, overdue = 0, overdueCount = 0;
     const aging = {}; AGING.forEach(b => { aging[b.key] = { amount: 0, count: 0 }; });
     open.forEach(r => {
@@ -126,7 +132,7 @@ export default function ARDashboard({ db, navigate }) {
       const bk = aging[bucketKey(d)]; bk.amount += bal; bk.count += 1;
     });
     return { open, outstanding, overdue, overdueCount, openCount: open.length, aging };
-  }, [rows, today]);
+  }, [periodRows, today]);
 
   const divisionOptions = useMemo(() => {
     const set = new Set();
@@ -138,7 +144,7 @@ export default function ARDashboard({ db, navigate }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(r => {
+    return periodRows.filter(r => {
       const bal = Number(r.balance || 0);
       if (mode === 'open' && bal <= 0.005) return false;
       if (mode === 'overdue' && !(bal > 0.005 && (daysPastDue(r.due_date, today) || 0) > 0)) return false;
@@ -156,7 +162,7 @@ export default function ARDashboard({ db, navigate }) {
       }
       return true;
     });
-  }, [rows, mode, search, filters, today]);
+  }, [periodRows, mode, search, filters, today]);
 
   const footer = useMemo(() => {
     const open = filtered.filter(r => Number(r.balance) > 0.005);
@@ -202,7 +208,7 @@ export default function ARDashboard({ db, navigate }) {
         {/* Headline — Outstanding hero + Overdue callout; both filter the table */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
           <button type="button" className="coll-arhead" data-active={mode === 'open'} onClick={() => setMode('open')}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', lineHeight: 1, ...tnum }}>{fmt$(k.outstanding)}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: '-.01em', lineHeight: 1, ...tnum }}>{fmt$(k.outstanding)}</div>
             <div style={{ fontSize: 12.5, color: C.muted }}>outstanding · {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}</div>
           </button>
           <button type="button" className="coll-arhead coll-arhead-r" data-active={mode === 'overdue'} onClick={() => setMode('overdue')}>

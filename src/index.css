@@ -5517,7 +5517,6 @@ tr:hover td { background: var(--bg-secondary); }
 /* A/R summary headline figures — Outstanding / Overdue as click-to-filter chips */
 .coll-arhead { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; background: none; border: none; font-family: inherit; text-align: left; padding: 8px 10px; margin: -8px -10px; border-radius: 10px; cursor: pointer; transition: background .12s; }
 .coll-arhead:hover { background: #f8f9fb; }
-.coll-arhead[data-active="true"] { background: #eef2fb; }
 .coll-arhead:focus-visible { outline: 2px solid #2f6bf2; outline-offset: 1px; }
 .coll-arhead-r { align-items: flex-end; text-align: right; }
 
