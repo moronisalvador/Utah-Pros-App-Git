@@ -7,20 +7,21 @@
  *   The ten boxes that make up the new owner Overview dashboard — revenue,
  *   average ticket, open estimates, new claims, jobs completed, active drying,
  *   collections, action-required list, the live employee clock-in board, and
- *   the production pipeline. Each one draws its own little chart or list. Right
- *   now they all read made-up numbers from tokens.js; every widget already
- *   accepts a `data` prop, so when we connect the real database later we just
- *   feed real numbers in and nothing else changes.
+ *   the production pipeline. Each one draws its own little chart or list from
+ *   live database numbers passed in by Dashboard.jsx. While a box's data is
+ *   loading it shows a shimmer; if it fails it shows a "Couldn't load · Retry".
+ *   Many rows are tappable and jump straight to that job (or the production
+ *   board), so the dashboard is a launch pad, not just a readout.
  *
  * WHERE IT LIVES:
  *   Route:        / (Overview dashboard)
  *   Rendered by:  src/pages/Dashboard.jsx
  *
  * DEPENDS ON:
- *   Packages:  react
- *   Internal:  ./Card (Card shell + DeltaPill + footer pieces), ./tokens
- *   Data:      reads → none yet (placeholder props). Live sources noted per
- *                      widget + in tokens.js. · writes → none
+ *   Packages:  react, react-router-dom (useNavigate for row deep-links)
+ *   Internal:  ./Card (Card shell + loading/error states + footer pieces), ./tokens
+ *   Data:      reads → none directly (Dashboard's hooks fetch; these render props)
+ *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - Charts are pure CSS/SVG (stacked div widths, conic-gradient donut, inline
@@ -28,24 +29,66 @@
  *   - Colors come from the dashboard-scoped palette in tokens.js, NOT the
  *     app-wide DIVISION_COLORS. Keep it that way until the app-wide rollout.
  *   - Metrics use font-variant-numeric: tabular-nums so digits don't jitter.
+ *   - Row deep-links go through useJobRowNav: they no-op when there's no job_id
+ *     and are disabled while the grid is in edit mode (showHandle) so a click to
+ *     navigate can't fight a click to rearrange.
  * ════════════════════════════════════════════════
  */
 
+import { useNavigate } from 'react-router-dom';
 import { C, DIV, STATUS, PLACEHOLDER } from './tokens';
 import { Card, DeltaPill, CardFooter, FootLink, FootSummary } from './Card';
 
 const mono = { fontFamily: 'var(--font-mono)' };
 const tnum = { fontVariantNumeric: 'tabular-nums' };
 
+// ─── SECTION: Helpers ──────────────
+
+// Hook: returns a factory that turns a job id into spreadable, keyboard-accessible
+// row props (onClick/role/tabIndex/onKeyDown/cursor). Returns null when not
+// linkable (no id, or `enabled` is false during edit mode) so the row stays inert.
+function useJobRowNav(enabled) {
+  const navigate = useNavigate();
+  return (jobId) => {
+    if (!enabled || !jobId) return null;
+    const go = () => navigate(`/jobs/${jobId}`);
+    return {
+      onClick: go,
+      role: 'button',
+      tabIndex: 0,
+      onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } },
+      style: { cursor: 'pointer' },
+    };
+  };
+}
+
+// A financial card the current viewer isn't allowed to see (gated by the
+// `overview_financials` permission in Dashboard — admins always; others grantable
+// in Admin → Page Access / Permissions). Same shell + slot so the grid stays intact.
+export function RestrictedCard({ spanClass, title, showHandle }) {
+  return (
+    <Card spanClass={spanClass} title={title} showHandle={showHandle}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 80, textAlign: 'center' }}>
+        <span style={{ fontSize: 20 }} aria-hidden="true">🔒</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: C.muted }}>Restricted</span>
+        <span style={{ fontSize: 11, color: C.faint2 }}>Financial data — restricted</span>
+      </div>
+    </Card>
+  );
+}
+
 // ─── SECTION: Row A — KPI tiles ──────────────
 
-export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.revenue }) {
+export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.revenue, loading, error, onRetry }) {
   return (
     <Card
       spanClass="ovw-span-4"
       title="Revenue recognized"
       suffix={periodLabel}
       showHandle={showHandle}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
       right={data.delta ? <DeltaPill dir={data.delta.dir} pct={data.delta.pct} /> : null}
     >
       <div style={{ fontSize: 33, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>
@@ -73,9 +116,9 @@ export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.
   );
 }
 
-export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicket }) {
+export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicket, loading, error, onRetry }) {
   return (
-    <Card spanClass="ovw-span-4" title="Avg ticket" suffix={periodLabel} showHandle={showHandle}>
+    <Card spanClass="ovw-span-4" title="Avg ticket" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 1 }}>
         {data.bars.map(b => (
           <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -100,13 +143,13 @@ export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicke
   );
 }
 
-export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
+export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates, loading, error, onRetry }) {
   const hasData = data.slices.length > 0;
   const conic = hasData
     ? `conic-gradient(${data.slices.map(s => `${s.color} ${s.from}% ${s.to}%`).join(', ')})`
     : C.track;
   return (
-    <Card spanClass="ovw-span-4" title="Open estimates" showHandle={showHandle}>
+    <Card spanClass="ovw-span-4" title="Open estimates" showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{ position: 'relative', width: 128, height: 128, flex: 'none' }}>
           <div style={{ width: 128, height: 128, borderRadius: '50%', background: conic }} />
@@ -142,9 +185,9 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates }) {
 
 // ─── SECTION: Row B — claims booked + jobs completed ──────────────
 
-export function NewClaimsBooked({ periodLabel, showHandle, data = PLACEHOLDER.newClaims }) {
+export function NewClaimsBooked({ periodLabel, showHandle, data = PLACEHOLDER.newClaims, loading, error, onRetry }) {
   return (
-    <Card spanClass="ovw-span-6" title="New claims booked" suffix={periodLabel} showHandle={showHandle}>
+    <Card spanClass="ovw-span-6" title="New claims booked" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
         <div style={{ flex: 'none' }}>
           <div style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>{data.count}</div>
@@ -166,9 +209,9 @@ export function NewClaimsBooked({ periodLabel, showHandle, data = PLACEHOLDER.ne
   );
 }
 
-export function JobsCompleted({ periodLabel, showHandle, data = PLACEHOLDER.jobsCompleted }) {
+export function JobsCompleted({ periodLabel, showHandle, data = PLACEHOLDER.jobsCompleted, loading, error, onRetry }) {
   return (
-    <Card spanClass="ovw-span-6" title="Jobs completed" suffix={periodLabel} showHandle={showHandle}>
+    <Card spanClass="ovw-span-6" title="Jobs completed" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
         <div style={{ flex: 'none' }}>
           <div style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>{data.count}</div>
@@ -185,7 +228,8 @@ export function JobsCompleted({ periodLabel, showHandle, data = PLACEHOLDER.jobs
 
 // ─── SECTION: Row C — active drying (signature) + collections ──────────────
 
-export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying }) {
+export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying, loading, error, onRetry }) {
+  const rowNav = useJobRowNav(!showHandle);
   return (
     <Card
       spanClass="ovw-span-7"
@@ -193,6 +237,9 @@ export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying }) {
       suffix="· % to dry standard"
       dotColor={DIV.mitigation}
       showHandle={showHandle}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
       gap={6}
       headGap={6}
       right={<FootLink to="/production">View all</FootLink>}
@@ -205,7 +252,7 @@ export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying }) {
       {data.rows.map(r => {
         const s = STATUS[r.status] || STATUS.info;
         return (
-          <div key={r.job} className="ovw-row">
+          <div key={r.job} className="ovw-row" {...(rowNav(r.jobId) || {})}>
             <div style={{ width: 120, flex: 'none', minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, letterSpacing: '-.02em', ...mono }}>{r.job}</div>
               <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.loc}</div>
@@ -236,10 +283,10 @@ const COLLECTION_BAR = {
   gray:    { fill: '#c2c7d0',                                 value: '#667085', radius: '5px 5px 0 0' },
 };
 
-export function Collections({ showHandle, data = PLACEHOLDER.collections }) {
+export function Collections({ showHandle, data = PLACEHOLDER.collections, loading, error, onRetry }) {
   const max = Math.max(...data.bars.map(b => b.amount ?? 0), 1);
   return (
-    <Card spanClass="ovw-span-5" title="Collections" suffix="· My money" dotColor={STATUS.info.solid} showHandle={showHandle}>
+    <Card spanClass="ovw-span-5" title="Collections" suffix="· My money" dotColor={STATUS.info.solid} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       {/* plot grows (flex:1) to fill the card so a taller row-mate doesn't leave dead space */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 18, minHeight: 140, paddingTop: 4 }}>
         {data.bars.map(b => {
@@ -268,13 +315,14 @@ export function Collections({ showHandle, data = PLACEHOLDER.collections }) {
 
 // ─── SECTION: Row D — action required + employee status (live) ──────────────
 
-export function ActionRequired({ showHandle, data = PLACEHOLDER.actions, summary = PLACEHOLDER.actionSummary }) {
+export function ActionRequired({ showHandle, data = PLACEHOLDER.actions, summary = PLACEHOLDER.actionSummary, loading, error, onRetry }) {
+  const rowNav = useJobRowNav(!showHandle);
   return (
-    <Card spanClass="ovw-span-6" title="Action required" suffix="· sorted by urgency" dotColor={STATUS.warning.solid} showHandle={showHandle} gap={5} headGap={6}>
+    <Card spanClass="ovw-span-6" title="Action required" suffix="· sorted by urgency" dotColor={STATUS.warning.solid} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry} gap={5} headGap={6}>
       {data.map(a => {
         const s = STATUS[a.kind] || STATUS.info;
         return (
-          <div key={a.job} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} style={{ cursor: 'pointer' }}>
+          <div key={a.job} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} {...(rowNav(a.jobId) || {})}>
             <span style={{ width: 22, height: 22, borderRadius: 7, background: s.tint, color: s.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: a.glyph === '✎' ? 12 : 13, fontWeight: 800, flex: 'none' }}>{a.glyph}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, color: C.title, fontWeight: 600 }}>
@@ -306,12 +354,16 @@ function LiveBadge() {
   );
 }
 
-export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summary = PLACEHOLDER.employeeSummary }) {
+export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summary = PLACEHOLDER.employeeSummary, loading, error, onRetry }) {
+  const rowNav = useJobRowNav(!showHandle);
   return (
     <Card
       spanClass="ovw-span-6"
       title={<>Employee status<LiveBadge /><span className="ovw-suffix">· clock-in board</span></>}
       showHandle={showHandle}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
       gap={5}
       headGap={6}
     >
@@ -321,7 +373,7 @@ export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summa
         const statusColor = e.statusKind === 'success' ? '#1f8a4c' : e.statusKind === 'danger' ? '#c0322c' : C.faint;
         const elapsedColor = danger ? '#c0322c' : e.dot === 'gray' ? C.faint2 : C.ink;
         return (
-          <div key={e.name} className={`ovw-row${e.escal ? ' ovw-escal' : ''}`}>
+          <div key={e.name} className={`ovw-row${e.escal ? ' ovw-escal' : ''}`} {...(rowNav(e.jobId) || {})}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: DOT[e.dot], flex: 'none' }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: nameColor }}>{e.name}</div>
@@ -346,7 +398,15 @@ export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summa
 
 // ─── SECTION: Row E — production pipeline (future-ready) ──────────────
 
-export function ProductionPipeline({ showHandle, data = PLACEHOLDER.pipeline }) {
+export function ProductionPipeline({ showHandle, data = PLACEHOLDER.pipeline, loading, error, onRetry }) {
+  const navigate = useNavigate();
+  const linkable = !showHandle;
+  const stageNav = linkable ? {
+    onClick: () => navigate('/production'),
+    role: 'button',
+    tabIndex: 0,
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/production'); } },
+  } : null;
   return (
     <Card
       spanClass="ovw-span-12"
@@ -354,6 +414,9 @@ export function ProductionPipeline({ showHandle, data = PLACEHOLDER.pipeline }) 
       suffix="· jobs by stage"
       dotColor={DIV.reconstruction}
       showHandle={showHandle}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
       wide
       gap={12}
       right={<span style={{ fontSize: 11, fontWeight: 600, color: C.muted, background: '#f3f4f6', borderRadius: 999, padding: '4px 11px' }}>Mitigation live · reconstruction &amp; remodel activate later</span>}
@@ -362,7 +425,7 @@ export function ProductionPipeline({ showHandle, data = PLACEHOLDER.pipeline }) 
         {data.active.map(st => {
           const fill = st.kind === 'success' ? STATUS.success.solid : STATUS.info.solid;
           return (
-            <div key={st.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div key={st.label} style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 7, padding: '2px 4px', margin: '-2px -4px', cursor: linkable ? 'pointer' : 'default' }} {...(stageNav || {})}>
               <span style={{ width: 140, flex: 'none', fontSize: 12.5, color: C.body, fontWeight: 600 }}>{st.label}</span>
               <div style={{ flex: 1, height: 22, background: C.track, borderRadius: 7, overflow: 'hidden', display: 'flex' }}>
                 <div style={{ width: `${st.pct}%`, height: '100%', background: fill, borderRadius: 7, minWidth: 20 }} />

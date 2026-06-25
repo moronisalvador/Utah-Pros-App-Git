@@ -21,11 +21,13 @@
  *   Data:      reads → none · writes → none
  *
  * NOTES / GOTCHAS:
- *   - The ⠿ drag handle is decorative for now (Phase 1 is a static grid).
- *     Drag/resize/reorder + per-user persistence is Phase 3 — the handle is
- *     already here so wiring it up later is purely behavioral.
+ *   - The ⠿ drag handle is wired to react-grid-layout (it's the draggableHandle);
+ *     it only appears in edit mode (showHandle).
  *   - `title` accepts a node (not just a string) so cards can embed things like
  *     the live "LIVE" badge in the Employee status header.
+ *   - Pass `loading`/`error` and the body is replaced by a shimmer skeleton or a
+ *     small "Couldn't load · Retry" state (onRetry); the header `right` slot is
+ *     suppressed in both so a stale delta pill never shows over a skeleton.
  * ════════════════════════════════════════════════
  */
 
@@ -77,6 +79,33 @@ export function FootSummary({ children, color = C.body, weight = 600, size = 12 
   return <span style={{ fontSize: size, color, fontWeight: weight }}>{children}</span>;
 }
 
+// ─── SECTION: Loading / error body states ──────────────
+
+// Shimmer skeleton shown while a widget's hook is loading — replaces the body so
+// the placeholder numbers never flash. Grows to fill the card (flex:1) so it
+// reads right at any card height.
+function CardSkeleton() {
+  return (
+    <div className="ovw-skel" aria-hidden="true">
+      <div className="ovw-skel-bar metric" />
+      <div className="ovw-skel-bar grow" />
+      <div className="ovw-skel-bar line" style={{ width: '70%' }} />
+      <div className="ovw-skel-bar line" style={{ width: '45%' }} />
+    </div>
+  );
+}
+
+// Shown when a widget's hook throws — a visible failure (not a silent fall back to
+// placeholder) with a one-tap retry that forces an immediate refetch.
+function CardError({ onRetry }) {
+  return (
+    <div className="ovw-err">
+      <span className="ovw-err-msg">Couldn't load</span>
+      {onRetry && <button type="button" className="ovw-link" onClick={onRetry}>Retry</button>}
+    </div>
+  );
+}
+
 // ─── SECTION: Card shell ──────────────
 
 export function Card({
@@ -89,8 +118,12 @@ export function Card({
   wide = false,
   gap,
   headGap,
+  loading = false,
+  error = null,
+  onRetry,
   children,
 }) {
+  const stateOverride = loading || error; // skeleton/error replaces the body + hides `right`
   return (
     <section
       className={`ovw-card${wide ? ' ovw-card-wide' : ''} ${spanClass}`}
@@ -105,11 +138,11 @@ export function Card({
           {suffix && <span className="ovw-suffix">{suffix}</span>}
         </div>
         <div className="ovw-head-right">
-          {right}
+          {!stateOverride && right}
           <DragHandle show={showHandle} />
         </div>
       </div>
-      {children}
+      {loading ? <CardSkeleton /> : error ? <CardError onRetry={onRetry} /> : children}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 // ── Nav keys for permissions matrix (must match Sidebar.jsx) ──
 const NAV_KEYS = [
   { key: 'dashboard', label: 'Dashboard', section: 'Main' },
+  { key: 'overview_financials', label: 'Financial Cards (Overview)', section: 'Main' },
   { key: 'conversations', label: 'Conversations', section: 'Main' },
   { key: 'jobs', label: 'Jobs', section: 'Main' },
   { key: 'leads', label: 'Leads', section: 'Main' },
@@ -929,8 +930,9 @@ function PermissionsTab() {
 // ══════════════════════════════════════════════════════════════
 
 const PAGE_ACCESS_KEYS = [
-  { key: 'dashboard',          label: 'Dashboard',          section: 'Main' },
-  { key: 'conversations',      label: 'Conversations',      section: 'Main' },
+  { key: 'dashboard',           label: 'Dashboard',           section: 'Main' },
+  { key: 'overview_financials', label: 'Financial Cards (Overview)', section: 'Main' },
+  { key: 'conversations',       label: 'Conversations',       section: 'Main' },
   { key: 'claims',             label: 'Claims',             section: 'Main' },
   { key: 'jobs',               label: 'Jobs',               section: 'Main' },
   { key: 'production',         label: 'Production',         section: 'Main' },
