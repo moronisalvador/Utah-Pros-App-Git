@@ -201,7 +201,9 @@ status `6` (live clock-in board) · Production pipeline `12` (future-ready, grey
 `src/components/overview/tokens.js` (palette + placeholder datasets; every widget takes a `data` prop
 defaulting to its placeholder) · `src/components/overview/Card.jsx` (shell + DeltaPill + footer +
 loading-skeleton / error-retry body states) · `src/components/overview/Widgets.jsx` (the 10 widgets +
-`RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`) ·
+`RestrictedCard`; CSS/SVG charts, no chart lib; rows deep-link via `useJobRowNav`; data-heavy list
+widgets — Employee status, Action required, Active drying — scroll their rows internally via `.ovw-scroll`
+(header + footer stay fixed) so long lists aren't clipped) ·
 `src/components/overview/WidgetBoundary.jsx` (per-card React error boundary so one bad RPC can't blank the
 grid) · `src/components/overview/hooks/` (one hook per widget, all built on the shared
 `usePolledRpc(load, intervalMs, enabled)` — initial load + interval refresh that **pauses while the tab is
@@ -220,7 +222,7 @@ separate future project (Phase 4 below, decision pending).
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
   switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
   (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
@@ -368,7 +370,16 @@ invoice_adjustments     — Invoice adjustment audit log
 payments                — Payment records
 stripe_events           — Stripe webhook idempotency ledger (RLS-locked, service-role only). Added Jun 20 2026 (Stripe S3)
 billing_2fa_codes       — One-time email-2FA codes for editing payout destinations (RLS-locked). Added Jun 20 2026
-estimates               — Estimate records
+estimates               — Estimate records. Line-item builder + QBO sync (Jun 25 2026). MULTIPLE per job
+                          (estimate_type initial/supplement/change_order/final). amount/subtotal roll up from
+                          estimate_line_items via recompute_estimate_from_lines(). QBO cols qbo_estimate_id/
+                          qbo_synced_at/qbo_sync_error/qbo_doc_number/qbo_emailed_at/qbo_email_status/
+                          sent_to_email; plus contact_id, expiration_date, converted_invoice_id (FK invoices,
+                          set on convert; status→'approved'). status draft/submitted/under_review/approved/
+                          denied/revised/paid.
+estimate_line_items     — Line items per estimate (Jun 25 2026). Clone of invoice_line_items; line_total is a
+                          GENERATED column (quantity*unit_price) — never write it. qbo_item_id/name +
+                          qbo_class_id/name per line. Copied into invoice_line_items on convert-to-invoice.
 vendor_invoices         — Vendor invoice tracking (also used by Netlify vendor app)
 vendors                 — Vendor records
 oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-generated
@@ -1121,6 +1132,59 @@ query) and **global** (no props — customer typeahead via `search_contacts_for_
 that customer's claims→jobs). Rows badge "Has invoice" vs "New". Entry points: Customer
 page header button (gated `feature:billing` + `canEditBilling`) and a global **+ New
 invoice** button on the Collections hub header.
+
+---
+
+## QuickBooks Online — Estimates (Jun 25 2026)
+
+A full line-item **estimate builder** that mirrors the invoice tool, syncs to QBO, and
+converts to an invoice. Ships **dormant** behind the `page:estimates` feature flag
+(seeded **disabled** — a missing flag would read as ON, so the OFF row is required).
+Edits gated by `canEditBilling` (admin + manager), same as invoices.
+
+**Key difference from invoices:** estimates are **multiple per job** (initial / supplement /
+change_order / final), not one-per-job. The dashboard "Open estimates" donut
+(`get_open_estimates_summary`) reads `estimates.amount`, which the recompute trigger keeps
+in sync with the line items.
+
+**DB (`migrations/20260625_estimate_builder.sql`, applied):**
+- `estimate_line_items` — clone of `invoice_line_items` (line_total GENERATED; qbo_item/class per line).
+- `estimates` extended with `contact_id`, `subtotal`, `expiration_date`, `converted_invoice_id`
+  (FK invoices) + the `qbo_*` sync columns.
+- `recompute_estimate_from_lines()` trigger → rolls lines into `estimates.subtotal` + `amount`.
+- `generate_estimate_number()` → `EST-NNNNNN` (own sequence).
+- `create_estimate_for_job(p_job_id, p_estimate_type DEFAULT 'initial', p_created_by)` — always
+  inserts a NEW draft (multiple per job), unlike the idempotent invoice creator.
+- `get_estimates()` — one row per estimate w/ client/claim/job context + converted invoice number
+  (mirror of `get_ar_invoices`). Granted anon, authenticated.
+- `convert_estimate_to_invoice(p_estimate_id, p_force, p_created_by)` — reuses the one-per-job
+  `create_invoice_for_job`, copies estimate lines into that invoice, sets `invoices.estimate_id` +
+  `estimates.converted_invoice_id`, marks the estimate `'approved'`. Returns `{needs_confirm:true}`
+  (UI two-click) if the target invoice already has lines, unless `p_force`.
+
+**Worker (`functions/api/qbo-estimate.js` + `lib/quickbooks.js`):** itemized push/update/delete/send to
+the QBO `/estimate` endpoint (`createEstimate`/`updateEstimate`/`deleteEstimate`/`sendEstimate`,
+reusing `divisionToQbo`/`findClassId`). Uses the UPR `estimate_number` as the QBO DocNumber (unique —
+job number isn't, with many estimates per job), sets `TxnStatus:'Pending'` + optional `ExpirationDate`,
+and advances UPR status draft→submitted on first push.
+
+**Convert → invoice in QBO (both requested directions):**
+- **UPR-initiated:** the "Convert to invoice" button runs the convert RPC then pushes the invoice;
+  `qbo-invoice.js` adds `LinkedTxn:[{TxnType:'Estimate'}]` when the invoice's linked estimate has a
+  `qbo_estimate_id`, so QBO marks the estimate converted/Closed.
+- **QBO-initiated (deposit auto-convert, dormant):** when a customer pays a deposit on an estimate via
+  QBO's online pay link, QBO turns it into a new invoice. The inbound payment sync
+  (`lib/qbo-payment-sync.js` → `adoptInvoiceFromQboEstimate`) detects a QBO invoice with no UPR match
+  but a `LinkedTxn→Estimate`, finds the UPR estimate by `qbo_estimate_id`, runs
+  `convert_estimate_to_invoice` (force), and adopts the QBO invoice id so the payment lands and the
+  estimate shows converted in UPR. Activates with the QBO Payment webhook (§4B of QBO-BILLING-STATUS).
+
+**Frontend:** `src/pages/EstimateEditor.jsx` (`/estimates/:id`) · `src/pages/Estimates.jsx`
+(`/estimates`, list + KPIs + filters) · `src/components/NewEstimateModal.jsx` (job picker + type
+selector + existing-estimates list) · `src/components/AutoGrowTextarea.jsx` (shared, line-item
+description grows down + accepts line breaks for scope of work — also adopted by InvoiceEditor). Nav
+entries (`navItems.jsx`: sidebar + desktop overflow) + routes (`App.jsx`) gated by `page:estimates`.
+The invoice & estimate editors were also **widened** (maxWidth 1240; Description is the widest column).
 
 ---
 

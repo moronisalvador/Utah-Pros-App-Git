@@ -327,6 +327,92 @@ export async function sendInvoice(env, qboInvoiceId, sendTo) {
   return data.Invoice;
 }
 
+// ── Estimates (Phase 2 — mirrors Invoices) ────────────────────────────────────
+// QBO Estimates use the same line shape as Invoices (SalesItemLineDetail + ItemRef
+// + ClassRef). An Estimate can later be linked to an Invoice via the Invoice's
+// LinkedTxn ([{ TxnId: <estimateId>, TxnType: 'Estimate' }]) — that's how QBO marks
+// an estimate "converted" and rolls it into the invoice. (Handled in qbo-invoice.)
+export async function createEstimate(env, payload) {
+  const res = await qboFetch(env, `/estimate?minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify(payload),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO create estimate ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Estimate;
+}
+
+// Sparse-update an existing QBO estimate (auto-push when the UPR estimate is edited
+// after first push). Looks up the current SyncToken, then sends a sparse update — a
+// provided Line array replaces the line set (how the amount changes).
+export async function updateEstimate(env, qboEstimateId, fields) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const existing = qd?.QueryResponse?.Estimate?.[0];
+  if (existing?.SyncToken == null) throw new Error('Estimate not found in QBO for update');
+  const res = await qboFetch(env, `/estimate?minorversion=${MINOR_VERSION}`, {
+    method: 'POST',
+    body: JSON.stringify({ Id: String(qboEstimateId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO update estimate ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Estimate;
+}
+
+// Delete a QBO estimate (revert-to-draft cleanup). Looks up SyncToken first.
+export async function deleteEstimate(env, qboEstimateId) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const syncToken = qd?.QueryResponse?.Estimate?.[0]?.SyncToken;
+  if (syncToken == null) throw new Error('Estimate not found in QBO for delete');
+  const res = await qboFetch(env, `/estimate?operation=delete&minorversion=${MINOR_VERSION}`, {
+    method: 'POST', body: JSON.stringify({ Id: String(qboEstimateId), SyncToken: syncToken }),
+  });
+  if (!res.ok) throw new Error(`QBO delete estimate ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
+}
+
+// Ask QuickBooks to EMAIL the estimate to the customer (QBO sends the email). `sendTo`
+// overrides the recipient; if omitted QBO uses the customer's billing email. QBO's send
+// endpoint wants an empty octet-stream body; the response echoes the estimate.
+export async function sendEstimate(env, qboEstimateId, sendTo) {
+  const path = `/estimate/${qboEstimateId}/send?minorversion=${MINOR_VERSION}`
+    + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
+  const res = await qboFetch(env, path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO send estimate ${res.status}`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return data.Estimate;
+}
+
+// Look up a QBO estimate's id + SyncToken (used by qbo-invoice to mark an estimate
+// Closed/accepted after the converted invoice is created). Returns null if not found.
+export async function getEstimateRef(env, qboEstimateId) {
+  const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Estimate WHERE Id = '${qboEstimateId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const qd = await q.json().catch(() => ({}));
+  const row = qd?.QueryResponse?.Estimate?.[0];
+  return row?.SyncToken != null ? { id: String(row.Id), syncToken: String(row.SyncToken) } : null;
+}
+
 // ── Payments (one-way UPR → QBO) ─────────────────────────────────────────────
 // Create a QBO Payment applied to an invoice. UPR records the payment first; this
 // mirrors it into QBO so the QBO invoice shows paid/partial. `txnDate` = 'YYYY-MM-DD'.

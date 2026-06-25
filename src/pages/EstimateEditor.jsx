@@ -1,3 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: EstimateEditor.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The page where you build an estimate for a job, line by line. Each line has a
+ *   QuickBooks item, an optional class, a description, a quantity and a price, and
+ *   the page adds them up. From here you can save the estimate to QuickBooks, email
+ *   it to the customer, and — when it's accepted — turn it into an invoice with one
+ *   button (which also links it in QuickBooks). It mirrors the invoice editor.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /estimates/:estimateId
+ *   Rendered by:  src/App.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext (db, isFeatureEnabled, employee),
+ *              @/lib/realtime (getAuthHeader), @/lib/claimUtils (canEditBilling)
+ *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts;
+ *                       QBO Item/Class catalog via /api/qbo-query
+ *              writes → estimate_line_items (insert/update/delete); estimates +
+ *                       QBO estimate via /api/qbo-estimate; on convert, invoices +
+ *                       invoice_line_items via convert_estimate_to_invoice RPC and
+ *                       /api/qbo-invoice
+ *
+ * NOTES / GOTCHAS:
+ *   - estimate_line_items.line_total is a GENERATED column (quantity * unit_price) —
+ *     never write it.
+ *   - load() reads via a db ref so it runs once per estimate, not on every Supabase
+ *     token refresh (same fix as InvoiceEditor — keeps in-progress edits alive).
+ *   - Convert: runs convert_estimate_to_invoice (copies lines into the job's one
+ *     invoice). If that invoice already has lines the RPC returns needs_confirm and
+ *     the button asks for a second click. After converting it pushes the invoice to
+ *     QBO, which carries LinkedTxn → the QBO estimate to complete the conversion there.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,22 +48,22 @@ const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:to
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
 
-// Dedicated invoice editor — build line items (Item + Class per line) and push the invoice
-// to QuickBooks. Intentional, guarded flow (vs. inline editing). Route: /invoices/:invoiceId.
-export default function InvoiceEditor() {
-  const { invoiceId } = useParams();
+// Dedicated estimate editor — build line items (Item + Class per line), push to
+// QuickBooks, email it, and convert to an invoice once accepted. Route: /estimates/:estimateId.
+export default function EstimateEditor() {
+  const { estimateId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
 
-  // Keep the latest db client in a ref. Supabase swaps the db object on every token
-  // refresh / tab refocus (SIGNED_IN / TOKEN_REFRESHED); without this, load() below
-  // would re-run on each swap and overwrite in-progress edits when you switch tabs.
+  // Keep the latest db client in a ref so load() runs once per estimate, not on every
+  // token refresh / tab refocus (which would clobber in-progress edits). See InvoiceEditor.
   const dbRef = useRef(db);
   dbRef.current = db;
 
-  const [inv, setInv] = useState(null);
+  const [est, setEst] = useState(null);
   const [job, setJob] = useState(null);
   const [claim, setClaim] = useState(null);
   const [contact, setContact] = useState(null);
@@ -37,29 +76,27 @@ export default function InvoiceEditor() {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
+  const [confirmConvert, setConfirmConvert] = useState(false);
 
-  // Reads via dbRef.current (not db) and depends only on invoiceId — so it runs once per
-  // invoice, not every time the auth token refreshes. That's what keeps your edits from
-  // being wiped when you leave and return to the tab.
   const load = useCallback(async () => {
     const d = dbRef.current;
     setLoading(true);
     try {
-      const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
-      if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
-      setInv(i);
-      const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      const e = (await d.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
+      if (!e) { toast('Estimate not found', 'error'); navigate('/estimates', { replace: true }); return; }
+      setEst(e);
+      const j = e.job_id ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
       setJob(j || null);
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
-      const cid = i.contact_id || j?.primary_contact_id;
+      const cid = e.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
+      setLines(await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || []);
     } catch (e) {
-      toast('Failed to load invoice: ' + (e.message || e), 'error');
+      toast('Failed to load estimate: ' + (e.message || e), 'error');
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, navigate]);
+  }, [estimateId, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -85,14 +122,15 @@ export default function InvoiceEditor() {
   }, []);
   useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
 
-  const synced = !!inv?.qbo_invoice_id;
+  const synced = !!est?.qbo_estimate_id;
+  const converted = !!est?.converted_invoice_id;
   const total = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
 
   // ── Line handlers ──
   const addLine = async () => {
     setBusy(true);
     // line_total is a generated column (quantity * unit_price) — never write it.
-    try { await db.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
+    try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
@@ -104,13 +142,10 @@ export default function InvoiceEditor() {
       return next;
     }));
   };
-  // Persist a line on blur WITHOUT reloading — local state already reflects the edit
-  // (setLineLocal computes line_total), so a refetch would only cause the page to blink
-  // and could clobber the field you tab into next.
+  // Persist a line on blur WITHOUT reloading — local state already reflects the edit.
   const saveLine = async (line) => {
     try {
-      // description is NOT NULL; line_total is generated (quantity * unit_price) — don't write it.
-      await db.update('invoice_line_items', `id=eq.${line.id}`, {
+      await db.update('estimate_line_items', `id=eq.${line.id}`, {
         description: line.description || '',
         qbo_item_id: line.qbo_item_id || null, qbo_item_name: line.qbo_item_name || null,
         qbo_class_id: line.qbo_class_id || null, qbo_class_name: line.qbo_class_name || null,
@@ -120,7 +155,7 @@ export default function InvoiceEditor() {
   };
   const removeLine = async (line) => {
     setBusy(true);
-    try { await db.delete('invoice_line_items', `id=eq.${line.id}`); await load(); }
+    try { await db.delete('estimate_line_items', `id=eq.${line.id}`); await load(); }
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
   };
@@ -128,17 +163,16 @@ export default function InvoiceEditor() {
   // ── QBO actions ──
   const callWorker = async (body) => {
     const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId, ...body }) });
+    const res = await fetch('/api/qbo-estimate', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ estimate_id: estimateId, ...body }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   };
-  // Persist current line state to the DB (covers a field that hasn't blurred yet when the
-  // button is clicked) and push the latest amounts to QuickBooks — create on first save,
-  // update thereafter, so the QBO copy always matches what's on screen.
+  // Persist current line state then push the latest amounts to QuickBooks — create on
+  // first save, update thereafter, so the QBO copy always matches what's on screen.
   const flushAndPush = async () => {
     for (const l of lines) {
-      await db.update('invoice_line_items', `id=eq.${l.id}`, {
+      await db.update('estimate_line_items', `id=eq.${l.id}`, {
         description: l.description || '',
         qbo_item_id: l.qbo_item_id || null, qbo_item_name: l.qbo_item_name || null,
         qbo_class_id: l.qbo_class_id || null, qbo_class_name: l.qbo_class_name || null,
@@ -147,28 +181,25 @@ export default function InvoiceEditor() {
     }
     await callWorker({});
   };
-  // Save the invoice: flush any pending line edits to the DB, then record + sync to QuickBooks.
-  const saveInvoice = async () => {
+  const saveEstimate = async () => {
     setBusy(true);
-    try { await flushAndPush(); toast('Invoice saved'); await load(); }
-    catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
+    try { await flushAndPush(); toast('Estimate saved'); await load(); }
+    catch (e) { toast('Couldn’t save estimate: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Send the invoice to the customer by email. Two-click confirm — it's an outward-facing
-  // send. Flushes pending line edits + pushes to QuickBooks first (via flushAndPush), so the
-  // customer always receives the latest amounts whether or not Save was clicked beforehand.
-  const emailInvoice = async () => {
+  // Email the estimate to the customer via QuickBooks. Two-click confirm (outward-facing).
+  const emailEstimate = async () => {
     if (!confirmEmail) { setConfirmEmail(true); return; }
     setConfirmEmail(false); setBusy(true);
     try {
       await flushAndPush();
       const d = await callWorker({ action: 'send' });
-      toast(`Invoice sent to ${d.emailed_to}`); await load();
+      toast(`Estimate sent to ${d.emailed_to}`); await load();
     }
-    catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
+    catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Revert a saved invoice back to a draft (unrecords it, removing the QBO copy).
+  // Revert a saved estimate back to a draft (removes the QBO copy).
   const revertToDraft = async () => {
     if (!confirmRemove) { setConfirmRemove(true); return; }
     setConfirmRemove(false); setBusy(true);
@@ -180,89 +211,103 @@ export default function InvoiceEditor() {
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setConfirmDelete(false); setBusy(true);
     try {
-      for (const l of lines) await db.delete('invoice_line_items', `id=eq.${l.id}`);
-      await db.delete('invoices', `id=eq.${invoiceId}`);
-      toast('Draft invoice deleted');
-      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/collections');
+      for (const l of lines) await db.delete('estimate_line_items', `id=eq.${l.id}`);
+      await db.delete('estimates', `id=eq.${estimateId}`);
+      toast('Draft estimate deleted');
+      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/estimates');
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
-  // ── Stripe pay-by-link (dormant until Stripe keys exist → worker returns 503) ──
-  const createPayLink = async () => {
+  // ── Convert to invoice ──
+  // Copies the estimate's lines into the job's (single) invoice and links them, then
+  // pushes the invoice to QBO so the conversion completes there too (LinkedTxn → the
+  // QBO estimate). If the invoice already has lines the RPC asks for a second click.
+  const convertToInvoice = async () => {
+    const force = confirmConvert;
     setBusy(true);
     try {
-      const auth = await getAuthHeader();
-      const res = await fetch('/api/stripe-pay-link', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId }) });
-      const d = await res.json().catch(() => ({}));
-      if (res.status === 503) { toast('Stripe is not set up yet — add keys in Payment Settings.', 'error'); return; }
-      if (!res.ok) throw new Error(d.error || res.statusText);
-      try { await navigator.clipboard.writeText(d.url); toast('Pay link created & copied'); }
-      catch { toast('Pay link created'); }
-      await load();
-    } catch (e) { toast('Pay link: ' + (e.message || e), 'error'); }
-    finally { setBusy(false); }
-  };
-  const copyPayLink = async () => {
-    try { await navigator.clipboard.writeText(inv.stripe_payment_link_url); toast('Pay link copied'); }
-    catch { toast('Copy failed — long-press the link to copy', 'error'); }
+      // Make sure the estimate exists in QBO first so the invoice can link to it (best-effort).
+      if (!est.qbo_estimate_id && total > 0) {
+        try { await flushAndPush(); await load(); } catch { /* QBO may be off — convert in UPR anyway */ }
+      }
+      const res = await db.rpc('convert_estimate_to_invoice', { p_estimate_id: estimateId, p_force: force });
+      const r = Array.isArray(res) ? res[0] : res;
+      if (r?.needs_confirm) {
+        setConfirmConvert(true);
+        toast(`That job's invoice already has ${r.existing_line_count} line(s) — click again to append.`, 'error');
+        setBusy(false);
+        return;
+      }
+      const invId = r?.invoice_id;
+      if (!invId) throw new Error('Convert did not return an invoice');
+      setConfirmConvert(false);
+      // Complete the conversion in QuickBooks: push the invoice (carries LinkedTxn → estimate).
+      try {
+        const auth = await getAuthHeader();
+        const pr = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invId }) });
+        if (!pr.ok) { const d = await pr.json().catch(() => ({})); throw new Error(d.error || pr.statusText); }
+        toast('Estimate converted to invoice & linked in QuickBooks');
+      } catch (e) {
+        toast('Converted to invoice — finish the QuickBooks push from the invoice: ' + e.message, 'error');
+      }
+      navigate(`/invoices/${invId}`);
+    } catch (e) {
+      toast('Convert failed: ' + (e.message || e), 'error');
+      setBusy(false);
+    }
   };
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
-  if (!inv) return null;
+  if (!est) return null;
 
-  if (!isFeatureEnabled('feature:billing')) {
-    return <div style={{ maxWidth: 900, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
+  if (!isFeatureEnabled('page:estimates')) {
+    return <div style={{ maxWidth: 900, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
   }
 
   const division = job?.division ? String(job.division).replace(/_/g, ' ') : 'Job';
-  const paid = Number(inv.amount_paid || 0);
-  // Draft → Saved (recorded, not yet emailed) → Sent (emailed to customer) → Partial → Paid.
-  const statusLabel = !synced ? 'Draft'
-    : (paid >= total && total > 0) ? 'Paid'
-    : paid > 0 ? 'Partial'
-    : inv.qbo_emailed_at ? 'Sent'
-    : 'Saved';
-  const statusColor = statusLabel === 'Paid' ? '#16a34a' : statusLabel === 'Partial' ? '#d97706' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
+  // Draft → Sent (in QuickBooks / emailed) → Converted (turned into an invoice).
+  const statusLabel = converted ? 'Converted' : !synced ? 'Draft' : est.qbo_emailed_at ? 'Sent' : 'Saved';
+  const statusColor = statusLabel === 'Converted' ? '#16a34a' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
 
   return (
     <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
       {/* Top bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => (job?.claim_id ? navigate(`/collections/${job.claim_id}`) : navigate(-1))} style={{ gap: 4 }}>← Back</button>
-        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Invoice #{inv.qbo_doc_number || inv.invoice_number}{inv.qbo_synced_at ? ' · saved ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/estimates')} style={{ gap: 4 }}>← Estimates</button>
+        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Estimate #{est.qbo_doc_number || est.estimate_number}{est.qbo_synced_at ? ' · saved ' + fmtDate(est.qbo_synced_at) : ''}</span>}
       </div>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{inv.qbo_doc_number || inv.invoice_number}</div>
-          {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>UPR ref {inv.invoice_number}</div>}
+          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{est.qbo_doc_number || est.estimate_number || 'New estimate'}</div>
+          {est.qbo_doc_number && est.qbo_doc_number !== est.estimate_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>UPR ref {est.estimate_number}</div>}
           <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
             {contact?.name || 'Client'} · <span style={{ textTransform: 'capitalize' }}>{division}</span> {job?.job_number || ''}{claim?.claim_number ? ` · ${claim.claim_number}` : ''}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            Sent {inv.sent_at ? fmtDate(inv.sent_at) : '—'} · Due {inv.due_date ? fmtDate(inv.due_date) : '—'}
-            {inv.qbo_emailed_at && <> · Emailed {fmtDate(inv.qbo_emailed_at)}</>}
+            {TYPE_LABEL[est.estimate_type] || 'Estimate'}{est.submitted_at ? ` · Sent ${fmtDate(est.submitted_at)}` : ''}
+            {est.qbo_emailed_at && <> · Emailed {fmtDate(est.qbo_emailed_at)}</>}
           </div>
         </div>
         <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
       </div>
 
-      {inv.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
+      {est.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#d97706', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{catalogMsg}</div>}
-      {inv.stripe_payment_link_url && <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', color: 'var(--accent)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+      {converted && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>✓ Converted to an invoice. <button className="btn btn-sm" onClick={() => navigate(`/invoices/${est.converted_invoice_id}`)} style={{ background: '#fff', border: '1px solid #bbf7d0', color: '#16a34a' }}>View invoice →</button></div>}
 
       {/* Line items */}
       <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginTop: 6 }}>
         <div style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: 720 }}>
             <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{canEdit && <span />}
+              <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{canEdit && !converted && <span />}
             </div>
-            {lines.length === 0 && <div style={{ padding: '20px 14px', color: 'var(--text-tertiary)', fontSize: 13 }}>No line items yet. {canEdit ? 'Add a line to build the invoice.' : ''}</div>}
+            {lines.length === 0 && <div style={{ padding: '20px 14px', color: 'var(--text-tertiary)', fontSize: 13 }}>No line items yet. {canEdit ? 'Add a line to build the estimate.' : ''}</div>}
             {lines.map(l => (
               <div key={l.id} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', alignItems: 'flex-start' }}>
-                {canEdit ? (
+                {canEdit && !converted ? (
                   <>
                     <select value={l.qbo_item_id || ''} disabled={!qboItems.length} onChange={e => { const it = qboItems.find(i => i.id === e.target.value); const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
                       <option value="">{qboItems.length ? 'Select item…' : '—'}</option>
@@ -292,7 +337,7 @@ export default function InvoiceEditor() {
             ))}
             {/* Total */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--bg-secondary)' }}>
-              {canEdit ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={addLine}>+ Add line</button> : <span />}
+              {canEdit && !converted ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={addLine}>+ Add line</button> : <span />}
               <div style={{ fontSize: 16, fontWeight: 800 }}>Total: {fmt$(total)}</div>
             </div>
           </div>
@@ -300,22 +345,24 @@ export default function InvoiceEditor() {
       </div>
 
       {/* Action bar */}
-      {canEdit && (
+      {canEdit && !converted && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 16 }}>
-          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={saveInvoice}>
-            {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
+          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={saveEstimate}>
+            {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
           </button>
           {synced && (
-            <button className="btn btn-secondary" disabled={busy} onClick={emailInvoice} onBlur={() => setConfirmEmail(false)}
+            <button className="btn btn-secondary" disabled={busy} onClick={emailEstimate} onBlur={() => setConfirmEmail(false)}
               title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
               style={confirmEmail ? { background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe' } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend invoice' : '✉ Send invoice to customer'}
+              {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend estimate' : '✉ Send estimate to customer'}
             </button>
           )}
           {total > 0 && (
-            inv.stripe_payment_link_url
-              ? <button className="btn btn-secondary" disabled={busy} onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</button>
-              : <button className="btn btn-secondary" disabled={busy} onClick={createPayLink}>💳 Create pay link</button>
+            <button className="btn btn-secondary" disabled={busy} onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)}
+              title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
+              style={confirmConvert ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' } : { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+              {busy ? 'Working…' : confirmConvert ? 'Confirm — append to invoice' : '→ Convert to invoice'}
+            </button>
           )}
           {synced && (
             <button className="btn btn-sm" disabled={busy} onClick={revertToDraft} onBlur={() => setConfirmRemove(false)}
@@ -323,7 +370,7 @@ export default function InvoiceEditor() {
               {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
             </button>
           )}
-          {!synced && paid <= 0 && (
+          {!synced && (
             <button className="btn btn-sm" disabled={busy} onClick={deleteDraft} onBlur={() => setConfirmDelete(false)}
               style={{ marginLeft: 'auto', background: confirmDelete ? '#fef2f2' : 'transparent', color: confirmDelete ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmDelete ? '#fecaca' : 'var(--border-light)'}` }}>
               {confirmDelete ? 'Confirm delete' : 'Delete draft'}
@@ -331,7 +378,7 @@ export default function InvoiceEditor() {
           )}
         </div>
       )}
-      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save as you type. Click <b>Save</b> to record the invoice{synced ? <>, then <b>Send invoice to customer</b> to email it</> : ''}. Record payments from the claim's A/R panel.</div>}
+      {canEdit && !converted && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save as you type. Click <b>Save</b> to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
     </div>
   );
 }

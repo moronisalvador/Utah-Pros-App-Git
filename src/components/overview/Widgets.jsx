@@ -244,31 +244,34 @@ export function ActiveDrying({ showHandle, data = PLACEHOLDER.drying, loading, e
       headGap={6}
       right={<FootLink to="/production">View all</FootLink>}
     >
-      {data.rows.length === 0 && (
+      {data.rows.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, color: C.faint, fontSize: 13, fontWeight: 500 }}>
           No active drying jobs right now
         </div>
+      ) : (
+        <div className="ovw-scroll">
+          {data.rows.map(r => {
+            const s = STATUS[r.status] || STATUS.info;
+            return (
+              <div key={r.job} className="ovw-row" {...(rowNav(r.jobId) || {})}>
+                <div style={{ width: 120, flex: 'none', minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, letterSpacing: '-.02em', ...mono }}>{r.job}</div>
+                  <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.loc}</div>
+                </div>
+                <div style={{ flex: 1, height: 9, background: C.track, borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${r.pct}%`, height: '100%', background: s.solid, borderRadius: 999 }} />
+                </div>
+                <div style={{ width: 98, flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: r.badge ? 3 : 0, justifyContent: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{r.pct}%</span>
+                  {r.badge && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: s.text, background: s.tint, padding: '2px 6px', borderRadius: 999, letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{r.badge}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
-      {data.rows.map(r => {
-        const s = STATUS[r.status] || STATUS.info;
-        return (
-          <div key={r.job} className="ovw-row" {...(rowNav(r.jobId) || {})}>
-            <div style={{ width: 120, flex: 'none', minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, letterSpacing: '-.02em', ...mono }}>{r.job}</div>
-              <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.loc}</div>
-            </div>
-            <div style={{ flex: 1, height: 9, background: C.track, borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ width: `${r.pct}%`, height: '100%', background: s.solid, borderRadius: 999 }} />
-            </div>
-            <div style={{ width: 98, flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: r.badge ? 3 : 0, justifyContent: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{r.pct}%</span>
-              {r.badge && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: s.text, background: s.tint, padding: '2px 6px', borderRadius: 999, letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{r.badge}</span>
-              )}
-            </div>
-          </div>
-        );
-      })}
       <CardFooter>
         <FootSummary>{data.summary}</FootSummary>
         <span style={{ fontSize: 12, color: STATUS.warning.text, fontWeight: 700 }}>{data.warn}</span>
@@ -319,23 +322,25 @@ export function ActionRequired({ showHandle, data = PLACEHOLDER.actions, summary
   const rowNav = useJobRowNav(!showHandle);
   return (
     <Card spanClass="ovw-span-6" title="Action required" suffix="· sorted by urgency" dotColor={STATUS.warning.solid} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry} gap={5} headGap={6}>
-      {data.map(a => {
-        const s = STATUS[a.kind] || STATUS.info;
-        return (
-          <div key={a.job} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} {...(rowNav(a.jobId) || {})}>
-            <span style={{ width: 22, height: 22, borderRadius: 7, background: s.tint, color: s.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: a.glyph === '✎' ? 12 : 13, fontWeight: 800, flex: 'none' }}>{a.glyph}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: C.title, fontWeight: 600 }}>
-                <span style={{ color: C.ink, ...mono }}>{a.job}</span> — {a.text}
+      <div className="ovw-scroll">
+        {data.map(a => {
+          const s = STATUS[a.kind] || STATUS.info;
+          return (
+            <div key={a.job} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} {...(rowNav(a.jobId) || {})}>
+              <span style={{ width: 22, height: 22, borderRadius: 7, background: s.tint, color: s.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: a.glyph === '✎' ? 12 : 13, fontWeight: 800, flex: 'none' }}>{a.glyph}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: C.title, fontWeight: 600 }}>
+                  <span style={{ color: C.ink, ...mono }}>{a.job}</span> — {a.text}
+                </div>
+                <div style={{ fontSize: 10.5, color: C.faint }}>{a.sub}</div>
               </div>
-              <div style={{ fontSize: 10.5, color: C.faint }}>{a.sub}</div>
+              {a.meta
+                ? <span style={{ fontSize: 12.5, fontWeight: 800, color: STATUS.danger.text, flex: 'none', ...tnum }}>{a.meta}</span>
+                : <span style={{ color: C.faint2, fontSize: 16, flex: 'none' }}>›</span>}
             </div>
-            {a.meta
-              ? <span style={{ fontSize: 12.5, fontWeight: 800, color: STATUS.danger.text, flex: 'none', ...tnum }}>{a.meta}</span>
-              : <span style={{ color: C.faint2, fontSize: 16, flex: 'none' }}>›</span>}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       <CardFooter>
         <FootSummary>{summary}</FootSummary>
         <FootLink to="/jobs">View all →</FootLink>
@@ -367,27 +372,34 @@ export function EmployeeStatus({ showHandle, data = PLACEHOLDER.employees, summa
       gap={5}
       headGap={6}
     >
-      {data.map(e => {
-        const danger = e.statusKind === 'danger';
-        const nameColor = e.dot === 'gray' ? C.muted : C.ink;
-        const statusColor = e.statusKind === 'success' ? '#1f8a4c' : e.statusKind === 'danger' ? '#c0322c' : C.faint;
-        const elapsedColor = danger ? '#c0322c' : e.dot === 'gray' ? C.faint2 : C.ink;
-        return (
-          <div key={e.name} className={`ovw-row${e.escal ? ' ovw-escal' : ''}`} {...(rowNav(e.jobId) || {})}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: DOT[e.dot], flex: 'none' }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: nameColor }}>{e.name}</div>
-              {e.detailWarn
-                ? <div style={{ fontSize: 10.5, color: '#c0322c', fontWeight: 600 }}>{e.job && <span style={mono}>{e.job}</span>}{e.job ? ' · ' : ''}{e.detailWarn}</div>
-                : <div style={{ fontSize: 10.5, color: C.faint }}>{e.job && <span style={mono}>{e.job}</span>}{e.job ? ' · ' : ''}{e.detail}</div>}
+      <div className="ovw-scroll">
+        {data.map(e => {
+          const danger = e.statusKind === 'danger';
+          const nameColor = e.dot === 'gray' ? C.muted : C.ink;
+          const statusColor = e.statusKind === 'success' ? '#1f8a4c' : e.statusKind === 'danger' ? '#c0322c' : C.faint;
+          const elapsedColor = danger ? '#c0322c' : e.dot === 'gray' ? C.faint2 : C.ink;
+          return (
+            <div key={e.name} className={`ovw-row${e.escal ? ' ovw-escal' : ''}`} {...(rowNav(e.jobId) || {})}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: DOT[e.dot], flex: 'none', marginTop: 2 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: nameColor }}>{e.name}</div>
+                {e.client
+                  ? <div style={{ fontSize: 11.5, color: C.title, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.client}</div>
+                  : <div style={{ fontSize: 10.5, color: C.faint }}>{e.detail}</div>}
+                {(e.job || e.address) && (
+                  <div style={{ fontSize: 10.5, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.address || undefined}>
+                    {e.job && <span style={mono}>{e.job}</span>}{e.job && e.address ? ' · ' : ''}{e.address}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <span style={{ fontSize: 13, fontWeight: danger ? 800 : 700, color: elapsedColor, ...tnum }}>{e.elapsed}</span>
+                <span style={{ fontSize: 10, color: statusColor, fontWeight: danger ? 700 : 600 }}>{e.status}</span>
+              </div>
             </div>
-            <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-              <span style={{ fontSize: 13, fontWeight: danger ? 800 : 700, color: elapsedColor, ...tnum }}>{e.elapsed}</span>
-              <span style={{ fontSize: 10, color: statusColor, fontWeight: danger ? 700 : 600 }}>{e.status}</span>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       <CardFooter>
         <FootSummary>{summary.left}</FootSummary>
         <span style={{ fontSize: 12, color: '#c0322c', fontWeight: 700 }}>{summary.warn}</span>

@@ -5169,6 +5169,21 @@ tr:hover td { background: var(--bg-secondary); }
 .ovw-row.ovw-escal:hover { background: #fdecea; }
 .ovw-row:focus-visible { outline: 2px solid #2f6bf2; outline-offset: -2px; }
 
+/* ── scrollable list body: data-heavy widgets (employee status / action required /
+      active drying) scroll their rows internally instead of clipping — header + footer
+      stay put. gap:inherit keeps each card's row spacing; min-height:0 lets the flex
+      child actually scroll; the -margin/+padding tucks the scrollbar toward the edge. ── */
+.ovw-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: inherit;
+  scrollbar-width: thin; scrollbar-color: #d6dae1 transparent;
+  margin-right: -8px; padding-right: 8px;
+}
+.ovw-scroll::-webkit-scrollbar { width: 7px; }
+.ovw-scroll::-webkit-scrollbar-thumb { background: #d6dae1; border-radius: 999px; }
+.ovw-scroll::-webkit-scrollbar-thumb:hover { background: #b9c0cb; }
+.ovw-scroll::-webkit-scrollbar-track { background: transparent; }
+
 /* ── loading skeleton + error states (Card body) ── */
 @keyframes ovwShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .ovw-skel { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 70px; }

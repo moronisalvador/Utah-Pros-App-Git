@@ -175,10 +175,20 @@ export async function onRequestPost(context) {
     // (QBO DocNumber max is 21 chars.)
     const docNumber = job.job_number ? String(job.job_number).slice(0, 21) : null;
 
+    // Estimate → Invoice link: if this invoice was converted from a UPR estimate
+    // that already exists in QBO, link the QBO invoice to that QBO estimate. This is
+    // how QBO marks the estimate "converted" (Closed) and rolls it into the invoice —
+    // so finishing a convert in UPR completes the conversion in QBO too.
+    let linkedTxn = null;
+    if (inv.estimate_id) {
+      const est = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0];
+      if (est?.qbo_estimate_id) linkedTxn = [{ TxnId: String(est.qbo_estimate_id), TxnType: 'Estimate' }];
+    }
+
     // Update in place if already synced, else create.
     let qboInv, mode;
     if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}) });
+      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}) });
       mode = 'updated';
     } else {
       const payload = {
@@ -188,6 +198,7 @@ export async function onRequestPost(context) {
         CustomerMemo: { value: memo },
         ...(docNumber ? { DocNumber: docNumber } : {}),
         ...(hasShip ? { ShipAddr: shipAddr } : {}),
+        ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}),
       };
       qboInv = await createInvoice(env, payload);
       mode = 'created';
