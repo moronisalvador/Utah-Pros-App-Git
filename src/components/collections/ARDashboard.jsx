@@ -38,7 +38,7 @@ import {
   midnight, daysPastDue, downloadCsv, invoiceStatusKind,
 } from './collTokens';
 import {
-  CollCard, SegControl, SearchBox, StatusBadge, DivisionSquare,
+  CollCard, SegControl, SearchBox, DivisionSquare,
   ProgressBar, Pill, EmptyState, PopoverButton, FilterGroup, ToggleChip,
   FunnelIcon, ColumnsIcon,
 } from './collKit';
@@ -300,7 +300,6 @@ export default function ARDashboard({ db, navigate }) {
             {filtered.length === 0 ? (
               <EmptyState title="No invoices match" sub="Try a different filter or search term." />
             ) : filtered.map(r => {
-              const kind = invoiceStatusKind(r, today);
               const paid = Number(r.amount_paid || 0), total = Number(r.total || 0);
               // Append city only when the address line doesn't already contain it
               // (job data is inconsistent — some rows pack the full address into one field).
@@ -340,12 +339,7 @@ export default function ARDashboard({ db, navigate }) {
                         <div style={{ width: 84, maxWidth: '100%' }}><ProgressBar pct={total > 0 ? (paid / total) * 100 : 0} color={STATUS.success.solid} height={4} /></div>
                       </div>
                     );
-                    return (
-                      <div key={key} style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>
-                        <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end' }}><StatusBadge kind={kind} /></div>
-                      </div>
-                    );
+                    return <div key={key} style={{ textAlign: 'right', fontSize: 13.5, fontWeight: 800, color: C.ink, ...tnum }}>{fmt$2(r.balance)}</div>;
                   })}
                 </div>
               );
