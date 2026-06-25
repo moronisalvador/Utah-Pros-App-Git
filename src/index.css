@@ -5460,3 +5460,124 @@ tr:hover td { background: var(--bg-secondary); }
   .topnav-search { width: clamp(90px, calc(100vw - 960px), 280px); transition: width var(--transition-fast); }
   .topnav-search:focus-within { width: min(340px, calc(100vw - 700px)); }
 }
+
+/* ═══════════════════════════════════════════════════
+   Collections / "My Money" redesign — scoped to `.coll-`
+   ───────────────────────────────────────────────────
+   The UPR design-system look for the Collections page (the same visual language
+   as the Overview dashboard): white cards on a cool-grey page, teal/purple/coral/
+   pink divisions, blue/green/amber/red status. Page-scoped — does not affect the
+   rest of the app. The existing `.collections-*` / `.ar-*` rules belong to the
+   per-claim A/R panel (SharedClaimUI) and are intentionally left untouched.
+   ═══════════════════════════════════════════════════ */
+.coll-page { max-width: 1320px; margin: 0 auto; padding: 24px 28px 60px; color: #101828; }
+
+/* Header */
+.coll-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+.coll-title { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.025em; color: #101828; }
+.coll-subtitle { margin-top: 4px; font-size: 13px; color: #667085; font-weight: 500; }
+.coll-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Tab + period row */
+.coll-tabrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+
+/* Buttons */
+.coll-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 8px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background .12s; white-space: nowrap; }
+.coll-ghost:hover, .coll-ghost-open { background: #fafbfc; }
+.coll-primary { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; background: #2f6bf2; border: none; border-radius: 9px; padding: 9px 15px; cursor: pointer; box-shadow: 0 1px 2px rgba(47,107,242,.25); transition: background .12s; white-space: nowrap; }
+.coll-primary:hover { background: #2a60d8; }
+
+/* Segmented control (section tabs / period / status filter) */
+.coll-seg { display: inline-flex; background: #fff; border: 1px solid #e7e9ee; border-radius: 10px; padding: 3px; gap: 2px; box-shadow: 0 1px 2px rgba(16,24,40,.04); flex-wrap: wrap; }
+.coll-seg-btn { font-family: inherit; font-weight: 600; color: #667085; background: transparent; border: none; cursor: pointer; transition: background .12s, color .12s; white-space: nowrap; }
+.coll-seg-btn:hover { background: #f4f5f7; }
+.coll-seg-btn.active { color: #fff; background: #101828; font-weight: 700; }
+.coll-seg-btn.active:hover { background: #101828; }
+
+/* Card shell */
+.coll-card { background: #fff; border: 1px solid #e7e9ee; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05); min-width: 0; }
+
+/* KPI tiles */
+.coll-kpi-grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.coll-kpi-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+.coll-kpi-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.coll-kpi { display: flex; flex-direction: column; gap: 5px; padding: 16px 18px; }
+.coll-kpi-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #98a2b3; }
+.coll-kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.coll-kpi-ctx { font-size: 12px; font-weight: 500; color: #667085; display: flex; align-items: center; gap: 6px; }
+
+/* Search box */
+.coll-search { display: flex; align-items: center; gap: 8px; background: #f4f5f7; border: 1px solid #eceef2; border-radius: 9px; padding: 8px 12px; min-width: 0; }
+.coll-search-ico { color: #98a2b3; font-size: 14px; flex: none; }
+.coll-search input { flex: 1; min-width: 0; border: none; background: transparent; font-family: inherit; font-size: 13px; color: #101828; outline: none; padding: 0; }
+.coll-search input::placeholder { color: #98a2b3; }
+
+/* Pills + badges */
+.coll-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; line-height: 1.5; }
+.coll-count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 5px; font-size: 10px; font-weight: 800; color: #2f6bf2; background: #eef2fb; border-radius: 999px; font-variant-numeric: tabular-nums; }
+
+/* Filter chips */
+.coll-chip { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
+.coll-chip:hover { background: #f8f9fb; }
+.coll-chip.active { background: #eef2fb; color: #2456c9; border-color: #cfe0fb; }
+
+/* Toolbar (inside table card) */
+.coll-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #f0f1f4; flex-wrap: wrap; }
+
+/* Tables — header + rows share an inline grid-template-columns */
+.coll-tablewrap { overflow-x: auto; }
+.coll-thead { background: #fafbfc; border-bottom: 1px solid #f0f1f4; padding: 11px 18px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #98a2b3; }
+.coll-row { padding: 15px 18px; border-bottom: 1px solid #f0f1f4; cursor: pointer; transition: background .12s; align-items: center; }
+.coll-row:last-child { border-bottom: none; }
+.coll-row:hover { background: #f8f9fb; }
+.coll-row.coll-escal { background: #fef3f2; }
+.coll-row.coll-escal:hover { background: #fdecea; }
+.coll-row.coll-static { cursor: default; }
+.coll-row.coll-static:hover { background: #fff; }
+
+/* Card footer (count + export link) */
+.coll-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; background: #fafbfc; border-top: 1px solid #f0f1f4; flex-wrap: wrap; }
+.coll-link { font-family: inherit; font-size: 12.5px; font-weight: 600; color: #2f6bf2; background: none; border: none; cursor: pointer; padding: 0; text-decoration: none; }
+.coll-link:hover { text-decoration: underline; }
+
+/* Pop-down menus (Filters / Columns) */
+.coll-pop-wrap { position: relative; display: inline-flex; }
+.coll-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; background: #fff; border: 1px solid #e7e9ee; border-radius: 12px; box-shadow: 0 8px 24px rgba(16,24,40,.12), 0 2px 6px rgba(16,24,40,.06); padding: 14px; }
+.coll-filter-group { margin-bottom: 14px; }
+.coll-filter-group:last-child { margin-bottom: 0; }
+.coll-filter-label { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #98a2b3; margin-bottom: 8px; }
+.coll-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.coll-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f1f4; }
+.coll-col-item { display: flex; align-items: center; gap: 9px; padding: 6px 4px; font-size: 13px; color: #344054; cursor: pointer; user-select: none; }
+.coll-col-item input { accent-color: #2f6bf2; width: 15px; height: 15px; cursor: pointer; }
+.coll-col-item.locked { color: #98a2b3; cursor: default; }
+
+/* Aging card bucket dividers */
+.coll-aging-buckets { display: grid; grid-template-columns: repeat(5, 1fr); }
+.coll-aging-cell { padding: 0 16px; border-right: 1px solid #f0f1f4; }
+.coll-aging-cell:last-child { border-right: none; }
+
+/* Empty state */
+.coll-empty { padding: 48px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.coll-empty-ico { font-size: 26px; opacity: 0.85; }
+.coll-empty-title { font-size: 14px; font-weight: 700; color: #344054; }
+.coll-empty-sub { font-size: 12.5px; color: #98a2b3; }
+
+/* Loading */
+.coll-loading { padding: 40px 18px; text-align: center; color: #98a2b3; font-size: 13px; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .coll-kpi-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .coll-kpi-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 768px) {
+  .coll-page { padding: 16px 14px 40px; }
+  .coll-title { font-size: 20px; }
+  .coll-kpi-4, .coll-kpi-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .coll-aging-buckets { grid-template-columns: repeat(2, 1fr); gap: 12px 0; }
+  .coll-kpi-value { font-size: 24px; }
+}
+@media (max-width: 540px) {
+  .coll-kpi-4, .coll-kpi-3 { grid-template-columns: 1fr 1fr; }
+}
