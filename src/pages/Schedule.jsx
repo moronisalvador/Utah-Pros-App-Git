@@ -41,7 +41,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
-import { DIV_COLORS, TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
+import { TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
 
@@ -51,6 +51,7 @@ import EventModal from '@/components/EventModal';
 import CalendarView from '@/components/CalendarView';
 import { SegControl, GhostButton, ToggleChip } from '@/components/collections/collKit';
 import { C, divColor } from '@/components/collections/collTokens';
+import { eventCardStyle, divisionPill } from '@/components/schedule/eventCardStyle';
 
 const SPAN_OPTIONS = [
   { value: 'day', label: 'Day' },
@@ -224,14 +225,12 @@ function hexToTint(hex, opacity = 0.08) {
 
 function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
   const crew = appt.crew || [];
-  const leadCrew = crew.find(c => c.role === 'lead');
-  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+  const cs = eventCardStyle(appt);
   const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const isDone = appt.status === 'completed';
   const hasTasks = appt.tasks_total > 0;
   const taskNames = appt.task_names || [];
-  const bgTint = isDone ? 'var(--bg-tertiary)' : hexToTint(color, 0.07);
 
   return (
     <div
@@ -248,8 +247,8 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
       onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
       onMouseLeave={() => onHoverLeave?.()}
       style={{
-        borderLeft: `3px solid ${color}`, borderRadius: 4,
-        background: bgTint, padding: '6px 8px', marginBottom: 4,
+        border: `1px solid ${cs.border}`, borderLeft: `3px solid ${cs.accent}`, borderRadius: 6,
+        background: cs.bg, padding: '6px 8px', marginBottom: 4,
         cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
         transition: 'box-shadow 120ms ease',
       }}
@@ -259,7 +258,7 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
       {/* Title + status dot */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
         {isActive && <span style={{ width: 6, height: 6, borderRadius: 3, background: status.color, flexShrink: 0 }} />}
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: cs.title, lineHeight: 1.3, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
       </div>
 
       {/* Time */}
@@ -287,8 +286,8 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
       {/* Task progress bar */}
       {hasTasks && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: taskNames.length > 0 ? 4 : 0 }}>
-          <div style={{ flex: 1, height: 3, background: isDone ? 'rgba(0,0,0,0.06)' : hexToTint(color, 0.15), borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} />
+          <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#1f9d55' : cs.accent, borderRadius: 2 }} />
           </div>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
         </div>
@@ -314,16 +313,13 @@ function ApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
 // ═══════════════════════════════════════════════════════════════
 
 function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }) {
-  const dc = DIV_COLORS[appt._division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
-  const crew = appt.crew || [];
-  const leadCrew = crew.find(c => c.role === 'lead');
-  const color = leadCrew?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280';
+  const dc = divisionPill(appt._division);
+  const cs = eventCardStyle(appt);
   const isDone = appt.status === 'completed';
   const isActive = ['en_route', 'in_progress'].includes(appt.status);
   const status = STATUS_LABELS[appt.status] || STATUS_LABELS.scheduled;
   const hasTasks = appt.tasks_total > 0;
   const taskNames = appt.task_names || [];
-  const bgTint = isDone ? 'var(--bg-tertiary)' : hexToTint(color, 0.07);
 
   return (
     <div
@@ -340,8 +336,8 @@ function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }
       onMouseEnter={e => onHoverEnter?.(appt, e.currentTarget)}
       onMouseLeave={() => onHoverLeave?.()}
       style={{
-        borderLeft: `3px solid ${color}`, borderRadius: 4,
-        background: bgTint, padding: '6px 8px', marginBottom: 4,
+        border: `1px solid ${cs.border}`, borderLeft: `3px solid ${cs.accent}`, borderRadius: 6,
+        background: cs.bg, padding: '6px 8px', marginBottom: 4,
         cursor: isDone ? 'pointer' : 'grab', opacity: isDone ? 0.6 : 1,
         transition: 'box-shadow 120ms ease',
       }}
@@ -355,7 +351,7 @@ function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }
       </div>
 
       {/* Title */}
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: cs.title, lineHeight: 1.3, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{appt.title}</div>
 
       {/* Time */}
       {appt.time_start && (
@@ -367,8 +363,8 @@ function CrewApptCard({ appt, onClick, onDragStart, onHoverEnter, onHoverLeave }
       {/* Task progress bar */}
       {hasTasks && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: taskNames.length > 0 ? 4 : 0 }}>
-          <div style={{ flex: 1, height: 3, background: isDone ? 'rgba(0,0,0,0.06)' : hexToTint(color, 0.15), borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#10b981' : color, borderRadius: 2 }} />
+          <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${Math.round((appt.tasks_done / appt.tasks_total) * 100)}%`, height: '100%', background: appt.tasks_done === appt.tasks_total ? '#1f9d55' : cs.accent, borderRadius: 2 }} />
           </div>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{appt.tasks_done}/{appt.tasks_total}</span>
         </div>
@@ -403,16 +399,15 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick, showWeekend }) 
   const byDate = {};
   for (const job of boardData) for (const appt of (job.appointments || [])) {
     if (!byDate[appt.date]) byDate[appt.date] = [];
-    const lc = (appt.crew || []).find(c => c.role === 'lead');
-    byDate[appt.date].push({ ...appt, _jobName: job.insured_name, _color: lc?.color || appt.color || TYPE_COLORS[appt.type] || '#6b7280' });
+    byDate[appt.date].push({ ...appt, _jobName: job.insured_name, _color: appt.status === 'completed' ? '#9ca3af' : divColor(job.division) });
   }
   const weeks = []; let day = 1 - startDow;
   for (let w = 0; w < 6; w++) { const wk = []; for (let d = 0; d < 7; d++) { const dt = new Date(year, month, day); wk.push({ day, date: dt, inMonth: day >= 1 && day <= daysInMonth, key: fmtDate(dt) }); day++; } weeks.push(wk); }
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '0 0 8px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, borderBottom: '1px solid var(--border-color)' }}>
-        {hdrs.map(d => <div key={d} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textAlign: 'center', padding: '8px 0', background: 'var(--bg-secondary)' }}>{d}</div>)}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, borderBottom: '1px solid #e7e9ee' }}>
+        {hdrs.map(d => <div key={d} style={{ fontSize: 11, fontWeight: 600, color: '#98a2b3', textAlign: 'center', padding: '8px 0', background: '#fafbfc' }}>{d}</div>)}
       </div>
       {weeks.map((wk, wi) => {
         const f = showWeekend ? wk : wk.filter(c => { const dow = c.date.getDay(); return dow !== 0 && dow !== 6; });
@@ -422,12 +417,12 @@ function MonthView({ anchor, boardData, onApptClick, onDayClick, showWeekend }) 
               const appts = byDate[cell.key] || []; const isToday = cell.key === todayKey;
               return (
                 <div key={di} onClick={() => cell.inMonth && onDayClick(cell.key)}
-                  style={{ borderBottom: '1px solid var(--border-light)', borderRight: di < f.length - 1 ? '1px solid var(--border-light)' : 'none', padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default', background: isToday ? '#f8fbff' : 'transparent', opacity: cell.inMonth ? 1 : 0.35, minHeight: 90 }}
-                  onMouseEnter={e => { if (cell.inMonth) e.currentTarget.style.background = isToday ? '#f0f7ff' : 'var(--bg-secondary)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#f8fbff' : 'transparent'; }}>
-                  <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? '#fff' : cell.inMonth ? 'var(--text-primary)' : 'var(--text-tertiary)', width: isToday ? 22 : 'auto', height: isToday ? 22 : 'auto', borderRadius: 11, background: isToday ? 'var(--accent)' : 'transparent', display: isToday ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>{cell.date.getDate()}</div>
+                  style={{ borderBottom: '1px solid #f0f1f4', borderRight: di < f.length - 1 ? '1px solid #f0f1f4' : 'none', padding: '4px 5px', cursor: cell.inMonth ? 'pointer' : 'default', background: isToday ? '#f5f8fe' : 'transparent', opacity: cell.inMonth ? 1 : 0.35, minHeight: 90 }}
+                  onMouseEnter={e => { if (cell.inMonth) e.currentTarget.style.background = isToday ? '#eaf1fe' : '#f8f9fb'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isToday ? '#f5f8fe' : 'transparent'; }}>
+                  <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? '#fff' : cell.inMonth ? '#344054' : '#98a2b3', width: isToday ? 22 : 'auto', height: isToday ? 22 : 'auto', borderRadius: 11, background: isToday ? '#2f6bf2' : 'transparent', display: isToday ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>{cell.date.getDate()}</div>
                   {appts.slice(0, 3).map(a => <div key={a.id} onClick={e => { e.stopPropagation(); onApptClick(a); }} style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2, padding: '2px 4px', marginBottom: 2, borderRadius: 3, background: a._color, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.15)'} onMouseLeave={e => e.currentTarget.style.filter = 'none'}>{a.time_start ? fmtTime(a.time_start) + ' ' : ''}{a._jobName}</div>)}
-                  {appts.length > 3 && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 500, paddingLeft: 4 }}>+{appts.length - 3} more</div>}
+                  {appts.length > 3 && <div style={{ fontSize: 9, color: '#98a2b3', fontWeight: 500, paddingLeft: 4 }}>+{appts.length - 3} more</div>}
                 </div>
               );
             })}
@@ -797,7 +792,7 @@ export default function Schedule() {
 
               {/* ═══ JOBS VIEW ═══ */}
               {viewMode === 'jobs' && filteredBoardData.map(job => {
-                const dc = DIV_COLORS[job.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
+                const dc = divisionPill(job.division);
                 return [
                   <div key={`lbl-${job.job_id}`} style={S.jobCell}>
                     <div style={S.jobCellName} title={job.insured_name}>{job.insured_name}</div>
