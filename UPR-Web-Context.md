@@ -240,14 +240,25 @@ separate future project (Phase 4 below, decision pending).
   `/production`. (2) **Loading/error states** — `usePolledRpc` exposes `{loading,error,reload}`; `Card`
   renders a shimmer skeleton while loading and a "Couldn't load · Retry" on failure (no more placeholder
   flash, no silent failures). (3) **Jobs completed wired** to `get_jobs_completed(p_start,p_end)`. (4)
-  **Access control** — Revenue / Avg ticket / Collections gated by `canEditBilling(role)` (admin/manager;
-  see `src/lib/claimUtils.js` `BILLING_EDIT_ROLES`); non-privileged roles get a `RestrictedCard` AND their
-  hooks run with `enabled=false` so those RPCs aren't even fetched (not just UI-hidden). (5) **`page:overview`
+  **Access control** — Revenue / Avg ticket / Collections gated by the **`overview_financials`** permission
+  (`canAccess('overview_financials')`): admins always pass; grant it to anyone else **per-employee** (Admin →
+  Page Access) or **per-role** (Admin → Permissions) — registered in both `NAV_KEYS` and `PAGE_ACCESS_KEYS`
+  in `Admin.jsx`. **View-only and deliberately separate from `canEditBilling`** (billing EDIT), so granting a
+  PM the money cards does NOT confer invoice/A-R edit rights anywhere. Non-privileged viewers get a
+  `RestrictedCard` AND their hooks run with `enabled=false` so those RPCs aren't even fetched (not just
+  UI-hidden). No DB migration — the existing `upsert_employee_page_access` / `upsert_permission` RPCs create
+  the key's rows on first toggle. (Initial Part A shipped this as an admin-only `canEditBilling` gate; made
+  configurable Jun 25 2026.) (5) **`page:overview`
   feature flag** is a kill-switch handled as **content** inside `Dashboard.jsx` (a placeholder when disabled),
   **NOT** a `FeatureRoute` redirect — the dashboard is the home route `/`, so redirecting to `/` would
   infinite-loop. (6) **`WidgetBoundary`** wraps each card so one failing widget can't blank the grid.
   Migration `20260624_dashboard_interactivity.sql` (adds `job_id` to `get_active_drying_jobs` +
   `get_dashboard_action_items`, creates `get_jobs_completed`, seeds the `page:overview` flag enabled).
+- **Part B — planned (light up the empty widgets):** upstream features that populate the three
+  wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
+  lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
+  owned by a separate effort** — the widget reads `get_open_estimates_summary` and lights up automatically
+  once `estimates` rows exist with an open `status` (no dashboard change needed).
 - **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
   **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
   "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).

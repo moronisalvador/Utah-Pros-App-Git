@@ -62,15 +62,16 @@ function useJobRowNav(enabled) {
   };
 }
 
-// A financial card the current viewer isn't allowed to see (gated by canEditBilling
-// in Dashboard). Renders the same shell + slot so the grid layout stays intact.
+// A financial card the current viewer isn't allowed to see (gated by the
+// `overview_financials` permission in Dashboard — admins always; others grantable
+// in Admin → Page Access / Permissions). Same shell + slot so the grid stays intact.
 export function RestrictedCard({ spanClass, title, showHandle }) {
   return (
     <Card spanClass={spanClass} title={title} showHandle={showHandle}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 80, textAlign: 'center' }}>
         <span style={{ fontSize: 20 }} aria-hidden="true">🔒</span>
         <span style={{ fontSize: 12.5, fontWeight: 600, color: C.muted }}>Restricted</span>
-        <span style={{ fontSize: 11, color: C.faint2 }}>Financial data — admin access</span>
+        <span style={{ fontSize: 11, color: C.faint2 }}>Financial data — restricted</span>
       </div>
     </Card>
   );

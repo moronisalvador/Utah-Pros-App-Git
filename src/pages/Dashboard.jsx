@@ -11,8 +11,9 @@
  *   header has the date, a division color key, a time-period switch (MTD / Last
  *   30 / QTD / YTD), and an "Edit layout" button. In edit mode the owner can drag
  *   cards by their ⠿ handle, resize from the corner, and reorder — saved per user.
- *   Money cards (revenue, avg ticket, collections) only show to billing-privileged
- *   roles; everyone else sees a "Restricted" placeholder in that slot.
+ *   Money cards (revenue, avg ticket, collections) only show to viewers granted
+ *   financial access (admins by default); everyone else sees a "Restricted"
+ *   placeholder in that slot.
  *
  * WHERE IT LIVES:
  *   Route:        /  (office/admin/PM/supervisor landing — field techs go to /tech)
@@ -22,7 +23,7 @@
  *   Packages:  react, react-grid-layout
  *   Internal:  @/components/overview/Widgets (the 10 cards) + its hooks + tokens,
  *              @/components/overview/WidgetBoundary (per-card crash isolation),
- *              @/contexts/AuthContext (role + feature flag), @/lib/claimUtils
+ *              @/contexts/AuthContext (canAccess permission + feature flags)
  *   Data:      reads → per-widget RPCs (see each hook) + get_dashboard_layout
  *              writes → save_dashboard_layout (the user's card arrangement)
  *
@@ -46,7 +47,6 @@ import { useState } from 'react';
 // v2 ships the classic v1-compatible API (WidthProvider/Responsive + draggableHandle) under /legacy
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import { useAuth } from '@/contexts/AuthContext';
-import { canEditBilling } from '@/lib/claimUtils';
 import { DIVISIONS, PERIODS } from '@/components/overview/tokens';
 import {
   RevenueRecognized, AvgTicket, OpenEstimates,
@@ -90,8 +90,10 @@ const DEFAULT_LAYOUTS = { lg: lgLayout, xs: xsLayout };
 
 export default function Dashboard() {
   // ─── SECTION: State & hooks ──────────────
-  const { employee, isFeatureEnabled } = useAuth();
-  const canFin = canEditBilling(employee?.role); // who may see company money (admin/manager)
+  const { isFeatureEnabled, canAccess } = useAuth();
+  // Money-card visibility is its own permission (NOT billing-edit): admins always pass,
+  // others can be granted it per-employee (Admin → Page Access) or per-role (Permissions).
+  const canFin = canAccess('overview_financials');
   const overviewOn = isFeatureEnabled('page:overview'); // kill-switch (content-gated below)
 
   const [period, setPeriod] = useState(PERIODS[0]);
