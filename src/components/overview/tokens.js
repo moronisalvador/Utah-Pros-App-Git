@@ -148,11 +148,11 @@ export const PLACEHOLDER = {
   },
 
   actions: [
-    { job: '#2241', glyph: '!', kind: 'warning', text: 'moisture log missing 2 days',          sub: 'IICRC S500 compliance' },
-    { job: '#2237', glyph: '✓', kind: 'success', text: 'drying goal met → pull equipment',      sub: '100% to dry standard' },
-    { job: '#2230', glyph: '!', kind: 'warning', text: 'estimate 4 days overdue to adjuster',   sub: 'Pending submission' },
-    { job: '#2225', glyph: '↑', kind: 'danger',  text: 'supplement pending adjuster 9 days',    sub: 'Escalation · aging', escal: true, meta: '$6,800' },
-    { job: '#2219', glyph: '✎', kind: 'info',    text: 'Certificate of Completion unsigned',    sub: 'Awaiting homeowner signature' },
+    { job: '#2241', client: 'Sebastian Garcia', address: 'Saratoga Springs, UT', glyph: '!', kind: 'warning', text: 'moisture log missing 2 days',          sub: 'IICRC S500 compliance' },
+    { job: '#2237', client: 'Taylor Foot',       address: 'Orem, UT',             glyph: '✓', kind: 'success', text: 'drying goal met → pull equipment',      sub: '100% to dry standard' },
+    { job: '#2230', client: 'Marcus Lee',        address: 'Lehi, UT',             glyph: '!', kind: 'warning', text: 'estimate 4 days overdue to adjuster',   sub: 'Pending submission' },
+    { job: '#2225', client: 'Dana Whitfield',    address: 'Provo, UT',            glyph: '↑', kind: 'danger',  text: 'supplement pending adjuster 9 days',    sub: 'Escalation · aging', escal: true, meta: '$6,800' },
+    { job: '#2219', client: 'Julia Grant',       address: 'Orem, UT',             glyph: '✎', kind: 'info',    text: 'Certificate of Completion unsigned',    sub: 'Awaiting homeowner signature' },
   ],
   actionSummary: '5 open tasks',
 
