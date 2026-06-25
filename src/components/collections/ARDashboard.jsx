@@ -40,7 +40,7 @@ import {
 import {
   CollCard, Kpi, KpiGrid, SegControl, SearchBox, StatusBadge, DivisionSquare,
   ProgressBar, Pill, EmptyState, PopoverButton, FilterGroup, ToggleChip,
-  FunnelIcon, ColumnsIcon, MapPin,
+  FunnelIcon, ColumnsIcon,
 } from './collKit';
 
 const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -147,6 +147,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
       const bal = Number(r.balance || 0);
       if (mode === 'open' && bal <= 0.005) return false;
       if (mode === 'overdue' && !(bal > 0.005 && (daysPastDue(r.due_date, today) || 0) > 0)) return false;
+      if (mode === 'collected' && !(Number(r.amount_paid || 0) > 0.005)) return false;
       if (filters.divisions.length && !filters.divisions.includes(String(r.division || '').toLowerCase())) return false;
       if (filters.sync.length) {
         const st = r.qbo_sync_error ? 'error' : (r.qbo_invoice_id ? 'synced' : 'unsynced');
@@ -188,18 +189,18 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
     <div>
       {/* KPI tiles */}
       <KpiGrid cols={4}>
-        <Kpi label="Outstanding" value={fmt$(k.outstanding)} valueColor={C.ink}>
+        <Kpi label="Outstanding" value={fmt$(k.outstanding)} valueColor={C.ink} onClick={() => setMode('open')} active={mode === 'open'}>
           {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}
         </Kpi>
-        <Kpi label="Overdue" value={fmt$(k.overdue)} valueColor={k.overdue > 0 ? STATUS.danger.solid : C.faint}>
+        <Kpi label="Overdue" value={fmt$(k.overdue)} valueColor={k.overdue > 0 ? STATUS.danger.solid : C.faint} onClick={() => setMode('overdue')} active={mode === 'overdue'}>
           {k.overdue > 0
             ? <span style={{ color: STATUS.danger.text, fontWeight: 600 }}>{k.overdueCount} past due</span>
             : <><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS.success.solid }} /><span style={{ color: STATUS.success.text, fontWeight: 600 }}>Nothing past due</span></>}
         </Kpi>
-        <Kpi label="Collected" value={fmt$(k.collected)} valueColor={STATUS.success.text}>
+        <Kpi label="Collected" value={fmt$(k.collected)} valueColor={STATUS.success.text} onClick={() => setMode('collected')} active={mode === 'collected'}>
           {period === 'All' ? 'received to date' : `received · ${period}`}
         </Kpi>
-        <Kpi label="Invoiced" value={fmt$(k.invoiced)} valueColor={C.ink}>
+        <Kpi label="Invoiced" value={fmt$(k.invoiced)} valueColor={C.ink} onClick={() => setMode('all')} active={mode === 'all'}>
           <div style={{ flex: 1, maxWidth: 110 }}><ProgressBar pct={k.collPct} color={STATUS.success.solid} height={6} /></div>
           <span style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>{Math.round(k.collPct)}% collected</span>
         </Kpi>
@@ -309,10 +310,13 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
             ) : filtered.map(r => {
               const kind = invoiceStatusKind(r, today);
               const paid = Number(r.amount_paid || 0), total = Number(r.total || 0);
-              const escal = kind === 'overdue';
-              const addr = r.job_address ? `${r.job_address}${r.job_city ? ', ' + r.job_city : ''}` : null;
+              // Append city only when the address line doesn't already contain it
+              // (job data is inconsistent — some rows pack the full address into one field).
+              const addr = r.job_address
+                ? (r.job_city && !r.job_address.toLowerCase().includes(r.job_city.toLowerCase()) ? `${r.job_address}, ${r.job_city}` : r.job_address)
+                : (r.job_city || null);
               return (
-                <div key={r.invoice_id} className={`coll-row${escal ? ' coll-escal' : ''}`}
+                <div key={r.invoice_id} className="coll-row"
                   style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}
                   onClick={() => navigate(`/invoices/${r.invoice_id}`)}>
                   {visible.map(key => {
@@ -333,7 +337,7 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ ...mono, fontSize: 12, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.claim_number || '—'}</div>
                           <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{divLabel(r.division)}{r.job_number ? ` · ${r.job_number}` : ''}</div>
-                          {addr && <div style={{ fontSize: 11, color: C.faint, display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><MapPin />{addr}</div>}
+                          {addr && <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{addr}</div>}
                         </div>
                       </div>
                     );
@@ -341,9 +345,9 @@ export default function ARDashboard({ db, navigate, period = 'MTD' }) {
                     if (key === 'age') return <div key={key}><AgePill r={r} today={today} /></div>;
                     if (key === 'total') return <div key={key} style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: C.ink, ...tnum }}>{fmt$2(r.total)}</div>;
                     if (key === 'collected') return (
-                      <div key={key} style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: paid > 0 ? STATUS.success.text : C.faint, ...tnum }}>{fmt$2(paid)}</div>
-                        <div style={{ marginTop: 4 }}><ProgressBar pct={total > 0 ? (paid / total) * 100 : 0} color={STATUS.success.solid} height={4} /></div>
+                      <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: paid > 0 ? STATUS.success.text : C.faint, ...tnum }}>{fmt$2(paid)}</span>
+                        <div style={{ width: 84, maxWidth: '100%' }}><ProgressBar pct={total > 0 ? (paid / total) * 100 : 0} color={STATUS.success.solid} height={4} /></div>
                       </div>
                     );
                     return (

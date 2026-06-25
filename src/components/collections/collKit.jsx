@@ -44,10 +44,19 @@ export function KpiGrid({ cols = 4, children }) {
   return <div className={`coll-kpi-grid coll-kpi-${cols}`}>{children}</div>;
 }
 
-// One KPI tile: uppercase label → big value → context line (any node).
-export function Kpi({ label, value, valueColor = C.ink, children }) {
+// One KPI tile: uppercase label → big value → context line (any node). Pass
+// onClick to make it a clickable quick-filter; `active` draws the selected ring.
+export function Kpi({ label, value, valueColor = C.ink, children, onClick, active = false }) {
+  const clickable = typeof onClick === 'function';
+  const interactive = clickable
+    ? { role: 'button', tabIndex: 0, onClick, 'aria-pressed': active,
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } }
+    : {};
   return (
-    <section className="coll-card coll-kpi">
+    <section
+      className={`coll-card coll-kpi${clickable ? ' coll-kpi-click' : ''}${active ? ' coll-kpi-active' : ''}`}
+      {...interactive}
+    >
       <div className="coll-kpi-label">{label}</div>
       <div className="coll-kpi-value" style={{ color: valueColor }}>{value}</div>
       {children != null && <div className="coll-kpi-ctx">{children}</div>}
