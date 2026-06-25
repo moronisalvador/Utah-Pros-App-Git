@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
+import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -224,7 +225,7 @@ export default function InvoiceEditor() {
   const statusColor = statusLabel === 'Paid' ? '#16a34a' : statusLabel === 'Partial' ? '#d97706' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
+    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
       {/* Top bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <button className="btn btn-ghost btn-sm" onClick={() => (job?.claim_id ? navigate(`/collections/${job.claim_id}`) : navigate(-1))} style={{ gap: 4 }}>← Back</button>
@@ -260,14 +261,14 @@ export default function InvoiceEditor() {
             </div>
             {lines.length === 0 && <div style={{ padding: '20px 14px', color: 'var(--text-tertiary)', fontSize: 13 }}>No line items yet. {canEdit ? 'Add a line to build the invoice.' : ''}</div>}
             {lines.map(l => (
-              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', alignItems: 'center' }}>
+              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', alignItems: 'flex-start' }}>
                 {canEdit ? (
                   <>
                     <select value={l.qbo_item_id || ''} disabled={!qboItems.length} onChange={e => { const it = qboItems.find(i => i.id === e.target.value); const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
                       <option value="">{qboItems.length ? 'Select item…' : '—'}</option>
                       {qboItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                     </select>
-                    <input type="text" value={l.description || ''} placeholder="Description" onChange={e => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={inp} />
+                    <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={e => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={txt} />
                     <select value={l.qbo_class_id || ''} disabled={!qboClasses.length} onChange={e => { const c = qboClasses.find(x => x.id === e.target.value); const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
                       <option value="">{qboClasses.length ? 'Class…' : '—'}</option>
                       {qboClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -335,6 +336,10 @@ export default function InvoiceEditor() {
   );
 }
 
-const GRID = '1.3fr 1.4fr 1fr 70px 100px 110px 30px';
+// Description takes the most room (scope of work goes here); minWidth keeps mobile
+// horizontally scrollable exactly as before.
+const GRID = '1.1fr 2.6fr 0.9fr 60px 100px 115px 28px';
 const inp = { width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' };
 const sel = { ...inp, cursor: 'pointer' };
+// Description textarea: matches the inputs on the first line, then grows downward.
+const txt = { ...inp, lineHeight: 1.4, minHeight: 32, display: 'block' };
