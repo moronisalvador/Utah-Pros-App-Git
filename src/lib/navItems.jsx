@@ -120,7 +120,6 @@ export const SYSTEM_ITEMS = [
   { key: 'admin_panel',        label: 'Admin',               path: '/admin',                    icon: IconAdmin,    end: true },
   { key: 'demo_sheet_builder', label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder', icon: IconAdmin,    adminOnly: true },
   { key: 'tech_feedback',      label: 'Tech Feedback',       path: '/tech-feedback',            icon: IconFeedback },
-  { key: 'help',               label: 'Help & Guides',       path: '/help',                     icon: IconHelp,     always: true },
   { key: 'dev_tools',          label: 'Dev Tools',           path: '/dev-tools',                icon: IconDevTools, moroniOnly: true },
 ];
 

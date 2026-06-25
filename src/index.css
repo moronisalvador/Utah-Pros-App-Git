@@ -71,7 +71,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --bottom-bar-h: 72px;
   /* Desktop top-nav height — 0 by default so mobile/iPad layout math is unchanged;
-     set to a real value only inside the @media (min-width:1280px) desktop block. */
+     set to a real value only inside the @media (min-width:1024px) desktop/tablet block. */
   --topnav-h: 0px;
 }
 
@@ -5429,7 +5429,7 @@ tr:hover td { background: var(--bg-secondary); }
 .settings-hub-link.active .nav-icon { opacity: 1; }
 
 /* ── Desktop activation — the ONLY rules that reshape the shell ── */
-@media (min-width: 1280px) {
+@media (min-width: 1024px) {
   :root { --topnav-h: 56px; }
   .app-layout { flex-direction: column; }
   .sidebar { display: none; }
@@ -5449,4 +5449,14 @@ tr:hover td { background: var(--bg-secondary); }
     padding: var(--space-4) var(--space-3); overflow-y: auto;
   }
   .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
+}
+
+/* ── Tablet tier (1024–1279px): the top bar is tighter here, so the global search
+      is sized fluidly to the gap between the nav links and the right cluster — it
+      fills the space on regular iPads and stays narrow (never clipping a primary
+      link) on the smallest 1024px ones, expanding a touch on focus for typing.
+      ≥1280px is unchanged (full 340px inline search, base rule). ── */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .topnav-search { width: clamp(90px, calc(100vw - 960px), 280px); transition: width var(--transition-fast); }
+  .topnav-search:focus-within { width: min(340px, calc(100vw - 700px)); }
 }

@@ -119,7 +119,7 @@ export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.
 export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicket, loading, error, onRetry }) {
   return (
     <Card spanClass="ovw-span-4" title="Avg ticket" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 1 }}>
         {data.bars.map(b => (
           <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ width: 84, fontSize: 12, color: C.body, fontWeight: 500, flex: 'none' }}>{b.label}</span>
@@ -130,7 +130,7 @@ export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicke
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f7fb', border: '1px solid #e9eef6', borderRadius: 10, padding: '10px 12px', marginTop: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f7fb', border: '1px solid #e9eef6', borderRadius: 10, padding: '9px 12px', marginTop: 'auto', marginBottom: 1 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.title }}>
             Avg claim <span style={{ fontWeight: 500, color: C.faint }}>· all jobs / loss</span>
@@ -323,16 +323,23 @@ export function ActionRequired({ showHandle, data = PLACEHOLDER.actions, summary
   return (
     <Card spanClass="ovw-span-6" title="Action required" suffix="· sorted by urgency" dotColor={STATUS.warning.solid} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry} gap={5} headGap={6}>
       <div className="ovw-scroll">
-        {data.map(a => {
+        {data.map((a, i) => {
           const s = STATUS[a.kind] || STATUS.info;
           return (
-            <div key={a.job} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} {...(rowNav(a.jobId) || {})}>
+            <div key={`${a.job}-${i}`} className={`ovw-row ovw-row-action${a.escal ? ' ovw-escal' : ''}`} {...(rowNav(a.jobId) || {})}>
               <span style={{ width: 22, height: 22, borderRadius: 7, background: s.tint, color: s.text, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: a.glyph === '✎' ? 12 : 13, fontWeight: 800, flex: 'none' }}>{a.glyph}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, color: C.title, fontWeight: 600 }}>
-                  <span style={{ color: C.ink, ...mono }}>{a.job}</span> — {a.text}
+                {/* Line 1 — who it's for: customer name + job number, so a row is identifiable at a glance */}
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {a.client || <span style={mono}>{a.job}</span>}
+                  {a.client && a.job && <span style={{ fontWeight: 600, color: C.faint }}> · <span style={mono}>{a.job}</span></span>}
                 </div>
-                <div style={{ fontSize: 10.5, color: C.faint }}>{a.sub}</div>
+                {/* Line 2 — what's needed */}
+                <div style={{ fontSize: 11.5, color: C.title, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.text}</div>
+                {/* Line 3 — where + status/age (full address on hover via title) */}
+                <div style={{ fontSize: 10.5, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={a.address || undefined}>
+                  {a.address}{a.address && a.sub ? ' · ' : ''}{a.sub}
+                </div>
               </div>
               {a.meta
                 ? <span style={{ fontSize: 12.5, fontWeight: 800, color: STATUS.danger.text, flex: 'none', ...tnum }}>{a.meta}</span>
