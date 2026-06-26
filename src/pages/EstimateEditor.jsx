@@ -126,10 +126,15 @@ export default function EstimateEditor() {
         return d.queryResponse || {};
       };
       const [itemsR, classesR] = await Promise.all([
-        run('SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 200'),
+        run('SELECT Id, Name, Type FROM Item WHERE Active = true MAXRESULTS 200'),
         run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
       ]);
-      setQboItems((itemsR.Item || []).map((i) => ({ id: String(i.Id), name: i.Name })));
+      // Drop QBO "Category" items: categories are organizational parents, NOT sellable
+      // products/services. Referencing one on a line makes QBO reject the whole estimate
+      // ("An item in this transaction is set up as a category instead of a product or
+      // service."). QBO's query API can't filter Type server-side (Type != 'Category'
+      // errors), so we filter here — only real products/services stay selectable.
+      setQboItems((itemsR.Item || []).filter((i) => i.Type !== 'Category').map((i) => ({ id: String(i.Id), name: i.Name })));
       setQboClasses((classesR.Class || []).map((c) => ({ id: String(c.Id), name: c.Name })));
       setCatalogMsg('');
     } catch (e) {
@@ -285,6 +290,16 @@ export default function EstimateEditor() {
   const addr = est.property_address ? `${est.property_address}${est.property_city ? `, ${est.property_city}` : ''}${est.property_state ? `, ${est.property_state}` : ''}${est.property_zip ? ` ${est.property_zip}` : ''}` : '';
   const GRID = editable ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
+  // Lines whose saved Item is no longer a valid product/service (e.g. a QBO category
+  // picked before categories were filtered out, or a since-deactivated item). These
+  // still break the QBO push, and SearchSelect renders them as a blank Item cell — so
+  // flag them so the user knows to re-pick. Only check once the catalog has loaded, or
+  // we'd false-flag every line while qboItems is still empty.
+  const invalidItemLines = qboItems.length
+    ? lines.filter((l) => l.qbo_item_id && !qboItems.some((i) => i.id === String(l.qbo_item_id)))
+    : [];
+  const invalidItemNames = [...new Set(invalidItemLines.map((l) => l.qbo_item_name).filter(Boolean))];
+
   // ─── SECTION: Render ──────────────
   return (
     <div className="coll-page">
@@ -354,6 +369,11 @@ export default function EstimateEditor() {
       {/* Banners */}
       {est.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
       {catalogMsg && editable && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {editable && invalidItemLines.length > 0 && (
+        <div style={bannerStyle(STATUS.warning)}>
+          {invalidItemLines.length === 1 ? 'A line item is' : `${invalidItemLines.length} line items are`} set to a QuickBooks category{invalidItemNames.length ? ` (${invalidItemNames.join(', ')})` : ''}, which QuickBooks won’t accept on an estimate — only products or services can be billed. Re-pick a product/service for {invalidItemLines.length === 1 ? 'that line' : 'those lines'} (for a discount, use “Discounts and Adjustments”), then Save.
+        </div>
+      )}
       {converted && <div style={bannerStyle(STATUS.success)}>✓ Converted to an invoice. <button type="button" onClick={() => navigate(`/invoices/${est.converted_invoice_id}`)} style={{ background: 'none', border: 'none', color: STATUS.success.text, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', fontSize: 13 }}>View invoice →</button></div>}
 
       {/* Single column: line items → actions (no lateral panel) */}

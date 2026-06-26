@@ -1262,7 +1262,11 @@ not the app-wide tokens.
   date** — UPR `invoices.due_date`, does NOT sync back from QBO) + the **service/loss address** (`job.address…`
   → fallback `claim.loss_*`, the same source QBO uses). Estimates also show Type.
 - **Line editor:** new **`src/components/collections/SearchSelect.jsx`** (typeahead dropdown, outside-click/
-  Esc close) for the QBO Item & Class per line (options from `/api/qbo-query` SELECT … FROM Item/Class);
+  Esc close) for the QBO Item & Class per line (options from `/api/qbo-query` SELECT … FROM Item/Class —
+  the Item query selects `Type` and **filters out `Type='Category'`**, since QBO categories are grouping
+  parents that can't go on a transaction line; selecting one would make QBO reject the push with "An item
+  in this transaction is set up as a category instead of a product or service." A line still pointing at a
+  category, e.g. a pre-existing one, renders a blank Item cell + a warning banner prompting a re-pick);
   HTML5 **drag-to-reorder** persisting `sort_order`; `AutoGrowTextarea` description; qty/rate cells; footer
   **Subtotal → Total** (invoice shows read-only **Tax** only when `invoices.tax` is set — UPR-side, never
   pushed to QBO as a separate line). Line edits save on blur/select without reloading; **Save** flushes +
