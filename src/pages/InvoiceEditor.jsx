@@ -43,6 +43,7 @@ import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
+import DatePicker from '@/components/DatePicker';
 import ActionMenu from '@/components/collections/ActionMenu';
 import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
@@ -165,13 +166,20 @@ export default function InvoiceEditor() {
   useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
 
   // Payment modal: close on Escape, focus the dialog when it opens.
+  // Depend on a STABLE open flag, not payView/payForm — payForm changes on every keystroke, and
+  // re-running this effect would re-fire the focus() below and steal focus from the inputs (the
+  // "one character at a time" bug). The contains() guard is a second safety net.
+  const payModalOpen = !!(payView || payForm);
   useEffect(() => {
-    if (!payView && !payForm) return undefined;
+    if (!payModalOpen) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') { setPayForm(null); setPayView(null); setDelPayArmed(false); } };
     document.addEventListener('keydown', onKey);
-    const t = setTimeout(() => payModalRef.current?.focus(), 0);
+    const t = setTimeout(() => {
+      const el = payModalRef.current;
+      if (el && !el.contains(document.activeElement)) el.focus(); // never steal focus from a field
+    }, 0);
     return () => { document.removeEventListener('keydown', onKey); clearTimeout(t); };
-  }, [payView, payForm]);
+  }, [payModalOpen]);
 
   // Xactimate import modal: rotate the status line + ease a simulated progress bar while the AI
   // works. There are no real progress events (it's a single request), so the bar climbs toward
@@ -543,7 +551,7 @@ export default function InvoiceEditor() {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Due date</div>
             {canEdit
-              ? <input type="date" value={inv.due_date ? String(inv.due_date).slice(0, 10) : ''} onChange={(e) => updateDueDate(e.target.value)} style={{ fontSize: 12.5, padding: '5px 8px', border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit' }} />
+              ? <DatePicker value={inv.due_date ? String(inv.due_date).slice(0, 10) : ''} onChange={(v) => updateDueDate(v)} placeholder="Set due date" />
               : <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{inv.due_date ? fmtDate(inv.due_date) : '—'}</div>}
           </div>
         </div>
@@ -784,7 +792,7 @@ export default function InvoiceEditor() {
           style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(16,24,40,.45)', overflowY: 'auto', padding: '24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}
           onClick={closePayModal}>
           <div ref={payModalRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 440, marginTop: '6vh', background: '#fff', borderRadius: 14, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', overflow: 'hidden', outline: 'none' }}>
+            style={{ width: '100%', maxWidth: 440, marginTop: '6vh', background: '#fff', borderRadius: 14, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', overflow: 'visible', outline: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 16px', borderBottom: `1px solid ${C.hairline}` }}>
               <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{payMode === 'view' ? 'Payment' : payMode === 'edit' ? 'Edit payment' : 'Record payment'}</span>
               <button type="button" onClick={closePayModal} aria-label="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.faint, fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
@@ -812,7 +820,7 @@ export default function InvoiceEditor() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
-                      <label style={fieldWrap}><span style={fieldLbl}>Date</span><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} style={fieldInp} /></label>
+                      <div style={fieldWrap}><span style={fieldLbl}>Date</span><DatePicker value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} style={{ width: '100%' }} /></div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
