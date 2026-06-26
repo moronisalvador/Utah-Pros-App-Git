@@ -56,7 +56,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
+import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
 import StalledWidget from '@/components/tech/StalledWidget';
+import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
@@ -165,6 +167,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null); // { id, filePath, description? }
   const [rooms, setRooms] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [supersede, setSupersede] = useState(null); // precheck result when OMW would supersede another open clock
   const confirmTimer = useRef(null);
   const photoToastTimer = useRef(null);
   const fileRef = useRef(null);
@@ -362,17 +365,11 @@ function ActiveCard({ appt, employee, db, onReload }) {
     return created;
   };
 
-  const doOmw = async () => {
-    if (!confirmOmw) {
-      setConfirmOmw(true);
-      impact('light');
-      confirmTimer.current = setTimeout(() => setConfirmOmw(false), 3000);
-      return;
-    }
-    setConfirmOmw(false);
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+  // Fire the actual On-My-Way RPC. Returns true on success.
+  const fireOmw = async () => {
     impact('medium');
     setActing(true);
+    let ok = false;
     try {
       const coords = await getCurrentCoords().catch(() => null);
       await db.rpc('clock_appointment_action', {
@@ -384,10 +381,51 @@ function ActiveCard({ appt, employee, db, onReload }) {
         p_accuracy: coords?.accuracy ?? null,
       });
       if (onReload) onReload();
+      ok = true;
     } catch (e) {
-      toast('Action failed: ' + e.message, 'error');
+      // Backstop: enforce flag flipped on between precheck and call → show hard-block sheet.
+      if (String(e.message || '').includes('OPEN_ENTRY_EXISTS')) {
+        const pc = await runOmwPrecheck(db, appt.id, employee.id);
+        if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
+        else toast("You're still clocked in on another job — clock out there first.", 'error');
+      } else {
+        toast('Action failed: ' + e.message, 'error');
+      }
     }
     setActing(false);
+    return ok;
+  };
+
+  const doOmw = async () => {
+    if (!confirmOmw) {
+      setConfirmOmw(true);
+      impact('light');
+      confirmTimer.current = setTimeout(() => setConfirmOmw(false), 3000);
+      return;
+    }
+    setConfirmOmw(false);
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    // Check whether going On-My-Way would supersede another open clock.
+    const pc = await runOmwPrecheck(db, appt.id, employee.id);
+    if (pc.open_entry && (pc.enforce_explicit || pc.requires_confirmation)) {
+      setSupersede(pc);
+      return;
+    }
+    await fireOmw();
+  };
+
+  const handleSupersedeConfirm = async () => {
+    const open = supersede?.open_entry;
+    setSupersede(null);
+    const ok = await fireOmw();
+    if (ok && open) {
+      toast(`Clocked out of ${jobLabel(open)} (${fmtElapsed(open.elapsed_minutes)})`, 'success');
+    }
+  };
+
+  const handleSupersedeGoToJob = (apptId) => {
+    setSupersede(null);
+    if (apptId) navigate(`/tech/appointment/${apptId}`);
   };
 
   const goToDetail = () => navigate(`/tech/appointment/${appt.id}`);
@@ -539,6 +577,15 @@ function ActiveCard({ appt, employee, db, onReload }) {
         onAssignRoom={handleAssignPhotoRoom}
         onCreateRoom={handleCreateRoom}
         onClose={() => setPhotoNoteSheet(null)}
+      />
+
+      {/* Supersede confirm / hard-block sheet (shown before OMW when clocked in elsewhere) */}
+      <ClockSupersedeSheet
+        precheck={supersede}
+        busy={acting}
+        onConfirm={handleSupersedeConfirm}
+        onCancel={() => setSupersede(null)}
+        onGoToJob={handleSupersedeGoToJob}
       />
     </div>
   );

@@ -40,9 +40,12 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from '@/lib/toast';
 import { getCurrentCoords } from '@/lib/nativeGeolocation';
 import { impact, notify } from '@/lib/nativeHaptics';
+import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
+import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
 
 // ─── SECTION: Helpers ──────────────
 export function fmtTime(iso) {
@@ -188,6 +191,7 @@ function VisitSummary({ n, travelMin, onsiteMin }) {
 // ══════════════════════════════════════════════════════════
 export default function TimeTracker({ appt, employee, db, onUpdate }) {
   // ─── SECTION: State & hooks ──────────────
+  const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -196,6 +200,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnReason, setReturnReason] = useState('');
   const [returningJob, setReturningJob] = useState(false);
+  const [supersede, setSupersede] = useState(null); // precheck result when OMW would supersede another open clock
   const confirmReturnTimer = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
@@ -232,13 +237,11 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const visitNumber = entries.length > 1 ? entries.indexOf(currentEntry) + 1 : null;
 
   // ─── SECTION: Event handlers ──────────────
-  const doAction = async (action) => {
-    if (action === 'finish') {
-      if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
-      setConfirmFinish(false);
-    }
+  // Fire the actual clock RPC. Returns true on success.
+  const performClock = async (action) => {
     actionHaptic(action);
     setActing(true);
+    let ok = false;
     try {
       // Capture coords on arrival-transitions (omw, start). Pause/resume/finish skip it
       // so we don't stall the UI asking for GPS when location doesn't add value.
@@ -256,10 +259,49 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       });
       await loadEntries();
       if (onUpdate) onUpdate();
+      ok = true;
     } catch (e) {
-      toast('Action failed: ' + e.message, 'error');
+      // Backstop: enforce flag flipped on between precheck and call → show hard-block sheet.
+      if (action === 'omw' && String(e.message || '').includes('OPEN_ENTRY_EXISTS')) {
+        const pc = await runOmwPrecheck(db, appt.id, employee.id);
+        if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
+        else toast("You're still clocked in on another job — clock out there first.", 'error');
+      } else {
+        toast('Action failed: ' + e.message, 'error');
+      }
     }
     setActing(false);
+    return ok;
+  };
+
+  const doAction = async (action) => {
+    if (action === 'finish') {
+      if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
+      setConfirmFinish(false);
+    }
+    // Before On-My-Way, check whether it would supersede another open clock.
+    if (action === 'omw') {
+      const pc = await runOmwPrecheck(db, appt.id, employee.id);
+      if (pc.open_entry && (pc.enforce_explicit || pc.requires_confirmation)) {
+        setSupersede(pc);
+        return;
+      }
+    }
+    await performClock(action);
+  };
+
+  const handleSupersedeConfirm = async () => {
+    const open = supersede?.open_entry;
+    setSupersede(null);
+    const ok = await performClock('omw');
+    if (ok && open) {
+      toast(`Clocked out of ${jobLabel(open)} (${fmtElapsed(open.elapsed_minutes)})`, 'success');
+    }
+  };
+
+  const handleSupersedeGoToJob = (apptId) => {
+    setSupersede(null);
+    if (apptId) navigate(`/tech/appointment/${apptId}`);
   };
 
   const handleReturnTap = () => {
@@ -486,6 +528,15 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           </div>
         </div>
       )}
+
+      {/* Supersede confirm / hard-block sheet (shown before OMW when clocked in elsewhere) */}
+      <ClockSupersedeSheet
+        precheck={supersede}
+        busy={acting}
+        onConfirm={handleSupersedeConfirm}
+        onCancel={() => setSupersede(null)}
+        onGoToJob={handleSupersedeGoToJob}
+      />
     </div>
   );
 }
