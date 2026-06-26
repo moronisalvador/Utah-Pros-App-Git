@@ -146,7 +146,18 @@ export default function PaymentSettings() {
         </div>
       )}
 
-      {/* Stripe */}
+      {/* QuickBooks Payments — the active online-pay path (Stripe below is the future processor). */}
+      <Section title="Online payments (QuickBooks)">
+        <Row label="Accept credit cards" hint="Adds a “Pay now” card button to invoices you email through QuickBooks.">
+          <Toggle on={on('accept_card')} onClick={() => save('accept_card', !on('accept_card'))} />
+        </Row>
+        <Row label="Accept ACH / bank transfer" hint="Customers pay by bank transfer from the emailed invoice — cheaper for large insurance payments.">
+          <Toggle on={on('accept_ach')} onClick={() => save('accept_ach', !on('accept_ach'))} />
+        </Row>
+        <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Powered by QuickBooks Payments — these add the “Pay now” button to the QBO invoice your customer receives, and online payments flow back into UPR automatically. Requires QuickBooks Payments to be enabled on your QuickBooks company.</p>
+      </Section>
+
+      {/* Stripe (future processor — dormant). */}
       <Section title="Stripe — card & ACH payments">
         <Row label="Connection" hint="Set STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET in Cloudflare, then load to verify.">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -156,8 +167,6 @@ export default function PaymentSettings() {
             <button className="btn btn-secondary btn-sm" disabled={loadingDest} onClick={loadStripeDestinations}>{loadingDest ? 'Checking…' : 'Load from Stripe'}</button>
           </div>
         </Row>
-        <Row label="Accept credit cards"><Toggle on={on('accept_card')} onClick={() => save('accept_card', !on('accept_card'))} /></Row>
-        <Row label="Accept ACH / bank transfer" hint="~0.8% capped — cheaper for large insurance payments."><Toggle on={on('accept_ach')} onClick={() => save('accept_ach', !on('accept_ach'))} /></Row>
 
         {/* Payout destinations — money-movement setting, gated by a code emailed to the owner. */}
         <div style={{ padding: '9px 0', borderTop: '1px solid var(--border-light)' }}>

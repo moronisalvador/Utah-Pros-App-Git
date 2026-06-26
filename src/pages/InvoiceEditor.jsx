@@ -165,10 +165,20 @@ export default function InvoiceEditor() {
   const [xactInfo, setXactInfo] = useState(null);     // worker result → confirmation banner
   const [xactStage, setXactStage] = useState(0);      // rotating status line index (import modal)
   const [xactPct, setXactPct] = useState(0);          // simulated progress % (import modal)
+  const [onlinePayOn, setOnlinePayOn] = useState(false); // org-wide QBO online-pay (card/ACH) → drives the "online-payable" banner
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
   const xactHydratedRef = useRef(false); // hydrate the persisted recap banner once per mount
+
+  // Org-wide online-pay setting (card/ACH) — informs the "this invoice is online-payable" banner.
+  useEffect(() => {
+    let alive = true;
+    dbRef.current.rpc('get_billing_settings')
+      .then((s) => { if (alive) setOnlinePayOn(s?.accept_card === 'true' || s?.accept_ach === 'true'); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -328,11 +338,11 @@ export default function InvoiceEditor() {
         quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
       });
     }
-    await callWorker({});
+    return callWorker({});
   };
   const saveInvoice = async () => {
     setBusy(true);
-    try { await flushAndPush(); toast('Invoice saved'); await load(); }
+    try { const d = await flushAndPush(); toast('Invoice saved'); if (d?.online_pay_warning) toast(d.online_pay_warning, 'error'); await load(); }
     catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
@@ -633,6 +643,7 @@ export default function InvoiceEditor() {
         </div>
       )}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+      {synced && onlinePayOn && <div style={bannerStyle(STATUS.info)}>💳 Online payment enabled — the QuickBooks invoice your customer receives includes a “Pay now” card/ACH button, and online payments post back here automatically.</div>}
 
       {/* Xactimate AI recap — persisted on the invoice (inv.xactimate_meta) and re-shown on every load */}
       {xactInfo && (
@@ -743,7 +754,7 @@ export default function InvoiceEditor() {
                 {payments.map((p, i) => {
                   const net = Number(p.amount || 0) - Number(p.refunded_amount || 0);
                   const typeTxt = [p.payer_type, p.payment_method ? String(p.payment_method).replace('_', ' ') : null].filter(Boolean).join(' · ') || '—';
-                  const noteTxt = [p.reference_number, p.qbo_payment_id ? '✓ QB' : null].filter(Boolean).join(' · ') || '—';
+                  const noteTxt = [p.source === 'qbo' ? 'Online · QBO' : null, p.reference_number, p.qbo_payment_id ? '✓ QB' : null].filter(Boolean).join(' · ') || '—';
                   const cells = (
                     <>
                       <span style={{ color: C.body, ...tnum }}>{fmtDate(p.payment_date)}</span>
