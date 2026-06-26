@@ -27,7 +27,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel, periodRange, inPeriod,
 } from './collTokens';
@@ -61,17 +61,22 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
   const [mode, setMode] = useState('all');                  // all | draft | sent | converted
 
   // ─── SECTION: Data fetching ──────────────
+  // dbRef holds the latest REST client so load() stays stable across renders. A token
+  // refresh on tab refocus rebuilds `db`; the old [db] dep re-fired load() and flashed the
+  // loading state ("blink"). Same pattern as InvoiceEditor/EstimateEditor.
+  const dbRef = useRef(db);
+  dbRef.current = db;
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await db.rpc('get_estimates');
+      const data = await dbRef.current.rpc('get_estimates');
       setRows(data || []);
     } catch (e) {
       toast('Failed to load estimates: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [db]);
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Derived totals + filter ──────────────

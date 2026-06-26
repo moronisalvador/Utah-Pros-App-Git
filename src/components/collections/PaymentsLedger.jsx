@@ -28,7 +28,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel, downloadCsv,
 } from './collTokens';
@@ -47,17 +47,22 @@ export default function PaymentsLedger({ db, navigate }) {
   const [search, setSearch] = useState('');
 
   // ─── SECTION: Data fetching ──────────────
+  // dbRef holds the latest REST client so load() stays stable across renders. A token
+  // refresh on tab refocus rebuilds `db`; the old [db] dep re-fired load() and flashed the
+  // loading state ("blink"). Same pattern as InvoiceEditor/EstimateEditor.
+  const dbRef = useRef(db);
+  dbRef.current = db;
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await db.rpc('get_payments_ledger', { p_limit: 1000 });
+      const data = await dbRef.current.rpc('get_payments_ledger', { p_limit: 1000 });
       setRows(data || []);
     } catch (e) {
       toast('Failed to load payments: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [db]);
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Derived totals + filter ──────────────
