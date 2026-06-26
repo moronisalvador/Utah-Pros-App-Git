@@ -233,11 +233,11 @@ export async function createCustomer(env, payload) {
 // QBO; Class Id is resolved at runtime by name. Class only for mit/recon for now.
 export function divisionToQbo(division) {
   const d = (division || '').toLowerCase();
-  if (d.includes('recon'))                                  return { itemId: '1010000201', className: 'Reconstruction' };
-  if (d.includes('mold'))                                   return { itemId: '1010000131', className: null };
-  if (d.includes('content'))                                return { itemId: '38',         className: null };
+  if (d.includes('recon'))                                  return { itemId: '1010000201', itemName: 'Reconstruction/ Remodeling Services', className: 'Reconstruction' };
+  if (d.includes('mold'))                                   return { itemId: '1010000131', itemName: 'Mold Remediation Services',           className: null };
+  if (d.includes('content'))                                return { itemId: '38',         itemName: 'Contents',                            className: null };
   if (d.includes('mit') || d.includes('water') || d.includes('dry'))
-                                                            return { itemId: '1010000071', className: 'Mitigation' };
+                                                            return { itemId: '1010000071', itemName: 'Water Damage Mitigation And Drying',  className: 'Mitigation' };
   return null;
 }
 
