@@ -173,10 +173,15 @@ export default function InvoiceEditor() {
         return d.queryResponse || {};
       };
       const [itemsR, classesR] = await Promise.all([
-        run('SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 200'),
+        run('SELECT Id, Name, Type FROM Item WHERE Active = true MAXRESULTS 200'),
         run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
       ]);
-      setQboItems((itemsR.Item || []).map((i) => ({ id: String(i.Id), name: i.Name })));
+      // Drop QBO "Category" items: categories are organizational parents, NOT sellable
+      // products/services. Referencing one on a line makes QBO reject the whole invoice
+      // ("An item in this transaction is set up as a category instead of a product or
+      // service."). QBO's query API can't filter Type server-side (Type != 'Category'
+      // errors), so we filter here — only real products/services stay selectable.
+      setQboItems((itemsR.Item || []).filter((i) => i.Type !== 'Category').map((i) => ({ id: String(i.Id), name: i.Name })));
       setQboClasses((classesR.Class || []).map((c) => ({ id: String(c.Id), name: c.Name })));
       setCatalogMsg('');
     } catch (e) {
@@ -465,6 +470,16 @@ export default function InvoiceEditor() {
   const stKind = invoiceStatusKind({ total: invoiced, amount_paid: collected, balance, due_date: inv.due_date, sent_at: inv.sent_at, qbo_invoice_id: inv.qbo_invoice_id, status: inv.status });
   const GRID = canEdit ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
+  // Lines whose saved Item is no longer a valid product/service (e.g. a QBO category
+  // picked before categories were filtered out, or a since-deactivated item). These
+  // still break the QBO push, and SearchSelect renders them as a blank Item cell — so
+  // flag them so the user knows to re-pick. Only check once the catalog has loaded, or
+  // we'd false-flag every line while qboItems is still empty.
+  const invalidItemLines = qboItems.length
+    ? lines.filter((l) => l.qbo_item_id && !qboItems.some((i) => i.id === String(l.qbo_item_id)))
+    : [];
+  const invalidItemNames = [...new Set(invalidItemLines.map((l) => l.qbo_item_name).filter(Boolean))];
+
   // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
   const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
   const payStripe = (payView?.source || '') === 'stripe';
@@ -557,6 +572,11 @@ export default function InvoiceEditor() {
       {/* Banners */}
       {inv.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {canEdit && invalidItemLines.length > 0 && (
+        <div style={bannerStyle(STATUS.warning)}>
+          {invalidItemLines.length === 1 ? 'A line item is' : `${invalidItemLines.length} line items are`} set to a QuickBooks category{invalidItemNames.length ? ` (${invalidItemNames.join(', ')})` : ''}, which QuickBooks won’t accept on an invoice — only products or services can be billed. Re-pick a product/service for {invalidItemLines.length === 1 ? 'that line' : 'those lines'} (for a discount, use “Discounts and Adjustments”), then Save.
+        </div>
+      )}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
       {/* Xactimate AI recap — persisted on the invoice (inv.xactimate_meta) and re-shown on every load */}
