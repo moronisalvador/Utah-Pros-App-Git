@@ -87,6 +87,8 @@ const IconMail    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="
 const IconDollar  = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>);
 const IconEye     = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>);
 const IconPrint   = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>);
+// External-link glyph — marks a value that navigates elsewhere (e.g. Job → its page).
+const IconExternal = ({ s = 12 }) => (<svg width={s} height={s} {...TB}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>);
 
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
@@ -499,7 +501,7 @@ export default function InvoiceEditor() {
   // ─── SECTION: Render ──────────────
   return (
     <div className="coll-page">
-      <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } }`}</style>
+      <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } } .inv-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
       {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -544,7 +546,16 @@ export default function InvoiceEditor() {
           <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
           <StatusBadge kind={stKind} />
         </div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        {job?.id ? (
+          // The invoice number doubles as the work/job number — click it to open the job.
+          <button type="button" onClick={() => navigate(`/jobs/${job.id}`)} title="Open job" className="inv-doc-link"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>
+            {docNumber}
+            <span style={{ color: STATUS.info.text, display: 'inline-flex' }}><IconExternal s={16} /></span>
+          </button>
+        ) : (
+          <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        )}
         {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
         <div style={{ marginTop: 12 }}>
           <SectionLabel>Bill to</SectionLabel>
