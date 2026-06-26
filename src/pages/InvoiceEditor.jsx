@@ -45,8 +45,9 @@ import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import DatePicker from '@/components/DatePicker';
 import ActionMenu from '@/components/collections/ActionMenu';
-import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin } from '@/components/collections/collKit';
+import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
+import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
 // performs (upload → read → extract → identify billable → reconcile → fill the draft).
@@ -90,11 +91,54 @@ const IconPrint   = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><polyline
 // External-link glyph — marks a value that navigates elsewhere (e.g. Job → its page).
 const IconExternal = ({ s = 12 }) => (<svg width={s} height={s} {...TB}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>);
 
+// Loading skeleton — mirrors the invoice silhouette (toolbar → header card → line items →
+// payments) so the slide reveals page shape, not a spinner. Bars reuse the .coll-skel shimmer.
+function InvoiceSkeleton() {
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Skel w={74} h={34} r={9} />
+        <div style={{ display: 'flex', gap: 8 }}><Skel w={120} h={34} r={9} /><Skel w={92} h={34} r={9} /></div>
+      </div>
+      <CollCard style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Skel w={58} h={12} /><Skel w={70} h={20} r={999} /></div>
+        <Skel w={180} h={26} style={{ marginTop: 10 }} />
+        <div style={{ marginTop: 14 }}><Skel w={48} h={9} /><Skel w={160} h={15} style={{ marginTop: 8 }} /></div>
+        <div style={{ height: 1, background: C.hairline, margin: '14px 0' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px 20px' }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i}><Skel w="55%" h={9} /><Skel w="80%" h={14} style={{ marginTop: 7 }} /></div>
+          ))}
+        </div>
+      </CollCard>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <CollCard pad={0}>
+          <div style={{ padding: '12px 16px', background: C.headFill, borderBottom: `1px solid ${C.cardBorder}` }}><Skel w={130} h={10} /></div>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 2.6fr 1fr 100px', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${C.hairline}` }}>
+              <Skel w="75%" h={14} /><Skel w="90%" h={14} /><Skel w="55%" h={14} /><Skel w="70%" h={14} style={{ justifySelf: 'end' }} />
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px', background: C.headFill }}>
+            <div style={{ minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}><Skel w="100%" h={13} /><Skel w="100%" h={16} /></div>
+          </div>
+        </CollCard>
+        <CollCard>
+          <Skel w={80} h={10} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}><Skel w="33%" h={38} r={10} /><Skel w="33%" h={38} r={10} /><Skel w="33%" h={38} r={10} /></div>
+          <Skel w="100%" h={6} r={999} style={{ marginTop: 12 }} />
+        </CollCard>
+      </div>
+    </>
+  );
+}
+
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
+  const slide = usePageTransition();
 
   const dbRef = useRef(db);
   dbRef.current = db;
@@ -121,10 +165,20 @@ export default function InvoiceEditor() {
   const [xactInfo, setXactInfo] = useState(null);     // worker result → confirmation banner
   const [xactStage, setXactStage] = useState(0);      // rotating status line index (import modal)
   const [xactPct, setXactPct] = useState(0);          // simulated progress % (import modal)
+  const [onlinePayOn, setOnlinePayOn] = useState(false); // org-wide QBO online-pay (card/ACH) → drives the "online-payable" banner
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
   const xactHydratedRef = useRef(false); // hydrate the persisted recap banner once per mount
+
+  // Org-wide online-pay setting (card/ACH) — informs the "this invoice is online-payable" banner.
+  useEffect(() => {
+    let alive = true;
+    dbRef.current.rpc('get_billing_settings')
+      .then((s) => { if (alive) setOnlinePayOn(s?.accept_card === 'true' || s?.accept_ach === 'true'); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -284,11 +338,11 @@ export default function InvoiceEditor() {
         quantity: Number(l.quantity || 0), unit_price: Number(l.unit_price || 0),
       });
     }
-    await callWorker({});
+    return callWorker({});
   };
   const saveInvoice = async () => {
     setBusy(true);
-    try { await flushAndPush(); toast('Invoice saved'); await load(); }
+    try { const d = await flushAndPush(); toast('Invoice saved'); if (d?.online_pay_warning) toast(d.online_pay_warning, 'error'); await load(); }
     catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
@@ -452,7 +506,7 @@ export default function InvoiceEditor() {
   };
 
   // ─── SECTION: Derived values ──────────────
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+  if (loading) return <div className={`coll-page ${slide}`}><InvoiceSkeleton /></div>;
   if (!inv) return null;
   if (!isFeatureEnabled('feature:billing')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
@@ -500,7 +554,7 @@ export default function InvoiceEditor() {
 
   // ─── SECTION: Render ──────────────
   return (
-    <div className="coll-page">
+    <div className={`coll-page ${slide}`}>
       <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } } .inv-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
       {/* Top bar — Back + QBO-style action toolbar */}
@@ -589,6 +643,7 @@ export default function InvoiceEditor() {
         </div>
       )}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+      {synced && onlinePayOn && <div style={bannerStyle(STATUS.info)}>💳 Online payment enabled — the QuickBooks invoice your customer receives includes a “Pay now” card/ACH button, and online payments post back here automatically.</div>}
 
       {/* Xactimate AI recap — persisted on the invoice (inv.xactimate_meta) and re-shown on every load */}
       {xactInfo && (
@@ -699,7 +754,7 @@ export default function InvoiceEditor() {
                 {payments.map((p, i) => {
                   const net = Number(p.amount || 0) - Number(p.refunded_amount || 0);
                   const typeTxt = [p.payer_type, p.payment_method ? String(p.payment_method).replace('_', ' ') : null].filter(Boolean).join(' · ') || '—';
-                  const noteTxt = [p.reference_number, p.qbo_payment_id ? '✓ QB' : null].filter(Boolean).join(' · ') || '—';
+                  const noteTxt = [p.source === 'qbo' ? 'Online · QBO' : null, p.reference_number, p.qbo_payment_id ? '✓ QB' : null].filter(Boolean).join(' · ') || '—';
                   const cells = (
                     <>
                       <span style={{ color: C.body, ...tnum }}>{fmtDate(p.payment_date)}</span>

@@ -31,6 +31,30 @@
 
 ---
 
+## How we work (the operating loop)
+
+This is the working style to follow in **every** session on this repo — the loop that keeps changes
+safe on a live, single-developer business app. It is the behavior to reproduce, not optional ceremony.
+
+1. **Understand before acting.** Read the actual file and the relevant context doc before editing —
+   never edit from memory (Rule 1). For anything non-trivial, plan first (prefer plan mode) and reuse
+   existing patterns/utilities (see [Patterns to Follow](#patterns-to-follow)) instead of inventing.
+2. **Verify before shipping.** Run `npx eslint <changed files>` and `npm run build`, and report the
+   real result. Never say "done" without having verified — if something failed, say so with the output.
+3. **Ship the sanctioned way.** Feature branch → push **`dev`** (staging) → open a reviewed
+   **`dev → main` PR** → **merge commit (not squash)** → **fast-forward `dev` to `main`**. Never push
+   `main` directly. Wait for the **Cloudflare Pages** check to go green before merging. (Full detail:
+   [Deployment & Release Workflow](#deployment--release-workflow).)
+4. **Report honestly / reveal things.** State outcomes faithfully, including failures. Surface
+   discrepancies and assumptions out loud (e.g. "`dev` and `main` are identical — only X will ship")
+   instead of glossing over them. Don't over-claim. Flag risk before irreversible or outward-facing
+   actions, and ask when a request is genuinely ambiguous rather than guessing.
+5. **Keep context lean.** Delegate broad searches to subagents (Explore) so the main thread stays
+   focused. Consult the right doc for the job — `BILLING-CONTEXT.md` for the invoice / QBO / Xactimate
+   stack, `UPR-Web-Context.md` for tables and RPCs — instead of loading everything at once.
+
+---
+
 ## Stack
 
 - **Frontend:** React 19 + Vite — all JSX, no TypeScript

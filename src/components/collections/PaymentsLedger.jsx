@@ -33,7 +33,7 @@ import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divLabel, downloadCsv,
 } from './collTokens';
 import {
-  CollCard, Kpi, KpiGrid, SearchBox, DivisionSquare, EmptyState,
+  CollCard, Kpi, KpiGrid, SearchBox, DivisionSquare, EmptyState, Pill,
 } from './collKit';
 
 const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -142,6 +142,7 @@ export default function PaymentsLedger({ db, navigate }) {
                     {r.payment_method ? cap(r.payment_method) : '—'}
                     {r.payer_type && <span style={{ color: C.faint }}> · {cap(r.payer_type)}</span>}
                     {r.is_deductible ? <span style={{ color: STATUS.warning.text, fontWeight: 600 }}> · Deductible</span> : ''}
+                    {r.source === 'qbo' && <Pill color={STATUS.info.text} bg={STATUS.info.tint} border={STATUS.info.border} style={{ marginLeft: 6, fontSize: 10 }}>Online · QBO</Pill>}
                   </div>
                   <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: C.ink, ...tnum }}>{fmt$2(r.amount)}</div>
                   <div style={{ textAlign: 'center', fontSize: 13 }}>

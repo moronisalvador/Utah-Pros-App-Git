@@ -35,7 +35,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
@@ -47,6 +47,7 @@ import EstimatesList from '@/components/collections/EstimatesList';
 import PaymentsLedger from '@/components/collections/PaymentsLedger';
 import NewInvoiceModal from '@/components/NewInvoiceModal';
 import NewEstimateModal from '@/components/NewEstimateModal';
+import usePageTransition from '@/hooks/usePageTransition';
 
 const TABS = [
   { value: 'ar', label: 'A/R · Outstanding' },
@@ -59,6 +60,7 @@ export default function Collections() {
   // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
+  const slide = usePageTransition();
   // Initial tab can be deep-linked via ?tab= (e.g. the dashboard "Open estimates"
   // widget → /collections?tab=estimates); falls back to A/R. Tab clicks sync back to
   // ?tab= (replace) so the browser Back button returns you to the tab you were on.
@@ -81,9 +83,23 @@ export default function Collections() {
   const billingOn = isFeatureEnabled('feature:billing');
   const onEstimates = tab === 'estimates';
 
+  // Warm the detail-page chunks on idle so the first row click slides straight in instead
+  // of flashing the lazy-chunk loader. Same specifiers App.jsx lazy-loads, so the browser
+  // cache is shared; the per-page skeleton then covers the remaining data fetch.
+  useEffect(() => {
+    const warm = () => {
+      import('@/pages/InvoiceEditor');
+      import('@/pages/EstimateEditor');
+      import('@/pages/ClaimCollectionPage');
+    };
+    const ric = window.requestIdleCallback;
+    const id = ric ? ric(warm) : window.setTimeout(warm, 400);
+    return () => { if (ric) window.cancelIdleCallback(id); else window.clearTimeout(id); };
+  }, []);
+
   // ─── SECTION: Render ──────────────
   return (
-    <div className="coll-page">
+    <div className={`coll-page ${slide}`}>
       <header className="coll-header">
         <div>
           <h1 className="coll-title">Collections</h1>

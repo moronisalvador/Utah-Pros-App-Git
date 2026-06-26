@@ -5,6 +5,8 @@ import '@/claim-page.css';
 import { errToast, fmtK, fmtDate, fmtPh, DIV_EMOJI, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { StatusBadge, KPI } from '@/components/claim/SharedClaimUI';
 import ClaimBilling from '@/components/ClaimBilling';
+import usePageTransition from '@/hooks/usePageTransition';
+import { Skel } from '@/components/collections/collKit';
 
 // ═══════════════════════════════════════════════════════════════════════
 // CLAIM A/R WORKSPACE — /collections/:claimId
@@ -18,6 +20,7 @@ export default function ClaimCollectionPage() {
   const navigate = useNavigate();
   const { db, employee: currentUser, isFeatureEnabled } = useAuth();
   const canEdit = canEditBilling(currentUser?.role);   // A/R edits — admin + manager only
+  const slide = usePageTransition();
 
   const [claim,   setClaim]   = useState(null);
   const [jobs,    setJobs]    = useState([]);
@@ -54,7 +57,7 @@ export default function ClaimCollectionPage() {
     return { invoiced, collected, balance, ded_total, ded_owed };
   }, [jobs]);
 
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+  if (loading) return <div className={`claim-page ${slide}`}><ClaimCollectionSkeleton /></div>;
   if (!claim)  return null;
 
   const openBalance = jobs.filter(j => getBalances(j).balance > 0).length;
@@ -65,7 +68,7 @@ export default function ClaimCollectionPage() {
   const collectedPct = totals.invoiced > 0 ? Math.round((totals.collected / totals.invoiced) * 100) + '% of billed' : '—';
 
   return (
-    <div className="claim-page">
+    <div className={`claim-page ${slide}`}>
       {/* ── TOP BAR ── */}
       <div className="claim-topbar">
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections')} style={{ gap: 4 }}>← Collections</button>
@@ -122,5 +125,38 @@ export default function ClaimCollectionPage() {
           : <div style={{ padding: 16, color: 'var(--text-tertiary)', fontSize: 13, border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>}
       </div>
     </div>
+  );
+}
+
+// Loading skeleton — mirrors the claim A/R workspace (topbar → header → KPI strip → body)
+// using the page's own layout classes so the slide reveals shape, not a spinner.
+function ClaimCollectionSkeleton() {
+  return (
+    <>
+      <div className="claim-topbar">
+        <Skel w={110} h={32} r={8} />
+        <Skel w={140} h={32} r={8} />
+      </div>
+      <div className="claim-header">
+        <div className="claim-header-left">
+          <Skel w={150} h={22} />
+          <Skel w={200} h={16} style={{ marginTop: 8 }} />
+          <Skel w={260} h={12} style={{ marginTop: 8 }} />
+        </div>
+        <div className="claim-header-right">
+          <Skel w={90} h={22} r={999} />
+          <Skel w={70} h={12} style={{ marginTop: 8 }} />
+        </div>
+      </div>
+      <div className="claim-kpi-strip" style={{ marginTop: 12 }}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i}><Skel w="60%" h={10} /><Skel w="80%" h={22} style={{ marginTop: 8 }} /><Skel w="50%" h={10} style={{ marginTop: 8 }} /></div>
+        ))}
+      </div>
+      <div className="claim-body" style={{ paddingTop: 16 }}>
+        <Skel w={160} h={12} />
+        <Skel w="100%" h={180} r={10} style={{ marginTop: 12 }} />
+      </div>
+    </>
   );
 }

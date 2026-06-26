@@ -48,6 +48,12 @@ function estStatus(r) {
 
 const GRID = '1fr 1.4fr 1.3fr 0.9fr 0.9fr 1fr 0.9fr';
 
+// Default order: most recently CREATED estimate first (matches the A/R + Invoices tabs).
+// get_estimates() already returns created_at DESC; we re-sort explicitly so the order is
+// guaranteed here regardless of the RPC. Null dates sort last.
+const byCreatedDesc = (a, b) =>
+  (b.created_at ? new Date(b.created_at).getTime() : 0) - (a.created_at ? new Date(a.created_at).getTime() : 0);
+
 export default function EstimatesList({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +104,7 @@ export default function EstimatesList({ db, navigate, period = 'All' }) {
         if (!hay.includes(q)) return false;
       }
       return true;
-    });
+    }).sort(byCreatedDesc);
   }, [periodRows, mode, search]);
 
   // ─── SECTION: Render ──────────────
