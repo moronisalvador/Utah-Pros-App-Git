@@ -47,6 +47,17 @@ import ActionMenu from '@/components/collections/ActionMenu';
 import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 
+// Rotating status lines for the Xactimate import modal — each maps to a real step the worker
+// performs (upload → read → extract → identify billable → reconcile → fill the draft).
+const XACT_STAGES = [
+  'Uploading your estimate…',
+  'Reading the PDF…',
+  'Extracting line items…',
+  'Finding the insurance-billable total…',
+  'Cross-checking the math…',
+  'Pre-filling your invoice draft…',
+];
+
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -92,6 +103,8 @@ export default function InvoiceEditor() {
   const [showPreview, setShowPreview] = useState(false);
   const [xactBusy, setXactBusy] = useState(false);   // Xactimate upload + AI extraction in flight
   const [xactInfo, setXactInfo] = useState(null);     // worker result → confirmation banner
+  const [xactStage, setXactStage] = useState(0);      // rotating status line index (import modal)
+  const [xactPct, setXactPct] = useState(0);          // simulated progress % (import modal)
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
@@ -159,6 +172,21 @@ export default function InvoiceEditor() {
     const t = setTimeout(() => payModalRef.current?.focus(), 0);
     return () => { document.removeEventListener('keydown', onKey); clearTimeout(t); };
   }, [payView, payForm]);
+
+  // Xactimate import modal: rotate the status line + ease a simulated progress bar while the AI
+  // works. There are no real progress events (it's a single request), so the bar climbs toward
+  // ~92% and holds; xactBusy flipping false unmounts the modal and resets these.
+  useEffect(() => {
+    if (!xactBusy) { setXactStage(0); setXactPct(0); return undefined; }
+    setXactStage(0); setXactPct(8);
+    let ticks = 0;
+    const id = setInterval(() => {
+      ticks += 1;
+      setXactPct((p) => Math.min(92, p + Math.max(1.5, (92 - p) * 0.1)));
+      if (ticks % 7 === 0) setXactStage((s) => Math.min(XACT_STAGES.length - 1, s + 1));
+    }, 350);
+    return () => clearInterval(id);
+  }, [xactBusy]);
 
   // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
@@ -722,6 +750,25 @@ export default function InvoiceEditor() {
               </div>
               <div style={{ fontSize: 11.5, color: C.faint, marginTop: 28, borderTop: `1px solid ${C.hairline}`, paddingTop: 12 }}>Thank you for your business. Please remit payment by the due date above.</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Xactimate import — progress modal while the AI reads the PDF. No real progress events,
+          so the bar eases toward ~90% and the status line rotates through the actual steps. */}
+      {xactBusy && (
+        <div role="dialog" aria-modal="true" aria-busy="true" aria-label="Importing Xactimate estimate"
+          style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(16,24,40,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
+          <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 16, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', padding: '30px 26px', textAlign: 'center', animation: 'fadeIn .2s ease' }}>
+            <div aria-hidden="true" style={{ width: 34, height: 34, margin: '0 auto 16px', borderRadius: '50%', border: `3px solid ${C.track}`, borderTopColor: STATUS.success.solid, animation: 'spin .8s linear infinite' }} />
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>✨ Reading your Xactimate estimate</div>
+            <div key={xactStage} aria-live="polite" style={{ fontSize: 13, color: C.muted, marginTop: 7, minHeight: 18, animation: 'fadeIn .3s ease' }}>
+              {XACT_STAGES[xactStage]}
+            </div>
+            <div style={{ marginTop: 18, height: 6, background: C.track, borderRadius: 999, overflow: 'hidden' }}>
+              <div style={{ width: `${xactPct}%`, height: '100%', background: STATUS.success.solid, borderRadius: 999, transition: 'width .35s ease' }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: C.faint, marginTop: 14 }}>This usually takes a few seconds — please keep this tab open.</div>
           </div>
         </div>
       )}
