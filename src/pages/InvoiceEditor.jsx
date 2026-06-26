@@ -328,9 +328,10 @@ export default function InvoiceEditor() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', ...tnum }}>{docNumber}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
               <StatusBadge kind={stKind} />
             </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
             {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
             <div style={{ fontSize: 13.5, color: C.body, marginTop: 4 }}>
               {contact?.name || 'Client'} · {division}{job?.job_number ? ` ${job.job_number}` : ''}{claim?.claim_number ? <> · <span style={mono}>{claim.claim_number}</span></> : ''}
