@@ -44,8 +44,9 @@ import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import ActionMenu from '@/components/collections/ActionMenu';
 import { IconOpenPage } from '@/components/Icons';
-import { CollCard, GhostButton, PrimaryButton, Pill, MapPin } from '@/components/collections/collKit';
+import { CollCard, GhostButton, PrimaryButton, Pill, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
+import usePageTransition from '@/hooks/usePageTransition';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -60,11 +61,47 @@ const fmtStamp = (iso) => {
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
 const EST_STATUS = { Converted: STATUS.success, Sent: STATUS.info, Saved: STATUS.neutral, Draft: STATUS.neutral };
 
+// Loading skeleton — mirrors the estimate silhouette (toolbar → header card → line items)
+// so the slide reveals page shape, not a spinner. Bars reuse the .coll-skel shimmer.
+function EstimateSkeleton() {
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Skel w={74} h={34} r={9} />
+        <div style={{ display: 'flex', gap: 8 }}><Skel w={120} h={34} r={9} /><Skel w={92} h={34} r={9} /></div>
+      </div>
+      <CollCard style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Skel w={64} h={12} /><Skel w={70} h={20} r={999} /></div>
+        <Skel w={180} h={26} style={{ marginTop: 10 }} />
+        <div style={{ marginTop: 14 }}><Skel w={70} h={9} /><Skel w={160} h={15} style={{ marginTop: 8 }} /></div>
+        <div style={{ height: 1, background: C.hairline, margin: '14px 0' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px 20px' }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i}><Skel w="55%" h={9} /><Skel w="80%" h={14} style={{ marginTop: 7 }} /></div>
+          ))}
+        </div>
+      </CollCard>
+      <CollCard pad={0}>
+        <div style={{ padding: '12px 16px', background: C.headFill, borderBottom: `1px solid ${C.cardBorder}` }}><Skel w={130} h={10} /></div>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.3fr 2.6fr 1fr 100px', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${C.hairline}` }}>
+            <Skel w="75%" h={14} /><Skel w="90%" h={14} /><Skel w="55%" h={14} /><Skel w="70%" h={14} style={{ justifySelf: 'end' }} />
+          </div>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '14px 16px', background: C.headFill }}>
+          <div style={{ minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}><Skel w="100%" h={13} /><Skel w="100%" h={16} /></div>
+        </div>
+      </CollCard>
+    </>
+  );
+}
+
 export default function EstimateEditor() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
+  const slide = usePageTransition();
 
   const dbRef = useRef(db);
   dbRef.current = db;
@@ -273,7 +310,7 @@ export default function EstimateEditor() {
   };
 
   // ─── SECTION: Derived values ──────────────
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+  if (loading) return <div className={`coll-page ${slide}`}><EstimateSkeleton /></div>;
   if (!est) return null;
   if (!isFeatureEnabled('page:estimates')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
@@ -303,7 +340,7 @@ export default function EstimateEditor() {
 
   // ─── SECTION: Render ──────────────
   return (
-    <div className="coll-page">
+    <div className={`coll-page ${slide}`}>
       <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } } .est-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
       {/* Top bar — Back + QBO-style action toolbar */}
