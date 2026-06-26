@@ -1294,6 +1294,8 @@ not the app-wide tokens.
 
 ## AI — Xactimate estimate → pre-filled invoice draft (Jun 2026)
 
+> **Deep-dive:** for the full billing/QBO/Xactimate engineering context (invoice builder, two-way QBO sync, payments, Stripe, and this AI tool), see **`BILLING-CONTEXT.md`**.
+
 **UPR's first AI/LLM integration.** Upload an Xactimate estimate PDF on the invoice builder and Claude reads
 it, determines the amount we bill insurance, and pre-fills the draft. **Human-in-the-loop: it only fills a
 DRAFT — nothing posts to QBO until the user reviews and Saves.**
