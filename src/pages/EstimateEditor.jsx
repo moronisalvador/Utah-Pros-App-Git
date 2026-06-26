@@ -497,6 +497,7 @@ function Field({ label, value, mono: isMono }) {
 }
 
 const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-const cellTxt = { ...cellInp, lineHeight: 1.4, minHeight: 34, display: 'block' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
 const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
 const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });

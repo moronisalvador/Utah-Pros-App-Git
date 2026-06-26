@@ -665,7 +665,8 @@ function Stat({ label, value, color = C.ink }) {
 
 const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
 const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-const cellTxt = { ...cellInp, lineHeight: 1.4, minHeight: 34, display: 'block' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
 const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
 const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
 const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };

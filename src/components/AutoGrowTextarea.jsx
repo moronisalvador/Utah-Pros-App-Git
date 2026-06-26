@@ -33,7 +33,13 @@ export default function AutoGrowTextarea({ value, onChange, onBlur, placeholder,
   const fit = useCallback((el) => {
     if (!el) return;
     el.style.height = 'auto';                 // shrink first so deletions reduce height
-    el.style.height = `${el.scrollHeight}px`; // then grow to fit content
+    // With box-sizing:border-box the height includes the border but scrollHeight does
+    // not — add it back so a single line matches sibling inputs exactly (no 2px clip).
+    const cs = window.getComputedStyle(el);
+    const border = cs.boxSizing === 'border-box'
+      ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+      : 0;
+    el.style.height = `${el.scrollHeight + border}px`; // then grow to fit content
   }, []);
 
   // Re-fit when the value changes from outside (initial load, reload after save).
