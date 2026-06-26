@@ -10,7 +10,9 @@ import { supabase } from './supabase.js';
 const PROVIDER      = 'quickbooks';
 const TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const AUTHORIZE_URL = 'https://appcenter.intuit.com/connect/oauth2';
-const SCOPE         = 'com.intuit.quickbooks.accounting';
+// Accounting (invoices/payments) + Payments (card charging via the Payments API). Adding
+// the payment scope requires the owner to RECONNECT QuickBooks once to re-consent.
+const SCOPE         = 'com.intuit.quickbooks.accounting com.intuit.quickbooks.payment';
 const MINOR_VERSION = '70';
 
 // ── Environment helpers ────────────────────────────────────────────────────────
@@ -91,6 +93,10 @@ export async function saveTokens(env, tokens, extra = {}) {
     refresh_token:    tokens.refresh_token,
     token_expires_at: new Date(now + ttlMs).toISOString(),
     updated_at:       new Date(now).toISOString(),
+    // Persist the granted scopes so the app can tell whether card charging (the payment
+    // scope) is authorized, and prompt a reconnect when it isn't. Intuit returns `scope`
+    // on both the initial exchange and refreshes; omit when absent so we don't clobber it.
+    ...(tokens.scope ? { granted_scopes: tokens.scope } : {}),
     ...extra,
   };
   await db.upsert('integration_credentials', row);
@@ -130,6 +136,60 @@ export async function qboFetch(env, path, options = {}) {
       ...(options.headers || {}),
     },
   });
+}
+
+// ── QuickBooks PAYMENTS API (card processing) ────────────────────────────────────
+// Separate product from the Accounting API above: DIFFERENT host, /quickbooks/v4/payments
+// base, same OAuth bearer (needs the com.intuit.quickbooks.payment scope). Used for keyed
+// card charges (card-not-present). The raw card number is tokenized client-side; only the
+// opaque token reaches here.
+export function paymentsApiBase(environment) {
+  return environment === 'sandbox'
+    ? 'https://sandbox.api.intuit.com'
+    : 'https://api.intuit.com';
+}
+
+export async function paymentsFetch(env, path, options = {}) {
+  const { accessToken, environment } = await getValidAccessToken(env);
+  const url = `${paymentsApiBase(environment)}/quickbooks/v4/payments${path}`;
+  const { requestId, headers, ...rest } = options;
+  return fetch(url, {
+    ...rest,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept':        'application/json',
+      'Content-Type':  'application/json',
+      'Request-Id':    requestId || crypto.randomUUID(), // Intuit idempotency key
+      ...(headers || {}),
+    },
+  });
+}
+
+// Charge a tokenized card. `token` is the opaque value-token minted client-side by Intuit's
+// tokenizer (the PAN never touches our servers). Returns the Charge ({ id, status, authCode }).
+// Throws with `e.declined = true` on a card decline so callers can message it cleanly.
+export async function createCharge(env, { amount, token, currency = 'USD', requestId } = {}) {
+  const res = await paymentsFetch(env, '/charges', {
+    method: 'POST',
+    requestId,
+    body: JSON.stringify({
+      amount: Number(amount).toFixed(2),
+      currency,
+      token,
+      capture: true,
+      context: { isEcommerce: true },
+    }),
+  });
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  const apiErr = data?.errors?.[0];
+  if (!res.ok || apiErr) {
+    const e = new Error(apiErr ? `${apiErr.code || ''} ${apiErr.message || apiErr.detail || ''}`.trim() : `QBO charge failed (${res.status})`);
+    e.status = res.status; e.intuitTid = tid;
+    e.declined = res.status === 402 || /declin/i.test(JSON.stringify(data));
+    throw e;
+  }
+  return data;
 }
 
 export async function fetchCompanyName(env) {
