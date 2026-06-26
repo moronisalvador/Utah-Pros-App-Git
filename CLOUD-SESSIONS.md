@@ -119,6 +119,22 @@ commit anything you want available remotely.
 
 ---
 
+## Starting a focused (dedicated) session
+
+To run a session scoped to one subsystem — e.g. the **billing / invoice builder + Xactimate AI** —
+without unrelated work bloating its context:
+
+1. Start a fresh cloud session on `moronisalvador/Utah-Pros-App-Git` (it clones `main`).
+2. Set the session model to **Opus** in the model picker — the strong model is worth it for this work.
+3. Set the network allowlist (above) — one-time per environment.
+4. Make your **first message** the kickoff command: **`/invoice`** (or `/invoice <what to build>`). It's
+   defined in `.claude/commands/invoice.md` — it points the session at `BILLING-CONTEXT.md`, declares
+   the files in scope, and re-states the operating loop (plan → verify → ship via PR).
+5. Keep that session for billing/invoice work only; spin up separate sessions for other areas.
+
+The behavioral "operating loop" itself lives in `CLAUDE.md` → **How we work**, so it loads in *every*
+session automatically — `/invoice` just adds the subsystem scope on top.
+
 ## Local vs. cloud — when to use which
 
 | Use **cloud (Remote)** for | Use **local** for |
