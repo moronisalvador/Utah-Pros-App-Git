@@ -185,23 +185,37 @@ export async function onRequestPost(context) {
       if (est?.qbo_estimate_id) linkedTxn = [{ TxnId: String(est.qbo_estimate_id), TxnType: 'Estimate' }];
     }
 
-    // Update in place if already synced, else create.
-    let qboInv, mode;
-    if (inv.qbo_invoice_id) {
-      qboInv = await updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}) });
-      mode = 'updated';
-    } else {
-      const payload = {
-        CustomerRef: { value: String(contact.qbo_customer_id) },
-        Line: lines,
-        PrivateNote: memo,
-        CustomerMemo: { value: memo },
-        ...(docNumber ? { DocNumber: docNumber } : {}),
-        ...(hasShip ? { ShipAddr: shipAddr } : {}),
-        ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}),
-      };
-      qboInv = await createInvoice(env, payload);
-      mode = 'created';
+    // Online-payment flags — make the emailed QBO invoice show a "Pay now" card/ACH
+    // button. Driven by the accept_card / accept_ach billing toggles (integration_config).
+    // Only set a flag when true (never write false,false), so this stays inert until
+    // QuickBooks Payments is enabled on the company AND the toggles are on.
+    const payCfg = (await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value')) || [];
+    const cfgOn = (k) => payCfg.find((r) => r.key === k)?.value === 'true';
+    const onlinePay = {};
+    if (cfgOn('accept_card')) onlinePay.AllowOnlineCreditCardPayment = true;
+    if (cfgOn('accept_ach')) onlinePay.AllowOnlineACHPayment = true;
+    const hasOnlinePay = Object.keys(onlinePay).length > 0;
+
+    // Update in place if already synced, else create. `extra` carries the online-pay flags
+    // so we can retry without them if QBO rejects (Payments not enabled on the company yet).
+    const pushInvoice = (extra) =>
+      inv.qbo_invoice_id
+        ? updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...extra })
+        : createInvoice(env, { CustomerRef: { value: String(contact.qbo_customer_id) }, Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...extra });
+
+    const mode = inv.qbo_invoice_id ? 'updated' : 'created';
+    let qboInv, onlinePayWarning = null;
+    try {
+      qboInv = await pushInvoice(onlinePay);
+    } catch (e) {
+      // If QBO rejected specifically because of the online-pay flags, retry without them so
+      // the invoice still syncs; surface a clear hint instead of a cryptic QBO fault.
+      if (hasOnlinePay && /payment|online|merchant/i.test(e.message || '')) {
+        qboInv = await pushInvoice({});
+        onlinePayWarning = 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.';
+      } else {
+        throw e;
+      }
     }
 
     const nowIso = new Date().toISOString();
@@ -218,7 +232,7 @@ export async function onRequestPost(context) {
     }
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
     await logRun(db, 'completed', 1, null, startedAt);
-    return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt }, 200, request, env);
+    return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning }, 200, request, env);
   } catch (e) {
     await db.update('invoices', `id=eq.${invoiceId}`, { qbo_sync_error: (e.message || 'push failed').slice(0, 500) });
     await logRun(db, 'error', 0, e.message, startedAt);
