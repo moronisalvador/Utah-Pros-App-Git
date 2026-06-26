@@ -4,65 +4,62 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The page where you build an estimate for a job, line by line. Each line has a
- *   QuickBooks item, an optional class, a description, a quantity and a price, and
- *   the page adds them up. From here you can save the estimate to QuickBooks, email
- *   it to the customer, and — when it's accepted — turn it into an invoice with one
- *   button (which also links it in QuickBooks). It mirrors the invoice editor.
+ *   The full estimate builder for one estimate (opened from the My Money /
+ *   Collections "Estimates" tab). You build the line items (each with a QuickBooks
+ *   Item + Class, a typed description, quantity and rate), see the running total,
+ *   preview/print what the customer gets, save/send it to QuickBooks, and — once it's
+ *   accepted — turn it into an invoice in one click. Mirrors the invoice builder.
  *
  * WHERE IT LIVES:
  *   Route:        /estimates/:estimateId
- *   Rendered by:  src/App.jsx
+ *   Rendered by:  src/App.jsx (inside the Layout shell)
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext (db, isFeatureEnabled, employee),
- *              @/lib/realtime (getAuthHeader), @/lib/claimUtils (canEditBilling)
- *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts;
- *                       QBO Item/Class catalog via /api/qbo-query
- *              writes → estimate_line_items (insert/update/delete); estimates +
- *                       QBO estimate via /api/qbo-estimate; on convert, invoices +
- *                       invoice_line_items via convert_estimate_to_invoice RPC and
- *                       /api/qbo-invoice
+ *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
+ *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
+ *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
+ *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
+ *              writes → estimate_line_items (add/edit/reorder/remove); estimates + QBO
+ *                       estimate via /api/qbo-estimate; on convert, invoices via
+ *                       convert_estimate_to_invoice RPC + /api/qbo-invoice
  *
  * NOTES / GOTCHAS:
- *   - estimate_line_items.line_total is a GENERATED column (quantity * unit_price) —
- *     never write it.
- *   - load() reads via a db ref so it runs once per estimate, not on every Supabase
- *     token refresh (same fix as InvoiceEditor — keeps in-progress edits alive).
- *   - Convert: runs convert_estimate_to_invoice (copies lines into the job's one
- *     invoice). If that invoice already has lines the RPC returns needs_confirm and
- *     the button asks for a second click. After converting it pushes the invoice to
- *     QBO, which carries LinkedTxn → the QBO estimate to complete the conversion there.
+ *   - estimate_line_items.line_total is a GENERATED column (quantity × unit_price) —
+ *     never written.
+ *   - dbRef keeps the latest Supabase client so load() runs once per estimate (not on
+ *     every token refresh), preserving in-progress edits.
+ *   - A CONVERTED estimate is read-only (it became an invoice). Convert copies the
+ *     lines into the job's one invoice; if that invoice already has lines the RPC
+ *     returns needs_confirm and the button asks for a second click.
+ *   - Back button uses navigate(-1) so it returns to wherever you came from.
  * ════════════════════════════════════════════════
  */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
+import SearchSelect from '@/components/collections/SearchSelect';
+import { CollCard, GhostButton, PrimaryButton, Pill } from '@/components/collections/collKit';
+import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
+const EST_STATUS = { Converted: STATUS.success, Sent: STATUS.info, Saved: STATUS.neutral, Draft: STATUS.neutral };
 
-// Dedicated estimate editor — build line items (Item + Class per line), push to
-// QuickBooks, email it, and convert to an invoice once accepted. Route: /estimates/:estimateId.
 export default function EstimateEditor() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
 
-  // Keep the latest db client in a ref so load() runs once per estimate, not on every
-  // token refresh / tab refocus (which would clobber in-progress edits). See InvoiceEditor.
   const dbRef = useRef(db);
   dbRef.current = db;
 
+  // ─── SECTION: State & hooks ──────────────
   const [est, setEst] = useState(null);
   const [job, setJob] = useState(null);
   const [claim, setClaim] = useState(null);
@@ -77,7 +74,10 @@ export default function EstimateEditor() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const dragIdx = useRef(null);
 
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     const d = dbRef.current;
     setLoading(true);
@@ -87,7 +87,7 @@ export default function EstimateEditor() {
       setEst(e);
       const j = e.job_id ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
+      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
       const cid = e.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       setLines(await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || []);
@@ -113,8 +113,8 @@ export default function EstimateEditor() {
         run('SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 200'),
         run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
       ]);
-      setQboItems((itemsR.Item || []).map(i => ({ id: String(i.Id), name: i.Name })));
-      setQboClasses((classesR.Class || []).map(c => ({ id: String(c.Id), name: c.Name })));
+      setQboItems((itemsR.Item || []).map((i) => ({ id: String(i.Id), name: i.Name })));
+      setQboClasses((classesR.Class || []).map((c) => ({ id: String(c.Id), name: c.Name })));
       setCatalogMsg('');
     } catch (e) {
       setCatalogMsg(/not connected/i.test(e.message || '') ? 'Connect QuickBooks (Dev Tools) to load items & classes.' : 'QuickBooks catalog unavailable.');
@@ -122,27 +122,21 @@ export default function EstimateEditor() {
   }, []);
   useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
 
-  const synced = !!est?.qbo_estimate_id;
-  const converted = !!est?.converted_invoice_id;
-  const total = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
-
-  // ── Line handlers ──
+  // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
     setBusy(true);
-    // line_total is a generated column (quantity * unit_price) — never write it.
     try { await db.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
   const setLineLocal = (lineId, patch) => {
-    setLines(prev => prev.map(l => {
+    setLines((prev) => prev.map((l) => {
       if (l.id !== lineId) return l;
       const next = { ...l, ...patch };
       if ('quantity' in patch || 'unit_price' in patch) next.line_total = round2(Number(next.quantity || 0) * Number(next.unit_price || 0));
       return next;
     }));
   };
-  // Persist a line on blur WITHOUT reloading — local state already reflects the edit.
   const saveLine = async (line) => {
     try {
       await db.update('estimate_line_items', `id=eq.${line.id}`, {
@@ -159,8 +153,18 @@ export default function EstimateEditor() {
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
   };
+  const onDropRow = async (toIdx) => {
+    const from = dragIdx.current; dragIdx.current = null;
+    if (from == null || from === toIdx) return;
+    const next = [...lines];
+    const [moved] = next.splice(from, 1);
+    next.splice(toIdx, 0, moved);
+    setLines(next);
+    try { for (let i = 0; i < next.length; i++) if (next[i].sort_order !== i) await db.update('estimate_line_items', `id=eq.${next[i].id}`, { sort_order: i }); }
+    catch { toast('Failed to reorder lines', 'error'); await load(); }
+  };
 
-  // ── QBO actions ──
+  // ─── SECTION: QBO actions ──────────────
   const callWorker = async (body) => {
     const auth = await getAuthHeader();
     const res = await fetch('/api/qbo-estimate', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ estimate_id: estimateId, ...body }) });
@@ -168,8 +172,6 @@ export default function EstimateEditor() {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   };
-  // Persist current line state then push the latest amounts to QuickBooks — create on
-  // first save, update thereafter, so the QBO copy always matches what's on screen.
   const flushAndPush = async () => {
     for (const l of lines) {
       await db.update('estimate_line_items', `id=eq.${l.id}`, {
@@ -187,7 +189,6 @@ export default function EstimateEditor() {
     catch (e) { toast('Couldn’t save estimate: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Email the estimate to the customer via QuickBooks. Two-click confirm (outward-facing).
   const emailEstimate = async () => {
     if (!confirmEmail) { setConfirmEmail(true); return; }
     setConfirmEmail(false); setBusy(true);
@@ -199,7 +200,6 @@ export default function EstimateEditor() {
     catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Revert a saved estimate back to a draft (removes the QBO copy).
   const revertToDraft = async () => {
     if (!confirmRemove) { setConfirmRemove(true); return; }
     setConfirmRemove(false); setBusy(true);
@@ -214,19 +214,15 @@ export default function EstimateEditor() {
       for (const l of lines) await db.delete('estimate_line_items', `id=eq.${l.id}`);
       await db.delete('estimates', `id=eq.${estimateId}`);
       toast('Draft estimate deleted');
-      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/collections?tab=estimates');
+      navigate(-1);
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
-  // ── Convert to invoice ──
-  // Copies the estimate's lines into the job's (single) invoice and links them, then
-  // pushes the invoice to QBO so the conversion completes there too (LinkedTxn → the
-  // QBO estimate). If the invoice already has lines the RPC asks for a second click.
+  // Convert an accepted estimate into the job's invoice (and link it in QuickBooks).
   const convertToInvoice = async () => {
     const force = confirmConvert;
     setBusy(true);
     try {
-      // Make sure the estimate exists in QBO first so the invoice can link to it (best-effort).
       if (!est.qbo_estimate_id && total > 0) {
         try { await flushAndPush(); await load(); } catch { /* QBO may be off — convert in UPR anyway */ }
       }
@@ -241,7 +237,6 @@ export default function EstimateEditor() {
       const invId = r?.invoice_id;
       if (!invId) throw new Error('Convert did not return an invoice');
       setConfirmConvert(false);
-      // Complete the conversion in QuickBooks: push the invoice (carries LinkedTxn → estimate).
       try {
         const auth = await getAuthHeader();
         const pr = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invId }) });
@@ -257,141 +252,272 @@ export default function EstimateEditor() {
     }
   };
 
+  // ─── SECTION: Derived values ──────────────
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
   if (!est) return null;
-
   if (!isFeatureEnabled('page:estimates')) {
-    return <div style={{ maxWidth: 900, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
+    return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Estimates are turned off (feature flag <code>page:estimates</code>).</div>;
   }
 
-  const division = (est.intended_division || job?.division) ? String(est.intended_division || job?.division).replace(/_/g, ' ') : 'Estimate';
-  // Draft → Sent (in QuickBooks / emailed) → Converted (turned into an invoice).
+  const synced = !!est.qbo_estimate_id;
+  const converted = !!est.converted_invoice_id;
+  const editable = canEdit && !converted;
+  const division = divLabel(est.intended_division || job?.division) || 'Estimate';
+  const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
+  const total = round2(subtotal);
+  const docNumber = est.qbo_doc_number || est.estimate_number || 'New estimate';
   const statusLabel = converted ? 'Converted' : !synced ? 'Draft' : est.qbo_emailed_at ? 'Sent' : 'Saved';
-  const statusColor = statusLabel === 'Converted' ? '#16a34a' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
+  const st = EST_STATUS[statusLabel] || STATUS.neutral;
+  const addr = est.property_address ? `${est.property_address}${est.property_city ? `, ${est.property_city}` : ''}${est.property_state ? `, ${est.property_state}` : ''}${est.property_zip ? ` ${est.property_zip}` : ''}` : '';
+  const dangerBtn = (on) => ({ ...btnSm, background: on ? STATUS.danger.tint : '#fff', color: on ? STATUS.danger.text : C.muted, border: `1px solid ${on ? STATUS.danger.border : C.cardBorder}` });
+  const GRID = editable ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
+  // ─── SECTION: Render ──────────────
   return (
-    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
+    <div className="coll-page">
+      <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } }`}</style>
+
       {/* Top bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections?tab=estimates')} style={{ gap: 4 }}>← Estimates</button>
-        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Estimate #{est.qbo_doc_number || est.estimate_number}{est.qbo_synced_at ? ' · saved ' + fmtDate(est.qbo_synced_at) : ''}</span>}
-      </div>
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{est.qbo_doc_number || est.estimate_number || 'New estimate'}</div>
-          {est.qbo_doc_number && est.qbo_doc_number !== est.estimate_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>UPR ref {est.estimate_number}</div>}
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {contact?.name || 'Client'} · <span style={{ textTransform: 'capitalize' }}>{division}</span> {job?.job_number || ''}{claim?.claim_number ? ` · ${claim.claim_number}` : ''}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            {TYPE_LABEL[est.estimate_type] || 'Estimate'}{est.submitted_at ? ` · Sent ${fmtDate(est.submitted_at)}` : ''}
-            {est.qbo_emailed_at && <> · Emailed {fmtDate(est.qbo_emailed_at)}</>}
-          </div>
-          {est.property_address && (
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-              📍 {est.property_address}{est.property_city ? `, ${est.property_city}` : ''}{est.property_state ? `, ${est.property_state}` : ''}{est.property_zip ? ` ${est.property_zip}` : ''}
-            </div>
-          )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {synced && <span style={{ fontSize: 12, color: C.faint }}>Estimate #{docNumber}{est.qbo_synced_at ? ' · saved ' + fmtDate(est.qbo_synced_at) : ''}</span>}
+          <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
       </div>
 
-      {est.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
-      {catalogMsg && canEdit && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#d97706', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{catalogMsg}</div>}
-      {converted && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>✓ Converted to an invoice. <button className="btn btn-sm" onClick={() => navigate(`/invoices/${est.converted_invoice_id}`)} style={{ background: '#fff', border: '1px solid #bbf7d0', color: '#16a34a' }}>View invoice →</button></div>}
-
-      {/* Line items */}
-      <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginTop: 6 }}>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 720 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{canEdit && !converted && <span />}
+      {/* Header card */}
+      <CollCard style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Estimate</span>
+              <Pill color={st.text} bg={st.tint} border={st.border} style={{ letterSpacing: '.04em' }}>{statusLabel.toUpperCase()}</Pill>
             </div>
-            {lines.length === 0 && <div style={{ padding: '20px 14px', color: 'var(--text-tertiary)', fontSize: 13 }}>No line items yet. {canEdit ? 'Add a line to build the estimate.' : ''}</div>}
-            {lines.map(l => (
-              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', alignItems: 'flex-start' }}>
-                {canEdit && !converted ? (
-                  <>
-                    <select value={l.qbo_item_id || ''} disabled={!qboItems.length} onChange={e => { const it = qboItems.find(i => i.id === e.target.value); const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
-                      <option value="">{qboItems.length ? 'Select item…' : '—'}</option>
-                      {qboItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </select>
-                    <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={e => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={txt} />
-                    <select value={l.qbo_class_id || ''} disabled={!qboClasses.length} onChange={e => { const c = qboClasses.find(x => x.id === e.target.value); const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
-                      <option value="">{qboClasses.length ? 'Class…' : '—'}</option>
-                      {qboClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={e => setLineLocal(l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={inp} />
-                    <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={e => setLineLocal(l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={inp} />
-                    <span style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmt$(l.line_total)}</span>
-                    <button onClick={() => removeLine(l)} disabled={busy} title="Remove line" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 16 }}>✕</button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 13 }}>{l.qbo_item_name || '—'}</span>
-                    <span style={{ fontSize: 13 }}>{l.description || '—'}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{l.qbo_class_name || '—'}</span>
-                    <span style={{ fontSize: 13 }}>{Number(l.quantity || 0)}</span>
-                    <span style={{ fontSize: 13 }}>{fmt$(l.unit_price)}</span>
-                    <span style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmt$(l.line_total)}</span>
-                  </>
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+            {est.qbo_doc_number && est.qbo_doc_number !== est.estimate_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {est.estimate_number}</div>}
+            <div style={{ fontSize: 13.5, color: C.body, marginTop: 4 }}>
+              {contact?.name || 'Client'} · {division}{job?.job_number ? ` ${job.job_number}` : ''}{claim?.claim_number ? <> · <span style={mono}>{claim.claim_number}</span></> : ''}
+            </div>
+          </div>
+        </div>
+      </CollCard>
+
+      {/* Banners */}
+      {est.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save estimate: {est.qbo_sync_error}</div>}
+      {catalogMsg && editable && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {converted && <div style={bannerStyle(STATUS.success)}>✓ Converted to an invoice. <button type="button" onClick={() => navigate(`/invoices/${est.converted_invoice_id}`)} style={{ background: 'none', border: 'none', color: STATUS.success.text, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', fontSize: 13 }}>View invoice →</button></div>}
+
+      {/* Two columns: builder (main) + details (side) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
+        {/* ── MAIN: line items + actions ── */}
+        <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <CollCard pad={0}>
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: editable ? 660 : 560 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '11px 16px', background: C.headFill, borderBottom: `1px solid ${C.cardBorder}`, fontSize: 10.5, fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                  {editable && <span />}
+                  <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{editable && <span />}
+                </div>
+
+                {lines.length === 0 && (
+                  <div style={{ padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>No line items yet.{editable ? ' Add a line to build the estimate.' : ''}</div>
                 )}
+
+                {lines.map((l, idx) => (
+                  <div
+                    key={l.id}
+                    draggable={editable}
+                    onDragStart={() => { dragIdx.current = idx; }}
+                    onDragOver={(e) => { if (editable) e.preventDefault(); }}
+                    onDrop={() => editable && onDropRow(idx)}
+                    style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 16px', borderBottom: `1px solid ${C.hairline}`, alignItems: 'start' }}
+                  >
+                    {editable ? (
+                      <>
+                        <span title="Drag to reorder" style={{ cursor: 'grab', color: C.faint2, fontSize: 15, lineHeight: '32px', userSelect: 'none', textAlign: 'center' }}>⠿</span>
+                        <SearchSelect value={l.qbo_item_id || ''} options={qboItems} disabled={!qboItems.length} placeholder={qboItems.length ? 'Item…' : '—'}
+                          onChange={(it) => { const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
+                        <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={(e) => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={cellTxt} />
+                        <SearchSelect value={l.qbo_class_id || ''} options={qboClasses} disabled={!qboClasses.length} placeholder={qboClasses.length ? 'Class…' : '—'}
+                          onChange={(c) => { const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
+                        <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={(e) => setLineLocal(l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />
+                        <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={(e) => setLineLocal(l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />
+                        <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: C.ink, lineHeight: '32px', ...tnum }}>{fmt$2(l.line_total)}</span>
+                        <button onClick={() => removeLine(l)} disabled={busy} title="Remove line" style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.faint2, fontSize: 16, lineHeight: '32px' }}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 13, color: C.ink }}>{l.qbo_item_name || '—'}</span>
+                        <span style={{ fontSize: 13, color: C.body }}>{l.description || '—'}</span>
+                        <span style={{ fontSize: 13, color: C.muted }}>{l.qbo_class_name || '—'}</span>
+                        <span style={{ fontSize: 13, ...tnum }}>{Number(l.quantity || 0)}</span>
+                        <span style={{ fontSize: 13, ...tnum }}>{fmt$2(l.unit_price)}</span>
+                        <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, ...tnum }}>{fmt$2(l.line_total)}</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+
+                {/* Footer: add line + totals */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, padding: '12px 16px', background: C.headFill }}>
+                  {editable ? <GhostButton onClick={addLine} style={{ opacity: busy ? 0.6 : 1 }}>+ Add line</GhostButton> : <span />}
+                  <div style={{ minWidth: 200 }}>
+                    <TotalRow label="Subtotal" value={fmt$2(subtotal)} />
+                    <div style={{ height: 1, background: C.cardBorder, margin: '6px 0' }} />
+                    <TotalRow label="Total" value={fmt$2(total)} strong />
+                  </div>
+                </div>
               </div>
-            ))}
-            {/* Total */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--bg-secondary)' }}>
-              {canEdit && !converted ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={addLine}>+ Add line</button> : <span />}
-              <div style={{ fontSize: 16, fontWeight: 800 }}>Total: {fmt$(total)}</div>
             </div>
-          </div>
+          </CollCard>
+
+          {/* Action bar */}
+          {editable && (
+            <div className="est-no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
+                {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
+              </PrimaryButton>
+              {synced && (
+                <GhostButton onClick={emailEstimate} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+                  style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
+                  {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend estimate' : '✉ Send to customer'}
+                </GhostButton>
+              )}
+              {total > 0 && (
+                <button type="button" onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)} disabled={busy}
+                  title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
+                  style={confirmConvert
+                    ? { ...btnSm, background: STATUS.danger.tint, color: STATUS.danger.text, border: `1px solid ${STATUS.danger.border}` }
+                    : { ...btnSm, background: STATUS.success.tint, color: STATUS.success.text, border: `1px solid ${STATUS.success.border}` }}>
+                  {busy ? 'Working…' : confirmConvert ? 'Confirm — append to invoice' : '→ Convert to invoice'}
+                </button>
+              )}
+              {synced && (
+                <button type="button" onClick={revertToDraft} onBlur={() => setConfirmRemove(false)} disabled={busy} style={dangerBtn(confirmRemove)}>
+                  {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
+                </button>
+              )}
+              {!synced && (
+                <button type="button" onClick={deleteDraft} onBlur={() => setConfirmDelete(false)} disabled={busy} style={{ ...dangerBtn(confirmDelete), marginLeft: 'auto' }}>
+                  {confirmDelete ? 'Confirm delete' : 'Delete draft'}
+                </button>
+              )}
+            </div>
+          )}
+          {editable && <div style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Click <b>Save</b> to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
+        </div>
+
+        {/* ── SIDE: details ── */}
+        <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+          <CollCard>
+            <SectionLabel>Prepared for</SectionLabel>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
+            {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
+            <div style={{ height: 1, background: C.hairline, margin: '12px 0' }} />
+            <DetailRow label="Type" value={TYPE_LABEL[est.estimate_type] || 'Estimate'} />
+            <DetailRow label="Carrier" value={claim?.insurance_carrier || '—'} />
+            <DetailRow label="Claim" value={claim?.claim_number || '—'} mono />
+            <DetailRow label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
+            {claim?.date_of_loss && <DetailRow label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
+            <DetailRow label="Sent" value={est.submitted_at ? fmtDate(est.submitted_at) : 'Not sent'} />
+            {addr && <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>📍 {addr}</div>}
+            <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 8 }}>The customer memo & service address are generated automatically when the estimate is sent to QuickBooks.</div>
+          </CollCard>
         </div>
       </div>
 
-      {/* Action bar */}
-      {canEdit && !converted && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 16 }}>
-          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={saveEstimate}>
-            {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
-          </button>
-          {synced && (
-            <button className="btn btn-secondary" disabled={busy} onClick={emailEstimate} onBlur={() => setConfirmEmail(false)}
-              title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-              style={confirmEmail ? { background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe' } : undefined}>
-              {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend estimate' : '✉ Send estimate to customer'}
-            </button>
-          )}
-          {total > 0 && (
-            <button className="btn btn-secondary" disabled={busy} onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)}
-              title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
-              style={confirmConvert ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' } : { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
-              {busy ? 'Working…' : confirmConvert ? 'Confirm — append to invoice' : '→ Convert to invoice'}
-            </button>
-          )}
-          {synced && (
-            <button className="btn btn-sm" disabled={busy} onClick={revertToDraft} onBlur={() => setConfirmRemove(false)}
-              style={{ background: confirmRemove ? '#fef2f2' : 'var(--bg-tertiary)', color: confirmRemove ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmRemove ? '#fecaca' : 'var(--border-light)'}` }}>
-              {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
-            </button>
-          )}
-          {!synced && (
-            <button className="btn btn-sm" disabled={busy} onClick={deleteDraft} onBlur={() => setConfirmDelete(false)}
-              style={{ marginLeft: 'auto', background: confirmDelete ? '#fef2f2' : 'transparent', color: confirmDelete ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmDelete ? '#fecaca' : 'var(--border-light)'}` }}>
-              {confirmDelete ? 'Confirm delete' : 'Delete draft'}
-            </button>
-          )}
+      {/* Customer preview overlay */}
+      {showPreview && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(16,24,40,.45)', overflowY: 'auto', padding: '24px 16px' }} onClick={() => setShowPreview(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, margin: '0 auto' }}>
+            <div className="est-no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+              <PrimaryButton onClick={() => window.print()}>⎙ Print / Save PDF</PrimaryButton>
+              <GhostButton onClick={() => setShowPreview(false)} style={{ background: '#fff' }}>Close</GhostButton>
+            </div>
+            <div className="est-print-doc" style={{ background: '#fff', borderRadius: 12, padding: '36px 40px', boxShadow: '0 12px 40px rgba(16,24,40,.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>Utah Pros Restoration</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>Estimate</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.ink, letterSpacing: '.04em' }}>ESTIMATE</div>
+                  <div style={{ fontSize: 12.5, color: C.body, marginTop: 2 }}>#{docNumber}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 24 }}>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint }}>Prepared for</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 3 }}>{contact?.name || '—'}</div>
+                  {contact?.email && <div style={{ fontSize: 12.5, color: C.muted }}>{contact.email}</div>}
+                  {claim?.claim_number && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Claim {claim.claim_number}{claim.insurance_carrier ? ` · ${claim.insurance_carrier}` : ''}</div>}
+                  {addr && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{addr}</div>}
+                </div>
+                <div style={{ textAlign: 'right', fontSize: 12.5, color: C.body }}>
+                  <div>{TYPE_LABEL[est.estimate_type] || 'Estimate'}</div>
+                  <div>{est.submitted_at ? `Sent ${fmtDate(est.submitted_at)}` : 'Draft'}</div>
+                </div>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 24, fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${C.cardBorder}`, color: C.faint, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>Description</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 60 }}>Qty</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 90 }}>Rate</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 100 }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.length === 0 && <tr><td colSpan={4} style={{ padding: '16px 6px', color: C.faint }}>No line items.</td></tr>}
+                  {lines.map((l) => (
+                    <tr key={l.id} style={{ borderBottom: `1px solid ${C.hairline}` }}>
+                      <td style={{ padding: '9px 6px', color: C.ink }}>{l.qbo_item_name ? <b>{l.qbo_item_name}</b> : null}{l.qbo_item_name && l.description ? ' — ' : ''}{l.description}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', ...tnum }}>{Number(l.quantity || 0)}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', ...tnum }}>{fmt$2(l.unit_price)}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', fontWeight: 600, ...tnum }}>{fmt$2(l.line_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                <div style={{ minWidth: 240 }}>
+                  <TotalRow label="Subtotal" value={fmt$2(subtotal)} />
+                  <div style={{ height: 1, background: C.cardBorder, margin: '6px 0' }} />
+                  <TotalRow label="Estimate total" value={fmt$2(total)} strong />
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 28, borderTop: `1px solid ${C.hairline}`, paddingTop: 12 }}>This estimate is provided for your review. Amounts are estimated and may be adjusted as scope is finalized.</div>
+            </div>
+          </div>
         </div>
       )}
-      {canEdit && !converted && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save as you type. Click <b>Save</b> to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
     </div>
   );
 }
 
-// Description takes the most room (scope of work goes here); minWidth keeps mobile
-// horizontally scrollable exactly as before.
-const GRID = '1.1fr 2.6fr 0.9fr 60px 100px 115px 28px';
-const inp = { width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' };
-const sel = { ...inp, cursor: 'pointer' };
-// Description textarea: matches the inputs on the first line, then grows downward.
-const txt = { ...inp, lineHeight: 1.4, minHeight: 32, display: 'block' };
+// ─── SECTION: Small presentational helpers ──────────────
+function TotalRow({ label, value, strong }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, padding: '2px 0' }}>
+      <span style={{ fontSize: strong ? 14 : 12.5, fontWeight: strong ? 800 : 500, color: strong ? C.ink : C.muted }}>{label}</span>
+      <span style={{ fontSize: strong ? 16 : 13, fontWeight: strong ? 800 : 600, color: C.ink, ...tnum }}>{value}</span>
+    </div>
+  );
+}
+function SectionLabel({ children }) {
+  return <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint, marginBottom: 8 }}>{children}</div>;
+}
+function DetailRow({ label, value, mono: isMono }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0', fontSize: 12.5 }}>
+      <span style={{ color: C.muted }}>{label}</span>
+      <span style={{ color: C.ink, fontWeight: 600, textAlign: 'right', ...(isMono ? mono : null) }}>{value}</span>
+    </div>
+  );
+}
+
+const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+const cellTxt = { ...cellInp, lineHeight: 1.4, minHeight: 34, display: 'block' };
+const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
+const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
