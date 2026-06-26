@@ -85,7 +85,9 @@ src/
     Production.jsx                — Kanban pipeline (30 phases, 4 macro groups) + list view
     Leads.jsx                     — Jobs in lead phase (feature-flagged: page:leads)
     Collections.jsx               — "My Money" / Collections page (feature-flagged: page:collections), redesigned to
-                                    the UPR design system (Jun 2026). FOUR tabs: A/R · Outstanding (ARDashboard),
+                                    the UPR design system (Jun 2026). FOUR tabs: A/R · Outstanding (ARDashboard —
+                                    default-sorts newest CREATED first, client-side, via get_ar_invoices().created_at
+                                    added by 20260626_get_ar_invoices_created_at.sql; clickable column headers override),
                                     Invoices (InvoicesList, get_ar_invoices(), rows → /invoices/:id editor),
                                     Estimates (EstimatesList, get_estimates(), rows → /estimates/:id — a convenience
                                     view of the standalone /estimates page), Payments (PaymentsLedger,

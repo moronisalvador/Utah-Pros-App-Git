@@ -30,8 +30,8 @@
  *   - Address line under Claim · Job renders only if get_ar_invoices supplies
  *     job_address/job_city (additive RPC field) — absent today, shows gracefully.
  *   - Column sorting is client-side: clicking the Sent/Age/Total/Collected/Balance
- *     headers sorts the already-filtered rows. Until a header is clicked the table
- *     keeps the RPC's order (balance desc); null/undated values always sort last.
+ *     headers sorts the already-filtered rows. The default order is newest CREATED
+ *     first (invoices.created_at, desc); null/undated values always sort last.
  * ════════════════════════════════════════════════
  */
 
@@ -81,8 +81,12 @@ const LOCKED = ['client', 'balance'];
 // comparable primitive; a null value (undated / no due date) sinks to the bottom
 // regardless of direction so an empty cell never sorts to the top.
 const SORTABLE = ['sent', 'age', 'total', 'collected', 'balance'];
+// Default order for the A/R table: most recently CREATED invoice first. 'created' isn't a
+// visible column (no header arrow) — it just seeds the order; clicking any header overrides it.
+const DEFAULT_SORT = { key: 'created', dir: 'desc' };
 function sortValue(r, key, today) {
   switch (key) {
+    case 'created':   return r.created_at ? new Date(r.created_at).getTime() : null;
     case 'sent':      return r.sent_at ? new Date(r.sent_at).getTime() : null;
     case 'age':       return daysPastDue(r.due_date, today);   // overdue > 0, future < 0, none = null
     case 'total':     return Number(r.total || 0);
@@ -114,7 +118,7 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
   const [mode, setMode] = useState('open');                 // open | overdue | all
   const [filters, setFilters] = useState({ divisions: [], sync: [], minAmt: '', maxAmt: '' });
   const [cols, setCols] = useState({ client: true, claimJob: true, sent: true, age: true, total: true, collected: true, balance: true });
-  const [sort, setSort] = useState({ key: null, dir: 'desc' }); // key null ⇒ RPC default order (balance desc)
+  const [sort, setSort] = useState(DEFAULT_SORT); // newest created first until a header is clicked
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -184,8 +188,9 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
   }, [periodRows, mode, search, filters, today]);
 
   // ─── SECTION: Sorting (client-side) ──────────────
-  // A null sort key preserves get_ar_invoices()'s order (balance desc). Clicking a
-  // header sets the key; clicking it again flips direction.
+  // Default is newest-created-first (DEFAULT_SORT, key 'created'). Clicking a header
+  // sets that key; clicking it again flips direction. A null key falls back to the
+  // RPC's own order (only reachable via legacy state — defaults never set null now).
   const sorted = useMemo(() => {
     if (!sort.key) return filtered;
     const dir = sort.dir === 'asc' ? 1 : -1;
@@ -329,7 +334,7 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
                         onChange={() => {
                           if (locked) return;
                           setCols(c => ({ ...c, [key]: !c[key] }));
-                          if (sort.key === key && cols[key]) setSort({ key: null, dir: 'desc' }); // hiding the active sort column → default order
+                          if (sort.key === key && cols[key]) setSort(DEFAULT_SORT); // hiding the active sort column → default order
                         }} />
                       {COL[key].label}
                     </label>
