@@ -89,13 +89,22 @@ export default function EstimateEditor() {
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
       const cid = e.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || []);
+      let ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
+      // Start a fresh editable draft with one blank line so the builder opens ready to type.
+      if (ls.length === 0 && canEdit && !e.converted_invoice_id && !e.qbo_estimate_id) {
+        try {
+          const created = await d.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
+          const row = Array.isArray(created) ? created[0] : created;
+          if (row) ls = [row];
+        } catch { /* non-fatal — user can still + Add line */ }
+      }
+      setLines(ls);
     } catch (e) {
       toast('Failed to load estimate: ' + (e.message || e), 'error');
     } finally {
       setLoading(false);
     }
-  }, [estimateId, navigate]);
+  }, [estimateId, navigate, canEdit]);
 
   useEffect(() => { load(); }, [load]);
 

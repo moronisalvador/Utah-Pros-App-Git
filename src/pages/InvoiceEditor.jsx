@@ -93,14 +93,23 @@ export default function InvoiceEditor() {
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
+      let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
+      // Start a fresh editable draft with one blank line so the builder opens ready to type.
+      if (ls.length === 0 && canEdit && !i.qbo_invoice_id) {
+        try {
+          const created = await d.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
+          const row = Array.isArray(created) ? created[0] : created;
+          if (row) ls = [row];
+        } catch { /* non-fatal — user can still + Add line */ }
+      }
+      setLines(ls);
       setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
     } catch (e) {
       toast('Failed to load invoice: ' + (e.message || e), 'error');
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, navigate]);
+  }, [invoiceId, navigate, canEdit]);
 
   useEffect(() => { load(); }, [load]);
 
