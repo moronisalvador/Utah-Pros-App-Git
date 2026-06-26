@@ -43,6 +43,7 @@ import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import ActionMenu from '@/components/collections/ActionMenu';
+import { IconOpenPage } from '@/components/Icons';
 import { CollCard, GhostButton, PrimaryButton, Pill, MapPin } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
 
@@ -303,7 +304,7 @@ export default function EstimateEditor() {
   // ─── SECTION: Render ──────────────
   return (
     <div className="coll-page">
-      <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } }`}</style>
+      <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } } .est-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
       {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -346,7 +347,16 @@ export default function EstimateEditor() {
           <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Estimate</span>
           <Pill color={st.text} bg={st.tint} border={st.border} style={{ letterSpacing: '.04em' }}>{statusLabel.toUpperCase()}</Pill>
         </div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        {job?.id ? (
+          // Click the estimate number to open its job.
+          <button type="button" onClick={() => navigate(`/jobs/${job.id}`)} title="Open job" className="est-doc-link"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>
+            {docNumber}
+            <span style={{ color: STATUS.info.text, display: 'inline-flex' }}><IconOpenPage width={16} height={16} style={{ flex: 'none' }} aria-hidden="true" /></span>
+          </button>
+        ) : (
+          <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        )}
         {est.qbo_doc_number && est.qbo_doc_number !== est.estimate_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {est.estimate_number}</div>}
         <div style={{ marginTop: 12 }}>
           <SectionLabel>Prepared for</SectionLabel>

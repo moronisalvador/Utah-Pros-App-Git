@@ -501,7 +501,7 @@ export default function InvoiceEditor() {
   // ─── SECTION: Render ──────────────
   return (
     <div className="coll-page">
-      <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } }`}</style>
+      <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } } .inv-doc-link:hover { text-decoration: underline; text-underline-offset: 3px; }`}</style>
 
       {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -546,7 +546,16 @@ export default function InvoiceEditor() {
           <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
           <StatusBadge kind={stKind} />
         </div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        {job?.id ? (
+          // The invoice number doubles as the work/job number — click it to open the job.
+          <button type="button" onClick={() => navigate(`/jobs/${job.id}`)} title="Open job" className="inv-doc-link"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>
+            {docNumber}
+            <span style={{ color: STATUS.info.text, display: 'inline-flex' }}><IconExternal s={16} /></span>
+          </button>
+        ) : (
+          <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        )}
         {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
         <div style={{ marginTop: 12 }}>
           <SectionLabel>Bill to</SectionLabel>
@@ -557,9 +566,7 @@ export default function InvoiceEditor() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px 20px' }}>
           <Field label="Carrier" value={claim?.insurance_carrier || '—'} />
           <Field label="Claim" value={claim?.claim_number || '—'} mono />
-          <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division}
-            onClick={job?.id ? () => navigate(`/jobs/${job.id}`) : undefined}
-            title={job?.id ? 'Open job' : undefined} />
+          <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
           <div style={{ minWidth: 0 }}>
@@ -880,21 +887,11 @@ function TotalRow({ label, value, strong }) {
 function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint, marginBottom: 8 }}>{children}</div>;
 }
-function Field({ label, value, mono: isMono, onClick, title }) {
-  const valStyle = { fontSize: 13, fontWeight: 600, color: C.ink, ...(isMono ? mono : null) };
+function Field({ label, value, mono: isMono }) {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>{label}</div>
-      {onClick ? (
-        // Clickable value (e.g. Job → its page): link-blue text + external-link icon so it reads as tappable.
-        <button type="button" onClick={onClick} title={title}
-          style={{ ...valStyle, display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', color: STATUS.info.text, fontFamily: 'inherit' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
-          <IconExternal />
-        </button>
-      ) : (
-        <div style={valStyle}>{value}</div>
-      )}
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, ...(isMono ? mono : null) }}>{value}</div>
     </div>
   );
 }
