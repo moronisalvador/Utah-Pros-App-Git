@@ -4,8 +4,14 @@
 // UPR's first AI/LLM integration. It downloads the uploaded PDF from Supabase Storage
 // (service role), sends it to Claude (claude-opus-4-8) with a strict extraction tool,
 // and inserts ONE summary line on the draft invoice at the insurance-billable total
-// (the Replacement Cost Value, by default). It does NOT push anything to QuickBooks —
-// a human reviews the pre-filled draft + the extracted breakdown and clicks Save.
+// (the Replacement Cost Value). The prompt is tailored to the job's work type — mitigation
+// (no depreciation/deductible; bill the full total) vs reconstruction (may carry depreciation/
+// deductible and "Paid When Incurred" holdbacks, which are surfaced, not subtracted). It does NOT
+// push anything to QuickBooks — a human reviews the pre-filled draft + breakdown and clicks Save.
+//
+// Training surface: the AI's behavior = this prompt + the worked examples + the deterministic
+// reconciliation below. There is no fine-tuning (the API is stateless) — to teach it a new rule,
+// add guidance / a worked example / a check here and ship.
 //
 // Auth:  Supabase Bearer (a logged-in admin/manager session — the UI is billing-gated).
 // Body:  { invoice_id, file_path }   // file_path = the key WITHIN the job-files bucket
@@ -78,8 +84,9 @@ const ESTIMATE_SCHEMA = {
         acv: { type: 'number', description: 'Actual Cash Value — RCV minus depreciation.' },
         deductible: { type: 'number' },
         net_claim: { type: 'number' },
+        paid_when_incurred: { type: 'number', description: 'Sum of line items the carrier marks "Paid When Incurred" / holds back until the work is completed (often continuous flooring). 0 if none — normally 0 on mitigation.' },
       },
-      required: ['line_item_total', 'overhead', 'profit', 'sales_tax', 'rcv', 'depreciation', 'acv', 'deductible', 'net_claim'],
+      required: ['line_item_total', 'overhead', 'profit', 'sales_tax', 'rcv', 'depreciation', 'acv', 'deductible', 'net_claim', 'paid_when_incurred'],
     },
     billable: {
       type: 'object',
@@ -97,21 +104,29 @@ const ESTIMATE_SCHEMA = {
   required: ['claim_number', 'date_of_loss', 'line_items', 'totals', 'billable'],
 };
 
-const PROMPT = `You are reading an Xactimate property-insurance estimate for Utah Pros Restoration, a restoration contractor.
+// Work-type-specific guidance, injected into the prompt so the model applies the right expectations.
+// `workType` is derived from the job's division (mitigation vs reconstruction).
+const WORK_TYPE_GUIDANCE = {
+  mitigation: `This is a MITIGATION estimate (water/fire/mold cleanup). It is a service with no materials and does not change the home's value, and Utah Pros writes the estimate — so depreciation and a deductible are almost never present. The billable is the full RCV, which equals the estimate total. When the printed totals tie out, be decisive and report "high" confidence; do NOT treat a missing ACV, depreciation, or deductible as a problem. Set paid_when_incurred to 0.`,
+  reconstruction: `This is a RECONSTRUCTION estimate (repairs/remodel). Depreciation, ACV, and a deductible may be present. Some carriers mark certain line items "Paid When Incurred" (PWI) — often continuous flooring — and hold back payment until the work is completed and photographed; these may be struck through or labeled "Paid When Incurred". Sum those held-back items into paid_when_incurred. The billable is STILL the full RCV — report the held-back amount separately, do NOT subtract it.`,
+};
+
+function buildPrompt(workType) {
+  return `You are reading an Xactimate property-insurance estimate for Utah Pros Restoration, a restoration contractor.
+
+${WORK_TYPE_GUIDANCE[workType] || WORK_TYPE_GUIDANCE.mitigation}
 
 Using ONLY what appears in this document (never invent figures):
 - Extract every line item (description, quantity, unit price, and its room/trade category + Xactimate code when shown).
-- Extract all summary totals: line-item subtotal, overhead, profit, sales tax, RCV (Replacement Cost Value), depreciation, ACV (Actual Cash Value), deductible, and net claim. Use 0 for any figure not present (many estimates have no overhead/profit, depreciation, or deductible).
+- Extract all summary totals: line-item subtotal, overhead, profit, sales tax, RCV (Replacement Cost Value), depreciation, ACV (Actual Cash Value), deductible, net claim, and paid_when_incurred. Use 0 for any figure not present (many estimates have no overhead/profit, depreciation, deductible, or PWI).
 - Determine the amount the contractor bills the insurance company ("billable"). For a restoration contractor this is normally the RCV — the full replacement cost: the carrier pays the ACV up front and releases the withheld depreciation once the work is complete, while the homeowner pays the deductible. Prefer RCV unless the document clearly indicates a different billed total. When no depreciation is withheld, RCV equals the net claim — still bill the RCV. Give a one-sentence rationale and your confidence: when the printed totals tie out (RCV = line items + overhead + profit + tax), be decisive and report "high"; reserve "medium"/"low" only for genuinely ambiguous, partial, or unreadable estimates.
 
-Worked example — if the estimate's summary reads:
-  Line Item Total 18,200.00 · Material Sales Tax 540.00 · Replacement Cost Value 18,740.00 ·
-  Less Depreciation (3,100.00) · Actual Cash Value 15,640.00 · Less Deductible (1,000.00) · Net Claim 14,640.00
-then the correct result is: totals = { line_item_total: 18200, overhead: 0, profit: 0, sales_tax: 540, rcv: 18740,
-depreciation: 3100, acv: 15640, deductible: 1000, net_claim: 14640 }, and billable = { amount: 18740, basis: "RCV",
-confidence: "high", rationale: "Contractor bills the full replacement cost; the carrier pays ACV now and releases depreciation on completion." }.
+## Worked examples
+1. Reconstruction — summary reads: Line Item Total 18,200.00 · Material Sales Tax 540.00 · Replacement Cost Value 18,740.00 · Less Depreciation (3,100.00) · Actual Cash Value 15,640.00 · Less Deductible (1,000.00) · Net Claim 14,640.00 → totals = { line_item_total: 18200, overhead: 0, profit: 0, sales_tax: 540, rcv: 18740, depreciation: 3100, acv: 15640, deductible: 1000, net_claim: 14640, paid_when_incurred: 0 }, billable = { amount: 18740, basis: "RCV", confidence: "high", rationale: "Contractor bills the full replacement cost; the carrier pays ACV now and releases depreciation on completion." }.
+2. Mitigation — summary reads: Line Item Total 4,287.34 · Material Sales Tax 35.88 · Replacement Cost Value 4,323.22 · Net Claim 4,323.22 (no depreciation, ACV, or deductible) → totals = { line_item_total: 4287.34, overhead: 0, profit: 0, sales_tax: 35.88, rcv: 4323.22, depreciation: 0, acv: 0, deductible: 0, net_claim: 4323.22, paid_when_incurred: 0 }, billable = { amount: 4323.22, basis: "RCV", confidence: "high", rationale: "Mitigation service with no depreciation or deductible; bill the full replacement cost, which equals the net claim." }.
 
 All money values are plain numbers (no "$" and no thousands separators). Call submit_estimate exactly once with the structured result.`;
+}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -137,6 +152,17 @@ export async function onRequestPost(context) {
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
     if (inv.qbo_invoice_id) return jsonResponse({ error: 'This invoice is already in QuickBooks — import only into a draft.' }, 409, request, env);
 
+    // Work-type drives both the AI's expectations (mitigation vs reconstruction) and the line's QBO
+    // Item/Class — derive it once from the job's division via the shared mapping (best-effort).
+    let qboMap = null;
+    try {
+      const division = inv.job_id
+        ? (await db.select('jobs', `id=eq.${inv.job_id}&select=division&limit=1`))?.[0]?.division
+        : null;
+      qboMap = divisionToQbo(division);
+    } catch { /* defaults to mitigation + no Item/Class */ }
+    const workType = qboMap?.className === 'Reconstruction' ? 'reconstruction' : 'mitigation';
+
     // 1. Download the uploaded PDF (service role) → base64 (chunked, V8-safe for large files).
     const fileRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/job-files/${file_path}`, {
       headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
@@ -160,7 +186,7 @@ export async function onRequestPost(context) {
           role: 'user',
           content: [
             { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfB64 } },
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: buildPrompt(workType) },
           ],
         }],
       }),
@@ -194,24 +220,20 @@ export async function onRequestPost(context) {
         await db.delete('invoice_line_items', `id=eq.${l.id}`);
       }
     }
-    // Pre-fill the line's QBO Item + Class from the job's division — the SAME mapping the invoice
-    // sync uses (functions/lib/quickbooks.js divisionToQbo), so the draft shows exactly what will
-    // post to QuickBooks. Best-effort: a QBO hiccup must never fail the import (sync still falls back).
+    // Pre-fill the line's QBO Item + Class from the work-type mapping derived above — the SAME mapping
+    // the invoice sync uses (functions/lib/quickbooks.js), so the draft shows exactly what will post.
+    // Best-effort: a QBO hiccup must never fail the import (sync still falls back).
     const lineExtra = {};
     try {
-      const division = inv.job_id
-        ? (await db.select('jobs', `id=eq.${inv.job_id}&select=division&limit=1`))?.[0]?.division
-        : null;
-      const map = divisionToQbo(division);
-      if (map) {
-        lineExtra.qbo_item_id = map.itemId;
-        lineExtra.qbo_item_name = map.itemName;
-        if (map.className) {
-          const classId = await findClassId(env, map.className);
-          if (classId) { lineExtra.qbo_class_id = classId; lineExtra.qbo_class_name = map.className; }
+      if (qboMap) {
+        lineExtra.qbo_item_id = qboMap.itemId;
+        lineExtra.qbo_item_name = qboMap.itemName;
+        if (qboMap.className) {
+          const classId = await findClassId(env, qboMap.className);
+          if (classId) { lineExtra.qbo_class_id = classId; lineExtra.qbo_class_name = qboMap.className; }
         }
       }
-    } catch { /* division/QBO mapping is best-effort — leave Item/Class for the user to pick */ }
+    } catch { /* QBO class lookup is best-effort — leave Item/Class for the user to pick */ }
 
     const ref = extracted.claim_number ? ` (claim ${extracted.claim_number})` : '';
     await db.insert('invoice_line_items', {
@@ -225,6 +247,8 @@ export async function onRequestPost(context) {
       line_count: Array.isArray(extracted.line_items) ? extracted.line_items.length : 0,
       billable: { ...extracted.billable, amount, confidence },
       totals: extracted.totals,
+      paid_when_incurred: round2(extracted.totals?.paid_when_incurred),
+      work_type: workType,
       checks, reconciles,
       claim_number: extracted.claim_number || null,
       date_of_loss: extracted.date_of_loss || null,

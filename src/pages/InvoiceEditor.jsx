@@ -564,6 +564,11 @@ export default function InvoiceEditor() {
               <div style={{ fontWeight: 800 }}>✨ Imported from Xactimate — billing insurance {fmt$2(xactInfo.billable?.amount)} <span style={{ fontWeight: 500 }}>({xactInfo.billable?.basis} · {xactInfo.billable?.confidence} confidence)</span></div>
               {xactInfo.billable?.rationale && <div style={{ fontSize: 12, marginTop: 3 }}>{xactInfo.billable.rationale}</div>}
               {xactInfo.reconciles === false && <div style={{ fontSize: 12, marginTop: 3, fontWeight: 700 }}>⚠ The estimate’s totals didn’t fully reconcile — double-check the amount before saving.</div>}
+              {Number(xactInfo.paid_when_incurred) > 0 && (
+                <div style={{ fontSize: 12, marginTop: 4, fontWeight: 700 }}>
+                  ⏳ {fmt$2(xactInfo.paid_when_incurred)} is Paid When Incurred — the carrier holds this until the work is completed and documented. The billable shown is the full RCV; trim it if you bill in stages.
+                </div>
+              )}
               {xactInfo.totals && (
                 <div style={{ fontSize: 11.5, marginTop: 6, ...mono }}>
                   {['rcv', 'depreciation', 'acv', 'deductible', 'net_claim', 'sales_tax'].filter((k) => Number(xactInfo.totals[k]) > 0).map((k) => `${k.replace('_', ' ').toUpperCase()} ${fmt$2(xactInfo.totals[k])}`).join('   ·   ') || 'No summary totals found.'}
