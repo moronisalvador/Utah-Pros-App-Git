@@ -31,6 +31,9 @@
  *   - Tax is UPR-side (invoices.tax, optional) and is shown read-only here; it is not
  *     sent to QuickBooks as a separate line. Editable memo/terms are a later phase.
  *   - Back button uses navigate(-1) so it returns to wherever you came from.
+ *   - Payments open in a VIEW-first modal; a deliberate Edit step loads the form
+ *     (guards accidental edits). Editing re-syncs QBO (delete+recreate). Stripe
+ *     (card) payments are view-only to protect the Stripe↔QBO reconciliation.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -58,6 +61,7 @@ const fmtStamp = (iso) => {
 
 const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['other', 'Other']];
 const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
@@ -81,12 +85,13 @@ export default function InvoiceEditor() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
-  const [payForm, setPayForm] = useState(null); // null = closed, else the draft object (.id set when editing)
+  const [payForm, setPayForm] = useState(null); // null = closed, else the form draft (.id set when editing)
+  const [payView, setPayView] = useState(null); // a payment shown read-only in the modal (the "view" step)
   const [delPayArmed, setDelPayArmed] = useState(false);
   const [hoverPay, setHoverPay] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const dragIdx = useRef(null);
-  const paymentsRef = useRef(null);
+  const payModalRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -142,6 +147,15 @@ export default function InvoiceEditor() {
     }
   }, []);
   useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
+
+  // Payment modal: close on Escape, focus the dialog when it opens.
+  useEffect(() => {
+    if (!payView && !payForm) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { setPayForm(null); setPayView(null); setDelPayArmed(false); } };
+    document.addEventListener('keydown', onKey);
+    const t = setTimeout(() => payModalRef.current?.focus(), 0);
+    return () => { document.removeEventListener('keydown', onKey); clearTimeout(t); };
+  }, [payView, payForm]);
 
   // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
@@ -292,19 +306,19 @@ export default function InvoiceEditor() {
           toast(`Payment of ${fmt$2(amt)} recorded${inv.qbo_invoice_id ? '' : ' (save to QuickBooks first to sync)'}`);
         }
       }
-      setPayForm(null); setDelPayArmed(false); await load();
+      setPayForm(null); setPayView(null); setDelPayArmed(false); await load();
     } catch (e) { toast('Failed to save payment: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
-  // Click a payment row → open the form pre-filled to edit it (QBO-style click-to-edit).
+  // The deliberate "Edit" step inside the modal: load the viewed payment into the form.
   const editPayment = (p) => {
     setDelPayArmed(false);
+    setPayView(p); // keep the original around so the dirty-check + "← Back" work
     setPayForm({
       id: p.id, qbo_payment_id: p.qbo_payment_id || null,
       amount: String(p.amount ?? ''), date: p.payment_date ? String(p.payment_date).slice(0, 10) : today(),
       payer_type: p.payer_type || 'insurance', method: p.payment_method || 'check', reference: p.reference_number || '',
     });
-    setTimeout(() => paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
   const deleteEditingPayment = async () => {
     if (!payForm?.id) return;
@@ -315,17 +329,17 @@ export default function InvoiceEditor() {
         try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) }); }
         catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
       }
-      await db.delete('payments', `id=eq.${payForm.id}`); toast('Payment deleted'); setPayForm(null); await load();
+      await db.delete('payments', `id=eq.${payForm.id}`); toast('Payment deleted'); setPayForm(null); setPayView(null); await load();
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(false); }
   };
-  // Open a fresh record-payment form (triggered from the top toolbar) and bring it into view.
+  // Open the modal straight into a fresh record-payment form (from the top toolbar).
   const receivePayment = () => {
     const inviced = Number(inv?.adjusted_total ?? inv?.total ?? 0);
     const bal = Math.max(0, round2(inviced - Number(inv?.amount_paid || 0)));
     setDelPayArmed(false);
+    setPayView(null);
     setPayForm({ amount: bal > 0 ? bal.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' });
-    setTimeout(() => paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
 
   // ─── SECTION: Stripe pay-by-link (dormant until keys exist) ──────────────
@@ -368,6 +382,22 @@ export default function InvoiceEditor() {
   const docNumber = inv.qbo_doc_number || inv.invoice_number;
   const stKind = invoiceStatusKind({ total: invoiced, amount_paid: collected, balance, due_date: inv.due_date, sent_at: inv.sent_at, qbo_invoice_id: inv.qbo_invoice_id, status: inv.status });
   const GRID = canEdit ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
+
+  // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
+  const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
+  const payStripe = (payView?.source || '') === 'stripe';
+  const payDirty = payMode === 'edit'
+    ? !!payView && (
+        String(payForm.amount ?? '') !== String(payView.amount ?? '')
+        || (payForm.date || '') !== (payView.payment_date ? String(payView.payment_date).slice(0, 10) : '')
+        || (payForm.payer_type || 'insurance') !== (payView.payer_type || 'insurance')
+        || (payForm.method || 'check') !== (payView.payment_method || 'check')
+        || (payForm.reference || '') !== (payView.reference_number || '')
+      )
+    : true;
+  const payCanSave = !busy && Number(payForm?.amount) > 0 && payDirty;
+  const closePayModal = () => { setPayForm(null); setPayView(null); setDelPayArmed(false); };
+  const cancelPayEdit = () => { setPayForm(null); setDelPayArmed(false); }; // → back to view (payView stays) or close (new)
 
   // ─── SECTION: Render ──────────────
   return (
@@ -510,8 +540,7 @@ export default function InvoiceEditor() {
 
           {canEdit && <div className="inv-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Use <b>Save</b> (top) to record the invoice in QuickBooks{synced ? <>, then <b>Send to customer</b> to email it</> : ''}.</div>}
 
-          {/* Payments — full width, below the builder (form opens from the top "Receive payment") */}
-          <div ref={paymentsRef}>
+          {/* Payments — full width, below the builder (click a row → view→edit modal) */}
           <CollCard style={{ marginTop: 2 }}>
             <SectionLabel>Payments</SectionLabel>
             <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
@@ -540,7 +569,7 @@ export default function InvoiceEditor() {
                   );
                   const base = { display: 'grid', gridTemplateColumns: PAY_GRID, gap: 8, alignItems: 'center', padding: '9px 12px', fontSize: 12.5, borderTop: i === 0 ? 'none' : `1px solid ${C.hairline}` };
                   return canEdit ? (
-                    <button key={p.id} type="button" onClick={() => editPayment(p)} title="Click to edit"
+                    <button key={p.id} type="button" onClick={() => { setPayForm(null); setPayView(p); }} title="View payment"
                       onMouseEnter={() => setHoverPay(p.id)} onMouseLeave={() => setHoverPay(null)}
                       style={{ ...base, width: '100%', textAlign: 'left', border: 'none', borderTop: i === 0 ? 'none' : `1px solid ${C.hairline}`, background: hoverPay === p.id ? C.rowHover : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {cells}
@@ -552,32 +581,7 @@ export default function InvoiceEditor() {
               </div>
             )}
 
-            {canEdit && payForm && (
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: C.headFill, border: `1px solid ${C.cardBorder}`, borderRadius: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{payForm.id ? 'Edit payment' : 'Record payment'}</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
-                  <label style={fieldWrap}><span style={fieldLbl}>Date</span><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} style={fieldInp} /></label>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
-                  <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
-                </div>
-                <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
-                <div style={{ display: 'flex', gap: 8, marginTop: 2, alignItems: 'center' }}>
-                  <PrimaryButton onClick={recordPayment} style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>{payForm.id ? 'Update payment' : 'Save payment'}</PrimaryButton>
-                  <GhostButton onClick={() => { setPayForm(null); setDelPayArmed(false); }}>Cancel</GhostButton>
-                  {payForm.id && (
-                    <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
-                      style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
-                      {delPayArmed ? 'Confirm delete' : 'Delete'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
           </CollCard>
-          </div>
         </div>
       </div>
 
@@ -647,6 +651,66 @@ export default function InvoiceEditor() {
           </div>
         </div>
       )}
+
+      {/* Payment modal — inspect first, then a deliberate Edit step (guards accidental edits) */}
+      {payMode && (
+        <div role="dialog" aria-modal="true" aria-label="Payment"
+          style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'rgba(16,24,40,.45)', overflowY: 'auto', padding: '24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}
+          onClick={closePayModal}>
+          <div ref={payModalRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 440, marginTop: '6vh', background: '#fff', borderRadius: 14, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', overflow: 'hidden', outline: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 16px', borderBottom: `1px solid ${C.hairline}` }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{payMode === 'view' ? 'Payment' : payMode === 'edit' ? 'Edit payment' : 'Record payment'}</span>
+              <button type="button" onClick={closePayModal} aria-label="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.faint, fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
+            </div>
+
+            <div style={{ padding: 16 }}>
+              {payMode === 'view' ? (
+                <>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: STATUS.success.text, ...tnum }}>{fmt$2(Number(payView.amount || 0) - Number(payView.refunded_amount || 0))}</div>
+                  <div style={{ fontSize: 12.5, color: C.muted, marginTop: 2 }}>{fmtDate(payView.payment_date)}</div>
+                  <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    <ViewRow label="From" value={cap(payView.payer_type) || '—'} />
+                    <ViewRow label="Method" value={payView.payment_method ? cap(String(payView.payment_method).replace('_', ' ')) : '—'} />
+                    <ViewRow label="Reference" value={payView.reference_number || '—'} />
+                    <ViewRow label="QuickBooks" value={payView.qbo_payment_id ? '✓ Synced' : 'Not synced'} valueColor={payView.qbo_payment_id ? STATUS.success.text : C.faint} />
+                  </div>
+                  {payStripe && <div style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5, color: STATUS.info.text, background: STATUS.info.tint, border: `1px solid ${STATUS.info.border}`, borderRadius: 9, padding: '9px 11px' }}>💳 Card payment — recorded automatically from Stripe. To refund or adjust it, do so in QuickBooks so the card reconciliation stays intact.</div>}
+                  <div style={{ marginTop: 18, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <GhostButton onClick={closePayModal}>Close</GhostButton>
+                    {canEdit && !payStripe && <PrimaryButton onClick={() => editPayment(payView)}>Edit</PrimaryButton>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
+                      <label style={fieldWrap}><span style={fieldLbl}>Date</span><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} style={fieldInp} /></label>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                      <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                    </div>
+                    <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
+                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates the payment and re-syncs it to QuickBooks.</div>}
+                  </div>
+                  <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>
+                    <GhostButton onClick={cancelPayEdit}>{payView ? '← Back' : 'Cancel'}</GhostButton>
+                    {payMode === 'edit' && (
+                      <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
+                        style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
+                        {delPayArmed ? 'Confirm delete' : 'Delete'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -676,6 +740,14 @@ function Stat({ label, value, color = C.ink }) {
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color, ...tnum, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
+    </div>
+  );
+}
+function ViewRow({ label, value, valueColor }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+      <span style={{ fontSize: 12, color: C.faint }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: valueColor || C.ink, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
     </div>
   );
 }
