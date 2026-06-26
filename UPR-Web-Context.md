@@ -899,7 +899,7 @@ doc-category keys unchanged). Two new schema capabilities:
 
 ## Feature Flags System (Phase 1A complete, 1B wired in AuthContext)
 
-**Table:** `feature_flags` — 9 rows, all `enabled = false`
+**Table:** `feature_flags` — 19 rows as of Jun 2026 (mixed on / off / dev-only). The table below is the original Phase-1A seed; new flags are now added via the self-registering registry (see below), and `feature:ai_xactimate` (Jun 2026, AI Xactimate Import) is live + ON.
 
 | Key | Category | Label |
 |-----|----------|-------|
@@ -925,6 +925,17 @@ doc-category keys unchanged). Two new schema capabilities:
   4. `nav_permissions` by role (existing logic)
 - All three (permissions, flags, page access) fetched in parallel at login
 - All reset on logout
+
+**Self-registering flag registry (`src/lib/featureFlags.js`, Jun 2026):** Flags no longer need
+hand-entry in DevTools. `FEATURE_FLAG_REGISTRY` is the code-side manifest of every flag the app
+references — explicit `feature:*` entries plus every `featureFlag` declared on a `navItems.jsx`
+entry (auto-derived, reusing the nav label). When DevTools → Feature Flags loads, `FlagsTab.load()`
+upserts any registry key **missing** from `feature_flags` — created **ENABLED**, and never touches
+an existing row. ENABLED (not OFF) is deliberate: `isFeatureEnabled` treats a missing flag as **ON**
+("no row = unrestricted"), so seeding OFF would *hide* a feature that was already live. To
+dark-launch a feature OFF, set `enabled: false` on its registry entry. Add a flag going forward by
+appending one line to `EXPLICIT_FLAGS`, or just set `featureFlag` on a nav item — it self-registers
+on the next DevTools open.
 
 **Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 7 tabs (Moroni-only route)
 
