@@ -1255,7 +1255,8 @@ not the app-wide tokens.
   HTML5 **drag-to-reorder** persisting `sort_order`; `AutoGrowTextarea` description; qty/rate cells; footer
   **Subtotal → Total** (invoice shows read-only **Tax** only when `invoices.tax` is set — UPR-side, never
   pushed to QBO as a separate line). Line edits save on blur/select without reloading; **Save** flushes +
-  pushes to QBO (create first time, update after).
+  pushes to QBO (create first time, update after). A fresh **editable draft auto-opens with one blank line**
+  (inserted on load when there are 0 lines) so the builder is ready to type.
 - **Invoice payment summary** (full-width `CollCard` below the builder): Invoiced / Collected / Balance KPIs
   + `ProgressBar` + a HouseCall-Pro-style **payment history table** (Date · Type · Amount · Note;
   `payments?invoice_id=eq.…`). **Click a row to edit** (QBO-style) — reopens the record form pre-filled;

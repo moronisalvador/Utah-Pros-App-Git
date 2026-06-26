@@ -48,6 +48,14 @@ import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/co
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+// Compact saved stamp: "06-22-26 2:30 PM"
+const fmtStamp = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso); if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getFullYear() % 100)} ${h}:${p(d.getMinutes())} ${ap}`;
+};
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
 const EST_STATUS = { Converted: STATUS.success, Sent: STATUS.info, Saved: STATUS.neutral, Draft: STATUS.neutral };
 
@@ -89,13 +97,22 @@ export default function EstimateEditor() {
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
       const cid = e.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
-      setLines(await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || []);
+      let ls = await d.select('estimate_line_items', `estimate_id=eq.${estimateId}&order=sort_order.asc,created_at.asc`) || [];
+      // Start a fresh editable draft with one blank line so the builder opens ready to type.
+      if (ls.length === 0 && canEdit && !e.converted_invoice_id && !e.qbo_estimate_id) {
+        try {
+          const created = await d.insert('estimate_line_items', { estimate_id: estimateId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
+          const row = Array.isArray(created) ? created[0] : created;
+          if (row) ls = [row];
+        } catch { /* non-fatal — user can still + Add line */ }
+      }
+      setLines(ls);
     } catch (e) {
       toast('Failed to load estimate: ' + (e.message || e), 'error');
     } finally {
       setLoading(false);
     }
-  }, [estimateId, navigate]);
+  }, [estimateId, navigate, canEdit]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -277,7 +294,7 @@ export default function EstimateEditor() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
         <div className="est-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ Saved {fmtDate(est.qbo_synced_at)}</span>}
+          {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ {fmtStamp(est.qbo_synced_at)}</span>}
           {editable && (
             <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
               {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
