@@ -5,9 +5,11 @@ import { useState } from 'react';
 // Reachable from the sidebar by every logged-in user (not role-gated).
 // The downloadable PDF is served from /public.
 //
-// Reflects the line-item invoice builder (/invoices/:id), the "+ New invoice"
-// job picker, payment recording that syncs to QuickBooks, the Stripe card
-// pay-link, and the Collections surfaces.
+// Reflects the rebuilt line-item invoice/estimate builder (/invoices/:id,
+// /estimates/:id) with its top action toolbar (Save · Send to customer ·
+// Receive payment · Create pay link · Preview · Manage ▾), the click-to-edit
+// payment-history table, the Stripe card pay-link, and the four-tab
+// Collections ("My Money") surface. One-way UPR → QuickBooks throughout.
 // ═══════════════════════════════════════════════════════════════════════
 
 const PDF_URL = '/UPR-Invoicing-Financials-Guide.pdf';
@@ -86,7 +88,7 @@ function Callout({ children, tone = 'green' }) {
 }
 
 const GLOSSARY = [
-  ['Invoiced', 'Total of the invoice’s line items, once it’s <b>sent to QuickBooks</b>. What we’ve officially billed.'],
+  ['Invoiced', 'Total of the invoice’s line items, once you’ve <b>Saved</b> it (which records it in QuickBooks). What we’ve officially billed.'],
   ['Collected', 'Payments you’ve <b>recorded</b> as received (they also post to QuickBooks).'],
   ['Balance', 'Invoiced − Collected. What’s still owed.'],
   ['Aging', 'How overdue the balance is, vs. the invoice due date — Current, 1–30, 31–60, 61–90, 90+ days.'],
@@ -95,20 +97,26 @@ const GLOSSARY = [
 ];
 
 const FAQ = [
+  ['What does the “Save” button actually do?',
+   'It records the invoice in QuickBooks. The <b>first</b> Save creates the real QuickBooks invoice (the status leaves <b>Draft</b> and the balance clock starts); <b>later</b> Saves update it. You never have to touch QuickBooks yourself — Save handles it in the background. While you’re still building, your line edits save on their own as a <i>draft</i>; nothing reaches QuickBooks until you click <b>Save</b>.'],
+  ['How do I email the invoice to the customer?',
+   'Click <b>✉ Send to customer</b> in the top toolbar (it appears once the invoice is saved). It emails the customer the QuickBooks-generated PDF. Use <b>⎙ Preview</b> first to see / print exactly what they’ll get.'],
   ['How do I take a card payment from a customer?',
-   'Open the invoice (the <b>/invoices</b> editor) and click <b>💳 Create pay link</b> — that makes a secure Stripe link for the balance. Send it to the customer; when they pay, the payment is recorded and synced to QuickBooks automatically. <i>(Available once Stripe is connected in Payment Settings.)</i>'],
+   'Open the invoice and click <b>💳 Create pay link</b> — that makes a secure Stripe link for the balance. Send it to the customer; when they pay, the payment is recorded and synced to QuickBooks automatically. <i>(Available once Stripe is connected in Payment Settings.)</i>'],
   ['I recorded a payment — did it reach QuickBooks?',
-   'Yes, automatically — as long as the invoice was already <b>sent to QuickBooks</b>. A green <b>✓ QB</b> shows next to the payment. A <b>! QB</b> means the invoice isn’t in QuickBooks yet — send it first, then the payment will apply.'],
-  ['The Collections balance still shows an old number.',
-   'That job probably predates this system. <b>Older jobs keep their existing numbers</b> and don’t need re-invoicing. Only jobs with a freshly <b>sent</b> invoice switch to the new figures.'],
-  ['I sent the invoice but Invoiced didn’t change.',
-   'Invoiced reflects the <b>line-item total</b> of an invoice that’s in QuickBooks. If it looks off, check the lines add up and the status chip shows a green <b>QuickBooks #</b> (not Draft).'],
-  ['I got a red “Error” badge.',
-   'Hover it to see why — usually the customer needs to be linked to a QuickBooks customer first. Fix that, then <b>Send / Update to QuickBooks</b> again.'],
-  ['Can I undo a send?',
-   'Yes — on the invoice editor, <b>Remove from QuickBooks</b> pulls it out entirely. Just fixing line items? You don’t need to remove it — edit the lines and click <b>Update in QuickBooks</b>.'],
-  ['Why don’t I see the Item / Class dropdowns?',
-   'They load <b>live from QuickBooks</b>, so QuickBooks must be connected (Dev Tools → Integrations). Until then the line builder can’t pick Items/Classes.'],
+   'Yes, automatically — as long as the invoice was already <b>Saved</b> to QuickBooks. A green <b>✓ QB</b> shows next to the payment in the history table. If the invoice isn’t in QuickBooks yet, save it first, then the payment will apply.'],
+  ['How do I edit or delete a payment I recorded?',
+   'In the <b>Payments</b> card, <b>click the payment’s row</b> — the form reopens with its details. Change it and click <b>Update payment</b>, or click <b>Delete</b> inside that form. Edits re-sync to QuickBooks for you (it removes the old one and re-posts the new amount).'],
+  ['Can I undo a Save / pull an invoice back out of QuickBooks?',
+   'Yes — use <b>Manage ▾ → Revert to draft</b> on the invoice. It pulls the invoice out of QuickBooks and back to an editable draft. Just fixing line items? You don’t need to revert — edit the lines and click <b>Save</b> again to update.'],
+  ['I Saved the invoice but “Invoiced” didn’t change.',
+   'Invoiced reflects the <b>line-item total</b> of an invoice that’s in QuickBooks. If it looks off, check the lines add up and the status chip isn’t still <b>Draft</b>.'],
+  ['I got a red error / the Save failed.',
+   'Read the red banner — it’s usually that the customer needs to be linked to a QuickBooks customer first. Fix that, then click <b>Save</b> again.'],
+  ['Why are the Item / Class pickers greyed out?',
+   'They load <b>live from QuickBooks</b>, so QuickBooks must be connected (Dev Tools → Integrations) and its credentials present in this environment. Until then the line builder can’t pick Items/Classes.'],
+  ['What about estimates?',
+   'Estimates use the <b>same builder</b> (the <b>Estimates</b> tab in Collections, or <b>+ New estimate</b>). Build lines, <b>Save</b>, <b>Send to customer</b> — and once it’s accepted, <b>→ Convert to invoice</b> turns it into the job’s invoice in one click (and links it in QuickBooks).'],
 ];
 
 export default function Help() {
@@ -124,7 +132,7 @@ export default function Help() {
             Invoicing &amp; Financials
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 15, color: 'var(--text-secondary)' }}>
-            How we build invoices, send them to QuickBooks, take payments, and track collections in UPR.
+            How we build invoices in UPR, save them to QuickBooks, take payments, and track collections.
           </p>
         </div>
         <a href={PDF_URL} target="_blank" rel="noopener noreferrer" className="btn btn-primary"
@@ -142,84 +150,106 @@ export default function Help() {
           fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.8,
           overflowX: 'auto',
         }}>
-          JOB&nbsp; → &nbsp;BUILD INVOICE&nbsp; → &nbsp;SEND TO QUICKBOOKS&nbsp; → &nbsp;GET PAID&nbsp; → &nbsp;COLLECTIONS<br />
-          <span style={{ color: 'var(--text-tertiary)' }}>(the work)&nbsp;&nbsp;(line items in UPR)&nbsp;&nbsp;(real QBO invoice)&nbsp;&nbsp;(payments sync to QBO)&nbsp;&nbsp;(track A/R)</span>
+          JOB&nbsp; → &nbsp;BUILD LINES&nbsp; → &nbsp;SAVE&nbsp; → &nbsp;SEND TO CUSTOMER&nbsp; → &nbsp;GET PAID&nbsp; → &nbsp;COLLECTIONS<br />
+          <span style={{ color: 'var(--text-tertiary)' }}>(the work)&nbsp;&nbsp;(line items in UPR)&nbsp;&nbsp;(records it in QBO)&nbsp;&nbsp;(emails the PDF)&nbsp;&nbsp;(payments sync to QBO)&nbsp;&nbsp;(track A/R)</span>
         </div>
         <Bullets items={[
           '<b>One invoice per job — and a job is one division.</b> A claim with Mitigation and Reconstruction is two jobs = two invoices. Insurance pays each category on a separate check, so each check matches its own invoice.',
-          '<b>Invoices are built line by line.</b> On the invoice editor each line carries a QuickBooks <b>Item</b> + <b>Class</b>, a description, and quantity × rate. The invoice total adds itself up from the lines — there’s no single lump-sum box.',
-          '<b>“Invoiced” means it’s in QuickBooks.</b> A new invoice starts as a <b>draft</b> in UPR. You add the lines, then click <b>Send to QuickBooks</b> — now it’s real, the balance clock starts, and it appears in Collections.',
-          '<b>Everything flows one way: UPR → QuickBooks.</b> QuickBooks is the official record; UPR is where you build the invoice, send it, take payment, and chase the balance. Nobody edits invoices or payments directly in QuickBooks.',
+          '<b>Invoices are built line by line.</b> In the builder each line carries a QuickBooks <b>Item</b> + <b>Class</b>, a description, and quantity × rate. The <b>Subtotal</b> and <b>Total</b> add themselves up from the lines — there’s no single lump-sum box. A brand-new invoice opens with one blank line ready to fill.',
+          '<b>“Save” is what records it in QuickBooks.</b> A new invoice starts as a <b>draft</b> in UPR. You build the lines (they save themselves as you type), then click <b>Save</b> — the first Save creates the real QuickBooks invoice, the balance clock starts, and it appears in Collections. Save again any time to update it.',
+          '<b>Everything flows one way: UPR → QuickBooks.</b> QuickBooks is the official record; UPR is where you build the invoice, save it, take payment, and chase the balance. Nobody edits invoices or payments directly in QuickBooks.',
           '<b>Payments you record in UPR post to QuickBooks automatically</b>, applied against the invoice.',
-          '<b>The financial numbers come straight from your invoices</b> — once a job has a sent invoice, its Invoiced / Balance update on their own.',
+          '<b>The financial numbers come straight from your invoices</b> — once a job has a saved invoice, its Invoiced / Balance update on their own.',
         ]} />
       </Card>
 
-      {/* 2. Who can do what */}
+      {/* 2. How UPR & QuickBooks stay in sync */}
       <Card>
-        <SectionTitle n="2">Who Can Do What</SectionTitle>
+        <SectionTitle n="2">How UPR &amp; QuickBooks Stay in Sync</SectionTitle>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          You work entirely in UPR. Behind each button, UPR talks to QuickBooks for you — always one direction, <b>UPR → QuickBooks</b>.
+        </p>
         <Bullets items={[
-          '<b>Build invoices, send to QuickBooks, record payments, manage Payment Settings:</b> Admins and Managers.',
+          '<b>Save</b> → creates the QuickBooks invoice the first time, and <b>updates</b> it on every Save after. (The buttons say Save, not “send to QuickBooks” — but that’s what Save does.)',
+          '<b>Send to customer</b> → asks QuickBooks to email the customer the invoice PDF. The PDF itself is generated by QuickBooks; UPR’s on-screen <b>Preview</b> is a faithful copy you can print.',
+          '<b>Record / edit a payment</b> → posts to QuickBooks against the invoice (✓ QB). Editing a payment re-syncs by removing the old one and re-posting the new amount.',
+          '<b>Item &amp; Class pickers</b> load <b>live from QuickBooks</b>, so the right buckets are used — QuickBooks must be connected for them to appear.',
+          'The <b>customer must be linked</b> to a QuickBooks customer before an invoice or payment can post. If a Save fails, this is the usual reason.',
+          '<b>Revert to draft</b> (Manage ▾) pulls an invoice back out of QuickBooks; <b>Delete draft</b> removes one that was never saved.',
+          '<b>Golden rule:</b> never add or edit invoices/payments directly in QuickBooks — always do it in UPR so the two never drift apart.',
+        ]} />
+      </Card>
+
+      {/* 3. Who can do what */}
+      <Card>
+        <SectionTitle n="3">Who Can Do What</SectionTitle>
+        <Bullets items={[
+          '<b>Build invoices &amp; estimates, save to QuickBooks, record payments, manage Payment Settings:</b> Admins and Managers.',
           '<b>Everyone else:</b> can see the info (read-only). The edit buttons simply won’t show.',
           'Billing is also behind the <b>Billing</b> feature switch — if it’s off, the billing areas are hidden for everyone.',
         ]} />
       </Card>
 
-      {/* 3. Start an invoice */}
+      {/* 4. Start an invoice */}
       <Card>
-        <SectionTitle n="3">Start an Invoice</SectionTitle>
+        <SectionTitle n="4">Start an Invoice</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
-          Two ways to begin — both open the same invoice editor. <b>One invoice per job</b>: if the job already has one, you’ll land right back on it (never a duplicate).
+          All paths open the same builder. <b>One invoice per job</b>: if the job already has one, you’ll land right back on it (never a duplicate).
         </p>
         <Bullets items={[
-          '<b>“+ New invoice” button</b> — on a <b>Customer’s page</b> (top of the page) or on the <b>Collections</b> screen. Pick the job to bill and it opens the editor.',
+          '<b>“+ New invoice” button</b> — on the <b>Collections</b> (“My Money”) screen or a <b>Customer’s page</b>. Pick the job to bill and it opens the builder.',
           '<b>From the claim or customer</b> — open the claim’s <b>Invoices &amp; Payments</b> panel (or a customer’s <b>Financial</b> tab) and click <b>Create invoice</b> on the job’s row.',
+          'The builder opens with the header (customer, claim/job, service address, due date), an empty line ready to fill, and the action toolbar across the top.',
         ]} />
       </Card>
 
-      {/* 4. Build & send */}
+      {/* 5. Build & save */}
       <Card>
-        <SectionTitle n="4">Build &amp; Send to QuickBooks</SectionTitle>
+        <SectionTitle n="5">Build &amp; Save to QuickBooks</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
-          <b>Where:</b> the invoice editor (the page that opens after you start an invoice).
+          <b>Where:</b> the invoice builder (the page that opens after you start an invoice). The action buttons live in the <b>top toolbar</b>, next to “← Back”.
         </p>
         <Steps items={[
-          'Click <b>+ Add line</b>. Choose the QuickBooks <b>Item</b> and <b>Class</b>, type a <b>description</b>, then the <b>quantity</b> and <b>rate</b>. The line amount and the invoice <b>Total</b> fill in automatically.',
-          'Add as many lines as the job needs. <b>Line edits save by themselves</b> — no save button.',
-          'When the total is right, click <b>Send to QuickBooks</b>. The status goes <b>Draft → Sent</b> and you get a green <b>QuickBooks #</b> — it’s now officially invoiced and shows in Collections.',
-          'Need to change it after sending? Edit the lines and click <b>Update in QuickBooks</b> to re-push.',
+          'On the first (blank) line, choose the QuickBooks <b>Item</b> and <b>Class</b>, type a <b>description</b>, then the <b>quantity</b> and <b>rate</b>. The line amount, <b>Subtotal</b> and <b>Total</b> fill in automatically.',
+          'Click <b>+ Add line</b> for more lines. Drag the <b>⠿</b> handle to reorder them. <b>Line edits save by themselves</b> as you type (as a draft) — there’s no per-line save.',
+          'When the total is right, click <b>Save</b> in the top toolbar. The first Save <b>records the invoice in QuickBooks</b>; the status leaves <b>Draft</b> and it shows in Collections. Click <b>Save</b> again any time to update it.',
+          'Click <b>⎙ Preview</b> to see / print exactly what the customer will get, then <b>✉ Send to customer</b> to email it.',
           'The <b>Item</b> and <b>Class</b> lists come live from QuickBooks, so QuickBooks must be connected.',
         ]} />
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Callout tone="amber">
-            <b>Fixing mistakes:</b> A red <b>Error</b> badge? Hover to read why (usually the customer isn’t linked in QuickBooks yet) — fix it and click <b>Send / Update</b> again. Sent the wrong thing? Edit the lines and <b>Update</b>, or use <b>Remove from QuickBooks</b> to pull it out entirely. An unsent draft can be removed with <b>Delete draft</b>.
+            <b>Fixing mistakes:</b> A red banner on Save usually means the customer isn’t linked in QuickBooks yet — fix it and click <b>Save</b> again. Need to pull an invoice back out of QuickBooks to rework it? Use <b>Manage ▾ → Revert to draft</b>. An invoice that was never saved can be removed with <b>Manage ▾ → Delete draft</b>.
+          </Callout>
+          <Callout tone="blue">
+            <b>Estimates work the same way.</b> Build them in the <b>Estimates</b> tab (or <b>+ New estimate</b>) with the same line builder, <b>Save</b>, and <b>Send to customer</b>. Once it’s accepted, <b>→ Convert to invoice</b> turns it into the job’s invoice and links it in QuickBooks.
           </Callout>
         </div>
       </Card>
 
-      {/* 5. Get paid */}
+      {/* 6. Send & get paid */}
       <Card>
-        <SectionTitle n="5">Get Paid</SectionTitle>
+        <SectionTitle n="6">Get Paid</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
-          <b>Where:</b> the claim’s <b>Invoices &amp; Payments</b> panel, a customer’s <b>Financial</b> tab, or <b>Collections</b> → open the claim.
+          <b>Where:</b> the invoice builder’s <b>Payments</b> card (below the lines), or the claim’s <b>Invoices &amp; Payments</b> panel.
         </p>
         <Steps items={[
-          '<b>A payment comes in?</b> Click <b>+ Record payment</b>, enter the amount and date, choose who paid (insurance / homeowner / other) and the method, add a reference (check #, etc.), and save.',
-          'The payment <b>posts to QuickBooks automatically</b>, applied to that invoice — a green <b>✓ QB</b> appears next to it. (If you see <b>! QB</b>, the invoice isn’t in QuickBooks yet — send it first.)',
+          '<b>A payment comes in?</b> Click <b>💵 Receive payment</b> in the top toolbar. Enter the amount and date, choose who paid (insurance / homeowner / other) and the method, add a reference (check #, etc.), and save.',
+          'The payment <b>posts to QuickBooks automatically</b>, applied to that invoice — a green <b>✓ QB</b> appears next to it in the Payments history. (If the invoice isn’t in QuickBooks yet, save it first.)',
+          '<b>Need to fix a payment?</b> Click its row in the Payments history — the form reopens. Change it and <b>Update payment</b>, or <b>Delete</b> it from inside the form. Edits re-sync to QuickBooks.',
           '<b>Collected</b> and <b>Balance</b> update right away; <b>Invoiced</b> doesn’t change (it only reflects the invoice itself).',
         ]} />
         <div style={{ marginTop: 12 }}>
           <Callout tone="blue">
-            <b>💳 Card payments (Stripe pay-link):</b> On the invoice editor click <b>Create pay link</b> to generate a secure Stripe link for the balance, then send it to the customer. When they pay by card, the payment is recorded and synced to QuickBooks automatically — including the processing fee, which is booked for you. <i>Available once Stripe is connected (Collections → ⚙ Payment Settings).</i>
+            <b>💳 Card payments (Stripe pay-link):</b> In the toolbar click <b>Create pay link</b> to generate a secure Stripe link for the balance, then send it to the customer. When they pay by card, the payment is recorded and synced to QuickBooks automatically — including the processing fee, which is booked for you. <i>Available once Stripe is connected (Collections → ⚙ Payment Settings).</i>
           </Callout>
         </div>
       </Card>
 
-      {/* 6. Collections & the numbers */}
+      {/* 7. Collections & the numbers */}
       <Card>
-        <SectionTitle n="6">Collections &amp; the Numbers</SectionTitle>
+        <SectionTitle n="7">Collections &amp; the Numbers</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
-          <b>Collections</b> in the menu has two tabs: <b>A/R · Outstanding</b> (totals, aging buckets, and an overdue worklist) and <b>Payments</b> (cash-in history). Click any row to open that claim’s A/R workspace. The same per-invoice detail also lives on each claim’s <b>Invoices &amp; Payments</b> panel and each customer’s <b>Financial</b> tab.
+          <b>Collections</b> (“My Money” in the menu) has four tabs: <b>A/R · Outstanding</b> (totals, aging buckets, and an overdue worklist), <b>Invoices</b> (every invoice — click one to open the builder), <b>Estimates</b> (pre-sale quotes), and <b>Payments</b> (cash-in history). The same per-claim detail also lives on each claim’s <b>Invoices &amp; Payments</b> panel and each customer’s <b>Financial</b> tab.
         </p>
         <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           {GLOSSARY.map(([term, def], i) => (
@@ -235,20 +265,20 @@ export default function Help() {
           ))}
         </div>
         <p style={{ margin: '12px 0 0', fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Rule of thumb: <b>Invoiced − Collected = Balance.</b> If the Balance looks wrong, it’s almost always an invoice that wasn’t sent, or a payment that wasn’t recorded.
+          Rule of thumb: <b>Invoiced − Collected = Balance.</b> If the Balance looks wrong, it’s almost always an invoice that wasn’t Saved, or a payment that wasn’t recorded.
         </p>
       </Card>
 
-      {/* 7. Good practices */}
+      {/* 8. Good practices */}
       <Card>
-        <SectionTitle n="7">Good Practices</SectionTitle>
+        <SectionTitle n="8">Good Practices</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
           <div>
             <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 8, fontSize: 14 }}>✓ DO</div>
             <Bullets color="#16a34a" items={[
               'One invoice per division (Mitigation and Reconstruction each get their own).',
               'Build the lines with the right <b>Item + Class</b> so the numbers land in the correct QuickBooks buckets.',
-              'Only <b>Send to QuickBooks</b> when the total is <b>final</b> — sending creates the real bill and starts the A/R clock. Not ready? Leave it a draft.',
+              'Build freely first — line edits save as a draft on their own. Only click <b>Save</b> once the total is <b>final</b>: the first Save creates the real bill in QuickBooks and starts the A/R clock.',
               'Record payments the day they arrive, with the correct payer and method.',
               'Use the card <b>pay link</b> for deductibles / out-of-pocket — it reconciles itself.',
               'Mark the deductible received as soon as it’s collected.',
@@ -258,17 +288,17 @@ export default function Help() {
             <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 8, fontSize: 14 }}>✕ DON’T</div>
             <Bullets color="#dc2626" items={[
               'Don’t try to make a second invoice for the same job — open the existing one and edit its lines.',
-              'Don’t send a guess. A sent invoice is a real bill in QuickBooks.',
+              'Don’t Save a guess. The first Save is a real bill in QuickBooks.',
               'Don’t enter invoices or payments directly in QuickBooks — always do it in UPR so the two stay in sync.',
-              'Don’t “Remove from QuickBooks” unless you mean to pull it back to correct and re-send.',
+              'Don’t use <b>Revert to draft</b> unless you mean to pull the invoice back out of QuickBooks to correct and re-Save.',
             ]} />
           </div>
         </div>
       </Card>
 
-      {/* 8. FAQ */}
+      {/* 9. FAQ */}
       <Card>
-        <SectionTitle n="8">FAQ &amp; Troubleshooting</SectionTitle>
+        <SectionTitle n="9">FAQ &amp; Troubleshooting</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {FAQ.map(([q, a], i) => (
             <div key={i} style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
@@ -297,8 +327,9 @@ export default function Help() {
       <Card style={{ marginBottom: 0 }}>
         <SectionTitle n="★">Quick Cheat-Sheet</SectionTitle>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <Callout tone="blue"><b>To bill a job:</b> <i>+ New invoice</i> (or Claim → Invoices &amp; Payments → <i>Create invoice</i>) → add line items (Item + Class, qty × rate) → <i>Send to QuickBooks</i> (green QuickBooks # = done).</Callout>
-          <Callout tone="green"><b>To collect:</b> Collections → open claim → <i>+ Record payment</i> (it posts to QuickBooks) — or open the invoice and <i>Create pay link</i> for a card payment.</Callout>
+          <Callout tone="blue"><b>To bill a job:</b> <i>+ New invoice</i> (or Claim → Invoices &amp; Payments → <i>Create invoice</i>) → fill the line items (Item + Class, qty × rate) → <i>Save</i> (records it in QuickBooks) → <i>Send to customer</i> to email it.</Callout>
+          <Callout tone="green"><b>To collect:</b> open the invoice → <i>Receive payment</i> (it posts to QuickBooks), or <i>Create pay link</i> for a card payment. Click a payment row to edit it.</Callout>
+          <Callout tone="amber"><b>To fix a sent invoice:</b> edit the lines and <i>Save</i> again to update — or <i>Manage ▾ → Revert to draft</i> to pull it out of QuickBooks entirely.</Callout>
         </div>
       </Card>
 
