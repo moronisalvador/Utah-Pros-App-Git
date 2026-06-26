@@ -38,6 +38,12 @@ export function CollCard({ children, pad = 18, style, className = '' }) {
   return <section className={`coll-card ${className}`} style={{ padding: pad, ...style }}>{children}</section>;
 }
 
+// Skeleton shimmer bar (loading placeholder). Compose several to mirror a page's layout
+// while it loads; the shimmer styling is the .coll-skel class in index.css. r = border-radius.
+export function Skel({ w, h = 12, r = 7, style }) {
+  return <div className="coll-skel" style={{ width: w, height: h, borderRadius: r, ...style }} />;
+}
+
 export function KpiGrid({ cols = 4, children }) {
   // Column count via a modifier class (not inline) so the responsive media query
   // in index.css can collapse it to 2-up / 1-up on narrow screens.
