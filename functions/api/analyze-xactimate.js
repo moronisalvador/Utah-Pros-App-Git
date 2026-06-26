@@ -14,6 +14,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { divisionToQbo, findClassId } from '../lib/quickbooks.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-opus-4-8'; // swap to 'claude-sonnet-4-6' for a cheaper/faster pass
@@ -69,6 +70,8 @@ const ESTIMATE_SCHEMA = {
       description: 'Summary totals; use 0 for any figure not present on the document.',
       properties: {
         line_item_total: { type: 'number' },
+        overhead: { type: 'number', description: 'Overhead total, or 0 if not listed.' },
+        profit: { type: 'number', description: 'Profit total, or 0 if not listed.' },
         sales_tax: { type: 'number' },
         rcv: { type: 'number', description: 'Replacement Cost Value — the gross total.' },
         depreciation: { type: 'number' },
@@ -76,7 +79,7 @@ const ESTIMATE_SCHEMA = {
         deductible: { type: 'number' },
         net_claim: { type: 'number' },
       },
-      required: ['line_item_total', 'sales_tax', 'rcv', 'depreciation', 'acv', 'deductible', 'net_claim'],
+      required: ['line_item_total', 'overhead', 'profit', 'sales_tax', 'rcv', 'depreciation', 'acv', 'deductible', 'net_claim'],
     },
     billable: {
       type: 'object',
@@ -98,15 +101,15 @@ const PROMPT = `You are reading an Xactimate property-insurance estimate for Uta
 
 Using ONLY what appears in this document (never invent figures):
 - Extract every line item (description, quantity, unit price, and its room/trade category + Xactimate code when shown).
-- Extract all summary totals: line-item subtotal, sales tax, RCV (Replacement Cost Value), depreciation, ACV (Actual Cash Value), deductible, and net claim. Use 0 for any figure not present.
-- Determine the amount the contractor bills the insurance company ("billable"). For a restoration contractor this is normally the RCV — the full replacement cost: the carrier pays the ACV up front and releases the withheld depreciation once the work is complete, while the homeowner pays the deductible. Prefer RCV unless the document clearly indicates a different billed total. Give a one-sentence rationale and your confidence.
+- Extract all summary totals: line-item subtotal, overhead, profit, sales tax, RCV (Replacement Cost Value), depreciation, ACV (Actual Cash Value), deductible, and net claim. Use 0 for any figure not present (many estimates have no overhead/profit, depreciation, or deductible).
+- Determine the amount the contractor bills the insurance company ("billable"). For a restoration contractor this is normally the RCV — the full replacement cost: the carrier pays the ACV up front and releases the withheld depreciation once the work is complete, while the homeowner pays the deductible. Prefer RCV unless the document clearly indicates a different billed total. When no depreciation is withheld, RCV equals the net claim — still bill the RCV. Give a one-sentence rationale and your confidence: when the printed totals tie out (RCV = line items + overhead + profit + tax), be decisive and report "high"; reserve "medium"/"low" only for genuinely ambiguous, partial, or unreadable estimates.
 
 Worked example — if the estimate's summary reads:
   Line Item Total 18,200.00 · Material Sales Tax 540.00 · Replacement Cost Value 18,740.00 ·
   Less Depreciation (3,100.00) · Actual Cash Value 15,640.00 · Less Deductible (1,000.00) · Net Claim 14,640.00
-then the correct result is: totals = { line_item_total: 18200, sales_tax: 540, rcv: 18740, depreciation: 3100,
-acv: 15640, deductible: 1000, net_claim: 14640 }, and billable = { amount: 18740, basis: "RCV", confidence: "high",
-rationale: "Contractor bills the full replacement cost; the carrier pays ACV now and releases depreciation on completion." }.
+then the correct result is: totals = { line_item_total: 18200, overhead: 0, profit: 0, sales_tax: 540, rcv: 18740,
+depreciation: 3100, acv: 15640, deductible: 1000, net_claim: 14640 }, and billable = { amount: 18740, basis: "RCV",
+confidence: "high", rationale: "Contractor bills the full replacement cost; the carrier pays ACV now and releases depreciation on completion." }.
 
 All money values are plain numbers (no "$" and no thousands separators). Call submit_estimate exactly once with the structured result.`;
 
@@ -172,10 +175,14 @@ export async function onRequestPost(context) {
     // it claim "high" confidence. Math can't hallucinate, so this catches misreads for free.
     const t = extracted.totals || {};
     const near = (a, b) => Math.abs(round2(a) - round2(b)) <= Math.max(1, Math.abs(round2(b)) * 0.01); // within $1 or 1%
+    // Reconcile every figure against RCV (always printed), NOT against ACV — Xactimate omits the
+    // ACV line when no depreciation is withheld, so the old "net_claim ≈ acv − deductible" check
+    // compared against 0 and falsely failed. Build-up includes overhead & profit when listed.
+    const buildUp = (t.line_item_total || 0) + (t.overhead || 0) + (t.profit || 0) + (t.sales_tax || 0);
     const checks = {
-      acv: t.acv ? near(t.acv, (t.rcv || 0) - (t.depreciation || 0)) : null,
-      net_claim: t.net_claim ? near(t.net_claim, (t.acv || 0) - (t.deductible || 0)) : null,
-      rcv: t.rcv ? near(t.rcv, (t.line_item_total || 0) + (t.sales_tax || 0)) : null,
+      rcv:       t.line_item_total ? near(t.rcv || 0, buildUp) : null,
+      acv:       t.acv ? near(t.acv, (t.rcv || 0) - (t.depreciation || 0)) : null,
+      net_claim: t.net_claim ? near(t.net_claim, (t.rcv || 0) - (t.depreciation || 0) - (t.deductible || 0)) : null,
     };
     const reconciles = Object.values(checks).every((v) => v !== false); // absent figures (null) don't fail
     const confidence = (!reconciles && extracted.billable.confidence === 'high') ? 'medium' : extracted.billable.confidence;
@@ -187,10 +194,29 @@ export async function onRequestPost(context) {
         await db.delete('invoice_line_items', `id=eq.${l.id}`);
       }
     }
+    // Pre-fill the line's QBO Item + Class from the job's division — the SAME mapping the invoice
+    // sync uses (functions/lib/quickbooks.js divisionToQbo), so the draft shows exactly what will
+    // post to QuickBooks. Best-effort: a QBO hiccup must never fail the import (sync still falls back).
+    const lineExtra = {};
+    try {
+      const division = inv.job_id
+        ? (await db.select('jobs', `id=eq.${inv.job_id}&select=division&limit=1`))?.[0]?.division
+        : null;
+      const map = divisionToQbo(division);
+      if (map) {
+        lineExtra.qbo_item_id = map.itemId;
+        lineExtra.qbo_item_name = map.itemName;
+        if (map.className) {
+          const classId = await findClassId(env, map.className);
+          if (classId) { lineExtra.qbo_class_id = classId; lineExtra.qbo_class_name = map.className; }
+        }
+      }
+    } catch { /* division/QBO mapping is best-effort — leave Item/Class for the user to pick */ }
+
     const ref = extracted.claim_number ? ` (claim ${extracted.claim_number})` : '';
     await db.insert('invoice_line_items', {
       invoice_id, description: `Restoration per Xactimate estimate${ref}`,
-      quantity: 1, unit_price: amount, sort_order: 0,
+      quantity: 1, unit_price: amount, sort_order: 0, ...lineExtra,
     });
 
     await logRun(db, 'completed', 1, null, startedAt);
