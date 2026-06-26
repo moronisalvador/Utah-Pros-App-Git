@@ -29,6 +29,9 @@
  *     system's stance that current A/R is a snapshot, not a period metric.
  *   - Address line under Claim · Job renders only if get_ar_invoices supplies
  *     job_address/job_city (additive RPC field) — absent today, shows gracefully.
+ *   - Column sorting is client-side: clicking the Sent/Age/Total/Collected/Balance
+ *     headers sorts the already-filtered rows. Until a header is clicked the table
+ *     keeps the RPC's order (balance desc); null/undated values always sort last.
  * ════════════════════════════════════════════════
  */
 
@@ -74,6 +77,21 @@ const COL = {
 const COL_ORDER = ['client', 'claimJob', 'sent', 'age', 'total', 'collected', 'balance'];
 const LOCKED = ['client', 'balance'];
 
+// Headers the user can click to sort (the rest stay plain labels). Each maps to a
+// comparable primitive; a null value (undated / no due date) sinks to the bottom
+// regardless of direction so an empty cell never sorts to the top.
+const SORTABLE = ['sent', 'age', 'total', 'collected', 'balance'];
+function sortValue(r, key, today) {
+  switch (key) {
+    case 'sent':      return r.sent_at ? new Date(r.sent_at).getTime() : null;
+    case 'age':       return daysPastDue(r.due_date, today);   // overdue > 0, future < 0, none = null
+    case 'total':     return Number(r.total || 0);
+    case 'collected': return Number(r.amount_paid || 0);
+    case 'balance':   return Number(r.balance || 0);
+    default:          return null;
+  }
+}
+
 const numInput = { width: 88, padding: '6px 9px', border: `1px solid ${C.cardBorder}`, borderRadius: 7, fontSize: 12.5, fontFamily: 'inherit', color: C.ink, background: '#fff', outline: 'none' };
 
 // Plain text, not pills — let the one status badge carry the row's color. Overdue
@@ -96,6 +114,7 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
   const [mode, setMode] = useState('open');                 // open | overdue | all
   const [filters, setFilters] = useState({ divisions: [], sync: [], minAmt: '', maxAmt: '' });
   const [cols, setCols] = useState({ client: true, claimJob: true, sent: true, age: true, total: true, collected: true, balance: true });
+  const [sort, setSort] = useState({ key: null, dir: 'desc' }); // key null ⇒ RPC default order (balance desc)
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -163,6 +182,25 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
       return true;
     });
   }, [periodRows, mode, search, filters, today]);
+
+  // ─── SECTION: Sorting (client-side) ──────────────
+  // A null sort key preserves get_ar_invoices()'s order (balance desc). Clicking a
+  // header sets the key; clicking it again flips direction.
+  const sorted = useMemo(() => {
+    if (!sort.key) return filtered;
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = sortValue(a, sort.key, today), vb = sortValue(b, sort.key, today);
+      const na = va == null || Number.isNaN(va), nb = vb == null || Number.isNaN(vb);
+      if (na && nb) return 0;
+      if (na) return 1;            // nulls always last, both directions
+      if (nb) return -1;
+      return va < vb ? -dir : va > vb ? dir : 0;
+    });
+  }, [filtered, sort, today]);
+
+  const onSort = (key) =>
+    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
 
   const footer = useMemo(() => {
     const open = filtered.filter(r => Number(r.balance) > 0.005);
@@ -288,7 +326,11 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
                   return (
                     <label key={key} className={`coll-col-item${locked ? ' locked' : ''}`}>
                       <input type="checkbox" checked={cols[key]} disabled={locked}
-                        onChange={() => !locked && setCols(c => ({ ...c, [key]: !c[key] }))} />
+                        onChange={() => {
+                          if (locked) return;
+                          setCols(c => ({ ...c, [key]: !c[key] }));
+                          if (sort.key === key && cols[key]) setSort({ key: null, dir: 'desc' }); // hiding the active sort column → default order
+                        }} />
                       {COL[key].label}
                     </label>
                   );
@@ -301,11 +343,21 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
         <div className="coll-tablewrap">
           <div style={{ minWidth: 840 }}>
             <div className="coll-thead" style={{ display: 'grid', gridTemplateColumns: gtc, gap: 14 }}>
-              {visible.map(key => <div key={key} style={{ textAlign: COL[key].num ? 'right' : 'left' }}>{COL[key].label}</div>)}
+              {visible.map(key => {
+                if (!SORTABLE.includes(key)) return <div key={key} style={{ textAlign: COL[key].num ? 'right' : 'left' }}>{COL[key].label}</div>;
+                const active = sort.key === key;
+                const arrow = <span className="coll-th-arr">{active ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</span>;
+                return (
+                  <button key={key} type="button" className="coll-th-sort" data-active={active}
+                    onClick={() => onSort(key)} style={{ justifyContent: COL[key].num ? 'flex-end' : 'flex-start' }}>
+                    {COL[key].num ? <>{arrow}<span>{COL[key].label}</span></> : <><span>{COL[key].label}</span>{arrow}</>}
+                  </button>
+                );
+              })}
             </div>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <EmptyState title="No invoices match" sub="Try a different filter or search term." />
-            ) : filtered.map(r => {
+            ) : sorted.map(r => {
               const paid = Number(r.amount_paid || 0), total = Number(r.total || 0);
               // Append city only when the address line doesn't already contain it
               // (job data is inconsistent — some rows pack the full address into one field).
