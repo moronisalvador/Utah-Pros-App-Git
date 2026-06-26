@@ -495,6 +495,7 @@ CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 *For the current active task, see any `*-TASK.md` file in this repo root (if one exists).*
 *For UI patterns, components, and design tokens, see `UPR-Design-System.md`.*
 *For full database documentation (all 69 tables, 85+ RPCs), see `UPR-Web-Context.md`.*
+*For the billing / QuickBooks / Xactimate-AI stack (invoice builder, two-way QBO sync, payments, Stripe, AI import), see `BILLING-CONTEXT.md`.*
 
 ---
 
