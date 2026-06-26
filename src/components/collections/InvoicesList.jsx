@@ -53,6 +53,11 @@ const COL_ORDER = ['invoice', 'customer', 'claimJob', 'date', 'total', 'balance'
 const LOCKED = ['invoice', 'balance'];
 const numInput = { width: 88, padding: '6px 9px', border: `1px solid ${C.cardBorder}`, borderRadius: 7, fontSize: 12.5, fontFamily: 'inherit', color: C.ink, background: '#fff', outline: 'none' };
 
+// Default order: most recently CREATED invoice first (matches the A/R + Estimates tabs).
+// get_ar_invoices() comes back balance-desc, so we re-sort here. Null dates sort last.
+const byCreatedDesc = (a, b) =>
+  (b.created_at ? new Date(b.created_at).getTime() : 0) - (a.created_at ? new Date(a.created_at).getTime() : 0);
+
 export default function InvoicesList({ db, navigate, period = 'All' }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +112,7 @@ export default function InvoicesList({ db, navigate, period = 'All' }) {
         if (!hay.includes(q)) return false;
       }
       return true;
-    });
+    }).sort(byCreatedDesc);
   }, [rows, mode, search, filters, period]);
 
   const billed = useMemo(() => filtered.reduce((a, r) => a + Number(r.total || 0), 0), [filtered]);
