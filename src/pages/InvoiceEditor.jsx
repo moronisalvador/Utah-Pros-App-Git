@@ -75,6 +75,20 @@ const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['o
 const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+// ─── SECTION: Toolbar icons (stroke style — matches the nav bar; sized for buttons) ──────────────
+// Same recipe as src/components/Icons.jsx (viewBox 24, currentColor, 2px round strokes) so the
+// toolbar reads as one family with the nav. currentColor = each adopts its button's text color
+// (ghost = slate, primary = white). Replaces the old emoji glyphs (✨ 💵 💳 ⎙ ✉ ←).
+const TB = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, style: { flex: 'none' } };
+const IconBack    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>);
+const IconSave    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>);
+const IconSparkle = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0Z" /><path d="M20 3v4M22 5h-4M4 17v2M5 18H3" /></svg>);
+const IconMail    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22 6 12 13 2 6" /></svg>);
+const IconDollar  = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>);
+const IconCard    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>);
+const IconEye     = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>);
+const IconPrint   = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>);
+
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
@@ -495,35 +509,35 @@ export default function InvoiceEditor() {
 
       {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
+        <GhostButton onClick={() => navigate(-1)} leftIcon={<IconBack />}>Back</GhostButton>
         <div className="inv-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {synced && inv.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ {fmtStamp(inv.qbo_synced_at)}</span>}
           {canEdit && (
             <PrimaryButton onClick={saveInvoice} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
-              {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
+              <IconSave />{busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
             </PrimaryButton>
           )}
           {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
             <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
-              style={xactBusy ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
-              {xactBusy ? '✨ Reading…' : '✨ Import Xactimate'}
+              leftIcon={<IconSparkle />} style={xactBusy ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
+              {xactBusy ? 'Reading…' : 'Import Xactimate'}
             </GhostButton>
           )}
           {canEdit && synced && (
             <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-              style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend' : '✉ Send to customer'}
+              leftIcon={<IconMail />} style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
+              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
             </GhostButton>
           )}
           {canEdit && balance > 0.005 && (
-            <GhostButton onClick={receivePayment} leftIcon={<span aria-hidden="true">💵</span>}>Receive payment</GhostButton>
+            <GhostButton onClick={receivePayment} leftIcon={<IconDollar />}>Receive payment</GhostButton>
           )}
           {canEdit && liveTotal > 0 && (
             inv.stripe_payment_link_url
-              ? <GhostButton onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</GhostButton>
-              : <GhostButton onClick={createPayLink}>💳 Create pay link</GhostButton>
+              ? <GhostButton onClick={copyPayLink} leftIcon={<IconCard />} title={inv.stripe_payment_link_url}>Copy pay link</GhostButton>
+              : <GhostButton onClick={createPayLink} leftIcon={<IconCard />}>Create pay link</GhostButton>
           )}
-          <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
+          <GhostButton onClick={() => setShowPreview(true)} leftIcon={<IconEye />}>Preview</GhostButton>
           {canEdit && (
             <ActionMenu items={[
               { key: 'revert', label: 'Revert to draft', onSelect: doRevert, confirm: true, danger: true, show: synced },
@@ -712,7 +726,7 @@ export default function InvoiceEditor() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(16,24,40,.45)', overflowY: 'auto', padding: '24px 16px' }} onClick={() => setShowPreview(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, margin: '0 auto' }}>
             <div className="inv-no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
-              <PrimaryButton onClick={() => window.print()}>⎙ Print / Save PDF</PrimaryButton>
+              <PrimaryButton onClick={() => window.print()}><IconPrint />Print / Save PDF</PrimaryButton>
               <GhostButton onClick={() => setShowPreview(false)} style={{ background: '#fff' }}>Close</GhostButton>
             </div>
             <div className="inv-print-doc" style={{ background: '#fff', borderRadius: 12, padding: '36px 40px', boxShadow: '0 12px 40px rgba(16,24,40,.2)' }}>
@@ -838,7 +852,7 @@ export default function InvoiceEditor() {
                   </div>
                   <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
                     <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>
-                    <GhostButton onClick={cancelPayEdit}>{payView ? '← Back' : 'Cancel'}</GhostButton>
+                    <GhostButton onClick={cancelPayEdit} leftIcon={payView ? <IconBack /> : null}>{payView ? 'Back' : 'Cancel'}</GhostButton>
                     {payMode === 'edit' && (
                       <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
                         style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
