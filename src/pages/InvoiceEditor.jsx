@@ -40,7 +40,8 @@ import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
-import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar } from '@/components/collections/collKit';
+import ActionMenu from '@/components/collections/ActionMenu';
+import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -71,13 +72,13 @@ export default function InvoiceEditor() {
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
-  const [confirmDelPay, setConfirmDelPay] = useState(null);
-  const [payForm, setPayForm] = useState(null); // null = closed, else the draft object
+  const [payForm, setPayForm] = useState(null); // null = closed, else the draft object (.id set when editing)
+  const [delPayArmed, setDelPayArmed] = useState(false);
+  const [hoverPay, setHoverPay] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const dragIdx = useRef(null);
+  const paymentsRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -87,9 +88,9 @@ export default function InvoiceEditor() {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       setInv(i);
-      const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
+      const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id,address,city,state,zip&limit=1`))?.[0] : null;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
+      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
@@ -205,16 +206,14 @@ export default function InvoiceEditor() {
     catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  const revertToDraft = async () => {
-    if (!confirmRemove) { setConfirmRemove(true); return; }
-    setConfirmRemove(false); setBusy(true);
+  const doRevert = async () => {
+    setBusy(true);
     try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load(); }
     catch (e) { toast('Couldn’t revert: ' + e.message, 'error'); }
     finally { setBusy(false); }
   };
-  const deleteDraft = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return; }
-    setConfirmDelete(false); setBusy(true);
+  const doDelete = async () => {
+    setBusy(true);
     try {
       for (const l of lines) await db.delete('invoice_line_items', `id=eq.${l.id}`);
       await db.delete('invoices', `id=eq.${invoiceId}`);
@@ -232,41 +231,84 @@ export default function InvoiceEditor() {
   const recordPayment = async () => {
     const amt = Number(payForm?.amount);
     if (!(amt > 0)) { toast('Enter a payment amount', 'error'); return; }
+    const editing = !!payForm.id;
     setBusy(true);
     try {
-      const inserted = await db.insert('payments', {
-        invoice_id: invoiceId, job_id: job?.id || null, contact_id: inv.contact_id || null,
-        amount: amt, payment_date: payForm.date || today(),
-        payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
-        reference_number: payForm.reference || null, recorded_by: employee?.id || null,
-      });
-      const row = Array.isArray(inserted) ? inserted[0] : inserted;
-      if (inv.qbo_invoice_id && row?.id) {
-        try {
-          const auth = await getAuthHeader();
-          const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: row.id }) });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || res.statusText);
-          toast(`Payment of ${fmt$2(amt)} recorded & synced to QuickBooks`);
-        } catch (e) { toast('Payment recorded — QuickBooks sync failed: ' + e.message, 'error'); }
+      if (editing) {
+        await db.update('payments', `id=eq.${payForm.id}`, {
+          amount: amt, payment_date: payForm.date || today(),
+          payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
+          reference_number: payForm.reference || null,
+        });
+        // QBO has no payment-update endpoint → delete the old mirror + recreate so it reflects the edit.
+        if (inv.qbo_invoice_id) {
+          try {
+            const auth = await getAuthHeader();
+            if (payForm.qbo_payment_id) {
+              await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) });
+            }
+            const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id }) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || res.statusText);
+            toast('Payment updated & re-synced to QuickBooks');
+          } catch (e) { toast('Payment updated — QuickBooks re-sync failed: ' + e.message, 'error'); }
+        } else {
+          toast('Payment updated');
+        }
       } else {
-        toast(`Payment of ${fmt$2(amt)} recorded${inv.qbo_invoice_id ? '' : ' (save to QuickBooks first to sync)'}`);
+        const inserted = await db.insert('payments', {
+          invoice_id: invoiceId, job_id: job?.id || null, contact_id: inv.contact_id || null,
+          amount: amt, payment_date: payForm.date || today(),
+          payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
+          reference_number: payForm.reference || null, recorded_by: employee?.id || null,
+        });
+        const row = Array.isArray(inserted) ? inserted[0] : inserted;
+        if (inv.qbo_invoice_id && row?.id) {
+          try {
+            const auth = await getAuthHeader();
+            const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: row.id }) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || res.statusText);
+            toast(`Payment of ${fmt$2(amt)} recorded & synced to QuickBooks`);
+          } catch (e) { toast('Payment recorded — QuickBooks sync failed: ' + e.message, 'error'); }
+        } else {
+          toast(`Payment of ${fmt$2(amt)} recorded${inv.qbo_invoice_id ? '' : ' (save to QuickBooks first to sync)'}`);
+        }
       }
-      setPayForm(null); await load();
-    } catch (e) { toast('Failed to record payment: ' + (e.message || e), 'error'); }
+      setPayForm(null); setDelPayArmed(false); await load();
+    } catch (e) { toast('Failed to save payment: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
-  const deletePayment = async (pay) => {
-    if (confirmDelPay !== pay.id) { setConfirmDelPay(pay.id); return; }
-    setConfirmDelPay(null); setBusy(true);
+  // Click a payment row → open the form pre-filled to edit it (QBO-style click-to-edit).
+  const editPayment = (p) => {
+    setDelPayArmed(false);
+    setPayForm({
+      id: p.id, qbo_payment_id: p.qbo_payment_id || null,
+      amount: String(p.amount ?? ''), date: p.payment_date ? String(p.payment_date).slice(0, 10) : today(),
+      payer_type: p.payer_type || 'insurance', method: p.payment_method || 'check', reference: p.reference_number || '',
+    });
+    setTimeout(() => paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
+  const deleteEditingPayment = async () => {
+    if (!payForm?.id) return;
+    if (!delPayArmed) { setDelPayArmed(true); return; }
+    setDelPayArmed(false); setBusy(true);
     try {
-      if (pay.qbo_payment_id) {
-        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: pay.id, action: 'delete' }) }); }
+      if (payForm.qbo_payment_id) {
+        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: payForm.id, action: 'delete' }) }); }
         catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
       }
-      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load();
+      await db.delete('payments', `id=eq.${payForm.id}`); toast('Payment deleted'); setPayForm(null); await load();
     } catch { toast('Failed to delete payment', 'error'); }
     finally { setBusy(false); }
+  };
+  // Open a fresh record-payment form (triggered from the top toolbar) and bring it into view.
+  const receivePayment = () => {
+    const inviced = Number(inv?.adjusted_total ?? inv?.total ?? 0);
+    const bal = Math.max(0, round2(inviced - Number(inv?.amount_paid || 0)));
+    setDelPayArmed(false);
+    setPayForm({ amount: bal > 0 ? bal.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' });
+    setTimeout(() => paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   };
 
   // ─── SECTION: Stripe pay-by-link (dormant until keys exist) ──────────────
@@ -298,6 +340,8 @@ export default function InvoiceEditor() {
 
   const synced = !!inv.qbo_invoice_id;
   const division = divLabel(job?.division) || 'Job';
+  const addr = ([job?.address, job?.city, job?.state, job?.zip].filter(Boolean).join(', '))
+    || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
   const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
   const tax = Number(inv.tax || 0);
   const liveTotal = round2(subtotal + tax);
@@ -306,7 +350,6 @@ export default function InvoiceEditor() {
   const balance = round2(invoiced - collected);
   const docNumber = inv.qbo_doc_number || inv.invoice_number;
   const stKind = invoiceStatusKind({ total: invoiced, amount_paid: collected, balance, due_date: inv.due_date, sent_at: inv.sent_at, qbo_invoice_id: inv.qbo_invoice_id, status: inv.status });
-  const dangerBtn = (on) => ({ ...btnSm, background: on ? STATUS.danger.tint : '#fff', color: on ? STATUS.danger.text : C.muted, border: `1px solid ${on ? STATUS.danger.border : C.cardBorder}` });
   const GRID = canEdit ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
   // ─── SECTION: Render ──────────────
@@ -314,12 +357,37 @@ export default function InvoiceEditor() {
     <div className="coll-page">
       <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } }`}</style>
 
-      {/* Top bar */}
+      {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {synced && <span style={{ fontSize: 12, color: C.faint }}>Invoice #{docNumber}{inv.qbo_synced_at ? ' · saved ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+        <div className="inv-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {synced && inv.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ Saved {fmtDate(inv.qbo_synced_at)}</span>}
+          {canEdit && (
+            <PrimaryButton onClick={saveInvoice} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
+              {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
+            </PrimaryButton>
+          )}
+          {canEdit && synced && (
+            <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+              style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
+              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend' : '✉ Send to customer'}
+            </GhostButton>
+          )}
+          {canEdit && balance > 0.005 && (
+            <GhostButton onClick={receivePayment} leftIcon={<span aria-hidden="true">💵</span>}>Receive payment</GhostButton>
+          )}
+          {canEdit && liveTotal > 0 && (
+            inv.stripe_payment_link_url
+              ? <GhostButton onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</GhostButton>
+              : <GhostButton onClick={createPayLink}>💳 Create pay link</GhostButton>
+          )}
           <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
+          {canEdit && (
+            <ActionMenu items={[
+              { key: 'revert', label: 'Revert to draft', onSelect: doRevert, confirm: true, danger: true, show: synced },
+              { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced && collected <= 0 },
+            ]} />
+          )}
         </div>
       </div>
 
@@ -350,7 +418,8 @@ export default function InvoiceEditor() {
               : <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{inv.due_date ? fmtDate(inv.due_date) : '—'}</div>}
           </div>
         </div>
-        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 12 }}>The customer memo & service address are generated automatically when the invoice is sent to QuickBooks.</div>
+        {addr && <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted, marginTop: 12 }}><MapPin /> {addr}</div>}
+        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 12 }}>The customer memo is generated automatically when the invoice is sent to QuickBooks.</div>
       </CollCard>
 
       {/* Banners */}
@@ -422,38 +491,10 @@ export default function InvoiceEditor() {
             </div>
           </CollCard>
 
-          {/* Action bar */}
-          {canEdit && (
-            <div className="inv-no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <PrimaryButton onClick={saveInvoice} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
-                {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
-              </PrimaryButton>
-              {synced && (
-                <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-                  style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-                  {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend invoice' : '✉ Send to customer'}
-                </GhostButton>
-              )}
-              {liveTotal > 0 && (
-                inv.stripe_payment_link_url
-                  ? <GhostButton onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</GhostButton>
-                  : <GhostButton onClick={createPayLink}>💳 Create pay link</GhostButton>
-              )}
-              {synced && (
-                <button type="button" onClick={revertToDraft} onBlur={() => setConfirmRemove(false)} disabled={busy} style={dangerBtn(confirmRemove)}>
-                  {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
-                </button>
-              )}
-              {!synced && collected <= 0 && (
-                <button type="button" onClick={deleteDraft} onBlur={() => setConfirmDelete(false)} disabled={busy} style={{ ...dangerBtn(confirmDelete), marginLeft: 'auto' }}>
-                  {confirmDelete ? 'Confirm delete' : 'Delete draft'}
-                </button>
-              )}
-            </div>
-          )}
-          {canEdit && <div style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Click <b>Save</b> to record the invoice in QuickBooks{synced ? <>, then <b>Send to customer</b> to email it</> : ''}.</div>}
+          {canEdit && <div className="inv-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Use <b>Save</b> (top) to record the invoice in QuickBooks{synced ? <>, then <b>Send to customer</b> to email it</> : ''}.</div>}
 
-          {/* Payments — full width, below the builder */}
+          {/* Payments — full width, below the builder (form opens from the top "Receive payment") */}
+          <div ref={paymentsRef}>
           <CollCard style={{ marginTop: 2 }}>
             <SectionLabel>Payments</SectionLabel>
             <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
@@ -464,27 +505,39 @@ export default function InvoiceEditor() {
             <div style={{ marginTop: 10 }}><ProgressBar pct={invoiced > 0 ? (collected / invoiced) * 100 : 0} /></div>
 
             {payments.length > 0 && (
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {payments.map((p) => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, color: STATUS.success.text, ...tnum }}>{fmt$2(Number(p.amount || 0) - Number(p.refunded_amount || 0))}</span>
-                      <span style={{ color: C.muted }}> · {fmtDate(p.payment_date)}</span>
-                      <div style={{ fontSize: 11, color: C.faint, textTransform: 'capitalize' }}>{p.payer_type || '—'}{p.payment_method ? ` · ${String(p.payment_method).replace('_', ' ')}` : ''}{p.reference_number ? ` · ${p.reference_number}` : ''}{p.qbo_payment_id ? ' · ✓ QB' : ''}</div>
-                    </div>
-                    {canEdit && (
-                      <button type="button" onClick={() => deletePayment(p)} onBlur={() => setConfirmDelPay(null)} disabled={busy}
-                        style={{ flex: 'none', fontSize: 11, padding: '3px 8px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', ...dangerBtn(confirmDelPay === p.id) }}>
-                        {confirmDelPay === p.id ? 'Confirm' : 'Delete'}
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div style={{ marginTop: 12, border: `1px solid ${C.hairline}`, borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: PAY_GRID, gap: 8, padding: '8px 12px', background: C.headFill, fontSize: 10, fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                  <span>Date</span><span>Type</span><span style={{ textAlign: 'right' }}>Amount</span><span>Note</span>
+                </div>
+                {payments.map((p, i) => {
+                  const net = Number(p.amount || 0) - Number(p.refunded_amount || 0);
+                  const typeTxt = [p.payer_type, p.payment_method ? String(p.payment_method).replace('_', ' ') : null].filter(Boolean).join(' · ') || '—';
+                  const noteTxt = [p.reference_number, p.qbo_payment_id ? '✓ QB' : null].filter(Boolean).join(' · ') || '—';
+                  const cells = (
+                    <>
+                      <span style={{ color: C.body, ...tnum }}>{fmtDate(p.payment_date)}</span>
+                      <span style={{ color: C.muted, textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{typeTxt}</span>
+                      <span style={{ textAlign: 'right', fontWeight: 700, color: STATUS.success.text, ...tnum }}>{fmt$2(net)}</span>
+                      <span style={{ color: C.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{noteTxt}</span>
+                    </>
+                  );
+                  const base = { display: 'grid', gridTemplateColumns: PAY_GRID, gap: 8, alignItems: 'center', padding: '9px 12px', fontSize: 12.5, borderTop: i === 0 ? 'none' : `1px solid ${C.hairline}` };
+                  return canEdit ? (
+                    <button key={p.id} type="button" onClick={() => editPayment(p)} title="Click to edit"
+                      onMouseEnter={() => setHoverPay(p.id)} onMouseLeave={() => setHoverPay(null)}
+                      style={{ ...base, width: '100%', textAlign: 'left', border: 'none', borderTop: i === 0 ? 'none' : `1px solid ${C.hairline}`, background: hoverPay === p.id ? C.rowHover : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {cells}
+                    </button>
+                  ) : (
+                    <div key={p.id} style={base}>{cells}</div>
+                  );
+                })}
               </div>
             )}
 
-            {canEdit && (payForm ? (
+            {canEdit && payForm && (
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: C.headFill, border: `1px solid ${C.cardBorder}`, borderRadius: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{payForm.id ? 'Edit payment' : 'Record payment'}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
                   <label style={fieldWrap}><span style={fieldLbl}>Date</span><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} style={fieldInp} /></label>
@@ -494,18 +547,20 @@ export default function InvoiceEditor() {
                   <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
                 </div>
                 <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
-                <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                  <PrimaryButton onClick={recordPayment} style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>Save payment</PrimaryButton>
-                  <GhostButton onClick={() => setPayForm(null)}>Cancel</GhostButton>
+                <div style={{ display: 'flex', gap: 8, marginTop: 2, alignItems: 'center' }}>
+                  <PrimaryButton onClick={recordPayment} style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>{payForm.id ? 'Update payment' : 'Save payment'}</PrimaryButton>
+                  <GhostButton onClick={() => { setPayForm(null); setDelPayArmed(false); }}>Cancel</GhostButton>
+                  {payForm.id && (
+                    <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
+                      style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
+                      {delPayArmed ? 'Confirm delete' : 'Delete'}
+                    </button>
+                  )}
                 </div>
               </div>
-            ) : (
-              <button type="button" onClick={() => setPayForm({ amount: balance > 0 ? balance.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' })}
-                style={{ marginTop: 12, width: '100%', padding: '9px', fontSize: 12.5, fontWeight: 600, color: STATUS.info.text, background: STATUS.info.tint, border: `1px solid ${STATUS.info.border}`, borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
-                + Record payment
-              </button>
-            ))}
+            )}
           </CollCard>
+          </div>
         </div>
       </div>
 
@@ -608,9 +663,10 @@ function Stat({ label, value, color = C.ink }) {
   );
 }
 
+const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
 const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-const cellTxt = { ...cellInp, lineHeight: 1.4, minHeight: 34, display: 'block' };
-const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
 const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
 const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
 const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
