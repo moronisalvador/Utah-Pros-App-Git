@@ -1,34 +1,71 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: InvoiceEditor.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The full invoice builder for one invoice (opened from the My Money / Collections
+ *   list). You build the line items (each with a QuickBooks Item + Class, a typed
+ *   description, quantity and rate), see the running Subtotal/Total, edit the due
+ *   date, record payments, preview/print what the customer gets, and Save/Send the
+ *   invoice to QuickBooks. Styled to match the My Money / Collections design.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /invoices/:invoiceId
+ *   Rendered by:  src/App.jsx (inside the Layout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
+ *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
+ *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
+ *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
+ *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
+ *                       delete), invoices.due_date; QBO push/send via /api/qbo-invoice,
+ *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link
+ *
+ * NOTES / GOTCHAS:
+ *   - line_total is a GENERATED column (quantity × unit_price) — never written.
+ *   - dbRef keeps the latest Supabase client so load() doesn't re-run (and clobber
+ *     in-progress edits) every time the auth token refreshes on tab refocus.
+ *   - Tax is UPR-side (invoices.tax, optional) and is shown read-only here; it is not
+ *     sent to QuickBooks as a separate line. Editable memo/terms are a later phase.
+ *   - Back button uses navigate(-1) so it returns to wherever you came from.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
+import SearchSelect from '@/components/collections/SearchSelect';
+import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar } from '@/components/collections/collKit';
+import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-const fmt$ = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (v) => v ? new Date(v + (String(v).includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const today = () => new Date().toISOString().slice(0, 10);
 
-// Dedicated invoice editor — build line items (Item + Class per line) and push the invoice
-// to QuickBooks. Intentional, guarded flow (vs. inline editing). Route: /invoices/:invoiceId.
+const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['other', 'Other']];
+const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
+
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
   const canEdit = canEditBilling(employee?.role);
 
-  // Keep the latest db client in a ref. Supabase swaps the db object on every token
-  // refresh / tab refocus (SIGNED_IN / TOKEN_REFRESHED); without this, load() below
-  // would re-run on each swap and overwrite in-progress edits when you switch tabs.
   const dbRef = useRef(db);
   dbRef.current = db;
 
+  // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
   const [job, setJob] = useState(null);
   const [claim, setClaim] = useState(null);
   const [contact, setContact] = useState(null);
   const [lines, setLines] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [qboItems, setQboItems] = useState([]);
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
@@ -37,10 +74,12 @@ export default function InvoiceEditor() {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
+  const [confirmDelPay, setConfirmDelPay] = useState(null);
+  const [payForm, setPayForm] = useState(null); // null = closed, else the draft object
+  const [showPreview, setShowPreview] = useState(false);
+  const dragIdx = useRef(null);
 
-  // Reads via dbRef.current (not db) and depends only on invoiceId — so it runs once per
-  // invoice, not every time the auth token refreshes. That's what keeps your edits from
-  // being wiped when you leave and return to the tab.
+  // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     const d = dbRef.current;
     setLoading(true);
@@ -50,10 +89,11 @@ export default function InvoiceEditor() {
       setInv(i);
       const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
       setJob(j || null);
-      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier&limit=1`))?.[0] || null : null);
+      setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss&limit=1`))?.[0] || null : null);
       const cid = i.contact_id || j?.primary_contact_id;
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       setLines(await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || []);
+      setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
     } catch (e) {
       toast('Failed to load invoice: ' + (e.message || e), 'error');
     } finally {
@@ -76,8 +116,8 @@ export default function InvoiceEditor() {
         run('SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 200'),
         run('SELECT Id, Name FROM Class WHERE Active = true MAXRESULTS 200'),
       ]);
-      setQboItems((itemsR.Item || []).map(i => ({ id: String(i.Id), name: i.Name })));
-      setQboClasses((classesR.Class || []).map(c => ({ id: String(c.Id), name: c.Name })));
+      setQboItems((itemsR.Item || []).map((i) => ({ id: String(i.Id), name: i.Name })));
+      setQboClasses((classesR.Class || []).map((c) => ({ id: String(c.Id), name: c.Name })));
       setCatalogMsg('');
     } catch (e) {
       setCatalogMsg(/not connected/i.test(e.message || '') ? 'Connect QuickBooks (Dev Tools) to load items & classes.' : 'QuickBooks catalog unavailable.');
@@ -85,31 +125,24 @@ export default function InvoiceEditor() {
   }, []);
   useEffect(() => { if (canEdit) loadCatalog(); }, [canEdit, loadCatalog]);
 
-  const synced = !!inv?.qbo_invoice_id;
-  const total = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
-
-  // ── Line handlers ──
+  // ─── SECTION: Line handlers ──────────────
   const addLine = async () => {
     setBusy(true);
-    // line_total is a generated column (quantity * unit_price) — never write it.
     try { await db.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
   const setLineLocal = (lineId, patch) => {
-    setLines(prev => prev.map(l => {
+    setLines((prev) => prev.map((l) => {
       if (l.id !== lineId) return l;
       const next = { ...l, ...patch };
       if ('quantity' in patch || 'unit_price' in patch) next.line_total = round2(Number(next.quantity || 0) * Number(next.unit_price || 0));
       return next;
     }));
   };
-  // Persist a line on blur WITHOUT reloading — local state already reflects the edit
-  // (setLineLocal computes line_total), so a refetch would only cause the page to blink
-  // and could clobber the field you tab into next.
+  // Persist a line on blur/select WITHOUT reloading — local state already reflects it.
   const saveLine = async (line) => {
     try {
-      // description is NOT NULL; line_total is generated (quantity * unit_price) — don't write it.
       await db.update('invoice_line_items', `id=eq.${line.id}`, {
         description: line.description || '',
         qbo_item_id: line.qbo_item_id || null, qbo_item_name: line.qbo_item_name || null,
@@ -124,8 +157,19 @@ export default function InvoiceEditor() {
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
   };
+  // Drag-reorder: move the dragged row, then persist each line's new sort_order.
+  const onDropRow = async (toIdx) => {
+    const from = dragIdx.current; dragIdx.current = null;
+    if (from == null || from === toIdx) return;
+    const next = [...lines];
+    const [moved] = next.splice(from, 1);
+    next.splice(toIdx, 0, moved);
+    setLines(next);
+    try { for (let i = 0; i < next.length; i++) if (next[i].sort_order !== i) await db.update('invoice_line_items', `id=eq.${next[i].id}`, { sort_order: i }); }
+    catch { toast('Failed to reorder lines', 'error'); await load(); }
+  };
 
-  // ── QBO actions ──
+  // ─── SECTION: QBO actions ──────────────
   const callWorker = async (body) => {
     const auth = await getAuthHeader();
     const res = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId, ...body }) });
@@ -133,9 +177,6 @@ export default function InvoiceEditor() {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   };
-  // Persist current line state to the DB (covers a field that hasn't blurred yet when the
-  // button is clicked) and push the latest amounts to QuickBooks — create on first save,
-  // update thereafter, so the QBO copy always matches what's on screen.
   const flushAndPush = async () => {
     for (const l of lines) {
       await db.update('invoice_line_items', `id=eq.${l.id}`, {
@@ -147,16 +188,12 @@ export default function InvoiceEditor() {
     }
     await callWorker({});
   };
-  // Save the invoice: flush any pending line edits to the DB, then record + sync to QuickBooks.
   const saveInvoice = async () => {
     setBusy(true);
     try { await flushAndPush(); toast('Invoice saved'); await load(); }
     catch (e) { toast('Couldn’t save invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Send the invoice to the customer by email. Two-click confirm — it's an outward-facing
-  // send. Flushes pending line edits + pushes to QuickBooks first (via flushAndPush), so the
-  // customer always receives the latest amounts whether or not Save was clicked beforehand.
   const emailInvoice = async () => {
     if (!confirmEmail) { setConfirmEmail(true); return; }
     setConfirmEmail(false); setBusy(true);
@@ -168,7 +205,6 @@ export default function InvoiceEditor() {
     catch (e) { toast('Couldn’t send invoice: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  // Revert a saved invoice back to a draft (unrecords it, removing the QBO copy).
   const revertToDraft = async () => {
     if (!confirmRemove) { setConfirmRemove(true); return; }
     setConfirmRemove(false); setBusy(true);
@@ -183,11 +219,57 @@ export default function InvoiceEditor() {
       for (const l of lines) await db.delete('invoice_line_items', `id=eq.${l.id}`);
       await db.delete('invoices', `id=eq.${invoiceId}`);
       toast('Draft invoice deleted');
-      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/collections');
+      navigate(-1);
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
-  // ── Stripe pay-by-link (dormant until Stripe keys exist → worker returns 503) ──
+  // ─── SECTION: Due date + payments ──────────────
+  const updateDueDate = async (val) => {
+    setInv((prev) => ({ ...prev, due_date: val || null }));
+    try { await db.update('invoices', `id=eq.${invoiceId}`, { due_date: val || null }); }
+    catch (e) { toast('Failed to update due date: ' + (e.message || e), 'error'); }
+  };
+  const recordPayment = async () => {
+    const amt = Number(payForm?.amount);
+    if (!(amt > 0)) { toast('Enter a payment amount', 'error'); return; }
+    setBusy(true);
+    try {
+      const inserted = await db.insert('payments', {
+        invoice_id: invoiceId, job_id: job?.id || null, contact_id: inv.contact_id || null,
+        amount: amt, payment_date: payForm.date || today(),
+        payer_type: payForm.payer_type || 'insurance', payment_method: payForm.method || null,
+        reference_number: payForm.reference || null, recorded_by: employee?.id || null,
+      });
+      const row = Array.isArray(inserted) ? inserted[0] : inserted;
+      if (inv.qbo_invoice_id && row?.id) {
+        try {
+          const auth = await getAuthHeader();
+          const res = await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: row.id }) });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          toast(`Payment of ${fmt$2(amt)} recorded & synced to QuickBooks`);
+        } catch (e) { toast('Payment recorded — QuickBooks sync failed: ' + e.message, 'error'); }
+      } else {
+        toast(`Payment of ${fmt$2(amt)} recorded${inv.qbo_invoice_id ? '' : ' (save to QuickBooks first to sync)'}`);
+      }
+      setPayForm(null); await load();
+    } catch (e) { toast('Failed to record payment: ' + (e.message || e), 'error'); }
+    finally { setBusy(false); }
+  };
+  const deletePayment = async (pay) => {
+    if (confirmDelPay !== pay.id) { setConfirmDelPay(pay.id); return; }
+    setConfirmDelPay(null); setBusy(true);
+    try {
+      if (pay.qbo_payment_id) {
+        try { const auth = await getAuthHeader(); await fetch('/api/qbo-payment', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: pay.id, action: 'delete' }) }); }
+        catch (e) { toast('QuickBooks removal failed: ' + e.message, 'error'); }
+      }
+      await db.delete('payments', `id=eq.${pay.id}`); toast('Payment deleted'); await load();
+    } catch { toast('Failed to delete payment', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  // ─── SECTION: Stripe pay-by-link (dormant until keys exist) ──────────────
   const createPayLink = async () => {
     setBusy(true);
     try {
@@ -207,139 +289,340 @@ export default function InvoiceEditor() {
     catch { toast('Copy failed — long-press the link to copy', 'error'); }
   };
 
+  // ─── SECTION: Derived values ──────────────
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
   if (!inv) return null;
-
   if (!isFeatureEnabled('feature:billing')) {
-    return <div style={{ maxWidth: 900, margin: '0 auto', padding: 24, color: 'var(--text-tertiary)' }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
+    return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
   }
 
-  const division = job?.division ? String(job.division).replace(/_/g, ' ') : 'Job';
-  const paid = Number(inv.amount_paid || 0);
-  // Draft → Saved (recorded, not yet emailed) → Sent (emailed to customer) → Partial → Paid.
-  const statusLabel = !synced ? 'Draft'
-    : (paid >= total && total > 0) ? 'Paid'
-    : paid > 0 ? 'Partial'
-    : inv.qbo_emailed_at ? 'Sent'
-    : 'Saved';
-  const statusColor = statusLabel === 'Paid' ? '#16a34a' : statusLabel === 'Partial' ? '#d97706' : statusLabel === 'Sent' ? 'var(--accent)' : statusLabel === 'Saved' ? 'var(--text-secondary)' : 'var(--text-tertiary)';
+  const synced = !!inv.qbo_invoice_id;
+  const division = divLabel(job?.division) || 'Job';
+  const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
+  const tax = Number(inv.tax || 0);
+  const liveTotal = round2(subtotal + tax);
+  const invoiced = Number(inv.adjusted_total ?? inv.total ?? liveTotal);
+  const collected = Number(inv.amount_paid || 0);
+  const balance = round2(invoiced - collected);
+  const docNumber = inv.qbo_doc_number || inv.invoice_number;
+  const stKind = invoiceStatusKind({ total: invoiced, amount_paid: collected, balance, due_date: inv.due_date, sent_at: inv.sent_at, qbo_invoice_id: inv.qbo_invoice_id, status: inv.status });
+  const dangerBtn = (on) => ({ ...btnSm, background: on ? STATUS.danger.tint : '#fff', color: on ? STATUS.danger.text : C.muted, border: `1px solid ${on ? STATUS.danger.border : C.cardBorder}` });
+  const GRID = canEdit ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
+  // ─── SECTION: Render ──────────────
   return (
-    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
+    <div className="coll-page">
+      <style>{`@media print { body * { visibility: hidden !important; } .inv-print-doc, .inv-print-doc * { visibility: visible !important; } .inv-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .inv-no-print { display: none !important; } }`}</style>
+
       {/* Top bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => (job?.claim_id ? navigate(`/collections/${job.claim_id}`) : navigate(-1))} style={{ gap: 4 }}>← Back</button>
-        {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Invoice #{inv.qbo_doc_number || inv.invoice_number}{inv.qbo_synced_at ? ' · saved ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {synced && <span style={{ fontSize: 12, color: C.faint }}>Invoice #{docNumber}{inv.qbo_synced_at ? ' · saved ' + fmtDate(inv.qbo_synced_at) : ''}</span>}
+          <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
+        </div>
       </div>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{inv.qbo_doc_number || inv.invoice_number}</div>
-          {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>UPR ref {inv.invoice_number}</div>}
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {contact?.name || 'Client'} · <span style={{ textTransform: 'capitalize' }}>{division}</span> {job?.job_number || ''}{claim?.claim_number ? ` · ${claim.claim_number}` : ''}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            Sent {inv.sent_at ? fmtDate(inv.sent_at) : '—'} · Due {inv.due_date ? fmtDate(inv.due_date) : '—'}
-            {inv.qbo_emailed_at && <> · Emailed {fmtDate(inv.qbo_emailed_at)}</>}
+      {/* Header card */}
+      <CollCard style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 24, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', ...tnum }}>{docNumber}</span>
+              <StatusBadge kind={stKind} />
+            </div>
+            {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
+            <div style={{ fontSize: 13.5, color: C.body, marginTop: 4 }}>
+              {contact?.name || 'Client'} · {division}{job?.job_number ? ` ${job.job_number}` : ''}{claim?.claim_number ? <> · <span style={mono}>{claim.claim_number}</span></> : ''}
+            </div>
           </div>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-secondary)', color: statusColor, border: `1px solid ${statusColor}40` }}>{statusLabel}</span>
-      </div>
+      </CollCard>
 
-      {inv.qbo_sync_error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
-      {catalogMsg && canEdit && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#d97706', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10 }}>{catalogMsg}</div>}
-      {inv.stripe_payment_link_url && <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', color: 'var(--accent)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 13, marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+      {/* Banners */}
+      {inv.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
+      {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
+      {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
-      {/* Line items */}
-      <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginTop: 6 }}>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 720 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 14px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{canEdit && <span />}
-            </div>
-            {lines.length === 0 && <div style={{ padding: '20px 14px', color: 'var(--text-tertiary)', fontSize: 13 }}>No line items yet. {canEdit ? 'Add a line to build the invoice.' : ''}</div>}
-            {lines.map(l => (
-              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border-light)', alignItems: 'flex-start' }}>
-                {canEdit ? (
-                  <>
-                    <select value={l.qbo_item_id || ''} disabled={!qboItems.length} onChange={e => { const it = qboItems.find(i => i.id === e.target.value); const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
-                      <option value="">{qboItems.length ? 'Select item…' : '—'}</option>
-                      {qboItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </select>
-                    <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={e => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={txt} />
-                    <select value={l.qbo_class_id || ''} disabled={!qboClasses.length} onChange={e => { const c = qboClasses.find(x => x.id === e.target.value); const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} style={sel}>
-                      <option value="">{qboClasses.length ? 'Class…' : '—'}</option>
-                      {qboClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={e => setLineLocal(l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={inp} />
-                    <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={e => setLineLocal(l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={inp} />
-                    <span style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmt$(l.line_total)}</span>
-                    <button onClick={() => removeLine(l)} disabled={busy} title="Remove line" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 16 }}>✕</button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 13 }}>{l.qbo_item_name || '—'}</span>
-                    <span style={{ fontSize: 13 }}>{l.description || '—'}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{l.qbo_class_name || '—'}</span>
-                    <span style={{ fontSize: 13 }}>{Number(l.quantity || 0)}</span>
-                    <span style={{ fontSize: 13 }}>{fmt$(l.unit_price)}</span>
-                    <span style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>{fmt$(l.line_total)}</span>
-                  </>
+      {/* Two columns: builder (main) + details/payments (side) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
+        {/* ── MAIN: line items + actions ── */}
+        <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <CollCard pad={0}>
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: canEdit ? 660 : 560 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '11px 16px', background: C.headFill, borderBottom: `1px solid ${C.cardBorder}`, fontSize: 10.5, fontWeight: 700, color: C.faint, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                  {canEdit && <span />}
+                  <span>Item</span><span>Description</span><span>Class</span><span>Qty</span><span>Rate</span><span style={{ textAlign: 'right' }}>Amount</span>{canEdit && <span />}
+                </div>
+
+                {lines.length === 0 && (
+                  <div style={{ padding: '28px 16px', textAlign: 'center', color: C.faint, fontSize: 13 }}>No line items yet.{canEdit ? ' Add a line to build the invoice.' : ''}</div>
                 )}
+
+                {lines.map((l, idx) => (
+                  <div
+                    key={l.id}
+                    draggable={canEdit}
+                    onDragStart={() => { dragIdx.current = idx; }}
+                    onDragOver={(e) => { if (canEdit) e.preventDefault(); }}
+                    onDrop={() => canEdit && onDropRow(idx)}
+                    style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 16px', borderBottom: `1px solid ${C.hairline}`, alignItems: 'start' }}
+                  >
+                    {canEdit ? (
+                      <>
+                        <span title="Drag to reorder" style={{ cursor: 'grab', color: C.faint2, fontSize: 15, lineHeight: '32px', userSelect: 'none', textAlign: 'center' }}>⠿</span>
+                        <SearchSelect value={l.qbo_item_id || ''} options={qboItems} disabled={!qboItems.length} placeholder={qboItems.length ? 'Item…' : '—'}
+                          onChange={(it) => { const patch = { qbo_item_id: it?.id || null, qbo_item_name: it?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
+                        <AutoGrowTextarea value={l.description || ''} placeholder="Description / scope of work" onChange={(e) => setLineLocal(l.id, { description: e.target.value })} onBlur={() => saveLine(l)} style={cellTxt} />
+                        <SearchSelect value={l.qbo_class_id || ''} options={qboClasses} disabled={!qboClasses.length} placeholder={qboClasses.length ? 'Class…' : '—'}
+                          onChange={(c) => { const patch = { qbo_class_id: c?.id || null, qbo_class_name: c?.name || null }; setLineLocal(l.id, patch); saveLine({ ...l, ...patch }); }} />
+                        <input type="number" inputMode="decimal" value={l.quantity ?? ''} onChange={(e) => setLineLocal(l.id, { quantity: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />
+                        <input type="number" inputMode="decimal" value={l.unit_price ?? ''} onChange={(e) => setLineLocal(l.id, { unit_price: e.target.value })} onBlur={() => saveLine(l)} style={cellInp} />
+                        <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: C.ink, lineHeight: '32px', ...tnum }}>{fmt$2(l.line_total)}</span>
+                        <button onClick={() => removeLine(l)} disabled={busy} title="Remove line" style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.faint2, fontSize: 16, lineHeight: '32px' }}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 13, color: C.ink }}>{l.qbo_item_name || '—'}</span>
+                        <span style={{ fontSize: 13, color: C.body }}>{l.description || '—'}</span>
+                        <span style={{ fontSize: 13, color: C.muted }}>{l.qbo_class_name || '—'}</span>
+                        <span style={{ fontSize: 13, ...tnum }}>{Number(l.quantity || 0)}</span>
+                        <span style={{ fontSize: 13, ...tnum }}>{fmt$2(l.unit_price)}</span>
+                        <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, ...tnum }}>{fmt$2(l.line_total)}</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+
+                {/* Footer: add line + totals */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, padding: '12px 16px', background: C.headFill }}>
+                  {canEdit ? <GhostButton onClick={addLine} style={{ opacity: busy ? 0.6 : 1 }}>+ Add line</GhostButton> : <span />}
+                  <div style={{ minWidth: 200 }}>
+                    <TotalRow label="Subtotal" value={fmt$2(subtotal)} />
+                    {tax > 0 && <TotalRow label="Tax" value={fmt$2(tax)} />}
+                    <div style={{ height: 1, background: C.cardBorder, margin: '6px 0' }} />
+                    <TotalRow label="Total" value={fmt$2(liveTotal)} strong />
+                  </div>
+                </div>
               </div>
-            ))}
-            {/* Total */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--bg-secondary)' }}>
-              {canEdit ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={addLine}>+ Add line</button> : <span />}
-              <div style={{ fontSize: 16, fontWeight: 800 }}>Total: {fmt$(total)}</div>
             </div>
-          </div>
+          </CollCard>
+
+          {/* Action bar */}
+          {canEdit && (
+            <div className="inv-no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <PrimaryButton onClick={saveInvoice} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
+                {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
+              </PrimaryButton>
+              {synced && (
+                <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+                  style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
+                  {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend invoice' : '✉ Send to customer'}
+                </GhostButton>
+              )}
+              {liveTotal > 0 && (
+                inv.stripe_payment_link_url
+                  ? <GhostButton onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</GhostButton>
+                  : <GhostButton onClick={createPayLink}>💳 Create pay link</GhostButton>
+              )}
+              {synced && (
+                <button type="button" onClick={revertToDraft} onBlur={() => setConfirmRemove(false)} disabled={busy} style={dangerBtn(confirmRemove)}>
+                  {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
+                </button>
+              )}
+              {!synced && collected <= 0 && (
+                <button type="button" onClick={deleteDraft} onBlur={() => setConfirmDelete(false)} disabled={busy} style={{ ...dangerBtn(confirmDelete), marginLeft: 'auto' }}>
+                  {confirmDelete ? 'Confirm delete' : 'Delete draft'}
+                </button>
+              )}
+            </div>
+          )}
+          {canEdit && <div style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Click <b>Save</b> to record the invoice in QuickBooks{synced ? <>, then <b>Send to customer</b> to email it</> : ''}.</div>}
+        </div>
+
+        {/* ── SIDE: details + payments ── */}
+        <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+          {/* Details */}
+          <CollCard>
+            <SectionLabel>Bill to</SectionLabel>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
+            {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
+            <div style={{ height: 1, background: C.hairline, margin: '12px 0' }} />
+            <DetailRow label="Carrier" value={claim?.insurance_carrier || '—'} />
+            <DetailRow label="Claim" value={claim?.claim_number || '—'} mono />
+            <DetailRow label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
+            {claim?.date_of_loss && <DetailRow label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
+            <DetailRow label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Due date</span>
+              {canEdit ? (
+                <input type="date" value={inv.due_date ? String(inv.due_date).slice(0, 10) : ''} onChange={(e) => updateDueDate(e.target.value)}
+                  style={{ fontSize: 12.5, padding: '5px 8px', border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit' }} />
+              ) : <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ink }}>{inv.due_date ? fmtDate(inv.due_date) : '—'}</span>}
+            </div>
+            <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 6 }}>The customer memo & service address are generated automatically when the invoice is sent to QuickBooks.</div>
+          </CollCard>
+
+          {/* Payments */}
+          <CollCard>
+            <SectionLabel>Payments</SectionLabel>
+            <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+              <Stat label="Invoiced" value={fmt$2(invoiced)} />
+              <Stat label="Collected" value={fmt$2(collected)} color={collected > 0 ? STATUS.success.text : C.ink} />
+              <Stat label="Balance" value={fmt$2(balance)} color={balance > 0.005 ? STATUS.danger.text : STATUS.success.text} />
+            </div>
+            <div style={{ marginTop: 10 }}><ProgressBar pct={invoiced > 0 ? (collected / invoiced) * 100 : 0} /></div>
+
+            {payments.length > 0 && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {payments.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, color: STATUS.success.text, ...tnum }}>{fmt$2(Number(p.amount || 0) - Number(p.refunded_amount || 0))}</span>
+                      <span style={{ color: C.muted }}> · {fmtDate(p.payment_date)}</span>
+                      <div style={{ fontSize: 11, color: C.faint, textTransform: 'capitalize' }}>{p.payer_type || '—'}{p.payment_method ? ` · ${String(p.payment_method).replace('_', ' ')}` : ''}{p.reference_number ? ` · ${p.reference_number}` : ''}{p.qbo_payment_id ? ' · ✓ QB' : ''}</div>
+                    </div>
+                    {canEdit && (
+                      <button type="button" onClick={() => deletePayment(p)} onBlur={() => setConfirmDelPay(null)} disabled={busy}
+                        style={{ flex: 'none', fontSize: 11, padding: '3px 8px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', ...dangerBtn(confirmDelPay === p.id) }}>
+                        {confirmDelPay === p.id ? 'Confirm' : 'Delete'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {canEdit && (payForm ? (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: C.headFill, border: `1px solid ${C.cardBorder}`, borderRadius: 10 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
+                  <label style={fieldWrap}><span style={fieldLbl}>Date</span><input type="date" value={payForm.date} onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))} style={fieldInp} /></label>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                  <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                </div>
+                <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
+                <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                  <PrimaryButton onClick={recordPayment} style={{ opacity: busy ? 0.6 : 1, pointerEvents: busy ? 'none' : 'auto' }}>Save payment</PrimaryButton>
+                  <GhostButton onClick={() => setPayForm(null)}>Cancel</GhostButton>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setPayForm({ amount: balance > 0 ? balance.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' })}
+                style={{ marginTop: 12, width: '100%', padding: '9px', fontSize: 12.5, fontWeight: 600, color: STATUS.info.text, background: STATUS.info.tint, border: `1px solid ${STATUS.info.border}`, borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
+                + Record payment
+              </button>
+            ))}
+          </CollCard>
         </div>
       </div>
 
-      {/* Action bar */}
-      {canEdit && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 16 }}>
-          <button className="btn btn-primary" disabled={busy || total <= 0} onClick={saveInvoice}>
-            {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
-          </button>
-          {synced && (
-            <button className="btn btn-secondary" disabled={busy} onClick={emailInvoice} onBlur={() => setConfirmEmail(false)}
-              title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-              style={confirmEmail ? { background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe' } : undefined}>
-              {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? '✉ Resend invoice' : '✉ Send invoice to customer'}
-            </button>
-          )}
-          {total > 0 && (
-            inv.stripe_payment_link_url
-              ? <button className="btn btn-secondary" disabled={busy} onClick={copyPayLink} title={inv.stripe_payment_link_url}>💳 Copy pay link</button>
-              : <button className="btn btn-secondary" disabled={busy} onClick={createPayLink}>💳 Create pay link</button>
-          )}
-          {synced && (
-            <button className="btn btn-sm" disabled={busy} onClick={revertToDraft} onBlur={() => setConfirmRemove(false)}
-              style={{ background: confirmRemove ? '#fef2f2' : 'var(--bg-tertiary)', color: confirmRemove ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmRemove ? '#fecaca' : 'var(--border-light)'}` }}>
-              {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
-            </button>
-          )}
-          {!synced && paid <= 0 && (
-            <button className="btn btn-sm" disabled={busy} onClick={deleteDraft} onBlur={() => setConfirmDelete(false)}
-              style={{ marginLeft: 'auto', background: confirmDelete ? '#fef2f2' : 'transparent', color: confirmDelete ? '#dc2626' : 'var(--text-tertiary)', border: `1px solid ${confirmDelete ? '#fecaca' : 'var(--border-light)'}` }}>
-              {confirmDelete ? 'Confirm delete' : 'Delete draft'}
-            </button>
-          )}
+      {/* Customer preview overlay */}
+      {showPreview && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(16,24,40,.45)', overflowY: 'auto', padding: '24px 16px' }} onClick={() => setShowPreview(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, margin: '0 auto' }}>
+            <div className="inv-no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+              <PrimaryButton onClick={() => window.print()}>⎙ Print / Save PDF</PrimaryButton>
+              <GhostButton onClick={() => setShowPreview(false)} style={{ background: '#fff' }}>Close</GhostButton>
+            </div>
+            <div className="inv-print-doc" style={{ background: '#fff', borderRadius: 12, padding: '36px 40px', boxShadow: '0 12px 40px rgba(16,24,40,.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: C.ink }}>Utah Pros Restoration</div>
+                  <div style={{ fontSize: 12, color: C.muted }}>Accounts Receivable</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.ink, letterSpacing: '.04em' }}>INVOICE</div>
+                  <div style={{ fontSize: 12.5, color: C.body, marginTop: 2 }}>#{docNumber}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 24 }}>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint }}>Bill to</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginTop: 3 }}>{contact?.name || '—'}</div>
+                  {contact?.email && <div style={{ fontSize: 12.5, color: C.muted }}>{contact.email}</div>}
+                  {claim?.claim_number && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Claim {claim.claim_number}{claim.insurance_carrier ? ` · ${claim.insurance_carrier}` : ''}</div>}
+                </div>
+                <div style={{ textAlign: 'right', fontSize: 12.5, color: C.body }}>
+                  <div>Sent: {inv.sent_at ? fmtDate(inv.sent_at) : '—'}</div>
+                  <div>Due: {inv.due_date ? fmtDate(inv.due_date) : '—'}</div>
+                </div>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 24, fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${C.cardBorder}`, color: C.faint, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>Description</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 60 }}>Qty</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 90 }}>Rate</th>
+                    <th style={{ textAlign: 'right', padding: '8px 6px', width: 100 }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.length === 0 && <tr><td colSpan={4} style={{ padding: '16px 6px', color: C.faint }}>No line items.</td></tr>}
+                  {lines.map((l) => (
+                    <tr key={l.id} style={{ borderBottom: `1px solid ${C.hairline}` }}>
+                      <td style={{ padding: '9px 6px', color: C.ink }}>{l.qbo_item_name ? <b>{l.qbo_item_name}</b> : null}{l.qbo_item_name && l.description ? ' — ' : ''}{l.description}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', ...tnum }}>{Number(l.quantity || 0)}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', ...tnum }}>{fmt$2(l.unit_price)}</td>
+                      <td style={{ padding: '9px 6px', textAlign: 'right', fontWeight: 600, ...tnum }}>{fmt$2(l.line_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                <div style={{ minWidth: 240 }}>
+                  <TotalRow label="Subtotal" value={fmt$2(subtotal)} />
+                  {tax > 0 && <TotalRow label="Tax" value={fmt$2(tax)} />}
+                  <div style={{ height: 1, background: C.cardBorder, margin: '6px 0' }} />
+                  <TotalRow label="Total due" value={fmt$2(liveTotal)} strong />
+                  {collected > 0 && <><TotalRow label="Collected" value={fmt$2(collected)} /><TotalRow label="Balance" value={fmt$2(balance)} strong /></>}
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 28, borderTop: `1px solid ${C.hairline}`, paddingTop: 12 }}>Thank you for your business. Please remit payment by the due date above.</div>
+            </div>
+          </div>
         </div>
       )}
-      {canEdit && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>Line edits save as you type. Click <b>Save</b> to record the invoice{synced ? <>, then <b>Send invoice to customer</b> to email it</> : ''}. Record payments from the claim's A/R panel.</div>}
     </div>
   );
 }
 
-// Description takes the most room (scope of work goes here); minWidth keeps mobile
-// horizontally scrollable exactly as before.
-const GRID = '1.1fr 2.6fr 0.9fr 60px 100px 115px 28px';
-const inp = { width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' };
-const sel = { ...inp, cursor: 'pointer' };
-// Description textarea: matches the inputs on the first line, then grows downward.
-const txt = { ...inp, lineHeight: 1.4, minHeight: 32, display: 'block' };
+// ─── SECTION: Small presentational helpers ──────────────
+function TotalRow({ label, value, strong }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, padding: '2px 0' }}>
+      <span style={{ fontSize: strong ? 14 : 12.5, fontWeight: strong ? 800 : 500, color: strong ? C.ink : C.muted }}>{label}</span>
+      <span style={{ fontSize: strong ? 16 : 13, fontWeight: strong ? 800 : 600, color: C.ink, ...tnum }}>{value}</span>
+    </div>
+  );
+}
+function SectionLabel({ children }) {
+  return <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint, marginBottom: 8 }}>{children}</div>;
+}
+function DetailRow({ label, value, mono: isMono }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0', fontSize: 12.5 }}>
+      <span style={{ color: C.muted }}>{label}</span>
+      <span style={{ color: C.ink, fontWeight: 600, textAlign: 'right', ...(isMono ? mono : null) }}>{value}</span>
+    </div>
+  );
+}
+function Stat({ label, value, color = C.ink }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color, ...tnum, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
+    </div>
+  );
+}
+
+const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+const cellTxt = { ...cellInp, lineHeight: 1.4, minHeight: 34, display: 'block' };
+const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
+const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
+const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
+const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
+const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
