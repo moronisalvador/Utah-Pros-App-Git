@@ -83,7 +83,7 @@ export default function EstimateEditor() {
     setLoading(true);
     try {
       const e = (await d.select('estimates', `id=eq.${estimateId}&limit=1`))?.[0];
-      if (!e) { toast('Estimate not found', 'error'); navigate('/estimates', { replace: true }); return; }
+      if (!e) { toast('Estimate not found', 'error'); navigate('/collections?tab=estimates', { replace: true }); return; }
       setEst(e);
       const j = e.job_id ? (await d.select('jobs', `id=eq.${e.job_id}&select=id,division,job_number,claim_id,primary_contact_id&limit=1`))?.[0] : null;
       setJob(j || null);
@@ -214,7 +214,7 @@ export default function EstimateEditor() {
       for (const l of lines) await db.delete('estimate_line_items', `id=eq.${l.id}`);
       await db.delete('estimates', `id=eq.${estimateId}`);
       toast('Draft estimate deleted');
-      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/estimates');
+      navigate(job?.claim_id ? `/collections/${job.claim_id}` : '/collections?tab=estimates');
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
@@ -273,7 +273,7 @@ export default function EstimateEditor() {
     <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px', paddingBottom: 96 }}>
       {/* Top bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/estimates')} style={{ gap: 4 }}>← Estimates</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections?tab=estimates')} style={{ gap: 4 }}>← Estimates</button>
         {synced && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Estimate #{est.qbo_doc_number || est.estimate_number}{est.qbo_synced_at ? ' · saved ' + fmtDate(est.qbo_synced_at) : ''}</span>}
       </div>
 
