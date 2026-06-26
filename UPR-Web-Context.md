@@ -95,7 +95,10 @@ src/
                                     view of the standalone /estimates page), Payments (PaymentsLedger,
                                     get_payments_ledger()). Header has Payment-settings + New-invoice/New-estimate
                                     actions; A/R, Invoices, and Estimates carry a period switch (All/MTD/Last 30/
-                                    QTD/YTD) that scopes their data by date. A/R + Invoices have wired Filters
+                                    QTD/YTD) that scopes their data by date. **All four tab components load once via a
+                                    `dbRef` (load() deps `[]`)** so a token refresh on browser-tab refocus no longer
+                                    re-fires load() and flashes the loading state (the old "blink") — the latest client
+                                    stays reachable through the ref. A/R + Invoices have wired Filters
                                     (division / QB-sync / amount) and a Columns show/hide editor; footer "Export →"
                                     links download a CSV of the visible rows. Estimates shows 4 KPIs incl a
                                     conversion-rate card. Row status is shown as plain COLORED TEXT (not pills) on

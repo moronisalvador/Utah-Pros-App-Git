@@ -29,7 +29,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divColor, divLabel,
   midnight, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
@@ -67,17 +67,22 @@ export default function InvoicesList({ db, navigate, period = 'All' }) {
   const [cols, setCols] = useState({ invoice: true, customer: true, claimJob: true, date: true, total: true, balance: true });
 
   // ─── SECTION: Data fetching ──────────────
+  // dbRef holds the latest REST client so load() stays stable across renders. A token
+  // refresh on tab refocus rebuilds `db`; the old [db] dep re-fired load() and flashed the
+  // loading state ("blink"). Same pattern as InvoiceEditor/EstimateEditor.
+  const dbRef = useRef(db);
+  dbRef.current = db;
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await db.rpc('get_ar_invoices');
+      const data = await dbRef.current.rpc('get_ar_invoices');
       setRows(data || []);
     } catch (e) {
       toast('Failed to load invoices: ' + (e.message || e));
     } finally {
       setLoading(false);
     }
-  }, [db]);
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   const today = useMemo(() => midnight(), []);
