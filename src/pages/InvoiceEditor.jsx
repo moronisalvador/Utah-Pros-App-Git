@@ -90,8 +90,11 @@ export default function InvoiceEditor() {
   const [delPayArmed, setDelPayArmed] = useState(false);
   const [hoverPay, setHoverPay] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [xactBusy, setXactBusy] = useState(false);   // Xactimate upload + AI extraction in flight
+  const [xactInfo, setXactInfo] = useState(null);     // worker result → confirmation banner
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
+  const xactInputRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -362,6 +365,49 @@ export default function InvoiceEditor() {
     catch { toast('Copy failed — long-press the link to copy', 'error'); }
   };
 
+  // ─── SECTION: Xactimate AI import ──────────────
+  // Upload the chosen Xactimate PDF to the job's files (skipping the upload if the same
+  // file is already attached), then let the worker AI-read it and pre-fill this draft.
+  const importXactimate = async (file) => {
+    if (!file || !job?.id) return;
+    setXactBusy(true);
+    try {
+      let key; // object key within the job-files bucket for the worker to read
+      let existing = null;
+      try {
+        existing = (await db.select('job_documents',
+          `job_id=eq.${job.id}&category=eq.xactimate&name=eq.${encodeURIComponent(file.name)}&select=file_path&limit=1`))?.[0];
+      } catch { /* dedup lookup failed — just treat it as a new upload */ }
+      if (existing?.file_path) {
+        key = String(existing.file_path).replace(/^job-files\//, ''); // already on the job — reuse it, no duplicate
+      } else {
+        key = `${job.id}/xactimate/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
+        const up = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${key}`, {
+          method: 'POST', headers: { Authorization: `Bearer ${db.apiKey}`, 'Content-Type': file.type || 'application/pdf' }, body: file,
+        });
+        if (!up.ok) throw new Error('Upload failed');
+        // Record it in the job's documents so the source estimate is retained + auditable.
+        try {
+          await db.rpc('insert_job_document', {
+            p_job_id: job.id, p_name: file.name, p_file_path: `job-files/${key}`,
+            p_mime_type: file.type || 'application/pdf', p_category: 'xactimate', p_uploaded_by: employee?.id || null,
+          });
+        } catch { /* non-fatal — analysis can still proceed */ }
+      }
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/analyze-xactimate', {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: invoiceId, file_path: key }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setXactInfo(data);
+      toast(`Imported from Xactimate — ${fmt$2(data.billable?.amount)} (${data.billable?.basis})`);
+      await load();
+    } catch (e) { toast('Xactimate import failed: ' + (e.message || e), 'error'); }
+    finally { setXactBusy(false); }
+  };
+
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
   if (!inv) return null;
@@ -414,6 +460,12 @@ export default function InvoiceEditor() {
               {busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
             </PrimaryButton>
           )}
+          {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
+            <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
+              style={xactBusy ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
+              {xactBusy ? '✨ Reading…' : '✨ Import Xactimate'}
+            </GhostButton>
+          )}
           {canEdit && synced && (
             <GhostButton onClick={emailInvoice} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
               style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
@@ -435,6 +487,8 @@ export default function InvoiceEditor() {
               { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced && collected <= 0 },
             ]} />
           )}
+          <input ref={xactInputRef} type="file" accept="application/pdf,.pdf" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importXactimate(f); }} />
         </div>
       </div>
 
@@ -473,6 +527,26 @@ export default function InvoiceEditor() {
       {inv.qbo_sync_error && <div style={bannerStyle(STATUS.danger)}>Couldn’t save invoice: {inv.qbo_sync_error}</div>}
       {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
+
+      {/* Xactimate AI import result — review before Save */}
+      {xactInfo && (
+        <div style={bannerStyle(xactInfo.reconciles === false ? STATUS.warning : STATUS.success)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800 }}>✨ Imported from Xactimate — billing insurance {fmt$2(xactInfo.billable?.amount)} <span style={{ fontWeight: 500 }}>({xactInfo.billable?.basis} · {xactInfo.billable?.confidence} confidence)</span></div>
+              {xactInfo.billable?.rationale && <div style={{ fontSize: 12, marginTop: 3 }}>{xactInfo.billable.rationale}</div>}
+              {xactInfo.reconciles === false && <div style={{ fontSize: 12, marginTop: 3, fontWeight: 700 }}>⚠ The estimate’s totals didn’t fully reconcile — double-check the amount before saving.</div>}
+              {xactInfo.totals && (
+                <div style={{ fontSize: 11.5, marginTop: 6, ...mono }}>
+                  {['rcv', 'depreciation', 'acv', 'deductible', 'net_claim', 'sales_tax'].filter((k) => Number(xactInfo.totals[k]) > 0).map((k) => `${k.replace('_', ' ').toUpperCase()} ${fmt$2(xactInfo.totals[k])}`).join('   ·   ') || 'No summary totals found.'}
+                </div>
+              )}
+              <div style={{ fontSize: 11.5, marginTop: 6 }}>Review the line below, then <b>Save</b> to record it in QuickBooks.</div>
+            </div>
+            <button type="button" onClick={() => setXactInfo(null)} aria-label="Dismiss" style={{ flex: 'none', border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, lineHeight: 1, opacity: 0.7 }}>✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Single column: line items → actions → payments (no lateral panel) */}
       <div>

@@ -1281,6 +1281,48 @@ not the app-wide tokens.
 
 ---
 
+## AI — Xactimate estimate → pre-filled invoice draft (Jun 2026)
+
+**UPR's first AI/LLM integration.** Upload an Xactimate estimate PDF on the invoice builder and Claude reads
+it, determines the amount we bill insurance, and pre-fills the draft. **Human-in-the-loop: it only fills a
+DRAFT — nothing posts to QBO until the user reviews and Saves.**
+
+**Worker (`functions/api/analyze-xactimate.js`):** POST `{ invoice_id, file_path }` (Supabase Bearer auth).
+Downloads the uploaded PDF from the `job-files` bucket (service role) → base64 (chunked, V8-safe) → calls the
+**Anthropic Messages API** (`https://api.anthropic.com/v1/messages`, `x-api-key: env.ANTHROPIC_API_KEY`,
+`anthropic-version: 2023-06-01`) with model **`claude-opus-4-8`**, a base64 **document** block, and a **forced
+strict tool** (`submit_estimate`, `tool_choice:{type:'tool'}`) whose schema returns `line_items[]`,
+`totals{line_item_total,sales_tax,rcv,depreciation,acv,deductible,net_claim}`, and
+`billable{amount,basis(RCV|ACV|net_claim|line_item_total),confidence,rationale}`. Inserts **one summary
+line** at the billable amount (RCV by default — restoration bills full replacement cost), replacing any blank
+auto-added line. Logs `worker_runs` as `analyze-xactimate`. **Does not** touch QBO. Returns the billable +
+totals + reconciliation result for the UI banner.
+
+**Consistency (how we get the same behavior every time):** no fine-tuning. (1) The **strict tool schema**
+guarantees an identical output shape every run. (2) A **worked example** in the prompt + a pinned model
+anchor the one judgment call ("which total"). (3) A **deterministic arithmetic cross-check** in the worker
+(ACV≈RCV−depreciation, net≈ACV−deductible, RCV≈subtotal+tax within $1/1%) auto-downgrades `high`→`medium`
+confidence and flags a mismatch, and the human confirms before Save.
+
+**Frontend (`InvoiceEditor.jsx`):** an **✨ Import Xactimate** toolbar button (gated `canEdit && !synced &&
+job?.id && isFeatureEnabled('feature:ai_xactimate')`) → file picker → uploads the PDF to
+`job-files/{job_id}/xactimate/{ts}-{name}.pdf` + records it via `insert_job_document` (category `xactimate`)
+so the **source estimate is retained on the job automatically** — *skipping the upload and reusing the
+existing copy* if a job_document with the same filename + `xactimate` category is already attached (no
+duplicates). Then calls the worker and reloads. A **confirmation banner** shows the chosen amount, basis,
+confidence, the totals breakdown, and a ⚠ warning when the totals don't reconcile.
+
+**Going live requires two ops steps (not code):** add **`ANTHROPIC_API_KEY`** to Cloudflare Pages env (both
+**Preview** and **Production**) + redeploy, and enable the **`feature:ai_xactimate`** flag (DevTools →
+feature flags). Until the key exists the worker returns `503` and the UI toasts "AI isn't configured." Key
+stays server-side only — never the frontend.
+
+**Phase 2 (later):** category/itemized line granularity + QBO Item/Class auto-mapping; auto-fill
+`tax`/`deductible`/depreciation adjustment columns; pick an already-attached job document instead of
+uploading; a general "AI document import" surface (estimates, scope sheets).
+
+---
+
 ## Stripe — Card Payments & Fee Automation (S3 — Jun 20 2026, DORMANT)
 
 Live card/ACH collection + automated QuickBooks fee reconciliation. **All code is shipped
