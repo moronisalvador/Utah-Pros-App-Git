@@ -60,12 +60,17 @@ export default function Collections() {
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   // Initial tab can be deep-linked via ?tab= (e.g. the dashboard "Open estimates"
-  // widget → /collections?tab=estimates); falls back to A/R. Tab clicks are state-only.
-  const [params] = useSearchParams();
+  // widget → /collections?tab=estimates); falls back to A/R. Tab clicks sync back to
+  // ?tab= (replace) so the browser Back button returns you to the tab you were on.
+  const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = params.get('tab');
-    return TABS.some(o => o.value === t) ? t : 'ar';
+    return TABS.some((o) => o.value === t) ? t : 'ar';
   });
+  const changeTab = (t) => {
+    setTab(t);
+    setParams((prev) => { const p = new URLSearchParams(prev); p.set('tab', t); return p; }, { replace: true });
+  };
   const [arPeriod, setArPeriod] = useState('All');
   const [invPeriod, setInvPeriod] = useState('All');
   const [estPeriod, setEstPeriod] = useState('All');
@@ -100,7 +105,7 @@ export default function Collections() {
       </header>
 
       <div className="coll-tabrow">
-        <SegControl options={TABS} value={tab} onChange={setTab} size="lg" ariaLabel="Collections section" />
+        <SegControl options={TABS} value={tab} onChange={changeTab} size="lg" ariaLabel="Collections section" />
         {tab === 'ar' && (
           <SegControl options={PERIODS} value={arPeriod} onChange={setArPeriod} size="sm" ariaLabel="Time period" />
         )}
