@@ -241,9 +241,10 @@ export async function onRequestPost(context) {
       quantity: 1, unit_price: amount, sort_order: 0, ...lineExtra,
     });
 
-    await logRun(db, 'completed', 1, null, startedAt);
-    return jsonResponse({
-      ok: true,
+    // The recap is BOTH returned to the UI and persisted on the invoice, so the banner survives a
+    // refresh and stays available after the invoice is saved. Persisting is best-effort — a failed
+    // write must never fail the import.
+    const recap = {
       line_count: Array.isArray(extracted.line_items) ? extracted.line_items.length : 0,
       billable: { ...extracted.billable, amount, confidence },
       totals: extracted.totals,
@@ -252,7 +253,13 @@ export async function onRequestPost(context) {
       checks, reconciles,
       claim_number: extracted.claim_number || null,
       date_of_loss: extracted.date_of_loss || null,
-    }, 200, request, env);
+      imported_at: new Date().toISOString(),
+    };
+    try { await db.update('invoices', `id=eq.${invoice_id}`, { xactimate_meta: recap }); }
+    catch { /* recap persistence is best-effort */ }
+
+    await logRun(db, 'completed', 1, null, startedAt);
+    return jsonResponse({ ok: true, ...recap }, 200, request, env);
   } catch (e) {
     await logRun(db, 'error', 0, e.message, startedAt);
     return jsonResponse({ error: e.message || 'Extraction failed' }, 500, request, env);
