@@ -323,21 +323,34 @@ export default function InvoiceEditor() {
         </div>
       </div>
 
-      {/* Header card */}
+      {/* Header card — number + bill-to + details (no lateral panel) */}
       <CollCard style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
+          <StatusBadge kind={stKind} />
+        </div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
+        {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
+        <div style={{ marginTop: 12 }}>
+          <SectionLabel>Bill to</SectionLabel>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
+          {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
+        </div>
+        <div style={{ height: 1, background: C.hairline, margin: '14px 0' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px 20px' }}>
+          <Field label="Carrier" value={claim?.insurance_carrier || '—'} />
+          <Field label="Claim" value={claim?.claim_number || '—'} mono />
+          <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
+          {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
+          <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
-              <StatusBadge kind={stKind} />
-            </div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: C.ink, letterSpacing: '-.02em', marginTop: 2, ...tnum }}>{docNumber}</div>
-            {inv.qbo_doc_number && inv.qbo_doc_number !== inv.invoice_number && <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>UPR ref {inv.invoice_number}</div>}
-            <div style={{ fontSize: 13.5, color: C.body, marginTop: 4 }}>
-              {contact?.name || 'Client'} · {division}{job?.job_number ? ` ${job.job_number}` : ''}{claim?.claim_number ? <> · <span style={mono}>{claim.claim_number}</span></> : ''}
-            </div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Due date</div>
+            {canEdit
+              ? <input type="date" value={inv.due_date ? String(inv.due_date).slice(0, 10) : ''} onChange={(e) => updateDueDate(e.target.value)} style={{ fontSize: 12.5, padding: '5px 8px', border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit' }} />
+              : <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{inv.due_date ? fmtDate(inv.due_date) : '—'}</div>}
           </div>
         </div>
+        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 12 }}>The customer memo & service address are generated automatically when the invoice is sent to QuickBooks.</div>
       </CollCard>
 
       {/* Banners */}
@@ -345,10 +358,9 @@ export default function InvoiceEditor() {
       {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
-      {/* Two columns: builder (main) + details/payments (side) */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
-        {/* ── MAIN: line items + actions ── */}
-        <div style={{ flex: '3 1 520px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Single column: line items → actions → payments (no lateral panel) */}
+      <div>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <CollCard pad={0}>
             <div style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: canEdit ? 660 : 560 }}>
@@ -440,33 +452,9 @@ export default function InvoiceEditor() {
             </div>
           )}
           {canEdit && <div style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Click <b>Save</b> to record the invoice in QuickBooks{synced ? <>, then <b>Send to customer</b> to email it</> : ''}.</div>}
-        </div>
 
-        {/* ── SIDE: details + payments ── */}
-        <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
-          {/* Details */}
-          <CollCard>
-            <SectionLabel>Bill to</SectionLabel>
-            <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{contact?.name || '—'}</div>
-            {contact?.email && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 1 }}>{contact.email}</div>}
-            <div style={{ height: 1, background: C.hairline, margin: '12px 0' }} />
-            <DetailRow label="Carrier" value={claim?.insurance_carrier || '—'} />
-            <DetailRow label="Claim" value={claim?.claim_number || '—'} mono />
-            <DetailRow label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
-            {claim?.date_of_loss && <DetailRow label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
-            <DetailRow label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>Due date</span>
-              {canEdit ? (
-                <input type="date" value={inv.due_date ? String(inv.due_date).slice(0, 10) : ''} onChange={(e) => updateDueDate(e.target.value)}
-                  style={{ fontSize: 12.5, padding: '5px 8px', border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit' }} />
-              ) : <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ink }}>{inv.due_date ? fmtDate(inv.due_date) : '—'}</span>}
-            </div>
-            <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 6 }}>The customer memo & service address are generated automatically when the invoice is sent to QuickBooks.</div>
-          </CollCard>
-
-          {/* Payments */}
-          <CollCard>
+          {/* Payments — full width, below the builder */}
+          <CollCard style={{ marginTop: 2 }}>
             <SectionLabel>Payments</SectionLabel>
             <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
               <Stat label="Invoiced" value={fmt$2(invoiced)} />
@@ -603,11 +591,11 @@ function TotalRow({ label, value, strong }) {
 function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint, marginBottom: 8 }}>{children}</div>;
 }
-function DetailRow({ label, value, mono: isMono }) {
+function Field({ label, value, mono: isMono }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '3px 0', fontSize: 12.5 }}>
-      <span style={{ color: C.muted }}>{label}</span>
-      <span style={{ color: C.ink, fontWeight: 600, textAlign: 'right', ...(isMono ? mono : null) }}>{value}</span>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, ...(isMono ? mono : null) }}>{value}</div>
     </div>
   );
 }
