@@ -78,14 +78,13 @@ const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 // ─── SECTION: Toolbar icons (stroke style — matches the nav bar; sized for buttons) ──────────────
 // Same recipe as src/components/Icons.jsx (viewBox 24, currentColor, 2px round strokes) so the
 // toolbar reads as one family with the nav. currentColor = each adopts its button's text color
-// (ghost = slate, primary = white). Replaces the old emoji glyphs (✨ 💵 💳 ⎙ ✉ ←).
+// (ghost = slate, primary = white). Replaces the old emoji glyphs (✨ 💵 ⎙ ✉ ←).
 const TB = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, style: { flex: 'none' } };
 const IconBack    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>);
 const IconSave    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>);
 const IconSparkle = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0Z" /><path d="M20 3v4M22 5h-4M4 17v2M5 18H3" /></svg>);
 const IconMail    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22 6 12 13 2 6" /></svg>);
 const IconDollar  = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>);
-const IconCard    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>);
 const IconEye     = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>);
 const IconPrint   = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>);
 
@@ -402,26 +401,6 @@ export default function InvoiceEditor() {
     setPayForm({ amount: bal > 0 ? bal.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' });
   };
 
-  // ─── SECTION: Stripe pay-by-link (dormant until keys exist) ──────────────
-  const createPayLink = async () => {
-    setBusy(true);
-    try {
-      const auth = await getAuthHeader();
-      const res = await fetch('/api/stripe-pay-link', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId }) });
-      const d = await res.json().catch(() => ({}));
-      if (res.status === 503) { toast('Stripe is not set up yet — add keys in Payment Settings.', 'error'); return; }
-      if (!res.ok) throw new Error(d.error || res.statusText);
-      try { await navigator.clipboard.writeText(d.url); toast('Pay link created & copied'); }
-      catch { toast('Pay link created'); }
-      await load();
-    } catch (e) { toast('Pay link: ' + (e.message || e), 'error'); }
-    finally { setBusy(false); }
-  };
-  const copyPayLink = async () => {
-    try { await navigator.clipboard.writeText(inv.stripe_payment_link_url); toast('Pay link copied'); }
-    catch { toast('Copy failed — long-press the link to copy', 'error'); }
-  };
-
   // ─── SECTION: Xactimate AI import ──────────────
   // Upload the chosen Xactimate PDF to the job's files (skipping the upload if the same
   // file is already attached), then let the worker AI-read it and pre-fill this draft.
@@ -517,6 +496,9 @@ export default function InvoiceEditor() {
               <IconSave />{busy ? 'Saving…' : synced ? 'Save' : 'Save invoice'}
             </PrimaryButton>
           )}
+          {canEdit && balance > 0.005 && (
+            <GhostButton onClick={receivePayment} leftIcon={<IconDollar />}>Receive payment</GhostButton>
+          )}
           {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
             <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
               leftIcon={<IconSparkle />} style={xactBusy ? { opacity: 0.6, pointerEvents: 'none' } : undefined}>
@@ -528,14 +510,6 @@ export default function InvoiceEditor() {
               leftIcon={<IconMail />} style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
               {confirmEmail ? 'Confirm send' : inv.qbo_emailed_at ? 'Resend' : 'Send to customer'}
             </GhostButton>
-          )}
-          {canEdit && balance > 0.005 && (
-            <GhostButton onClick={receivePayment} leftIcon={<IconDollar />}>Receive payment</GhostButton>
-          )}
-          {canEdit && liveTotal > 0 && (
-            inv.stripe_payment_link_url
-              ? <GhostButton onClick={copyPayLink} leftIcon={<IconCard />} title={inv.stripe_payment_link_url}>Copy pay link</GhostButton>
-              : <GhostButton onClick={createPayLink} leftIcon={<IconCard />}>Create pay link</GhostButton>
           )}
           <GhostButton onClick={() => setShowPreview(true)} leftIcon={<IconEye />}>Preview</GhostButton>
           {canEdit && (
