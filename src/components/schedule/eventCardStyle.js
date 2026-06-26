@@ -60,3 +60,19 @@ export function eventCardStyle(appt) {
   if (isEvent) return appt.type === 'task' ? TASK_CARD : APPOINTMENT_CARD;
   return DIVISION_CARD[divisionBucket(appt._division)] || APPOINTMENT_CARD;
 }
+
+// Short human labels for the division pill. The app-wide DIV_COLORS constant
+// uses a different hue scheme (blue water / amber recon), so the Schedule keeps
+// its own pill here to stay consistent with the division-colored cards above.
+const DIVISION_LABEL = {
+  water: 'Water', fire: 'Fire', contents: 'Contents', mitigation: 'Mitigation', mit: 'Mitigation',
+  reconstruction: 'Recon', recon: 'Recon', remodeling: 'Remodel', remodel: 'Remodel', mold: 'Mold',
+};
+
+// division string → { bg, border, text, label } pill in the new palette.
+export function divisionPill(division) {
+  const card = DIVISION_CARD[divisionBucket(division)] || APPOINTMENT_CARD;
+  const d = String(division || '').toLowerCase();
+  const label = DIVISION_LABEL[d] || (d ? d.charAt(0).toUpperCase() + d.slice(1) : '');
+  return { bg: card.bg, border: card.border, text: card.title, label };
+}

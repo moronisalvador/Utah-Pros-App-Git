@@ -37,7 +37,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
 import { PERIODS } from '@/components/collections/collTokens';
 import { SegControl, GhostButton, PrimaryButton } from '@/components/collections/collKit';
@@ -59,7 +59,13 @@ export default function Collections() {
   // ─── SECTION: State & hooks ──────────────
   const { db, employee, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('ar');
+  // Initial tab can be deep-linked via ?tab= (e.g. the dashboard "Open estimates"
+  // widget → /collections?tab=estimates); falls back to A/R. Tab clicks are state-only.
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = params.get('tab');
+    return TABS.some(o => o.value === t) ? t : 'ar';
+  });
   const [arPeriod, setArPeriod] = useState('All');
   const [invPeriod, setInvPeriod] = useState('All');
   const [estPeriod, setEstPeriod] = useState('All');

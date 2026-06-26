@@ -177,7 +177,7 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates, loadin
         <span style={{ fontSize: 12, color: C.body, fontWeight: 600 }}>
           {data.total} open · <span style={{ color: C.ink, fontWeight: 700, ...tnum }}>{data.totalValue}</span>
         </span>
-        <FootLink to="/claims">View estimates →</FootLink>
+        <FootLink to="/collections?tab=estimates">View estimates →</FootLink>
       </CardFooter>
     </Card>
   );

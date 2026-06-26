@@ -1,7 +1,42 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: JobPanel.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The left-hand rail on the Schedule page. It lists jobs (grouped by where they
+ *   are in the pipeline), lets the dispatcher search/filter them and toggle which
+ *   ones show on the schedule board. Clicking a job opens a detail view inside the
+ *   rail: a progress summary plus the job's phases and tasks, where you can add,
+ *   duplicate, complete, or delete tasks and turn a set of selected tasks into a
+ *   new appointment.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (panel)
+ *   Rendered by:  src/pages/Schedule.jsx (left rail)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  ScheduleWizard, DivisionIcons, lib/scheduleUtils,
+ *              schedule/eventCardStyle (divisionPill — division-colored label)
+ *   Data:      reads  → get_job_task_pool (RPC, via the db prop)
+ *              writes → add_adhoc_job_task, add_custom_schedule_phase,
+ *                       toggle_job_task (RPCs); job_tasks (delete). Board on/off
+ *                       toggles bubble up to Schedule.jsx via the onToggleJob prop.
+ *
+ * NOTES / GOTCHAS:
+ *   - The `.schedule-job-panel` / `.schedule-job-panel-collapsed` classes drive the
+ *     mobile slide-in sheet + collapsed strip (CSS in index.css) — keep them.
+ *   - Division label colors come from divisionPill (the new teal/purple/coral/pink
+ *     palette), NOT the app-wide DIV_COLORS, so the rail matches the reskinned cards.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import ScheduleWizard from '@/components/ScheduleWizard';
-import { DIV_COLORS, MITIGATION_DIVS, RECON_DIVS, classifyPhase, fmtDate, fmtShortDate } from '@/lib/scheduleUtils';
+import { MITIGATION_DIVS, RECON_DIVS, classifyPhase, fmtDate, fmtShortDate } from '@/lib/scheduleUtils';
+import { divisionPill } from '@/components/schedule/eventCardStyle';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -134,7 +169,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   // STATE 2: Job Detail View
   // ═════════════════════════════════════════════
   if (activeJob) {
-    const dc = DIV_COLORS[activeJob.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
+    const dc = divisionPill(activeJob.division);
     const isOn = activeJob.on_board;
     const today = fmtDate(new Date());
 
@@ -722,10 +757,10 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
             { key: 'reconstruction', label: `Recon (${reconCount})` },
           ].map(f => (
             <button key={f.key} onClick={() => changeDivFilter(f.key)} style={{
-              flex: 1, fontSize: 11, fontWeight: 600, padding: '5px 0', borderRadius: 'var(--radius-md)',
-              border: divFilter === f.key ? '1px solid var(--accent)' : '1px solid var(--border-color)',
-              background: divFilter === f.key ? 'var(--accent-light)' : 'var(--bg-primary)',
-              color: divFilter === f.key ? 'var(--accent)' : 'var(--text-secondary)',
+              flex: 1, fontSize: 11, fontWeight: 600, padding: '5px 0', borderRadius: 8,
+              border: divFilter === f.key ? '1px solid #cfe0fb' : '1px solid #e7e9ee',
+              background: divFilter === f.key ? '#eef2fb' : '#fff',
+              color: divFilter === f.key ? '#2456c9' : '#475467',
               cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 120ms ease',
             }}>{f.label}</button>
           ))}
@@ -783,7 +818,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
 }
 
 function JobRow({ job, onToggle, isOn, onOpen }) {
-  const dc = DIV_COLORS[job.division] || { bg: '#f1f3f5', text: '#6b7280', label: '' };
+  const dc = divisionPill(job.division);
   const isProduction = job.in_production;
   return (
     <div style={{ ...P.jobRow, background: isOn ? 'var(--accent-light)' : 'transparent' }}>
@@ -830,46 +865,46 @@ function JobRow({ job, onToggle, isOn, onOpen }) {
 
 const P = {
   collapsed: {
-    width: 40, background: 'var(--bg-primary)', borderRight: '1px solid var(--border-color)',
+    width: 40, background: '#fff', borderRight: '1px solid #e7e9ee',
     display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 12, gap: 8,
     cursor: 'pointer', flexShrink: 0,
   },
   collapsedLabel: {
     writingMode: 'vertical-rl', fontSize: 12, fontWeight: 600,
-    color: 'var(--text-secondary)', letterSpacing: '0.05em',
+    color: '#475467', letterSpacing: '0.05em',
   },
   collapsedBadge: {
-    fontSize: 11, fontWeight: 700, color: 'var(--accent)',
-    background: 'var(--accent-light)', padding: '2px 6px', borderRadius: 99,
+    fontSize: 11, fontWeight: 700, color: '#2456c9',
+    background: '#eef2fb', padding: '2px 6px', borderRadius: 99,
   },
   panel: {
-    width: 300, background: 'var(--bg-primary)', borderRight: '1px solid var(--border-color)',
+    width: 300, background: '#fff', borderRight: '1px solid #e7e9ee',
     display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
   },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '12px 14px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+    padding: '12px 14px', borderBottom: '1px solid #e7e9ee', flexShrink: 0,
   },
-  closeBtn: { fontSize: 14, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
-  searchWrap: { padding: '8px 12px', borderBottom: '1px solid var(--border-light)', flexShrink: 0 },
+  closeBtn: { fontSize: 14, color: '#98a2b3', background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
+  searchWrap: { padding: '8px 12px', borderBottom: '1px solid #f0f1f4', flexShrink: 0 },
   searchInput: {
-    width: '100%', padding: '6px 10px', border: '1px solid var(--border-color)',
-    borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'var(--font-sans)',
-    outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-primary)',
+    width: '100%', padding: '6px 10px', border: '1px solid #e7e9ee',
+    borderRadius: 8, fontSize: 12, fontFamily: 'var(--font-sans)',
+    outline: 'none', color: '#101828', background: '#fff',
   },
   body: { flex: 1, overflowY: 'auto', padding: '0' },
   groupHead: {
     display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
     fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
-    color: 'var(--text-tertiary)', userSelect: 'none',
+    color: '#98a2b3', userSelect: 'none',
   },
   dot: { width: 7, height: 7, borderRadius: '50%', flexShrink: 0 },
   jobRow: {
     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px',
-    cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
+    cursor: 'pointer', borderBottom: '1px solid #f0f1f4',
   },
   jobName: {
-    fontSize: 13, fontWeight: 500, color: 'var(--text-primary)',
+    fontSize: 13, fontWeight: 500, color: '#101828',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
 };

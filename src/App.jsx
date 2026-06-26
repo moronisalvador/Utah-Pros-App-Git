@@ -73,7 +73,6 @@ const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuil
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
 const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
-const Estimates = lazyRetry(() => import('@/pages/Estimates'));
 const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 
@@ -279,11 +278,9 @@ function WebRoutes() {
             <ErrorBoundary section="ClaimCollection"><ClaimCollectionPage /></ErrorBoundary>
           </FeatureRoute>
         } />
-        <Route path="estimates" element={
-          <FeatureRoute flag="page:estimates">
-            <ErrorBoundary section="Estimates"><Estimates /></ErrorBoundary>
-          </FeatureRoute>
-        } />
+        {/* Estimates list now lives as a tab in Collections ("My Money") — redirect the
+            standalone route there. The editor /estimates/:id below is unchanged. */}
+        <Route path="estimates" element={<Navigate to="/collections?tab=estimates" replace />} />
         <Route path="estimates/:estimateId" element={
           <FeatureRoute flag="page:estimates">
             <ErrorBoundary section="Estimate"><EstimateEditor /></ErrorBoundary>
