@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 
 /* ── Toast helpers ── */
 const ok  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -59,14 +60,36 @@ function FlagsTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await db.rpc('get_feature_flags');
-      setFlags(rows || []);
+      let rows = (await db.rpc('get_feature_flags')) || [];
+      // Auto-register: surface any code-declared flag (FEATURE_FLAG_REGISTRY) not yet
+      // in the DB so it's manageable here. Created ENABLED — a missing flag already
+      // reads as ON (AuthContext: "no row = unrestricted"), so registering one must
+      // never flip a live feature off. Best-effort: never blanks out the list.
+      try {
+        const known   = new Set(rows.map((f) => f.key));
+        const missing = FEATURE_FLAG_REGISTRY.filter((r) => !known.has(r.key));
+        if (missing.length) {
+          await Promise.all(missing.map((r) => db.rpc('upsert_feature_flag', {
+            p_key:              r.key,
+            p_enabled:          r.enabled !== false,
+            p_dev_only_user_id: null,
+            p_category:         r.category,
+            p_label:            r.label,
+            p_description:      r.description || null,
+            p_updated_by:       employee?.id,
+            p_force_disabled:   false,
+          })));
+          rows = (await db.rpc('get_feature_flags')) || rows;
+          ok(`Auto-registered ${missing.length} new flag${missing.length > 1 ? 's' : ''} from code`);
+        }
+      } catch { /* best-effort — don't block the list on auto-register */ }
+      setFlags(rows);
     } catch (e) {
       err('Failed to load flags');
     } finally {
       setLoading(false);
     }
-  }, [db]);
+  }, [db, employee]);
 
   useEffect(() => { load(); }, [load]);
 
