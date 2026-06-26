@@ -1309,8 +1309,10 @@ line** at the billable amount (RCV by default — restoration bills full replace
 auto-added line, and **pre-fills that line's QBO Item + Class from the job's division** via the shared
 `divisionToQbo`/`findClassId` (functions/lib/quickbooks.js) — the same mapping the invoice sync uses, so the
 draft shows exactly what will post (e.g. Water → "Water Damage Mitigation And Drying" / Mitigation class).
-Logs `worker_runs` as `analyze-xactimate`. **Does not** touch QBO. Returns the billable + totals +
-reconciliation result for the UI banner.
+Logs `worker_runs` as `analyze-xactimate`. **Does not** touch QBO. Returns the recap (billable + totals +
+reconciliation + work_type + paid_when_incurred) for the UI banner **and persists the same recap to
+`invoices.xactimate_meta` (JSONB, added Jun 2026)** so the banner survives a refresh and stays available after
+the invoice is saved (best-effort write — never fails the import).
 
 **Work-type awareness (mitigation vs reconstruction):** the prompt is tailored from the job's division (via
 `divisionToQbo` → Mitigation/Reconstruction). For **mitigation** (water/fire/mold cleanup) the model expects
@@ -1343,7 +1345,7 @@ job?.id && isFeatureEnabled('feature:ai_xactimate')`) → file picker → upload
 so the **source estimate is retained on the job automatically** — *skipping the upload and reusing the
 existing copy* if a job_document with the same filename + `xactimate` category is already attached (no
 duplicates). Then calls the worker and reloads. A **confirmation banner** shows the chosen amount, basis,
-confidence, the totals breakdown, a ⏳ "Paid When Incurred" held-back note when present, and a ⚠ warning when the totals don't reconcile. While the AI works, a
+confidence, the totals breakdown, a ⏳ "Paid When Incurred" held-back note when present, and a ⚠ warning when the totals don't reconcile. The banner is **hydrated from `inv.xactimate_meta` on every load** (once per mount, so a manual ✕ dismiss isn't undone by line-edit reloads), so it persists across refresh and after QBO save — only the "review before Save" line is gated to drafts. While the AI works, a
 **progress modal** shows a spinner, a simulated progress bar, and a status line that rotates through the real
 steps (upload → read → extract → identify billable → reconcile → fill).
 

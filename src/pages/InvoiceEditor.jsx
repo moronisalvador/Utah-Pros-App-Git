@@ -109,6 +109,7 @@ export default function InvoiceEditor() {
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
+  const xactHydratedRef = useRef(false); // hydrate the persisted recap banner once per mount
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -118,6 +119,12 @@ export default function InvoiceEditor() {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       setInv(i);
+      // Re-show the persisted Xactimate recap banner on (re)load — once per mount, so a manual
+      // dismiss isn't undone by later loads triggered by line edits.
+      if (!xactHydratedRef.current) {
+        xactHydratedRef.current = true;
+        if (i.xactimate_meta) setXactInfo(i.xactimate_meta);
+      }
       const j = i.job_id ? (await d.select('jobs', `id=eq.${i.job_id}&select=id,division,job_number,claim_id,primary_contact_id,address,city,state,zip&limit=1`))?.[0] : null;
       setJob(j || null);
       setClaim(j?.claim_id ? (await d.select('claims', `id=eq.${j.claim_id}&select=claim_number,insurance_carrier,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null);
@@ -564,7 +571,7 @@ export default function InvoiceEditor() {
       {catalogMsg && canEdit && <div style={bannerStyle(STATUS.warning)}>{catalogMsg}</div>}
       {inv.stripe_payment_link_url && <div style={bannerStyle(STATUS.info)}>💳 Card pay link active — <a href={inv.stripe_payment_link_url} target="_blank" rel="noopener noreferrer" style={{ color: STATUS.info.text, wordBreak: 'break-all' }}>{inv.stripe_payment_link_url}</a></div>}
 
-      {/* Xactimate AI import result — review before Save */}
+      {/* Xactimate AI recap — persisted on the invoice (inv.xactimate_meta) and re-shown on every load */}
       {xactInfo && (
         <div style={bannerStyle(xactInfo.reconciles === false ? STATUS.warning : STATUS.success)}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -582,7 +589,7 @@ export default function InvoiceEditor() {
                   {['rcv', 'depreciation', 'acv', 'deductible', 'net_claim', 'sales_tax'].filter((k) => Number(xactInfo.totals[k]) > 0).map((k) => `${k.replace('_', ' ').toUpperCase()} ${fmt$2(xactInfo.totals[k])}`).join('   ·   ') || 'No summary totals found.'}
                 </div>
               )}
-              <div style={{ fontSize: 11.5, marginTop: 6 }}>Review the line below, then <b>Save</b> to record it in QuickBooks.</div>
+              {!synced && <div style={{ fontSize: 11.5, marginTop: 6 }}>Review the line below, then <b>Save</b> to record it in QuickBooks.</div>}
             </div>
             <button type="button" onClick={() => setXactInfo(null)} aria-label="Dismiss" style={{ flex: 'none', border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, lineHeight: 1, opacity: 0.7 }}>✕</button>
           </div>
