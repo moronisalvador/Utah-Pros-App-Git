@@ -1303,7 +1303,7 @@ Downloads the uploaded PDF from the `job-files` bucket (service role) → base64
 **Anthropic Messages API** (`https://api.anthropic.com/v1/messages`, `x-api-key: env.ANTHROPIC_API_KEY`,
 `anthropic-version: 2023-06-01`) with model **`claude-opus-4-8`**, a base64 **document** block, and a **forced
 strict tool** (`submit_estimate`, `tool_choice:{type:'tool'}`) whose schema returns `line_items[]`,
-`totals{line_item_total,overhead,profit,sales_tax,rcv,depreciation,acv,deductible,net_claim}`, and
+`totals{line_item_total,overhead,profit,sales_tax,rcv,depreciation,acv,deductible,net_claim,paid_when_incurred}`, and
 `billable{amount,basis(RCV|ACV|net_claim|line_item_total),confidence,rationale}`. Inserts **one summary
 line** at the billable amount (RCV by default — restoration bills full replacement cost), replacing any blank
 auto-added line, and **pre-fills that line's QBO Item + Class from the job's division** via the shared
@@ -1311,6 +1311,14 @@ auto-added line, and **pre-fills that line's QBO Item + Class from the job's div
 draft shows exactly what will post (e.g. Water → "Water Damage Mitigation And Drying" / Mitigation class).
 Logs `worker_runs` as `analyze-xactimate`. **Does not** touch QBO. Returns the billable + totals +
 reconciliation result for the UI banner.
+
+**Work-type awareness (mitigation vs reconstruction):** the prompt is tailored from the job's division (via
+`divisionToQbo` → Mitigation/Reconstruction). For **mitigation** (water/fire/mold cleanup) the model expects
+no depreciation/deductible and bills the full RCV (= the total) at high confidence. For **reconstruction** it
+watches for **"Paid When Incurred" (PWI)** line items (carriers like Farmers hold back continuous flooring
+until the work is completed/photographed), sums them into `totals.paid_when_incurred`, and **keeps the
+billable at the full RCV** — the held-back amount is surfaced in the banner (⏳ note) for the human to trim if
+billing in stages, never auto-subtracted. The worker returns `work_type` and `paid_when_incurred`.
 
 **Consistency (how we get the same behavior every time):** no fine-tuning. (1) The **strict tool schema**
 guarantees an identical output shape every run. (2) A **worked example** in the prompt + a pinned model
@@ -1321,13 +1329,21 @@ Checks reconcile against **RCV** (always printed), never ACV — Xactimate omits
 depreciation is withheld, and the earlier net_claim≈ACV−deductible check then compared against 0 and falsely
 flagged clean estimates as not reconciling.
 
+**Keeping it improving (the "training" loop):** there is no fine-tuning — the API is stateless, so the
+Anthropic Console (Workbench/Evals) is only for prototyping prompt wording and watching cost; it does **not**
+push to UPR. The AI's behavior lives entirely in `analyze-xactimate.js`: the prompt, a `## Worked examples`
+section (seeded with one reconstruction + one mitigation example), and the deterministic checks. To teach it
+a new rule, add guidance / a worked example / a check there and ship. As the example set grows past the
+~4K-token cache minimum (Opus 4.8), move the stable prompt+examples into a `cache_control` prefix to keep
+cost/latency flat.
+
 **Frontend (`InvoiceEditor.jsx`):** an **✨ Import Xactimate** toolbar button (gated `canEdit && !synced &&
 job?.id && isFeatureEnabled('feature:ai_xactimate')`) → file picker → uploads the PDF to
 `job-files/{job_id}/xactimate/{ts}-{name}.pdf` + records it via `insert_job_document` (category `xactimate`)
 so the **source estimate is retained on the job automatically** — *skipping the upload and reusing the
 existing copy* if a job_document with the same filename + `xactimate` category is already attached (no
 duplicates). Then calls the worker and reloads. A **confirmation banner** shows the chosen amount, basis,
-confidence, the totals breakdown, and a ⚠ warning when the totals don't reconcile. While the AI works, a
+confidence, the totals breakdown, a ⏳ "Paid When Incurred" held-back note when present, and a ⚠ warning when the totals don't reconcile. While the AI works, a
 **progress modal** shows a spinner, a simulated progress bar, and a status line that rotates through the real
 steps (upload → read → extract → identify billable → reconcile → fill).
 
@@ -1339,6 +1355,7 @@ stays server-side only — never the frontend.
 **Phase 2 (later):** category/itemized line granularity (one line per room/trade instead of a single summary
 line); auto-fill `tax`/`deductible`/depreciation adjustment columns; pick an already-attached job document
 instead of uploading; a general "AI document import" surface (estimates, scope sheets).
+*(Done: work-type-aware prompt — mitigation vs reconstruction; PWI detection + ⏳ banner note.)*
 *(Done Jun 2026: QBO Item/Class auto-fill from division; progress modal; RCV-based reconciliation fix.)*
 
 ---
