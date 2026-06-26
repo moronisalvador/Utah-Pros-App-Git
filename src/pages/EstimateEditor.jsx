@@ -42,7 +42,8 @@ import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
-import { CollCard, GhostButton, PrimaryButton, Pill } from '@/components/collections/collKit';
+import ActionMenu from '@/components/collections/ActionMenu';
+import { CollCard, GhostButton, PrimaryButton, Pill, MapPin } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -70,8 +71,6 @@ export default function EstimateEditor() {
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -200,16 +199,14 @@ export default function EstimateEditor() {
     catch (e) { toast('Couldn’t send estimate: ' + e.message, 'error'); await load(); }
     finally { setBusy(false); }
   };
-  const revertToDraft = async () => {
-    if (!confirmRemove) { setConfirmRemove(true); return; }
-    setConfirmRemove(false); setBusy(true);
+  const doRevert = async () => {
+    setBusy(true);
     try { await callWorker({ action: 'delete' }); toast('Reverted to draft'); await load(); }
     catch (e) { toast('Couldn’t revert: ' + e.message, 'error'); }
     finally { setBusy(false); }
   };
-  const deleteDraft = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return; }
-    setConfirmDelete(false); setBusy(true);
+  const doDelete = async () => {
+    setBusy(true);
     try {
       for (const l of lines) await db.delete('estimate_line_items', `id=eq.${l.id}`);
       await db.delete('estimates', `id=eq.${estimateId}`);
@@ -269,7 +266,6 @@ export default function EstimateEditor() {
   const statusLabel = converted ? 'Converted' : !synced ? 'Draft' : est.qbo_emailed_at ? 'Sent' : 'Saved';
   const st = EST_STATUS[statusLabel] || STATUS.neutral;
   const addr = est.property_address ? `${est.property_address}${est.property_city ? `, ${est.property_city}` : ''}${est.property_state ? `, ${est.property_state}` : ''}${est.property_zip ? ` ${est.property_zip}` : ''}` : '';
-  const dangerBtn = (on) => ({ ...btnSm, background: on ? STATUS.danger.tint : '#fff', color: on ? STATUS.danger.text : C.muted, border: `1px solid ${on ? STATUS.danger.border : C.cardBorder}` });
   const GRID = editable ? '22px 1.15fr 2.3fr 1fr 56px 92px 100px 26px' : '1.2fr 2.6fr 1fr 56px 92px 110px';
 
   // ─── SECTION: Render ──────────────
@@ -277,12 +273,38 @@ export default function EstimateEditor() {
     <div className="coll-page">
       <style>{`@media print { body * { visibility: hidden !important; } .est-print-doc, .est-print-doc * { visibility: visible !important; } .est-print-doc { position: absolute !important; left: 0; top: 0; width: 100%; box-shadow: none !important; border: none !important; } .est-no-print { display: none !important; } }`}</style>
 
-      {/* Top bar */}
+      {/* Top bar — Back + QBO-style action toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <GhostButton onClick={() => navigate(-1)}>← Back</GhostButton>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {synced && <span style={{ fontSize: 12, color: C.faint }}>Estimate #{docNumber}{est.qbo_synced_at ? ' · saved ' + fmtDate(est.qbo_synced_at) : ''}</span>}
+        <div className="est-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {synced && est.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ Saved {fmtDate(est.qbo_synced_at)}</span>}
+          {editable && (
+            <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
+              {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
+            </PrimaryButton>
+          )}
+          {editable && synced && (
+            <GhostButton onClick={emailEstimate} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
+              style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
+              {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend' : '✉ Send to customer'}
+            </GhostButton>
+          )}
+          {editable && total > 0 && (
+            <button type="button" onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)} disabled={busy}
+              title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
+              style={confirmConvert
+                ? { ...btnSm, background: STATUS.danger.tint, color: STATUS.danger.text, border: `1px solid ${STATUS.danger.border}` }
+                : { ...btnSm, background: STATUS.success.tint, color: STATUS.success.text, border: `1px solid ${STATUS.success.border}` }}>
+              {busy ? 'Working…' : confirmConvert ? 'Confirm — append to invoice' : '→ Convert to invoice'}
+            </button>
+          )}
           <GhostButton onClick={() => setShowPreview(true)}>⎙ Preview</GhostButton>
+          {editable && (
+            <ActionMenu items={[
+              { key: 'revert', label: 'Revert to draft', onSelect: doRevert, confirm: true, danger: true, show: synced },
+              { key: 'delete', label: 'Delete draft', onSelect: doDelete, confirm: true, danger: true, show: !synced },
+            ]} />
+          )}
         </div>
       </div>
 
@@ -308,8 +330,8 @@ export default function EstimateEditor() {
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           <Field label="Sent" value={est.submitted_at ? fmtDate(est.submitted_at) : 'Not sent'} />
         </div>
-        {addr && <div style={{ fontSize: 11.5, color: C.faint, marginTop: 12 }}>📍 {addr}</div>}
-        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 8 }}>The customer memo & service address are generated automatically when the estimate is sent to QuickBooks.</div>
+        {addr && <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.muted, marginTop: 12 }}><MapPin /> {addr}</div>}
+        <div style={{ fontSize: 10.5, color: C.faint2, marginTop: addr ? 6 : 8 }}>The customer memo is generated automatically when the estimate is sent to QuickBooks.</div>
       </CollCard>
 
       {/* Banners */}
@@ -380,40 +402,7 @@ export default function EstimateEditor() {
             </div>
           </CollCard>
 
-          {/* Action bar */}
-          {editable && (
-            <div className="est-no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <PrimaryButton onClick={saveEstimate} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
-                {busy ? 'Saving…' : synced ? 'Save' : 'Save estimate'}
-              </PrimaryButton>
-              {synced && (
-                <GhostButton onClick={emailEstimate} title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
-                  style={confirmEmail ? { background: STATUS.info.tint, color: STATUS.info.text, borderColor: STATUS.info.border } : undefined}>
-                  {confirmEmail ? 'Confirm send' : est.qbo_emailed_at ? '✉ Resend estimate' : '✉ Send to customer'}
-                </GhostButton>
-              )}
-              {total > 0 && (
-                <button type="button" onClick={convertToInvoice} onBlur={() => setConfirmConvert(false)} disabled={busy}
-                  title="Turn this accepted estimate into an invoice (and link it in QuickBooks)"
-                  style={confirmConvert
-                    ? { ...btnSm, background: STATUS.danger.tint, color: STATUS.danger.text, border: `1px solid ${STATUS.danger.border}` }
-                    : { ...btnSm, background: STATUS.success.tint, color: STATUS.success.text, border: `1px solid ${STATUS.success.border}` }}>
-                  {busy ? 'Working…' : confirmConvert ? 'Confirm — append to invoice' : '→ Convert to invoice'}
-                </button>
-              )}
-              {synced && (
-                <button type="button" onClick={revertToDraft} onBlur={() => setConfirmRemove(false)} disabled={busy} style={dangerBtn(confirmRemove)}>
-                  {confirmRemove ? 'Confirm revert' : 'Revert to draft'}
-                </button>
-              )}
-              {!synced && (
-                <button type="button" onClick={deleteDraft} onBlur={() => setConfirmDelete(false)} disabled={busy} style={{ ...dangerBtn(confirmDelete), marginLeft: 'auto' }}>
-                  {confirmDelete ? 'Confirm delete' : 'Delete draft'}
-                </button>
-              )}
-            </div>
-          )}
-          {editable && <div style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Click <b>Save</b> to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
+          {editable && <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Use <b>Save</b> (top) to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
         </div>
       </div>
 
