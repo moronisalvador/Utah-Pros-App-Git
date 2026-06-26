@@ -87,6 +87,8 @@ const IconMail    = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="
 const IconDollar  = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>);
 const IconEye     = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>);
 const IconPrint   = ({ s = 15 }) => (<svg width={s} height={s} {...TB}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>);
+// External-link glyph — marks a value that navigates elsewhere (e.g. Job → its page).
+const IconExternal = ({ s = 12 }) => (<svg width={s} height={s} {...TB}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>);
 
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
@@ -555,7 +557,9 @@ export default function InvoiceEditor() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px 20px' }}>
           <Field label="Carrier" value={claim?.insurance_carrier || '—'} />
           <Field label="Claim" value={claim?.claim_number || '—'} mono />
-          <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
+          <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division}
+            onClick={job?.id ? () => navigate(`/jobs/${job.id}`) : undefined}
+            title={job?.id ? 'Open job' : undefined} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
           <div style={{ minWidth: 0 }}>
@@ -876,11 +880,21 @@ function TotalRow({ label, value, strong }) {
 function SectionLabel({ children }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: C.faint, marginBottom: 8 }}>{children}</div>;
 }
-function Field({ label, value, mono: isMono }) {
+function Field({ label, value, mono: isMono, onClick, title }) {
+  const valStyle = { fontSize: 13, fontWeight: 600, color: C.ink, ...(isMono ? mono : null) };
   return (
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, ...(isMono ? mono : null) }}>{value}</div>
+      {onClick ? (
+        // Clickable value (e.g. Job → its page): link-blue text + external-link icon so it reads as tappable.
+        <button type="button" onClick={onClick} title={title}
+          style={{ ...valStyle, display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', color: STATUS.info.text, fontFamily: 'inherit' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+          <IconExternal />
+        </button>
+      ) : (
+        <div style={valStyle}>{value}</div>
+      )}
     </div>
   );
 }

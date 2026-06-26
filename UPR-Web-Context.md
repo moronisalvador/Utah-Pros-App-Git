@@ -1258,7 +1258,9 @@ not the app-wide tokens.
   confirm) and tucks away Revert to draft / Delete draft. This replaced the old bottom action bar.
 - **Single full-width column** (no lateral panels): a header `CollCard` carries the eyebrow
   (INVOICE / ESTIMATE) + status (`StatusBadge` / `Pill`) + doc number + Bill-to / Prepared-for, then a
-  responsive details grid (Carrier · Claim · Job · Date of loss · Sent; **invoices add an editable Due
+  responsive details grid (Carrier · Claim · Job · Date of loss · Sent; on invoices the **Job value is a
+  link** — external-link icon + link-blue, `navigate('/jobs/:id')` — when the invoice has a linked job;
+  **invoices add an editable Due
   date** — UPR `invoices.due_date`, does NOT sync back from QBO) + the **service/loss address** (`job.address…`
   → fallback `claim.loss_*`, the same source QBO uses). Estimates also show Type.
 - **Line editor:** new **`src/components/collections/SearchSelect.jsx`** (typeahead dropdown, outside-click/
