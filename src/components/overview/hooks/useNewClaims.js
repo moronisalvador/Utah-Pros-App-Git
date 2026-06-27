@@ -1,9 +1,11 @@
 /**
  * ════════════════════════════════════════════════
  * FILE: useNewClaims.js — "New claims booked" card data (period count + 30-day
- *   sparkline + 30-vs-30 delta). Reads `claims.created_at` (floored to ~400 days
- *   so the query never rescans the whole table). projected $ stays null until
- *   jobs.estimated_value lands (widget hides that line).
+ *   sparkline + 30-vs-30 delta). Counts only claims that have >= 1 REAL job (one
+ *   that's authorized/billed — signed work-auth, QBO invoice, or approved estimate),
+ *   via the get_real_claims_created RPC; estimate/lead-only claims are excluded and
+ *   live in the Open-estimates tile. Floored to ~400 days so it never rescans the
+ *   whole table. projected $ stays null until jobs.estimated_value lands.
  * ════════════════════════════════════════════════
  */
 import { useCallback } from 'react';
@@ -45,7 +47,10 @@ export function useNewClaims(period = 'MTD') {
   const load = useCallback(async () => {
     const now = Date.now();
     const floor = new Date(now - 400 * DAY).toISOString().slice(0, 10);
-    const rows = await db.select('claims', `select=created_at&created_at=gte.${floor}&order=created_at.desc`);
+    // Only count claims that have >= 1 REAL job (authorized/billed) — excludes estimate/lead-only
+    // claims. "Real" is set by signed work-auth / QBO invoice / approved estimate (see
+    // 20260627_real_job_classification.sql); estimates remain in the Open-estimates tile.
+    const rows = await db.rpc('get_real_claims_created', { p_floor: floor });
     const times = (rows || []).map(r => r.created_at && new Date(r.created_at).getTime()).filter(Boolean);
 
     const count = times.filter(t => t >= periodStartTs(period, now)).length;
