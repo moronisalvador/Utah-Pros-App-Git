@@ -58,6 +58,7 @@ export const DIV = {
   reconstruction: '#8a5cf6', // purple
   remodeling:     '#f2664a', // coral
   mold:           '#ec4899', // pink
+  contents:       '#f59e0b', // amber
 };
 
 // Status encoding — solid (bars/dots), text (text-on-tint), tint (badge bg).
@@ -75,6 +76,7 @@ export const DIVISIONS = [
   { key: 'reconstruction', label: 'Reconstruction', color: DIV.reconstruction },
   { key: 'remodeling',     label: 'Remodeling',     color: DIV.remodeling },
   { key: 'mold',           label: 'Mold',           color: DIV.mold },
+  { key: 'contents',       label: 'Contents',       color: DIV.contents },
 ];
 
 export const PERIODS = ['MTD', 'Last 30', 'QTD', 'YTD'];
@@ -89,6 +91,17 @@ export const PLACEHOLDER = {
       { key: 'reconstruction', label: 'Reconstruction', value: '$28.6K', pct: 32.7, color: DIV.reconstruction },
       { key: 'remodeling',     label: 'Remodeling',     value: '$9.4K',  pct: 10.7, color: DIV.remodeling },
       { key: 'mold',           label: 'Mold',           value: '$8.2K',  pct: 9.5,  color: DIV.mold },
+    ],
+  },
+
+  payments: {
+    total: '$82,593',
+    delta: { dir: 'up', pct: 22 },
+    segments: [
+      { key: 'mitigation',     label: 'Mitigation',     value: '$30.1K', pct: 36.4, color: DIV.mitigation },
+      { key: 'reconstruction', label: 'Reconstruction', value: '$48.2K', pct: 58.4, color: DIV.reconstruction },
+      { key: 'remodeling',     label: 'Remodeling',     value: '$0',     pct: 0,    color: DIV.remodeling },
+      { key: 'mold',           label: 'Mold',           value: '$4.3K',  pct: 5.2,  color: DIV.mold },
     ],
   },
 
