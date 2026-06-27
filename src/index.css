@@ -3501,6 +3501,52 @@ tr:hover td { background: var(--bg-secondary); }
   .tt-table th, .tt-table td { padding: 8px 8px; }
 }
 
+/* ── PR-7: tab badge, status badges, inline edit, requests ── */
+.tt-tab-badge {
+  display: inline-block; min-width: 16px; height: 16px; padding: 0 5px; margin-left: 6px;
+  border-radius: var(--radius-full); background: #dc2626; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+.tt-badge {
+  display: inline-block; padding: 1px 6px; border-radius: var(--radius-full);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap;
+}
+.tt-badge.open   { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.tt-badge.danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.tt-badge.muted  { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.tt-badge.edit   { background: #faf5ff; color: #7c3aed; border: 1px solid #ddd6fe; }
+.tt-overlong { color: #dc2626; }
+.tt-inline-input {
+  width: 100%; max-width: 130px; height: 26px; padding: 2px 6px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  font-size: 12px; font-family: var(--font-sans); background: var(--bg-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Requests (change-request review cards) ── */
+.tt-req-card {
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); padding: 14px 16px; flex-shrink: 0;
+}
+.tt-req-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.tt-req-note {
+  font-size: 13px; color: var(--text-secondary); font-style: italic;
+  background: var(--bg-secondary); padding: 8px 10px; border-radius: var(--radius-md);
+  margin-bottom: 10px;
+}
+.tt-req-diff { display: flex; flex-direction: column; gap: 4px; }
+.tt-diff-row {
+  display: grid; grid-template-columns: 110px 1fr 18px 1fr; align-items: center;
+  gap: 8px; font-size: 12px;
+}
+.tt-diff-label { font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+.tt-diff-old { color: var(--text-tertiary); text-decoration: line-through; }
+.tt-diff-arrow { color: var(--text-tertiary); text-align: center; }
+.tt-diff-new { color: var(--text-secondary); }
+
 
 /* ═══════════════════════════════════════════════════
    Collections / A-R Dashboard
@@ -5607,4 +5653,24 @@ tr:hover td { background: var(--bg-secondary); }
 }
 @media (max-width: 540px) {
   .coll-kpi-4, .coll-kpi-3 { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Time Tracking redesign: small additions on top of the `.coll-` kit ── */
+.coll-select {
+  font-family: inherit; font-size: 13px; color: #101828; background: #f4f5f7;
+  border: 1px solid #eceef2; border-radius: 9px; padding: 8px 10px; cursor: pointer;
+  width: 100%; min-width: 0; outline: none;
+}
+.coll-select:focus { border-color: #cfe0fb; }
+.coll-datein {
+  font-family: inherit; font-size: 12.5px; color: #101828; background: #f4f5f7;
+  border: 1px solid #eceef2; border-radius: 9px; padding: 7px 10px; outline: none;
+}
+.coll-datein:focus { border-color: #cfe0fb; }
+.coll-check { width: 15px; height: 15px; accent-color: #2f6bf2; cursor: pointer; vertical-align: middle; }
+/* Employee group sub-header bar inside the timesheet table */
+.tt-group-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 18px; background: #fafbfc; border-bottom: 1px solid #f0f1f4;
+  border-top: 1px solid #eef0f3;
 }
