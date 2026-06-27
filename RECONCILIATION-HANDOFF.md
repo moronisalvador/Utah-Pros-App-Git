@@ -72,29 +72,43 @@ For each claim and job that currently has a June (or wrong) `created_at`, set
 `created_at` to the **OLDEST** real date available for that entity, in this order
 of trust:
 
-1. **Encircle claim `created_at`** — for anything with an `encircle_claim_id`,
+1. **Encircle claim `date_claim_created`** — for anything with an `encircle_claim_id`,
    this is the truest "when the loss/claim actually started." Pull it with
-   `encircle_get_claim(<encircle_claim_id>)`.
+   `encircle_get_claim(<encircle_claim_id>)`. ⚠️ **The live Encircle API returns
+   `date_claim_created` (a date), NOT a `created_at` field** — verified 2026-06-27.
+   The claim object also has `date_of_loss` and `contractor_identifier` (= our CLM#).
 2. **QBO customer created date** — for non-Encircle clients.
 3. **QBO invoice / estimate `TxnDate`** — if older than the above.
 4. Any existing older UPR date.
 
 > "Whichever is the **older** date prevails." The point is to stop counting old
 > work as if it happened in June. When you backdate a claim, backdate its child
-> jobs (and, if needed, the invoice's `created_at`) to match.
+> jobs (and, if needed, the invoice) to match.
+
+> ⚠️ **REVISED PRIORITY (verified 2026-06-27 — read this before backdating claims).**
+> Live data shows the **claim/job dates are mostly NOT the problem**: June claim
+> count is 19 vs May's 17 (normal), and the Encircle June claims sampled
+> (`date_claim_created`) genuinely fall in June. The inflated MTD **Revenue** tile
+> is driven by **`invoices.invoice_date`** — June = **$122,138** (matches the
+> dashboard exactly) vs May's $21,728. So the real de-inflation work is on
+> **invoices**: for each June invoice, compare UPR `invoice_date` to its QBO
+> `TxnDate` (source of truth) and correct mismatches to the true (older) date.
+> Spot-check the 16 Encircle claims by `date_claim_created` too, but expect most to
+> already be correct.
 
 **Also backfill `jobs.encircle_created_at`** while you're there — it is currently
 **NULL on all 178 Encircle jobs** because the import never persisted it. Set it to
-the Encircle `created_at` you pulled. (Root-cause fix for the import worker is in §6.)
+the Encircle `date_claim_created` you pulled. (Root-cause fix for the import worker is in §6.)
 
 ---
 
 ## 4. What's DONE (this session)
 
-### MCP server — fully built out (committed, **pending deploy + reconnect**)
-The `upr-mcp` server now has **53 tools** (was ~30). All on branch
-`claude/vigilant-davinci-m2ds35` (PR #114). **Not live until the user deploys it
-and reconnects the connector.**
+### MCP server — fully built out and **LIVE** (deployed 2026-06-27)
+The `upr-mcp` server now has **53 tools** (was ~30). Merged to `main` + `dev` (PR
+#114) and **auto-deployed via Cloudflare Workers Builds** (Version `a6c485a8`) —
+the live worker is verified to contain the new code. Reconnect the connector if a
+session still shows the old 28-tool list.
 
 - **🐛 Root-cause bug fix:** `buildInvoiceLines` emitted QBO `DetailType:
   'SalesItemLine'` (invalid) → fixed to `'SalesItemLineDetail'`. This is what
@@ -142,6 +156,54 @@ so these still need to be re-backdated to their true oldest date.
 
 ## 5. Current-state snapshot (live data, 2026-06-27)
 
+### 🚨 ROOT CAUSE FOUND — the inflation is the APRIL bulk import, not June claims
+Verified live 2026-06-27:
+- **45 claims were created on a single day, 2026-04-19** — all 45 Encircle-linked
+  (87 jobs). This is the initial Encircle bulk-import run.
+- Their **true loss months span 2025-09 → 2026-04** (1 Sep, 4 Oct, 9 Nov, 5 Dec,
+  8 Jan, 5 Feb, 6 Mar, only 7 genuinely Apr). So ~38 old claims are stamped April 19.
+- This is why April shows **63 claims** and the MTD/period reports are wrong: eight
+  months of history are collapsed onto one import date.
+- **May (17) and June (19) claim counts are clean** (0 claims with a loss date
+  predating their created month). The separate **June Revenue** inflation ($122,138)
+  is an **`invoices.invoice_date`** problem, not a claim-date one.
+
+**Correct fix (bigger than the original June-only plan):**
+Date-basis priority (decided with Moroni): **`date_of_loss` → Encircle
+`date_claim_created` → QBO date.**
+
+1. **Backdate the 4/19 import batch.** Verified scope (live 2026-06-27):
+   - **45 claims** with `created_at::date = '2026-04-19'` — all have `date_of_loss`.
+   - **50 jobs** with `created_at::date = '2026-04-19'` — all have `date_of_loss`.
+   - Set `created_at = date_of_loss` (add `+ time '12:00'` so it lands at noon and
+     can't slip a day under a local-timezone bucket). Reference SQL (preview first):
+     ```sql
+     -- claims
+     UPDATE claims SET created_at = date_of_loss + time '12:00'
+     WHERE created_at::date = '2026-04-19' AND date_of_loss IS NOT NULL;
+     -- jobs (scope by the import DAY, NOT by claim — see warning below)
+     UPDATE jobs SET created_at = date_of_loss + time '12:00'
+     WHERE created_at::date = '2026-04-19' AND date_of_loss IS NOT NULL;
+     ```
+   - ⚠️ **Do NOT backdate by `claim_id`.** 40 jobs belonging to these 45 claims were
+     created on *other* days (2026-03-26 → 2026-06-26) — genuine later work (e.g.
+     recon added after the claim). Scoping by `created_at::date='2026-04-19'` excludes
+     them correctly. For any 4/19 row missing `date_of_loss`, fall back to Encircle
+     `date_claim_created` (via the job's `encircle_claim_id`), then QBO.
+   - Backfill `jobs.encircle_created_at` from Encircle `date_claim_created` while at it.
+2. Separately, fix **June (and May) invoice `invoice_date`** against QBO `TxnDate`
+   (this is what de-inflates the Revenue tile — June = $122,138 by `invoice_date`).
+3. Re-check other months for smaller clusters once 4/19 is corrected.
+
+**Writes must be PREVIEWED then run once.** ⚠️ **COORDINATION:** more than one
+session has investigated this — only **ONE** session should execute the backdate,
+or they'll race/double-up. As of this writing the `vigilant-davinci` session
+deliberately did **not** run the writes.
+
+**Tool gotcha:** `upr_sql` / `exec_read_sql` reject a query that **starts with a
+`--` comment** (the SELECT/WITH guard only matches a leading `select`/`with`). Put
+comments after the first keyword, or omit them.
+
 Counts (regenerate with `upr_sql`):
 
 | Metric | Value |
@@ -153,8 +215,9 @@ Counts (regenerate with `upr_sql`):
 | Jobs with an `encircle_claim_id` (all-time) | 178 (but `encircle_created_at` is NULL on all) |
 
 ### Work-list A — the 16 June jobs WITH an Encircle id (backdate from Encircle first)
-For each: `encircle_get_claim(<id>)` → take `created_at` → backdate the job (and
-its claim) per §3, and set `jobs.encircle_created_at`.
+For each: `encircle_get_claim(<id>)` → take `date_claim_created` → backdate the job
+(and its claim) per §3, and set `jobs.encircle_created_at`. ⚠️ Most of these
+sampled as genuinely-June (see §3 revised priority) — verify, don't assume they're all old.
 
 | Job # | encircle_claim_id | UPR created (wrong) |
 |---|---|---|
@@ -202,7 +265,7 @@ from the **QBO customer / invoice date** per §3.
    - Re-scan for jobs not linked to a claim, and claims not linked to a customer.
 5. **Fix the import root cause** — `functions/api/encircle-import.js` (and
    `sync-encircle.js`) should persist `encircle_created_at` **and** set the UPR
-   `created_at` to the Encircle `created_at`, so future imports don't re-inflate.
+   `created_at` to the Encircle `date_claim_created`, so future imports don't re-inflate.
    (Add to `CLAIM-ESTIMATE-HIERARCHY-PLAN.md` or a new task file.)
 6. **Then May 2026** — same process, one client at a time.
 
@@ -260,24 +323,28 @@ RECONCILIATION-HANDOFF.md in the repo root first — it has the full mission, da
 model, the date-correction rule, what's done, and the work-lists. Then read
 CLAUDE.md for project rules.
 
-Context: the UPR MCP was just expanded (53 tools) and deployed, and I've
-reconnected it — so encircle_get_claim, upr_sql, the QBO tools, etc. are live.
+Context: the UPR MCP is live with 53 tools (encircle_get_claim, upr_sql, the QBO
+tools, etc.). Verified 2026-06-27: the inflated MTD Revenue tile is driven by
+invoices.invoice_date (June = $122,138), NOT by claim/job dates (June claim count
+19 ≈ May 17, and the Encircle June claims are genuinely June). So invoices are the
+main target. Also: the Encircle API returns date_claim_created, NOT created_at.
 
 Today's job, in order:
-1. De-inflate June. For the 16 June jobs that have an encircle_claim_id
-   (Work-list A in the handoff), call encircle_get_claim for each, read the true
-   created_at, and backdate the job + its claim to the OLDEST real date (Encircle
-   created_at, else QBO customer/invoice date — older wins). Also set
-   jobs.encircle_created_at. Then do the remaining June claims/jobs (Work-list B),
-   using QBO dates for the non-Encircle ones. Preview your upr_update calls to me
-   in small batches before confirming.
-2. Find the RPC behind the MTD dashboard tiles (Revenue / Avg ticket / New claims
-   booked — it's NOT get_dashboard_stats) and confirm the numbers drop after
-   backdating.
-3. Finish June structural loose ends (INV-000044 draft, INV-000005 missing doc#,
+1. De-inflate June REVENUE (the real problem). Pull the June invoices
+   (upr_sql on invoices where invoice_date in June, with job/claim + qbo_doc_number),
+   and for each compare UPR invoice_date to its QBO TxnDate (qbo_query / qbo_get,
+   source of truth). Where they differ, correct UPR invoice_date to the true (older)
+   date via upr_update. Preview in small batches before confirming.
+2. Spot-check claim/job dates. For the 16 June jobs with an encircle_claim_id
+   (Work-list A), call encircle_get_claim, read date_claim_created, and backdate the
+   job + claim only where Encircle is older than UPR. Set jobs.encircle_created_at.
+   Then the non-Encircle June jobs (Work-list B) from QBO dates. Expect few changes.
+3. Find the RPC behind the MTD dashboard tiles (Revenue / Avg ticket / New claims
+   booked — it's NOT get_dashboard_stats) and confirm the numbers drop after the fixes.
+4. Finish June structural loose ends (INV-000044 draft, INV-000005 missing doc#,
    ~12 jobs with no claim_id, any jobs not linked to a claim / claims not linked
    to a customer).
-4. Then start May 2026, same process.
+5. Then start May 2026, same process.
 
 Work ONE client/invoice at a time, verify across all three systems before
 changing anything, check for an existing claim before creating one, and don't
