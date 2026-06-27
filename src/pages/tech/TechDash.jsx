@@ -834,6 +834,22 @@ export default function TechDash() {
 
   useEffect(() => { load(); loadUpcoming(); loadOpenClock(); }, [load, loadUpcoming, loadOpenClock]);
 
+  // Finish the open clock from the 5 PM banner. Normally jumps to the appointment;
+  // if the appointment is gone (stranded clock), finishes by entry id directly.
+  const finishOpenClock = useCallback(async () => {
+    if (!openClock) return;
+    if (openClock.appointment_id) { navigate(`/tech/appointment/${openClock.appointment_id}`); return; }
+    try {
+      await db.rpc('clock_finish_entry', { p_entry_id: openClock.id, p_employee_id: employee.id });
+      notify('success');
+      toast('Clocked out', 'success');
+      await loadOpenClock();
+      await load();
+    } catch (e) {
+      toast('Could not clock out: ' + e.message, 'error');
+    }
+  }, [openClock, db, employee.id, navigate, loadOpenClock, load]);
+
   // Check jobsite proximity on mount + whenever the app returns to foreground
   useEffect(() => {
     checkAwayFromJobsite();
@@ -1027,7 +1043,7 @@ export default function TechDash() {
         </div>
       </div>
       <button
-        onClick={() => navigate(`/tech/appointment/${openClock.appointment_id}`)}
+        onClick={finishOpenClock}
         style={{
           width: '100%', minHeight: 44, marginTop: 10,
           borderRadius: 'var(--tech-radius-button)',
@@ -1036,7 +1052,7 @@ export default function TechDash() {
           cursor: 'pointer', touchAction: 'manipulation',
         }}
       >
-        Finish my day
+        {openClock.appointment_id ? 'Finish my day' : 'Clock out now'}
       </button>
     </div>
   ) : null;
