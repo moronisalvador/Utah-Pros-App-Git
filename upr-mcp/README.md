@@ -100,6 +100,10 @@ Claude runs the OAuth flow automatically → you'll get a Google login → only
 **Encircle (read):** `encircle_get_claim` (by `encircle_claim_id` → full claim
 incl. `created_at`, the true claim-filed date), `encircle_list_claims`. Requires
 the `ENCIRCLE_API_KEY` secret on the worker (same token the Pages functions use).
+**Resend (email test/troubleshoot):** `resend_send_test_email` *(sends a real
+email — guarded)*, `resend_get_email` (delivery status of a sent email by id),
+`resend_list_domains` (DKIM/SPF/DMARC verification status). Requires the
+`RESEND_API_KEY` secret on the worker (same token the Pages functions use).
 
 Every **[WRITE]** tool, called without `confirm: true`, returns a **preview** of
 exactly what it would change and does nothing — call again with `confirm: true`

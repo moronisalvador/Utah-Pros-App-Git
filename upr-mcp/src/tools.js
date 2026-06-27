@@ -9,6 +9,7 @@
 
 import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend } from './qbo.js';
 import { encircleGetClaim, encircleListClaims } from './encircle.js';
+import { resendSend, resendGetEmail, resendListDomains } from './resend.js';
 import { supabase } from './supabase.js';
 
 const n = (v) => (v == null ? v : Number(v));
@@ -313,6 +314,34 @@ export const TOOLS = {
     description: 'List recent Encircle property claims (newest first). Each includes id, created_at, date_of_loss, status, full_address.',
     inputSchema: { type: 'object', properties: { limit: { type: 'number' }, order: { type: 'string' } } },
     run: (env, a) => encircleListClaims(env, { limit: a.limit, order: a.order }),
+  },
+
+  // ── Resend (transactional email) — test + troubleshoot ───────────────────────
+  resend_send_test_email: {
+    write: true,
+    description: 'Send a test email through Resend — the same provider UPR uses for esign links, the scope/demo sheet, the water-loss report, and billing 2FA. From defaults to the verified utahpros.app sender; Reply-To stays on the same domain. Sends a REAL email — confirm carefully.',
+    inputSchema: { type: 'object', properties: {
+      to: { description: 'recipient — string "a@b.com", {email,name}, or an array of either' },
+      subject: { type: 'string' }, html: { type: 'string' }, text: { type: 'string' },
+      from: { type: 'string' }, reply_to: { type: 'string' }, confirm: { type: 'boolean' },
+    }, required: ['to'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Send a test email to ${JSON.stringify(a.to)} (subject: "${a.subject || '(none)'}").`, { to: a.to, subject: a.subject, from: a.from || '(default utahpros.app sender)' });
+      const r = await resendSend(env, { to: a.to, subject: a.subject, html: a.html, text: a.text, from: a.from, replyTo: a.reply_to });
+      return { ok: true, email_id: r?.id || null };
+    },
+  },
+  resend_get_email: {
+    write: false,
+    description: 'Look up one sent email by its Resend id to see delivery status (last_event: sent / delivered / delivery_delayed / bounced / complained), recipients, subject, and timestamps. Use to answer "did the customer actually get it?".',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    run: (env, a) => resendGetEmail(env, a.id),
+  },
+  resend_list_domains: {
+    write: false,
+    description: 'List Resend sending domains with their verification + DKIM/SPF/DMARC status. First stop when troubleshooting email deliverability (see EMAIL-DELIVERABILITY.md).',
+    inputSchema: { type: 'object', properties: {} },
+    run: (env) => resendListDomains(env),
   },
 
   // ── UPR (Supabase) — read + write the app's own database ─────────────────────
