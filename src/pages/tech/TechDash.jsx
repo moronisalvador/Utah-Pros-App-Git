@@ -698,6 +698,16 @@ function DashSkeleton() {
 
 /* ── TechDash Page ── */
 
+// Current hour (0-23) in America/Denver — the company's timezone of record.
+function denverHour() {
+  try {
+    const h = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', hour: 'numeric', hour12: false }).format(new Date());
+    return parseInt(h, 10) % 24;
+  } catch {
+    return new Date().getHours();
+  }
+}
+
 export default function TechDash() {
   // ─── SECTION: State & hooks ──────────────
   const { employee, db, logout } = useAuth();
@@ -713,6 +723,7 @@ export default function TechDash() {
   const [awayConfirmFinish, setAwayConfirmFinish] = useState(false);
   const awayConfirmTimer = useRef(null);
   const lastAwayCheck = useRef(0);
+  const [openClock, setOpenClock] = useState(null); // open LIVE entry for the 5 PM "still clocked in" banner
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
@@ -810,7 +821,34 @@ export default function TechDash() {
     } catch { /* ignore */ }
   }, [db]);
 
-  useEffect(() => { load(); loadUpcoming(); }, [load, loadUpcoming]);
+  // Open LIVE time entry (clock_out null + travel_start set) — drives the 5 PM nudge banner.
+  const loadOpenClock = useCallback(async () => {
+    try {
+      const rows = await db.select(
+        'job_time_entries',
+        `employee_id=eq.${employee.id}&clock_out=is.null&travel_start=not.is.null&select=id,appointment_id,travel_start,clock_in,paused_at&order=created_at.desc&limit=1`
+      );
+      setOpenClock(rows && rows[0] ? rows[0] : null);
+    } catch { /* additive — never block the dashboard */ }
+  }, [db, employee.id]);
+
+  useEffect(() => { load(); loadUpcoming(); loadOpenClock(); }, [load, loadUpcoming, loadOpenClock]);
+
+  // Finish the open clock from the 5 PM banner. Normally jumps to the appointment;
+  // if the appointment is gone (stranded clock), finishes by entry id directly.
+  const finishOpenClock = useCallback(async () => {
+    if (!openClock) return;
+    if (openClock.appointment_id) { navigate(`/tech/appointment/${openClock.appointment_id}`); return; }
+    try {
+      await db.rpc('clock_finish_entry', { p_entry_id: openClock.id, p_employee_id: employee.id });
+      notify('success');
+      toast('Clocked out', 'success');
+      await loadOpenClock();
+      await load();
+    } catch (e) {
+      toast('Could not clock out: ' + e.message, 'error');
+    }
+  }, [openClock, db, employee.id, navigate, loadOpenClock, load]);
 
   // Check jobsite proximity on mount + whenever the app returns to foreground
   useEffect(() => {
@@ -979,6 +1017,46 @@ export default function TechDash() {
     </div>
   ) : null;
 
+  // "Still clocked in" end-of-day nudge — shows after 5 PM Denver when an open
+  // live clock exists. The midnight split (apply_midnight_clock_split) is the
+  // backend safety net; this banner is the proactive reminder to finish the day.
+  const overtimeBanner = (openClock && denverHour() >= 17) ? (
+    <div style={{
+      margin: 'var(--space-3) var(--space-4) 0',
+      padding: 'var(--space-3) var(--space-4)',
+      background: '#fef2f2',
+      border: '1px solid #fecaca',
+      borderRadius: 'var(--tech-radius-card)',
+      boxShadow: 'var(--tech-shadow-card)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}>
+          <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#b91c1c', marginBottom: 2 }}>
+            You're still clocked in
+          </div>
+          <div style={{ fontSize: 13, color: '#b91c1c', opacity: 0.85 }}>
+            It's past 5 PM and a job is still running. Finish it before you head home — otherwise it auto-closes at midnight.
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={finishOpenClock}
+        style={{
+          width: '100%', minHeight: 44, marginTop: 10,
+          borderRadius: 'var(--tech-radius-button)',
+          fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-sans)',
+          background: '#dc2626', color: '#fff', border: 'none',
+          cursor: 'pointer', touchAction: 'manipulation',
+        }}
+      >
+        {openClock.appointment_id ? 'Finish my day' : 'Clock out now'}
+      </button>
+    </div>
+  ) : null;
+
   if (appointments.length === 0) {
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -990,6 +1068,7 @@ export default function TechDash() {
         </div>
 
         {awayBanner}
+        {overtimeBanner}
 
         {upcoming.length > 0 ? (
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 var(--space-4)' }}>

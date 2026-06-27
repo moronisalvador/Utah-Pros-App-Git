@@ -1,0 +1,15 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION: 20260626_pr3_enable_pg_cron
+-- PR-3 (Time-Tracking build plan) — enable the pg_cron scheduler.
+--
+-- WHAT THIS DOES (plain language):
+--   Turns on Postgres's built-in job scheduler so the database can run the
+--   nightly "midnight clock split" on its own. Creates the `cron` schema with
+--   cron.schedule() etc. Safe/idempotent.
+--
+-- NOTES / GOTCHAS:
+--   - pg_cron runs in UTC. Jobs that care about local time must gate on
+--     America/Denver inside the function (the split function does — it only acts
+--     on entries whose work_date is already in the past, Denver-wise).
+-- ════════════════════════════════════════════════
+create extension if not exists pg_cron;
