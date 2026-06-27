@@ -546,6 +546,7 @@ get_assigned_tasks(p_employee_id) — Incomplete tasks for employee with job con
 get_all_employees()             — All employees with auth status
 get_payroll_summary(...)        — Payroll summary
 get_timesheet_entries(...)      — Time entries for payroll
+get_timesheet_entries_admin(p_start_date, p_end_date, p_employee_id, p_job_id, p_status, p_division) — Time-Tracking PR-5 (Jun 27 2026). Richer admin read for the office Time Tracking page; SECURITY DEFINER, additive (get_timesheet_entries left intact). Returns all get_timesheet_entries columns PLUS travel_start, on_site_end, travel_minutes, total_paused_minutes, auto_continued, and computed duration_minutes (travel+on-site mins), is_open (clock_out null AND travel_start not null), is_overlong (hours + travel/60 > 12). Filters: p_employee_id (null=all), p_job_id, p_division (cast j.division::text — division is the job_division ENUM), p_status ('open'|'approved'|'unapproved'|'overlong'|null). has_pending_change deferred to PR-6 (needs time_entry_change_requests).
 get_job_labor_summary(p_job_id) — Labor cost per job
 upsert_time_entry(...)          — Save time entry
 approve_time_entries(...)       — Bulk approve
