@@ -8,6 +8,10 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/install_pkgs.sh\"",
             "statusMessage": "Installing dependencies (cloud sessions only)..."
+            "permissions": { "allow": [
+  "mcp__Supabase__apply_migration",
+  "mcp__Supabase__execute_sql"
+]}
           }
         ]
       }
