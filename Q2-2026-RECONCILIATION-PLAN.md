@@ -85,6 +85,13 @@ Verify **per CLAIM, not per job** (recon inherits the claim's shared Encircle fi
 - Fix the **5 invoices whose job has no claim** (one client at a time): Sarah Garcia (R-2606-003 + W-2606-016 / QBO 1116), Stuart Hernandez (R-2606-004 / QBO 1264 → his CLM-2604-109), April Smith (M-2606-004 / QBO 1248), Virginia Roundy (W-2606-018 / QBO 1274). Create/link the claim per Encircle+QBO.
 - Re-run the audit until **0 invoices without a job+claim** and **0 jobs without a claim**.
 
+### Phase 5c — Re-date invoices to the LOSS DATE (sales basis) — **only AFTER loss dates are reconciled**
+**Decision (Moroni):** the dashboard should track **sales = when the job happened**, not when it was billed. Once Q2 loss dates are verified/correct (Phases 3–4), set the invoice date **= the claim's `date_of_loss`** in **BOTH systems**:
+- **QBO:** `qbo_update_entity('Invoice', <id>, {"TxnDate": "<date_of_loss>"})` — moves revenue recognition to the loss month in QBO's books too.
+- **UPR:** `UPDATE invoices SET invoice_date = <claim date_of_loss> WHERE id = <id>;` to match.
+**Sequencing is critical:** do this **last**, after every claim's `date_of_loss` is confirmed — otherwise we stamp invoices with unverified dates. Result: Revenue/Sales tile (still `invoice_date`-based) now reads as **sales by loss month**, split Mitigation vs Recon.
+**Caveats:** QBO may block editing `TxnDate` on paid invoices or **closed accounting periods** — flag any that fail. This intentionally shifts QBO's monthly P&L / sales-tax periods. The future **Payments/Collections widget** will use actual **payment dates** (independent of `TxnDate`), so the "what got paid this month" cash view is preserved.
+
 ### Phase 6 — Dedupe
 - Resolve Encircle re-push duplicates and same-address claims (Guide §5). Merge with `merge_claims(keep, merge)` / `merge_jobs`. Verify with Moroni before merging (A2Z has many *legit* separate losses — don't over-merge).
 
