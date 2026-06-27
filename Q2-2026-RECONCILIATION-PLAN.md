@@ -65,9 +65,12 @@ Produce three lists and diff them:
 - ⚠️ Convert **pending mitigation estimates → invoices** where work was done (as we did for Tanra 1065→5582), if Moroni confirms each.
 
 ### Phase 3 — Authoritative real-job verification via Encircle (replace the proxy)
-For **every Q2 job marked real** (and the borderline ones): confirm Encircle media spans **≥2 distinct days**.
-- Use `encircle_list_media(claim_id)`; compute distinct `primary_client_created` days. Empty or single-day ⇒ **not real** → set estimate.
-- The **25 Q2 jobs with no Encircle link** (recon/contents/pre-Encircle): per Decision #4, check the **claim's** Encircle file (recon shares the mitigation claim's file) and UPR activity. Real only with **multi-day proof**; a job that's invoiced but has **no** multi-day Encircle/UPR evidence → **flag for Moroni**, do not auto-count.
+Verify **per CLAIM, not per job** (recon inherits the claim's shared Encircle file). For each Q2 claim:
+- Take **`claims.encircle_claim_id`** (not the job's — recon jobs often lack a job-level id but the claim has one). Call `encircle_list_media(<claim encircle id>)`; compute distinct `primary_client_created` days.
+- **≥2 days ⇒ the whole claim is real** → mark all its jobs (water + recon) real. **Empty or single-day ⇒ inspection** → all its jobs estimate.
+- Then push the verdict to `jobs.is_real_job` via `set_job_real_job(...)`, overriding the proxy/auto-classifier where they disagree.
+- A claim that is **invoiced/contracted but single-day** in Encircle → **flag for Moroni** (don't silently keep or drop).
+- ⚠️ Media is verbose/unsorted — pull per claim, scan dates only.
 - ⚠️ **The proxy UNDERCOUNTS the 4/19 import-batch historical jobs** (old losses backdated into April): they were worked months ago and have **no UPR appointments/clock-ins**, so appointment/clock-in-days can't confirm their multi-day work and they read not-real (April currently shows only **4** real claims — almost certainly low). **Verify each against Encircle photos** (multi-day) and mark the real ones. Expect the **April real count to rise** after this pass. The current QTD total (**21** = Apr 4 / May 9 / Jun 8) is a **floor**, not the final number.
 - Reconcile each verdict with `is_real_job`; fix mismatches via `set_job_real_job(...)`.
 - ⚠️ Media is verbose/unsorted — pull per claim, scan dates only, don't dump in bulk.
@@ -118,7 +121,7 @@ The **Revenue recognized · MTD** tile (`get_revenue_by_division`) sums invoices
 1. **Q2 scope = by LOSS DATE.** A claim/job belongs to Q2 if the loss/work occurred **Apr 1 – Jun 30**. Invoices keep their real QBO `TxnDate` (revenue lands in the month billed).
 2. **Missing clients = LIST FIRST.** Build the full list of Encircle/QBO records with no UPR match, Moroni reviews, then import the approved ones via the Tanra playbook (§Phase 2).
 3. **Mitigation estimates = CASE-BY-CASE.** Flag each pending mitigation estimate with the Encircle evidence that work was done; Moroni confirms; convert + mirror the approved ones (like Tanra 1065→5582).
-4. **Real job = ENCIRCLE MULTI-DAY PROOF, ALL DIVISIONS (incl. recon).** A job counts as real **only** with **multi-day work evidence**: Encircle photos on **≥2 distinct days** (use the claim's shared Encircle file — mitigation + recon live under one claim), **or** ≥2 days of UPR appointments/clock-ins. **A QBO invoice / accepted estimate alone is NOT sufficient** — contracted jobs with no multi-day evidence are **flagged for Moroni**, not auto-counted.
+4. **Real job = ENCIRCLE MULTI-DAY PROOF — verified at the CLAIM level.** A claim is real if its **Encircle file** (referenced by `claims.encircle_claim_id`) has photos on **≥2 distinct days**, or it has ≥2 days of UPR appointments/clock-ins. **Recon shares the claim's Encircle file with the mitigation** (the multi-day documentation), and **there are no recon-only jobs** — so every recon job inherits its claim's multi-day mitigation proof and never drops for lack of its own photos. If a claim's Encircle file is **empty or single-day**, it's an inspection → not real (a QBO invoice alone is NOT sufficient; flag any contracted-but-single-day claim for Moroni).
    - ⚠️ This is **stricter** than the deployed auto-classifier (which marks real on invoice/work-auth/estimate). The classifier stays as the **going-forward default**; the Q2 reconciliation **overrides it via Encircle verification** and may *lower* counts further (e.g. recon jobs with an invoice but no multi-day Encircle/UPR evidence). It **supersedes Guide §3's "recon = contracted" caveat** for this pass.
 
 ---
