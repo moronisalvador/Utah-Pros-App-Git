@@ -68,6 +68,7 @@ Produce three lists and diff them:
 For **every Q2 job marked real** (and the borderline ones): confirm Encircle media spans **≥2 distinct days**.
 - Use `encircle_list_media(claim_id)`; compute distinct `primary_client_created` days. Empty or single-day ⇒ **not real** → set estimate.
 - The **25 Q2 jobs with no Encircle link** are recon/contents or pre-Encircle: keep real only if **invoiced / accepted estimate**; otherwise flag for Moroni.
+- ⚠️ **The proxy UNDERCOUNTS the 4/19 import-batch historical jobs** (old losses backdated into April): they were worked months ago and have **no UPR appointments/clock-ins**, so appointment/clock-in-days can't confirm their multi-day work and they read not-real (April currently shows only **4** real claims — almost certainly low). **Verify each against Encircle photos** (multi-day) and mark the real ones. Expect the **April real count to rise** after this pass. The current QTD total (**21** = Apr 4 / May 9 / Jun 8) is a **floor**, not the final number.
 - Reconcile each verdict with `is_real_job`; fix mismatches via `set_job_real_job(...)`.
 - ⚠️ Media is verbose/unsorted — pull per claim, scan dates only, don't dump in bulk.
 
@@ -102,6 +103,16 @@ For **every Q2 job marked real** (and the borderline ones): confirm Encircle med
 - [ ] No duplicate/test record left.
 
 ---
+
+## 4b. Revenue tile investigation (the "$122K June" puzzle)
+
+The **Revenue recognized · MTD** tile (`get_revenue_by_division`) sums invoices by **`invoice_date`** (billing date). June shows **$122,504**, but by the underlying claim's true loss month that is: **March $40,572 · April $43,234 · May $8,015 · June (actual new work) $14,232 · no-claim orphans $16,451.** So only ~12% is June work — ~75% is **old jobs completed & billed in June** (correct accrual revenue; invoice dates match QBO `TxnDate`), and ~13% is on the 2 orphan invoices.
+
+**Do:**
+1. **Link the 2 orphan invoices** (Stuart Hernandez `INV-000035` $15,701 / QBO 1264; Virginia Roundy `INV-000038` $750 / QBO 1274) to claims — they're billing into June revenue with no claim. (Part of Phase 5.)
+2. **Verify no duplicate June invoices** (group QBO invoices by job/amount/date).
+3. **Decide on a "revenue by work/loss month" view** — add an optional tile/report so the dashboard can show *June-produced* revenue (~$14K) next to *June-billed* revenue ($122K). This is the number that matches "June was slow." Code change → `dev → main` PR.
+4. Confirm with Moroni that **billing-date revenue is the intended definition** for the main tile (it's standard), with the work-month view as the secondary lens.
 
 ## 5. Open questions for Moroni (resolve at start)
 1. **Scope of Q2:** by **loss date** (work happened Apr–Jun) or **invoice date** (billed Apr–Jun)? (Plan assumes *loss date* for claims/jobs, *TxnDate* for invoices.)
