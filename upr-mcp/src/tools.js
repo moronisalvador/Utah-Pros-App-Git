@@ -16,7 +16,7 @@ const esc = (s) => String(s).replace(/'/g, "\\'");
 
 function buildInvoiceLines(lines) {
   return (lines || []).map((l) => ({
-    DetailType: 'SalesItemLine',
+    DetailType: 'SalesItemLineDetail',
     Amount: n(l.amount),
     ...(l.description ? { Description: l.description } : {}),
     SalesItemLineDetail: {
