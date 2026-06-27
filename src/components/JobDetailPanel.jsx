@@ -87,8 +87,6 @@ export default function JobDetailPanel({ job, phases, employees, onClose, onUpda
     return new Date(val).toLocaleDateString();
   };
 
-  const phaseLabel = phases.find(p => p.key === job.phase)?.label || job.phase;
-
   const totalCosts = [
     Number(job.total_labor_cost || 0),
     Number(job.total_material_cost || 0),

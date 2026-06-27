@@ -6,7 +6,7 @@ import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import MergeModal from '@/components/MergeModal';
 import ClaimBilling from '@/components/ClaimBilling';
-import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmt$, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
+import { toast, errToast, DIV_LABEL, DIV_EMOJI, LOSS_TYPES, CLAIM_STATUSES, fmtK, fmtPh, fmtDate, fmtDateShort, getBalances, withJobFinancials, canEditBilling } from '@/lib/claimUtils';
 import { IR, EF, ES, StatusBadge } from '@/components/claim/SharedClaimUI';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -724,7 +724,7 @@ function ScheduleSection({ appointments, loaded, navigate, isTech }) {
 // ═══════════════════════════════════════════════════════════════════════
 // DOCUMENTS SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function DocumentsSection({ jobs, documents, loaded, db, navigate }) {
+function DocumentsSection({ jobs, documents, loaded, db }) {
   const grouped = useMemo(() => {
     const g = {};
     for (const doc of documents) {

@@ -98,13 +98,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
   };
 
-  const fmtTime = (t) => {
-    if (!t) return '';
-    const [h, m] = t.split(':');
-    const hr = parseInt(h, 10);
-    return `${hr % 12 || 12}:${m}${hr >= 12 ? 'p' : 'a'}`;
-  };
-
   const fmtApptDate = (d) => {
     if (!d) return '';
     return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {

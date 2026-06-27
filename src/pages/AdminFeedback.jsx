@@ -53,7 +53,7 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 export default function AdminFeedback() {
-  const { db, employee } = useAuth();
+  const { db } = useAuth();
   const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');       // 'all' | 'bug' | 'feature'
@@ -67,7 +67,7 @@ export default function AdminFeedback() {
     try {
       const rows = await db.rpc('get_tech_feedback');
       setFeedbacks(rows || []);
-    } catch (e) {
+    } catch {
       errToast('Failed to load feedback');
     } finally {
       setLoading(false);

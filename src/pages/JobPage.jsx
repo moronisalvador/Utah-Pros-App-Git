@@ -455,8 +455,6 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
   const{isFeatureEnabled}=useAuth();
   const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
   const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
-  const deductible=Number(job.deductible||0);const deprecHeld=Number(job.depreciation_held||0);
-  const deprecReleased=Number(job.depreciation_released||0);const supplement=Number(job.supplement_value||0);
   const laborCost=Number(job.total_labor_cost||0);const materialCost=Number(job.total_material_cost||0);
   const equipCost=Number(job.total_equipment_cost||0);const subCost=Number(job.total_sub_cost||0);
   const otherCost=Number(job.total_other_cost||0);const totalCost=laborCost+materialCost+equipCost+subCost+otherCost;
@@ -503,13 +501,13 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
   const[newAmt,setNewAmt]=useState('');const[newDesc,setNewDesc]=useState('');const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
   const[addingSupp,setAddingSupp]=useState(false);const[confirmDelSupp,setConfirmDelSupp]=useState(null);
 
-  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch(e){}finally{setLoadingSupp(false);};},[db,job.id]);
+  const loadSupplements=useCallback(async()=>{try{const s=await db.select('job_supplements',`job_id=eq.${job.id}&order=supplement_date.asc`);setSupplements(s||[]);}catch{ /* ignored */ }finally{setLoadingSupp(false);};},[db,job.id]);
   useEffect(()=>{loadSupplements();},[loadSupplements]);
 
   const suppTotal=supplements.reduce((s,r)=>s+Number(r.amount||0),0);
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
 
-  const syncSuppTotal=async(newSupps)=>{const total=newSupps.reduce((s,r)=>s+Number(r.amount||0),0);try{await saveBatch({supplement_value:total||null});}catch(e){}};
+  const syncSuppTotal=async(newSupps)=>{const total=newSupps.reduce((s,r)=>s+Number(r.amount||0),0);try{await saveBatch({supplement_value:total||null});}catch{ /* ignored */ }};
 
   const addSupplement=async()=>{const amt=parseFloat(newAmt);if(!amt||amt<=0){errToast('Amount must be greater than 0');return;}
     setAddingSupp(true);try{const ins=await db.insert('job_supplements',{job_id:job.id,amount:amt,description:newDesc.trim()||null,supplement_date:newDate||null});
@@ -519,7 +517,7 @@ function InsFinTile({job,fmt,saveBatch,canEdit,db}){
 
   const deleteSupplement=async(id)=>{if(confirmDelSupp!==id){setConfirmDelSupp(id);return;}setConfirmDelSupp(null);
     try{await db.delete('job_supplements',`id=eq.${id}`);const updated=supplements.filter(s=>s.id!==id);setSupplements(updated);
-    await syncSuppTotal(updated);okToast('Supplement deleted');}catch(e){errToast('Failed to delete supplement');}};
+    await syncSuppTotal(updated);okToast('Supplement deleted');}catch{errToast('Failed to delete supplement');}};
 
   const start=()=>{sF({deductible:job.deductible||'',depreciation_held:job.depreciation_held||'',depreciation_released:job.depreciation_released||''});setEd(true);};
   const save=async()=>{setSv(true);try{await saveBatch({deductible:parseFloat(f.deductible)||null,depreciation_held:parseFloat(f.depreciation_held)||null,depreciation_released:parseFloat(f.depreciation_released)||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
@@ -869,7 +867,7 @@ function ActivityTab({job,notes,setNotes,history,employees,phaseMap,db,currentUs
     </div>);}
 
 /* === SCHEDULE TAB === */
-function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
+function ScheduleTab({taskSummary,onGenerateClick,navigate}){
   const hasSchedule=taskSummary&&taskSummary.total>0;
   if(!hasSchedule)return(<div style={{padding:'40px 20px',textAlign:'center'}}><div style={{fontSize:36,opacity:0.15,marginBottom:12}}>{'\u{1F4C5}'}</div><div style={{fontSize:15,fontWeight:600,color:'var(--text-secondary)',marginBottom:6}}>No schedule created yet</div><div style={{fontSize:13,color:'var(--text-tertiary)',marginBottom:20,maxWidth:320,margin:'0 auto 20px'}}>Apply a template to auto-generate appointments and tasks for this job.</div><button className="btn btn-primary" onClick={onGenerateClick} style={{padding:'10px 24px',fontSize:14}}>Generate schedule</button></div>);
   const byPhase=taskSummary.by_phase||[];const pct=taskSummary.total>0?Math.round((taskSummary.completed/taskSummary.total)*100):0;

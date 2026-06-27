@@ -235,7 +235,7 @@ export function AuthProvider({ children }) {
     if (flag?.force_disabled) return false;
 
     // Layer 2: Per-employee override — if a row exists, it wins over role
-    if (employeePageAccess.hasOwnProperty(navKey)) {
+    if (Object.prototype.hasOwnProperty.call(employeePageAccess, navKey)) {
       return employeePageAccess[navKey];
     }
 

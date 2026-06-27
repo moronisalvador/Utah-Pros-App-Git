@@ -579,7 +579,7 @@ function TotalCard({ calc, marginTier, tierColors }) {
   );
 }
 
-function InternalPanel({ calc, marginTier }) {
+function InternalPanel({ calc }) {
   const { lines, internal } = calc;
   return (
     <div style={{

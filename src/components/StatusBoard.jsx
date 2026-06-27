@@ -51,7 +51,7 @@ export default function StatusBoard() {
       const data = await db.rpc('get_tech_status_board');
       setRows(data || []);
       setLastUpdate(new Date());
-    } catch (e) {
+    } catch {
       errToast('Failed to load status board');
     } finally {
       if (showSpinner) setLoading(false);

@@ -106,7 +106,7 @@ function AddressAutocomplete({
       } else {
         setOpen(false);
       }
-    } catch (err) {
+    } catch {
       setSuggestions([]);
       setOpen(false);
     }

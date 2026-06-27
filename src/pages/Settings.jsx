@@ -535,7 +535,7 @@ function RichTextArea({ value, onChange, onFocus, isLong }) {
 }
 
 /* ═══ SECTION EDITOR ═══ */
-function SectionEditor({ idx, divMeta, heading, body, onHeadingChange, onBodyChange, onFocus, isLong }) {
+function SectionEditor({ divMeta, heading, body, onHeadingChange, onBodyChange, onFocus, isLong }) {
   const [expanded, setExpanded] = useState(true);
   return (
     <div style={{ marginBottom: 12, border: '1px solid var(--border-light)', borderRadius: 8, overflow: 'hidden' }}>

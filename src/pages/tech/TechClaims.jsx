@@ -83,7 +83,7 @@ export default function TechClaims() {
         result = await db.rpc('get_claims_list');
       }
       setClaims(result || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load claims', 'error');
     }
     setLoading(false);

@@ -99,6 +99,6 @@ export async function onRequestPost(context) {
   return jsonResponse(await reconcile(env), 200, request, env);
 }
 // Cloudflare cron trigger (if configured in wrangler.toml [triggers] crons).
-export async function scheduled(event, env, ctx) {
+export async function scheduled(event, env) {
   await reconcile(env);
 }

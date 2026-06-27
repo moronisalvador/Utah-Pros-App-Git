@@ -19,7 +19,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { validateTwilioSignature } from '../lib/twilio.js';
-import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { handleOptions } from '../lib/cors.js';
 
 // ── STOP/HELP/START keyword detection ──
 // CTIA requires handling these exact keywords (case-insensitive)
@@ -204,7 +204,7 @@ export async function onRequestPost(context) {
     }
 
     // ── 5. Insert inbound message ──
-    const [message] = await db.insert('messages', {
+    await db.insert('messages', {
       conversation_id: conversation.id,
       type: 'sms_inbound',
       body: body.trim() || null,

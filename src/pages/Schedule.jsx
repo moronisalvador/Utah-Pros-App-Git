@@ -450,7 +450,7 @@ export default function Schedule() {
   const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('upr_schedule_view') || 'calendar'; } catch { return 'calendar'; } });
   const changeViewMode = (mode) => {
     setViewMode(mode);
-    try { localStorage.setItem('upr_schedule_view', mode); } catch {}
+    try { localStorage.setItem('upr_schedule_view', mode); } catch { /* ignored */ }
     // Month only available in calendar view
     if (mode !== 'calendar' && calSpan === 'month') changeCalSpan('week');
   };
@@ -459,7 +459,7 @@ export default function Schedule() {
     if (typeof window !== 'undefined' && window.innerWidth <= 768) return 'day';
     try { return localStorage.getItem('upr_schedule_span') || 'week'; } catch { return 'week'; }
   });
-  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch {} };
+  const changeCalSpan = (span) => { setCalSpan(span); try { localStorage.setItem('upr_schedule_span', span); } catch { /* ignored */ } };
   const [crewFilter, setCrewFilter] = useState(null);
   const [createModal, setCreateModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -958,8 +958,6 @@ export default function Schedule() {
         const placementColor = placementMode.crew?.find(c => c.role === 'lead')?.color || '#2563eb';
 
         // Time helpers
-        const parseTime = (t) => { const [h, m] = (t || '09:00').split(':').map(Number); return { h, m: m || 0 }; };
-        const formatTime12 = (t) => { const { h, m } = parseTime(t); const hr = h % 12 || 12; return `${hr}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 
         const HOUR_OPTIONS = [];
         for (let h = 6; h <= 22; h++) for (let m = 0; m < 60; m += 30) {

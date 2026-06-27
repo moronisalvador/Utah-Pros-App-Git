@@ -37,7 +37,7 @@ function roleLabel(role) {
 // MAIN ADMIN PAGE
 // ══════════════════════════════════════════════════════════════
 export default function Admin() {
-  const { employee: currentUser, db } = useAuth();
+  const { employee: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('employees');
 
   // Block non-admin access
@@ -116,7 +116,7 @@ function EmployeesTab() {
       try {
         const data = await db.select('employees', 'order=full_name.asc');
         setEmployees(data || []);
-      } catch (err2) {
+      } catch {
         setError('Failed to load employees');
       }
     } finally {
@@ -748,7 +748,7 @@ function PermissionsTab() {
         perms = await db.select('nav_permissions', 'order=role.asc,nav_key.asc').catch(() => []);
       }
       setPermissions(perms || []);
-    } catch (err) {
+    } catch {
       setError('Failed to load permissions');
     } finally {
       setLoading(false);
@@ -808,7 +808,7 @@ function PermissionsTab() {
           await db.insert('nav_permissions', { role, nav_key: navKey, can_view: newView, can_edit: newEdit });
         }
       }
-    } catch (err) {
+    } catch {
       setError('Failed to save permission');
       await loadData(); // Revert
     } finally {
@@ -963,7 +963,7 @@ function PageAccessTab() {
       const data = await db.rpc('get_all_employees');
       const nonAdmin = (data || []).filter(e => e.is_active !== false && e.role !== 'admin');
       setEmployees(nonAdmin);
-    } catch (e) {
+    } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load employees', type: 'error' } }));
     } finally {
       setLoading(false);
@@ -993,7 +993,7 @@ function PageAccessTab() {
       const fMap = {};
       (flagRows || []).forEach(f => { fMap[f.key] = f; });
       setFlags(fMap);
-    } catch (e) {
+    } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load access data', type: 'error' } }));
     } finally {
       setLoadingAccess(false);
@@ -1005,7 +1005,7 @@ function PageAccessTab() {
   const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
 
   const handleToggle = async (navKey) => {
-    const currentOverride = overrides.hasOwnProperty(navKey) ? overrides[navKey] : undefined;
+    const currentOverride = Object.prototype.hasOwnProperty.call(overrides, navKey) ? overrides[navKey] : undefined;
     const roleDefault = rolePerms[navKey] || false;
     const newValue = currentOverride === undefined ? !roleDefault : !currentOverride;
     setSaving(navKey);
@@ -1018,7 +1018,7 @@ function PageAccessTab() {
       });
       setOverrides(prev => ({ ...prev, [navKey]: newValue }));
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `${navKey} ${newValue ? 'granted' : 'revoked'} for ${selectedEmployee?.full_name}`, type: 'success' } }));
-    } catch (e) {
+    } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to save', type: 'error' } }));
     } finally {
       setSaving(null);
@@ -1038,7 +1038,7 @@ function PageAccessTab() {
         return next;
       });
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Override cleared — reverted to role default', type: 'success' } }));
-    } catch (e) {
+    } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to clear override', type: 'error' } }));
     } finally {
       setSaving(null);
@@ -1056,7 +1056,7 @@ function PageAccessTab() {
       ));
       setOverrides({});
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: `All overrides cleared for ${selectedEmployee?.full_name}`, type: 'success' } }));
-    } catch (e) {
+    } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to clear overrides', type: 'error' } }));
     } finally {
       setSaving(null);
@@ -1148,7 +1148,7 @@ function PageAccessTab() {
               {/* Page rows */}
               {pages.map((page, pIdx) => {
                 const roleDefault = rolePerms[page.key] || false;
-                const hasOverride = overrides.hasOwnProperty(page.key);
+                const hasOverride = Object.prototype.hasOwnProperty.call(overrides, page.key);
                 const overrideVal = hasOverride ? overrides[page.key] : undefined;
                 const effectiveAccess = hasOverride ? overrideVal : roleDefault;
                 const flag = flags[`page:${page.key}`];

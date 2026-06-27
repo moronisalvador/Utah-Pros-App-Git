@@ -720,7 +720,7 @@ export default function TechDash() {
     try {
       const result = await db.rpc('get_my_appointments_today', { p_employee_id: employee.id });
       setAppointments(result || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load appointments', 'error');
     }
     setLoading(false);

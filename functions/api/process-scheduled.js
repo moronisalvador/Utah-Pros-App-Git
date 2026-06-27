@@ -35,7 +35,7 @@ export async function onRequestPost(context) {
 }
 
 // Also support Cloudflare scheduled() handler for cron triggers
-export async function scheduled(event, env, ctx) {
+export async function scheduled(event, env) {
   const db = supabase(env);
   const result = await processQueue(db, env, null);
   console.log('Cron processed:', result);
@@ -48,7 +48,7 @@ async function processScheduled(context) {
   return jsonResponse(result, 200, request, env);
 }
 
-async function processQueue(db, env, request) {
+async function processQueue(db, env) {
   const now = new Date().toISOString();
   const processed = [];
   const errors = [];

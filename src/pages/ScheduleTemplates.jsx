@@ -797,7 +797,7 @@ export default function ScheduleTemplates() {
     try {
       if (form.id) {
         // Update existing
-        const { id, tasks, ...data } = form;
+        const { id, ...data } = form;
         await db.update('template_phases', `id=eq.${id}`, data);
       } else {
         // Insert new

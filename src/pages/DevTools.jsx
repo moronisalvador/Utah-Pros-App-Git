@@ -48,7 +48,7 @@ const CATEGORY_COLOR = {
    FEATURE FLAGS TAB
    ════════════════════════════════════════════════════ */
 function FlagsTab() {
-  const { db, employee, featureFlags: ctxFlags, isFeatureEnabled } = useAuth();
+  const { db, employee } = useAuth();
   const [flags, setFlags]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(null); // key of flag being saved
@@ -84,7 +84,7 @@ function FlagsTab() {
         }
       } catch { /* best-effort — don't block the list on auto-register */ }
       setFlags(rows);
-    } catch (e) {
+    } catch {
       err('Failed to load flags');
     } finally {
       setLoading(false);
@@ -108,7 +108,7 @@ function FlagsTab() {
       });
       setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, enabled: !f.enabled } : f));
       ok(`${flag.label} ${!flag.enabled ? 'enabled' : 'disabled'}`);
-    } catch (e) {
+    } catch {
       err('Failed to update flag');
     } finally {
       setSaving(null);
@@ -131,7 +131,7 @@ function FlagsTab() {
       });
       setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, dev_only_user_id: newVal } : f));
       ok(newVal ? 'Dev-only mode on (only you see this)' : 'Dev-only mode cleared');
-    } catch (e) {
+    } catch {
       err('Failed to update dev-only');
     } finally {
       setSaving(null);
@@ -153,7 +153,7 @@ function FlagsTab() {
       });
       setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, force_disabled: !f.force_disabled } : f));
       ok(!flag.force_disabled ? '⚠️ Force disabled — hidden for everyone including admins' : 'Force disable cleared');
-    } catch (e) {
+    } catch {
       err('Failed to update force disable');
     } finally {
       setSaving(null);
@@ -168,7 +168,7 @@ function FlagsTab() {
       await db.rpc('delete_feature_flag', { p_key: flag.key });
       setFlags(prev => prev.filter(f => f.key !== flag.key));
       ok(`Flag "${flag.key}" deleted`);
-    } catch (e) {
+    } catch {
       err('Failed to delete flag');
     } finally {
       setSaving(null);
@@ -194,7 +194,7 @@ function FlagsTab() {
       setNewFlag({ key: '', label: '', category: 'page', description: '' });
       setShowAdd(false);
       load();
-    } catch (e) {
+    } catch {
       err('Failed to create flag');
     } finally {
       setAdding(false);
@@ -449,8 +449,6 @@ function HealthTab() {
 
   const run = useCallback(async () => {
     setLoading(true);
-    const results = [];
-    const t = (label, fn) => ({ label, fn });
 
     const runCheck = async (label, fn) => {
       const start = Date.now();
@@ -589,7 +587,7 @@ function EmployeesTab() {
     try {
       const rows = await db.rpc('get_all_employees');
       setEmployees(rows || []);
-    } catch (e) {
+    } catch {
       err('Failed to load employees');
     } finally {
       setLoading(false);
@@ -719,7 +717,7 @@ function WorkersTab() {
     try {
       const rows = await db.rpc('get_worker_runs', { p_limit: n });
       setRuns(rows || []);
-    } catch (e) {
+    } catch {
       err('Failed to load worker runs');
     } finally {
       setLoading(false);
@@ -787,7 +785,7 @@ function WorkersTab() {
 
       {/* Worker summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 24 }}>
-        {byWorker.map(({ name, runs: wRuns, latest }) => {
+        {byWorker.map(({ name, latest }) => {
           const st = latest?.status;
           const col = st ? STATUS_STYLE[st] : { bg: 'var(--bg-secondary)', color: 'var(--text-tertiary)', border: 'var(--border-color)' };
           return (
@@ -949,7 +947,7 @@ function OrphanChecker() {
       }));
       setResults(all);
       ok('Orphan checks complete');
-    } catch (e) {
+    } catch {
       err('Failed to run orphan checks');
     } finally {
       setLoading(false);
@@ -1267,7 +1265,7 @@ function TemplatePreview() {
       try {
         const rows = await db.select('message_templates', 'select=id,title,body,category,variables&order=title&is_active=eq.true');
         setTemplates(rows || []);
-      } catch (e) {
+      } catch {
         err('Failed to load templates');
       } finally {
         setLoading(false);
@@ -1498,7 +1496,7 @@ function ScheduledQueue() {
     try {
       const rows = await db.rpc('get_scheduled_queue', { p_limit: 50 });
       setItems(rows || []);
-    } catch (e) {
+    } catch {
       err('Failed to load scheduled queue');
     } finally {
       setLoading(false);
@@ -1939,7 +1937,7 @@ function UnsyncedClaimsPanel() {
       const mapped = claims.map(c => ({ ...c, contact_name: contactsById[c.contact_id]?.name || null }));
       setRows(mapped);
       setSelected(new Set(mapped.map(c => c.id))); // default every claim to selected
-    } catch (e) {
+    } catch {
       err('Failed to load unsynced claims');
     } finally {
       setLoading(false);
@@ -2574,7 +2572,7 @@ function IntegrationsTab() {
       ]);
       setStatus(Array.isArray(st) ? st[0] : st);
       setStats(Array.isArray(sx) ? sx[0] : sx);
-    } catch (e) {
+    } catch {
       err('Failed to load integration status');
     } finally {
       setLoading(false);

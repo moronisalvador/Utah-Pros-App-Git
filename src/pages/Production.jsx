@@ -503,7 +503,7 @@ function JobCard({ job, isDragging, onDragStart, onDragEnd, onClick, onLongPress
       draggable={!isTouchDevice()}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={(e) => {
+      onClick={() => {
         // Desktop click — touch devices handle via touchEnd
         if (!isTouchDevice()) onClick();
       }}

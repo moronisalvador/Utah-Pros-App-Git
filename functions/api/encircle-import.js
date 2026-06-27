@@ -44,22 +44,6 @@ function normalizeLossType(raw) {
   return 'other';
 }
 
-function parseAddressParts(fullAddress) {
-  if (!fullAddress) return { address: null, city: null, state: null, zip: null };
-  const parts = fullAddress.split(',').map(s => s.trim());
-  if (parts.length >= 3) {
-    const street = parts[0];
-    const city = parts[1];
-    const last = parts[parts.length - 1];
-    const stateZip = last.split(/\s+/);
-    return { address: street, city, state: stateZip[0] || null, zip: stateZip[1] || null };
-  }
-  if (parts.length === 2) {
-    return { address: parts[0], city: parts[1], state: null, zip: null };
-  }
-  return { address: fullAddress, city: null, state: null, zip: null };
-}
-
 function encircleHeaders(env) {
   return {
     'Authorization': `Bearer ${env.ENCIRCLE_API_KEY}`,
