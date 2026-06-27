@@ -66,7 +66,11 @@ npx wrangler secret put QBO_CLIENT_SECRET
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put COOKIE_ENCRYPTION_KEY   # e.g. `openssl rand -hex 32`
+npx wrangler secret put ENCIRCLE_API_KEY        # for the encircle_* tools (same token the Pages functions use)
+npx wrangler secret put RESEND_API_KEY          # for the resend_* email tools (same token the Pages functions use)
 ```
+The last two are optional — the `encircle_*` / `resend_*` tools simply return a
+clear "not configured" error until their key is set.
 Confirm `ALLOWED_EMAIL` in `wrangler.toml` is your address, then redeploy:
 ```bash
 npx wrangler deploy
@@ -88,19 +92,53 @@ Claude runs the OAuth flow automatically → you'll get a Google login → only
 
 ## Tools
 
-**QuickBooks (read):** `qbo_query`, `qbo_get`, `qbo_list_invoices`,
-`qbo_list_payments`, `qbo_report`
+**QuickBooks (read):** `qbo_query` (any SELECT), `qbo_get`, `qbo_list_invoices`,
+`qbo_list_payments`, `qbo_list_estimates`, `qbo_report`
 **QuickBooks (write):** `qbo_create_invoice`, `qbo_update_invoice`,
-`qbo_delete_invoice` *(refuses invoices with payments)*, `qbo_create_payment`,
-`qbo_relink_payment` *(move a payment between invoices)*, `qbo_delete_payment`,
-`qbo_create_customer`, `qbo_update_customer`, `qbo_create_item`, and generic
-`qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`.
-**UPR database:** `upr_select`, `upr_rpc` (read/any function),
-`upr_insert`, `upr_update`, `upr_delete` (writes require a filter + confirm).
+`qbo_delete_invoice` *(refuses invoices with payments)*, `qbo_send_invoice`,
+`qbo_create_payment`, `qbo_relink_payment` *(move a payment between invoices)*,
+`qbo_delete_payment`, `qbo_create_customer`, `qbo_update_customer`,
+`qbo_create_item`, `qbo_create_estimate`, `qbo_send_estimate`, and generic
+`qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity` *(reach any QBO
+entity)*.
+
+**UPR database (Supabase):** `upr_schema` / `upr_describe` (discover tables +
+RPCs), `upr_select` (PostgREST query), `upr_sql` *(read-only raw SQL — SELECT/WITH
+only, for aggregates/joins; needs the `exec_read_sql` DB function from
+`supabase/migrations/20260627_exec_read_sql.sql`)*, `upr_search` (cross-entity
+text search), `upr_rpc` (read or, with confirm, any mutating function),
+`upr_insert`, `upr_upsert`, `upr_update`, `upr_delete` (writes require a filter +
+confirm).
+
+**Encircle (read):** `encircle_get_claim` (by `encircle_claim_id` → full claim
+incl. `created_at`, the true claim-filed date), `encircle_list_claims`
+*(search by policyholder / CLM# / etc. + paging)*, `encircle_list_media`,
+`encircle_list_notes`, `encircle_list_assignments`, `encircle_list_structures`,
+`encircle_list_rooms`, `encircle_webapp_link` (deep link), and generic
+`encircle_get` (any GET path).
+**Encircle (write):** `encircle_update_claim` *(write our CLM# / dates back)*,
+`encircle_create_claim`, `encircle_create_note`, `encircle_assign_user`,
+`encircle_unassign_user`, and generic `encircle_request` *(any method/path)*.
+Requires the `ENCIRCLE_API_KEY` secret on the worker.
+
+**Resend (email — test/troubleshoot/drive):** `resend_send_test_email` *(sends a
+real email — guarded)*, `resend_get_email` (delivery status by id),
+`resend_list_domains` / `resend_get_domain` (DKIM/SPF/DMARC status),
+`resend_verify_domain`, and generic `resend_get` / `resend_request` *(any
+endpoint — batch send, audiences, broadcasts, api-keys)*. Requires the
+`RESEND_API_KEY` secret on the worker.
+
+> **Google / Workspace** (Gmail, Drive, Calendar) is intentionally **not** in
+> this server — there is no Google data-API key here (the Google OAuth in this
+> worker is only for owner *login*). Use the dedicated Gmail / Google Drive /
+> Google Calendar MCP connectors in Claude for that; adding Workspace here would
+> need separate Google OAuth scopes + consent.
 
 Every **[WRITE]** tool, called without `confirm: true`, returns a **preview** of
 exactly what it would change and does nothing — call again with `confirm: true`
-to execute.
+to execute. The generic **power tools** (`*_get` / `*_request` / `*_entity`)
+make the server capable of essentially any QBO / Encircle / Resend / Supabase
+operation even when there is no dedicated named tool.
 
 ## Security
 

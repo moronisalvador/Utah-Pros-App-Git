@@ -8,6 +8,14 @@
 //   - Every call (read + write, preview + execute) is audit-logged by the caller.
 
 import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend } from './qbo.js';
+import {
+  encircleGet, encircleRequest, encircleGetClaim, encircleListClaims,
+  encircleUpdateClaim, encircleCreateClaim, encircleWebappLink,
+} from './encircle.js';
+import {
+  resendGet, resendRequest, resendSend, resendGetEmail,
+  resendListDomains, resendGetDomain, resendVerifyDomain,
+} from './resend.js';
 import { supabase } from './supabase.js';
 
 const n = (v) => (v == null ? v : Number(v));
@@ -15,7 +23,7 @@ const esc = (s) => String(s).replace(/'/g, "\\'");
 
 function buildInvoiceLines(lines) {
   return (lines || []).map((l) => ({
-    DetailType: 'SalesItemLine',
+    DetailType: 'SalesItemLineDetail',
     Amount: n(l.amount),
     ...(l.description ? { Description: l.description } : {}),
     SalesItemLineDetail: {
@@ -299,6 +307,193 @@ export const TOOLS = {
       return qboCreate(env, 'Estimate', payload);
     },
   },
+  qbo_send_estimate: {
+    write: true,
+    description: 'Email a QBO estimate to the customer (uses the estimate billing email, or send_to to override). Sends a real email — confirm carefully.',
+    inputSchema: { type: 'object', properties: { estimate_id: { type: 'string' }, send_to: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['estimate_id'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Email estimate ${a.estimate_id} to the customer${a.send_to ? ' at ' + a.send_to : ''}.`, { estimate_id: a.estimate_id, send_to: a.send_to || '(billing email on file)' });
+      const est = await qboSend(env, 'estimate', a.estimate_id, a.send_to);
+      return { ok: true, sent_estimate_id: a.estimate_id, email_status: est?.EmailStatus };
+    },
+  },
+
+  // ── Encircle (claims source-of-truth) — read + guarded write ─────────────────
+  encircle_get_claim: {
+    write: false,
+    description: 'Fetch a single Encircle property claim by its Encircle id (jobs.encircle_claim_id). Returns the full claim incl. created_at — the true date the claim was filed in Encircle — plus date_of_loss, status, full_address, policyholder, contractor_identifier (our CLM). Use this to recover real claim dates the UPR import did not persist.',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
+    run: (env, a) => encircleGetClaim(env, a.claim_id),
+  },
+  encircle_list_claims: {
+    write: false,
+    description: 'List/search Encircle property claims (newest first → { list, cursor }). Filter by policyholder_name, contractor_identifier (our CLM#), assignment_identifier, or insurer_identifier; page with after (cursor) + limit (max 100).',
+    inputSchema: { type: 'object', properties: {
+      limit: { type: 'number' }, order: { type: 'string' }, after: { type: 'string' },
+      policyholder_name: { type: 'string' }, contractor_identifier: { type: 'string' },
+      assignment_identifier: { type: 'string' }, insurer_identifier: { type: 'string' },
+    } },
+    run: (env, a) => encircleListClaims(env, a),
+  },
+  encircle_update_claim: {
+    write: true,
+    description: 'Update an Encircle claim (PATCH). fields is a raw Encircle claim patch — e.g. {"contractor_identifier":"CLM-2606-152"} to write our CLM number back, or date_claim_created / date_of_loss / adjuster_name / full_address. See ENCIRCLE_API_REFERENCE.md "Update Claim" for all fields.',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, fields: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['claim_id', 'fields'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Update Encircle claim ${a.claim_id}.`, a.fields);
+      return encircleUpdateClaim(env, a.claim_id, a.fields);
+    },
+  },
+  encircle_create_claim: {
+    write: true,
+    description: 'Create an Encircle property claim (POST). fields is a raw Encircle claim object — policyholder_name is required; common: full_address, insurance_company_name, policy_number, date_of_loss, type_of_loss, contractor_identifier (our CLM).',
+    inputSchema: { type: 'object', properties: { fields: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['fields'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Create an Encircle claim for "${a.fields?.policyholder_name || '(no name)'}".`, a.fields);
+      return encircleCreateClaim(env, a.fields);
+    },
+  },
+  encircle_list_media: {
+    write: false,
+    description: "List a claim's media (photos/videos): url, thumbnail_url, source, room_id, when taken. Path: /v1/property_claims/{id}/media.",
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, source: { type: 'string' }, limit: { type: 'number' } }, required: ['claim_id'] },
+    run: (env, a) => {
+      const qp = new URLSearchParams({ limit: String(Math.min(Number(a.limit) || 50, 100)) });
+      if (a.source) qp.set('source', a.source);
+      return encircleGet(env, `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/media?${qp.toString()}`);
+    },
+  },
+  encircle_list_notes: {
+    write: false,
+    description: "List a claim's notes. Path: /v2/property_claims/{id}/notes.",
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, limit: { type: 'number' } }, required: ['claim_id'] },
+    run: (env, a) => encircleGet(env, `/v2/property_claims/${encodeURIComponent(String(a.claim_id))}/notes?limit=${Math.min(Number(a.limit) || 50, 100)}`),
+  },
+  encircle_create_note: {
+    write: true,
+    description: 'Add a note to an Encircle claim (POST /v2/property_claims/{id}/notes). text is required; title is optional.',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, text: { type: 'string' }, title: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['claim_id', 'text'] },
+    run: async (env, a) => {
+      const body = { text: a.text, ...(a.title ? { title: a.title } : {}) };
+      if (!a.confirm) return preview(`Add a note to Encircle claim ${a.claim_id}.`, body);
+      return encircleRequest(env, 'POST', `/v2/property_claims/${encodeURIComponent(String(a.claim_id))}/notes`, body);
+    },
+  },
+  encircle_list_assignments: {
+    write: false,
+    description: "List Encircle users assigned to a claim. Path: /v1/property_claims/{id}/assignments.",
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
+    run: (env, a) => encircleGet(env, `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/assignments`),
+  },
+  encircle_assign_user: {
+    write: true,
+    description: 'Assign an Encircle user (by email) to a claim (POST /v1/property_claims/{id}/assignments). The user must already have an Encircle account.',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, email_address: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['claim_id', 'email_address'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Assign ${a.email_address} to Encircle claim ${a.claim_id}.`, { email_address: a.email_address });
+      return encircleRequest(env, 'POST', `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/assignments`, { email_address: a.email_address });
+    },
+  },
+  encircle_unassign_user: {
+    write: true,
+    description: 'Remove an Encircle user (by email) from a claim (DELETE /v1/property_claims/{id}/assignments).',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, email_address: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['claim_id', 'email_address'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Unassign ${a.email_address} from Encircle claim ${a.claim_id}.`, { email_address: a.email_address });
+      return encircleRequest(env, 'DELETE', `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/assignments`, { email_address: a.email_address });
+    },
+  },
+  encircle_list_structures: {
+    write: false,
+    description: "List the structures (buildings) in a claim. Path: /v1/property_claims/{id}/structures.",
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
+    run: (env, a) => encircleGet(env, `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/structures?limit=100`),
+  },
+  encircle_list_rooms: {
+    write: false,
+    description: "List the rooms in a structure. Path: /v1/property_claims/{id}/structures/{structure_id}/rooms.",
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' }, structure_id: { type: 'string' } }, required: ['claim_id', 'structure_id'] },
+    run: (env, a) => encircleGet(env, `/v1/property_claims/${encodeURIComponent(String(a.claim_id))}/structures/${encodeURIComponent(String(a.structure_id))}/rooms?limit=100`),
+  },
+  encircle_webapp_link: {
+    write: false,
+    description: 'Get a deep link that opens this claim in the Encircle web app (resolves the webapp_redirect 302 to its URL).',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
+    run: (env, a) => encircleWebappLink(env, a.claim_id),
+  },
+  encircle_get: {
+    write: false,
+    description: 'Power tool: GET any Encircle API path (read-only). e.g. "/v2/property_claims/123/rooms/456", "/v2/equipment", "/v1/organizations". Use for endpoints without a dedicated tool. See ENCIRCLE_API_REFERENCE.md.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    run: (env, a) => encircleGet(env, a.path),
+  },
+  encircle_request: {
+    write: true,
+    description: 'Power tool: call any Encircle endpoint with any method (POST/PATCH/PUT/DELETE). method + path + optional body. Covers anything without a dedicated tool (structures, rooms, equipment, webhooks, brands). Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, body: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on Encircle.`, a.body || {});
+      return encircleRequest(env, a.method, a.path, a.body);
+    },
+  },
+
+  // ── Resend (transactional email) — test + troubleshoot ───────────────────────
+  resend_send_test_email: {
+    write: true,
+    description: 'Send a test email through Resend — the same provider UPR uses for esign links, the scope/demo sheet, the water-loss report, and billing 2FA. From defaults to the verified utahpros.app sender; Reply-To stays on the same domain. Sends a REAL email — confirm carefully.',
+    inputSchema: { type: 'object', properties: {
+      to: { description: 'recipient — string "a@b.com", {email,name}, or an array of either' },
+      subject: { type: 'string' }, html: { type: 'string' }, text: { type: 'string' },
+      from: { type: 'string' }, reply_to: { type: 'string' }, confirm: { type: 'boolean' },
+    }, required: ['to'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Send a test email to ${JSON.stringify(a.to)} (subject: "${a.subject || '(none)'}").`, { to: a.to, subject: a.subject, from: a.from || '(default utahpros.app sender)' });
+      const r = await resendSend(env, { to: a.to, subject: a.subject, html: a.html, text: a.text, from: a.from, replyTo: a.reply_to });
+      return { ok: true, email_id: r?.id || null };
+    },
+  },
+  resend_get_email: {
+    write: false,
+    description: 'Look up one sent email by its Resend id to see delivery status (last_event: sent / delivered / delivery_delayed / bounced / complained), recipients, subject, and timestamps. Use to answer "did the customer actually get it?".',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    run: (env, a) => resendGetEmail(env, a.id),
+  },
+  resend_list_domains: {
+    write: false,
+    description: 'List Resend sending domains with their verification + DKIM/SPF/DMARC status. First stop when troubleshooting email deliverability (see EMAIL-DELIVERABILITY.md).',
+    inputSchema: { type: 'object', properties: {} },
+    run: (env) => resendListDomains(env),
+  },
+  resend_get_domain: {
+    write: false,
+    description: 'Get one Resend domain by id, including its full DNS record set (DKIM/SPF/DMARC) and each record\'s verification status.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    run: (env, a) => resendGetDomain(env, a.id),
+  },
+  resend_verify_domain: {
+    write: true,
+    description: 'Re-trigger verification for a Resend domain (POST /domains/{id}/verify) after fixing DNS records.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['id'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Re-verify Resend domain ${a.id}.`, { id: a.id });
+      return resendVerifyDomain(env, a.id);
+    },
+  },
+  resend_get: {
+    write: false,
+    description: 'Power tool: GET any Resend API path (read-only). e.g. "/emails/{id}", "/domains", "/api-keys", "/audiences". Use for endpoints without a dedicated tool.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    run: (env, a) => resendGet(env, a.path),
+  },
+  resend_request: {
+    write: true,
+    description: 'Power tool: call any Resend endpoint with any method (POST/PATCH/DELETE). method + path + optional body. Covers anything without a dedicated tool (batch send, audiences, broadcasts, api-keys). Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, body: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on Resend.`, a.body || {});
+      return resendRequest(env, a.method, a.path, a.body);
+    },
+  },
 
   // ── UPR (Supabase) — read + write the app's own database ─────────────────────
   upr_select: {
@@ -306,6 +501,16 @@ export const TOOLS = {
     description: 'Read rows from a UPR (Supabase) table via a PostgREST query string. Example: table="jobs", query="status=eq.active&select=*&order=created_at.desc&limit=20".',
     inputSchema: { type: 'object', properties: { table: { type: 'string' }, query: { type: 'string' } }, required: ['table'] },
     run: (env, a) => supabase(env).select(a.table, a.query || ''),
+  },
+  upr_sql: {
+    write: false,
+    description: 'Run a READ-ONLY SQL query (SELECT/WITH only) against the UPR database and get JSON rows back. For aggregates, GROUP BY, date_trunc and multi-table joins that PostgREST (upr_select) is clumsy at — e.g. monthly revenue, claim/job counts by created_at date, orphaned-record audits. Enforced read-only: non-SELECT is rejected and it runs in a read-only transaction with a statement timeout (via the exec_read_sql DB function).',
+    inputSchema: { type: 'object', properties: { sql: { type: 'string' } }, required: ['sql'] },
+    run: (env, a) => {
+      const s = String(a.sql || '').trim();
+      if (!/^(select|with)\s/i.test(s)) throw new Error('Only SELECT/WITH read-only queries are allowed in upr_sql.');
+      return supabase(env).rpc('exec_read_sql', { p_query: s });
+    },
   },
   upr_rpc: {
     write: false,
@@ -386,6 +591,15 @@ export const TOOLS = {
     run: async (env, a) => {
       if (!a.confirm) return preview(`Insert into ${a.table}.`, a.data);
       return supabase(env).insert(a.table, a.data);
+    },
+  },
+  upr_upsert: {
+    write: true,
+    description: 'Upsert row(s) into a UPR table (INSERT … ON CONFLICT merge-duplicates on the primary key). data is an object or array of objects. Use when a row may or may not already exist.',
+    inputSchema: { type: 'object', properties: { table: { type: 'string' }, data: {}, confirm: { type: 'boolean' } }, required: ['table', 'data'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Upsert into ${a.table} (merge on conflict).`, a.data);
+      return supabase(env).upsert(a.table, a.data);
     },
   },
   upr_update: {
