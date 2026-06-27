@@ -5654,3 +5654,23 @@ tr:hover td { background: var(--bg-secondary); }
 @media (max-width: 540px) {
   .coll-kpi-4, .coll-kpi-3 { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Time Tracking redesign: small additions on top of the `.coll-` kit ── */
+.coll-select {
+  font-family: inherit; font-size: 13px; color: #101828; background: #f4f5f7;
+  border: 1px solid #eceef2; border-radius: 9px; padding: 8px 10px; cursor: pointer;
+  width: 100%; min-width: 0; outline: none;
+}
+.coll-select:focus { border-color: #cfe0fb; }
+.coll-datein {
+  font-family: inherit; font-size: 12.5px; color: #101828; background: #f4f5f7;
+  border: 1px solid #eceef2; border-radius: 9px; padding: 7px 10px; outline: none;
+}
+.coll-datein:focus { border-color: #cfe0fb; }
+.coll-check { width: 15px; height: 15px; accent-color: #2f6bf2; cursor: pointer; vertical-align: middle; }
+/* Employee group sub-header bar inside the timesheet table */
+.tt-group-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 18px; background: #fafbfc; border-bottom: 1px solid #f0f1f4;
+  border-top: 1px solid #eef0f3;
+}
