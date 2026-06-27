@@ -140,14 +140,36 @@ async function calFetch(env, employeeId, path, method, body) {
   return res.status === 204 ? null : res.json();
 }
 
-export function createEvent(env, employeeId, calendarId, body) {
-  return calFetch(env, employeeId, `/${encodeURIComponent(calendarId)}/events`, 'POST', body);
-}
 export function updateEvent(env, employeeId, calendarId, eventId, body) {
   return calFetch(env, employeeId, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'PATCH', body);
 }
 export function deleteEvent(env, employeeId, calendarId, eventId) {
   return calFetch(env, employeeId, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'DELETE');
+}
+
+// Google event ids must be base32hex (chars 0-9a-v, length 5–1024). UUID hex
+// (0-9a-f) is a valid subset, so a deterministic id per (source, employee) lets
+// concurrent trigger fires (appointment INSERT + appointment_crew INSERT) collapse
+// onto ONE event instead of racing to create duplicates.
+function deterministicEventId(sourceId, employeeId) {
+  return `${sourceId}${employeeId}`.replace(/-/g, '').toLowerCase();
+}
+
+// Create an event with an explicit deterministic id. If that id already exists
+// (a concurrent fire or a prior sync created it), Google returns 409 → we PATCH
+// it instead. This makes initial creation idempotent and duplicate-proof.
+async function insertOrPatchEvent(env, employeeId, calendarId, eventId, body) {
+  const { accessToken } = await getValidAccessToken(env, employeeId);
+  const auth = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+  const collection = `${CAL_API}/${encodeURIComponent(calendarId)}/events`;
+
+  const ins = await fetch(collection, { method: 'POST', headers: auth, body: JSON.stringify({ ...body, id: eventId }) });
+  if (ins.ok) return 'created';
+  if (ins.status !== 409) throw new Error(`Calendar insert ${ins.status}: ${(await ins.text()).slice(0, 200)}`);
+
+  const pat = await fetch(`${collection}/${encodeURIComponent(eventId)}`, { method: 'PATCH', headers: auth, body: JSON.stringify(body) });
+  if (!pat.ok) throw new Error(`Calendar patch ${pat.status}: ${(await pat.text()).slice(0, 200)}`);
+  return 'updated';
 }
 
 // ─── SECTION: Link persistence ──────────────
@@ -162,8 +184,20 @@ async function writeLink(db, existing, fields) {
   const now = new Date().toISOString();
   if (existing) {
     await db.update('google_calendar_links', `id=eq.${existing.id}`, { ...fields, updated_at: now });
-  } else {
+    return;
+  }
+  try {
     await db.insert('google_calendar_links', { ...fields, updated_at: now });
+  } catch (e) {
+    // A concurrent fire already inserted this (source,employee) row (unique
+    // constraint) — update it in place instead of failing.
+    if (fields.source_id && fields.employee_id) {
+      await db.update('google_calendar_links',
+        `source_type=eq.${fields.source_type}&source_id=eq.${fields.source_id}&employee_id=eq.${fields.employee_id}`,
+        { ...fields, updated_at: now });
+    } else {
+      throw e;
+    }
   }
 }
 
@@ -231,12 +265,15 @@ export async function syncAppointment(env, db, appointmentId) {
       }
       let eventId = link?.google_event_id || null;
       if (eventId) {
+        // Existing event (incl. any legacy random ids) — update in place.
         await updateEvent(env, employeeId, calId, eventId, body);
         updated++;
       } else {
-        const ev = await createEvent(env, employeeId, calId, body);
-        eventId = ev?.id || null;
-        created++;
+        // First sync for this person — deterministic id makes concurrent
+        // trigger fires collapse onto one event instead of duplicating.
+        eventId = deterministicEventId(appointmentId, employeeId);
+        const mode = await insertOrPatchEvent(env, employeeId, calId, eventId, body);
+        if (mode === 'created') created++; else updated++;
       }
       await writeLink(db, link, {
         source_type: SOURCE, source_id: appointmentId, employee_id: employeeId,
