@@ -236,9 +236,26 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
   invoices when a customer pays an estimate deposit online — via `convert_estimate_to_invoice`) /
   `removeQboPaymentFromUpr`. The `amount_paid` trigger does the rest.
 
+### Keyed card charges (in-UPR "Charge a card" virtual terminal)
+Staff can key a customer's card on a **synced** invoice and charge it via QuickBooks Payments:
+- **`src/lib/intuitTokenize.js`** — `tokenizeCard(card, { environment })` POSTs the raw card from the
+  **browser straight to Intuit's Tokens API** (`/quickbooks/v4/payments/tokens`, **no Authorization
+  header** — by design) and returns the opaque single-use token. The PAN never touches our servers →
+  PCI **SAQ A-EP**. Network/CORS failures throw a clear error (never silently charge).
+- **`functions/api/qbo-charge.js`** (`POST {invoice_id, token, amount}`) — `createCharge()` (Payments
+  API host `api.intuit.com`/`sandbox.api.intuit.com`, separate from the Accounting host) → insert UPR
+  `payments` row (`source='qbo'`, `credit_card`) → `createPayment()` linked QBO Payment (deposit →
+  `integration_config.qbo_bank_account_id`) → stamp `qbo_payment_id` so the inbound webhook **dedups**
+  it (no double-count). Guards on the `com.intuit.quickbooks.payment` scope (409); declines → 402.
+- **UI** — InvoiceEditor payment modal "Charge a card" tab; PaymentSettings "QuickBooks card terminal"
+  status. Both **gated on** `get_qbo_connection_status()` → `has_payment_scope` (the owner must
+  **reconnect QuickBooks once** to grant the Payments scope; until then it's disabled by design).
+- **Scope plumbing** — `quickbooks.js` `SCOPE` includes the payment scope; `saveTokens` persists the
+  granted `scope` → `integration_credentials.granted_scopes`. `buildAuthorizeUrl` requests it.
+
 ### Logging
-Workers log to **`worker_runs`** (`worker_name`, status, counts, error). Webhook events log to
-**`qbo_events`**.
+Workers log to **`worker_runs`** (`worker_name`, status, counts, error — keyed charges log as
+`qbo-charge`). Webhook events log to **`qbo_events`**.
 
 ---
 

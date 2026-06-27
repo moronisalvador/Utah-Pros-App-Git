@@ -1,3 +1,35 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: PaymentSettings.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "Payment Settings" screen for admins/managers. It controls how the business
+ *   accepts money: turning on the QuickBooks "Pay now" card/ACH buttons, showing
+ *   whether the QuickBooks card terminal (keyed charges) is ready, choosing default
+ *   invoice terms and an optional card surcharge, the (future) Stripe payout setup,
+ *   and which QuickBooks accounts card deposits and fees post to.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /payments/settings
+ *   Rendered by:  src/App.jsx (inside the Layout shell)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/realtime (getAuthHeader),
+ *              @/lib/claimUtils (canEditBilling)
+ *   Data:      reads  → get_billing_settings, get_qbo_connection_status (RPCs);
+ *                       QBO accounts via /api/qbo-query, Stripe via /api/stripe-accounts
+ *              writes → set_billing_setting (RPC); payout destinations via /api/billing-2fa
+ *
+ * NOTES / GOTCHAS:
+ *   - Settings are stored as strings in integration_config; on()/save() coerce to/from 'true'.
+ *   - Payout-destination edits are gated behind a 6-digit code emailed to the owner
+ *     (/api/billing-2fa) — never a plain edit field.
+ *   - The card-terminal "Status" only reflects the granted QBO Payments scope; charging
+ *     itself lives in InvoiceEditor's "Charge a card" tab.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +49,7 @@ export default function PaymentSettings() {
   const canEdit = canEditBilling(employee?.role);
 
   const [s, setS] = useState({});
+  const [qbo, setQbo] = useState(null);   // get_qbo_connection_status → card-terminal status
   const [accounts, setAccounts] = useState([]);
   const [loadingAcct, setLoadingAcct] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -35,6 +68,8 @@ export default function PaymentSettings() {
     try { setS((await db.rpc('get_billing_settings')) || {}); }
     catch { toast('Failed to load settings', 'error'); }
     finally { setLoading(false); }
+    try { setQbo((await db.rpc('get_qbo_connection_status')) || null); }
+    catch { /* non-fatal — the card-terminal status row just shows "unknown" */ }
   }, [db]);
   useEffect(() => { load(); }, [load]);
 
@@ -134,6 +169,15 @@ export default function PaymentSettings() {
 
   const stripeConnected = on('stripe_connected');
 
+  // Card-terminal status (keyed charges): scope present = ready; connected w/o scope = reconnect; else not connected.
+  const qboCard = (() => {
+    const connected = !!qbo?.connected;
+    const scope = !!qbo?.has_payment_scope;
+    if (scope) return { connected, scope, label: 'Ready', bg: '#f0fdf4', fg: '#16a34a', bd: '#bbf7d0' };
+    if (connected) return { connected, scope, label: 'Reconnect to enable', bg: '#fffbeb', fg: '#d97706', bd: '#fde68a' };
+    return { connected, scope, label: 'Not connected', bg: 'var(--bg-tertiary)', fg: 'var(--text-tertiary)', bd: 'var(--border-light)' };
+  })();
+
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px', paddingBottom: 80 }}>
       <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections')} style={{ gap: 4, marginBottom: 10 }}>← Collections</button>
@@ -155,6 +199,20 @@ export default function PaymentSettings() {
           <Toggle on={on('accept_ach')} onClick={() => save('accept_ach', !on('accept_ach'))} />
         </Row>
         <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Powered by QuickBooks Payments — these add the “Pay now” button to the QBO invoice your customer receives, and online payments flow back into UPR automatically. Requires QuickBooks Payments to be enabled on your QuickBooks company.</p>
+      </Section>
+
+      {/* Card terminal — keyed (card-not-present) charges from inside an invoice. Needs the QBO
+          Payments scope, which the owner grants by reconnecting QuickBooks (Dev Tools). */}
+      <Section title="QuickBooks card terminal" desc="Key a customer’s card on an invoice and charge it (the “Charge a card” tab in the invoice payment box). Card details go straight to QuickBooks — never through UPR.">
+        <Row label="Status" hint={qboCard.scope ? `Connected to ${qbo?.company_name || 'QuickBooks'}${qbo?.environment === 'sandbox' ? ' (sandbox)' : ''}.` : qboCard.connected ? 'QuickBooks is connected, but card charging isn’t authorized yet.' : 'Connect QuickBooks in Dev Tools to enable card charging.'}>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--radius-full)', background: qboCard.bg, color: qboCard.fg, border: `1px solid ${qboCard.bd}` }}>
+            {qboCard.label}
+          </span>
+        </Row>
+        {qboCard.connected && !qboCard.scope && (
+          <p style={{ fontSize: 11.5, color: '#d97706', marginTop: 4 }}>To enable card charging, reconnect QuickBooks so it grants the Payments permission: <b>Dev Tools → Connect QuickBooks → approve</b>. This re-consents the existing connection (accounting keeps working).</p>
+        )}
+        <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Keyed charges deposit to the <b>Deposit bank account</b> selected below and record a synced QuickBooks payment on the invoice.</p>
       </Section>
 
       {/* Stripe (future processor — dormant). */}

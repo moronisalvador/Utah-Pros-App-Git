@@ -19,10 +19,13 @@
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
- *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
+ *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments;
+ *                       get_qbo_connection_status (RPC — gate the Charge a card tab)
  *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
  *                       delete), invoices.due_date; QBO push/send via /api/qbo-invoice,
- *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link
+ *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link,
+ *                       keyed card charges via /api/qbo-charge (token minted client-side
+ *                       by @/lib/intuitTokenize — the raw card never reaches our servers)
  *
  * NOTES / GOTCHAS:
  *   - line_total is a GENERATED column (quantity × unit_price) — never written.
@@ -41,6 +44,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
+import { tokenizeCard } from '@/lib/intuitTokenize';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import DatePicker from '@/components/DatePicker';
@@ -166,6 +170,11 @@ export default function InvoiceEditor() {
   const [xactStage, setXactStage] = useState(0);      // rotating status line index (import modal)
   const [xactPct, setXactPct] = useState(0);          // simulated progress % (import modal)
   const [onlinePayOn, setOnlinePayOn] = useState(false); // org-wide QBO online-pay (card/ACH) → drives the "online-payable" banner
+  const [qboConn, setQboConn] = useState(null);          // get_qbo_connection_status → gates the Charge a card tab
+  const [payTab, setPayTab] = useState('record');        // payment modal (new): 'record' | 'charge'
+  const [cardForm, setCardForm] = useState({ number: '', exp: '', cvc: '', zip: '', name: '' });
+  const [charging, setCharging] = useState(false);       // card charge in flight
+  const [chargeErr, setChargeErr] = useState('');        // inline decline / charge error
   const dragIdx = useRef(null);
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
@@ -176,6 +185,16 @@ export default function InvoiceEditor() {
     let alive = true;
     dbRef.current.rpc('get_billing_settings')
       .then((s) => { if (alive) setOnlinePayOn(s?.accept_card === 'true' || s?.accept_ach === 'true'); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // QuickBooks connection + Payments-scope status — gates the "Charge a card" tab (card charging
+  // needs the com.intuit.quickbooks.payment scope, granted only after the owner reconnects QBO).
+  useEffect(() => {
+    let alive = true;
+    dbRef.current.rpc('get_qbo_connection_status')
+      .then((c) => { if (alive) setQboConn(c || null); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -253,7 +272,7 @@ export default function InvoiceEditor() {
   const payModalOpen = !!(payView || payForm);
   useEffect(() => {
     if (!payModalOpen) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') { setPayForm(null); setPayView(null); setDelPayArmed(false); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setPayForm(null); setPayView(null); setDelPayArmed(false); setPayTab('record'); setChargeErr(''); setCardForm({ number: '', exp: '', cvc: '', zip: '', name: '' }); } };
     document.addEventListener('keydown', onKey);
     const t = setTimeout(() => {
       const el = payModalRef.current;
@@ -430,6 +449,37 @@ export default function InvoiceEditor() {
     } catch (e) { toast('Failed to save payment: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
+  // Charge a keyed card on the invoice. The raw card is tokenized CLIENT-SIDE (browser → Intuit),
+  // so only the opaque token reaches /api/qbo-charge — which charges it, records the UPR payment,
+  // and mirrors a linked QBO Payment. The PAN never touches our servers (PCI: SAQ A-EP).
+  const chargeCard = async () => {
+    const amt = Number(payForm?.amount);
+    if (!(amt > 0)) { setChargeErr('Enter an amount to charge.'); return; }
+    setChargeErr(''); setCharging(true);
+    try {
+      const token = await tokenizeCard(
+        { number: cardForm.number, exp: cardForm.exp, cvc: cardForm.cvc, zip: cardForm.zip, name: cardForm.name || contact?.name || '' },
+        { environment: qboConn?.environment },
+      );
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/qbo-charge', {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: invoiceId, token, amount: amt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Decline → keep the form open with a clear inline message (no DB writes happened).
+        throw new Error(data.declined ? 'Card declined. Check the card details or try another card.' : (data.error || res.statusText));
+      }
+      toast(`Charged ${fmt$2(amt)} to card`);
+      if (data.qbo_sync_error) toast('Charged — but the QuickBooks payment didn’t sync: ' + data.qbo_sync_error, 'error');
+      setCardForm({ number: '', exp: '', cvc: '', zip: '', name: '' });
+      setPayForm(null); setPayView(null); setPayTab('record'); await load();
+    } catch (e) {
+      setChargeErr(e.message || 'Charge failed. Please try again.');
+    } finally { setCharging(false); }
+  };
+
   // The deliberate "Edit" step inside the modal: load the viewed payment into the form.
   const editPayment = (p) => {
     setDelPayArmed(false);
@@ -459,6 +509,7 @@ export default function InvoiceEditor() {
     const bal = Math.max(0, round2(inviced - Number(inv?.amount_paid || 0)));
     setDelPayArmed(false);
     setPayView(null);
+    setPayTab('record'); setChargeErr(''); setCardForm({ number: '', exp: '', cvc: '', zip: '', name: '' });
     setPayForm({ amount: bal > 0 ? bal.toFixed(2) : '', date: today(), payer_type: 'insurance', method: 'check', reference: '' });
   };
 
@@ -549,7 +600,9 @@ export default function InvoiceEditor() {
       )
     : true;
   const payCanSave = !busy && Number(payForm?.amount) > 0 && payDirty;
-  const closePayModal = () => { setPayForm(null); setPayView(null); setDelPayArmed(false); };
+  // Charge a card: admin/manager, the invoice is in QBO, and the Payments scope is granted.
+  const canCharge = canEdit && synced && !!qboConn?.has_payment_scope;
+  const closePayModal = () => { setPayForm(null); setPayView(null); setDelPayArmed(false); setPayTab('record'); setChargeErr(''); setCardForm({ number: '', exp: '', cvc: '', zip: '', name: '' }); };
   const cancelPayEdit = () => { setPayForm(null); setDelPayArmed(false); }; // → back to view (payView stays) or close (new)
 
   // ─── SECTION: Render ──────────────
@@ -875,7 +928,7 @@ export default function InvoiceEditor() {
           <div ref={payModalRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: 440, marginTop: '6vh', background: '#fff', borderRadius: 14, border: `1px solid ${C.cardBorder}`, boxShadow: '0 18px 50px rgba(16,24,40,.25)', overflow: 'visible', outline: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 16px', borderBottom: `1px solid ${C.hairline}` }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{payMode === 'view' ? 'Payment' : payMode === 'edit' ? 'Edit payment' : 'Record payment'}</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{payMode === 'view' ? 'Payment' : payMode === 'edit' ? 'Edit payment' : (payTab === 'charge' ? 'Charge a card' : 'Record payment')}</span>
               <button type="button" onClick={closePayModal} aria-label="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.faint, fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
             </div>
 
@@ -898,28 +951,63 @@ export default function InvoiceEditor() {
                 </>
               ) : (
                 <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
-                      <div style={fieldWrap}><span style={fieldLbl}>Date</span><DatePicker value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} style={{ width: '100%' }} /></div>
+                  {/* New-payment mode: choose between recording an existing payment and keying a card. */}
+                  {payMode === 'new' && canCharge && (
+                    <div role="tablist" aria-label="Payment type" style={{ display: 'flex', gap: 4, padding: 3, background: C.headFill, borderRadius: 10, marginBottom: 12 }}>
+                      {[['record', 'Record payment'], ['charge', 'Charge a card']].map(([v, t]) => (
+                        <button key={v} type="button" role="tab" aria-selected={payTab === v} onClick={() => { setPayTab(v); setChargeErr(''); }}
+                          style={{ flex: 1, padding: '7px 10px', fontSize: 12.5, fontWeight: 700, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', border: 'none', background: payTab === v ? '#fff' : 'transparent', color: payTab === v ? C.ink : C.muted, boxShadow: payTab === v ? '0 1px 2px rgba(16,24,40,.08)' : 'none' }}>
+                          {t}
+                        </button>
+                      ))}
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
-                      <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
-                    </div>
-                    <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
-                    {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates the payment and re-syncs it to QuickBooks.</div>}
-                  </div>
-                  <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>
-                    <GhostButton onClick={cancelPayEdit} leftIcon={payView ? <IconBack /> : null}>{payView ? 'Back' : 'Cancel'}</GhostButton>
-                    {payMode === 'edit' && (
-                      <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
-                        style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
-                        {delPayArmed ? 'Confirm delete' : 'Delete'}
-                      </button>
-                    )}
-                  </div>
+                  )}
+
+                  {payMode === 'new' && payTab === 'charge' ? (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
+                        <label style={fieldWrap}><span style={fieldLbl}>Name on card</span><input autoComplete="cc-name" value={cardForm.name} onChange={(e) => setCardForm((f) => ({ ...f, name: e.target.value }))} placeholder={contact?.name || 'Cardholder name'} style={fieldInp} /></label>
+                        <label style={fieldWrap}><span style={fieldLbl}>Card number</span><input autoComplete="cc-number" inputMode="numeric" value={cardForm.number} onChange={(e) => setCardForm((f) => ({ ...f, number: e.target.value }))} placeholder="1234 5678 9012 3456" style={fieldInp} /></label>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <label style={fieldWrap}><span style={fieldLbl}>Expiry (MM/YY)</span><input autoComplete="cc-exp" inputMode="numeric" value={cardForm.exp} onChange={(e) => setCardForm((f) => ({ ...f, exp: e.target.value }))} placeholder="MM/YY" style={fieldInp} /></label>
+                          <label style={fieldWrap}><span style={fieldLbl}>CVC</span><input autoComplete="cc-csc" inputMode="numeric" value={cardForm.cvc} onChange={(e) => setCardForm((f) => ({ ...f, cvc: e.target.value }))} placeholder="123" style={fieldInp} /></label>
+                          <label style={fieldWrap}><span style={fieldLbl}>ZIP</span><input autoComplete="postal-code" inputMode="numeric" value={cardForm.zip} onChange={(e) => setCardForm((f) => ({ ...f, zip: e.target.value }))} placeholder="84001" style={fieldInp} /></label>
+                        </div>
+                        {chargeErr && <div style={{ fontSize: 12, lineHeight: 1.5, color: STATUS.danger.text, background: STATUS.danger.tint, border: `1px solid ${STATUS.danger.border}`, borderRadius: 9, padding: '8px 11px' }}>{chargeErr}</div>}
+                        <div style={{ fontSize: 11, color: C.faint }}>🔒 Card details go straight to QuickBooks Payments — they never touch our servers. This records a synced QuickBooks payment on the invoice.</div>
+                      </div>
+                      <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <PrimaryButton onClick={chargeCard} style={{ opacity: (charging || !(Number(payForm.amount) > 0)) ? 0.6 : 1, pointerEvents: (charging || !(Number(payForm.amount) > 0)) ? 'none' : 'auto' }}>{charging ? 'Charging…' : `Charge ${fmt$2(Number(payForm.amount) || 0)}`}</PrimaryButton>
+                        <GhostButton onClick={closePayModal}>Cancel</GhostButton>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <label style={fieldWrap}><span style={fieldLbl}>Amount</span><input type="number" inputMode="decimal" value={payForm.amount} onChange={(e) => setPayForm((f) => ({ ...f, amount: e.target.value }))} style={fieldInp} /></label>
+                          <div style={fieldWrap}><span style={fieldLbl}>Date</span><DatePicker value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} style={{ width: '100%' }} /></div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <label style={fieldWrap}><span style={fieldLbl}>From</span><select value={payForm.payer_type} onChange={(e) => setPayForm((f) => ({ ...f, payer_type: e.target.value }))} style={fieldInp}>{PAYER_TYPES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                          <label style={fieldWrap}><span style={fieldLbl}>Method</span><select value={payForm.method} onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))} style={fieldInp}>{METHODS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
+                        </div>
+                        <label style={fieldWrap}><span style={fieldLbl}>Reference (optional)</span><input value={payForm.reference} onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Check # / ACH trace" style={fieldInp} /></label>
+                        {payMode === 'edit' && <div style={{ fontSize: 11, color: C.faint }}>Saving updates the payment and re-syncs it to QuickBooks.</div>}
+                      </div>
+                      <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <PrimaryButton onClick={recordPayment} style={{ opacity: payCanSave ? 1 : 0.6, pointerEvents: payCanSave ? 'auto' : 'none' }}>{payMode === 'edit' ? 'Update payment' : 'Save payment'}</PrimaryButton>
+                        <GhostButton onClick={cancelPayEdit} leftIcon={payView ? <IconBack /> : null}>{payView ? 'Back' : 'Cancel'}</GhostButton>
+                        {payMode === 'edit' && (
+                          <button type="button" onClick={deleteEditingPayment} onBlur={() => setDelPayArmed(false)} disabled={busy}
+                            style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', background: delPayArmed ? STATUS.danger.tint : '#fff', color: delPayArmed ? STATUS.danger.text : C.muted, border: `1px solid ${delPayArmed ? STATUS.danger.border : C.cardBorder}` }}>
+                            {delPayArmed ? 'Confirm delete' : 'Delete'}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
