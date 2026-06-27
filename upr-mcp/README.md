@@ -97,6 +97,9 @@ Claude runs the OAuth flow automatically → you'll get a Google login → only
 `qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`.
 **UPR database:** `upr_select`, `upr_rpc` (read/any function),
 `upr_insert`, `upr_update`, `upr_delete` (writes require a filter + confirm).
+**Encircle (read):** `encircle_get_claim` (by `encircle_claim_id` → full claim
+incl. `created_at`, the true claim-filed date), `encircle_list_claims`. Requires
+the `ENCIRCLE_API_KEY` secret on the worker (same token the Pages functions use).
 
 Every **[WRITE]** tool, called without `confirm: true`, returns a **preview** of
 exactly what it would change and does nothing — call again with `confirm: true`

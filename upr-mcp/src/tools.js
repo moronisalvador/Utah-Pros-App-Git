@@ -8,6 +8,7 @@
 //   - Every call (read + write, preview + execute) is audit-logged by the caller.
 
 import { qboQuery, qboGet, qboCreate, qboSparseUpdate, qboDelete, qboReport, qboSend } from './qbo.js';
+import { encircleGetClaim, encircleListClaims } from './encircle.js';
 import { supabase } from './supabase.js';
 
 const n = (v) => (v == null ? v : Number(v));
@@ -298,6 +299,20 @@ export const TOOLS = {
       if (!a.confirm) return preview(`Create estimate for customer ${a.customer_id} with ${payload.Line.length} line(s).`, payload);
       return qboCreate(env, 'Estimate', payload);
     },
+  },
+
+  // ── Encircle (claims source-of-truth) — read-only ───────────────────────────
+  encircle_get_claim: {
+    write: false,
+    description: 'Fetch a single Encircle property claim by its Encircle id (jobs.encircle_claim_id). Returns the full claim incl. created_at — the true date the claim was filed in Encircle — plus date_of_loss, status, full_address, policyholder. Use this to recover real claim dates the UPR import did not persist.',
+    inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
+    run: (env, a) => encircleGetClaim(env, a.claim_id),
+  },
+  encircle_list_claims: {
+    write: false,
+    description: 'List recent Encircle property claims (newest first). Each includes id, created_at, date_of_loss, status, full_address.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'number' }, order: { type: 'string' } } },
+    run: (env, a) => encircleListClaims(env, { limit: a.limit, order: a.order }),
   },
 
   // ── UPR (Supabase) — read + write the app's own database ─────────────────────
