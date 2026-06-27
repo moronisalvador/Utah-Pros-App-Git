@@ -101,7 +101,7 @@ async function logRun(db, status, processed, errorMessage, startedAt) {
       started_at:        startedAt,
       completed_at:      new Date().toISOString(),
     });
-  } catch (_) { /* logging is best-effort */ }
+  } catch { /* logging is best-effort */ }
 }
 
 function loadPending(db, limit) {
@@ -131,7 +131,7 @@ export async function onRequestPost(context) {
   }
 
   let body = {};
-  try { body = await request.json(); } catch (_) { /* empty body */ }
+  try { body = await request.json(); } catch { /* empty body */ }
 
   const dryRun = !!body.dry_run;
 

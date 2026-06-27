@@ -31,8 +31,8 @@ export async function registerPushForEmployee(db, employeeId) {
       const finish = (val, err) => {
         if (done) return;
         done = true;
-        try { regListener?.remove(); } catch {}
-        try { errListener?.remove(); } catch {}
+        try { regListener?.remove(); } catch { /* ignored */ }
+        try { errListener?.remove(); } catch { /* ignored */ }
         if (err) reject(err); else resolve(val);
       };
       let regListener, errListener;

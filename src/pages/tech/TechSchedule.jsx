@@ -425,11 +425,11 @@ function loadFilters(empId) {
       }
       return parsed;
     }
-  } catch {}
+  } catch { /* ignored */ }
   return { employee: 'me', division: 'all' };
 }
 function saveFilters(empId, filters) {
-  try { localStorage.setItem(`tech_schedule_filters_${empId}`, JSON.stringify(filters)); } catch {}
+  try { localStorage.setItem(`tech_schedule_filters_${empId}`, JSON.stringify(filters)); } catch { /* ignored */ }
 }
 
 /* ── Main Component ── */
@@ -500,7 +500,7 @@ export default function TechSchedule() {
         p_end_date: dateRange.end,
       });
       setAllAppointments(result || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load schedule', 'error');
     }
     setLoading(false);

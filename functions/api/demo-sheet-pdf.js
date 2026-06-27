@@ -161,6 +161,7 @@ export async function onRequestPost(context) {
 // keeping WinAnsi-safe typography (em/en dashes, curly quotes, ×, ·, …).
 function pdfSafe(s) {
   return String(s == null ? '' : s)
+    // eslint-disable-next-line no-misleading-character-class -- intentionally strips lone variation selectors (FE00-FE0F), ZWJ (200D) and combining keycap (20E3); pdf-lib WinAnsi throws on them
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
     .replace(/^\s+|\s+$/g, '');
 }
@@ -190,7 +191,6 @@ async function buildDemoPdf(rawModel) {
   const black  = rgb(0.05, 0.05, 0.05);
   const gray   = rgb(0.40, 0.40, 0.40);
   const lgray  = rgb(0.85, 0.85, 0.85);
-  const xlgray = rgb(0.94, 0.94, 0.94);
   const blue   = rgb(0.145, 0.388, 0.922);
   const navy   = rgb(0.118, 0.161, 0.231);
   const white  = rgb(1, 1, 1);

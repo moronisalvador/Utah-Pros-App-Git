@@ -167,7 +167,7 @@ export default function TechNewAppointment() {
         if (t) { setSelectedTasks(prev => [...prev, t.id]); break; }
       }
       setNewTaskTitle('');
-    } catch (err) { toast('Failed to create task', 'error'); }
+    } catch { toast('Failed to create task', 'error'); }
   };
 
   /* ── Crew helpers ── */

@@ -111,7 +111,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
     if (!newTaskTitle.trim() || !newTaskPhase) return;
     const phase = taskPool.find(g => g.phase_name === newTaskPhase) || taskPool[0];
     try {
-      const result = await db.rpc('add_adhoc_job_task', {
+      await db.rpc('add_adhoc_job_task', {
         p_job_id: jobId,
         p_title: newTaskTitle.trim(),
         p_phase_name: phase?.phase_name || newTaskPhase,

@@ -132,7 +132,7 @@ export default function TechEditAppointment() {
         const pool = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
         setTaskPool(Array.isArray(pool) ? pool : []);
       }
-    } catch (e) {
+    } catch {
       toast('Failed to load appointment', 'error');
       navigate(-1);
     }

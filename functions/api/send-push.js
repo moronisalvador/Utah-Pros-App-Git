@@ -79,7 +79,7 @@ export async function onRequestPost(context) {
 
     // 410 = token invalid/unregistered; prune from DB
     if (res.status === 410) {
-      try { await db.delete('device_tokens', `id=eq.${row.id}`); } catch {}
+      try { await db.delete('device_tokens', `id=eq.${row.id}`); } catch { /* ignored */ }
       return { token_id: row.id, status: 410, pruned: true };
     }
 

@@ -284,7 +284,7 @@ function StepSearch({ search, setSearch, results, searching, label, type, keepRe
 }
 
 /* ── Step 2: Compare ── */
-function StepCompare({ type, fields, keeper, loser, keepSide, onSwap, impact, confirmState, merging, error, onConfirm, onBack, confirmRef, setConfirmState }) {
+function StepCompare({ type, fields, keeper, loser, onSwap, impact, confirmState, merging, error, onConfirm, onBack, confirmRef, setConfirmState }) {
   const keepBorder = '2px solid #16a34a';
   const loseBorder = '2px solid #dc2626';
   const label = LABELS[type];

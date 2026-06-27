@@ -32,7 +32,7 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import ScheduleWizard from '@/components/ScheduleWizard';
 import { MITIGATION_DIVS, RECON_DIVS, classifyPhase, fmtDate, fmtShortDate } from '@/lib/scheduleUtils';
@@ -40,7 +40,7 @@ import { divisionPill } from '@/components/schedule/eventCardStyle';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
-function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onSchedulePhase, onCreateAppointment, onSelectJob, selectedJobId, refreshKey, onRefreshPanel }) {
+function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, onCreateAppointment, onSelectJob, refreshKey, onRefreshPanel }) {
   const [search, setSearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState('active');
   const [divFilter, setDivFilter] = useState(() => {
@@ -48,7 +48,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
   });
   const changeDivFilter = (f) => {
     setDivFilter(f);
-    try { localStorage.setItem('upr_schedule_div_filter', f); } catch {}
+    try { localStorage.setItem('upr_schedule_div_filter', f); } catch { /* ignored */ }
   };
 
   // Detail view state
@@ -77,7 +77,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
           const data = await db.rpc('get_job_task_pool', { p_job_id: activeJob.id });
           const parsed = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
           setTaskPool(parsed);
-        } catch {}
+        } catch { /* ignored */ }
       })();
     }
   }, [refreshKey]);
@@ -151,7 +151,7 @@ function JobPanel({ jobs, panelOpen, onTogglePanel, onToggleJob, loading, db, on
       const data = await db.rpc('get_job_task_pool', { p_job_id: activeJob.id });
       const parsed = Array.isArray(data) ? data : (typeof data === 'string' ? JSON.parse(data) : []);
       setTaskPool(parsed);
-    } catch {}
+    } catch { /* ignored */ }
   };
 
   // ── Collapsed state ──

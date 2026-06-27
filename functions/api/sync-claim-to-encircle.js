@@ -141,7 +141,7 @@ async function logWorkerRun(sbUrl, sbKey, status, records, errorMessage) {
         error_message: errorMessage || null,
       }),
     });
-  } catch {}
+  } catch { /* ignored */ }
 }
 
 async function doSync(request, env) {
@@ -198,7 +198,7 @@ async function doSync(request, env) {
   };
 
   // Strip nulls — Encircle treats missing fields better than explicit null on create
-  const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== null && v !== ''));
+  const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== null && v !== ''));
 
   // Encircle requires policyholder_name; fail fast with a clear message if missing
   if (!cleanPayload.policyholder_name) {

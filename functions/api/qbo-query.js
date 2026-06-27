@@ -42,7 +42,7 @@ export async function onRequestPost(context) {
   }
 
   let body = {};
-  try { body = await request.json(); } catch (_) { /* empty */ }
+  try { body = await request.json(); } catch { /* empty */ }
 
   const q = (body.query || '').trim();
   if (!q) return jsonResponse({ error: 'Provide a "query"' }, 400, request, env);

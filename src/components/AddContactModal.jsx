@@ -148,7 +148,7 @@ export default function AddContactModal({onClose,onSave,carriers,referralSources
       if(form.role==='adjuster')Object.assign(data,{insurance_carrier:form.insurance_carrier?.trim()||null,desk_phone:deskPh||null,desk_extension:form.desk_extension?.trim()||null,territory:form.territory?.trim()||null,relationship_notes:form.relationship_notes?.trim()||null});
       if(form.role==='vendor'||form.role==='subcontractor'){Object.assign(data,{trade_specialty:form.trade_specialty?.trim()||null,payment_terms:form.payment_terms||'net_30',w9_on_file:form.w9_on_file||false});if(form.role==='subcontractor'&&form.coi_expiration)data.coi_expiration=form.coi_expiration;}
       await onSave(data);
-    }catch(err){/* handled in parent */}finally{setSaving(false);}
+    }catch{/* handled in parent */}finally{setSaving(false);}
   };
 
   return(

@@ -43,7 +43,7 @@ export function supabase(env) {
     },
 
     // UPSERT — insert or update on conflict
-    async upsert(table, data, onConflict) {
+    async upsert(table, data) {
       const res = await fetch(`${url}/rest/v1/${table}`, {
         method: 'POST',
         headers: {

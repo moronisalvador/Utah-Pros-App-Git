@@ -68,14 +68,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
-import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
+import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
 import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
 import GenerateReportButton from '@/components/tech/GenerateReportButton';
-import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
+import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
@@ -153,7 +153,7 @@ export default function TechAppointment() {
         ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`).catch(() => [])
         : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []);
       setDocs(docList || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load appointment', 'error');
     }
     setLoading(false);
@@ -168,7 +168,7 @@ export default function TechAppointment() {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.id, p_employee_id: employee.id });
-    } catch (e) {
+    } catch {
       toast('Failed to toggle task', 'error');
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
     } finally {
@@ -558,7 +558,6 @@ export default function TechAppointment() {
   const job = appt.jobs;
   const crew = appt.appointment_crew || [];
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
-  const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
   const doneCount = tasks.filter(t => t.is_completed).length;
   const totalCount = tasks.length;
   const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;

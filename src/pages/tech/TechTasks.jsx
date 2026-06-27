@@ -173,7 +173,7 @@ export default function TechTasks() {
     try {
       const result = await db.rpc('get_assigned_tasks', { p_employee_id: employee.id });
       setTasks(result || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load tasks', 'error');
     }
     setLoading(false);
@@ -189,7 +189,7 @@ export default function TechTasks() {
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.task_id, p_employee_id: employee.id });
       toast('Task updated');
-    } catch (e) {
+    } catch {
       toast('Failed to toggle task', 'error');
       setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     } finally {

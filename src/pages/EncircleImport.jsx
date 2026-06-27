@@ -131,7 +131,7 @@ export default function EncircleImport() {
         assignment_identifier: detail.assignment_identifier || '',
       });
       setSelectedDivisions(['water']);
-    } catch (e) {
+    } catch {
       toast('Failed to load claim details', 'error');
     } finally {
       setLoadingDetail(false);

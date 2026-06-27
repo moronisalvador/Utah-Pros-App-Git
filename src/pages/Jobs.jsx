@@ -96,12 +96,6 @@ export default function Jobs() {
     }
   };
 
-  const phaseMap = useMemo(() => {
-    const m = {};
-    for (const p of phases) m[p.key] = p;
-    return m;
-  }, [phases]);
-
   const filteredJobs = useMemo(() => {
     let result = jobs;
     if (divisionTab !== 'all') result = result.filter(j => j.division === divisionTab);

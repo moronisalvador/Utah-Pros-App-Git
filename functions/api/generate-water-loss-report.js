@@ -320,7 +320,7 @@ async function buildReportPdf({ data, photoBlobs }) {
   };
 
   // ── Header bar (drawn on every page via drawHeader) ──
-  const drawHeader = (isFirstPage = false) => {
+  const drawHeader = () => {
     curPage.drawRectangle({ x: 0, y: PH - 48, width: PW, height: 48, color: navy });
     drawText('Utah Pros Restoration',   M, PH - 22, { font: fBold, size: 12, color: white });
     drawText('Licensed · Insured · Utah · (801) 427-0582', M, PH - 36,
@@ -743,10 +743,10 @@ async function renderRoomSection(args) {
   const {
     room, photoBlobs, pdfDoc,
     newPage, needY,
-    drawText, drawLine, drawWrapped,
+    drawText, drawLine,
     getCurY, setCurY, getCurPage,
     fonts: { fReg, fBold },
-    colors: { black, gray, lgray, xlgray, blue, amber, red, navy, accentBg, white },
+    colors: { black, gray, lgray, xlgray, blue, amber, navy },
     layout: { PW, M, CW },
   } = args;
 
@@ -931,8 +931,7 @@ async function renderRoomSection(args) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function embedPhotoCell({
   photo, blobInfo, pdfDoc, curPage,
-  x, y, w, h, captionH,
-  drawText, drawLine,
+  x, y, w, h,
   fonts: { fReg },
   colors: { gray, lgray, xlgray },
 }) {
@@ -982,10 +981,10 @@ async function embedPhotoCell({
 // ─────────────────────────────────────────────────────────────────────────────
 function drawTableCustom({
   rows, columns, startX, headerFill, stripeFill,
-  getCurPage, getCurY, setCurY, newPage, needY,
+  getCurPage, getCurY, setCurY, newPage,
   drawText, drawLine,
   fonts: { fReg, fBold },
-  colors: { black, gray, lgray, xlgray, navy },
+  colors: { black, lgray, xlgray, navy },
 }) {
   const rowH = 20;
   const headerH = 22;
@@ -1053,10 +1052,10 @@ function drawTableCustom({
 // ─────────────────────────────────────────────────────────────────────────────
 function drawReadingsTable({
   rows, cols, latestSet, startX,
-  getCurY, setCurY, getCurPage, newPage, needY,
+  getCurY, setCurY, getCurPage, newPage,
   drawText, drawLine,
   fonts: { fReg, fBold },
-  colors: { black, gray, lgray, xlgray, blue, navy },
+  colors: { black, lgray, xlgray, blue, navy },
 }) {
   const rowH = 18;
   const headerH = 20;
