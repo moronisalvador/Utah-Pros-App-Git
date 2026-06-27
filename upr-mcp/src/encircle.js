@@ -2,7 +2,8 @@
 // Encircle is UPR's claims source-of-truth. This module exposes the Encircle
 // REST API to the assistant so it can read AND (carefully) write claims, notes,
 // media, rooms, assignments, etc. — e.g. recover the TRUE claim-filed date
-// (created_at) the UPR import never persisted, write our CLM number back onto a
+// (date_claim_created — the live API does NOT return a created_at field) the UPR
+// import never persisted, write our CLM number back onto a
 // claim, pull a claim's photos, or post a note. Auth reuses the SAME token the
 // Cloudflare Pages functions use: Bearer ENCIRCLE_API_KEY (set as an MCP worker
 // secret). Base: https://api.encircleapp.com — see ENCIRCLE_API_REFERENCE.md.
@@ -52,8 +53,9 @@ export async function encircleRequest(env, method, path, body) {
 }
 
 // ─── Claims ──────────────────────────────────────────────────────────────────
-// GET /v1/property_claims/{id} — full claim incl. created_at (true filed date),
-// date_of_loss, status, full_address, policyholder, contractor_identifier (CLM).
+// GET /v1/property_claims/{id} — full claim incl. date_claim_created (true filed
+// date; the live API returns date_claim_created, NOT created_at), date_of_loss,
+// status, full_address, policyholder, contractor_identifier (CLM).
 export async function encircleGetClaim(env, claimId) {
   return encircleFetch(env, `/v1/property_claims/${encodeURIComponent(String(claimId))}`);
 }

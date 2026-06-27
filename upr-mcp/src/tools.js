@@ -321,7 +321,7 @@ export const TOOLS = {
   // ── Encircle (claims source-of-truth) — read + guarded write ─────────────────
   encircle_get_claim: {
     write: false,
-    description: 'Fetch a single Encircle property claim by its Encircle id (jobs.encircle_claim_id). Returns the full claim incl. created_at — the true date the claim was filed in Encircle — plus date_of_loss, status, full_address, policyholder, contractor_identifier (our CLM). Use this to recover real claim dates the UPR import did not persist.',
+    description: 'Fetch a single Encircle property claim by its Encircle id (jobs.encircle_claim_id). Returns the full claim incl. date_claim_created — the true date the claim was filed in Encircle (the live API returns date_claim_created, NOT a created_at field) — plus date_of_loss, status, full_address, policyholder, contractor_identifier (our CLM). Use this to recover real claim dates the UPR import did not persist.',
     inputSchema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] },
     run: (env, a) => encircleGetClaim(env, a.claim_id),
   },
