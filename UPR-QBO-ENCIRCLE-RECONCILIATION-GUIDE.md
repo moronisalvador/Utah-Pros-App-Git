@@ -29,7 +29,11 @@ CLAIM            — the loss (one address/event). NOT a sale. Has date_of_loss,
 
 - One **claim** can have **multiple jobs** (e.g. water mitigation **and** reconstruction = two jobs, one claim).
 - Mitigation and reconstruction are **separate jobs** under the same claim, usually billed on **separate** QBO invoices/estimates (mitigation is often billed to insurance; recon to the customer).
-- **Numbers auto-generate** on insert: `CLM-YYMM-NNN`, `INV-NNNNNN`, job `W/M/R/C-YYMM-NNN`. They use the **current** sequence/month, so a backdated record keeps a number whose `YYMM` prefix won't match its real date — **that is expected; the dates are what matter, not the number prefix.** Don't hand-edit numbers.
+- **Numbers auto-generate** on insert: `CLM-YYMM-NNN`, `INV-NNNNNN`, job `W/M/R/C-YYMM-NNN`. They use the **current** sequence/month, so a backdated record keeps a number whose `YYMM` prefix won't match its real date — **that is expected; the dates are what matter, not the number prefix.** Don't hand-edit the auto-generated `CLM-`/`INV-`/job numbers.
+- **Invoice display number = the JOB number, in BOTH systems.** The invoice the UI shows is `qbo_doc_number || invoice_number`. The convention is to set the invoice's **QBO `DocNumber`** *and* UPR **`invoices.qbo_doc_number`** to the **job number** (e.g. `R-2606-009`, `W-2606-022`) so UPR and QBO line up one-to-one. Legacy invoices with numeric QBO DocNumbers (e.g. `1196`, `1264`) should be **renamed to their job number** during reconciliation:
+  - QBO: `qbo_update_entity('Invoice', <id>, {"DocNumber": "<job#>"})`
+  - UPR: `UPDATE invoices SET qbo_doc_number='<job#>' WHERE qbo_invoice_id='<id>';`
+  - One invoice = one job; a split claim (water + recon) has **two** invoices, each numbered to its own job (W-… and R-…).
 
 ---
 
@@ -126,6 +130,7 @@ Imports stamped many old claims/jobs with the **import date** (e.g. a single 202
    ```
    - `status`: `paid` / `partially_paid` / `sent` / `draft`. `invoice_type`: `standard`.
    - The `invoice_real_job` trigger flips the job to real on insert.
+   - **Number it to the job:** set both QBO `DocNumber` and UPR `qbo_doc_number` to the job number (e.g. `R-2606-009`), not the numeric QBO number — see §2.
 
 ### Import gotchas (hit during Tanra Hill)
 - `contacts.role` is an enum-checked set: **`homeowner`**, adjuster, subcontractor, property_manager, agent, mortgage_co, tenant, other, vendor, referral_partner, insurance_rep, broker. (Not "customer".)
