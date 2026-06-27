@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error'   } }));
 const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -18,6 +19,7 @@ function IconEye(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 function IconEyeOff(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>);}
 function IconRefresh(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.1"/></svg>);}
 function IconChevronLeft(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
+function IconDrive(p){return(<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M7.71 3.5 1.15 15l3.43 5.94 6.56-11.37L7.71 3.5zM22.85 15 16.29 3.5H9.43l6.56 11.5h6.86zM4.93 16.06 8.36 22h11.49l-3.43-5.94H4.93z"/></svg>);}
 
 /* ═══ NAV GROUPS ═══ */
 const SETTINGS_NAV = [
@@ -27,6 +29,9 @@ const SETTINGS_NAV = [
   ]},
   { group: 'Documents', tabs: [
     { key: 'templates', label: 'Document Templates', icon: IconFileText },
+  ]},
+  { group: 'Integrations', tabs: [
+    { key: 'integrations', label: 'Google Drive', icon: IconDrive },
   ]},
 ];
 
@@ -222,6 +227,20 @@ export default function Settings() {
   }, [db]);
   useEffect(() => { load(); }, [load]);
 
+  // Google Drive OAuth redirect lands back here as ?gdrive=<status>. Toast the
+  // result, switch to the Integrations tab, and strip the param from the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gdrive = params.get('gdrive');
+    if (!gdrive) return;
+    if (gdrive === 'connected')     okToast('Google Drive connected');
+    else if (gdrive === 'badstate') errToast('Google Drive connect failed: state mismatch — try again');
+    else                            errToast('Google Drive connect failed' + (params.get('msg') ? `: ${params.get('msg')}` : ''));
+    setTab('integrations');
+    params.delete('gdrive'); params.delete('msg');
+    window.history.replaceState({}, '', window.location.pathname + (params.toString() ? `?${params}` : ''));
+  }, []);
+
   const saveCarrier = async (item) => {
     try {
       const p = { p_name: item.name, p_short_name: item.short_name || null, p_sort_order: item.sort_order || 999 };
@@ -270,6 +289,109 @@ export default function Settings() {
           {tab === 'carriers'  && <LookupTable title="Insurance Carriers" subtitle={`${carriers.length} carriers`}  items={carriers}  onSave={saveCarrier}  onDelete={deleteCarrier}  columns={[{key:'name',label:'Carrier Name',flex:3,required:true},{key:'short_name',label:'Code',flex:1,placeholder:'SF'},{key:'sort_order',label:'Order',flex:0.5,type:'number',placeholder:'999'}]} newItemDefaults={{name:'',short_name:'',sort_order:999}}/>}
           {tab === 'referrals' && <LookupTable title="Referral Sources"   subtitle={`${referrals.length} sources`}  items={referrals} onSave={saveReferral} onDelete={deleteReferral} columns={[{key:'name',label:'Source Name',flex:3,required:true},{key:'category',label:'Category',flex:2,type:'select',options:REF_CATEGORIES},{key:'sort_order',label:'Order',flex:0.5,type:'number',placeholder:'999'}]} newItemDefaults={{name:'',category:'other',sort_order:999}}/>}
           {tab === 'templates' && <DocumentTemplatesPanel db={db} />}
+          {tab === 'integrations' && <GoogleDriveIntegrationPanel db={db} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GOOGLE DRIVE INTEGRATION PANEL — per-user connect / disconnect
+   ═══════════════════════════════════════════════════════════════════ */
+function GoogleDriveIntegrationPanel({ db }) {
+  const [status,     setStatus]     = useState(null);   // { connected, google_email, connected_at }
+  const [loading,    setLoading]    = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [confirmDisc, setConfirmDisc] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_google_drive_status').catch(() => []);
+      setStatus(Array.isArray(rows) ? (rows[0] || { connected: false }) : (rows || { connected: false }));
+    } finally { setLoading(false); }
+  }, [db]);
+  useEffect(() => { load(); }, [load]);
+
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/google-drive-connect', { method: 'GET', headers: auth });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || res.statusText);
+      window.location.href = data.url;
+    } catch (e) {
+      errToast('Could not start Google Drive connect: ' + e.message);
+      setConnecting(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!confirmDisc) { setConfirmDisc(true); return; }
+    setConfirmDisc(false);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/google-drive-disconnect', { method: 'POST', headers: auth });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      okToast('Google Drive disconnected');
+      load();
+    } catch (e) {
+      errToast('Failed to disconnect: ' + e.message);
+    }
+  };
+
+  if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+
+  const connected = status?.connected;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 'var(--space-5)' }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Google Drive</h2>
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+          Connect your Google account to attach files to jobs straight from your Drive.
+          Your connection is private to you.
+        </p>
+      </div>
+
+      <div style={{
+        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
+        padding: 'var(--space-5)', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <IconDrive style={{ width: 24, height: 24, color: 'var(--text-secondary)' }} />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 'var(--text-base)' }}>
+              {connected ? 'Connected' : 'Not connected'}
+            </div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+              {connected
+                ? `${status.google_email || 'Google account'}${status.connected_at ? ` · since ${new Date(status.connected_at).toLocaleDateString()}` : ''}`
+                : 'No Google account linked yet.'}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          {connected && (
+            <button
+              className="btn btn-sm"
+              onClick={disconnect}
+              onBlur={() => setConfirmDisc(false)}
+              style={{
+                background: confirmDisc ? '#fef2f2' : 'var(--bg-tertiary)',
+                color:      confirmDisc ? '#dc2626' : 'var(--text-secondary)',
+                border:     `1px solid ${confirmDisc ? '#fecaca' : 'var(--border-light)'}`,
+              }}
+            >
+              {confirmDisc ? 'Confirm Disconnect' : 'Disconnect'}
+            </button>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={connect} disabled={connecting}>
+            {connecting ? 'Opening Google…' : connected ? 'Reconnect' : 'Connect Google Drive'}
+          </button>
         </div>
       </div>
     </div>

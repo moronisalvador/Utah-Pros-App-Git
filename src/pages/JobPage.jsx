@@ -11,6 +11,7 @@ import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
 import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
+import GoogleDriveButton from '@/components/GoogleDriveButton';
 import { withJobFinancials } from '@/lib/claimUtils';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
@@ -781,7 +782,10 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
       setUploadProgress({done:i+1,total:files.length});
     }}catch(err){errToast('Upload failed: '+err.message);}finally{setUploadProgress(null);if(fileInputRef.current)fileInputRef.current.value='';}};
   const handleDelete=async(doc)=>{try{await fetch(`${db.baseUrl}/storage/v1/object/job-files/${doc.file_path}`,{method:'DELETE',headers:{'Authorization':`Bearer ${db.apiKey}`,'apikey':db.apiKey}});await db.delete('job_documents',`id=eq.${doc.id}`);setDocuments(prev=>prev.filter(d=>d.id!==doc.id));reloadSignRequests();setConfirmDeleteDoc(null);}catch(err){errToast('Delete failed: '+err.message);setConfirmDeleteDoc(null);}};
-  const getFileUrl=doc=>`${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}`;
+  // file_path has two historical shapes: bare `{jobId}/…` (local uploads) and
+  // `job-files/{jobId}/…` (insert_job_document callers + Google Drive import).
+  // Strip a leading `job-files/` so both render without doubling the bucket path.
+  const getFileUrl=doc=>{const p=doc.file_path?.startsWith('job-files/')?doc.file_path.slice('job-files/'.length):doc.file_path;return `${db.baseUrl}/storage/v1/object/public/job-files/${p}`;};
   const fmtSize=b=>{if(!b)return'';if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).toFixed(1)} KB`;return`${(b/1048576).toFixed(1)} MB`;};
   const isImage=doc=>doc.mime_type?.startsWith('image/');
   const uploading=uploadProgress!==null;
@@ -792,6 +796,7 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
         <button className="btn btn-primary btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>
           {uploadProgress ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…` : 'Upload Files'}
         </button>
+        <GoogleDriveButton jobId={job.id} category={uploadCategory} onImported={docs=>setDocuments(prev=>[...docs,...prev])}/>
         {uploadProgress&&(
           <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:120}}>
             <div style={{flex:1,height:4,background:'var(--border-color)',borderRadius:2,overflow:'hidden'}}>
