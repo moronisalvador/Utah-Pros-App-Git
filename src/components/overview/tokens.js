@@ -79,7 +79,7 @@ export const DIVISIONS = [
   { key: 'contents',       label: 'Contents',       color: DIV.contents },
 ];
 
-export const PERIODS = ['MTD', 'Last 30', 'QTD', 'YTD'];
+export const PERIODS = ['MTD', 'Prev mo', 'Last 30', 'QTD', 'YTD'];
 
 // ─── SECTION: Placeholder data (swap each block for a live hook at integration) ──────────────
 export const PLACEHOLDER = {
