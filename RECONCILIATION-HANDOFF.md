@@ -169,14 +169,40 @@ Verified live 2026-06-27:
   is an **`invoices.invoice_date`** problem, not a claim-date one.
 
 **Correct fix (bigger than the original June-only plan):**
-1. Backdate the **45 April-19 claims + their 87 jobs** `created_at` to the true
-   Encircle **`date_claim_created`** (pull per claim via `encircle_get_claim` using
-   the job's `encircle_claim_id`; `date_of_loss` is a fallback proxy). Set
-   `jobs.encircle_created_at` too.
-2. Separately, fix **June (and May) invoice `invoice_date`** against QBO `TxnDate`.
-3. Re-check the other months for smaller clusters once the 4/19 batch is corrected.
-This must be done in **previewed batches with confirmation** — it writes to ~45
-claims + 87 jobs.
+Date-basis priority (decided with Moroni): **`date_of_loss` → Encircle
+`date_claim_created` → QBO date.**
+
+1. **Backdate the 4/19 import batch.** Verified scope (live 2026-06-27):
+   - **45 claims** with `created_at::date = '2026-04-19'` — all have `date_of_loss`.
+   - **50 jobs** with `created_at::date = '2026-04-19'` — all have `date_of_loss`.
+   - Set `created_at = date_of_loss` (add `+ time '12:00'` so it lands at noon and
+     can't slip a day under a local-timezone bucket). Reference SQL (preview first):
+     ```sql
+     -- claims
+     UPDATE claims SET created_at = date_of_loss + time '12:00'
+     WHERE created_at::date = '2026-04-19' AND date_of_loss IS NOT NULL;
+     -- jobs (scope by the import DAY, NOT by claim — see warning below)
+     UPDATE jobs SET created_at = date_of_loss + time '12:00'
+     WHERE created_at::date = '2026-04-19' AND date_of_loss IS NOT NULL;
+     ```
+   - ⚠️ **Do NOT backdate by `claim_id`.** 40 jobs belonging to these 45 claims were
+     created on *other* days (2026-03-26 → 2026-06-26) — genuine later work (e.g.
+     recon added after the claim). Scoping by `created_at::date='2026-04-19'` excludes
+     them correctly. For any 4/19 row missing `date_of_loss`, fall back to Encircle
+     `date_claim_created` (via the job's `encircle_claim_id`), then QBO.
+   - Backfill `jobs.encircle_created_at` from Encircle `date_claim_created` while at it.
+2. Separately, fix **June (and May) invoice `invoice_date`** against QBO `TxnDate`
+   (this is what de-inflates the Revenue tile — June = $122,138 by `invoice_date`).
+3. Re-check other months for smaller clusters once 4/19 is corrected.
+
+**Writes must be PREVIEWED then run once.** ⚠️ **COORDINATION:** more than one
+session has investigated this — only **ONE** session should execute the backdate,
+or they'll race/double-up. As of this writing the `vigilant-davinci` session
+deliberately did **not** run the writes.
+
+**Tool gotcha:** `upr_sql` / `exec_read_sql` reject a query that **starts with a
+`--` comment** (the SELECT/WITH guard only matches a leading `select`/`with`). Put
+comments after the first keyword, or omit them.
 
 Counts (regenerate with `upr_sql`):
 
