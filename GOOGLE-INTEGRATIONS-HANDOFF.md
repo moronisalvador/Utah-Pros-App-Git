@@ -58,12 +58,25 @@
 `VITE_` vars are build-time → **redeploy required**; they're public by design (security comes from the
 API-key restrictions, not from hiding them).
 
-## Follow-up (separate PR) — Google Calendar sync
-Appointment + assigned crew (`appointment_crew`) → push create/update/delete events to each crew
-member's Google Calendar. **Reuses the same `user_google_accounts` connection** + token refresh (table
-generalized with a `scopes` column). Needs: `calendar.events` scope (**sensitive → Google app
-verification**), an appointment trigger (pg_net, like the QBO customer-sync trigger) or a worker call on
-appointment save, and a `google_event_id` mapping (e.g. on `appointment_crew`) for updates/deletes.
+## ✅ Google Calendar sync — BUILT (Jun 28 2026, this branch)
+Appointment + assigned crew → push create/update/delete events to each crew member's Google Calendar.
+Reuses the same `user_google_accounts` connection + token refresh. **Migration applied** (inert until
+someone connects the calendar scope).
+- **Source-agnostic by design** (survives the appointments→scheduled-jobs refactor): mapping table
+  `google_calendar_links (source_type, source_id, employee_id, google_event_id, sync_hash, status …)`.
+  Today `source_type='appointment'`; flip to `'job_schedule'` later with no schema change.
+- **Scope:** `calendar.events` added to the single "Connect Google" consent. **Internal Workspace app
+  ⇒ no Google verification** even though it's a sensitive scope (resolved the old blocker).
+- **Triggers** on `appointments` + `appointment_crew` → `notify_google_calendar_sync()` → pg_net →
+  worker `functions/api/google-calendar-sync.js`. Lib: `functions/lib/google-calendar.js`.
+- **Backfill:** `functions/api/google-calendar-resync.js` + Settings "Sync my appointments" button.
+- **Status RPC:** `get_google_calendar_status()`. Times sent with `timeZone: 'America/Denver'`.
+- **Gated on the SAME config as Drive** (OAuth client + Cloudflare env vars) + the calendar scope on the
+  consent screen. On production release: `UPDATE integration_config SET value=
+  'https://utahpros.app/api/google-calendar-sync' WHERE key='gcal_worker_url';`
+- **To verify (after config + connect):** Moroni/Ben/E connect Google → Settings shows "Calendar sync" →
+  click "Sync my appointments" (or create/edit an appointment) → event appears on their Google Calendar;
+  edit → updates; cancel/delete → removed.
 
 ## Gotchas
 - Token table is **`user_google_accounts`** (generalized for Calendar), not `user_google_drive`.

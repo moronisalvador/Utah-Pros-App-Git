@@ -41,8 +41,13 @@ const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL     = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL  = 'https://www.googleapis.com/oauth2/v3/userinfo';
 const DRIVE_FILES   = 'https://www.googleapis.com/drive/v3/files';
-// drive.file = per-file access granted via the Picker (non-restricted scope).
-const SCOPE         = 'https://www.googleapis.com/auth/drive.file openid email';
+// One consent grants BOTH features per employee:
+//   drive.file      — per-file access granted via the Picker (non-restricted).
+//   calendar.events — manage events on the user's own calendars (appointment sync).
+// Both are non-restricted; with an Internal Workspace app neither needs Google
+// app verification. include_granted_scopes makes this incremental for anyone who
+// previously connected with Drive only (they re-consent once to add Calendar).
+const SCOPE         = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events openid email';
 
 // Native Google types must be exported, not downloaded raw. Map → export MIME.
 const GOOGLE_EXPORTS = {

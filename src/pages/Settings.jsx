@@ -233,9 +233,9 @@ export default function Settings() {
     const params = new URLSearchParams(window.location.search);
     const gdrive = params.get('gdrive');
     if (!gdrive) return;
-    if (gdrive === 'connected')     okToast('Google Drive connected');
-    else if (gdrive === 'badstate') errToast('Google Drive connect failed: state mismatch — try again');
-    else                            errToast('Google Drive connect failed' + (params.get('msg') ? `: ${params.get('msg')}` : ''));
+    if (gdrive === 'connected')     okToast('Google connected (Drive + Calendar)');
+    else if (gdrive === 'badstate') errToast('Google connect failed: state mismatch — try again');
+    else                            errToast('Google connect failed' + (params.get('msg') ? `: ${params.get('msg')}` : ''));
     setTab('integrations');
     params.delete('gdrive'); params.delete('msg');
     window.history.replaceState({}, '', window.location.pathname + (params.toString() ? `?${params}` : ''));
@@ -297,19 +297,25 @@ export default function Settings() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   GOOGLE DRIVE INTEGRATION PANEL — per-user connect / disconnect
+   GOOGLE INTEGRATION PANEL — per-user connect / disconnect (Drive + Calendar)
    ═══════════════════════════════════════════════════════════════════ */
 function GoogleDriveIntegrationPanel({ db }) {
   const [status,     setStatus]     = useState(null);   // { connected, google_email, connected_at }
+  const [cal,        setCal]        = useState(null);   // { connected, synced_count, error_count }
   const [loading,    setLoading]    = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [syncing,    setSyncing]    = useState(false);
   const [confirmDisc, setConfirmDisc] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await db.rpc('get_google_drive_status').catch(() => []);
-      setStatus(Array.isArray(rows) ? (rows[0] || { connected: false }) : (rows || { connected: false }));
+      const [drive, calendar] = await Promise.all([
+        db.rpc('get_google_drive_status').catch(() => []),
+        db.rpc('get_google_calendar_status').catch(() => []),
+      ]);
+      setStatus(Array.isArray(drive) ? (drive[0] || { connected: false }) : (drive || { connected: false }));
+      setCal(Array.isArray(calendar) ? (calendar[0] || { connected: false }) : (calendar || { connected: false }));
     } finally { setLoading(false); }
   }, [db]);
   useEffect(() => { load(); }, [load]);
@@ -323,7 +329,7 @@ function GoogleDriveIntegrationPanel({ db }) {
       if (!res.ok || !data.url) throw new Error(data.error || res.statusText);
       window.location.href = data.url;
     } catch (e) {
-      errToast('Could not start Google Drive connect: ' + e.message);
+      errToast('Could not start Google connect: ' + e.message);
       setConnecting(false);
     }
   };
@@ -335,27 +341,45 @@ function GoogleDriveIntegrationPanel({ db }) {
       const auth = await getAuthHeader();
       const res = await fetch('/api/google-drive-disconnect', { method: 'POST', headers: auth });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-      okToast('Google Drive disconnected');
+      okToast('Google disconnected');
       load();
     } catch (e) {
       errToast('Failed to disconnect: ' + e.message);
     }
   };
 
+  // Push the signed-in user's upcoming appointments to Google Calendar now.
+  const syncCalendar = async () => {
+    setSyncing(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/google-calendar-resync', { method: 'POST', headers: auth });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      okToast(`Synced ${data.synced || 0} of ${data.appointments || 0} appointments to Google Calendar`);
+      load();
+    } catch (e) {
+      errToast('Calendar sync failed: ' + e.message);
+    } finally { setSyncing(false); }
+  };
+
   if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
 
-  const connected = status?.connected;
+  const connected    = status?.connected;
+  const calConnected = cal?.connected;
 
   return (
     <div>
       <div style={{ marginBottom: 'var(--space-5)' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Google Drive</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Google</h2>
         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-          Connect your Google account to attach files to jobs straight from your Drive.
+          Connect your Google account once to attach files to jobs from your Drive and
+          push the appointments you're assigned to into your Google Calendar.
           Your connection is private to you.
         </p>
       </div>
 
+      {/* Account connection card */}
       <div style={{
         border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
         padding: 'var(--space-5)', display: 'flex', alignItems: 'center',
@@ -390,9 +414,33 @@ function GoogleDriveIntegrationPanel({ db }) {
             </button>
           )}
           <button className="btn btn-primary btn-sm" onClick={connect} disabled={connecting}>
-            {connecting ? 'Opening Google…' : connected ? 'Reconnect' : 'Connect Google Drive'}
+            {connecting ? 'Opening Google…' : connected ? 'Reconnect' : 'Connect Google'}
           </button>
         </div>
+      </div>
+
+      {/* Calendar feature row */}
+      <div style={{
+        marginTop: 'var(--space-3)',
+        border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
+        padding: 'var(--space-5)', display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap',
+      }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 'var(--text-base)' }}>Calendar sync</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            {calConnected
+              ? `Appointments you're assigned to sync to your Google Calendar · ${cal.synced_count || 0} synced${cal.error_count ? ` · ${cal.error_count} errored` : ''}`
+              : connected
+                ? 'Reconnect to grant calendar access.'
+                : 'Connect Google above to enable.'}
+          </div>
+        </div>
+        {calConnected && (
+          <button className="btn btn-sm" onClick={syncCalendar} disabled={syncing}>
+            {syncing ? 'Syncing…' : 'Sync my appointments'}
+          </button>
+        )}
       </div>
     </div>
   );

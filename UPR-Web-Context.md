@@ -1107,6 +1107,52 @@ APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (A
 
 ---
 
+## Google Integration — per-employee Drive + Calendar (Jun 2026)
+
+Each employee connects **their own** Google account once (Settings → Integrations →
+"Connect Google"). One consent grants **both** features (non-restricted scopes →
+no Google app verification for an Internal Workspace app):
+- `drive.file` — pick files from Drive into a job (JobPage Files tab).
+- `calendar.events` — push the appointments they're assigned to into their Google Calendar.
+
+**Tokens:** `user_google_accounts` (PK `employee_id`; `access_token`, `refresh_token`,
+`token_expires_at`, `google_email`, `scopes`). RLS on, **service-role only**. Refresh
+token never leaves the server. Token refresh + OAuth lib: `functions/lib/google-drive.js`
+(`getValidAccessToken` is shared by Calendar). OAuth state stashed in `integration_config`
+(`gdrive_oauth_state` / `gdrive_oauth_user`).
+
+### Calendar sync (Jun 28 2026)
+
+Pushes appointments → each assigned crew member's Google Calendar (create / update /
+delete). **Built to survive the planned appointments→scheduled-jobs refactor:** the
+mapping is source-agnostic.
+
+- **`google_calendar_links`** — durable mapping, one row per (synced occurrence × crew
+  member). Cols: `id, source_type` (`'appointment'` today, `'job_schedule'` later),
+  `source_id, employee_id, google_event_id, calendar_id, sync_hash, status`
+  (`pending|synced|deleted|error`), `last_error, synced_at`. UNIQUE
+  `(source_type, source_id, employee_id)`. RLS on, service-role only. Retains the
+  event-id mapping even after the source row is deleted, so deletes/updates always land.
+- **RPC `get_google_calendar_status()`** — per-caller `{connected (has calendar scope),
+  google_email, synced_count, error_count}`.
+- **Triggers** `trg_appointments_calendar_sync` (appointments I/U/D) +
+  `trg_appointment_crew_calendar_sync` (crew add/remove) → `notify_google_calendar_sync()`
+  → `net.http_post` to the worker (pg_net, same pattern as QBO customer sync). **Inert
+  until ≥1 employee has the calendar scope** (cheap EXISTS guard), so it's a no-op on prod
+  until someone connects.
+- **Workers:** `functions/api/google-calendar-sync.js` (trigger target, secret-auth via
+  `integration_config.gcal_webhook_secret`) and `functions/api/google-calendar-resync.js`
+  (authenticated "sync my upcoming appointments now" backfill, today→+60d). Core logic in
+  `functions/lib/google-calendar.js` (`syncAppointment`, `removeSourceEvents`,
+  `buildEventBody`). Times sent with explicit `timeZone: 'America/Denver'` (appointments
+  store local date+TIME, no TZ). `status='cancelled'` or a deleted appointment removes the events.
+- **`integration_config`:** `gcal_worker_url` (seeded to the **dev** host — flip to
+  `https://utahpros.app/api/google-calendar-sync` on production release) + `gcal_webhook_secret`.
+- **Requires** the same Google Cloud OAuth client + Cloudflare env vars as Drive
+  (`GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`), plus the calendar scope on the OAuth consent screen.
+
+---
+
 ## QuickBooks Online Integration (Jun 18 2026 — Phase 1: customer sync)
 
 One-directional push: when a paying-party contact (`role` in homeowner /
