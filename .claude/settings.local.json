@@ -57,7 +57,8 @@
       "Bash(echo \"exit=$?\")",
       "Bash(grep -E \"\\\\.js$\")",
       "mcp__filesystem__read_text_file",
-      "Bash(find \"F:\\\\APPS\\\\RestorationAPP\\\\Utah-Pros-App-Git/supabase\" -name \"*.sql\" -exec grep -l \"search_contacts_for_job\\\\|get_claims_list\" {} \\\\;)"
+      "Bash(find \"F:\\\\APPS\\\\RestorationAPP\\\\Utah-Pros-App-Git/supabase\" -name \"*.sql\" -exec grep -l \"search_contacts_for_job\\\\|get_claims_list\" {} \\\\;)",
+      "mcp__UPR_systems__upr_sql"
     ]
   }
 }
