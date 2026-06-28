@@ -32,8 +32,9 @@
  *   - All dollar figures are illustrative estimates, not live data.
  * ════════════════════════════════════════════════
  */
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { getAuthHeader } from '@/lib/realtime';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── SECTION: palette (job-cost ledger identity) ───
 const C = {
@@ -428,27 +429,74 @@ const SUGGESTIONS = [
 ];
 
 function BuildCopilot({ deal }) {
+  const { db } = useAuth();
+  const [chats, setChats] = useState([]);
+  const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [confirmDel, setConfirmDel] = useState(false);
   const scrollRef = useRef(null);
+
+  const loadChats = useCallback(async () => {
+    try { return (await db.rpc('list_homebuilding_chats')) || []; } catch { return []; }
+  }, [db]);
+
+  // Initial load — pull saved conversations and open the most recent.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await loadChats();
+      if (!alive) return;
+      setChats(rows);
+      if (rows.length) setActiveId(rows[0].id);
+    })();
+    return () => { alive = false; };
+  }, [loadChats]);
+
+  // Load the active conversation's messages whenever it changes.
+  useEffect(() => {
+    let alive = true;
+    if (!activeId) { setMessages([]); return undefined; }
+    (async () => {
+      try {
+        const rows = await db.rpc('get_homebuilding_chat_messages', { p_chat_id: activeId });
+        if (alive) setMessages((rows || []).map((r) => ({ role: r.role, content: r.content })));
+      } catch { if (alive) setMessages([]); }
+    })();
+    return () => { alive = false; };
+  }, [activeId, db]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy]);
 
+  const refreshChats = async () => { setChats(await loadChats()); };
+  const newChat = () => { setActiveId(null); setMessages([]); setError(''); setConfirmDel(false); setRenaming(false); };
+  const activeChat = chats.find((c) => c.id === activeId) || null;
+
   const send = async (text) => {
     const content = (text ?? input).trim();
     if (!content || busy) return;
-    setError('');
-    setInput('');
-    const next = [...messages, { role: 'user', content }];
-    setMessages(next);
+    setError(''); setInput(''); setConfirmDel(false);
     setBusy(true);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 95000);
     try {
+      // Make sure a conversation row exists (lazy-create on the first message).
+      let chatId = activeId;
+      if (!chatId) {
+        const c = await db.rpc('create_homebuilding_chat', { p_title: content.slice(0, 60) });
+        chatId = c?.id || null;
+        if (chatId) { setActiveId(chatId); setChats((prev) => [c, ...prev]); }
+      }
+      const next = [...messages, { role: 'user', content }];
+      setMessages(next);
+      if (chatId) { try { await db.rpc('add_homebuilding_chat_message', { p_chat_id: chatId, p_role: 'user', p_content: content }); } catch { /* non-fatal */ } }
+
       const auth = await getAuthHeader();
       const res = await fetch('/api/homebuilding-chat', {
         method: 'POST',
@@ -459,6 +507,8 @@ function BuildCopilot({ deal }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       setMessages((m) => [...m, { role: 'assistant', content: data.reply }]);
+      if (chatId) { try { await db.rpc('add_homebuilding_chat_message', { p_chat_id: chatId, p_role: 'assistant', p_content: data.reply }); } catch { /* non-fatal */ } }
+      refreshChats();
     } catch (e) {
       setError(e.name === 'AbortError'
         ? 'That took too long — try a shorter question, or one that doesn’t need a web lookup.'
@@ -469,20 +519,79 @@ function BuildCopilot({ deal }) {
     }
   };
 
+  const startRename = () => { if (!activeChat) return; setTitleDraft(activeChat.title); setRenaming(true); };
+  const saveRename = async () => {
+    const t = titleDraft.trim();
+    setRenaming(false);
+    if (!activeId || !t) return;
+    try { await db.rpc('rename_homebuilding_chat', { p_id: activeId, p_title: t }); } catch { /* non-fatal */ }
+    refreshChats();
+  };
+  const removeChat = async () => {
+    if (!activeId) return;
+    if (!confirmDel) { setConfirmDel(true); return; }
+    setConfirmDel(false);
+    try { await db.rpc('delete_homebuilding_chat', { p_id: activeId }); } catch { /* non-fatal */ }
+    const rows = await loadChats();
+    setChats(rows);
+    setActiveId(rows.length ? rows[0].id : null);
+    setMessages([]);
+  };
+
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
+
+  const barBtn = (extra) => ({
+    height: 32, padding: '0 12px', borderRadius: 8, fontFamily: MONO, fontSize: 12, cursor: 'pointer',
+    background: C.paper, color: C.muted, border: `1px solid ${C.line}`, ...extra,
+  });
 
   return (
     <section style={{ marginTop: 32 }}>
       <Eyebrow sheet="AI">Build copilot — ask anything</Eyebrow>
       <div className="hba-pad-md" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
-        <p style={{ fontSize: 13, color: C.muted, marginTop: 0, marginBottom: 14 }}>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 0, marginBottom: 12 }}>
           A construction-planning specialist — buying land, planning, full-project costs, scheduling, the Utah market,
           financing, sales, value-add, and Utah building/plumbing/electrical code norms. It can see the deal-modeler
-          numbers below and can search the web for current figures (rates, prices, code editions). Answers can take a
-          few seconds when it looks something up.
+          numbers below and can search the web for current figures. Conversations are saved — rename, switch, or start new.
         </p>
+
+        {/* conversation toolbar */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          {renaming ? (
+            <input
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={saveRename}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setRenaming(false); }}
+              autoFocus
+              style={{ flex: 1, minWidth: 160, height: 32, padding: '0 10px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.paper, border: `1px solid ${C.amber}`, borderRadius: 8, outline: 'none' }}
+            />
+          ) : (
+            <select
+              value={activeId || ''}
+              onChange={(e) => { setActiveId(e.target.value || null); setConfirmDel(false); }}
+              style={{ flex: 1, minWidth: 160, height: 32, padding: '0 8px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.paper, border: `1px solid ${C.line}`, borderRadius: 8 }}
+            >
+              {activeId === null && <option value="">New chat (unsaved)</option>}
+              {chats.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          )}
+          <button onClick={newChat} style={barBtn({ color: C.steel })}>+ New</button>
+          <button onClick={startRename} disabled={!activeChat} style={barBtn(activeChat ? {} : { opacity: 0.45, cursor: 'default' })}>Rename</button>
+          <button
+            onClick={removeChat}
+            onBlur={() => setConfirmDel(false)}
+            disabled={!activeChat}
+            style={barBtn(
+              !activeChat ? { opacity: 0.45, cursor: 'default' }
+                : confirmDel ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' } : {},
+            )}
+          >
+            {confirmDel ? 'Confirm' : 'Delete'}
+          </button>
+        </div>
 
         {/* message log */}
         <div ref={scrollRef} style={{
@@ -632,6 +741,7 @@ function Range3({ label, lo, mid, hi }) {
 }
 
 function AIEstimator({ region }) {
+  const { db } = useAuth();
   const [bedrooms, setBedrooms] = useState(4);
   const [bathrooms, setBathrooms] = useState(3);
   const [sqft, setSqft] = useState(2500);
@@ -642,8 +752,17 @@ function AIEstimator({ region }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [confirmDelEst, setConfirmDelEst] = useState(null);
+  const [renameId, setRenameId] = useState(null);
+  const [labelDraft, setLabelDraft] = useState('');
 
-  // Clear a prior estimate when the market changes — it was priced for the old region.
+  const loadHistory = useCallback(async () => {
+    try { setHistory((await db.rpc('list_homebuilding_estimates')) || []); } catch { /* non-fatal */ }
+  }, [db]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  // Clear the on-screen estimate when the market changes — it was priced for the old region.
   useEffect(() => { setResult(null); setError(''); }, [region]);
 
   const toggleFeature = (f) =>
@@ -664,12 +783,49 @@ function AIEstimator({ region }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       setResult(data.estimate);
+      // Auto-save each estimate to history.
+      const label = `${REGIONS[region].label} · ${Math.round(sqft).toLocaleString('en-US')}sf · ${bedrooms}bd/${bathrooms}ba`;
+      try {
+        await db.rpc('save_homebuilding_estimate', {
+          p_label: label, p_region: region,
+          p_spec: data.spec || { region, bedrooms, bathrooms, sqft, stories, finish, landAcres, features },
+          p_estimate: data.estimate,
+        });
+        loadHistory();
+      } catch { /* non-fatal */ }
     } catch (e) {
       setError(e.name === 'AbortError' ? 'That took too long — try again.' : (e.message || 'Estimate failed — try again.'));
     } finally {
       clearTimeout(timer);
       setBusy(false);
     }
+  };
+
+  const viewEstimate = (item) => {
+    setResult(item.estimate);
+    setError('');
+    const s = item.spec || {};
+    if (s.bedrooms) setBedrooms(s.bedrooms);
+    if (s.bathrooms) setBathrooms(s.bathrooms);
+    if (s.sqft) setSqft(s.sqft);
+    if (s.stories) setStories(s.stories);
+    if (s.finish) setFinish(s.finish);
+    if (s.landAcres != null) setLandAcres(s.landAcres);
+    if (Array.isArray(s.features)) setFeatures(s.features);
+  };
+  const saveEstRename = async () => {
+    const t = labelDraft.trim();
+    const id = renameId;
+    setRenameId(null);
+    if (!id || !t) return;
+    try { await db.rpc('rename_homebuilding_estimate', { p_id: id, p_label: t }); } catch { /* non-fatal */ }
+    loadHistory();
+  };
+  const removeEstimate = async (id) => {
+    if (confirmDelEst !== id) { setConfirmDelEst(id); return; }
+    setConfirmDelEst(null);
+    try { await db.rpc('delete_homebuilding_estimate', { p_id: id }); } catch { /* non-fatal */ }
+    loadHistory();
   };
 
   const sliders = [
@@ -796,6 +952,51 @@ function AIEstimator({ region }) {
             <p style={{ marginTop: 14, fontFamily: MONO, fontSize: 10.5, color: C.faint }}>
               AI estimate from market cost anchors + your spec — validate against local subs and recent comps before committing.
             </p>
+          </div>
+        )}
+
+        {/* saved estimate history */}
+        {history.length > 0 && (
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${C.line}` }}>
+            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 10 }}>
+              Saved estimates ({history.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {history.map((h) => (
+                <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, padding: '10px 12px', background: C.paper, border: `1px solid ${C.line}` }}>
+                  {renameId === h.id ? (
+                    <input
+                      value={labelDraft}
+                      onChange={(e) => setLabelDraft(e.target.value)}
+                      onBlur={saveEstRename}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveEstRename(); if (e.key === 'Escape') setRenameId(null); }}
+                      autoFocus
+                      style={{ flex: 1, height: 30, padding: '0 8px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.card, border: `1px solid ${C.amber}`, borderRadius: 6, outline: 'none' }}
+                    />
+                  ) : (
+                    <button onClick={() => viewEstimate(h)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      <div style={{ fontFamily: DISP, fontWeight: 700, fontSize: 14, color: C.ink }}>{h.label}</div>
+                      <div style={{ fontFamily: MONO, fontSize: 11, color: C.muted, marginTop: 2 }}>
+                        Build {fmt$(h.estimate?.build_cost?.expected)} · ARV {fmt$(h.estimate?.arv?.expected)}
+                      </div>
+                    </button>
+                  )}
+                  <button onClick={() => { setLabelDraft(h.label); setRenameId(h.id); }}
+                    style={{ height: 30, padding: '0 10px', borderRadius: 6, fontFamily: MONO, fontSize: 11, cursor: 'pointer', background: C.card, color: C.muted, border: `1px solid ${C.line}` }}>
+                    Rename
+                  </button>
+                  <button onClick={() => removeEstimate(h.id)} onBlur={() => setConfirmDelEst(null)}
+                    style={{
+                      height: 30, padding: '0 10px', borderRadius: 6, fontFamily: MONO, fontSize: 11, cursor: 'pointer',
+                      background: confirmDelEst === h.id ? '#fef2f2' : C.card,
+                      color: confirmDelEst === h.id ? '#dc2626' : C.muted,
+                      border: `1px solid ${confirmDelEst === h.id ? '#fecaca' : C.line}`,
+                    }}>
+                    {confirmDelEst === h.id ? 'Confirm' : 'Delete'}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

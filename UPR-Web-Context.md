@@ -1871,3 +1871,50 @@ package.json  — added "test": "vitest run" and vitest devDependency.
 that manifests as "Invalid hook call" in OfflineStatusPill. Clearing
 `node_modules/.vite` and restarting usually fixes it. Production bundle
 (`npm run build` / Cloudflare Pages) is unaffected.
+
+---
+
+## Homebuilding Entry Analysis (Moroni-only)
+
+Private planning page at `/homebuilding` (gated to `moroni@utah-pros.com` via `MoroniRoute`
+in `App.jsx`; side-nav link in `Sidebar.jsx` + desktop overflow entry in `navItems.jsx`).
+Rendered by `src/pages/HomebuildingAnalysis.jsx` (self-contained: inline styles + scoped
+`<style>`, inline-SVG icons, hand-built SVG radar — no recharts/lucide/Tailwind). Sections:
+three entry paths, per-market profiles, **Build Copilot** (AI chat), **Deal Modeler**,
+**AI Build & Value Estimator**, financing ladder, decisions, risk.
+
+### AI workers (Cloudflare Pages Functions)
+Both reuse the existing `ANTHROPIC_API_KEY` (Preview + Production) and re-check the logged-in
+user's email server-side (`moroni@utah-pros.com`).
+- `functions/api/homebuilding-chat.js` — Build Copilot chat. **Sonnet 4.6** + the `web_search`
+  server tool (current rates/prices/code editions), handles `pause_turn`. Non-streaming, so it
+  must finish inside Cloudflare's ~100s timeout — hence Sonnet + capped `max_uses`(3)/continuations(2);
+  the frontend also has a 95s AbortController. Gets the live deal-modeler state as context.
+- `functions/api/homebuilding-estimate.js` — AI estimator. **Sonnet 4.6**, single forced-tool
+  structured-output call (no web search). Inputs: region, beds, baths, sqft, stories, finish,
+  land, features → `{ build_cost{low,expected,high}, cost_per_sf, breakdown[], arv{...},
+  feature_notes[], confidence, assumptions[], notes[] }`. ARV anchored to comps, capped at the
+  neighborhood ceiling.
+
+### History tables (new) — chat + estimate persistence
+RLS enabled, **no public table policies**; access only via SECURITY DEFINER RPCs granted to
+`authenticated`. Read/written from the frontend via `db.rpc(...)` (workers do not persist).
+- `homebuilding_chats` — `id UUID PK, title TEXT, created_at, updated_at` (renameable conversations)
+- `homebuilding_chat_messages` — `id UUID PK, chat_id UUID FK→homebuilding_chats ON DELETE CASCADE, role TEXT('user'|'assistant'), content TEXT, created_at`
+- `homebuilding_estimates` — `id UUID PK, label TEXT, region TEXT, spec JSONB, estimate JSONB, created_at`
+
+### History RPCs (new)
+```
+list_homebuilding_chats()                                  -- ordered by updated_at desc
+create_homebuilding_chat(p_title)                          -- returns the new chat row
+rename_homebuilding_chat(p_id, p_title)
+delete_homebuilding_chat(p_id)                             -- cascades messages
+get_homebuilding_chat_messages(p_chat_id)                  -- ordered by created_at
+add_homebuilding_chat_message(p_chat_id, p_role, p_content) -- also touches chats.updated_at
+save_homebuilding_estimate(p_label, p_region, p_spec, p_estimate) -- returns the saved row
+list_homebuilding_estimates()                              -- newest first, limit 100
+rename_homebuilding_estimate(p_id, p_label)
+delete_homebuilding_estimate(p_id)
+```
+The Build Copilot loads/saves conversations (switch, rename, new, two-click delete); the AI
+Estimator auto-saves every run and shows a Saved-estimates list (view, rename, two-click delete).
