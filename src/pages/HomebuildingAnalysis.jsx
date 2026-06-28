@@ -35,6 +35,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { getAuthHeader } from '@/lib/realtime';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // ─── SECTION: palette (job-cost ledger identity) ───
 const C = {
@@ -1043,6 +1044,7 @@ const STYLES = `
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function HomebuildingAnalysis() {
+  const navigate = useNavigate();
   const [active, setActive] = useState('custom');
   const path = PATHS[active];
 
@@ -1102,6 +1104,12 @@ export default function HomebuildingAnalysis() {
             <p style={{ marginTop: 8, opacity: 0.85, fontSize: 14, maxWidth: 560 }}>
               Three ways in, what each costs you, and a live model of where your capital actually goes.
             </p>
+            <button onClick={() => navigate('/homebuilding/build')}
+              style={{ marginTop: 14, height: 42, padding: '0 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                background: C.amber, color: '#fff', fontFamily: DISP, fontWeight: 800, fontSize: 14,
+                display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(194,116,28,0.3)' }}>
+              + New Build — open the build simulator →
+            </button>
             <div style={{ marginTop: 20 }}>
               <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: 1.5, opacity: 0.7, textTransform: 'uppercase', marginBottom: 7 }}>Market</div>
               <div style={{ display: 'inline-flex', borderRadius: 8, padding: 4, background: 'rgba(255,255,255,0.12)' }}>

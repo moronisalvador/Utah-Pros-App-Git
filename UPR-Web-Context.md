@@ -1918,3 +1918,43 @@ delete_homebuilding_estimate(p_id)
 ```
 The Build Copilot loads/saves conversations (switch, rename, new, two-click delete); the AI
 Estimator auto-saves every run and shows a Saved-estimates list (view, rename, two-click delete).
+
+
+---
+
+## New Build simulator (Moroni-only)
+
+Full-page tool at `/homebuilding/build` (Moroni-only via `MoroniRoute`), reached from a "+ New Build"
+button in the Homebuilding Analysis title block. Rendered by `src/pages/NewBuildSimulator.jsx`.
+Numbers-first build planner: a standard Utah template seeds an editable itemized budget, a
+schedule (gantt), a construction-loan draw schedule, financing/returns, save/load projects, optional
+AI tuning, AI ARV estimate, and PDF export.
+
+### Engine — `src/lib/buildTemplate.js`
+Pure data + math (no UI). `PHASES` (trade line items w/ cost share, duration weeks, draw milestone),
+`FEATURES`, `DRAW_STAGES`. Functions: `computeLineItems(spec)` (trade lines total region/finish
+$/sf × sqft exactly; finish/story/bath scaling; feature add-ons), `computeSchedule`, `computeDraws`
+(sum to hard total), `computeFinancing` (mirrors the deal-modeler formula), `buildPlanFromSpec`,
+`defaultSpec`. Hard-cost $/sf already includes GC overhead & profit; soft + contingency are separate %.
+
+### Workers (Cloudflare Pages Functions) — Moroni-gated, reuse ANTHROPIC_API_KEY
+- `functions/api/homebuilding-plan-tune.js` — Sonnet 4.6, forced-tool structured output. Tunes the
+  template baseline (per-line totals + phase durations + soft/contingency %) to the spec/submarket.
+- `functions/api/homebuilding-build-plan-pdf.js` — pdf-lib; renders a multi-section Build Plan PDF
+  (cover, spec, budget table, schedule, draws, financing) and returns application/pdf bytes for
+  direct browser download (no storage). WinAnsi-sanitized text.
+
+### Table `homebuilding_build_projects` (new)
+`id UUID PK, label TEXT, region TEXT, spec JSONB, plan JSONB (lineItems/schedule/arv), created_at,
+updated_at`. RLS on, no public table policies; access via SECURITY DEFINER RPCs granted to
+`authenticated`:
+```
+list_homebuilding_build_projects()
+get_homebuilding_build_project(p_id)
+save_homebuilding_build_project(p_id, p_label, p_region, p_spec, p_plan)  -- null id = insert, else upsert
+rename_homebuilding_build_project(p_id, p_label)
+duplicate_homebuilding_build_project(p_id)
+delete_homebuilding_build_project(p_id)
+```
+Derived numbers (hard total, draws, months, financing) are recomputed on the page from the stored
+lineItems/schedule/arv; only those are persisted in `plan`.

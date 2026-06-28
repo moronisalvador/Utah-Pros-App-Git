@@ -76,6 +76,7 @@ const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
 const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
+const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -263,6 +264,9 @@ function WebRoutes() {
         {/* Homebuilding Entry Analysis — private to Moroni (side-nav link is Moroni-only too) */}
         <Route path="homebuilding" element={
           <MoroniRoute><ErrorBoundary section="Homebuilding Analysis"><HomebuildingAnalysis /></ErrorBoundary></MoroniRoute>
+        } />
+        <Route path="homebuilding/build" element={
+          <MoroniRoute><ErrorBoundary section="New Build Simulator"><NewBuildSimulator /></ErrorBoundary></MoroniRoute>
         } />
         <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
