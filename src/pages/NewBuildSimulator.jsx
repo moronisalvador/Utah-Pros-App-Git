@@ -35,6 +35,7 @@ import {
   REGIONS, SUBMARKETS, FINISH_LEVELS, FEATURES as FEATURE_DEFS, defaultSpec, buildPlanFromSpec,
   computeSchedule, computeDraws, computeFinancing, computeArvBaseline,
   lineItemsTotal, scheduleWeeks, scheduleMonths, round2,
+  ROOM_TYPES, roomDef, floorplanTotals,
 } from '@/lib/buildTemplate';
 
 const C = {
@@ -49,7 +50,7 @@ const fmt$ = (n) => (Number.isFinite(Number(n)) ? '$' + round0(n).toLocaleString
 const fmtPct = (n) => (Number.isFinite(Number(n)) ? (n * 100).toFixed(1) + '%' : '—');
 const FEATURE_NAMES = FEATURE_DEFS.map(([n]) => n);
 let customSeq = 0; // monotonic id so rapidly-added custom lines never collide on key
-const TABS = ['Spec', 'Budget', 'Schedule', 'Draws', 'Financing', 'Summary'];
+const TABS = ['Spec', 'Floor Plan', 'Budget', 'Schedule', 'Draws', 'Financing', 'Summary'];
 
 // ─── SECTION: small inputs ───
 function NumIn({ value, onChange, step = 1, min, max, width = 90, prefix }) {
@@ -90,7 +91,7 @@ export default function NewBuildSimulator() {
   const [activeId, setActiveId] = useState(null);
   const [label, setLabel] = useState('Untitled build');
   const [spec, setSpec] = useState(() => defaultSpec('wasatch'));
-  const [plan, setPlan] = useState(() => buildPlanFromSpec(defaultSpec('wasatch')));
+  const [plan, setPlan] = useState(() => ({ ...buildPlanFromSpec(defaultSpec('wasatch')), floorplan: { rooms: [] } }));
   const [tab, setTab] = useState('Spec');
   const [busy, setBusy] = useState('');            // '', 'save', 'tune', 'arv', 'pdf'
   const [error, setError] = useState('');
@@ -126,9 +127,10 @@ export default function NewBuildSimulator() {
 
   const openProject = (row) => {
     const s = { ...defaultSpec(row.region), ...(row.spec || {}) };
+    const fp = (row.plan && row.plan.floorplan && Array.isArray(row.plan.floorplan.rooms)) ? row.plan.floorplan : { rooms: [] };
     const p = (row.plan && Array.isArray(row.plan.lineItems) && row.plan.lineItems.length)
-      ? { lineItems: row.plan.lineItems, schedule: row.plan.schedule || computeSchedule(s), arv: row.plan.arv || 0 }
-      : { lineItems: buildPlanFromSpec(s).lineItems, schedule: computeSchedule(s), arv: 0 };
+      ? { lineItems: row.plan.lineItems, schedule: row.plan.schedule || computeSchedule(s), arv: row.plan.arv || 0, floorplan: fp }
+      : { lineItems: buildPlanFromSpec(s).lineItems, schedule: computeSchedule(s), arv: 0, floorplan: fp };
     setActiveId(row.id); setLabel(row.label || 'Untitled build'); setSpec(s); setPlan(p);
     setTuneNotes(null); setArvRange(null); setError(''); setConfirmDel(null);
     savedSnap.current = snap(row.label || 'Untitled build', s, p);
@@ -137,7 +139,7 @@ export default function NewBuildSimulator() {
   const newProject = () => {
     const s = defaultSpec(spec.region);
     const fresh = buildPlanFromSpec(s);
-    const p = { lineItems: fresh.lineItems, schedule: fresh.schedule, arv: 0 };
+    const p = { lineItems: fresh.lineItems, schedule: fresh.schedule, arv: 0, floorplan: { rooms: [] } };
     setActiveId(null); setLabel('Untitled build'); setSpec(s); setPlan(p);
     setTab('Spec'); setTuneNotes(null); setArvRange(null); setError(''); setConfirmDel(null);
     savedSnap.current = ''; // unsaved
@@ -159,6 +161,20 @@ export default function NewBuildSimulator() {
     const fresh = buildPlanFromSpec(spec);
     setPlan((p) => ({ ...p, lineItems: fresh.lineItems, schedule: fresh.schedule }));
     setTuneNotes(null);
+  };
+
+  const setFloorplan = (updater) => setPlan((p) => ({ ...p, floorplan: typeof updater === 'function' ? updater(p.floorplan || { rooms: [] }) : updater }));
+
+  // "Sync to spec" — push the floor plan's totals into the spec AND recompute costs.
+  const syncToSpec = () => {
+    const t = floorplanTotals(plan.floorplan);
+    if (!t.sqft) return;
+    const nextSpec = { ...spec, sqft: t.sqft, bedrooms: t.bedrooms, bathrooms: t.bathrooms };
+    setSpec(nextSpec);
+    const fresh = buildPlanFromSpec(nextSpec);
+    setPlan((p) => ({ ...p, lineItems: fresh.lineItems, schedule: fresh.schedule }));
+    setTuneNotes(null);
+    setTab('Budget');
   };
 
   const setLine = (i, patch) => setPlan((p) => {
@@ -354,6 +370,10 @@ export default function NewBuildSimulator() {
                 <SpecTab spec={spec} setSpecField={setSpecField} onGenerate={generateFromTemplate} />
               )}
 
+              {tab === 'Floor Plan' && (
+                <FloorPlanTab floorplan={plan.floorplan} setFloorplan={setFloorplan} onSync={syncToSpec} />
+              )}
+
               {tab === 'Budget' && (
                 <BudgetTab plan={plan} setLine={setLine} addLine={addLine} removeLine={removeLine}
                   hardTotal={hardTotal} costPerSf={costPerSf} spec={spec} setSpecField={setSpecField}
@@ -425,6 +445,8 @@ export default function NewBuildSimulator() {
           .nbs-grid { grid-template-columns: 1fr 300px !important; }
           .nbs-grid > div:last-child { order: 2; }
         }
+        .fp-grid { grid-template-columns: 1fr; }
+        @media (min-width: 980px) { .fp-grid { grid-template-columns: auto 1fr; } }
       `}</style>
     </div>
   );
@@ -700,6 +722,159 @@ function SummaryTab({ label, spec, plan, fin, hardTotal, costPerSf, weeks, month
       <button onClick={onExport} disabled={!!busy} style={{ alignSelf: 'start', height: 40, padding: '0 22px', borderRadius: 8, border: 'none', cursor: 'pointer', background: busy ? C.lineSoft : C.amber, color: busy ? C.faint : '#fff', fontFamily: SANS, fontWeight: 700, fontSize: 14 }}>
         {busy === 'pdf' ? 'Building PDF…' : 'Export Build Plan PDF'}
       </button>
+    </div>
+  );
+}
+
+// ─── SECTION: Floor Plan tab (drag-and-drop + stretch/move) ───
+const FP_PXFT = 9, FP_CW = 72, FP_CH = 52; // px/ft, canvas width/height in feet
+const fpSnap = (v) => Math.round(v);
+const fpClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function FloorPlanTab({ floorplan, setFloorplan, onSync }) {
+  const canvasRef = useRef(null);
+  const dragRef = useRef(null);
+  const dragNewRef = useRef(false); // true while dragging a palette tile (suppresses the click-to-add)
+  const [selId, setSelId] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const fp = floorplan && Array.isArray(floorplan.rooms) ? floorplan : { rooms: [] };
+  const rooms = fp.rooms;
+  const t = floorplanTotals(fp);
+  const sel = rooms.find((r) => r.id === selId) || null;
+
+  const setRoom = (id, patch) => setFloorplan((f) => ({ ...f, rooms: (f.rooms || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  const removeRoom = (id) => { setFloorplan((f) => ({ ...f, rooms: (f.rooms || []).filter((r) => r.id !== id) })); setSelId(null); };
+  const addRoom = (typeKey, xFt, yFt) => {
+    const d = roomDef(typeKey); if (!d) return;
+    const id = `r${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const x = fpClamp(fpSnap(xFt - d.w / 2), 0, FP_CW - d.w);
+    const y = fpClamp(fpSnap(yFt - d.h / 2), 0, FP_CH - d.h);
+    setFloorplan((f) => ({ ...f, rooms: [...(f.rooms || []), { id, type: typeKey, label: d.name, x, y, w: d.w, h: d.h }] }));
+    setSelId(id);
+  };
+
+  // Window-level pointer move/up drive move + resize (set up once; updates go through stable setPlan).
+  useEffect(() => {
+    const onMove = (e) => {
+      const drag = dragRef.current; if (!drag) return;
+      const dxFt = (e.clientX - drag.px) / FP_PXFT;
+      const dyFt = (e.clientY - drag.py) / FP_PXFT;
+      const o = drag.orig;
+      if (drag.mode === 'move') {
+        setRoom(drag.id, { x: fpClamp(fpSnap(o.x + dxFt), 0, FP_CW - o.w), y: fpClamp(fpSnap(o.y + dyFt), 0, FP_CH - o.h) });
+      } else if (drag.mode === 'resize') {
+        setRoom(drag.id, { w: fpClamp(fpSnap(o.w + dxFt), 4, FP_CW - o.x), h: fpClamp(fpSnap(o.h + dyFt), 4, FP_CH - o.y) });
+      }
+    };
+    const onUp = () => { dragRef.current = null; };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startMove = (e, r) => { e.preventDefault(); setSelId(r.id); dragRef.current = { mode: 'move', id: r.id, px: e.clientX, py: e.clientY, orig: { ...r } }; };
+  const startResize = (e, r) => { e.preventDefault(); e.stopPropagation(); setSelId(r.id); dragRef.current = { mode: 'resize', id: r.id, px: e.clientX, py: e.clientY, orig: { ...r } }; };
+  const onDrop = (e) => {
+    e.preventDefault();
+    const typeKey = e.dataTransfer.getData('roomType'); if (!typeKey || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    addRoom(typeKey, (e.clientX - rect.left) / FP_PXFT, (e.clientY - rect.top) / FP_PXFT);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ fontSize: 13, color: C.muted }}>
+        Drag a room onto the grid, then drag it to move and pull the corner to resize. 1 square = 1 ft.
+        Then <b>Sync to spec</b> to cost it out.
+      </div>
+
+      {/* palette */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {ROOM_TYPES.map((d) => (
+          <div key={d.key} draggable
+            onDragStart={(e) => { dragNewRef.current = true; e.dataTransfer.setData('roomType', d.key); e.dataTransfer.effectAllowed = 'copy'; }}
+            onDragEnd={() => { dragNewRef.current = false; }}
+            onClick={() => { if (dragNewRef.current) { dragNewRef.current = false; return; } addRoom(d.key, FP_CW / 2, FP_CH / 2); }}
+            title="Drag onto the grid (or click to add)"
+            style={{ cursor: 'grab', userSelect: 'none', fontFamily: MONO, fontSize: 11.5, padding: '6px 10px', borderRadius: 8, background: d.fill, border: `1px solid ${C.line}`, color: C.ink }}>
+            {d.name}{d.bed ? ` · ${d.bed}bd` : ''}{d.bath ? ` · ${d.bath}ba` : ''}
+          </div>
+        ))}
+      </div>
+
+      <div className="fp-grid" style={{ display: 'grid', gap: 14 }}>
+        {/* canvas (horizontally scrollable on small screens) */}
+        <div style={{ overflowX: 'auto' }}>
+          <div ref={canvasRef}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+            onDrop={onDrop}
+            onPointerDown={(e) => { if (e.target === canvasRef.current) setSelId(null); }}
+            style={{
+              position: 'relative', width: FP_CW * FP_PXFT, height: FP_CH * FP_PXFT, flexShrink: 0,
+              background: '#fafbfc', border: `1px solid ${C.line}`, borderRadius: 10, touchAction: 'none',
+              backgroundImage: `linear-gradient(${C.lineSoft} 1px, transparent 1px), linear-gradient(90deg, ${C.lineSoft} 1px, transparent 1px)`,
+              backgroundSize: `${FP_PXFT}px ${FP_PXFT}px`,
+            }}>
+            {rooms.map((r) => {
+              const d = roomDef(r.type) || {};
+              const on = r.id === selId;
+              return (
+                <div key={r.id} onPointerDown={(e) => startMove(e, r)}
+                  style={{
+                    position: 'absolute', left: r.x * FP_PXFT, top: r.y * FP_PXFT, width: r.w * FP_PXFT, height: r.h * FP_PXFT,
+                    background: d.fill || '#eee', border: `${on ? 2 : 1}px solid ${on ? C.steel : 'rgba(21,32,44,0.25)'}`,
+                    borderRadius: 4, boxSizing: 'border-box', cursor: 'move', overflow: 'hidden',
+                    display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+                  }}>
+                  <div style={{ fontFamily: SANS, fontSize: 11, fontWeight: 700, color: C.ink, textAlign: 'center', lineHeight: 1.1, pointerEvents: 'none', padding: '0 2px' }}>{r.label}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 9.5, color: C.muted, pointerEvents: 'none' }}>{r.w}×{r.h}</div>
+                  <div onPointerDown={(e) => startResize(e, r)}
+                    style={{ position: 'absolute', right: -1, bottom: -1, width: 14, height: 14, cursor: 'nwse-resize', background: on ? C.steel : 'rgba(21,32,44,0.35)', borderRadius: '3px 0 3px 0' }} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* side: totals + selected room */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ borderRadius: 10, padding: 14, background: C.paper, border: `1px solid ${C.line}` }}>
+            <KV k="Conditioned sqft" v={`${t.sqft.toLocaleString('en-US')} sf`} strong />
+            <KV k="Bedrooms" v={t.bedrooms} />
+            <KV k="Bathrooms" v={t.bathrooms} />
+            <KV k="Rooms placed" v={t.rooms} />
+            <button onClick={onSync} disabled={!t.sqft}
+              style={{ marginTop: 10, width: '100%', height: 38, borderRadius: 8, border: 'none', cursor: t.sqft ? 'pointer' : 'default', background: t.sqft ? C.amber : C.lineSoft, color: t.sqft ? '#fff' : C.faint, fontFamily: SANS, fontWeight: 700, fontSize: 13 }}>
+              Sync to spec → recalc costs
+            </button>
+            <div style={{ fontFamily: MONO, fontSize: 10, color: C.faint, marginTop: 6 }}>Garage &amp; covered patio are excluded from conditioned sqft.</div>
+          </div>
+
+          {sel && (
+            <div style={{ borderRadius: 10, padding: 14, background: C.card, border: `1px solid ${C.line}` }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 0.5, color: C.faint, textTransform: 'uppercase', marginBottom: 8 }}>Selected room</div>
+              <Field label="Label"><input value={sel.label} onChange={(e) => setRoom(sel.id, { label: e.target.value })} style={selStyle} /></Field>
+              <div style={{ height: 8 }} />
+              <Field label="Type">
+                <select value={sel.type} onChange={(e) => { const d = roomDef(e.target.value); const wasDefault = sel.label === (roomDef(sel.type) || {}).name; setRoom(sel.id, { type: e.target.value, ...(wasDefault && d ? { label: d.name } : {}) }); }} style={selStyle}>
+                  {ROOM_TYPES.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
+                </select>
+              </Field>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <Field label="Width (ft)"><NumIn value={sel.w} min={4} max={FP_CW} width={70} onChange={(v) => setRoom(sel.id, { w: fpClamp(Math.round(v), 4, FP_CW - sel.x) })} /></Field>
+                <Field label="Height (ft)"><NumIn value={sel.h} min={4} max={FP_CH} width={70} onChange={(v) => setRoom(sel.id, { h: fpClamp(Math.round(v), 4, FP_CH - sel.y) })} /></Field>
+              </div>
+              <button onClick={() => { if (!confirmDel) { setConfirmDel(true); return; } setConfirmDel(false); removeRoom(sel.id); }} onBlur={() => setConfirmDel(false)}
+                style={{ marginTop: 12, height: 32, padding: '0 14px', borderRadius: 8, cursor: 'pointer', fontFamily: MONO, fontSize: 12, background: confirmDel ? '#fef2f2' : C.card, color: confirmDel ? '#dc2626' : C.muted, border: `1px solid ${confirmDel ? '#fecaca' : C.line}` }}>
+                {confirmDel ? 'Confirm delete' : 'Delete room'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

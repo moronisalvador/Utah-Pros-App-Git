@@ -1968,3 +1968,12 @@ the typical lot and scales the build cost (`submarketMult`). `computeArvBaseline
 comps-based ARV ("City comp ARV" button) from `arvPsf`; the AI estimate (now passed the submarket)
 refines it.
 
+### Floor-plan builder (New Build → "Floor Plan" tab)
+Drag room tiles from a palette onto a 1-ft grid (HTML5 DnD), then drag to move / pull the corner to
+resize (pointer events; window-level move/up driven by a ref). Room model in `buildTemplate.js`:
+`ROOM_TYPES` (each with fill, bed, bath, conditioned, default w/h ft), `roomDef`, and
+`floorplanTotals(fp)` → { conditioned sqft, bedrooms, bathrooms, rooms }. Garage + covered patio are
+excluded from conditioned sqft. The plan is stored in `plan.floorplan` (persists via the existing
+build-project RPC). **Sync to spec** writes sqft/bd/ba into the Spec and regenerates the budget +
+schedule from it (`buildPlanFromSpec`), so building a plan auto-costs it.
+
