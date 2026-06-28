@@ -104,17 +104,17 @@ export const DRAW_STAGES = [
 
 // Feature → extra hard cost. {ls: flat $} or {perBasementSf: $/sf of basement}; some scale with finish.
 export const FEATURES = [
-  ['Finished basement', { perBasementSf: 55 }],
-  ['3-car garage', { ls: 18000 }],
-  ['RV garage / pad', { ls: 22000 }],
-  ['Casita / ADU', { ls: 60000 }],
-  ['Pool', { ls: 65000 }],
-  ['Hot tub / spa', { ls: 12000 }],
-  ['Solar', { ls: 22000 }],
-  ['Smart home', { ls: 9000 }],
-  ['Covered outdoor living', { ls: 16000 }],
-  ['Gourmet kitchen upgrade', { ls: 28000 }],
-  ['Office / flex room', { ls: 7000 }],
+  ['Finished basement', { perBasementSf: 55, draw: 2 }],
+  ['3-car garage', { ls: 18000, draw: 2 }],
+  ['RV garage / pad', { ls: 22000, draw: 2 }],
+  ['Casita / ADU', { ls: 60000, draw: 3 }],
+  ['Pool', { ls: 65000, draw: 6 }],
+  ['Hot tub / spa', { ls: 12000, draw: 6 }],
+  ['Solar', { ls: 22000, draw: 5 }],
+  ['Smart home', { ls: 9000, draw: 5 }],
+  ['Covered outdoor living', { ls: 16000, draw: 5 }],
+  ['Gourmet kitchen upgrade', { ls: 28000, draw: 5 }],
+  ['Office / flex room', { ls: 7000, draw: 4 }],
 ];
 const FEATURE_MAP = Object.fromEntries(FEATURES);
 
@@ -135,9 +135,10 @@ export function computeLineItems(spec) {
   const baths = clamp(Number(spec.bathrooms) || 3, 1, 12);
   const region = REGIONS[spec.region] ? spec.region : 'wasatch';
 
-  const totalHard = baseHardPsf(region, finish, stories) * sqft;
+  const bathMult = 1 + 0.04 * clamp(baths - 2.5, -1, 6); // each bath over ~2.5 adds ~4% (plumbing/fixtures/tile)
+  const totalHard = baseHardPsf(region, finish, stories) * sqft * bathMult;
   const finishPremium = FINISH_MULT[finish];
-  const plumbFactor = 1 + 0.1 * clamp(baths - 2.5, -1, 4);
+  const plumbFactor = 1 + 0.1 * clamp(baths - 2.5, -1, 4); // shifts the mix toward plumbing within the (now bath-scaled) total
 
   const flat = [];
   for (const ph of PHASES) {
@@ -168,7 +169,7 @@ export function computeLineItems(spec) {
     if (def.ls) amt = def.ls * (f.includes('kitchen') || f.includes('Casita') ? finishPremium : 1);
     else if (def.perBasementSf) amt = def.perBasementSf * clamp(Number(spec.basementSf) || Math.round(sqft * 0.5), 0, 8000);
     if (amt > 0) {
-      lines.push({ key: `feat:${f}`, phaseKey: 'features', phase: 'Upgrades & features', label: f, per: 'ls', qty: 1, unit: 'lump', unit_price: round0(amt), total: round0(amt), feature: true });
+      lines.push({ key: `feat:${f}`, phaseKey: 'features', phase: 'Upgrades & features', label: f, per: 'ls', qty: 1, unit: 'lump', unit_price: round0(amt), total: round0(amt), draw: def.draw || 6, feature: true });
     }
   }
 
@@ -202,7 +203,7 @@ export function computeDraws(lineItems, hardTotal) {
   for (const ph of PHASES) byPhase[ph.key] = ph.draw;
   const stageTotals = {};
   for (const l of lineItems || []) {
-    const draw = byPhase[l.phaseKey] || 6;
+    const draw = l.draw ?? byPhase[l.phaseKey] ?? 6;
     stageTotals[draw] = (stageTotals[draw] || 0) + (Number(l.total) || 0);
   }
   const total = hardTotal || lineItemsTotal(lineItems) || 1;

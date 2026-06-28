@@ -48,6 +48,7 @@ const round0 = (n) => Math.round(Number(n) || 0);
 const fmt$ = (n) => (Number.isFinite(Number(n)) ? '$' + round0(n).toLocaleString('en-US') : '—');
 const fmtPct = (n) => (Number.isFinite(Number(n)) ? (n * 100).toFixed(1) + '%' : '—');
 const FEATURE_NAMES = FEATURE_DEFS.map(([n]) => n);
+let customSeq = 0; // monotonic id so rapidly-added custom lines never collide on key
 const TABS = ['Spec', 'Budget', 'Schedule', 'Draws', 'Financing', 'Summary'];
 
 // ─── SECTION: small inputs ───
@@ -57,6 +58,7 @@ function NumIn({ value, onChange, step = 1, min, max, width = 90, prefix }) {
       {prefix && <span style={{ fontFamily: MONO, fontSize: 12, color: C.faint }}>{prefix}</span>}
       <input type="number" value={value} step={step} min={min} max={max}
         onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        onBlur={() => { if (min === undefined && max === undefined) return; const n = Number(value) || 0; const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n)); if (c !== n) onChange(c); }}
         style={{ width, height: 30, padding: '0 8px', fontFamily: MONO, fontSize: 13, color: C.ink,
           background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, outline: 'none' }} />
     </span>
@@ -170,7 +172,7 @@ export default function NewBuildSimulator() {
   });
   const addLine = () => setPlan((p) => ({
     ...p,
-    lineItems: [...p.lineItems, { key: `custom:${Date.now()}`, phaseKey: 'final', phase: 'Custom', label: 'New line item', per: 'ls', qty: 1, unit: 'lump', unit_price: 0, total: 0, custom: true }],
+    lineItems: [...p.lineItems, { key: `custom:${Date.now()}-${customSeq++}`, phaseKey: 'final', phase: 'Custom', label: 'New line item', per: 'ls', qty: 1, unit: 'lump', unit_price: 0, total: 0, custom: true }],
   }));
   const removeLine = (i) => setPlan((p) => ({ ...p, lineItems: p.lineItems.filter((_, idx) => idx !== i) }));
 
