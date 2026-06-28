@@ -73,8 +73,6 @@ const Banknote = (p) => <Svg {...p}><rect width="20" height="12" x="2" y="6" rx=
 const Users = (p) => <Svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Svg>;
 const FileSignature = (p) => <Svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 17c1.5-1.5 3-1.5 3-3a1.5 1.5 0 0 0-3 0" /></Svg>;
 const Building2 = (p) => <Svg {...p}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4M10 10h4M10 14h4M10 18h4" /></Svg>;
-const ShieldCheck = (p) => <Svg {...p}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></Svg>;
-const ScrollText = (p) => <Svg {...p}><path d="M15 12h-5M15 8h-5" /><path d="M19 17V5a2 2 0 0 0-2-2H4" /><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" /></Svg>;
 const AlertTriangle = (p) => <Svg {...p}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z" /><line x1="12" x2="12" y1="9" y2="13" /><line x1="12" x2="12.01" y1="17" y2="17" /></Svg>;
 const Check = (p) => <Svg {...p}><path d="M20 6 9 17l-5-5" /></Svg>;
 
@@ -286,7 +284,6 @@ const LADDER = [
 const DECISIONS = [
   { t: 'Partnership terms + operating agreement', d: 'Equity split, who has final say, capital each puts in, and the buy-sell. This kills more builders than the market does — settle it before the first dollar.' },
   { t: 'Entity structure', d: 'LLC for liability. For spec, a separate LLC per project to ring-fence each build is standard.' },
-  { t: 'License path + qualifier', d: 'B100 or R100 — and the gating question: do you or Mike have the 2 years / 4,000 supervisory hours, or do you take the construction-management-degree route?' },
   { t: 'Insurance + bonding', d: "General liability, builder's risk per project, workers comp, and the $50k state surety bond." },
   { t: 'Product, geography + land sourcing', d: 'Price band, where you build, and how you find lots. Put your learning energy here — sourcing is the hardest skill.' },
 ];
@@ -766,54 +763,6 @@ export default function HomebuildingAnalysis() {
 
         {/* ---------- DECISIONS ---------- */}
         <Decisions />
-
-        {/* ---------- LICENSING ---------- */}
-        <section style={{ marginTop: 32 }}>
-          <Eyebrow sheet="SHT 07">Utah licensing path</Eyebrow>
-          <div className="hba-pad-lg" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
-            <div className="hba-2col" style={{ gap: 24 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {[
-                  [ScrollText, 'License class', 'B100 (no project cap) or R100 (residential ≤4 units + small commercial). Required for any project over $3,000.'],
-                  [ShieldCheck, 'Qualifier — the gate', '2 years / 4,000 hrs construction experience within 10 yrs, ≥1 yr supervisory. A 2- or 4-yr construction-management degree also qualifies.'],
-                  [Check, 'Pre-license course', '25-hour DOPL-approved course, taken in person.'],
-                  [Check, 'Exam', 'Utah Business & Law exam, 70% to pass. No trade exam required since 2019.'],
-                ].map((row, i) => {
-                  const Icon = row[0];
-                  return (
-                    <div key={i} style={{ display: 'flex', gap: 12 }}>
-                      <span style={{ flexShrink: 0, marginTop: 2 }}><Icon size={18} color={C.steel} /></span>
-                      <div>
-                        <div style={{ fontFamily: MONO, fontSize: 12, color: C.ink, fontWeight: 600 }}>{row[1]}</div>
-                        <div style={{ fontSize: 13, color: C.muted }}>{row[2]}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {[
-                  ['Surety bond', '$50,000 contractor license bond, filed before issuance.'],
-                  ['Insurance', 'General liability (min $100k / $300k); workers comp if you have employees.'],
-                  ['Fees / renewal', '~$230–$315 application. Renews every 2 years with CE.'],
-                ].map(([k, v], i) => (
-                  <div key={i} style={{ borderRadius: 8, padding: 12, background: C.paper }}>
-                    <div style={{ fontFamily: MONO, fontSize: 12, color: C.ink, fontWeight: 600 }}>{k}</div>
-                    <div style={{ fontSize: 13, color: C.muted }}>{v}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ borderRadius: 12, marginTop: 24, padding: 16, display: 'flex', gap: 12, background: '#FBEFE7', border: `1px solid ${C.amber}` }}>
-              <AlertTriangle size={18} color={C.amber} />
-              <p style={{ fontSize: 14, color: C.ink, margin: 0 }}>
-                <b>Open question that sets your timeline:</b> UPR's reconstruction side started late 2024 — roughly 1.5 years.
-                Verify whether your documented supervisory hours clear the 2-year bar, or whether Mike's do. If neither, the
-                CM-degree route or a few more documented months are your options.
-              </p>
-            </div>
-          </div>
-        </section>
 
         {/* ---------- RISK ---------- */}
         <section style={{ marginTop: 32, marginBottom: 24 }}>
