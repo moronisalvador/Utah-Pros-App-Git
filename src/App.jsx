@@ -75,6 +75,7 @@ const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
 const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
+const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -122,6 +123,14 @@ function FeatureRoute({ flag, children }) {
 // Dev Tools — hardcoded to Moroni only, not role-based
 // Even other admins can't access this via direct URL
 function DevRoute({ children }) {
+  const { employee } = useAuth();
+  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  return children;
+}
+
+// Moroni-only pages (same hardcoded email gate as Dev Tools) — private analysis
+// surfaces that even other admins can't reach via direct URL.
+function MoroniRoute({ children }) {
   const { employee } = useAuth();
   if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
   return children;
@@ -250,6 +259,11 @@ function WebRoutes() {
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+
+        {/* Homebuilding Entry Analysis — private to Moroni (side-nav link is Moroni-only too) */}
+        <Route path="homebuilding" element={
+          <MoroniRoute><ErrorBoundary section="Homebuilding Analysis"><HomebuildingAnalysis /></ErrorBoundary></MoroniRoute>
+        } />
         <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />

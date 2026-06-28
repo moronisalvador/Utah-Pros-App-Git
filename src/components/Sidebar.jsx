@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
 import { IconLogout } from './Icons';
-import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools } from '@/lib/navItems';
+import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools, IconHomebuilding } from '@/lib/navItems';
 
 export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
@@ -85,6 +85,18 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
           <IconHelp className="nav-icon" />
           Help &amp; Guides
         </NavLink>
+
+        {/* Homebuilding Analysis — only visible to Moroni (private planning page) */}
+        {isMoroni && (
+          <NavLink
+            to="/homebuilding"
+            className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+            onClick={onNavClick}
+          >
+            <IconHomebuilding className="nav-icon" />
+            Homebuilding
+          </NavLink>
+        )}
 
         {/* Dev Tools — only visible to Moroni, not in NAV_ITEMS so never role-gated */}
         {isMoroni && (
