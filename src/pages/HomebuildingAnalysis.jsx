@@ -643,6 +643,9 @@ function AIEstimator({ region }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
+  // Clear a prior estimate when the market changes — it was priced for the old region.
+  useEffect(() => { setResult(null); setError(''); }, [region]);
+
   const toggleFeature = (f) =>
     setFeatures((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]));
 
