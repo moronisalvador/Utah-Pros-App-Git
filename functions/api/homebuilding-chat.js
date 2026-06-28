@@ -18,11 +18,15 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-opus-4-8'; // most capable; for a cheaper/faster pass swap to 'claude-sonnet-4-6'
+// Sonnet (not Opus) for the chat: it's ~2x faster, which matters because this worker is
+// NON-streaming and Cloudflare returns a 524 if the whole turn (model + web searches +
+// pause_turn continuations) runs past its ~100s gateway timeout. Opus 4.8 + several searches
+// blew that ceiling. Keep web search but cap uses + continuations to stay well under it.
+const MODEL = 'claude-sonnet-4-6';
 const OWNER_EMAIL = 'moroni@utah-pros.com';
 const MAX_TURNS = 24;        // cap history sent to the model to keep token cost bounded
 const MAX_LEN = 6000;        // per-message character cap (defensive)
-const MAX_CONTINUATIONS = 4; // server-tool (web search) pause_turn re-sends
+const MAX_CONTINUATIONS = 2; // server-tool (web search) pause_turn re-sends
 
 // Resolve the logged-in user from their Supabase token; return their email or null.
 async function getUserEmail(request, env) {
@@ -146,7 +150,7 @@ export async function onRequestPost(context) {
           model: MODEL,
           max_tokens: 2000,
           system,
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
           messages: convo,
         }),
       });

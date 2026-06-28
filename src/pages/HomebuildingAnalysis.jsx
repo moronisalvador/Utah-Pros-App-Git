@@ -297,6 +297,24 @@ const REGIONS = {
     cities: 'Salt Lake & Utah County metros',
     lot: 250000, build: 300000, soft: 45000, sale: 720000,
     blurb: 'A buildable Wasatch Front lot clears $150k+ before you pour a footing, and hard costs add $200k+ on top.',
+    profile: {
+      land: 'Buildable lots commonly $180k–$450k+. Infill and east-bench / view lots run higher; entry-level lots in growth corridors (Saratoga Springs, Eagle Mountain, southern Utah County) sit at the low end. Teardown/scrape lots in established SLC neighborhoods carry a premium and demo cost.',
+      costs: [
+        ['Lot / land', '$180k–$450k+'],
+        ['Hard build cost', '$150–$200 / sf'],
+        ['Soft costs', '$40k–$70k'],
+        ['Impact + connection fees', '$10k–$30k+ (varies by city)'],
+        ['Typical new-build ARV', '$550k–$1.2M+'],
+      ],
+      submarkets: 'SLC east bench (premium) · Draper / Lehi / Saratoga Springs (growth) · Utah County — Provo, Orem, Spanish Fork, Eagle Mountain',
+      expect: [
+        'High lot competition — good lots move fast and often off-market.',
+        'Longer entitlement/permitting in established cities; faster in growth-corridor subdivisions.',
+        'Winter weather affects the schedule (foundation/site work).',
+        'HOAs and design review common in newer master-planned communities.',
+        'Strong, supply-constrained resale demand keeps days-on-market low for well-built homes.',
+      ],
+    },
   },
   southern: {
     label: 'Southern Utah',
@@ -304,6 +322,24 @@ const REGIONS = {
     cities: 'St. George, Ivins, Santa Clara, Hurricane & Washington County',
     lot: 190000, build: 300000, soft: 45000, sale: 650000,
     blurb: 'A buildable Washington County lot still runs $150k+ — far more on a red-rock view lot in Ivins or Santa Clara — before you pour a footing, and hard costs add $200k+ on top.',
+    profile: {
+      land: 'Washington and Hurricane lots are the value end (~$120k–$250k). St. George, Ivins, and Santa Clara red-rock VIEW lots run $250k–$600k+ — the view is most of the price. Master-planned areas (near Sand Hollow, Desert Color) carry HOA + design standards.',
+      costs: [
+        ['Lot / land', '$120k–$600k+ (view premium)'],
+        ['Hard build cost', '$150–$190 / sf'],
+        ['Soft costs', '$35k–$55k'],
+        ['Water + impact fees', 'Notable — a real cost & constraint'],
+        ['Typical new-build ARV', '$500k–$950k+'],
+      ],
+      submarkets: 'St. George (core) · Ivins / Santa Clara (premium red-rock views) · Hurricane / Washington (value) · Toquerville / LaVerkin (emerging)',
+      expect: [
+        'Water availability, connection, and impact fees are a gating cost — confirm a will-serve early.',
+        'Summer heat compresses the work window; schedule slabs/roofing around it.',
+        'Strong second-home and retiree demand; more seasonal buyer activity.',
+        'Big value spread driven by the lot/view — the same house sells for far more on a red-rock view.',
+        'HOA + architectural review common in master-planned communities.',
+      ],
+    },
   },
 };
 
@@ -410,19 +446,25 @@ function BuildCopilot({ deal }) {
     const next = [...messages, { role: 'user', content }];
     setMessages(next);
     setBusy(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 95000);
     try {
       const auth = await getAuthHeader();
       const res = await fetch('/api/homebuilding-chat', {
         method: 'POST',
         headers: { ...auth, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next, deal }),
+        signal: ctrl.signal,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       setMessages((m) => [...m, { role: 'assistant', content: data.reply }]);
     } catch (e) {
-      setError(e.message || 'Something went wrong — try again.');
+      setError(e.name === 'AbortError'
+        ? 'That took too long — try a shorter question, or one that doesn’t need a web lookup.'
+        : (e.message || 'Something went wrong — try again.'));
     } finally {
+      clearTimeout(timer);
       setBusy(false);
     }
   };
@@ -433,12 +475,12 @@ function BuildCopilot({ deal }) {
 
   return (
     <section style={{ marginTop: 32 }}>
-      <Eyebrow sheet="SHT 09">Build copilot — ask anything</Eyebrow>
+      <Eyebrow sheet="AI">Build copilot — ask anything</Eyebrow>
       <div className="hba-pad-md" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
         <p style={{ fontSize: 13, color: C.muted, marginTop: 0, marginBottom: 14 }}>
           A construction-planning specialist — buying land, planning, full-project costs, scheduling, the Utah market,
           financing, sales, value-add, and Utah building/plumbing/electrical code norms. It can see the deal-modeler
-          numbers above and can search the web for current figures (rates, prices, code editions). Answers can take a
+          numbers below and can search the web for current figures (rates, prices, code editions). Answers can take a
           few seconds when it looks something up.
         </p>
 
@@ -519,6 +561,240 @@ function BuildCopilot({ deal }) {
         <p style={{ marginTop: 8, fontFamily: MONO, fontSize: 10.5, color: C.faint }}>
           Estimates for planning — validate against local subs &amp; comps. Press Enter to send, Shift+Enter for a new line.
         </p>
+      </div>
+    </section>
+  );
+}
+
+// ─── SECTION: Market profile (curated, reacts to the Market toggle) ───
+function MarketProfile({ region }) {
+  const r = REGIONS[region];
+  const p = r.profile;
+  const label = (t) => (
+    <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 8 }}>{t}</div>
+  );
+  return (
+    <section style={{ marginTop: 32 }}>
+      <Eyebrow sheet="MKT">{r.label} — land, costs &amp; what to expect</Eyebrow>
+      <div className="hba-pad-md" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
+        <div style={{ borderRadius: 12, padding: 16, background: C.paper, marginBottom: 20 }}>
+          {label('Buying land here')}
+          <p style={{ fontSize: 14, color: C.ink, margin: 0, lineHeight: 1.5 }}>{p.land}</p>
+        </div>
+        <div className="hba-2col">
+          <div>
+            {label('Average costs to expect')}
+            {p.costs.map(([k, v]) => <Row key={k} k={k} v={v} strong />)}
+            <p style={{ fontFamily: MONO, fontSize: 10.5, color: C.faint, marginTop: 10 }}>
+              Ballpark ranges — use the Build &amp; Value estimator below for a specific home, and the copilot for live figures.
+            </p>
+          </div>
+          <div>
+            {label('What to expect')}
+            <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0, padding: 0, listStyle: 'none' }}>
+              {p.expect.map((x, i) => (
+                <li key={i} style={{ display: 'flex', gap: 8, fontSize: 14, color: C.ink }}>
+                  <span style={{ color: C.amber, marginTop: 1 }}>▪</span>{x}
+                </li>
+              ))}
+            </ul>
+            <div style={{ marginTop: 16 }}>
+              {label('Submarkets')}
+              <p style={{ fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>{p.submarkets}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── SECTION: AI Build & Value Estimator ───
+const FINISH_LEVELS = [
+  ['builder', 'Builder-grade'],
+  ['mid', 'Mid'],
+  ['semi-custom', 'Semi-custom'],
+  ['custom', 'Custom'],
+];
+const FEATURES = [
+  'Finished basement', '3-car garage', 'RV garage / pad', 'Casita / ADU', 'Pool', 'Hot tub / spa',
+  'Solar', 'Smart home', 'View lot', 'Covered outdoor living', 'Gourmet kitchen', 'Office / flex room',
+];
+
+function Range3({ label, lo, mid, hi }) {
+  return (
+    <div>
+      <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 24, color: C.ink, fontWeight: 600 }}>{fmt$(mid)}</div>
+      <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginTop: 2 }}>{fmt$(lo)} – {fmt$(hi)}</div>
+    </div>
+  );
+}
+
+function AIEstimator({ region }) {
+  const [bedrooms, setBedrooms] = useState(4);
+  const [bathrooms, setBathrooms] = useState(3);
+  const [sqft, setSqft] = useState(2500);
+  const [stories, setStories] = useState(1);
+  const [finish, setFinish] = useState('mid');
+  const [landAcres, setLandAcres] = useState(0.25);
+  const [features, setFeatures] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const toggleFeature = (f) =>
+    setFeatures((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]));
+
+  const run = async () => {
+    setBusy(true); setError('');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 95000);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/homebuilding-estimate', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: { region, bedrooms, bathrooms, sqft, stories, finish, landAcres, features } }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setResult(data.estimate);
+    } catch (e) {
+      setError(e.name === 'AbortError' ? 'That took too long — try again.' : (e.message || 'Estimate failed — try again.'));
+    } finally {
+      clearTimeout(timer);
+      setBusy(false);
+    }
+  };
+
+  const sliders = [
+    ['Bedrooms', bedrooms, setBedrooms, 1, 8, 1, ''],
+    ['Bathrooms', bathrooms, setBathrooms, 1, 7, 0.5, ''],
+    ['Square footage', sqft, setSqft, 1000, 6000, 100, ' sf'],
+    ['Stories', stories, setStories, 1, 3, 1, ''],
+    ['Land size (acres)', landAcres, setLandAcres, 0.1, 3, 0.05, ' ac'],
+  ];
+
+  return (
+    <section style={{ marginTop: 32 }}>
+      <Eyebrow sheet="AI">Build &amp; value estimator</Eyebrow>
+      <div className="hba-pad-md" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 0, marginBottom: 16 }}>
+          Describe a home and the AI reasons out a hard build cost and an approximate sale value for{' '}
+          <b>{REGIONS[region].label}</b> (set by the Market toggle up top). Estimates to validate against local subs &amp; comps.
+        </p>
+
+        {/* inputs */}
+        <div className="hba-assump">
+          {sliders.map(([lab, val, setter, min, max, step, suffix]) => (
+            <div key={lab}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>{lab}</label>
+                <span style={{ fontFamily: MONO, fontSize: 12, color: C.ink }}>
+                  {step < 1 ? val : Math.round(val).toLocaleString('en-US')}{suffix}
+                </span>
+              </div>
+              <input type="range" min={min} max={max} step={step} value={val}
+                onChange={(e) => setter(Number(e.target.value))} />
+            </div>
+          ))}
+          <div>
+            <label style={{ fontFamily: MONO, fontSize: 11, color: C.muted, display: 'block', marginBottom: 4 }}>Finish level</label>
+            <select value={finish} onChange={(e) => setFinish(e.target.value)}
+              style={{ width: '100%', height: 34, padding: '0 8px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.paper, border: `1px solid ${C.line}`, borderRadius: 8 }}>
+              {FINISH_LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* features */}
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 8 }}>Features</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {FEATURES.map((f) => {
+              const on = features.includes(f);
+              return (
+                <button key={f} onClick={() => toggleFeature(f)}
+                  style={{
+                    fontFamily: MONO, fontSize: 12, padding: '7px 12px', borderRadius: 9999, cursor: 'pointer',
+                    background: on ? C.steel : C.paper, color: on ? '#fff' : C.muted,
+                    border: `1px solid ${on ? C.steel : C.line}`, transition: 'all .15s ease',
+                  }}>
+                  {f}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20 }}>
+          <button onClick={run} disabled={busy}
+            style={{
+              height: 44, padding: '0 22px', borderRadius: 12, border: 'none',
+              fontFamily: DISP, fontWeight: 700, fontSize: 14, cursor: busy ? 'default' : 'pointer',
+              background: busy ? C.lineSoft : C.amber, color: busy ? C.faint : '#fff',
+            }}>
+            {busy ? 'Estimating…' : result ? 'Re-estimate' : 'Estimate build cost & value'}
+          </button>
+          {error && <span style={{ fontSize: 13, color: C.down, fontFamily: MONO }}>{error}</span>}
+        </div>
+
+        {/* result */}
+        {result && (
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${C.line}` }}>
+            <div className="hba-2col">
+              <div style={{ borderRadius: 12, padding: 20, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.amber}` }}>
+                <Range3 label="Hard build cost" lo={result.build_cost.low} mid={result.build_cost.expected} hi={result.build_cost.high} />
+                <div style={{ fontFamily: MONO, fontSize: 12, color: C.muted, marginTop: 6 }}>
+                  ≈ ${Math.round(result.cost_per_sf.low)}–${Math.round(result.cost_per_sf.high)} / sf · structure only
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  {(result.breakdown || []).map((b, i) => <Row key={i} k={b.label} v={fmt$(b.amount)} sub />)}
+                </div>
+              </div>
+              <div style={{ borderRadius: 12, padding: 20, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.up}` }}>
+                <Range3 label="Approx. sale value (ARV)" lo={result.arv.low} mid={result.arv.expected} hi={result.arv.high} />
+                <div style={{ display: 'inline-block', marginTop: 10, fontFamily: MONO, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: C.paper, color: C.muted, border: `1px solid ${C.line}` }}>
+                  confidence: {result.confidence}
+                </div>
+                {(result.feature_notes || []).length > 0 && (
+                  <ul style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '14px 0 0', padding: 0, listStyle: 'none' }}>
+                    {result.feature_notes.map((n, i) => (
+                      <li key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: C.muted }}>
+                        <span style={{ color: C.up, marginTop: 1 }}>▪</span>{n}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            {((result.assumptions || []).length > 0 || (result.notes || []).length > 0) && (
+              <div className="hba-2col" style={{ marginTop: 16 }}>
+                {(result.assumptions || []).length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 6 }}>Assumptions</div>
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: C.muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {result.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {(result.notes || []).length > 0 && (
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1, color: C.faint, textTransform: 'uppercase', marginBottom: 6 }}>Notes</div>
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13, color: C.muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {result.notes.map((n, i) => <li key={i}>{n}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            <p style={{ marginTop: 14, fontFamily: MONO, fontSize: 10.5, color: C.faint }}>
+              AI estimate from market cost anchors + your spec — validate against local subs and recent comps before committing.
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -668,6 +944,9 @@ export default function HomebuildingAnalysis() {
           </div>
         </section>
 
+        {/* ---------- MARKET PROFILE (reacts to the Market toggle) ---------- */}
+        <MarketProfile region={region} />
+
         {/* ---------- THREE PATHS ---------- */}
         <section style={{ marginTop: 32 }}>
           <Eyebrow sheet="SHT 02">The three paths</Eyebrow>
@@ -767,6 +1046,9 @@ export default function HomebuildingAnalysis() {
             <RadarChart data={radarData} series={radarSeries} />
           </div>
         </section>
+
+        {/* ---------- BUILD COPILOT (AI chat) — sits right above the calculators ---------- */}
+        <BuildCopilot deal={{ region, lot, build, soft, sale, ltc, rate, months, sellPct, feePct }} />
 
         {/* ---------- DEAL MODELER ---------- */}
         <section style={{ marginTop: 32 }}>
@@ -887,6 +1169,9 @@ export default function HomebuildingAnalysis() {
           </div>
         </section>
 
+        {/* ---------- AI BUILD & VALUE ESTIMATOR (second calculator) ---------- */}
+        <AIEstimator region={region} />
+
         {/* ---------- FINANCING LADDER ---------- */}
         <section style={{ marginTop: 32 }}>
           <Eyebrow sheet="SHT 05">The money ladder</Eyebrow>
@@ -929,9 +1214,6 @@ export default function HomebuildingAnalysis() {
             </p>
           </div>
         </section>
-
-        {/* ---------- BUILD COPILOT (AI chat) ---------- */}
-        <BuildCopilot deal={{ region, lot, build, soft, sale, ltc, rate, months, sellPct, feePct }} />
 
         <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0', borderTop: `1px solid ${C.line}`, fontFamily: MONO, fontSize: 11, color: C.faint }}>
           <span>UPR · HOMEBUILDING ENTRY ANALYSIS</span>
