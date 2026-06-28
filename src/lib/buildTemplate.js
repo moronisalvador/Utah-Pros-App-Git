@@ -306,3 +306,38 @@ export function buildPlanFromSpec(spec) {
   const draws = computeDraws(lineItems, hardTotal);
   return { lineItems, schedule, draws, hardTotal, costPerSf, months, arv: 0, financingNotes: '' };
 }
+
+// ─── SECTION: floor-plan room model ───
+// Room types for the drag-and-drop floor-plan builder. bed/bath feed the spec; conditioned:false
+// rooms (garage, covered patio) are excluded from conditioned square footage. w/h are default feet.
+export const ROOM_TYPES = [
+  { key: 'bedroom', name: 'Bedroom',        fill: '#cfe3f7', bed: 1, bath: 0,   conditioned: true,  w: 12, h: 11 },
+  { key: 'primary', name: 'Primary suite',  fill: '#bcd6f0', bed: 1, bath: 1,   conditioned: true,  w: 16, h: 14 },
+  { key: 'bath',    name: 'Bathroom',       fill: '#c9eede', bed: 0, bath: 1,   conditioned: true,  w: 8,  h: 6 },
+  { key: 'half',    name: 'Half bath',      fill: '#d9f0e6', bed: 0, bath: 0.5, conditioned: true,  w: 6,  h: 5 },
+  { key: 'kitchen', name: 'Kitchen',        fill: '#f7e6c8', bed: 0, bath: 0,   conditioned: true,  w: 14, h: 12 },
+  { key: 'great',   name: 'Great room',     fill: '#e9dcf7', bed: 0, bath: 0,   conditioned: true,  w: 20, h: 16 },
+  { key: 'dining',  name: 'Dining',         fill: '#f3ddd0', bed: 0, bath: 0,   conditioned: true,  w: 12, h: 11 },
+  { key: 'office',  name: 'Office / flex',  fill: '#e2e8f0', bed: 0, bath: 0,   conditioned: true,  w: 11, h: 10 },
+  { key: 'laundry', name: 'Laundry / mud',  fill: '#e7f0d8', bed: 0, bath: 0,   conditioned: true,  w: 8,  h: 7 },
+  { key: 'hall',    name: 'Hall / stairs',  fill: '#eceef1', bed: 0, bath: 0,   conditioned: true,  w: 6,  h: 10 },
+  { key: 'garage',  name: 'Garage',         fill: '#d6dadf', bed: 0, bath: 0,   conditioned: false, w: 22, h: 22 },
+  { key: 'patio',   name: 'Covered patio',  fill: '#dceee0', bed: 0, bath: 0,   conditioned: false, w: 16, h: 10 },
+];
+const ROOM_MAP = Object.fromEntries(ROOM_TYPES.map((r) => [r.key, r]));
+export function roomDef(key) { return ROOM_MAP[key] || null; }
+
+// Roll a floor plan up into the numbers the cost engine wants.
+export function floorplanTotals(fp) {
+  const rooms = fp && Array.isArray(fp.rooms) ? fp.rooms : [];
+  let sqft = 0, bedrooms = 0, bathrooms = 0;
+  for (const r of rooms) {
+    const d = ROOM_MAP[r.type];
+    if (!d) continue;
+    const area = (Number(r.w) || 0) * (Number(r.h) || 0);
+    if (d.conditioned !== false) sqft += area;
+    bedrooms += d.bed || 0;
+    bathrooms += d.bath || 0;
+  }
+  return { sqft: Math.round(sqft), bedrooms, bathrooms: Math.round(bathrooms * 2) / 2, rooms: rooms.length };
+}
