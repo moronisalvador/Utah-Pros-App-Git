@@ -1958,3 +1958,13 @@ delete_homebuilding_build_project(p_id)
 ```
 Derived numbers (hard total, draws, months, financing) are recomputed on the page from the stored
 lineItems/schedule/arv; only those are persisted in `plan`.
+
+### City/submarket detail (buildTemplate.js `SUBMARKETS`)
+Per-city anchors for both regions — `{ name, psfMult (construction-cost nudge), lot (typical $),
+arvPsf (resale $/sf) }`. Wasatch: SLC east bench, SLC County, Draper, Lehi/Saratoga Springs, Eagle
+Mountain, Provo/Orem, Spanish Fork/Salem, Park City. Southern: St. George, Washington, Hurricane,
+Ivins, Santa Clara, Toquerville/LaVerkin. The Spec tab's submarket is a dropdown; picking a city sets
+the typical lot and scales the build cost (`submarketMult`). `computeArvBaseline(spec)` gives a quick
+comps-based ARV ("City comp ARV" button) from `arvPsf`; the AI estimate (now passed the submarket)
+refines it.
+

@@ -141,6 +141,7 @@ export async function onRequestPost(context) {
   const region = inp.region === 'southern' ? 'southern' : 'wasatch';
   const spec = {
     region,
+    submarket: typeof inp.submarket === 'string' ? inp.submarket.slice(0, 60) : '',
     bedrooms: num(inp.bedrooms, 1, 10, 4),
     bathrooms: num(inp.bathrooms, 1, 10, 3),
     sqft: num(inp.sqft, 600, 12000, 2500),
@@ -153,7 +154,7 @@ export async function onRequestPost(context) {
   const userText = `${ANCHORS[region]}
 
 HOME SPEC TO ESTIMATE:
-- Region: ${region === 'southern' ? 'Southern Utah (Washington County)' : 'Wasatch Front'}
+- Region: ${region === 'southern' ? 'Southern Utah (Washington County)' : 'Wasatch Front'}${spec.submarket ? ` — submarket/city: ${spec.submarket}` : ''}
 - Bedrooms: ${spec.bedrooms}
 - Bathrooms: ${spec.bathrooms}
 - Square footage (finished living): ${spec.sqft}

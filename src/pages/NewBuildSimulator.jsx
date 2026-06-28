@@ -32,8 +32,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import {
-  REGIONS, FINISH_LEVELS, FEATURES as FEATURE_DEFS, defaultSpec, buildPlanFromSpec,
-  computeSchedule, computeDraws, computeFinancing,
+  REGIONS, SUBMARKETS, FINISH_LEVELS, FEATURES as FEATURE_DEFS, defaultSpec, buildPlanFromSpec,
+  computeSchedule, computeDraws, computeFinancing, computeArvBaseline,
   lineItemsTotal, scheduleWeeks, scheduleMonths, round2,
 } from '@/lib/buildTemplate';
 
@@ -225,7 +225,7 @@ export default function NewBuildSimulator() {
     try {
       const data = await callJSON('/api/homebuilding-estimate', {
         inputs: {
-          region: spec.region, bedrooms: spec.bedrooms, bathrooms: spec.bathrooms, sqft: spec.sqft,
+          region: spec.region, submarket: spec.submarket, bedrooms: spec.bedrooms, bathrooms: spec.bathrooms, sqft: spec.sqft,
           stories: spec.stories, finish: spec.finish, landAcres: 0.25, features: spec.features,
         },
       });
@@ -442,11 +442,16 @@ function SpecTab({ spec, setSpecField, onGenerate }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
         <Field label="Market">
-          <select value={spec.region} onChange={(e) => setSpecField({ region: e.target.value, lot: e.target.value === 'southern' ? 160000 : 250000 })}
+          <select value={spec.region} onChange={(e) => { const r = e.target.value; const d = defaultSpec(r); setSpecField({ region: r, submarket: d.submarket, lot: d.lot }); }}
             style={selStyle}>{Object.entries(REGIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         </Field>
-        <Field label="Submarket / city (optional)">
-          <input value={spec.submarket} placeholder="e.g. Hurricane, Ivins…" onChange={(e) => setSpecField({ submarket: e.target.value })} style={txtStyle} />
+        <Field label="Submarket / city">
+          <select value={spec.submarket}
+            onChange={(e) => { const c = (SUBMARKETS[spec.region] || []).find((x) => x.name === e.target.value); setSpecField({ submarket: e.target.value, ...(c ? { lot: c.lot } : {}) }); }}
+            style={selStyle}>
+            <option value="">— Region average —</option>
+            {(SUBMARKETS[spec.region] || []).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
         </Field>
         <Field label="Square footage"><NumIn value={spec.sqft} step={50} min={400} max={20000} width={110} onChange={(v) => setSpecField({ sqft: v })} /></Field>
         <Field label="Stories">
@@ -489,7 +494,6 @@ function SpecTab({ spec, setSpecField, onGenerate }) {
   );
 }
 const selStyle = { width: '100%', height: 34, padding: '0 8px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.card, border: `1px solid ${C.line}`, borderRadius: 6 };
-const txtStyle = { width: '100%', height: 34, padding: '0 10px', fontFamily: SANS, fontSize: 13, color: C.ink, background: C.card, border: `1px solid ${C.line}`, borderRadius: 6, outline: 'none' };
 
 // ─── SECTION: Budget tab ───
 function BudgetTab({ plan, setLine, addLine, removeLine, hardTotal, costPerSf, spec, onGenerate, onTune, busy, tuneNotes, fin }) {
@@ -631,6 +635,9 @@ function FinancingTab({ spec, setSpecField, fin, plan, onArv, onEstimateARV, bus
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
         <Field label="Expected sale value (ARV)"><NumIn value={plan.arv} step={5000} min={0} width={140} prefix="$" onChange={(v) => onArv(v)} /></Field>
+        <button onClick={() => onArv(computeArvBaseline(spec))} style={{ height: 36, padding: '0 14px', borderRadius: 8, border: `1px solid ${C.line}`, cursor: 'pointer', background: C.card, color: C.steel, fontFamily: SANS, fontWeight: 600, fontSize: 13, alignSelf: 'end' }}>
+          City comp ARV
+        </button>
         <button onClick={onEstimateARV} disabled={!!busy} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: busy ? C.lineSoft : C.steel, color: busy ? C.faint : '#fff', fontFamily: SANS, fontWeight: 700, fontSize: 13, alignSelf: 'end' }}>
           {busy === 'arv' ? 'Estimating…' : 'AI estimate ARV'}
         </button>

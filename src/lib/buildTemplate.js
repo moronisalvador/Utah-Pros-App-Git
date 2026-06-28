@@ -40,6 +40,32 @@ export const FINISH_LEVELS = [
   ['custom', 'Custom'],
 ];
 
+// City/submarket detail. psfMult nudges construction cost; lot = typical buildable lot $;
+// arvPsf = typical finished resale $/sf (the biggest city differentiator). AI Tune refines further.
+export const SUBMARKETS = {
+  wasatch: [
+    { name: 'Salt Lake City (east bench)', psfMult: 1.08, lot: 420000, arvPsf: 330 },
+    { name: 'Salt Lake County', psfMult: 1.00, lot: 290000, arvPsf: 270 },
+    { name: 'Draper', psfMult: 1.03, lot: 360000, arvPsf: 300 },
+    { name: 'Lehi / Saratoga Springs', psfMult: 0.99, lot: 220000, arvPsf: 255 },
+    { name: 'Eagle Mountain', psfMult: 0.97, lot: 170000, arvPsf: 235 },
+    { name: 'Provo / Orem', psfMult: 1.00, lot: 270000, arvPsf: 260 },
+    { name: 'Spanish Fork / Salem', psfMult: 0.96, lot: 185000, arvPsf: 240 },
+    { name: 'Park City area', psfMult: 1.25, lot: 750000, arvPsf: 520 },
+  ],
+  southern: [
+    { name: 'St. George', psfMult: 1.00, lot: 210000, arvPsf: 275 },
+    { name: 'Washington', psfMult: 0.97, lot: 150000, arvPsf: 255 },
+    { name: 'Hurricane', psfMult: 0.95, lot: 135000, arvPsf: 240 },
+    { name: 'Ivins (red-rock views)', psfMult: 1.06, lot: 420000, arvPsf: 350 },
+    { name: 'Santa Clara', psfMult: 1.03, lot: 330000, arvPsf: 315 },
+    { name: 'Toquerville / LaVerkin', psfMult: 0.95, lot: 125000, arvPsf: 235 },
+  ],
+};
+const REGION_ARV_PSF = { wasatch: 265, southern: 270 };
+const DEFAULT_CITY = { wasatch: 'Salt Lake County', southern: 'St. George' };
+const FINISH_ARV_MULT = { builder: 0.92, mid: 1.0, 'semi-custom': 1.08, custom: 1.18 };
+
 // Base all-in hard cost $/sf for a 1-story, mid finish (includes GC overhead & profit).
 const REGION_BASE_PSF = { wasatch: 165, southern: 160 };
 const FINISH_MULT = { builder: 0.88, mid: 1.0, 'semi-custom': 1.18, custom: 1.4 };
@@ -48,6 +74,24 @@ const STORY_MULT = { 1: 1.0, 2: 0.93, 3: 0.9 }; // two-story is cheaper per sf (
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const round0 = (n) => Math.round(Number(n) || 0);
+
+export function getSubmarket(region, name) {
+  return (SUBMARKETS[region] || []).find((c) => c.name === name) || null;
+}
+export function submarketMult(region, name) {
+  const c = getSubmarket(region, name);
+  return c ? c.psfMult : 1;
+}
+// Quick comps-based ARV baseline from the city's resale $/sf (AI estimate refines it).
+export function computeArvBaseline(spec) {
+  const region = REGIONS[spec.region] ? spec.region : 'wasatch';
+  const c = getSubmarket(region, spec.submarket);
+  const arvPsf = c ? c.arvPsf : (REGION_ARV_PSF[region] || 265);
+  const sqft = clamp(Number(spec.sqft) || 2500, 400, 20000);
+  const fa = FINISH_ARV_MULT[spec.finish] || 1;
+  const effSf = sqft + 0.5 * clamp(Number(spec.basementSf) || 0, 0, 8000);
+  return round0(arvPsf * effSf * fa);
+}
 
 // ─── SECTION: the build template (phases → line items, durations, draw stage) ───
 // share = rough fraction of hard cost (normalized at compute time)
@@ -136,7 +180,8 @@ export function computeLineItems(spec) {
   const region = REGIONS[spec.region] ? spec.region : 'wasatch';
 
   const bathMult = 1 + 0.04 * clamp(baths - 2.5, -1, 6); // each bath over ~2.5 adds ~4% (plumbing/fixtures/tile)
-  const totalHard = baseHardPsf(region, finish, stories) * sqft * bathMult;
+  const subMult = submarketMult(region, spec.submarket); // city-level construction-cost nudge
+  const totalHard = baseHardPsf(region, finish, stories) * sqft * bathMult * subMult;
   const finishPremium = FINISH_MULT[finish];
   const plumbFactor = 1 + 0.1 * clamp(baths - 2.5, -1, 4); // shifts the mix toward plumbing within the (now bath-scaled) total
 
@@ -244,9 +289,10 @@ export function computeFinancing({ land, hard, softPct, contingencyPct, arv, ltc
 
 // ─── SECTION: default spec + full plan assembly ───
 export function defaultSpec(region = 'wasatch') {
+  const city = getSubmarket(region, DEFAULT_CITY[region]) || (SUBMARKETS[region] || [])[0] || null;
   return {
-    region, submarket: '', sqft: 2500, stories: 1, bedrooms: 4, bathrooms: 3, finish: 'mid',
-    basementSf: 0, lot: region === 'southern' ? 160000 : 250000, softPct: 12, contingencyPct: 5,
+    region, submarket: city ? city.name : '', sqft: 2500, stories: 1, bedrooms: 4, bathrooms: 3, finish: 'mid',
+    basementSf: 0, lot: city ? city.lot : (region === 'southern' ? 160000 : 250000), softPct: 12, contingencyPct: 5,
     features: [], startDate: '',
     ltc: 75, rate: 11, sellPct: 6,
   };
