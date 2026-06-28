@@ -32,7 +32,8 @@
  *   - All dollar figures are illustrative estimates, not live data.
  * ════════════════════════════════════════════════
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { getAuthHeader } from '@/lib/realtime';
 
 // ─── SECTION: palette (job-cost ledger identity) ───
 const C = {
@@ -366,6 +367,158 @@ function Decisions() {
             );
           })}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── SECTION: Build Copilot (AI chat) ───
+// Tiny markdown-ish formatter: renders **bold** spans and preserves line breaks.
+// Avoids pulling in a markdown dependency — the assistant is prompted to use bullets, not tables.
+function formatText(text) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((seg, i) => {
+    if (seg.startsWith('**') && seg.endsWith('**')) {
+      return <b key={i}>{seg.slice(2, -2)}</b>;
+    }
+    return <span key={i}>{seg}</span>;
+  });
+}
+
+const SUGGESTIONS = [
+  'Cost to build a 2,500 sf home in Hurricane?',
+  'Draft a rough build schedule for a custom home',
+  'How should I price a spec in St. George?',
+  'What soft costs do new builders forget?',
+];
+
+function BuildCopilot({ deal }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, busy]);
+
+  const send = async (text) => {
+    const content = (text ?? input).trim();
+    if (!content || busy) return;
+    setError('');
+    setInput('');
+    const next = [...messages, { role: 'user', content }];
+    setMessages(next);
+    setBusy(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/homebuilding-chat', {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next, deal }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      setMessages((m) => [...m, { role: 'assistant', content: data.reply }]);
+    } catch (e) {
+      setError(e.message || 'Something went wrong — try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+
+  return (
+    <section style={{ marginTop: 32 }}>
+      <Eyebrow sheet="SHT 09">Build copilot — ask anything</Eyebrow>
+      <div className="hba-pad-md" style={{ borderRadius: 16, background: C.card, border: `1px solid ${C.line}` }}>
+        <p style={{ fontSize: 13, color: C.muted, marginTop: 0, marginBottom: 14 }}>
+          A construction-planning specialist — buying land, planning, full-project costs, scheduling, the Utah market,
+          financing, sales, value-add, and Utah building/plumbing/electrical code norms. It can see the deal-modeler
+          numbers above and can search the web for current figures (rates, prices, code editions). Answers can take a
+          few seconds when it looks something up.
+        </p>
+
+        {/* message log */}
+        <div ref={scrollRef} style={{
+          maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12,
+          padding: messages.length ? 12 : 0, borderRadius: 12,
+          background: messages.length ? C.paper : 'transparent',
+          border: messages.length ? `1px solid ${C.lineSoft}` : 'none',
+        }}>
+          {messages.length === 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {SUGGESTIONS.map((s) => (
+                <button key={s} onClick={() => send(s)} disabled={busy}
+                  style={{
+                    fontFamily: MONO, fontSize: 12, color: C.steel, cursor: busy ? 'default' : 'pointer',
+                    background: C.paper, border: `1px solid ${C.line}`, borderRadius: 9999, padding: '8px 12px',
+                    textAlign: 'left',
+                  }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '85%', borderRadius: 14, padding: '10px 14px', fontSize: 14, lineHeight: 1.5,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                background: m.role === 'user' ? C.steel : C.card,
+                color: m.role === 'user' ? '#fff' : C.ink,
+                border: m.role === 'user' ? 'none' : `1px solid ${C.line}`,
+                borderBottomRightRadius: m.role === 'user' ? 4 : 14,
+                borderBottomLeftRadius: m.role === 'user' ? 14 : 4,
+              }}>
+                {m.role === 'user' ? m.content : formatText(m.content)}
+              </div>
+            </div>
+          ))}
+          {busy && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div style={{ borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.faint, fontFamily: MONO, background: C.card, border: `1px solid ${C.line}` }}>
+                thinking…
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 10, fontSize: 13, color: C.down, fontFamily: MONO }}>{error}</div>
+        )}
+
+        {/* composer */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Ask about costs, schedule, financing, the Hurricane market…"
+            rows={1}
+            style={{
+              flex: 1, resize: 'none', minHeight: 44, maxHeight: 160, padding: '11px 14px',
+              fontFamily: SANS, fontSize: 14, color: C.ink, background: C.paper,
+              border: `1px solid ${C.line}`, borderRadius: 12, outline: 'none',
+            }}
+          />
+          <button onClick={() => send()} disabled={busy || !input.trim()}
+            style={{
+              flexShrink: 0, height: 44, padding: '0 18px', borderRadius: 12, border: 'none',
+              fontFamily: DISP, fontWeight: 700, fontSize: 14,
+              cursor: busy || !input.trim() ? 'default' : 'pointer',
+              background: busy || !input.trim() ? C.lineSoft : C.amber,
+              color: busy || !input.trim() ? C.faint : '#fff',
+            }}>
+            Send
+          </button>
+        </div>
+        <p style={{ marginTop: 8, fontFamily: MONO, fontSize: 10.5, color: C.faint }}>
+          Estimates for planning — validate against local subs &amp; comps. Press Enter to send, Shift+Enter for a new line.
+        </p>
       </div>
     </section>
   );
@@ -776,6 +929,9 @@ export default function HomebuildingAnalysis() {
             </p>
           </div>
         </section>
+
+        {/* ---------- BUILD COPILOT (AI chat) ---------- */}
+        <BuildCopilot deal={{ region, lot, build, soft, sale, ltc, rate, months, sellPct, feePct }} />
 
         <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0', borderTop: `1px solid ${C.line}`, fontFamily: MONO, fontSize: 11, color: C.faint }}>
           <span>UPR · HOMEBUILDING ENTRY ANALYSIS</span>
