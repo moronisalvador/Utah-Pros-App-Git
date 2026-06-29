@@ -41,6 +41,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { STATUS } from './collTokens';
 import { buildArSnapshot } from './arSnapshot';
 import { getAuthHeader } from '@/lib/realtime';
@@ -188,7 +189,12 @@ export default function ARChatBubble({ rows = [], filteredRows = [], today, view
   if (hidden) return null;
 
   // ─── SECTION: Render ──────────────
-  return (
+  // Portal to <body>: the fixed FAB/panel must escape `.coll-page`, which gets a CSS `transform`
+  // from the page-slide transition (usePageTransition, fill-mode `both`). A transformed ancestor
+  // becomes the containing block for position:fixed children, which would re-anchor the bubble to
+  // that box and push it off-screen on a repaint (e.g. the auth token-refresh re-render when you
+  // return to the browser tab). Rendering at <body> keeps it truly viewport-fixed.
+  return createPortal(
     <>
       <button type="button" className={`coll-chat-fab${open ? ' open' : ''}`} aria-label="A/R Copilot" aria-expanded={open}
         onClick={() => setOpen((o) => !o)}>
@@ -243,6 +249,7 @@ export default function ARChatBubble({ rows = [], filteredRows = [], today, view
           <div className="coll-chat-foot">Reads your on-screen A/R · advisory only · Enter to send</div>
         </div>
       )}
-    </>
+    </>,
+    document.body,
   );
 }
