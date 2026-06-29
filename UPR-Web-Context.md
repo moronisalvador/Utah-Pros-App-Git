@@ -1204,7 +1204,7 @@ trigger no-ops unless QuickBooks is connected, so it is safe to ship before
 setup is finished.
 
 **Tables (RLS-locked — service-role only; NO anon/authenticated policies):**
-- `integration_credentials` — `provider PK, access_token, refresh_token, realm_id, environment ('sandbox'|'production'), token_expires_at, company_name, connected_by UUID→employees, connected_at, updated_at`. One row per provider (`'quickbooks'`). Access token auto-refreshes (~1h) inside the worker; refresh token rolls forward.
+- `integration_credentials` — `provider PK, access_token, refresh_token, realm_id, environment ('sandbox'|'production'), token_expires_at, company_name, granted_scopes (OAuth scopes granted — `payment` present ⇒ card charging authorized), connected_by UUID→employees, connected_at, updated_at`. One row per provider (`'quickbooks'`). Access token auto-refreshes (~1h) inside the worker; refresh token rolls forward. Frontend reads status (never tokens) via `get_qbo_connection_status()` RPC → `{ connected, has_payment_scope, company_name, environment }`.
 - `integration_config` — `key PK, value, updated_at`. Keys: `qbo_worker_url`, `qbo_webhook_secret`, plus transient `qbo_oauth_state` / `qbo_oauth_user` during connect.
 
 **Columns added to `contacts`:** `qbo_customer_id TEXT`, `qbo_synced_at TIMESTAMPTZ`, `qbo_sync_error TEXT` (+ partial index `idx_contacts_qbo_unsynced`).
@@ -1277,6 +1277,14 @@ setup is finished.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
+
+**In-UPR "Charge a card" virtual terminal — IMPLEMENTED (Jun 27 2026).** Staff can key a customer's card on a synced invoice and charge it through QuickBooks Payments (card-not-present), reconciling in both QBO and UPR with no double-count:
+- **`src/lib/intuitTokenize.js`** — `tokenizeCard(card, { environment })` POSTs the raw card **from the browser straight to Intuit's Tokens API** (`{api|sandbox.api}.intuit.com/quickbooks/v4/payments/tokens`, **no Authorization header** — by design) and returns the opaque single-use token. The PAN never reaches our servers → **PCI SAQ A-EP**. `parseExpiry('MM/YY')` helper. Network/CORS failures throw a clear message (never silently proceed).
+- **`functions/api/qbo-charge.js`** (`POST {invoice_id, token, amount}`, pre-existing backend) — `createCharge()` (Payments API, `functions/lib/quickbooks.js`) → insert UPR `payments` row (`source='qbo'`, `credit_card`, `reference_number='Card charge #<id>'`) → `createPayment()` linked QBO Payment (deposit → `integration_config.qbo_bank_account_id`) → stamp `qbo_payment_id` so the #47 webhook **dedups** it. Guards on the payment scope (409 if not granted); declines surface as 402. Logs `worker_runs` as `qbo-charge`.
+- **`src/pages/InvoiceEditor.jsx`** — the payment modal gained a **"Charge a card"** tab (alongside "Record payment") in new-payment mode. Tokenizes client-side then calls `/api/qbo-charge`; success closes + reloads (payment shows via the "Online · QBO" path), decline shows inline. **Gated on** `canEditBilling` **+ invoice synced + `has_payment_scope`** (from `get_qbo_connection_status`). Card fields are cleared on close/Escape.
+- **`src/pages/PaymentSettings.jsx`** — new **"QuickBooks card terminal"** status row (Ready / Reconnect to enable / Not connected) from `get_qbo_connection_status`; keyed charges deposit to the existing **Deposit bank account** picker.
+- **Scope:** `functions/lib/quickbooks.js` `SCOPE` includes `com.intuit.quickbooks.payment`; `saveTokens` persists the granted `scope` → `integration_credentials.granted_scopes`. **The owner must reconnect QuickBooks once** (Dev Tools → Connect QuickBooks → approve) to grant the Payments scope — until then `granted_scopes` lacks `payment` and the tab/worker stay disabled by design.
+- **Schema:** `supabase/migrations/20260626_integration_credentials_scopes.sql` (`granted_scopes text`) + `supabase/migrations/20260627_get_qbo_connection_status.sql` (the gating RPC).
 
 ---
 
