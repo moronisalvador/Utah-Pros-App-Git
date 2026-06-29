@@ -2,25 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
-import { reloadOnceForStaleChunk } from './lib/staleChunkReload';
 import './index.css';
-
-// ─── Stale-deploy safety net ──────────────────────────────────────────
-// Page routes are code-split (React.lazy). After a new deploy the old chunk
-// hashes 404, so an app still holding a stale index can crash trying to
-// lazy-load a route (the "ran into a problem" screen). Vite fires
-// `vite:preloadError` when a dynamically-imported module fails to load —
-// catch it and reload ONCE to fetch the fresh index + chunks (loop-guarded).
-window.addEventListener('vite:preloadError', (e) => {
-  try { e.preventDefault(); } catch { /* ignore */ }
-  reloadOnceForStaleChunk('vite:preloadError');
-});
 
 // Bumped to force a new bundle hash when the Cloudflare edge cached a
 // broken response (text/html instead of application/javascript) for an
 // immutable /assets/*.js URL. Any time you suspect edge poisoning again,
 // changing this literal is the cheapest way to invalidate.
-const BUILD_ID = '2026-04-18-ios-unblank';
+const BUILD_ID = '2026-06-29-newjob-unblank';
 void BUILD_ID;
 
 // Notify Capgo that the app booted successfully so a bad OTA bundle isn't
