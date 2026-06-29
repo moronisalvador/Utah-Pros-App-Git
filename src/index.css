@@ -4935,21 +4935,20 @@ tr:hover td { background: var(--bg-secondary); }
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
 }
-/* Page transition — directional slide on route change. The .tech-content
-   wrapper is keyed by pathname in TechLayout so it remounts and replays this
-   animation on every navigation. Forward (PUSH/REPLACE) slides in from the
-   right; Back (POP) slides in from the left — so moving between pages reads as
-   native sliding instead of an instant blink. */
-@keyframes tech-page-fwd {
-  from { opacity: 0; transform: translateX(64px); }
-  to   { opacity: 1; transform: translateX(0); }
+/* Page transition on route change. The .tech-content wrapper is keyed by
+   pathname in TechLayout so it remounts and replays this on every navigation.
+   NOTE: this is an OPACITY fade, not a transform-slide, on purpose — a CSS
+   `transform` on .tech-content re-anchors its position:fixed children (the
+   sticky "Create" submit bars on the creation pages) to the container instead
+   of the viewport, which floats those buttons into the middle of the form.
+   Opacity has no such side effect. A true directional slide needs those fixed
+   submit bars converted to in-flow footers first. */
+@keyframes tech-page-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-@keyframes tech-page-back {
-  from { opacity: 0; transform: translateX(-64px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.tech-content--fwd  { animation: tech-page-fwd 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); will-change: transform; }
-.tech-content--back { animation: tech-page-back 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); will-change: transform; }
+.tech-content--fwd,
+.tech-content--back { animation: tech-page-fade 0.2s ease-out; }
 
 /* Button press feedback in tech layout */
 .tech-layout .btn {
