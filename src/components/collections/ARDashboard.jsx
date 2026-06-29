@@ -23,6 +23,11 @@
  *   - COLOR SEMANTICS: a balance is neutral ink, never red. Red appears only on a
  *     genuinely past-due age pill / OVERDUE badge / the 90+ aging bucket. Green is
  *     collected/current; amber is aging. Do not redden outstanding balances.
+ *   - CLICK-TO-FILTER: the Outstanding/Overdue headline figures set `mode`
+ *     (open/overdue/all); each aging bucket sets `bucket`. A bucket OVERRIDES mode
+ *     in `filtered` (aging only applies to open invoices, so a band always means
+ *     "open invoices in that age band"), and picking a mode clears the bucket — the
+ *     two are mutually exclusive so the active highlight is always single + truthful.
  *   - The A/R worklist is period-INDEPENDENT (it always shows all open invoices,
  *     so aged debt can't hide). The header period switch scopes only the
  *     Invoiced + Collected tiles (money in the window) — matching the design
@@ -117,6 +122,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
   const [filters, setFilters] = useState({ divisions: [], sync: [], minAmt: '', maxAmt: '' });
   const [cols, setCols] = useState({ client: true, claimJob: true, sent: true, age: true, total: true, collected: true, balance: true });
   const [sort, setSort] = useState(DEFAULT_SORT); // newest created first until a header is clicked
+  const [bucket, setBucket] = useState(null);     // active aging-bucket filter (click an aging cell); overrides mode
 
   // ─── SECTION: Data fetching ──────────────
   // dbRef holds the latest REST client so load() stays stable across renders. A token
@@ -172,9 +178,16 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
     const q = search.trim().toLowerCase();
     return periodRows.filter(r => {
       const bal = Number(r.balance || 0);
-      if (mode === 'open' && bal <= 0.005) return false;
-      if (mode === 'overdue' && !(bal > 0.005 && (daysPastDue(r.due_date, today) || 0) > 0)) return false;
-      if (mode === 'collected' && !(Number(r.amount_paid || 0) > 0.005)) return false;
+      // An active aging bucket overrides Open/Overdue/All: aging only applies to open invoices,
+      // so a bucket always means "open invoices in this age band" — matching its headline amount.
+      if (bucket) {
+        if (bal <= 0.005) return false;
+        if (bucketKey(daysPastDue(r.due_date, today)) !== bucket) return false;
+      } else {
+        if (mode === 'open' && bal <= 0.005) return false;
+        if (mode === 'overdue' && !(bal > 0.005 && (daysPastDue(r.due_date, today) || 0) > 0)) return false;
+        if (mode === 'collected' && !(Number(r.amount_paid || 0) > 0.005)) return false;
+      }
       if (filters.divisions.length && !filters.divisions.includes(String(r.division || '').toLowerCase())) return false;
       if (filters.sync.length) {
         const st = r.qbo_sync_error ? 'error' : (r.qbo_invoice_id ? 'synced' : 'unsynced');
@@ -188,7 +201,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
       }
       return true;
     });
-  }, [periodRows, mode, search, filters, today]);
+  }, [periodRows, mode, search, filters, today, bucket]);
 
   // ─── SECTION: Sorting (client-side) ──────────────
   // Default is newest-created-first (DEFAULT_SORT, key 'created'). Clicking a header
@@ -209,6 +222,11 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
 
   const onSort = (key) =>
     setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+
+  // Picking Open/Overdue/All (toggle or the Outstanding/Overdue headline) clears any aging-bucket
+  // drill-down; clicking an aging cell toggles that band (and `filtered` then ignores `mode`).
+  const pickMode = (m) => { setMode(m); setBucket(null); };
+  const toggleBucket = (key) => setBucket(b => (b === key ? null : key));
 
   const footer = useMemo(() => {
     const open = filtered.filter(r => Number(r.balance) > 0.005);
@@ -253,11 +271,11 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
 
         {/* Headline — Outstanding hero + Overdue callout; both filter the table */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-          <button type="button" className="coll-arhead" data-active={mode === 'open'} onClick={() => setMode('open')}>
+          <button type="button" className="coll-arhead" data-active={mode === 'open' && !bucket} onClick={() => pickMode('open')}>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: '-.01em', lineHeight: 1, ...tnum }}>{fmt$(k.outstanding)}</div>
             <div style={{ fontSize: 12.5, color: C.muted }}>outstanding · {k.openCount} open invoice{k.openCount === 1 ? '' : 's'}</div>
           </button>
-          <button type="button" className="coll-arhead coll-arhead-r" data-active={mode === 'overdue'} onClick={() => setMode('overdue')}>
+          <button type="button" className="coll-arhead coll-arhead-r" data-active={mode === 'overdue' && !bucket} onClick={() => pickMode('overdue')}>
             <div style={{ fontSize: 18, fontWeight: 800, color: k.overdue > 0 ? STATUS.danger.text : C.faint, ...tnum }}>{fmt$(k.overdue)}</div>
             <div style={{ fontSize: 12, fontWeight: 500, color: k.overdue > 0 ? STATUS.danger.text : C.muted }}>{k.overdue > 0 ? `${k.overdueCount} past due` : 'nothing past due'}</div>
           </button>
@@ -272,11 +290,26 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
           {AGING.map(b => {
             const cell = k.aging[b.key];
             const has = cell.amount > 0;
-            return (
-              <div key={b.key} className="coll-aging-cell">
-                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: C.faint }}>{b.label}</div>
+            const active = bucket === b.key;
+            // Empty bands aren't clickable (nothing to show) — but a still-selected band stays
+            // clickable so it can always be toggled off even if a period change emptied it.
+            const clickable = has || active;
+            const body = (
+              <>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: active ? STATUS.info.text : C.faint }}>{b.label}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, margin: '4px 0 2px', color: has ? b.val : C.faint2, ...tnum }}>{fmt$(cell.amount)}</div>
                 <div style={{ fontSize: 11, fontWeight: 500, color: has ? C.muted : C.faintSub }}>{cell.count} invoice{cell.count === 1 ? '' : 's'}</div>
+              </>
+            );
+            return (
+              <div key={b.key} className="coll-aging-cell">
+                {clickable ? (
+                  <button type="button" className="coll-aging-btn" data-active={active} aria-pressed={active}
+                    onClick={() => toggleBucket(b.key)}
+                    title={active ? 'Clear filter — show all open' : `Filter the list to ${b.label} · ${cell.count} invoice${cell.count === 1 ? '' : 's'}`}>
+                    {body}
+                  </button>
+                ) : body}
               </div>
             );
           })}
@@ -287,7 +320,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
       <CollCard pad={0} style={{ overflow: 'hidden' }}>
         <div className="coll-toolbar">
           <SearchBox value={search} onChange={setSearch} placeholder="Search client, claim, job, invoice…" style={{ flex: 1, minWidth: 220 }} />
-          <SegControl options={[{ value: 'open', label: 'Open' }, { value: 'overdue', label: 'Overdue' }, { value: 'all', label: 'All' }]} value={mode} onChange={setMode} size="sm" ariaLabel="Status filter" />
+          <SegControl options={[{ value: 'open', label: 'Open' }, { value: 'overdue', label: 'Overdue' }, { value: 'all', label: 'All' }]} value={bucket ? null : mode} onChange={pickMode} size="sm" ariaLabel="Status filter" />
           <PopoverButton label="Filters" icon={<FunnelIcon />} count={activeFilterCount} width={300}>
             {() => (
               <>
@@ -427,7 +460,7 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
         rows={k.open}
         filteredRows={sorted}
         today={today}
-        viewState={{ period, search, mode, filters, sort }}
+        viewState={{ period, search, mode, filters, sort, bucket }}
         hidden={modalOpen}
       />
     </div>
