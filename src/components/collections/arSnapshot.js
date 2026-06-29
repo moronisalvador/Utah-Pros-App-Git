@@ -137,6 +137,7 @@ export function buildArSnapshot({ rows = [], filteredRows = [], today, viewState
       period: viewState.period ?? null,
       search: viewState.search ?? '',
       mode: viewState.mode ?? null,
+      bucket: viewState.bucket ?? null,
       filters: viewState.filters ?? null,
       sort: viewState.sort ?? null,
     },

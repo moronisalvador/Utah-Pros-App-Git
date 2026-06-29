@@ -123,7 +123,12 @@ src/
                                     amber = aging. A/R TOP is ONE unified summary card — an Outstanding hero + an
                                     Overdue callout (both click-to-filter the table) over the aging bar + 5 buckets —
                                     which replaced the old 4 KPI tiles + a separate aging card (they showed the same
-                                    money twice). The A/R period switch scopes the WHOLE A/R view by invoice date
+                                    money twice). EACH aging bucket amount is also click-to-filter (Jul 2026): tapping
+                                    a band drills the table to the open invoices in that age range (state `bucket`;
+                                    `.coll-aging-btn`). A bucket OVERRIDES the Open/Overdue/All `mode` (aging applies
+                                    only to open invoices) and picking a mode/Outstanding/Overdue clears the bucket, so
+                                    exactly one slice is highlighted at a time; empty bands aren't clickable; the footer
+                                    + CSV + Copilot snapshot all follow the active band. The A/R period switch scopes the WHOLE A/R view by invoice date
                                     (summary + aging + table recompute; drafts/undated always shown; default All).
                                     A/R rows are deliberately de-noised: age is plain text (red only when overdue),
                                     QB shows only on a sync error, and there are NO per-row status pills (overdue →
