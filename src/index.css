@@ -4935,8 +4935,23 @@ tr:hover td { background: var(--bg-secondary); }
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
 }
-.tech-content {
-  animation: tech-fade-in 0.15s ease-out;
+/* Page transition — directional slide on route change. The .tech-content
+   wrapper is keyed by pathname in TechLayout so it remounts and replays this
+   animation on every navigation. Forward (PUSH/REPLACE) slides in from the
+   right; Back (POP) slides in from the left — so moving between pages reads as
+   native sliding instead of an instant blink. */
+@keyframes tech-page-fwd {
+  from { opacity: 0; transform: translateX(34px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes tech-page-back {
+  from { opacity: 0; transform: translateX(-34px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.tech-content--fwd  { animation: tech-page-fwd 0.24s ease-out; }
+.tech-content--back { animation: tech-page-back 0.24s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .tech-content--fwd, .tech-content--back { animation: none; }
 }
 
 /* Button press feedback in tech layout */
