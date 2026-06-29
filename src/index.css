@@ -703,6 +703,7 @@ tr:hover td { background: var(--bg-secondary); }
 .division-badge[data-division="water"] { background: #dbeafe; color: #1e40af; }
 .division-badge[data-division="mold"] { background: #fce7f3; color: #9d174d; }
 .division-badge[data-division="reconstruction"] { background: #fef3c7; color: #92400e; }
+.division-badge[data-division="remodeling"] { background: #fdece8; color: #c0432a; }
 .division-badge[data-division="contents"] { background: #d1fae5; color: #065f46; }
 
 /* ── Priority tags ── */

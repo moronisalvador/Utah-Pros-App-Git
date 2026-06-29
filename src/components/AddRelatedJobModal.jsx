@@ -8,6 +8,7 @@ const DIVISION_OPTIONS = [
   { value: 'water', label: '💧 Water Mitigation', emoji: '💧' },
   { value: 'mold', label: '🦠 Mold Remediation', emoji: '🦠' },
   { value: 'reconstruction', label: '🏗️ Reconstruction', emoji: '🏗️' },
+  { value: 'remodeling', label: '🔨 Remodeling', emoji: '🔨' },
   { value: 'fire', label: '🔥 Fire', emoji: '🔥' },
   { value: 'contents', label: '📦 Contents', emoji: '📦' },
 ];

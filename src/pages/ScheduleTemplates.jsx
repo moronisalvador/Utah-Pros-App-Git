@@ -11,6 +11,7 @@ const DIVISIONS = [
   { value: 'water', label: 'Water Mitigation' },
   { value: 'mold', label: 'Mold Remediation' },
   { value: 'reconstruction', label: 'Reconstruction' },
+  { value: 'remodeling', label: 'Remodeling' },
   { value: 'fire', label: 'Fire' },
   { value: 'contents', label: 'Contents' },
 ];
