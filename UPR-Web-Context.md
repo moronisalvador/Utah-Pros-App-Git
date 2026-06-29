@@ -139,10 +139,17 @@ src/
                                     the filtered+sorted invoice list, and the view state — via buildArSnapshot()
                                     (arSnapshot.js) and injects it into the system prompt, so most questions answer in
                                     ONE call with no DB lookups and the numbers always match the screen (the model never
-                                    sums; code does). Three READ-ONLY drill-down tools map to existing data:
+                                    sums; code does). READ-ONLY drill-down tools map to existing data:
                                     lookup_customer → get_customer_detail / search_contacts_for_job (phone/email +
                                     claims/jobs), get_invoice_detail → invoices + invoice_line_items + payments (+
-                                    xactimate_meta), list_payments → get_payments_ledger. ADVISORY ONLY — it never
+                                    xactimate_meta), list_payments → get_payments_ledger, list_estimates → get_estimates,
+                                    get_job_detail → jobs select + get_job_financials, lookup_claim → claims select,
+                                    list_job_labor → get_job_labor_summary. Plus LIVE QuickBooks (read-only via qboFetch,
+                                    functions/lib/quickbooks.js — same OAuth as qbo-invoice/qbo-query, no new secrets):
+                                    qbo_customer (real-time QBO balance + open QBO invoices for a contact) and
+                                    qbo_ar_summary (live total A/R + aging across open QBO invoices, for reconciling
+                                    against the on-screen/local A/R). QBO tools are intent-based — the worker builds the
+                                    safe /query string (the model never passes raw QQL). ADVISORY ONLY — it never
                                     drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
                                     (no history tables). Auth: any logged-in session (the page is already access-gated);
                                     reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
