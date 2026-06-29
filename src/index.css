@@ -4941,18 +4941,15 @@ tr:hover td { background: var(--bg-secondary); }
    right; Back (POP) slides in from the left — so moving between pages reads as
    native sliding instead of an instant blink. */
 @keyframes tech-page-fwd {
-  from { opacity: 0; transform: translateX(34px); }
+  from { opacity: 0; transform: translateX(64px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 @keyframes tech-page-back {
-  from { opacity: 0; transform: translateX(-34px); }
+  from { opacity: 0; transform: translateX(-64px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-.tech-content--fwd  { animation: tech-page-fwd 0.24s ease-out; }
-.tech-content--back { animation: tech-page-back 0.24s ease-out; }
-@media (prefers-reduced-motion: reduce) {
-  .tech-content--fwd, .tech-content--back { animation: none; }
-}
+.tech-content--fwd  { animation: tech-page-fwd 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); will-change: transform; }
+.tech-content--back { animation: tech-page-back 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); will-change: transform; }
 
 /* Button press feedback in tech layout */
 .tech-layout .btn {
