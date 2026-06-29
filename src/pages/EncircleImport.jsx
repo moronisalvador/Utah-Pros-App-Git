@@ -7,6 +7,7 @@ const DIVISIONS = [
   { key: 'mold',           label: 'Mold Remediation', prefix: 'M-' },
   { key: 'fire',           label: 'Fire',             prefix: 'F-' },
   { key: 'reconstruction', label: 'Reconstruction',   prefix: 'R-' },
+  { key: 'remodeling',     label: 'Remodeling',       prefix: 'RM-' },
   { key: 'contents',       label: 'Contents',         prefix: 'C-' },
   { key: 'general',        label: 'General',          prefix: 'G-' },
 ];

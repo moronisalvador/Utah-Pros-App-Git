@@ -292,9 +292,10 @@ under `.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE p
 
 **⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
 uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
-`#f2664a`, Mold pink `#ec4899` — and introduces a **"Remodeling"** division **only here**. The app-wide
-`DIVISION_COLORS` and the division enum are untouched. App-wide adoption + a real Remodeling division is a
-separate future project (Phase 4 below, decision pending).
+`#f2664a`, Mold pink `#ec4899`. **Remodeling is now a real app-wide division** (added Jun 29 2026): the
+`job_division` enum includes `remodeling`, new jobs/invoices number as `RM-YYMM-###`, it maps to the same QBO
+item/class as reconstruction (`divisionToQbo`), and it appears in the New Job form + all division color/label
+maps. This dashboard keeps its own scoped palette (above).
 
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
@@ -344,7 +345,7 @@ separate future project (Phase 4 below, decision pending).
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
   owned by a separate effort** — the widget reads `get_open_estimates_summary` and lights up automatically
   once `estimates` rows exist with an open `status` (no dashboard change needed).
-- **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+- **Phase 4 — first-class "Remodeling" division shipped Jun 29 2026** (enum + `RM-` numbers + app-wide color/label maps + QBO mapping). The app-wide palette overhaul (recolor every division to the dashboard scheme) is still pending.
   **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
   "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
 

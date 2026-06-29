@@ -14,7 +14,7 @@ import CreateJobModal from '@/components/CreateJobModal';
 //     then loads the chosen customer's claims → jobs.
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
-const DIVISION_EMOJI = { water: '\u{1F4A7}', mold: '\u{1F9A0}', reconstruction: '\u{1F3D7}️', fire: '\u{1F525}', contents: '\u{1F4E6}' };
+const DIVISION_EMOJI = { water: '\u{1F4A7}', mold: '\u{1F9A0}', reconstruction: '\u{1F3D7}️', remodeling: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}' };
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 
 function IconSearch(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>); }

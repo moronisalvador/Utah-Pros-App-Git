@@ -135,7 +135,7 @@ function friendlyErr(msg = '') {
   return msg.replace(/^RPC [^:]+:\s*/, '');
 }
 
-const DIVISIONS = ['water','mold','reconstruction','fire','contents','general'];
+const DIVISIONS = ['water','mold','reconstruction','remodeling','fire','contents','general'];
 const WORK_TYPES = ['regular','field','travel','overtime','admin','training','other'];
 const STATUS_SEG = [
   { value:'',           label:'All' },

@@ -18,7 +18,7 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
-const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
+const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
 const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estimates'},{key:'invoice',label:'Invoices'},{key:'moisture_log',label:'Moisture Logs'},{key:'demo_sheet',label:'Scope Sheets'},{key:'receipt',label:'Receipts'},{key:'contract',label:'Contracts'},{key:'other',label:'Other'}];
 
 

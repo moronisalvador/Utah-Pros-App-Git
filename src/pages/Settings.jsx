@@ -59,6 +59,7 @@ const DIVISION_META = {
   water:          { emoji: '💧', label: 'Water Damage Mitigation'  },
   mold:           { emoji: '🧫', label: 'Mold Remediation'          },
   reconstruction: { emoji: '🏗️', label: 'Repairs & Reconstruction' },
+  remodeling:     { emoji: '🔨', label: 'Remodeling'              },
   fire:           { emoji: '🔥', label: 'Fire & Smoke Restoration'  },
   contents:       { emoji: '📦', label: 'Contents Restoration'      },
 };
@@ -87,6 +88,7 @@ const DEFAULT_TEMPLATES = {
     { division: 'reconstruction', sort_order: 3, heading: 'Repairs & Reconstruction',  body: 'I confirm that all repairs and reconstruction performed by {{company_name}} have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
     { division: 'fire',           sort_order: 4, heading: 'Fire & Smoke Restoration',  body: 'I confirm that all fire and smoke restoration services performed by {{company_name}} have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     { division: 'contents',       sort_order: 5, heading: 'Contents Restoration',      body: 'I confirm that {{company_name}} has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    { division: 'remodeling',     sort_order: 6, heading: 'Remodeling',                body: 'I confirm that all remodeling and finish work performed by {{company_name}} has been completed to my satisfaction. The work is 100% complete, in equal or better condition than agreed, and I have no outstanding complaints or concerns.' },
   ],
   work_auth: [{ division: null, sort_order: 1,
     heading: 'Work Authorization & Service Agreement',

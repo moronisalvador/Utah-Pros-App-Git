@@ -91,6 +91,7 @@ const DIVISIONS = [
   { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
   { value: 'mold', emoji: '\u{1F9A0}', label: 'Mold', color: '#9d174d' },
   { value: 'reconstruction', emoji: '\u{1F3D7}\uFE0F', label: 'Recon', color: '#d97706' },
+  { value: 'remodeling', emoji: '\u{1F528}', label: 'Remodel', color: '#f2664a' },
   { value: 'fire', emoji: '\u{1F525}', label: 'Fire', color: '#dc2626' },
   { value: 'contents', emoji: '\u{1F4E6}', label: 'Contents', color: '#059669' },
 ];
