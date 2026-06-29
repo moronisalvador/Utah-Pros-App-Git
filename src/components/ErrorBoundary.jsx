@@ -1,5 +1,4 @@
 import { Component } from 'react';
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/staleChunkReload';
 
 /**
  * ErrorBoundary — catches render errors in any child tree.
@@ -14,21 +13,14 @@ import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/staleChunkReloa
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, reloading: false };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
-    // A stale-deploy chunk failure isn't a real crash — flag it so we show a
-    // quiet "Updating…" state instead of the scary error screen while reloading.
-    return { hasError: true, error, reloading: isChunkLoadError(error) };
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, info) {
-    // Stale-deploy chunk load failure → reload once to fetch the fresh bundle.
-    if (isChunkLoadError(error)) {
-      reloadOnceForStaleChunk(`ErrorBoundary:${this.props.section || 'App'}`);
-      return;
-    }
     // Log to console — swap for a real error reporting service later
     console.error(`[ErrorBoundary:${this.props.section || 'App'}]`, error, info.componentStack);
   }
@@ -39,23 +31,6 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (!this.state.hasError) return this.props.children;
-
-    // Stale-deploy chunk error: we're reloading to the fresh build — show a
-    // quiet updating state instead of the error screen.
-    if (this.state.reloading) {
-      return (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', minHeight: '60vh', padding: '32px 24px',
-          textAlign: 'center', gap: 14,
-        }}>
-          <div className="spinner" style={{ width: 24, height: 24 }} />
-          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: 'var(--font-sans)' }}>
-            Updating to the latest version…
-          </div>
-        </div>
-      );
-    }
 
     const section = this.props.section || 'This page';
 
