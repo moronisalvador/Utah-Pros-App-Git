@@ -108,10 +108,12 @@ src/
                                     active tab is synced to ?tab= (replace) so tabs are deep-linkable and the
                                     browser Back button (and builder "← Back") returns to the tab you were on.
     components/collections/       — Collections redesign pieces: collTokens.js (page-scoped UPR palette + $/date
-                                    formatters + period math + invoiceStatusKind + CSV), collKit.jsx (shared
+                                    formatters + period math + invoiceStatusKind + aging bucketKey/AGING_BUCKETS + CSV),
+                                    collKit.jsx (shared
                                     primitives: CollCard, Kpi, SegControl, SearchBox, StatusBadge, DivisionSquare,
                                     ProgressBar, Pill, PopoverButton + Filters/Columns, inline SVG icons),
                                     ARDashboard.jsx, InvoicesList.jsx, EstimatesList.jsx, PaymentsLedger.jsx,
+                                    ARChatBubble.jsx + arSnapshot.js (AI A/R Copilot — see note below),
                                     SearchSelect.jsx (typeahead dropdown for the QBO Item/Class pickers in the
                                     invoice & estimate builders), ActionMenu.jsx ("Manage ▾" dropdown in the
                                     builder top toolbar — two-click confirm for Revert/Delete). Styles
@@ -130,6 +132,24 @@ src/
                                     from get_ar_invoices (job_address/job_city added by migration
                                     20260625_get_ar_invoices_address.sql). The Payments "Processing/in-flight" section
                                     from the design is omitted: get_payments_ledger returns cleared payments only.
+                                    AI A/R COPILOT (Jun 2026) — a floating, page-aware chat bubble on the A/R tab
+                                    (ARChatBubble.jsx, mounted by ARDashboard; worker functions/api/collections-chat.js,
+                                    Sonnet 4.6, non-streaming). On each send the browser builds a DETERMINISTIC snapshot
+                                    of exactly what's on screen — outstanding/overdue/aging totals, ranked top-debtors,
+                                    the filtered+sorted invoice list, and the view state — via buildArSnapshot()
+                                    (arSnapshot.js) and injects it into the system prompt, so most questions answer in
+                                    ONE call with no DB lookups and the numbers always match the screen (the model never
+                                    sums; code does). Three READ-ONLY drill-down tools map to existing data:
+                                    lookup_customer → get_customer_detail / search_contacts_for_job (phone/email +
+                                    claims/jobs), get_invoice_detail → invoices + invoice_line_items + payments (+
+                                    xactimate_meta), list_payments → get_payments_ledger. ADVISORY ONLY — it never
+                                    drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
+                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
+                                    reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
+                                    bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
+                                    never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
+                                    backdrop — the live A/R view it reads stays scrollable) and hides under the
+                                    New-invoice/estimate modals (z 80/90 vs 200).
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)
