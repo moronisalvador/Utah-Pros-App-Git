@@ -210,9 +210,12 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
   - Builds lines from `invoice_line_items`: `ItemRef = li.qbo_item_id || map.itemId`,
     `ClassRef = li.qbo_class_id || divClassId`, plus Qty/UnitPrice. **No-lines fallback:** one summary
     line at `adjusted_total ?? total`. Throws if the total ≤ 0.
-  - Sets `DocNumber = job_number` (needs "Custom transaction numbers" ON in QBO, else ignored), a
-    PrivateNote memo (date-of-loss / job / claim / address), `ShipAddr`, and a `LinkedTxn` to the QBO
-    estimate when converted.
+  - Sets `DocNumber` to a **unique-per-invoice** number: it reuses the one QBO already assigned, else
+    `job_number` for the first invoice on the job and `job_number-N` for the Nth — so a job's 2nd+
+    invoice (a supplement) doesn't collide ("Duplicate Document Number"). Needs "Custom transaction
+    numbers" ON in QBO, else ignored. Also a PrivateNote memo (date-of-loss / job / claim / address),
+    `ShipAddr`, and a `LinkedTxn` to the QBO estimate when converted. On a residual duplicate-number
+    fault (code 6140) it retries once without the forced number, so Save never hard-fails.
   - **Writeback:** `qbo_invoice_id`, `qbo_doc_number`, `qbo_synced_at`, `qbo_sync_error=null`; first
     create also sets `sent_at` + `due_date` (+30 days). `action:'send'` → QBO emails the customer and
     sets `qbo_emailed_at`/`qbo_email_status`; `action:'delete'` removes the QBO invoice.
@@ -323,7 +326,10 @@ teach it a new rule, add guidance / a worked example / a check in `analyze-xacti
   gating check.
 - **Coordination** — `InvoiceEditor.jsx`, `NewInvoiceModal.jsx`, the billing schema, `CLAUDE.md`, and
   `UPR-Web-Context.md` are touched by multiple chats. `git fetch origin dev` + rebase before pushing.
-- **DocNumber** uses `job_number` and only prints if "Custom transaction numbers" is ON in QBO.
+- **DocNumber** is unique per invoice — the number QBO already assigned, else `job_number` (first
+  invoice on the job) or `job_number-N` (the Nth, e.g. a supplement). A job **can** have more than one
+  invoice (you can't add lines to an already-paid invoice, so supplements get their own). Only prints
+  if "Custom transaction numbers" is ON in QBO.
 - **Reconciliation flags, never blocks** — a non-reconciling estimate still imports; it's just marked.
 
 ---

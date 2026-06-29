@@ -34,6 +34,7 @@ CLAIM            — the loss (one address/event). NOT a sale. Has date_of_loss,
   - QBO: `qbo_update_entity('Invoice', <id>, {"DocNumber": "<job#>"})`
   - UPR: `UPDATE invoices SET qbo_doc_number='<job#>' WHERE qbo_invoice_id='<id>';`
   - One invoice = one job; a split claim (water + recon) has **two** invoices, each numbered to its own job (W-… and R-…).
+  - ⚠️ **A job with more than one invoice** (e.g. a **supplement** billed after the first was paid) must **not** have both numbered to the bare job number — that triggers QBO's *Duplicate Document Number* error. The 2nd+ invoice is numbered `job_number-N` (e.g. `R-2604-009-2`); the `qbo-invoice` worker assigns this automatically, so leave each invoice's existing `qbo_doc_number` as-is rather than forcing it back to the bare job number.
 
 ---
 
