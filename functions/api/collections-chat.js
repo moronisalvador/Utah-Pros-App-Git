@@ -19,6 +19,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { qboFetch } from '../lib/quickbooks.js';
 
 // ─── SECTION: Config ──────────────
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -27,7 +28,7 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
 const MAX_TURNS = 24;      // cap history sent to the model to bound token cost
 const MAX_LEN = 6000;      // per-message character cap (defensive)
-const MAX_TOOL_ITERS = 4;  // cap the agentic tool loop (speed + cost guard)
+const MAX_TOOL_ITERS = 5;  // cap the agentic tool loop (speed + cost guard)
 const MAX_TOKENS = 1500;   // chat replies are short
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,6 +83,16 @@ You sit on the A/R · Outstanding tab: an Outstanding total, an Overdue callout,
 - Explain one invoice: use get_invoice_detail for its line items, payment history, and Xactimate basis.
 - Recent cash: use list_payments for the payment ledger (optionally for one customer).
 - Small, transparent what-if math on a handful of named invoices is fine (show the steps). For sums across many invoices, rely on the snapshot's totals.
+
+# DEEPER LOOKUPS (beyond the on-screen A/R)
+- Estimates: use list_estimates (optionally for one customer or status) — e.g. "is there an open estimate for this customer?".
+- Job detail: use get_job_detail for a job's phase, status, division, key dates, and its invoiced/collected/balance + who owes (insurance vs homeowner).
+- Claim detail: use lookup_claim (by claim number or id) for carrier, date of loss, loss address, status, and deductible.
+- Labor: use list_job_labor for a job's total hours and labor cost (broken down by employee).
+
+# LIVE QUICKBOOKS (read-only)
+- qbo_customer gives a customer's REAL-TIME QuickBooks balance + their open QBO invoices; qbo_ar_summary gives the company's live total A/R + aging across all open QBO invoices.
+- Your snapshot is UPR's local A/R; QuickBooks is the synced accounting source. They can differ slightly because of sync timing (a payment recorded in one but not yet the other, or an invoice not yet pushed). When they differ, say so and explain the likely reason — don't assume either is "wrong." Reach for the QBO tools when the user wants to check or reconcile against QuickBooks.
 
 # STRICT RULES
 1. Never invent numbers. Use only the snapshot and tool results. If a figure isn't available, say so and offer to look it up.
@@ -152,6 +163,60 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'list_estimates',
+    description: 'List estimates (pre-sale quotes), newest first. Optionally narrow to one customer by contact_id and/or a status. Use for "is there an open estimate for this customer?".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        contact_id: { type: 'string', description: 'Narrow to one customer (optional).' },
+        status: { type: 'string', description: 'Optional status filter, e.g. draft, submitted, approved, denied.' },
+      },
+    },
+  },
+  {
+    name: 'get_job_detail',
+    description: 'Get ONE job’s operational + financial detail: phase, status, division, address, key dates, and its invoiced/collected/balance + insurance vs homeowner responsibility. Pass the job_id (from a customer lookup or invoice).',
+    input_schema: {
+      type: 'object',
+      properties: { job_id: { type: 'string', description: 'The job id (uuid).' } },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'lookup_claim',
+    description: 'Look up ONE insurance claim: carrier, date of loss, loss address, status, deductible, policy number. Pass a claim_id (uuid) or a claim_number.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        claim_id: { type: 'string', description: 'The claim id (uuid).' },
+        claim_number: { type: 'string', description: 'The claim number (e.g. as shown on the A/R row).' },
+      },
+    },
+  },
+  {
+    name: 'list_job_labor',
+    description: 'Summarize logged labor for ONE job — total hours and labor cost, broken down by employee. Use for "how many hours / how much labor on this job?". Pass the job_id (uuid).',
+    input_schema: {
+      type: 'object',
+      properties: { job_id: { type: 'string', description: 'The job id (uuid).' } },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'qbo_customer',
+    description: 'LIVE QuickBooks: a customer’s real-time QBO balance and their open QBO invoices. Use to check/reconcile a customer against QuickBooks (e.g. "what’s the Johnson balance in QuickBooks?"). Pass the contact_id from the snapshot.',
+    input_schema: {
+      type: 'object',
+      properties: { contact_id: { type: 'string', description: 'The contact_id from the snapshot.' } },
+      required: ['contact_id'],
+    },
+  },
+  {
+    name: 'qbo_ar_summary',
+    description: 'LIVE QuickBooks: the company’s real-time total A/R and aging across all open QBO invoices. Use to reconcile our on-screen outstanding against QuickBooks (e.g. "does our outstanding match QuickBooks?"). No input.',
+    input_schema: { type: 'object', properties: {} },
+  },
 ];
 
 function slimCustomer(d) {
@@ -185,7 +250,43 @@ const slimPayment = (r) => ({
   claim: r.claim_number || null, contact_id: r.contact_id || null, sync_error: !!r.qbo_sync_error,
 });
 
-async function runTool(db, name, input = {}) {
+const slimEstimate = (r) => ({
+  number: r.qbo_doc_number || r.estimate_number || null,
+  type: r.estimate_type, status: r.status, amount: round2(r.amount),
+  division: r.division || null, job_number: r.job_number || null, claim_number: r.claim_number || null,
+  client: r.client_name || null, contact_id: r.contact_id || null,
+  converted_invoice: r.converted_invoice_number || null,
+  created_at: r.created_at, expiration_date: r.expiration_date,
+});
+
+// LIVE QUICKBOOKS — the worker builds the read-only /query string (the model never passes raw QQL),
+// reusing functions/lib/quickbooks.js qboFetch (auto token-refresh). Returns the QueryResponse object.
+async function qboQuery(env, q) {
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=70`, { method: 'GET' });
+  if (!res.ok) {
+    const tid = res.headers.get('intuit_tid') || null;
+    throw new Error(`QuickBooks read failed (${res.status})${tid ? ` [tid ${tid}]` : ''}`);
+  }
+  const data = await res.json().catch(() => ({}));
+  return data.QueryResponse || {};
+}
+
+// Bucket live QBO open invoices by days past DueDate — mirror the on-screen aging boundaries.
+function qboAging(invoices, todayMs) {
+  const buckets = { current: 0, b30: 0, b60: 0, b90: 0, b90p: 0 };
+  let total = 0;
+  for (const inv of invoices) {
+    const bal = Number(inv.Balance || 0);
+    total += bal;
+    const due = inv.DueDate ? new Date(`${inv.DueDate}T00:00:00`).getTime() : null;
+    const d = due == null ? null : Math.floor((todayMs - due) / 86400000);
+    const key = (d == null || d <= 0) ? 'current' : d <= 30 ? 'b30' : d <= 60 ? 'b60' : d <= 90 ? 'b90' : 'b90p';
+    buckets[key] = round2(buckets[key] + bal);
+  }
+  return { total: round2(total), count: invoices.length, buckets };
+}
+
+async function runTool(db, env, name, input = {}) {
   if (name === 'lookup_customer') {
     if (input.contact_id) {
       if (!UUID_RE.test(input.contact_id)) return { error: 'contact_id must be a valid id.' };
@@ -222,6 +323,81 @@ async function runTool(db, name, input = {}) {
     let rows = (await db.rpc('get_payments_ledger', { p_limit: limit })) || [];
     if (input.contact_id && UUID_RE.test(input.contact_id)) rows = rows.filter((r) => r.contact_id === input.contact_id);
     return { payments: rows.slice(0, limit).map(slimPayment), count: rows.length };
+  }
+
+  if (name === 'list_estimates') {
+    let rows = (await db.rpc('get_estimates')) || [];
+    if (input.contact_id && UUID_RE.test(input.contact_id)) rows = rows.filter((r) => r.contact_id === input.contact_id);
+    if (input.status && typeof input.status === 'string') {
+      const s = input.status.toLowerCase();
+      rows = rows.filter((r) => String(r.status || '').toLowerCase() === s);
+    }
+    return { estimates: rows.slice(0, 50).map(slimEstimate), count: rows.length };
+  }
+
+  if (name === 'get_job_detail') {
+    const id = input.job_id;
+    if (!UUID_RE.test(String(id || ''))) return { error: 'job_id must be a valid id.' };
+    const job = (await db.select('jobs', `id=eq.${id}&select=id,job_number,division,phase,status,ar_status,address,city,state,zip,insured_name,date_of_loss,received_date,target_completion,actual_completion,invoiced_date,estimated_value,approved_value,invoiced_value,collected_value,deductible,supplement_value,claim_id,claim_number&limit=1`))?.[0];
+    if (!job) return { error: 'Job not found.' };
+    let financials = null;
+    try { financials = (await db.rpc('get_job_financials', { p_job_ids: [id] }))?.[0] || null; } catch { /* best-effort */ }
+    return { job, financials };
+  }
+
+  if (name === 'lookup_claim') {
+    let filter = null;
+    if (input.claim_id && UUID_RE.test(input.claim_id)) filter = `id=eq.${input.claim_id}`;
+    else if (input.claim_number && /^[A-Za-z0-9_-]+$/.test(String(input.claim_number).trim())) filter = `claim_number=eq.${String(input.claim_number).trim()}`;
+    if (!filter) return { error: 'Provide a valid claim_id (uuid) or claim_number.' };
+    const claim = (await db.select('claims', `${filter}&select=id,claim_number,insurance_claim_number,insurance_carrier,policy_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip,loss_type,status,deductible,contact_id&limit=1`))?.[0];
+    if (!claim) return { error: 'Claim not found.' };
+    return { claim };
+  }
+
+  if (name === 'list_job_labor') {
+    const id = input.job_id;
+    if (!UUID_RE.test(String(id || ''))) return { error: 'job_id must be a valid id.' };
+    const rows = (await db.rpc('get_job_labor_summary', { p_job_id: id })) || [];
+    return {
+      job_number: rows[0]?.job_number || null,
+      total_hours: round2(rows.reduce((a, r) => a + Number(r.total_hours || 0), 0)),
+      total_cost: round2(rows.reduce((a, r) => a + Number(r.total_cost || 0), 0)),
+      employee_count: rows.length,
+      by_employee: rows.map((r) => ({ employee: r.employee_name, hours: round2(r.total_hours), cost: round2(r.total_cost), approved_hours: round2(r.approved_hours), entries: Number(r.entry_count || 0) })),
+    };
+  }
+
+  if (name === 'qbo_customer') {
+    if (!UUID_RE.test(String(input.contact_id || ''))) return { error: 'contact_id must be a valid id.' };
+    const c = (await db.select('contacts', `id=eq.${input.contact_id}&select=id,name,qbo_customer_id&limit=1`))?.[0];
+    if (!c) return { error: 'Contact not found.' };
+    if (!c.qbo_customer_id || !/^\d+$/.test(String(c.qbo_customer_id))) {
+      return { synced: false, contact_name: c.name, note: 'This customer is not synced to QuickBooks (no QBO customer id), so there is no live QBO balance.' };
+    }
+    const qid = String(c.qbo_customer_id);
+    const cust = (await qboQuery(env, `SELECT Id, DisplayName, Balance FROM Customer WHERE Id = '${qid}'`)).Customer?.[0] || null;
+    const inv = (await qboQuery(env, `SELECT Id, DocNumber, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' AND CustomerRef = '${qid}' MAXRESULTS 200`)).Invoice || [];
+    return {
+      synced: true, contact_name: c.name, source: 'QuickBooks (live)',
+      qbo_display_name: cust?.DisplayName || null,
+      qbo_balance: round2(cust?.Balance),
+      open_invoice_count: inv.length,
+      open_invoices: inv.map((i) => ({ doc: i.DocNumber || null, total: round2(i.TotalAmt), balance: round2(i.Balance), due_date: i.DueDate || null, txn_date: i.TxnDate || null })),
+    };
+  }
+
+  if (name === 'qbo_ar_summary') {
+    const inv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate, TxnDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`)).Invoice || [];
+    const aging = qboAging(inv, Date.now());
+    return {
+      source: 'QuickBooks (live)',
+      total_outstanding: aging.total,
+      open_invoice_count: aging.count,
+      aging_buckets: aging.buckets,
+      truncated: inv.length >= 1000,
+      note: inv.length >= 1000 ? 'Capped at 1000 open QBO invoices; the live total may be incomplete.' : undefined,
+    };
   }
 
   return { error: `Unknown tool: ${name}` };
@@ -280,7 +456,7 @@ export async function onRequestPost(context) {
       const results = [];
       for (const tu of toolUses) {
         let result;
-        try { result = await runTool(db, tu.name, tu.input); }
+        try { result = await runTool(db, env, tu.name, tu.input); }
         catch (e) { result = { error: String(e?.message || e).slice(0, 300) }; }
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 6000) });
       }
