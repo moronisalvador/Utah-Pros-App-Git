@@ -146,10 +146,14 @@ src/
                                     get_job_detail → jobs select + get_job_financials, lookup_claim → claims select,
                                     list_job_labor → get_job_labor_summary. Plus LIVE QuickBooks (read-only via qboFetch,
                                     functions/lib/quickbooks.js — same OAuth as qbo-invoice/qbo-query, no new secrets):
-                                    qbo_customer (real-time QBO balance + open QBO invoices for a contact) and
-                                    qbo_ar_summary (live total A/R + aging across open QBO invoices, for reconciling
-                                    against the on-screen/local A/R). QBO tools are intent-based — the worker builds the
-                                    safe /query string (the model never passes raw QQL). ADVISORY ONLY — it never
+                                    qbo_customer (real-time QBO balance + open QBO invoices for a contact),
+                                    qbo_ar_summary (live total A/R + aging across open QBO invoices), and reconcile_qbo
+                                    (diffs the FULL UPR open A/R against ALL open QBO invoices in one pass — matched by
+                                    qbo_invoice_id ↔ QBO Invoice.Id, fallback qbo_doc_number ↔ DocNumber — and returns
+                                    categorized to-do lists: sync_errors, qbo_open_not_in_upr, upr_open_unsynced,
+                                    upr_open_not_open_in_qbo, balance_mismatch, with complete counts/$ totals + capped
+                                    per-item lists). QBO tools are intent-based — the worker builds the safe /query string
+                                    (the model never passes raw QQL). ADVISORY ONLY — it never
                                     drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
                                     (no history tables). Auth: any logged-in session (the page is already access-gated);
                                     reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging

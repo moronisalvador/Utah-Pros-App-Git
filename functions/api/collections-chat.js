@@ -92,6 +92,13 @@ You sit on the A/R · Outstanding tab: an Outstanding total, an Overdue callout,
 
 # LIVE QUICKBOOKS (read-only)
 - qbo_customer gives a customer's REAL-TIME QuickBooks balance + their open QBO invoices; qbo_ar_summary gives the company's live total A/R + aging across all open QBO invoices.
+- reconcile_qbo is THE tool for "what doesn't match between A/R and QuickBooks" or any reconciliation to-do list. Call it ONCE — it diffs the FULL UPR open A/R against ALL open QBO invoices and returns categorized lists. Do NOT pull customers one by one for this. Turn its result into a prioritized to-do list:
+    1) sync_errors — invoices failing to sync; fix/re-push these in QBO first.
+    2) qbo_open_not_in_upr — open in QBO but not open in UPR (likely already paid/closed in UPR): apply the payment or void/write-off in QBO.
+    3) upr_open_unsynced — open in UPR but never pushed to QBO: sync/push them.
+    4) upr_open_not_open_in_qbo — open in UPR but QBO shows them not open (likely paid in QBO): reconcile/apply the payment in UPR.
+    5) balance_mismatch — matched invoices whose UPR and QBO balances differ.
+  Give each category's count, dollar total, and the specific invoices (doc #, customer, amounts). The per-category lists are capped at 30 but the summary counts/totals are complete — if a category is capped, say so and offer to break it down further.
 - Your snapshot is UPR's local A/R; QuickBooks is the synced accounting source. They can differ slightly because of sync timing (a payment recorded in one but not yet the other, or an invoice not yet pushed). When they differ, say so and explain the likely reason — don't assume either is "wrong." Reach for the QBO tools when the user wants to check or reconcile against QuickBooks.
 
 # STRICT RULES
@@ -215,6 +222,11 @@ const TOOLS = [
   {
     name: 'qbo_ar_summary',
     description: 'LIVE QuickBooks: the company’s real-time total A/R and aging across all open QBO invoices. Use to reconcile our on-screen outstanding against QuickBooks (e.g. "does our outstanding match QuickBooks?"). No input.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'reconcile_qbo',
+    description: 'LIVE QuickBooks reconciliation: diffs the FULL UPR open A/R against ALL open QBO invoices in one pass and returns categorized to-do lists (sync errors, open-in-QBO-not-UPR, UPR-open-unsynced, UPR-open-not-open-in-QBO, balance mismatches) with counts and dollar totals. Use this whenever the user asks "what doesn’t match between A/R and QuickBooks" or wants a reconciliation to-do list. No input.',
     input_schema: { type: 'object', properties: {} },
   },
 ];
@@ -400,6 +412,68 @@ async function runTool(db, env, name, input = {}) {
     };
   }
 
+  if (name === 'reconcile_qbo') {
+    // Full authoritative UPR open A/R (NOT the capped on-screen snapshot) vs ALL open QBO invoices.
+    const uprAll = (await db.rpc('get_ar_invoices')) || [];
+    const uprOpen = uprAll.filter((r) => Number(r.balance || 0) > 0.005);
+    const qboInv = (await qboQuery(env, `SELECT Id, DocNumber, CustomerRef, TotalAmt, Balance, DueDate FROM Invoice WHERE Balance > '0' MAXRESULTS 1000`)).Invoice || [];
+
+    // Match UPR ↔ QBO by qbo_invoice_id ↔ Id (fallback qbo_doc_number ↔ DocNumber).
+    const uprById = new Map();
+    const uprByDoc = new Map();
+    for (const u of uprOpen) {
+      if (u.qbo_invoice_id) uprById.set(String(u.qbo_invoice_id), u);
+      if (u.qbo_doc_number) uprByDoc.set(String(u.qbo_doc_number), u);
+    }
+
+    const matched = new Set();
+    const qbo_open_not_in_upr = [];
+    const balance_mismatch = [];
+    for (const q of qboInv) {
+      const u = uprById.get(String(q.Id)) || (q.DocNumber ? uprByDoc.get(String(q.DocNumber)) : null);
+      if (!u) {
+        qbo_open_not_in_upr.push({ doc: q.DocNumber || null, customer: q.CustomerRef?.name || null, qbo_balance: round2(q.Balance), qbo_total: round2(q.TotalAmt), due_date: q.DueDate || null });
+      } else {
+        matched.add(u.invoice_id);
+        const ub = round2(u.balance), qb = round2(q.Balance);
+        if (Math.abs(ub - qb) > 0.01) balance_mismatch.push({ doc: q.DocNumber || u.invoice_number || null, customer: u.client_name || q.CustomerRef?.name || null, upr_balance: ub, qbo_balance: qb, diff: round2(ub - qb) });
+      }
+    }
+
+    const sync_errors = [];
+    const upr_open_unsynced = [];
+    const upr_open_not_open_in_qbo = [];
+    for (const u of uprOpen) {
+      if (u.qbo_sync_error) sync_errors.push({ number: u.qbo_doc_number || u.invoice_number || null, customer: u.client_name || null, balance: round2(u.balance), error: String(u.qbo_sync_error).slice(0, 160) });
+      if (matched.has(u.invoice_id)) continue;
+      const item = { number: u.qbo_doc_number || u.invoice_number || null, customer: u.client_name || null, balance: round2(u.balance), due_date: u.due_date || null };
+      if (!u.qbo_invoice_id) upr_open_unsynced.push(item);
+      else upr_open_not_open_in_qbo.push(item);
+    }
+
+    const sumBy = (arr, k) => round2(arr.reduce((a, x) => a + Number(x[k] || 0), 0));
+    const cap = (arr) => arr.slice(0, 30);
+    return {
+      source: 'UPR get_ar_invoices (full open A/R) vs live QuickBooks open invoices',
+      upr_open_count: uprOpen.length,
+      qbo_open_count: qboInv.length,
+      qbo_truncated: qboInv.length >= 1000,
+      // summary counts/totals are COMPLETE even when the lists below are capped at 30.
+      summary: {
+        sync_errors: { count: sync_errors.length, total: sumBy(sync_errors, 'balance') },
+        qbo_open_not_in_upr: { count: qbo_open_not_in_upr.length, total: sumBy(qbo_open_not_in_upr, 'qbo_balance') },
+        upr_open_unsynced: { count: upr_open_unsynced.length, total: sumBy(upr_open_unsynced, 'balance') },
+        upr_open_not_open_in_qbo: { count: upr_open_not_open_in_qbo.length, total: sumBy(upr_open_not_open_in_qbo, 'balance') },
+        balance_mismatch: { count: balance_mismatch.length },
+      },
+      sync_errors: cap(sync_errors),
+      qbo_open_not_in_upr: cap(qbo_open_not_in_upr),
+      upr_open_unsynced: cap(upr_open_unsynced),
+      upr_open_not_open_in_qbo: cap(upr_open_not_open_in_qbo),
+      balance_mismatch: cap(balance_mismatch),
+    };
+  }
+
   return { error: `Unknown tool: ${name}` };
 }
 
@@ -458,7 +532,7 @@ export async function onRequestPost(context) {
         let result;
         try { result = await runTool(db, env, tu.name, tu.input); }
         catch (e) { result = { error: String(e?.message || e).slice(0, 300) }; }
-        results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 6000) });
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result).slice(0, 16000) });
       }
       convo = [...convo, { role: 'user', content: results }];
     }
