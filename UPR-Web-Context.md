@@ -482,7 +482,7 @@ upr_mcp_audit           — UPR MCP tool-call audit (actor_email, tool, argument
 
 ### Jobs & Claims
 ```
-create_job_with_contact(...)    — Atomic job + contact creation
+create_job_with_contact(...)    — Atomic job + contact (+ claim) creation. Optional trailing p_existing_claim_id UUID (added Jun 29 2026): when set, files the new job under that EXISTING claim (reuses it, skips the claims INSERT) instead of always minting a fresh CLM-…; NULL (default) = unchanged behavior. Now a 32-arg signature — DROP+CREATE'd in one migration (20260629_create_job_with_contact_existing_claim.sql) to avoid a second PostgREST overload (PGRST203). Both callers (TechNewJob mobile, CreateJobModal desktop) use named args so they bind unchanged. TechNewJob's existing-claim picker is scoped to the selected contact's claims via get_customer_detail(p_contact_id).data.claims; on save TechNewJob now opens /tech/jobs/:id and only pushes to Encircle for new claims.
 add_related_job(...)            — Sibling job under same claim
 get_claim_jobs(p_claim_id)      — {claim, jobs[]}
 get_claim_detail(p_claim_id)    — Full claim detail
