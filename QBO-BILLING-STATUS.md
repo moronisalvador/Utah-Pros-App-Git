@@ -32,7 +32,7 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 > known migration ahead, and keep **UPR as the only writer to QBO** under either processor.
 
 **Invoicing**
-- **One invoice per job (= per division).** A claim with Mitigation + Reconstruction = 2 jobs = 2 invoices. Driven by `create_invoice_for_job(p_job_id)` (returns the existing invoice if one exists — never duplicates).
+- **One invoice per job (= per division)** is the norm. A claim with Mitigation + Reconstruction = 2 jobs = 2 invoices. `create_invoice_for_job(p_job_id)` is idempotent (returns the existing invoice — never duplicates). **A job can still carry a 2nd+ invoice for a supplement** (you can't add lines to an already-paid invoice); the QBO `DocNumber` then becomes `job_number-N` (e.g. `R-2604-009-2`) so it doesn't collide — see `functions/api/qbo-invoice.js`.
 - **Builder-only, line-item invoices.** No lump-sum amount field. Each line carries a **QBO Item + Class** (per-line class), description, qty × rate. Invoice total rolls up from lines via the `recompute_invoice_from_lines()` trigger.
 - **Itemized push:** each line → a QBO `SalesItemLine` with `ItemRef` + `ClassRef`. The Item/Class dropdowns are pulled **live from QBO** via `qbo-query` (UPR mirrors the QBO catalog — they keep ~5–6 items in both).
 - **Invoice building happens on a dedicated page** `/invoices/:invoiceId` (`InvoiceEditor`) — intentional/guarded, like QBO/HCP. NOT inline.
