@@ -113,7 +113,7 @@ function substituteVars(text, job) {
 
 function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
   if (!templates || templates.length === 0) return buildSectionText(divisions, doc_type);
-  const ORDER = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
+  const ORDER = ['water', 'mold', 'reconstruction', 'remodeling', 'fire', 'contents'];
   if (doc_type === 'coc') {
     const divArr = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
     const sorted = [...divArr].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
@@ -536,10 +536,11 @@ function buildSectionText(divisions, doc_type) {
     water:          { heading: 'Water Damage Mitigation',  body: 'I confirm that all water mitigation services performed by Utah Pros Restoration at the above property have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     mold:           { heading: 'Mold Remediation',         body: 'I confirm that all mold remediation services performed by Utah Pros Restoration have been completed to my satisfaction. The affected areas have been properly contained, treated, and cleared in accordance with IICRC S520 standards. The work is 100% complete and I have no outstanding complaints or concerns.' },
     reconstruction: { heading: 'Repairs & Reconstruction', body: 'I confirm that all repairs and reconstruction performed by Utah Pros Restoration have been completed to my satisfaction. The repaired portions of the property are in equal or better condition than prior to the loss. The work is 100% complete and I have no outstanding complaints or concerns.' },
+    remodeling:     { heading: 'Remodeling',               body: 'I confirm that all remodeling and finish work performed by Utah Pros Restoration has been completed to my satisfaction. The work is 100% complete, in equal or better condition than agreed, and I have no outstanding complaints or concerns.' },
     fire:           { heading: 'Fire & Smoke Restoration', body: 'I confirm that all fire and smoke restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' },
     contents:       { heading: 'Contents Restoration',     body: 'I confirm that Utah Pros Restoration has returned all salvageable contents items in satisfactory condition. I have had the opportunity to inspect the returned items. The work is 100% complete and I have no outstanding complaints or concerns.' },
   };
-  const ORDER   = ['water', 'mold', 'reconstruction', 'fire', 'contents'];
+  const ORDER   = ['water', 'mold', 'reconstruction', 'remodeling', 'fire', 'contents'];
   const divArr  = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
   const sorted  = [...divArr].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   const results = sorted.map(d => map[d]).filter(Boolean);

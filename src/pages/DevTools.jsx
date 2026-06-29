@@ -886,7 +886,7 @@ function WorkersTab() {
 /* ════════════════════════════════════════════════════
    INTEGRITY TAB — Phase 4
    ════════════════════════════════════════════════════ */
-const DIVISION_ICON = { water: '\u{1F4A7}', mold: '\u{1F9EB}', reconstruction: '\u{1F3D7}\uFE0F', fire: '\u{1F525}', contents: '\u{1F4E6}' };
+const DIVISION_ICON = { water: '\u{1F4A7}', mold: '\u{1F9EB}', reconstruction: '\u{1F3D7}\uFE0F', remodeling: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}' };
 
 function IntegrityTab() {
   const [subTab, setSubTab] = useState('orphans');

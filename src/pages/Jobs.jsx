@@ -12,6 +12,7 @@ const DIVISION_TABS = [
   { key: 'water', label: 'Water', emoji: null /* use DivisionIcon */ },
   { key: 'mold', label: 'Mold', emoji: '🦠' },
   { key: 'reconstruction', label: 'Recon', emoji: '🏗️' },
+  { key: 'remodeling', label: 'Remodel', emoji: '🔨' },
   { key: 'fire', label: 'Fire', emoji: '🔥' },
   { key: 'contents', label: 'Contents', emoji: '📦' },
 ];
