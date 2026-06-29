@@ -23,7 +23,7 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/capacitor-updater": "^8.45.9",
-    "@googlemaps/js-api-loader": "1.16.8",
+    "@googlemaps/js-api-loader": "2.0.2",
     "@supabase/supabase-js": "^2.49.4",
     "idb": "^8.0.3",
     "pdf-lib": "^1.17.1",
