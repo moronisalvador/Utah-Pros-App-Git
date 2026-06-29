@@ -1,4 +1,4 @@
-// POST /api/qbo-invoice — push a UPR invoice to QuickBooks Online (one invoice per job).
+// POST /api/qbo-invoice — push a UPR invoice to QuickBooks Online.
 //
 // Auth: x-webhook-secret (server-side) or a Supabase Bearer (admin).
 // Body:
@@ -169,11 +169,21 @@ export async function onRequestPost(context) {
     }).filter(([, v]) => v));
     const hasShip = Object.keys(shipAddr).length > 0;
 
-    // Use the job number as the QBO invoice number (DocNumber): unique (one invoice per
-    // job), short, and the most traceable reference. Requires "Custom transaction numbers"
-    // ON in QBO to take effect; if it's OFF, QBO ignores it and auto-numbers instead.
-    // (QBO DocNumber max is 21 chars.)
-    const docNumber = job.job_number ? String(job.job_number).slice(0, 21) : null;
+    // QBO invoice number (DocNumber) — must be UNIQUE across all QBO invoices. A job can
+    // have more than one invoice (e.g. a supplement billed after the first was paid), so the
+    // bare job_number collides on the 2nd+ ("Duplicate Document Number"). Reuse the number
+    // QBO already assigned (stable once synced); otherwise use job_number for the first
+    // invoice on the job and job_number-N for the Nth (matches the R-2604-009 / R-2604-009-2
+    // scheme). Requires "Custom transaction numbers" ON in QBO to take effect; if OFF, QBO
+    // ignores it and auto-numbers instead. (QBO DocNumber max is 21 chars.)
+    let docNumber = inv.qbo_doc_number || null;
+    if (!docNumber && job.job_number) {
+      const siblings = await db.select('invoices', `job_id=eq.${inv.job_id}&select=id,created_at&order=created_at.asc,id.asc`) || [];
+      const pos = siblings.findIndex((r) => r.id === inv.id);   // 0-based position among the job's invoices
+      const base = String(job.job_number);
+      const suffix = pos > 0 ? `-${pos + 1}` : '';
+      docNumber = base.slice(0, 21 - suffix.length) + suffix;
+    }
 
     // Estimate → Invoice link: if this invoice was converted from a UPR estimate
     // that already exists in QBO, link the QBO invoice to that QBO estimate. This is
@@ -208,11 +218,18 @@ export async function onRequestPost(context) {
     try {
       qboInv = await pushInvoice(onlinePay);
     } catch (e) {
+      const msg = e.message || '';
       // If QBO rejected specifically because of the online-pay flags, retry without them so
       // the invoice still syncs; surface a clear hint instead of a cryptic QBO fault.
-      if (hasOnlinePay && /payment|online|merchant/i.test(e.message || '')) {
+      if (hasOnlinePay && /payment|online|merchant/i.test(msg)) {
         qboInv = await pushInvoice({});
         onlinePayWarning = 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.';
+      } else if (docNumber && (e.qboCode === '6140' || /duplicate document number/i.test(msg))) {
+        // The forced DocNumber still collided (e.g. a number entered by hand in QBO). Drop it
+        // and retry: QBO keeps the invoice's existing number (update) or auto-assigns (create),
+        // and the writeback below captures whatever it lands on. Keeps Save from hard-failing.
+        docNumber = null;
+        qboInv = await pushInvoice(onlinePay);
       } else {
         throw e;
       }
