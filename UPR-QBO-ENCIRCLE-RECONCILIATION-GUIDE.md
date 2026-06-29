@@ -1,6 +1,6 @@
 # UPR ↔ QuickBooks ↔ Encircle — Reconciliation & Data-Entry Guide
 **Audience:** a fresh Claude Code session reconciling UPR (Supabase) against QuickBooks Online (QBO) and Encircle.
-**Last updated:** 2026-06-27. Built from a full day of reconciliation (April de-inflation, real-job classifier, Tanra Hill import).
+**Last updated:** 2026-06-27 (rev 2). Built from two days of reconciliation (April de-inflation, real-job classifier, Tanra Hill import, the Q2 Encircle day-count scan, and a full owner walk-through of the verification sheet).
 
 > Read this **with** `RECONCILIATION-HANDOFF.md` (mission/history) and `CLAUDE.md` (project rules). This file is the **how-to**: the data model, the legitimacy test, the date rules, the import playbook, and the tooling gotchas.
 
@@ -60,8 +60,27 @@ A "real job" = actual multi-day remediation/reconstruction work. An **inspection
           (SELECT count(DISTINCT clock_in::date) FROM job_time_entries WHERE job_id=j.id) AS clockin_days
    FROM jobs j WHERE j.id = '<job>';
    ```
-2. **Authoritative (Encircle):** `encircle_list_media(claim_id)` → look at distinct `primary_client_created` **days**. Empty list = no work. All one day = inspection. ≥2 days = real.
-   - ⚠️ Media lists are **large and not reliably date-sorted**, and each item has a giant signed URL — pulling them for many jobs blows context. Use the UPR proxy first; reserve `encircle_list_media` for spot-checks and ambiguous cases.
+2. **Authoritative (Encircle Activity page):** the **Activity tab** in the Encircle web app is the **ground truth** for multi-day work — it groups every event (photos, notes, moisture, sketches, contents) by **Day 1 / Day 2 / …** with author + time. Direct URL (skips the overview click):
+   `https://encircleapp.com/app/property-claims/claim/{id}/activity`
+   The public API has **no activity endpoint** (404), so reconstruct it from `encircle_list_media` + `encircle_list_notes`.
+3. **API day-count (bulk, deterministic):** `encircle_list_media(claim_id, limit=100)` → count **distinct `primary_client_created` calendar days** with `jq`. Big results overflow to a file (jq that path); small ones return inline.
+   ```
+   jq -r '.list[].primary_client_created' FILE | cut -dT -f1 | sort -u | wc -l   # distinct work-days
+   jq -r '.list[].primary_client_created' FILE | sort | uniq -c | sort -rn | head -1   # collapse check (max items @ one timestamp)
+   ```
+
+> ### ⚠️ The media API lies about dates on re-pushed claims — TRUST THE ACTIVITY PAGE
+> - **Timestamp collapse:** when UPR re-syncs/re-pushes a claim, the media endpoint reports the **bulk re-sync time**, not the real capture time — dozens of photos share **one identical `primary_client_created`** (e.g. Matterhorn's photos were taken Apr 7 but the API says Apr 9, all at the same second). A high `max_burst` (many items at one timestamp) = collapsed = the day-count is unreliable (can merge several real days into one).
+> - **100-photo cap:** `encircle_list_media` returns ≤100 and the cursor isn't exposed — big claims **truncate**, hiding later days.
+> - Both failure modes only ever **undercount** days. So the rule is directional: **≥2 clean days (low burst) ⇒ real, trustworthy**; **exactly 1 day, or 2-with-heavy-collapse, or truncated ⇒ ambiguous → open the Activity page.**
+
+> ### ⚠️ Multi-day photos are NECESSARY but NOT SUFFICIENT — the owner's verdict is final
+> A multi-day photo spread can still be a **multi-day inspection or a multi-day *sales attempt*** (Laksnie Bunnirth = "tried to sell for a few days"; Grant Erickson/Page Vorwlaer = 2 clean days but inspection only). Encircle is the source of truth for *whether work happened*, but the day-count alone **cannot** distinguish work from repeated visits. For anything uncertain, give the owner a sheet (Encircle Activity link + appt/clock-in days + QBO $) and let them call it. **Never auto-promote on day-count alone.**
+>
+> Conversely, a **real job can have ~1 Encircle day or none** — a recon-only job sold on a signed work-auth (Kate Dalton), or work documented poorly. Use the §3 criteria (work-auth / invoice), not photos alone.
+
+- **Moisture/Hydro readings** (`/v2/property_claims/{id}/material_readings`, `/affected_atmosphere_readings`) would be the strongest multi-day signal (daily drying logs) — but the endpoints, while live, are **empty** for our claims (the team doesn't log Hydro). Don't rely on them yet.
+- ⚠️ Media lists are large; pulling them for many claims blows context. For a fleet scan, **delegate to subagents** that run the `jq` day-count and return only a compact table (claim_id, days, total, max_burst, truncated) — never have an agent *interpret* photo contents (that's where they err); keep it to mechanical timestamp counting.
 
 ### Recon/contents caveat
 Reconstruction is multi-day by nature but often isn't tracked via UPR appointments/clock-ins or Encircle. Treat an **R-** job as real if it's **contracted/invoiced** (QBO invoice or accepted estimate), not by the photo-day test.
@@ -93,7 +112,24 @@ Imports stamped many old claims/jobs with the **import date** (e.g. a single 202
 
 - **UPR re-pushed old claims into Encircle**, creating **new Encircle IDs on old losses** ("old claims rising to the top of the Encircle list"). A fresh-range Encircle ID on an old loss = a re-push duplicate.
 - Detect: same `encircle_claim_id` on two UPR claims; same normalized `loss_address`; an empty-Encircle claim that mirrors a populated one.
-- **Test data:** the office address **`1055 N State St`** and contacts like "Test", "Mr", or staff names (e.g. the developer) are training/test claims — safe to delete. Verify a same-address claim isn't a *real* mis-addressed job first (one was Angela Duty's real job mis-stamped with the office address — fixed the address, didn't delete).
+
+### The "empty re-push duplicate" pattern (seen 5× — Stucki, Greg, Stuart, Julia Grant, A2Z Southgate)
+The re-push creates a **fresh, EMPTY Encircle claim** (0 media, `date_claim_created` recent) **tagged with our CLM#** in `contractor_identifier`, while the **real field photos stay in the ORIGINAL Encircle claim** (often with no/old CLM tag). UPR frequently links to the **empty** one. Resolution **(do NOT merge inside Encircle — just fix the UPR link, then the owner deletes the empty Encircle claim)**:
+1. Find both Encircle claims (`encircle_list_claims(policyholder_name=…)`); confirm which is populated via `encircle_list_media` (the one with photos = keep).
+2. Re-point UPR **claim + every job** from the empty id → the populated id:
+   ```sql
+   UPDATE claims SET encircle_claim_id='<real>', encircle_synced_at=now() WHERE id='<claim>';
+   UPDATE jobs   SET encircle_claim_id='<real>' WHERE claim_id='<claim>';   -- watch the (encircle_claim_id, division) UNIQUE constraint
+   ```
+3. Tell the owner the **empty** Encircle id(s) are safe to delete (nothing in UPR references them anymore). Give a direct link.
+
+### Two UPR claims for ONE loss (duplicate-claim merge — A2Z Southgate)
+Sometimes the same loss exists as **two UPR claims** — one with the real Encircle link + jobs but no billing, one with the empty link but the invoices. **Merge** (owner-confirm first — it deletes a claim that holds invoices):
+1. **Move the invoices** onto the surviving claim's matching-division jobs (`UPDATE invoices SET job_id=…, qbo_doc_number='<new job#>'`) and rename the **QBO `DocNumber`** to match (`qbo_update_entity('Invoice', id, {DocNumber})`).
+2. Promote the surviving claim's jobs to real; delete the now-invoice-less duplicate (system_events → jobs → claim).
+3. A multi-unit property manager (e.g. A2Z, formerly **Presidio Property Management** — search **both** names) can have **several real losses at one address** on different dates — don't collapse genuinely distinct losses; only merge the true duplicate.
+
+- **Test data:** the office address **`1055 N State St`** and contacts like "Test", "Mr", "123 Test St", `TEST-RPC-1`, "RPC smoke test", or staff names are training/test artifacts — safe to delete (verify no real billing first). One real claim (Stuart Hernandez) was a *real* job wearing smoke-test placeholders (`123 Test St` / `TEST-RPC-1`) pointing at a **non-existent** Encircle id — fixed the data to the real Encircle claim, didn't delete. Verify a same-address claim isn't a *real* mis-addressed job first (Angela Duty's real job was mis-stamped with the office address — fixed the address, didn't delete).
 
 ---
 
@@ -149,6 +185,11 @@ Imports stamped many old claims/jobs with the **import date** (e.g. a single 202
 - **MCP connector** drops/reconnects mid-session and sometimes returns `"requires approval"` transiently — **retry**; if persistent, the user re-connects. A write that errors mid-transaction **rolls back** (verify state before re-running).
 - **Deletes & FKs:** `claims→jobs` is `ON DELETE SET NULL` (deleting a claim orphans its jobs, doesn't delete them). Most `job→child` FKs CASCADE, **but** `system_events`, `payments`, `conversations`, `document_requests`, `notification_queue`, `sub_confirmations`, `vendor_invoices` are `NO ACTION` and block a job delete. Order: delete `job_documents` + `job_tasks` first (their AFTER-DELETE triggers log a `document.deleted` event into `system_events`), **then** `system_events` for the job, **then** the job, **then** the claim.
 - **UPDATE triggers are column-conditional:** `trigger_claim_events` / `trigger_job_events` only log on status/phase/carrier/value changes; `sync_job_to_claim` only on insurance/date/address changes. **Changing only `created_at` / `encircle_claim_id` fires no events** — bulk backdates are quiet (just `updated_at` bumps).
+- **`contacts.phone` is `NOT NULL` *and* `UNIQUE`** — a phone-less contact can't be `null` or a second `''`. `create_job_with_contact` will 409 on a duplicate empty phone. Pass a short unique placeholder (the data already uses `'+'`, `'+1'`, `'+2'`…) and note "fill real number later".
+- **`jobs` has a `UNIQUE (encircle_claim_id, division)`** — two jobs of the same division can't share an Encircle id. When re-linking duplicates, this blocks the collision (it's the guardrail that surfaces the dup). A split claim (W + R) is fine; two W jobs on one Encircle id is not.
+- **QBO has no exposed "void" op** — `qbo_delete_invoice` **deletes** (guarded: refuses if a payment is applied — re-link/delete payments first). For an erroneous, unpaid invoice ("Ben did it wrong, never sold"), delete it + delete the UPR `invoices` row. If the owner truly needs a QBO *void* (zero-but-keep for audit), zero the lines via `qbo_update_invoice` instead.
+- **`encircle_list_media` output is huge** and overflows to a file (path in the error) — `jq` that file; never read it into context raw. The `after` cursor isn't exposed, and `source` is a media-type filter, not pagination — so you can't page past 100 with this tool (use the Activity page for the full timeline).
+- **MCP server names drift** mid-session (`UPR_systems` ↔ `UPR_MCP`) and tools disconnect/reconnect — when a tool 404s as "no such tool", re-`ToolSearch` for it under the current prefix.
 
 ---
 
@@ -164,8 +205,13 @@ Imports stamped many old claims/jobs with the **import date** (e.g. a single 202
 
 ---
 
-## 10. Known open items (as of 2026-06-27)
+## 10. Known open items (as of 2026-06-27 rev 2)
 
-- **5 invoices whose job has no `claim_id`** — link/create claims (one client at a time): Sarah Garcia (R-2606-003 + W-2606-016, QBO 1116 split), Stuart Hernandez (R-2606-004, QBO 1264 — Stuart already has CLM-2604-109), April Smith (M-2606-004, QBO 1248), Virginia Roundy (W-2606-018, QBO 1274).
-- **Tanra Hill mitigation:** QBO Estimate **1065 ($4,577.47, pending)** is the mitigation scope — never invoiced. Attach to water job **W-2606-022**; create a QBO mitigation invoice if revenue should be recognized.
-- Re-run the §3 multi-day check on the KEEP set's borderline single-photo-day jobs (e.g. Wright) for maximum precision.
+**Done in this pass (don't redo):** all 5 orphan invoices linked (Sarah Garcia, Stuart Hernandez, April Smith, Virginia Roundy); Q2 Encircle day-count scan run on all ~54 claims; owner verified the whole sheet; promotes/demotes/merges applied (Brandon Hahn, John Sanders, A2Z Southgate merge, Julia Grant re-link+promote → real; Kemble Wright Jun, Jay Jayaseelan → not-real; Emiliano test claim + Jaren Pope erroneous invoice deleted); imports done (Jay—now inspection, Kate Dalton, Tanra Hill).
+
+**Still open:**
+- **Owner to delete empty Encircle claims** (UPR no longer references them): `4657796` (Stucki), `4717588` (Greg), `4717590` (Julia Grant), `4717593` (A2Z Southgate). Stuart's `4537046` was a non-existent id (nothing to delete).
+- **Phase 5c — invoice re-dating to date_of_loss (NOT done; gated on the owner finishing loss-date reconciliation):** set invoice date = `date_of_loss` on **BOTH** QBO `TxnDate` (`qbo_update_entity('Invoice', id, {TxnDate})`) and UPR `invoices.invoice_date`, so the Revenue widget tracks **sales by when the loss happened**, not when billed. The new **Payments-received** widget (keyed off `payment_date`) is unaffected and already live.
+- **Jay Jayaseelan** (CLM-2606-158) is parked as an estimate — homeowner declined, expected to call back in ~2 months. Re-evaluate then.
+- **John Sanders** (CLM-2604-051) is now real but his QBO payment isn't mirrored into UPR `invoices` — backfill the invoice row from QBO.
+- Cosmetic: a CLM-2604-076 job has `job_number = 'A2Z Properties'` (malformed) instead of a `W-…` number.
