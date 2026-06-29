@@ -32,6 +32,9 @@
  *     A/R table while chatting — that live view is exactly what the AI is reading.
  *   - `hidden` is set true while a New-invoice/estimate modal is open so the bubble
  *     (z-index 80/90) doesn't sit under / fight the modal (z-index 200).
+ *   - Visual language matches the Collections page: ink (#101828) FAB + user bubbles,
+ *     blue reserved for the Send action, whisper-soft neutral shadows. Styles live in the
+ *     `.coll-chat-*` block in index.css.
  *   - formatText also turns phone numbers / emails in the AI's reply into tap-to-call /
  *     mailto links (a convenience for reaching people — it never sends anything).
  * ════════════════════════════════════════════════
@@ -76,7 +79,7 @@ const SUGGESTIONS = [
   'What’s the number for my biggest overdue account?',
 ];
 
-function ChatGlyph({ size = 24 }) {
+function ChatGlyph({ size = 23 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5Z" />
@@ -84,11 +87,25 @@ function ChatGlyph({ size = 24 }) {
     </svg>
   );
 }
-function CloseGlyph({ size = 22 }) {
+function CloseGlyph({ size = 21 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
       <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
     </svg>
+  );
+}
+function SendGlyph({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="12" y1="19" x2="12" y2="5" /><polyline points="6 11 12 5 18 11" />
+    </svg>
+  );
+}
+function TypingDots() {
+  return (
+    <div className="coll-chat-msg coll-chat-ai coll-chat-typing" aria-label="Assistant is thinking">
+      <span className="coll-chat-dotpulse" /><span className="coll-chat-dotpulse" /><span className="coll-chat-dotpulse" />
+    </div>
   );
 }
 
@@ -101,17 +118,37 @@ export default function ARChatBubble({ rows = [], filteredRows = [], today, view
   const [error, setError] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Keep the log pinned to the newest message.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy, open]);
 
+  // On open: focus the composer and let Escape close the panel.
+  useEffect(() => {
+    if (!open) return undefined;
+    inputRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
   // ─── SECTION: Event handlers ──────────────
+  const resetInputHeight = () => { if (inputRef.current) inputRef.current.style.height = 'auto'; };
+
+  // Auto-grow the textarea up to its CSS max-height as the user types.
+  const handleInput = (e) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  };
+
   const send = async (text) => {
     const content = (text ?? input).trim();
     if (!content || busy) return;
-    setError(''); setInput(''); setConfirmClear(false);
+    setError(''); setInput(''); setConfirmClear(false); resetInputHeight();
     const next = [...messages, { role: 'user', content }];
     setMessages(next);
     setBusy(true);
@@ -160,6 +197,7 @@ export default function ARChatBubble({ rows = [], filteredRows = [], today, view
 
       {open && (
         <div className="coll-chat-panel" role="dialog" aria-label="A/R Copilot">
+          <div className="coll-chat-grab" aria-hidden="true" />
           <div className="coll-chat-head">
             <div className="coll-chat-title"><span className="coll-chat-dot" />A/R Copilot</div>
             <div className="coll-chat-headbtns">
@@ -190,15 +228,17 @@ export default function ARChatBubble({ rows = [], filteredRows = [], today, view
                 {m.role === 'user' ? m.content : formatText(m.content)}
               </div>
             ))}
-            {busy && <div className="coll-chat-msg coll-chat-ai coll-chat-think">thinking…</div>}
+            {busy && <TypingDots />}
           </div>
 
           {error && <div className="coll-chat-err">{error}</div>}
 
           <div className="coll-chat-composer">
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown}
+            <textarea ref={inputRef} value={input} onChange={handleInput} onKeyDown={onKeyDown}
               placeholder="Ask about your A/R…" rows={1} className="coll-chat-input" />
-            <button type="button" className="coll-chat-send" onClick={() => send()} disabled={busy || !input.trim()}>Send</button>
+            <button type="button" className="coll-chat-send" onClick={() => send()} disabled={busy || !input.trim()} aria-label="Send">
+              <SendGlyph />
+            </button>
           </div>
           <div className="coll-chat-foot">Reads your on-screen A/R · advisory only · Enter to send</div>
         </div>
