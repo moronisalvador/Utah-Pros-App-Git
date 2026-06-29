@@ -107,6 +107,8 @@ function AddressAutocomplete({
         setOpen(false);
       }
     } catch (err) {
+      // TEMP DIAGNOSTIC (remove after fix): surface the swallowed request error.
+      console.error('[AddressAutocomplete] fetchAutocompleteSuggestions failed:', err);
       setSuggestions([]);
       setOpen(false);
     }

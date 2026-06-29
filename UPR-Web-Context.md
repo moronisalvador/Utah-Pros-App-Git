@@ -108,10 +108,12 @@ src/
                                     active tab is synced to ?tab= (replace) so tabs are deep-linkable and the
                                     browser Back button (and builder "← Back") returns to the tab you were on.
     components/collections/       — Collections redesign pieces: collTokens.js (page-scoped UPR palette + $/date
-                                    formatters + period math + invoiceStatusKind + CSV), collKit.jsx (shared
+                                    formatters + period math + invoiceStatusKind + aging bucketKey/AGING_BUCKETS + CSV),
+                                    collKit.jsx (shared
                                     primitives: CollCard, Kpi, SegControl, SearchBox, StatusBadge, DivisionSquare,
                                     ProgressBar, Pill, PopoverButton + Filters/Columns, inline SVG icons),
                                     ARDashboard.jsx, InvoicesList.jsx, EstimatesList.jsx, PaymentsLedger.jsx,
+                                    ARChatBubble.jsx + arSnapshot.js (AI A/R Copilot — see note below),
                                     SearchSelect.jsx (typeahead dropdown for the QBO Item/Class pickers in the
                                     invoice & estimate builders), ActionMenu.jsx ("Manage ▾" dropdown in the
                                     builder top toolbar — two-click confirm for Revert/Delete). Styles
@@ -130,6 +132,35 @@ src/
                                     from get_ar_invoices (job_address/job_city added by migration
                                     20260625_get_ar_invoices_address.sql). The Payments "Processing/in-flight" section
                                     from the design is omitted: get_payments_ledger returns cleared payments only.
+                                    AI A/R COPILOT (Jun 2026) — a floating, page-aware chat bubble on the A/R tab
+                                    (ARChatBubble.jsx, mounted by ARDashboard; worker functions/api/collections-chat.js,
+                                    Sonnet 4.6, non-streaming). On each send the browser builds a DETERMINISTIC snapshot
+                                    of exactly what's on screen — outstanding/overdue/aging totals, ranked top-debtors,
+                                    the filtered+sorted invoice list, and the view state — via buildArSnapshot()
+                                    (arSnapshot.js) and injects it into the system prompt, so most questions answer in
+                                    ONE call with no DB lookups and the numbers always match the screen (the model never
+                                    sums; code does). READ-ONLY drill-down tools map to existing data:
+                                    lookup_customer → get_customer_detail / search_contacts_for_job (phone/email +
+                                    claims/jobs), get_invoice_detail → invoices + invoice_line_items + payments (+
+                                    xactimate_meta), list_payments → get_payments_ledger, list_estimates → get_estimates,
+                                    get_job_detail → jobs select + get_job_financials, lookup_claim → claims select,
+                                    list_job_labor → get_job_labor_summary. Plus LIVE QuickBooks (read-only via qboFetch,
+                                    functions/lib/quickbooks.js — same OAuth as qbo-invoice/qbo-query, no new secrets):
+                                    qbo_customer (real-time QBO balance + open QBO invoices for a contact),
+                                    qbo_ar_summary (live total A/R + aging across open QBO invoices), and reconcile_qbo
+                                    (diffs the FULL UPR open A/R against ALL open QBO invoices in one pass — matched by
+                                    qbo_invoice_id ↔ QBO Invoice.Id, fallback qbo_doc_number ↔ DocNumber — and returns
+                                    categorized to-do lists: sync_errors, qbo_open_not_in_upr, upr_open_unsynced,
+                                    upr_open_not_open_in_qbo, balance_mismatch, with complete counts/$ totals + capped
+                                    per-item lists). QBO tools are intent-based — the worker builds the safe /query string
+                                    (the model never passes raw QQL). ADVISORY ONLY — it never
+                                    drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
+                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
+                                    reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
+                                    bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
+                                    never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
+                                    backdrop — the live A/R view it reads stays scrollable) and hides under the
+                                    New-invoice/estimate modals (z 80/90 vs 200).
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)
@@ -261,9 +292,10 @@ under `.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE p
 
 **⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
 uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
-`#f2664a`, Mold pink `#ec4899` — and introduces a **"Remodeling"** division **only here**. The app-wide
-`DIVISION_COLORS` and the division enum are untouched. App-wide adoption + a real Remodeling division is a
-separate future project (Phase 4 below, decision pending).
+`#f2664a`, Mold pink `#ec4899`. **Remodeling is now a real app-wide division** (added Jun 29 2026): the
+`job_division` enum includes `remodeling`, new jobs/invoices number as `RM-YYMM-###`, it maps to the same QBO
+item/class as reconstruction (`divisionToQbo`), and it appears in the New Job form + all division color/label
+maps. This dashboard keeps its own scoped palette (above).
 
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
@@ -313,7 +345,7 @@ separate future project (Phase 4 below, decision pending).
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
   owned by a separate effort** — the widget reads `get_open_estimates_summary` and lights up automatically
   once `estimates` rows exist with an open `status` (no dashboard change needed).
-- **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+- **Phase 4 — first-class "Remodeling" division shipped Jun 29 2026** (enum + `RM-` numbers + app-wide color/label maps + QBO mapping). The app-wide palette overhaul (recolor every division to the dashboard scheme) is still pending.
   **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
   "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
 

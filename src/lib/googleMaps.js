@@ -1,9 +1,10 @@
-import { Loader } from '@googlemaps/js-api-loader';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 let placesPromise = null;
 let warned = false;
+let configured = false;
 
 export function hasPlacesKey() {
   return Boolean(API_KEY);
@@ -19,14 +20,15 @@ export function loadPlaces() {
   }
   if (placesPromise) return placesPromise;
 
-  const loader = new Loader({
-    apiKey: API_KEY,
-    version: 'weekly',
-    libraries: ['places'],
-  });
+  // @googlemaps/js-api-loader v2 functional API: configure once with setOptions(),
+  // then importLibrary() loads the Maps JS API on first call. (The old `new Loader()`
+  // class was removed in v2 — calling it throws "Loader is no longer available".)
+  if (!configured) {
+    setOptions({ key: API_KEY, v: 'weekly' });
+    configured = true;
+  }
 
-  placesPromise = loader
-    .importLibrary('places')
+  placesPromise = importLibrary('places')
     .then((places) => ({
       AutocompleteSuggestion: places.AutocompleteSuggestion,
       AutocompleteSessionToken: places.AutocompleteSessionToken,
@@ -34,7 +36,8 @@ export function loadPlaces() {
     }))
     .catch((err) => {
       placesPromise = null;
-      console.warn('[googleMaps] Failed to load Places library:', err?.message || err);
+      // TEMP DIAGNOSTIC (remove after fix): full error to reveal config cause.
+      console.error('[googleMaps] Failed to load Places library:', err);
       return null;
     });
 

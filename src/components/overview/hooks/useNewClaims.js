@@ -16,12 +16,20 @@ const DAY = 86400000;
 const SPARK_DAYS = 30;
 const VB_W = 234; // sparkline drawable width (viewBox 0 0 240 58)
 
-function periodStartTs(period, now) {
+// Returns the [startTs, endTs) window for the selected period. Every period
+// except "Prev mo" runs through `now`; "Prev mo" is a bounded prior calendar month.
+function periodRange(period, now) {
   const d = new Date(now);
-  if (period === 'QTD') return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime();
-  if (period === 'YTD') return new Date(d.getFullYear(), 0, 1).getTime();
-  if (period === 'Last 30') return now - 30 * DAY;
-  return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); // MTD
+  if (period === 'Prev mo') {
+    return {
+      startTs: new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime(),
+      endTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), // 1st of this month (exclusive)
+    };
+  }
+  if (period === 'QTD') return { startTs: new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime(), endTs: now };
+  if (period === 'YTD') return { startTs: new Date(d.getFullYear(), 0, 1).getTime(), endTs: now };
+  if (period === 'Last 30') return { startTs: now - 30 * DAY, endTs: now };
+  return { startTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), endTs: now }; // MTD
 }
 
 function buildSparkline(times, now) {
@@ -53,7 +61,8 @@ export function useNewClaims(period = 'MTD') {
     const rows = await db.rpc('get_real_claims_created', { p_floor: floor });
     const times = (rows || []).map(r => r.created_at && new Date(r.created_at).getTime()).filter(Boolean);
 
-    const count = times.filter(t => t >= periodStartTs(period, now)).length;
+    const { startTs, endTs } = periodRange(period, now);
+    const count = times.filter(t => t >= startTs && t < endTs).length;
     const last30 = times.filter(t => t >= now - 30 * DAY).length;
     const prior30 = times.filter(t => t >= now - 60 * DAY && t < now - 30 * DAY).length;
     let delta = null;

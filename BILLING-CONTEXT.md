@@ -191,6 +191,7 @@ environment}` and **auto-refreshes** when within ~5 min of expiry (rolling the r
 | Division contains | itemId | itemName | className |
 |---|---|---|---|
 | `recon` | `1010000201` | Reconstruction/ Remodeling Services | `Reconstruction` |
+| `remodel` | `1010000201` | Reconstruction/ Remodeling Services | `Reconstruction` |
 | `mold` | `1010000131` | Mold Remediation Services | `null` |
 | `content` | `38` | Contents | `null` |
 | `mit` / `water` / `dry` | `1010000071` | Water Damage Mitigation And Drying | `Mitigation` |

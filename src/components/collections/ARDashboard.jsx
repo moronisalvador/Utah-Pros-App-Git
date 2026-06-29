@@ -39,31 +39,29 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   C, STATUS, mono, tnum, fmt$, fmt$2, fmtDate, divColor, divLabel,
   midnight, daysPastDue, periodRange, inPeriod, downloadCsv, invoiceStatusKind,
+  bucketKey, AGING_BUCKETS,
 } from './collTokens';
 import {
   CollCard, SegControl, SearchBox, DivisionSquare,
   ProgressBar, Pill, EmptyState, PopoverButton, FilterGroup, ToggleChip,
   FunnelIcon, ColumnsIcon,
 } from './collKit';
+import ARChatBubble from './ARChatBubble';
 
 const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 // ─── SECTION: Helpers — aging buckets, columns ──────────────
-// Aging buckets escalate by age: green → neutral → amber → amber → red.
-const AGING = [
-  { key: 'current', label: 'Current',    seg: STATUS.success.solid, val: STATUS.success.text },
-  { key: 'b30',     label: '1–30 days',  seg: '#cbd0d9',            val: C.body },
-  { key: 'b60',     label: '31–60 days', seg: STATUS.warning.solid, val: STATUS.warning.text },
-  { key: 'b90',     label: '61–90 days', seg: STATUS.warning.solid, val: STATUS.warning.text },
-  { key: 'b90p',    label: '90+ days',   seg: STATUS.danger.solid,  val: STATUS.danger.text },
-];
-function bucketKey(d) {
-  if (d == null || d <= 0) return 'current';
-  if (d <= 30) return 'b30';
-  if (d <= 60) return 'b60';
-  if (d <= 90) return 'b90';
-  return 'b90p';
-}
+// Aging buckets escalate by age: green → neutral → amber → amber → red. The boundaries and
+// labels live in collTokens (AGING_BUCKETS + bucketKey) as the single source of truth shared
+// with the AI Copilot's snapshot; this map only attaches each bucket's bar/text colors.
+const AGING_SEG = {
+  current: { seg: STATUS.success.solid, val: STATUS.success.text },
+  b30:     { seg: '#cbd0d9',            val: C.body },
+  b60:     { seg: STATUS.warning.solid, val: STATUS.warning.text },
+  b90:     { seg: STATUS.warning.solid, val: STATUS.warning.text },
+  b90p:    { seg: STATUS.danger.solid,  val: STATUS.danger.text },
+};
+const AGING = AGING_BUCKETS.map((b) => ({ ...b, ...AGING_SEG[b.key] }));
 
 const COL = {
   client:    { label: 'Client',      fr: '1.7fr',  num: false },
@@ -111,7 +109,7 @@ function AgePill({ r, today }) {
 }
 
 // ─── SECTION: Component ──────────────
-export default function ARDashboard({ db, navigate, period = 'All' }) {
+export default function ARDashboard({ db, navigate, period = 'All', modalOpen = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -422,6 +420,16 @@ export default function ARDashboard({ db, navigate, period = 'All' }) {
           <button type="button" className="coll-link" onClick={exportCsv}>Export A/R report →</button>
         </div>
       </CollCard>
+
+      {/* AI A/R Copilot — floating, page-aware. Reads the live on-screen rows (k.open for the
+          authoritative totals, `sorted` for the on-screen list) + the current view state. */}
+      <ARChatBubble
+        rows={k.open}
+        filteredRows={sorted}
+        today={today}
+        viewState={{ period, search, mode, filters, sort }}
+        hidden={modalOpen}
+      />
     </div>
   );
 }
