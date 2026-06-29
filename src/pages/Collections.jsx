@@ -133,7 +133,7 @@ export default function Collections() {
         )}
       </div>
 
-      {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} period={arPeriod} />}
+      {tab === 'ar'        && <ARDashboard db={db} navigate={navigate} period={arPeriod} modalOpen={showNewInvoice || showNewEstimate} />}
       {tab === 'invoices'  && <InvoicesList db={db} navigate={navigate} period={invPeriod} />}
       {tab === 'estimates' && <EstimatesList db={db} navigate={navigate} period={estPeriod} />}
       {tab === 'payments'  && <PaymentsLedger db={db} navigate={navigate} />}

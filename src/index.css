@@ -5674,3 +5674,66 @@ tr:hover td { background: var(--bg-secondary); }
   padding: 9px 18px; background: #fafbfc; border-bottom: 1px solid #f0f1f4;
   border-top: 1px solid #eef0f3;
 }
+
+/* ── A/R Copilot — floating chat bubble + panel (ARChatBubble.jsx) ── */
+.coll-chat-fab {
+  position: fixed; right: 24px; bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  z-index: 80; width: 56px; height: 56px; border-radius: 9999px; border: none;
+  display: flex; align-items: center; justify-content: center; color: #fff; background: #2f6bf2;
+  box-shadow: 0 6px 20px rgba(47,107,242,.36), 0 2px 6px rgba(16,24,40,.12);
+  cursor: pointer; transition: transform .14s ease, background .14s ease;
+}
+.coll-chat-fab:hover { background: #2a60d8; transform: translateY(-1px); }
+.coll-chat-fab:active { transform: translateY(0); }
+
+.coll-chat-panel {
+  position: fixed; right: 24px; bottom: calc(max(24px, env(safe-area-inset-bottom, 24px)) + 68px);
+  z-index: 90; width: 400px; max-width: calc(100vw - 32px); max-height: min(70vh, 640px);
+  display: flex; flex-direction: column; background: #fff; border: 1px solid #e7e9ee;
+  border-radius: 16px; box-shadow: 0 16px 48px rgba(16,24,40,.22), 0 4px 12px rgba(16,24,40,.10);
+  overflow: hidden; animation: collChatIn .16s ease;
+}
+@keyframes collChatIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.coll-chat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; border-bottom: 1px solid #f0f1f4; background: #fafbfc; }
+.coll-chat-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: #101828; }
+.coll-chat-dot { width: 8px; height: 8px; border-radius: 3px; background: #2f6bf2; flex: none; }
+.coll-chat-headbtns { display: flex; align-items: center; gap: 6px; }
+.coll-chat-headbtn { font-family: inherit; font-size: 12.5px; font-weight: 600; color: #667085; background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 7px; }
+.coll-chat-headbtn:hover { background: #f1f3f5; }
+.coll-chat-headbtn:disabled { opacity: .45; cursor: default; background: none; }
+
+.coll-chat-log { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #f8f9fb; }
+.coll-chat-intro { display: flex; flex-direction: column; gap: 12px; }
+.coll-chat-introtext { margin: 0; font-size: 13px; line-height: 1.5; color: #667085; }
+.coll-chat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.coll-chat-chips .coll-chip { text-align: left; }
+
+.coll-chat-msg { max-width: 86%; padding: 10px 13px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; border-radius: 14px; }
+.coll-chat-user { align-self: flex-end; background: #2f6bf2; color: #fff; border-bottom-right-radius: 5px; }
+.coll-chat-ai { align-self: flex-start; background: #fff; color: #101828; border: 1px solid #e7e9ee; border-bottom-left-radius: 5px; }
+.coll-chat-think { color: #98a2b3; font-family: var(--font-mono, monospace); font-size: 12.5px; }
+.coll-chat-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.coll-chat-user .coll-chat-link { color: #fff; }
+
+.coll-chat-err { padding: 8px 14px; font-size: 12.5px; color: #c0322c; background: #fdecea; border-top: 1px solid #f7d2cf; }
+
+.coll-chat-composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px 14px 6px; border-top: 1px solid #f0f1f4; background: #fff; }
+.coll-chat-input { flex: 1; resize: none; min-height: 42px; max-height: 140px; padding: 11px 13px; font-family: inherit; font-size: 13.5px; color: #101828; background: #f4f5f7; border: 1px solid #eceef2; border-radius: 12px; outline: none; }
+.coll-chat-input:focus { border-color: #cfe0fb; }
+.coll-chat-send { flex: none; height: 42px; padding: 0 16px; border: none; border-radius: 12px; font-family: inherit; font-weight: 700; font-size: 13.5px; color: #fff; background: #2f6bf2; cursor: pointer; }
+.coll-chat-send:hover { background: #2a60d8; }
+.coll-chat-send:disabled { background: #e7e9ee; color: #98a2b3; cursor: default; }
+.coll-chat-foot { padding: 4px 14px 11px; font-size: 10.5px; color: #aeb4be; background: #fff; text-align: center; }
+
+@media (max-width: 768px) {
+  /* Lift the bubble above the app's mobile bottom-bar (height var --bottom-bar-h, z-index 90);
+     the open sheet sits at z-index 95 so it covers the bar while the user chats. */
+  .coll-chat-fab { right: 16px; bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 16px); }
+  .coll-chat-fab.open { display: none; }
+  .coll-chat-panel {
+    right: 0; left: 0; bottom: 0; width: 100%; max-width: 100%;
+    height: 80dvh; max-height: 80dvh; border-radius: 18px 18px 0 0; z-index: 95;
+  }
+  .coll-chat-foot { padding-bottom: max(11px, env(safe-area-inset-bottom, 11px)); }
+}
