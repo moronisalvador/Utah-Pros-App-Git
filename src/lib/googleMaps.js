@@ -36,7 +36,8 @@ export function loadPlaces() {
     }))
     .catch((err) => {
       placesPromise = null;
-      console.warn('[googleMaps] Failed to load Places library:', err?.message || err);
+      // TEMP DIAGNOSTIC (remove after fix): full error to reveal config cause.
+      console.error('[googleMaps] Failed to load Places library:', err);
       return null;
     });
 
