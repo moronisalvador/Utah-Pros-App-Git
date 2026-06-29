@@ -327,17 +327,43 @@ export const ROOM_TYPES = [
 const ROOM_MAP = Object.fromEntries(ROOM_TYPES.map((r) => [r.key, r]));
 export function roomDef(key) { return ROOM_MAP[key] || null; }
 
-// Roll a floor plan up into the numbers the cost engine wants.
-export function floorplanTotals(fp) {
-  const rooms = fp && Array.isArray(fp.rooms) ? fp.rooms : [];
-  let sqft = 0, bedrooms = 0, bathrooms = 0;
-  for (const r of rooms) {
-    const d = ROOM_MAP[r.type];
-    if (!d) continue;
-    const area = (Number(r.w) || 0) * (Number(r.h) || 0);
-    if (d.conditioned !== false) sqft += area;
-    bedrooms += d.bed || 0;
-    bathrooms += d.bath || 0;
+// Normalize either floor-plan shape into an array of levels. The original v1 shape was
+// `{ rooms: [] }` (one implicit floor); v2 is `{ levels: [{ key, name, rooms, fixtures }], active }`.
+// Old saved plans migrate transparently — their rooms become "Level 1".
+export const LEVEL_DEFS = [
+  { key: 'basement', name: 'Basement' },
+  { key: 'level1', name: 'Level 1' },
+  { key: 'level2', name: 'Level 2' },
+];
+
+export function floorplanLevels(fp) {
+  if (fp && Array.isArray(fp.levels) && fp.levels.length) {
+    return fp.levels.map((lv) => ({
+      key: lv.key, name: lv.name || lv.key,
+      rooms: Array.isArray(lv.rooms) ? lv.rooms : [],
+      fixtures: Array.isArray(lv.fixtures) ? lv.fixtures : [],
+    }));
   }
-  return { sqft: Math.round(sqft), bedrooms, bathrooms: Math.round(bathrooms * 2) / 2, rooms: rooms.length };
+  const rooms = fp && Array.isArray(fp.rooms) ? fp.rooms : [];
+  return [{ key: 'level1', name: 'Level 1', rooms, fixtures: [] }];
+}
+
+// Roll a floor plan up into the numbers the cost engine wants. Sums conditioned room area
+// across EVERY level (a finished basement counts as finished living sqft — the planning basis
+// the Sync-to-spec button feeds into buildPlanFromSpec, which the user reviews before costing).
+export function floorplanTotals(fp) {
+  const levels = floorplanLevels(fp);
+  let sqft = 0, bedrooms = 0, bathrooms = 0, roomCount = 0;
+  for (const lv of levels) {
+    for (const r of lv.rooms) {
+      roomCount += 1;
+      const d = ROOM_MAP[r.type];
+      if (!d) continue;
+      const area = (Number(r.w) || 0) * (Number(r.h) || 0);
+      if (d.conditioned !== false) sqft += area;
+      bedrooms += d.bed || 0;
+      bathrooms += d.bath || 0;
+    }
+  }
+  return { sqft: Math.round(sqft), bedrooms, bathrooms: Math.round(bathrooms * 2) / 2, rooms: roomCount };
 }

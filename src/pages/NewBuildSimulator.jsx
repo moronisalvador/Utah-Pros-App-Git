@@ -35,7 +35,7 @@ import {
   REGIONS, SUBMARKETS, FINISH_LEVELS, FEATURES as FEATURE_DEFS, defaultSpec, buildPlanFromSpec,
   computeSchedule, computeDraws, computeFinancing, computeArvBaseline,
   lineItemsTotal, scheduleWeeks, scheduleMonths, round2,
-  ROOM_TYPES, roomDef, floorplanTotals,
+  ROOM_TYPES, roomDef, floorplanTotals, floorplanLevels, LEVEL_DEFS,
 } from '@/lib/buildTemplate';
 
 const C = {
@@ -127,7 +127,8 @@ export default function NewBuildSimulator() {
 
   const openProject = (row) => {
     const s = { ...defaultSpec(row.region), ...(row.spec || {}) };
-    const fp = (row.plan && row.plan.floorplan && Array.isArray(row.plan.floorplan.rooms)) ? row.plan.floorplan : { rooms: [] };
+    const rawFp = row.plan && row.plan.floorplan;
+    const fp = (rawFp && (Array.isArray(rawFp.levels) || Array.isArray(rawFp.rooms))) ? rawFp : { rooms: [] };
     const p = (row.plan && Array.isArray(row.plan.lineItems) && row.plan.lineItems.length)
       ? { lineItems: row.plan.lineItems, schedule: row.plan.schedule || computeSchedule(s), arv: row.plan.arv || 0, floorplan: fp }
       : { lineItems: buildPlanFromSpec(s).lineItems, schedule: computeSchedule(s), arv: 0, floorplan: fp };
@@ -726,153 +727,362 @@ function SummaryTab({ label, spec, plan, fin, hardTotal, costPerSf, weeks, month
   );
 }
 
-// ─── SECTION: Floor Plan tab (drag-and-drop + stretch/move) ───
-const FP_PXFT = 9, FP_CW = 72, FP_CH = 52; // px/ft, canvas width/height in feet
-const fpSnap = (v) => Math.round(v);
-const fpClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ─── SECTION: Floor Plan v2 (multi-level CAD-style editor) ───
+let fpSeq = 0;
+const fpId = (p) => `${p}-${Date.now().toString(36)}-${++fpSeq}`;
+
+// Fixtures are purely visual symbols (no cost effect) — default sizes in feet.
+const FIXTURE_TYPES = [
+  { key: 'door',    name: 'Door',      w: 3,   h: 0.5 },
+  { key: 'window',  name: 'Window',    w: 4,   h: 0.5 },
+  { key: 'toilet',  name: 'Toilet',    w: 1.6, h: 2.4 },
+  { key: 'sink',    name: 'Sink',      w: 2,   h: 1.8 },
+  { key: 'vanity',  name: 'Vanity',    w: 4,   h: 2 },
+  { key: 'cabinet', name: 'Cabinetry', w: 6,   h: 2 },
+  { key: 'island',  name: 'Island',    w: 6,   h: 3 },
+  { key: 'tub',     name: 'Bathtub',   w: 5,   h: 2.6 },
+  { key: 'shower',  name: 'Shower',    w: 3,   h: 3 },
+  { key: 'range',   name: 'Range',     w: 2.5, h: 2.2 },
+  { key: 'fridge',  name: 'Fridge',    w: 3,   h: 2.6 },
+];
+const FIX_MAP = Object.fromEntries(FIXTURE_TYPES.map((f) => [f.key, f]));
+
+const CANVAS_W_FT = 72;    // drawable area width  (ft)
+const CANVAS_H_FT = 60;    // drawable area height (ft)
+const GRID_FT = 0.5;       // snap granularity (ft)
+const SNAP_THR = 0.75;     // wall-magnet threshold (ft)
+const MIN_ROOM = 4;        // minimum room dimension (ft)
+
+const snapG = (v) => Math.round(v / GRID_FT) * GRID_FT;
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Pretty feet → feet-inches, e.g. 12.5 → 12'6"
+function ftIn(ft) {
+  const totalIn = Math.round((Number(ft) || 0) * 12);
+  const f = Math.floor(totalIn / 12);
+  const i = totalIn % 12;
+  return i ? `${f}'${i}"` : `${f}'`;
+}
+
+// Snap one moving edge to the grid, then to the nearest neighbor wall within threshold.
+function snapEdge(v, edges) {
+  const s = snapG(v);
+  let best = null, bestD = SNAP_THR + 1;
+  for (const e of edges) { const d = Math.abs(e - s); if (d <= SNAP_THR && d < bestD) { best = e; bestD = d; } }
+  return best !== null ? best : s;
+}
+// Snap a whole moving room along one axis: either its near or far edge can grab a neighbor wall.
+function snapMoveAxis(pos, size, edges) {
+  const s = snapG(pos);
+  let best = null, bestD = SNAP_THR + 1;
+  for (const e of edges) {
+    const dNear = Math.abs(e - s);
+    if (dNear <= SNAP_THR && dNear < bestD) { best = e; bestD = dNear; }
+    const dFar = Math.abs(e - (s + size));
+    if (dFar <= SNAP_THR && dFar < bestD) { best = e - size; bestD = dFar; }
+  }
+  return best !== null ? best : s;
+}
+
+// Guarantee all three levels exist, in Basement → Level 1 → Level 2 order, preserving content.
+function ensureLevels(levels) {
+  return LEVEL_DEFS.map((def) => {
+    const found = (levels || []).find((l) => l.key === def.key);
+    return { key: def.key, name: def.name, rooms: (found && found.rooms) || [], fixtures: (found && found.fixtures) || [] };
+  });
+}
+
+const HANDLES = [
+  { h: 'nw', cur: 'nwse-resize', fx: 0,   fy: 0 },
+  { h: 'n',  cur: 'ns-resize',   fx: 0.5, fy: 0 },
+  { h: 'ne', cur: 'nesw-resize', fx: 1,   fy: 0 },
+  { h: 'e',  cur: 'ew-resize',   fx: 1,   fy: 0.5 },
+  { h: 'se', cur: 'nwse-resize', fx: 1,   fy: 1 },
+  { h: 's',  cur: 'ns-resize',   fx: 0.5, fy: 1 },
+  { h: 'sw', cur: 'nesw-resize', fx: 0,   fy: 1 },
+  { h: 'w',  cur: 'ew-resize',   fx: 0,   fy: 0.5 },
+];
+
+// Simple architectural line-art for each fixture symbol. preserveAspectRatio="none" → fills the box.
+function FixtureArt({ type, color }) {
+  const p = { stroke: color, strokeWidth: 3.5, fill: 'none', vectorEffect: 'non-scaling-stroke', strokeLinejoin: 'round', strokeLinecap: 'round' };
+  let body = null;
+  switch (type) {
+    case 'door':    body = (<g {...p}><path d="M6,94 L6,6" /><path d="M6,6 A88,88 0 0 1 94,94" /><line x1="6" y1="94" x2="94" y2="94" /></g>); break;
+    case 'window':  body = (<g {...p}><line x1="3" y1="18" x2="3" y2="82" /><line x1="97" y1="18" x2="97" y2="82" /><line x1="3" y1="38" x2="97" y2="38" /><line x1="3" y1="62" x2="97" y2="62" /></g>); break;
+    case 'toilet':  body = (<g {...p}><rect x="26" y="4" width="48" height="20" /><ellipse cx="50" cy="60" rx="32" ry="34" /></g>); break;
+    case 'sink':    body = (<g {...p}><rect x="6" y="8" width="88" height="84" rx="6" /><circle cx="50" cy="56" r="26" /><circle cx="50" cy="22" r="5" /></g>); break;
+    case 'vanity':  body = (<g {...p}><rect x="3" y="6" width="94" height="88" /><ellipse cx="50" cy="54" rx="28" ry="20" /><circle cx="50" cy="22" r="4" /></g>); break;
+    case 'cabinet': body = (<g {...p}><rect x="3" y="6" width="94" height="88" /><path d="M3,6 L50,52 M97,6 L50,52" /></g>); break;
+    case 'island':  body = (<g {...p}><rect x="5" y="12" width="90" height="76" rx="5" /></g>); break;
+    case 'tub':     body = (<g {...p}><rect x="3" y="6" width="94" height="88" rx="14" /><ellipse cx="50" cy="52" rx="34" ry="32" /><circle cx="50" cy="22" r="3" /></g>); break;
+    case 'shower':  body = (<g {...p}><rect x="4" y="4" width="92" height="92" /><path d="M4,4 L96,96 M96,4 L4,96" /><circle cx="50" cy="50" r="5" /></g>); break;
+    case 'range':   body = (<g {...p}><rect x="4" y="4" width="92" height="92" rx="4" /><circle cx="31" cy="31" r="12" /><circle cx="69" cy="31" r="12" /><circle cx="31" cy="69" r="12" /><circle cx="69" cy="69" r="12" /></g>); break;
+    case 'fridge':  body = (<g {...p}><rect x="6" y="4" width="88" height="92" rx="4" /><line x1="6" y1="58" x2="94" y2="58" /><line x1="18" y1="16" x2="18" y2="48" /><line x1="18" y1="68" x2="18" y2="88" /></g>); break;
+    default:        body = (<g {...p}><rect x="4" y="4" width="92" height="92" /></g>);
+  }
+  return <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>{body}</svg>;
+}
 
 function FloorPlanTab({ floorplan, setFloorplan, onSync }) {
-  const canvasRef = useRef(null);
-  const dragRef = useRef(null);
-  const dragNewRef = useRef(false); // true while dragging a palette tile (suppresses the click-to-add)
-  const [selId, setSelId] = useState(null);
+  const [activeKey, setActiveKey] = useState(() => (
+    floorplan && LEVEL_DEFS.some((d) => d.key === floorplan.active) ? floorplan.active : 'level1'
+  ));
+  const [sel, setSel] = useState(null);          // { kind:'room'|'fixture', id }
+  const [pxft, setPxft] = useState(9);            // zoom (px per ft)
   const [confirmDel, setConfirmDel] = useState(false);
+  const canvasRef = useRef(null);
+  const dragNewRef = useRef(false);               // guards palette drag vs click double-add
+  const pxftRef = useRef(pxft);
+  useEffect(() => { pxftRef.current = pxft; }, [pxft]);
 
-  const fp = floorplan && Array.isArray(floorplan.rooms) ? floorplan : { rooms: [] };
-  const rooms = fp.rooms;
-  const t = floorplanTotals(fp);
-  const sel = rooms.find((r) => r.id === selId) || null;
+  const levels = useMemo(() => ensureLevels(floorplanLevels(floorplan)), [floorplan]);
+  const active = levels.find((l) => l.key === activeKey) || levels[1];
+  const rooms = active.rooms;
+  const fixtures = active.fixtures;
+  const totals = useMemo(() => floorplanTotals(floorplan), [floorplan]);
 
-  const setRoom = (id, patch) => setFloorplan((f) => ({ ...f, rooms: (f.rooms || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
-  const removeRoom = (id) => { setFloorplan((f) => ({ ...f, rooms: (f.rooms || []).filter((r) => r.id !== id) })); setSelId(null); };
-  const addRoom = (typeKey, xFt, yFt) => {
-    const d = roomDef(typeKey); if (!d) return;
-    const id = `r${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const x = fpClamp(fpSnap(xFt - d.w / 2), 0, FP_CW - d.w);
-    const y = fpClamp(fpSnap(yFt - d.h / 2), 0, FP_CH - d.h);
-    setFloorplan((f) => ({ ...f, rooms: [...(f.rooms || []), { id, type: typeKey, label: d.name, x, y, w: d.w, h: d.h }] }));
-    setSelId(id);
+  // Write back the full multi-level structure on every edit (active level switched on edit too).
+  const writeLevel = useCallback((key, fn) => setFloorplan((f) => {
+    const lv = ensureLevels(floorplanLevels(f));
+    return { levels: lv.map((l) => (l.key === key ? fn(l) : l)), active: key };
+  }), [setFloorplan]);
+  const setRooms = useCallback((upd) => writeLevel(activeKey, (l) => ({ ...l, rooms: typeof upd === 'function' ? upd(l.rooms) : upd })), [writeLevel, activeKey]);
+  const setFixtures = useCallback((upd) => writeLevel(activeKey, (l) => ({ ...l, fixtures: typeof upd === 'function' ? upd(l.fixtures) : upd })), [writeLevel, activeKey]);
+
+  const selRoom = sel && sel.kind === 'room' ? rooms.find((r) => r.id === sel.id) : null;
+  const selFix = sel && sel.kind === 'fixture' ? fixtures.find((f) => f.id === sel.id) : null;
+
+  // ── add / mutate ──
+  const addRoom = (key, cx, cy) => {
+    const d = roomDef(key); if (!d) return;
+    const w = d.w, h = d.h;
+    const x = clampN(snapG((cx == null ? 8 : cx) - w / 2), 0, CANVAS_W_FT - w);
+    const y = clampN(snapG((cy == null ? 8 : cy) - h / 2), 0, CANVAS_H_FT - h);
+    const id = fpId('r');
+    setRooms((rs) => [...rs, { id, type: key, name: d.name, x, y, w, h }]);
+    setSel({ kind: 'room', id }); setConfirmDel(false);
+  };
+  const addFixture = (key, cx, cy) => {
+    const d = FIX_MAP[key]; if (!d) return;
+    const w = d.w, h = d.h;
+    const x = clampN(snapG((cx == null ? 6 : cx) - w / 2), 0, CANVAS_W_FT - w);
+    const y = clampN(snapG((cy == null ? 6 : cy) - h / 2), 0, CANVAS_H_FT - h);
+    const id = fpId('f');
+    setFixtures((fs) => [...fs, { id, type: key, x, y, w, h, rot: 0 }]);
+    setSel({ kind: 'fixture', id }); setConfirmDel(false);
+  };
+  const updRoom = (id, patch) => setRooms((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const updFix = (id, patch) => setFixtures((fs) => fs.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  const delSel = () => {
+    if (!sel) return;
+    if (!confirmDel) { setConfirmDel(true); return; }
+    if (sel.kind === 'room') setRooms((rs) => rs.filter((r) => r.id !== sel.id));
+    else setFixtures((fs) => fs.filter((f) => f.id !== sel.id));
+    setSel(null); setConfirmDel(false);
   };
 
-  // Window-level pointer move/up drive move + resize (set up once; updates go through stable setPlan).
-  useEffect(() => {
-    const onMove = (e) => {
-      const drag = dragRef.current; if (!drag) return;
-      const dxFt = (e.clientX - drag.px) / FP_PXFT;
-      const dyFt = (e.clientY - drag.py) / FP_PXFT;
-      const o = drag.orig;
-      if (drag.mode === 'move') {
-        setRoom(drag.id, { x: fpClamp(fpSnap(o.x + dxFt), 0, FP_CW - o.w), y: fpClamp(fpSnap(o.y + dyFt), 0, FP_CH - o.h) });
-      } else if (drag.mode === 'resize') {
-        setRoom(drag.id, { w: fpClamp(fpSnap(o.w + dxFt), 4, FP_CW - o.x), h: fpClamp(fpSnap(o.h + dyFt), 4, FP_CH - o.y) });
+  // ── pointer drag: move / resize a room ──
+  const onRoomDown = (e, room, handle) => {
+    e.preventDefault(); e.stopPropagation();
+    setSel({ kind: 'room', id: room.id }); setConfirmDel(false);
+    const sx = e.clientX, sy = e.clientY;
+    const orig = { x: room.x, y: room.y, w: room.w, h: room.h };
+    const ppf = pxftRef.current;
+    const others = rooms.filter((r) => r.id !== room.id);
+    const vEdges = others.flatMap((r) => [r.x, r.x + r.w]);
+    const hEdges = others.flatMap((r) => [r.y, r.y + r.h]);
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / ppf, dy = (ev.clientY - sy) / ppf;
+      let next;
+      if (handle === 'body') {
+        const nx = clampN(snapMoveAxis(orig.x + dx, orig.w, vEdges), 0, CANVAS_W_FT - orig.w);
+        const ny = clampN(snapMoveAxis(orig.y + dy, orig.h, hEdges), 0, CANVAS_H_FT - orig.h);
+        next = { x: nx, y: ny, w: orig.w, h: orig.h };
+      } else {
+        let L = orig.x, R = orig.x + orig.w, T = orig.y, B = orig.y + orig.h;
+        if (handle.includes('w')) L = clampN(snapEdge(orig.x + dx, vEdges), 0, R - MIN_ROOM);
+        if (handle.includes('e')) R = clampN(snapEdge(orig.x + orig.w + dx, vEdges), L + MIN_ROOM, CANVAS_W_FT);
+        if (handle.includes('n')) T = clampN(snapEdge(orig.y + dy, hEdges), 0, B - MIN_ROOM);
+        if (handle.includes('s')) B = clampN(snapEdge(orig.y + orig.h + dy, hEdges), T + MIN_ROOM, CANVAS_H_FT);
+        next = { x: L, y: T, w: R - L, h: B - T };
       }
+      setRooms((rs) => rs.map((r) => (r.id === room.id ? { ...r, ...next } : r)));
     };
-    const onUp = () => { dragRef.current = null; };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onUp); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startMove = (e, r) => { e.preventDefault(); setSelId(r.id); dragRef.current = { mode: 'move', id: r.id, px: e.clientX, py: e.clientY, orig: { ...r } }; };
-  const startResize = (e, r) => { e.preventDefault(); e.stopPropagation(); setSelId(r.id); dragRef.current = { mode: 'resize', id: r.id, px: e.clientX, py: e.clientY, orig: { ...r } }; };
-  const onDrop = (e) => {
-    e.preventDefault();
-    const typeKey = e.dataTransfer.getData('roomType'); if (!typeKey || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    addRoom(typeKey, (e.clientX - rect.left) / FP_PXFT, (e.clientY - rect.top) / FP_PXFT);
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
   };
+
+  // ── pointer drag: move a fixture (grid snap only, free placement) ──
+  const onFixDown = (e, fix) => {
+    e.preventDefault(); e.stopPropagation();
+    setSel({ kind: 'fixture', id: fix.id }); setConfirmDel(false);
+    const sx = e.clientX, sy = e.clientY, orig = { x: fix.x, y: fix.y };
+    const ppf = pxftRef.current;
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / ppf, dy = (ev.clientY - sy) / ppf;
+      const nx = clampN(snapG(orig.x + dx), 0, CANVAS_W_FT - fix.w);
+      const ny = clampN(snapG(orig.y + dy), 0, CANVAS_H_FT - fix.h);
+      setFixtures((fs) => fs.map((f) => (f.id === fix.id ? { ...f, x: nx, y: ny } : f)));
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  };
+
+  // ── palette drag-and-drop onto the canvas ──
+  const onCanvasDrop = (e) => {
+    e.preventDefault(); dragNewRef.current = false;
+    const data = e.dataTransfer.getData('text/plain'); if (!data) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const fx = (e.clientX - rect.left) / pxft, fy = (e.clientY - rect.top) / pxft;
+    const [kind, key] = data.split(':');
+    if (kind === 'room') addRoom(key, fx, fy);
+    else if (kind === 'fix') addFixture(key, fx, fy);
+  };
+  const onPaletteDragStart = (e, payload) => { dragNewRef.current = true; e.dataTransfer.setData('text/plain', payload); e.dataTransfer.effectAllowed = 'copy'; };
+  const onPaletteClick = (kind, key) => { if (dragNewRef.current) return; if (kind === 'room') addRoom(key); else addFixture(key); };
+
+  const gridBg = {
+    backgroundColor: '#fff',
+    backgroundImage: `linear-gradient(${C.lineSoft} 1px, transparent 1px), linear-gradient(90deg, ${C.lineSoft} 1px, transparent 1px), linear-gradient(${C.line} 1px, transparent 1px), linear-gradient(90deg, ${C.line} 1px, transparent 1px)`,
+    backgroundSize: `${pxft}px ${pxft}px, ${pxft}px ${pxft}px, ${pxft * 5}px ${pxft * 5}px, ${pxft * 5}px ${pxft * 5}px`,
+  };
+
+  const tileStyle = { display: 'flex', alignItems: 'center', gap: 6, padding: '7px 9px', borderRadius: 7, border: `1px solid ${C.line}`, background: C.card, cursor: 'grab', fontFamily: SANS, fontSize: 12.5, color: C.ink, userSelect: 'none' };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ fontSize: 13, color: C.muted }}>
-        Drag a room onto the grid, then drag it to move and pull the corner to resize. 1 square = 1 ft.
-        Then <b>Sync to spec</b> to cost it out.
-      </div>
-
-      {/* palette */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {ROOM_TYPES.map((d) => (
-          <div key={d.key} draggable
-            onDragStart={(e) => { dragNewRef.current = true; e.dataTransfer.setData('roomType', d.key); e.dataTransfer.effectAllowed = 'copy'; }}
-            onDragEnd={() => { dragNewRef.current = false; }}
-            onClick={() => { if (dragNewRef.current) { dragNewRef.current = false; return; } addRoom(d.key, FP_CW / 2, FP_CH / 2); }}
-            title="Drag onto the grid (or click to add)"
-            style={{ cursor: 'grab', userSelect: 'none', fontFamily: MONO, fontSize: 11.5, padding: '6px 10px', borderRadius: 8, background: d.fill, border: `1px solid ${C.line}`, color: C.ink }}>
-            {d.name}{d.bed ? ` · ${d.bed}bd` : ''}{d.bath ? ` · ${d.bath}ba` : ''}
+    <div className="fp-grid" style={{ display: 'grid', gap: 16 }}>
+      {/* ── left rail: palettes + selection ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 220 }}>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, textTransform: 'uppercase', marginBottom: 7 }}>Rooms — drag or click</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {ROOM_TYPES.map((r) => (
+              <div key={r.key} draggable onDragStart={(e) => onPaletteDragStart(e, `room:${r.key}`)} onDragEnd={() => { dragNewRef.current = false; }} onClick={() => onPaletteClick('room', r.key)} style={tileStyle} title={`${r.name} · ${r.w}×${r.h} ft`}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, border: `1.5px solid ${C.muted}`, background: r.conditioned === false ? C.lineSoft : '#fff', flex: '0 0 auto' }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, textTransform: 'uppercase', marginBottom: 7 }}>Fixtures</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {FIXTURE_TYPES.map((f) => (
+              <div key={f.key} draggable onDragStart={(e) => onPaletteDragStart(e, `fix:${f.key}`)} onDragEnd={() => { dragNewRef.current = false; }} onClick={() => onPaletteClick('fix', f.key)} style={tileStyle} title={f.name}>
+                <span style={{ width: 18, height: 14, flex: '0 0 auto' }}><FixtureArt type={f.key} color={C.muted} /></span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* selection panel */}
+        {(selRoom || selFix) && (
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, background: C.paper }}>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, textTransform: 'uppercase', marginBottom: 8 }}>{selRoom ? 'Room' : 'Fixture'}</div>
+            {selRoom && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Field label="Type">
+                  <select value={selRoom.type} onChange={(e) => { const d = roomDef(e.target.value); updRoom(selRoom.id, { type: e.target.value, name: d ? d.name : selRoom.name }); }} style={selStyle}>
+                    {ROOM_TYPES.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+                  </select>
+                </Field>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Field label="Width (ft)"><NumIn value={selRoom.w} min={MIN_ROOM} max={CANVAS_W_FT} step={0.5} width={76} onChange={(v) => updRoom(selRoom.id, { w: clampN(snapG(v), MIN_ROOM, CANVAS_W_FT - selRoom.x) })} /></Field>
+                  <Field label="Height (ft)"><NumIn value={selRoom.h} min={MIN_ROOM} max={CANVAS_H_FT} step={0.5} width={76} onChange={(v) => updRoom(selRoom.id, { h: clampN(snapG(v), MIN_ROOM, CANVAS_H_FT - selRoom.y) })} /></Field>
+                </div>
+                <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.muted }}>{ftIn(selRoom.w)} × {ftIn(selRoom.h)} · {round0(selRoom.w * selRoom.h)} sf</div>
+              </div>
+            )}
+            {selFix && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontFamily: SANS, fontSize: 13, color: C.ink }}>{FIX_MAP[selFix.type] ? FIX_MAP[selFix.type].name : selFix.type}</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Field label="Width (ft)"><NumIn value={selFix.w} min={0.5} max={CANVAS_W_FT} step={0.5} width={76} onChange={(v) => updFix(selFix.id, { w: clampN(snapG(v), 0.5, CANVAS_W_FT - selFix.x) })} /></Field>
+                  <Field label="Depth (ft)"><NumIn value={selFix.h} min={0.5} max={CANVAS_H_FT} step={0.5} width={76} onChange={(v) => updFix(selFix.id, { h: clampN(snapG(v), 0.5, CANVAS_H_FT - selFix.y) })} /></Field>
+                </div>
+                <button onClick={() => updFix(selFix.id, { rot: ((selFix.rot || 0) + 90) % 360 })} style={{ height: 32, borderRadius: 7, border: `1px solid ${C.line}`, background: C.card, cursor: 'pointer', fontFamily: SANS, fontSize: 12.5, color: C.ink }}>↻ Rotate ({selFix.rot || 0}°)</button>
+              </div>
+            )}
+            <button onClick={delSel} onBlur={() => setConfirmDel(false)} style={{ marginTop: 10, width: '100%', height: 32, borderRadius: 7, cursor: 'pointer', fontFamily: SANS, fontSize: 12.5, fontWeight: 600, background: confirmDel ? '#fef2f2' : C.card, color: confirmDel ? '#dc2626' : C.muted, border: `1px solid ${confirmDel ? '#fecaca' : C.line}` }}>
+              {confirmDel ? 'Confirm delete' : 'Delete'}
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="fp-grid" style={{ display: 'grid', gap: 14 }}>
-        {/* canvas (horizontally scrollable on small screens) */}
-        <div style={{ overflowX: 'auto' }}>
-          <div ref={canvasRef}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-            onDrop={onDrop}
-            onPointerDown={(e) => { if (e.target === canvasRef.current) setSelId(null); }}
-            style={{
-              position: 'relative', width: FP_CW * FP_PXFT, height: FP_CH * FP_PXFT, flexShrink: 0,
-              background: '#fafbfc', border: `1px solid ${C.line}`, borderRadius: 10, touchAction: 'none',
-              backgroundImage: `linear-gradient(${C.lineSoft} 1px, transparent 1px), linear-gradient(90deg, ${C.lineSoft} 1px, transparent 1px)`,
-              backgroundSize: `${FP_PXFT}px ${FP_PXFT}px`,
-            }}>
+      {/* ── right: toolbar + canvas ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+        {/* level switcher + zoom */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'inline-flex', borderRadius: 8, border: `1px solid ${C.line}`, overflow: 'hidden' }}>
+            {levels.map((lv) => (
+              <button key={lv.key} onClick={() => { setActiveKey(lv.key); setSel(null); }} style={{ padding: '7px 14px', border: 'none', cursor: 'pointer', fontFamily: SANS, fontSize: 13, fontWeight: activeKey === lv.key ? 700 : 500, background: activeKey === lv.key ? C.steel : C.card, color: activeKey === lv.key ? '#fff' : C.muted }}>
+                {lv.name}<span style={{ marginLeft: 6, fontFamily: MONO, fontSize: 11, opacity: 0.8 }}>{lv.rooms.length}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+            <button onClick={() => setPxft((z) => clampN(z - 1, 6, 16))} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${C.line}`, background: C.card, cursor: 'pointer', fontSize: 16, color: C.ink }}>−</button>
+            <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted, width: 48, textAlign: 'center' }}>{pxft}px/ft</span>
+            <button onClick={() => setPxft((z) => clampN(z + 1, 6, 16))} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${C.line}`, background: C.card, cursor: 'pointer', fontSize: 16, color: C.ink }}>+</button>
+          </div>
+        </div>
+
+        {/* canvas */}
+        <div style={{ overflow: 'auto', border: `1px solid ${C.line}`, borderRadius: 8, maxHeight: 560, background: C.paper }}>
+          <div ref={canvasRef} onPointerDown={() => { setSel(null); setConfirmDel(false); }} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={onCanvasDrop}
+            style={{ position: 'relative', width: CANVAS_W_FT * pxft, height: CANVAS_H_FT * pxft, ...gridBg, touchAction: 'none' }}>
+            {/* fixtures under rooms' handles but above room bodies are drawn after rooms */}
             {rooms.map((r) => {
-              const d = roomDef(r.type) || {};
-              const on = r.id === selId;
+              const isSel = selRoom && selRoom.id === r.id;
+              const cond = roomDef(r.type) && roomDef(r.type).conditioned === false;
+              const wpx = r.w * pxft, hpx = r.h * pxft;
               return (
-                <div key={r.id} onPointerDown={(e) => startMove(e, r)}
-                  style={{
-                    position: 'absolute', left: r.x * FP_PXFT, top: r.y * FP_PXFT, width: r.w * FP_PXFT, height: r.h * FP_PXFT,
-                    background: d.fill || '#eee', border: `${on ? 2 : 1}px solid ${on ? C.steel : 'rgba(21,32,44,0.25)'}`,
-                    borderRadius: 4, boxSizing: 'border-box', cursor: 'move', overflow: 'hidden',
-                    display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-                  }}>
-                  <div style={{ fontFamily: SANS, fontSize: 11, fontWeight: 700, color: C.ink, textAlign: 'center', lineHeight: 1.1, pointerEvents: 'none', padding: '0 2px' }}>{r.label}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 9.5, color: C.muted, pointerEvents: 'none' }}>{r.w}×{r.h}</div>
-                  <div onPointerDown={(e) => startResize(e, r)}
-                    style={{ position: 'absolute', right: -1, bottom: -1, width: 14, height: 14, cursor: 'nwse-resize', background: on ? C.steel : 'rgba(21,32,44,0.35)', borderRadius: '3px 0 3px 0' }} />
+                <div key={r.id} onPointerDown={(e) => onRoomDown(e, r, 'body')}
+                  style={{ position: 'absolute', left: r.x * pxft, top: r.y * pxft, width: wpx, height: hpx, boxSizing: 'border-box',
+                    background: cond ? 'rgba(214,218,223,0.35)' : 'rgba(255,255,255,0.65)',
+                    border: `${isSel ? 2 : 1.5}px ${cond ? 'dashed' : 'solid'} ${isSel ? C.amber : C.steel}`,
+                    cursor: 'move', touchAction: 'none', zIndex: isSel ? 5 : 2 }}>
+                  {/* wall dimension labels: width on top, height on left */}
+                  {wpx > 34 && <span style={{ position: 'absolute', top: 1, left: 0, right: 0, textAlign: 'center', fontFamily: MONO, fontSize: 9.5, color: isSel ? C.amber : C.muted, pointerEvents: 'none' }}>{ftIn(r.w)}</span>}
+                  {hpx > 34 && <span style={{ position: 'absolute', left: 1, top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: 9.5, color: isSel ? C.amber : C.muted, pointerEvents: 'none' }}>{ftIn(r.h)}</span>}
+                  {/* name */}
+                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SANS, fontSize: Math.min(12, Math.max(8, wpx / 8)), color: C.ink, textAlign: 'center', padding: 4, pointerEvents: 'none', lineHeight: 1.15 }}>{r.name}</span>
+                  {/* resize handles */}
+                  {isSel && HANDLES.map((H) => (
+                    <span key={H.h} onPointerDown={(e) => onRoomDown(e, r, H.h)}
+                      style={{ position: 'absolute', left: H.fx * wpx, top: H.fy * hpx, width: 11, height: 11, marginLeft: -6, marginTop: -6, background: '#fff', border: `2px solid ${C.amber}`, borderRadius: 2, cursor: H.cur, touchAction: 'none', zIndex: 6 }} />
+                  ))}
+                </div>
+              );
+            })}
+            {fixtures.map((f) => {
+              const isSel = selFix && selFix.id === f.id;
+              return (
+                <div key={f.id} onPointerDown={(e) => onFixDown(e, f)}
+                  style={{ position: 'absolute', left: f.x * pxft, top: f.y * pxft, width: f.w * pxft, height: f.h * pxft,
+                    transform: `rotate(${f.rot || 0}deg)`, transformOrigin: 'center', cursor: 'move', touchAction: 'none',
+                    outline: isSel ? `2px solid ${C.amber}` : 'none', outlineOffset: 1, zIndex: isSel ? 7 : 4 }}>
+                  <FixtureArt type={f.type} color={isSel ? C.amber : '#3A4654'} />
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* side: totals + selected room */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ borderRadius: 10, padding: 14, background: C.paper, border: `1px solid ${C.line}` }}>
-            <KV k="Conditioned sqft" v={`${t.sqft.toLocaleString('en-US')} sf`} strong />
-            <KV k="Bedrooms" v={t.bedrooms} />
-            <KV k="Bathrooms" v={t.bathrooms} />
-            <KV k="Rooms placed" v={t.rooms} />
-            <button onClick={onSync} disabled={!t.sqft}
-              style={{ marginTop: 10, width: '100%', height: 38, borderRadius: 8, border: 'none', cursor: t.sqft ? 'pointer' : 'default', background: t.sqft ? C.amber : C.lineSoft, color: t.sqft ? '#fff' : C.faint, fontFamily: SANS, fontWeight: 700, fontSize: 13 }}>
-              Sync to spec → recalc costs
-            </button>
-            <div style={{ fontFamily: MONO, fontSize: 10, color: C.faint, marginTop: 6 }}>Garage &amp; covered patio are excluded from conditioned sqft.</div>
-          </div>
-
-          {sel && (
-            <div style={{ borderRadius: 10, padding: 14, background: C.card, border: `1px solid ${C.line}` }}>
-              <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 0.5, color: C.faint, textTransform: 'uppercase', marginBottom: 8 }}>Selected room</div>
-              <Field label="Label"><input value={sel.label} onChange={(e) => setRoom(sel.id, { label: e.target.value })} style={selStyle} /></Field>
-              <div style={{ height: 8 }} />
-              <Field label="Type">
-                <select value={sel.type} onChange={(e) => { const d = roomDef(e.target.value); const wasDefault = sel.label === (roomDef(sel.type) || {}).name; setRoom(sel.id, { type: e.target.value, ...(wasDefault && d ? { label: d.name } : {}) }); }} style={selStyle}>
-                  {ROOM_TYPES.map((d) => <option key={d.key} value={d.key}>{d.name}</option>)}
-                </select>
-              </Field>
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                <Field label="Width (ft)"><NumIn value={sel.w} min={4} max={FP_CW} width={70} onChange={(v) => setRoom(sel.id, { w: fpClamp(Math.round(v), 4, FP_CW - sel.x) })} /></Field>
-                <Field label="Height (ft)"><NumIn value={sel.h} min={4} max={FP_CH} width={70} onChange={(v) => setRoom(sel.id, { h: fpClamp(Math.round(v), 4, FP_CH - sel.y) })} /></Field>
-              </div>
-              <button onClick={() => { if (!confirmDel) { setConfirmDel(true); return; } setConfirmDel(false); removeRoom(sel.id); }} onBlur={() => setConfirmDel(false)}
-                style={{ marginTop: 12, height: 32, padding: '0 14px', borderRadius: 8, cursor: 'pointer', fontFamily: MONO, fontSize: 12, background: confirmDel ? '#fef2f2' : C.card, color: confirmDel ? '#dc2626' : C.muted, border: `1px solid ${confirmDel ? '#fecaca' : C.line}` }}>
-                {confirmDel ? 'Confirm delete' : 'Delete room'}
-              </button>
-            </div>
-          )}
+        {/* totals + sync */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', padding: '10px 14px', border: `1px solid ${C.line}`, borderRadius: 8, background: C.paper }}>
+          <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>Conditioned <strong style={{ color: C.ink, fontSize: 14 }}>{totals.sqft.toLocaleString('en-US')}</strong> sf</span>
+          <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>Beds <strong style={{ color: C.ink, fontSize: 14 }}>{totals.bedrooms}</strong></span>
+          <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>Baths <strong style={{ color: C.ink, fontSize: 14 }}>{totals.bathrooms}</strong></span>
+          <span style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}>Rooms <strong style={{ color: C.ink, fontSize: 14 }}>{totals.rooms}</strong></span>
+          <button onClick={onSync} disabled={!totals.sqft} style={{ marginLeft: 'auto', height: 38, padding: '0 20px', borderRadius: 8, border: 'none', cursor: totals.sqft ? 'pointer' : 'not-allowed', background: totals.sqft ? C.amber : C.lineSoft, color: totals.sqft ? '#fff' : C.faint, fontFamily: SANS, fontWeight: 700, fontSize: 13.5 }}>Sync to spec →</button>
+        </div>
+        <div style={{ fontFamily: SANS, fontSize: 11.5, color: C.faint, lineHeight: 1.5 }}>
+          Drag rooms from the palette onto the grid, then drag the body to move or any edge/corner handle to resize. Rooms snap to the grid and to each other&rsquo;s walls. All conditioned area across Basement, Level 1 and Level 2 counts toward finished sqft. <strong style={{ color: C.muted }}>Sync to spec</strong> pushes sqft + bed/bath into the budget.
         </div>
       </div>
     </div>
