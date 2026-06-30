@@ -88,6 +88,7 @@ const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
 const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
 const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
 const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
+const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
 const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
 const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
@@ -190,6 +191,7 @@ function TechRoutes() {
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
+      <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
       <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
       <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />

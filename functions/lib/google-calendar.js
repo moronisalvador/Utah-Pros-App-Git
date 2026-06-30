@@ -116,6 +116,14 @@ function formatTimeRange(appt) {
   return `${to12h(appt.time_start)} – ${to12h(end)}`;
 }
 
+// Client-facing arrival window: a standard 2-hour span from the scheduled start
+// (we give customers a window, not an exact minute).
+const CLIENT_ARRIVAL_WINDOW_HOURS = 2;
+function formatArrivalWindow(timeStart) {
+  if (!timeStart) return 'All day';
+  return `${to12h(timeStart)} – ${to12h(addHoursToTime(timeStart, CLIENT_ARRIVAL_WINDOW_HOURS))}`;
+}
+
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -198,10 +206,9 @@ function buildNotificationEmail({ summary, appt, job, recipientName, kind, base 
 // ─── SECTION: Client email ──────────────
 // Customer-facing confirmation / reschedule / cancellation. Branded "Utah Pros
 // Restoration", no internal details (crew, claim #), no app link.
-export function buildClientEmail({ kind, clientName, date, timeStart, timeEnd, where }) {
+export function buildClientEmail({ kind, clientName, date, timeStart, where }) {
   const dateLabel = formatApptDate(date);
-  const timeLabel = formatTimeRange({ time_start: timeStart, time_end: timeEnd });
-  const dateLine  = `${dateLabel} · ${timeLabel}`;
+  const arrival   = formatArrivalWindow(timeStart);   // 2-hour client arrival window
 
   const cfg = {
     confirmed:   { accent: '#16a34a', heading: 'Appointment confirmed',  lead: 'Your appointment with Utah Pros Restoration is confirmed.', subject: `Your Utah Pros appointment is confirmed — ${dateLabel}` },
@@ -210,7 +217,8 @@ export function buildClientEmail({ kind, clientName, date, timeStart, timeEnd, w
   }[kind] || {};
 
   const rows = [
-    [kind === 'cancelled' ? 'Was scheduled for' : 'When', dateLine],
+    ['Date', dateLabel],
+    timeStart ? ['Arrival window', arrival] : null,
     where && kind !== 'cancelled' ? ['Where', where] : null,
   ].filter(Boolean);
 
