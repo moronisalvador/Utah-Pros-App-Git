@@ -236,7 +236,7 @@ export default function TechMore() {
     {
       title: 'Resources',
       items: [
-        { key: 'training', label: 'Training Docs', Icon: IconBook, comingSoon: true },
+        { key: 'help', label: 'Help & Guides', Icon: IconBook, path: '/tech/help' },
         { key: 'checklists', label: 'Checklists', Icon: IconClipboard, comingSoon: true },
         { key: 'demosheet', label: 'Scope Sheet Tool', Icon: IconDocument, comingSoon: true },
       ],
