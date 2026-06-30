@@ -268,9 +268,9 @@ separate future project (Phase 4 below, decision pending).
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
-  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
-  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New Jobs Closed). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New Jobs Closed
+  (`get_jobs_closed` — see the canonical sale rule below), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
   reads ~0 until jobs reach a terminal phase, then lights up automatically). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
@@ -308,6 +308,21 @@ separate future project (Phase 4 below, decision pending).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" card + canonical sale rule — DONE (migration `20260630_job_sales_canonical.sql`):**
+  The old **"New claims booked"** card (counted raw `claims` rows) was renamed to **"New Jobs Closed"** and
+  now counts **actual sales**, excluding estimate-only opportunities. The card reads the new
+  `get_jobs_closed(p_floor)` RPC (hook `useJobsClosed.js`, replacing `useNewClaims.js`). The dashboard grid
+  layout key stays `newClaims` (internal id) so saved per-user layouts aren't reset.
+
+  ### ⭐ What counts as a SALE (THE canonical rule — all reporting must use this)
+  Encoded once in the **`job_sales`** view (`job_id, sale_date, first_sale_source`). A job is **Sold** when
+  EITHER **(a)** an estimate for it was converted to an invoice (`estimates.converted_invoice_id IS NOT NULL`;
+  sale date = `approved_at`), **OR (b)** it has a signed work authorization in `sign_requests`
+  (`status='signed'` AND `doc_type IN ('work_auth','recon_agreement')`; sale date = `signed_at`). A job's
+  `sale_date` is the **earliest** qualifying event. `coc`, `direction_pay`, and `change_order` do **NOT** count.
+  **Future reports must read `job_sales` (or `get_jobs_closed`) — never reinvent the sale rule.** This pairs
+  with the estimate-decoupling model (`20260625_estimate_decouple.sql`): an estimate is pre-sale, and a
+  claim + job only materialize when it's sold.
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is

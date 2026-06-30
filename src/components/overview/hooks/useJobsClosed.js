@@ -1,9 +1,36 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: useNewClaims.js — "New claims booked" card data (period count + 30-day
- *   sparkline + 30-vs-30 delta). Reads `claims.created_at` (floored to ~400 days
- *   so the query never rescans the whole table). projected $ stays null until
- *   jobs.estimated_value lands (widget hides that line).
+ * FILE: useJobsClosed.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Feeds the "New Jobs Closed" box on the Overview dashboard. It counts how many
+ *   jobs were actually SOLD in the chosen period (this month, last 30 days, etc.),
+ *   draws the little 30-day trend line, and works out whether sales are up or down
+ *   versus the previous 30 days. It does NOT count estimates that are still just
+ *   quotes — only real sales.
+ *
+ * WHAT COUNTS AS A SALE (the one canonical rule — see the get_jobs_closed RPC):
+ *   A job is "sold" when EITHER its estimate was converted to an invoice, OR it has
+ *   a signed work authorization / reconstruction agreement. The sale date is the
+ *   earliest of those events. All of that logic lives in the database view
+ *   `job_sales`; this file just reads the count back per period.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (hook)
+ *   Rendered by:  src/pages/Dashboard.jsx → NewJobsClosed card
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/contexts/AuthContext (useAuth → db), ./usePolledRpc
+ *   Data:      reads  → get_jobs_closed() RPC (which reads job_sales → estimates,
+ *                       sign_requests, jobs)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Floors the query to ~400 days so it never rescans all-time history.
+ *   - projected $ stays null (no projected-value line for sold jobs); the card
+ *     hides that line when projected is falsy.
  * ════════════════════════════════════════════════
  */
 import { useCallback } from 'react';
@@ -40,13 +67,13 @@ function buildSparkline(times, now) {
   return { line, area: `${line} ${VB_W},58 0,58` };
 }
 
-export function useNewClaims(period = 'MTD') {
+export function useJobsClosed(period = 'MTD') {
   const { db } = useAuth();
   const load = useCallback(async () => {
     const now = Date.now();
     const floor = new Date(now - 400 * DAY).toISOString().slice(0, 10);
-    const rows = await db.select('claims', `select=created_at&created_at=gte.${floor}&order=created_at.desc`);
-    const times = (rows || []).map(r => r.created_at && new Date(r.created_at).getTime()).filter(Boolean);
+    const rows = await db.rpc('get_jobs_closed', { p_floor: floor });
+    const times = (rows || []).map(r => r.sale_date && new Date(r.sale_date).getTime()).filter(Boolean);
 
     const count = times.filter(t => t >= periodStartTs(period, now)).length;
     const last30 = times.filter(t => t >= now - 30 * DAY).length;

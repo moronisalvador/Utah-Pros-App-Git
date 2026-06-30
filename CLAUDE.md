@@ -326,7 +326,19 @@ get_appointment_tasks(p_appointment_id)
 get_appointment_detail(p_appointment_id)
 get_my_appointments_today(p_employee_id)
 get_appointments_range(p_start_date, p_end_date)
+get_jobs_closed(p_floor DATE)  — sold jobs since a floor date; reads the job_sales view
 ```
+
+### ⭐ What counts as a SALE (canonical — all reporting must use this)
+A job is **Sold** when EITHER (a) an estimate for it was converted to an invoice
+(`estimates.converted_invoice_id IS NOT NULL`, sale date = `approved_at`), OR (b) it has a
+signed work authorization (`sign_requests.status='signed'` AND
+`doc_type IN ('work_auth','recon_agreement')`, sale date = `signed_at`). The rule lives in
+the **`job_sales`** view (`job_id, sale_date, first_sale_source`); the Overview
+"New Jobs Closed" card counts it via `get_jobs_closed`. **Read `job_sales` / `get_jobs_closed`
+for any sales / jobs-closed report — never reinvent the rule.** (`coc`, `direction_pay`,
+`change_order` do NOT count. Pairs with the estimate-decouple model: an estimate is pre-sale;
+a claim + job materialize only when it's sold.)
 
 ---
 
