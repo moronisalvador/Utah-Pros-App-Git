@@ -51,6 +51,8 @@ const CAL_API   = 'https://www.googleapis.com/calendar/v3/calendars';
 const TIMEZONE  = 'America/Denver';   // UPR ops timezone (appointments have no TZ of their own)
 const SOURCE    = 'appointment';
 const DEFAULT_DURATION_HOURS = 2;     // when an appointment has a start but no end
+// Sender display name for assignment emails (verified utahpros.app address kept).
+const NOTIFY_FROM = 'UPR - Notifications <restoration@utahpros.app>';
 
 // ─── SECTION: Helpers — time + formatting ──────────────
 function normTime(t) {
@@ -118,38 +120,77 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Division → accent color (matches the app's division palette).
+function divisionColor(division) {
+  return {
+    water: '#0d9488', fire: '#ea580c', contents: '#d97706',
+    mold: '#db2777', reconstruction: '#7c3aed', remodeling: '#ea580c',
+  }[division] || '#2563eb';
+}
+
 // Builds the assignment / reschedule email. `kind` ∈ {'assigned','rescheduled'}.
+// Branded, card-style HTML (table layout for email-client safety) + plain text.
 function buildNotificationEmail({ summary, appt, job, recipientName, kind, base }) {
-  const verb     = kind === 'rescheduled' ? 'Rescheduled' : "You're assigned";
+  const rescheduled = kind === 'rescheduled';
   const dateLine = `${formatApptDate(appt.date)} · ${formatTimeRange(appt)}`;
-  const where    = job ? [job.address, [job.city, job.state, job.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
+  const where    = job ? [job.address, [job.city, job.state, job.zip].filter(Boolean).join(' ').trim()].filter(Boolean).join(', ') : '';
   const link     = appt.job_id ? `${base}/jobs/${appt.job_id}` : `${base}/schedule`;
-  const subject  = `${verb}: ${summary} (${dateLine})`;
+  const accent   = divisionColor(job?.division);
+  const subject  = `${rescheduled ? 'Rescheduled' : "You're assigned"}: ${summary} (${dateLine})`;
+
+  const badge = rescheduled
+    ? { text: 'Rescheduled',    bg: '#fffbeb', fg: '#b45309', bd: '#fde68a' }
+    : { text: 'New assignment', bg: '#eff6ff', fg: '#2563eb', bd: '#bfdbfe' };
 
   const rows = [
     ['When', dateLine],
     where ? ['Where', where] : null,
+    job?.job_number ? ['Job', `#${job.job_number}`] : null,
     appt.notes && appt.notes.trim() ? ['Notes', appt.notes.trim()] : null,
   ].filter(Boolean);
 
-  const html = `
-    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;color:#111318">
-      <p style="font-size:15px">Hi ${esc(recipientName || 'there')},</p>
-      <p style="font-size:15px">${kind === 'rescheduled'
-        ? 'An appointment you\'re assigned to has been <strong>rescheduled</strong>:'
-        : 'You\'ve been <strong>assigned</strong> to an appointment:'}</p>
-      <div style="border:1px solid #e2e5e9;border-radius:8px;padding:16px;margin:12px 0">
-        <div style="font-size:17px;font-weight:600;margin-bottom:8px">${esc(summary)}</div>
-        ${rows.map(([k, v]) => `<div style="font-size:14px;margin:4px 0"><span style="color:#8b929e">${k}:</span> ${esc(v)}</div>`).join('')}
-      </div>
-      <p style="font-size:13px;color:#5f6672">This was added to your Google Calendar. <a href="${link}">Open in UPR</a></p>
-    </div>`;
+  const rowHtml = rows.map(([k, v]) => `
+            <tr>
+              <td style="padding:7px 0;font-size:11px;color:#8b929e;text-transform:uppercase;letter-spacing:.05em;vertical-align:top;width:62px">${k}</td>
+              <td style="padding:7px 0;font-size:14px;color:#111318;line-height:1.45;vertical-align:top">${esc(v)}</td>
+            </tr>`).join('');
 
-  const text = `Hi ${recipientName || 'there'},\n\n${kind === 'rescheduled'
-    ? 'An appointment you\'re assigned to has been rescheduled:'
-    : "You've been assigned to an appointment:"}\n\n${summary}\n` +
+  const intro = rescheduled
+    ? 'An appointment you’re assigned to was rescheduled.'
+    : 'You’ve been assigned to an appointment.';
+
+  const html = `
+  <div style="background:#f4f5f7;padding:24px 12px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+      <tr><td style="padding:2px 4px 16px">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:34px;height:34px;background:#2563eb;border-radius:9px;color:#ffffff;font-weight:700;font-size:18px;text-align:center;vertical-align:middle;font-family:-apple-system,'Segoe UI',Roboto,sans-serif">U</td>
+          <td style="padding-left:10px;font-size:15px;font-weight:600;color:#111318">Utah Pros Restoration</td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="background:#ffffff;border:1px solid #e2e5e9;border-radius:14px;overflow:hidden">
+        <div style="height:4px;background:${accent};line-height:4px;font-size:0">&nbsp;</div>
+        <div style="padding:24px">
+          <span style="display:inline-block;font-size:11px;font-weight:600;letter-spacing:.03em;padding:4px 11px;border-radius:999px;background:${badge.bg};color:${badge.fg};border:1px solid ${badge.bd}">${badge.text.toUpperCase()}</span>
+          <p style="font-size:15px;color:#5f6672;margin:16px 0 2px">Hi ${esc(recipientName || 'there')},</p>
+          <p style="font-size:15px;color:#111318;margin:0 0 18px">${intro}</p>
+          <div style="font-size:18px;font-weight:600;color:#111318;margin-bottom:10px;line-height:1.3">${esc(summary)}</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowHtml}</table>
+          <div style="margin-top:22px">
+            <a href="${link}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 22px;border-radius:10px">Open in UPR &rarr;</a>
+          </div>
+        </div>
+      </td></tr>
+      <tr><td style="padding:16px 10px 4px;text-align:center;font-size:12px;color:#8b929e;line-height:1.5">
+        Added to your Google Calendar · You’re receiving this because you’re assigned to this appointment.<br>
+        <span style="color:#b6bcc6">Utah Pros Restoration</span>
+      </td></tr>
+    </table>
+  </div>`;
+
+  const text = `Hi ${recipientName || 'there'},\n\n${intro}\n\n${summary}\n` +
     rows.map(([k, v]) => `${k}: ${v}`).join('\n') +
-    `\n\nAdded to your Google Calendar. Open in UPR: ${link}`;
+    `\n\nAdded to your Google Calendar.\nOpen in UPR: ${link}`;
 
   return { subject, html, text };
 }
@@ -408,7 +449,7 @@ export async function syncAppointment(env, db, appointmentId, opts = {}) {
       if (emailKind) {
         try {
           const mail = buildNotificationEmail({ summary: body.summary, appt, job, recipientName: name, kind: emailKind, base });
-          await sendEmail(env, { to: email, subject: mail.subject, html: mail.html, text: mail.text });
+          await sendEmail(env, { from: NOTIFY_FROM, to: email, subject: mail.subject, html: mail.html, text: mail.text });
           emailed++;
         } catch { /* email failure must never break the sync */ }
       }
