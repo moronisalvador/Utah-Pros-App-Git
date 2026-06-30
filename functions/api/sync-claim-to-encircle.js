@@ -74,6 +74,27 @@ function mapLossTypeToEncircle(lossType) {
   return null;
 }
 
+// Normalize a name/address for loose comparison (lowercase, alphanumerics only).
+function normForMatch(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Safety check for the duplicate-guard path: an Encircle claim found by our CLM is
+// only the SAME claim if its policyholder or address matches this UPR claim. This
+// stops a (theoretically impossible, now that claim_number is UNIQUE) CLM collision
+// from silently cross-linking one customer's job to a different customer's Encircle
+// claim — the failure that linked Tanner Johnson to Dorothy Killian's claim. A
+// genuine retry re-pushes the SAME contact, so its name/address always matches here.
+function encircleClaimMatchesClaim(existing, contactName, fullAddress) {
+  const en = normForMatch(existing.policyholder_name);
+  const cn = normForMatch(contactName);
+  if (en && cn && (en === cn || en.includes(cn) || cn.includes(en))) return true;
+  const ea = normForMatch(existing.full_address);
+  const ca = normForMatch(fullAddress);
+  if (ea && ca && (ea === ca || ea.includes(ca) || ca.includes(ea))) return true;
+  return false;
+}
+
 async function fetchClaimWithContact(sbUrl, sbKey, claimId) {
   const res = await fetch(
     `${sbUrl}/rest/v1/claims?id=eq.${claimId}&select=*,contact:contact_id(id,name,phone,email)`,
@@ -141,7 +162,7 @@ async function logWorkerRun(sbUrl, sbKey, status, records, errorMessage) {
         error_message: errorMessage || null,
       }),
     });
-  } catch {}
+  } catch { /* best-effort logging — never block the sync on a logging failure */ }
 }
 
 async function doSync(request, env) {
@@ -198,7 +219,7 @@ async function doSync(request, env) {
   };
 
   // Strip nulls — Encircle treats missing fields better than explicit null on create
-  const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== null && v !== ''));
+  const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== null && v !== ''));
 
   // Encircle requires policyholder_name; fail fast with a clear message if missing
   if (!cleanPayload.policyholder_name) {
@@ -211,6 +232,16 @@ async function doSync(request, env) {
   // Duplicate guard — link to an existing Encircle claim with our CLM rather than
   // creating a second one (handles retries, double-submits, and failed write-backs).
   const existing = await findExistingEncircleClaimByClm(env, claim.claim_number);
+  if (existing && !encircleClaimMatchesClaim(existing, cleanPayload.policyholder_name, fullAddress)) {
+    // The CLM matched an Encircle claim for a DIFFERENT policyholder/address. Linking
+    // would cross-contaminate two customers (this is exactly how a duplicate claim
+    // number once linked one job to another customer's Encircle claim). Refuse and
+    // surface it loudly instead of silently reporting success.
+    const errMsg = `Encircle claim ${existing.id} carries our CLM ${claim.claim_number} but belongs to "${existing.policyholder_name}" (≠ "${cleanPayload.policyholder_name}"). Refusing to link — likely a duplicate claim number; resolve it and retry.`;
+    await updateClaimSync(sbUrl, sbKey, claimId, { encircle_sync_error: errMsg });
+    await logWorkerRun(sbUrl, sbKey, 'error', 0, `${claimId}: ${errMsg}`);
+    return jsonResponse({ error: errMsg, claim_id: claimId, conflict_encircle_id: String(existing.id) }, 409, request, env);
+  }
   if (existing) {
     const encircleId = String(existing.id);
     await updateClaimSync(sbUrl, sbKey, claimId, {
