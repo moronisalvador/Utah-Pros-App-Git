@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How UPR Is Organized — Client → Claim → Job → Invoice</title>
+<style>
+  /* ─── UPR design tokens ───────────── */
+  :root{
+    --bg-primary:#ffffff; --bg-secondary:#f8f9fb; --bg-tertiary:#f1f3f5;
+    --border-color:#e2e5e9; --border-light:#f0f1f3;
+    --text-primary:#111318; --text-secondary:#5f6672; --text-tertiary:#8b929e;
+    --accent:#2563eb; --accent-hover:#1d4ed8; --accent-light:#eff6ff;
+    --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --radius-md:6px; --radius-lg:8px; --radius-xl:12px; --radius-full:9999px;
+    --shadow-sm:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+    --shadow-md:0 4px 6px -1px rgba(0,0,0,.06),0 2px 4px -2px rgba(0,0,0,.04);
+    /* division palette */
+    --water-c:#2563eb;  --water-bg:#eff6ff;  --water-bd:#bfdbfe;
+    --fire-c:#dc2626;   --fire-bg:#fef2f2;   --fire-bd:#fecaca;
+    --mold-c:#16a34a;   --mold-bg:#f0fdf4;   --mold-bd:#bbf7d0;
+    --recon-c:#7c3aed;  --recon-bg:#faf5ff;  --recon-bd:#ddd6fe;
+    --remod-c:#d97706;  --remod-bg:#fffbeb;  --remod-bd:#fde68a;
+    --content-c:#0d9488;--content-bg:#f0fdfa;--content-bd:#99f6e4;
+    --general-c:#64748b;--general-bg:#f1f5f9;--general-bd:#cbd5e1;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:var(--font-sans); color:var(--text-primary);
+    background:var(--bg-secondary);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:40px 24px 80px;}
+
+  /* ─── header ───────────── */
+  header{margin-bottom:40px;}
+  .eyebrow{
+    font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:10px;
+  }
+  h1{font-size:32px; font-weight:800; letter-spacing:-.02em; margin:0 0 10px;}
+  .sub{font-size:16px; color:var(--text-secondary); max-width:680px; margin:0;}
+
+  /* ─── section ───────────── */
+  section{margin-top:48px;}
+  .sec-title{font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-tertiary); margin:0 0 18px; display:flex; align-items:center; gap:10px;}
+  .sec-title::after{content:''; flex:1; height:1px; background:var(--border-color);}
+
+  /* ─── tier flow (abstract model) ───────────── */
+  .flow{display:flex; flex-direction:column; align-items:center; gap:0;}
+  .tier{
+    width:100%; max-width:560px; background:var(--bg-primary);
+    border:1px solid var(--border-color); border-radius:var(--radius-xl);
+    box-shadow:var(--shadow-sm); padding:18px 20px;
+    display:grid; grid-template-columns:48px 1fr auto; gap:16px; align-items:center;
+    position:relative;
+  }
+  .tier .num{
+    width:48px; height:48px; border-radius:var(--radius-full);
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; font-weight:800; color:#fff;
+  }
+  .tier h3{margin:0 0 3px; font-size:18px; font-weight:700; letter-spacing:-.01em;}
+  .tier p{margin:0; font-size:13.5px; color:var(--text-secondary);}
+  .tier .idfmt{
+    font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary);
+    background:var(--bg-tertiary); padding:4px 9px; border-radius:var(--radius-md);
+    white-space:nowrap;
+  }
+  .t-client .num{background:#0f172a;}
+  .t-claim  .num{background:var(--accent);}
+  .t-job    .num{background:#7c3aed;}
+  .t-invoice .num{background:#16a34a;}
+  .t-client {border-left:4px solid #0f172a;}
+  .t-claim  {border-left:4px solid var(--accent);}
+  .t-job    {border-left:4px solid #7c3aed;}
+  .t-invoice{border-left:4px solid #16a34a;}
+
+  .connector{
+    display:flex; flex-direction:column; align-items:center; padding:6px 0; position:relative; z-index:1;
+  }
+  .connector .line{width:2px; height:14px; background:var(--border-color);}
+  .connector .rule{
+    font-size:11.5px; font-weight:700; color:var(--accent);
+    background:var(--accent-light); border:1px solid var(--water-bd);
+    padding:3px 11px; border-radius:var(--radius-full); letter-spacing:.02em;
+    display:flex; align-items:center; gap:6px;
+  }
+  .connector .rule .fan{font-size:13px; line-height:1;}
+  .connector.one .rule{color:#16a34a; background:#f0fdf4; border-color:#bbf7d0;}
+
+  /* ─── worked example tree ───────────── */
+  .example{
+    background:var(--bg-primary); border:1px solid var(--border-color);
+    border-radius:var(--radius-xl); box-shadow:var(--shadow-sm); padding:26px 28px;
+  }
+  .tree{font-size:14px;}
+  .tree ul{list-style:none; margin:0; padding:0;}
+  .tree .children{margin-left:22px; padding-left:22px; border-left:2px solid var(--border-color);}
+  .node{position:relative; padding:10px 0;}
+  .node::before{
+    content:''; position:absolute; left:-24px; top:50%; width:22px; height:2px;
+    background:var(--border-color);
+  }
+  .root > .node::before{display:none;}
+  .card{
+    display:inline-flex; align-items:center; gap:12px;
+    border:1px solid var(--border-color); border-radius:var(--radius-lg);
+    padding:10px 14px; background:var(--bg-primary); box-shadow:var(--shadow-sm);
+    max-width:100%;
+  }
+  .card .ico{
+    width:34px; height:34px; border-radius:var(--radius-md); flex:none;
+    display:flex; align-items:center; justify-content:center; font-size:16px; color:#fff;
+  }
+  .card .meta{min-width:0; display:flex; flex-direction:column; gap:1px;}
+  .card .label{font-weight:700; font-size:14px; line-height:1.25;}
+  .card .desc{font-size:12px; color:var(--text-secondary);}
+  .card .code{font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary);}
+  .card.client .ico{background:#0f172a;}
+  .card.claim  .ico{background:var(--accent);}
+  .arrow-inv{display:inline-flex; align-items:center; gap:8px; margin-left:10px;}
+  .arrow-inv .ar{color:var(--text-tertiary); font-size:13px; font-weight:700;}
+  .inv-pill{
+    display:inline-flex; align-items:center; gap:7px;
+    background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d;
+    padding:7px 12px; border-radius:var(--radius-lg); font-size:12.5px; font-weight:600;
+  }
+  .inv-pill .code{color:#15803d; opacity:.8;}
+
+  /* division-tinted job cards */
+  .job-card{border-width:1px; border-style:solid;}
+  .div-water  {border-color:var(--water-bd);  background:var(--water-bg);}
+  .div-water  .ico{background:var(--water-c);}
+  .div-fire   {border-color:var(--fire-bd);   background:var(--fire-bg);}
+  .div-fire   .ico{background:var(--fire-c);}
+  .div-mold   {border-color:var(--mold-bd);   background:var(--mold-bg);}
+  .div-mold   .ico{background:var(--mold-c);}
+  .div-recon  {border-color:var(--recon-bd);  background:var(--recon-bg);}
+  .div-recon  .ico{background:var(--recon-c);}
+  .div-content{border-color:var(--content-bd);background:var(--content-bg);}
+  .div-content .ico{background:var(--content-c);}
+
+  .ex-note{margin-top:22px; padding-top:18px; border-top:1px solid var(--border-light); font-size:13px; color:var(--text-secondary);}
+  .ex-note strong{color:var(--text-primary);}
+
+  /* ─── rules ───────────── */
+  .rules{display:grid; gap:12px;}
+  .rule-row{
+    display:grid; grid-template-columns:28px 1fr; gap:14px; align-items:start;
+    background:var(--bg-primary); border:1px solid var(--border-color);
+    border-radius:var(--radius-lg); padding:16px 18px; box-shadow:var(--shadow-sm);
+  }
+  .rule-row .chk{
+    width:28px; height:28px; border-radius:var(--radius-full);
+    background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0;
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px;
+  }
+  .rule-row .txt b{font-size:14.5px;}
+  .rule-row .txt span{display:block; font-size:13px; color:var(--text-secondary); margin-top:2px;}
+  .rule-row code{font-family:var(--font-mono); font-size:11.5px; background:var(--bg-tertiary); padding:1px 6px; border-radius:4px; color:var(--text-secondary);}
+
+  /* ─── divisions + stats grid ───────────── */
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:24px;}
+  @media (max-width:760px){.cols{grid-template-columns:1fr;}}
+  .panel{background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-xl); padding:22px 24px; box-shadow:var(--shadow-sm);}
+  .panel h4{margin:0 0 16px; font-size:13px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary);}
+  .div-list{display:flex; flex-direction:column; gap:9px;}
+  .div-item{display:flex; align-items:center; gap:11px; font-size:13.5px;}
+  .div-dot{width:14px; height:14px; border-radius:4px; flex:none;}
+  .div-item .nm{font-weight:600;}
+  .div-item .pfx{font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); margin-left:auto;}
+  .stats{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .stat{background:var(--bg-secondary); border:1px solid var(--border-light); border-radius:var(--radius-lg); padding:14px 16px;}
+  .stat .v{font-size:26px; font-weight:800; letter-spacing:-.02em; color:var(--text-primary);}
+  .stat .k{font-size:12px; color:var(--text-secondary); margin-top:2px;}
+
+  footer{margin-top:48px; padding-top:20px; border-top:1px solid var(--border-color); font-size:12px; color:var(--text-tertiary); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+  footer code{font-family:var(--font-mono);}
+
+  @media print{
+    body{background:#fff;}
+    .tier,.example,.rule-row,.panel{box-shadow:none;}
+    section{break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Utah Pros Restoration · Data Model</div>
+    <h1>How everything fits together</h1>
+    <p class="sub">From the customer at the top to the bill at the bottom, every record in UPR hangs off a simple four-level chain. Read it top-to-bottom: each level can contain several of the level below it.</p>
+  </header>
+
+  <!-- ─── SECTION: the model ───────────── -->
+  <section>
+    <h2 class="sec-title">The chain</h2>
+    <div class="flow">
+
+      <div class="tier t-client">
+        <div class="num">1</div>
+        <div>
+          <h3>Client</h3>
+          <p>The homeowner or property owner we're doing the work for. One person (or business) we have a relationship with.</p>
+        </div>
+        <div class="idfmt">contacts</div>
+      </div>
+
+      <div class="connector">
+        <div class="line"></div>
+        <div class="rule"><span class="fan">▾</span> one client can have <b>many claims</b></div>
+        <div class="line"></div>
+      </div>
+
+      <div class="tier t-claim">
+        <div class="num">2</div>
+        <div>
+          <h3>Claim</h3>
+          <p>One insurance loss — a single thing that went wrong on one date (a burst pipe, a kitchen fire). It's the umbrella that holds all the work for that loss. Not a sale, not a bill.</p>
+        </div>
+        <div class="idfmt">CLM-2606-001</div>
+      </div>
+
+      <div class="connector">
+        <div class="line"></div>
+        <div class="rule"><span class="fan">▾</span> one claim splits into <b>many jobs</b></div>
+        <div class="line"></div>
+      </div>
+
+      <div class="tier t-job">
+        <div class="num">3</div>
+        <div>
+          <h3>Job</h3>
+          <p>One trade / division of the work on that loss — water mitigation, then reconstruction, then contents. Each job is exactly <b>one</b> division and runs on its own schedule.</p>
+        </div>
+        <div class="idfmt">WTR-2606-001</div>
+      </div>
+
+      <div class="connector one">
+        <div class="line"></div>
+        <div class="rule"><span class="fan">▾</span> each job gets <b>exactly one invoice</b></div>
+        <div class="line"></div>
+      </div>
+
+      <div class="tier t-invoice">
+        <div class="num">4</div>
+        <div>
+          <h3>Invoice</h3>
+          <p>The bill for that one job. Built from its own line items, split between insurance and homeowner, and synced to QuickBooks under that division.</p>
+        </div>
+        <div class="idfmt">INV-001000</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─── SECTION: worked example ───────────── -->
+  <section>
+    <h2 class="sec-title">A real example</h2>
+    <div class="example">
+      <div class="tree">
+        <ul class="root">
+          <li class="node">
+            <div class="card client">
+              <div class="ico">👤</div>
+              <div class="meta">
+                <div class="label">Sarah Johnson</div>
+                <div class="desc">Homeowner · one client record</div>
+              </div>
+            </div>
+
+            <ul class="children">
+              <!-- Claim 1 -->
+              <li class="node">
+                <div class="card claim">
+                  <div class="ico">🛡️</div>
+                  <div class="meta">
+                    <div class="label">Burst pipe in the basement</div>
+                    <div class="desc">Loss date Jan 12 · State Farm · <span class="code">CLM-2606-018</span></div>
+                  </div>
+                </div>
+                <ul class="children">
+                  <li class="node">
+                    <span class="card job-card div-water">
+                      <span class="ico">💧</span>
+                      <span class="meta"><span class="label">Water Mitigation</span><span class="code">WTR-2606-031</span></span>
+                    </span>
+                    <span class="arrow-inv"><span class="ar">→</span><span class="inv-pill">🧾 Invoice <span class="code">INV-001042</span></span></span>
+                  </li>
+                  <li class="node">
+                    <span class="card job-card div-recon">
+                      <span class="ico">🔨</span>
+                      <span class="meta"><span class="label">Reconstruction</span><span class="code">REC-2606-009</span></span>
+                    </span>
+                    <span class="arrow-inv"><span class="ar">→</span><span class="inv-pill">🧾 Invoice <span class="code">INV-001043</span></span></span>
+                  </li>
+                </ul>
+              </li>
+
+              <!-- Claim 2 -->
+              <li class="node">
+                <div class="card claim">
+                  <div class="ico">🛡️</div>
+                  <div class="meta">
+                    <div class="label">Kitchen fire (a separate loss, months later)</div>
+                    <div class="desc">Loss date Mar 3 · Allstate · <span class="code">CLM-2604-002</span></div>
+                  </div>
+                </div>
+                <ul class="children">
+                  <li class="node">
+                    <span class="card job-card div-fire">
+                      <span class="ico">🔥</span>
+                      <span class="meta"><span class="label">Fire Cleanup</span><span class="code">FIR-2604-005</span></span>
+                    </span>
+                    <span class="arrow-inv"><span class="ar">→</span><span class="inv-pill">🧾 Invoice <span class="code">INV-001051</span></span></span>
+                  </li>
+                  <li class="node">
+                    <span class="card job-card div-content">
+                      <span class="ico">📦</span>
+                      <span class="meta"><span class="label">Contents</span><span class="code">CNT-2604-002</span></span>
+                    </span>
+                    <span class="arrow-inv"><span class="ar">→</span><span class="inv-pill">🧾 Invoice <span class="code">INV-001052</span></span></span>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+
+          </li>
+        </ul>
+      </div>
+
+      <div class="ex-note">
+        One client, <strong>two separate losses</strong> → two claims. The basement claim needed two trades, so it became <strong>two jobs</strong> (water + reconstruction). Every job carries <strong>one division</strong> and produces <strong>one invoice</strong>. The claim itself is just the umbrella — its "total" is simply the sum of its jobs' invoices.
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SECTION: the rules ───────────── -->
+  <section>
+    <h2 class="sec-title">The rules, in plain English</h2>
+    <div class="rules">
+      <div class="rule-row">
+        <div class="chk">✓</div>
+        <div class="txt"><b>A client can have many claims.</b><span>Each claim is a different loss event. Sarah's pipe and her fire are two unrelated claims under the same person. <code>claims.contact_id → contacts.id</code></span></div>
+      </div>
+      <div class="rule-row">
+        <div class="chk">✓</div>
+        <div class="txt"><b>A claim is everything for one specific loss.</b><span>One date of loss, one carrier claim number. It groups together all the work that came out of that single event. <code>claims.date_of_loss</code></span></div>
+      </div>
+      <div class="rule-row">
+        <div class="chk">✓</div>
+        <div class="txt"><b>A claim can have many jobs.</b><span>The work is split by trade — mitigation, reconstruction, mold, contents — so each crew and each scope is tracked on its own. <code>jobs.claim_id → claims.id</code></span></div>
+      </div>
+      <div class="rule-row">
+        <div class="chk">✓</div>
+        <div class="txt"><b>A job is exactly one division.</b><span>A job is never "water and reconstruction" — those are two jobs. The division decides the crew, the job-number prefix, and the QuickBooks category. <code>jobs.division</code></span></div>
+      </div>
+      <div class="rule-row">
+        <div class="chk">✓</div>
+        <div class="txt"><b>A job has one invoice.</b><span>Each job is billed as its own unit. Creating an invoice for a job is idempotent — ask twice, get the same invoice. (A supplement is the rare exception that adds a second.) <code>invoices.job_id → jobs.id</code></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SECTION: divisions + stats ───────────── -->
+  <section>
+    <h2 class="sec-title">Reference</h2>
+    <div class="cols">
+      <div class="panel">
+        <h4>The seven divisions</h4>
+        <div class="div-list">
+          <div class="div-item"><span class="div-dot" style="background:var(--water-c)"></span><span class="nm">Water</span> <span style="color:var(--text-secondary);font-size:12.5px">— mitigation &amp; drying</span><span class="pfx">WTR</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--recon-c)"></span><span class="nm">Reconstruction</span> <span style="color:var(--text-secondary);font-size:12.5px">— repair &amp; rebuild</span><span class="pfx">REC</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--mold-c)"></span><span class="nm">Mold</span> <span style="color:var(--text-secondary);font-size:12.5px">— remediation</span><span class="pfx">MOL</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--fire-c)"></span><span class="nm">Fire</span> <span style="color:var(--text-secondary);font-size:12.5px">— cleanup &amp; restoration</span><span class="pfx">FIR</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--remod-c)"></span><span class="nm">Remodeling</span> <span style="color:var(--text-secondary);font-size:12.5px">— upgrades</span><span class="pfx">RM</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--content-c)"></span><span class="nm">Contents</span> <span style="color:var(--text-secondary);font-size:12.5px">— pack-out &amp; restore</span><span class="pfx">CNT</span></div>
+          <div class="div-item"><span class="div-dot" style="background:var(--general-c)"></span><span class="nm">General</span> <span style="color:var(--text-secondary);font-size:12.5px">— everything else</span><span class="pfx">GEN</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h4>Live right now in UPR</h4>
+        <div class="stats">
+          <div class="stat"><div class="v">105</div><div class="k">clients with claims</div></div>
+          <div class="stat"><div class="v">125</div><div class="k">claims (losses)</div></div>
+          <div class="stat"><div class="v">234</div><div class="k">jobs</div></div>
+          <div class="stat"><div class="v">79</div><div class="k">invoices</div></div>
+          <div class="stat"><div class="v">1.8</div><div class="k">avg jobs / claim</div></div>
+          <div class="stat"><div class="v">8</div><div class="k">most claims on one client</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Utah Pros Restoration — internal reference. Built from the live database &amp; app code.</span>
+    <span>Chain: <code>contacts → claims → jobs → invoices</code></span>
+  </footer>
+
+</div>
+</body>
+</html>
