@@ -2,15 +2,28 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+// ─── KILL SWITCH ──────────────
+// Google Places address autocomplete is DISABLED on dev + main while the
+// @googlemaps/js-api-loader v2 migration is unresolved (it stopped returning
+// suggestions and could throw inside AddressAutocomplete, breaking the
+// job-creation modal). With this on, hasPlacesKey() returns false and
+// loadPlaces() resolves null, so every address field gracefully falls back to a
+// plain text input and the Maps script is never loaded — nothing can crash.
+// Flip to false to re-enable once the real fix lands
+// (see GOOGLE-AUTOFILL-FIX-HANDOFF.md / GOOGLE-INTEGRATIONS-HANDOFF.md).
+const AUTOCOMPLETE_DISABLED = true;
+
 let placesPromise = null;
 let warned = false;
 let configured = false;
 
 export function hasPlacesKey() {
+  if (AUTOCOMPLETE_DISABLED) return false;
   return Boolean(API_KEY);
 }
 
 export function loadPlaces() {
+  if (AUTOCOMPLETE_DISABLED) return Promise.resolve(null);
   if (!API_KEY) {
     if (!warned) {
       warned = true;
