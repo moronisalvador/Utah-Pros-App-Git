@@ -86,6 +86,13 @@ function IconBack(props) {
     </svg>
   );
 }
+function IconNewJob(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="12" x2="12" y2="18" /><line x1="9" y1="15" x2="15" y2="15" />
+    </svg>
+  );
+}
 
 // ─── SECTION: Content ──────────────
 // Each card: an icon, a title, and a few short lines. <b> marks the buttons a
@@ -137,6 +144,16 @@ const TOPICS = [
     key: 'claims', Icon: IconFolder, title: 'Claims & photo albums',
     lines: [
       '<b>Claims</b> lists your jobs. Open one to see the details and the full <b>photo album</b>.',
+    ],
+  },
+  {
+    key: 'newjob', Icon: IconNewJob, title: 'Starting a new job',
+    lines: [
+      'Tap the <b>+</b> button (bottom-right of the Dash) and choose <b>New Job</b>.',
+      '<b>Find the customer</b> — search by name or phone. New to us? Tap <b>+ Create New Customer</b> and add their name and phone.',
+      '<b>New or existing claim</b> — a brand-new loss stays on <b>New claim</b>. More work on a loss they already have? Tap <b>Existing claim</b> and pick it, so it files in the right place.',
+      'Pick the <b>division</b> (the trade), the <b>referral source</b>, and the <b>insurance carrier</b> — or <b>Out of pocket</b> for cash. Add the address.',
+      'Tap <b>Create Job</b> — it opens the new job and lists you as the lead tech.',
     ],
   },
 ];
