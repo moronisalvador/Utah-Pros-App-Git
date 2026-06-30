@@ -258,7 +258,8 @@ db.select('job_documents', `or=(appointment_id.eq.${apptId},job_id.eq.${jobId})&
 `id UUID PK, worker_name TEXT, status TEXT CHECK('started','completed','error'), records_processed INT, error_message TEXT, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ`
 
 ### `employees`
-`id UUID PK, full_name TEXT, email TEXT, role TEXT, auth_user_id UUID, default_division TEXT`
+`id UUID PK, full_name TEXT, email TEXT, role TEXT, auth_user_id UUID, default_division TEXT, commission_percent NUMERIC (nullable), commission_flat NUMERIC (nullable)`
+*(`commission_percent`/`commission_flat` drive commissions — a rate set ⇒ that employee earns; both null ⇒ none. `commission_flat` wins over `commission_percent` when both set. See the commission rule below.)*
 
 ### `jobs`
 `id UUID PK, job_number TEXT, claim_id UUID, primary_contact_id UUID, division TEXT, phase TEXT, status TEXT, created_at TIMESTAMPTZ`
@@ -327,6 +328,7 @@ get_appointment_detail(p_appointment_id)
 get_my_appointments_today(p_employee_id)
 get_appointments_range(p_start_date, p_end_date)
 get_jobs_closed(p_floor DATE)  — sold jobs since a floor date; reads the job_sales view
+get_commissions(p_month DATE)  — per-sale commission rows for a month; THE only place commissions are computed
 ```
 
 ### ⭐ What counts as a SALE (canonical — all reporting must use this)
@@ -334,11 +336,24 @@ A job is **Sold** when EITHER (a) an estimate for it was converted to an invoice
 (`estimates.converted_invoice_id IS NOT NULL`, sale date = `approved_at`), OR (b) it has a
 signed work authorization (`sign_requests.status='signed'` AND
 `doc_type IN ('work_auth','recon_agreement')`, sale date = `signed_at`). The rule lives in
-the **`job_sales`** view (`job_id, sale_date, first_sale_source`); the Overview
+the **`job_sales`** view (`job_id, sale_date, first_sale_source, sold_by`); the Overview
 "New Jobs Closed" card counts it via `get_jobs_closed`. **Read `job_sales` / `get_jobs_closed`
 for any sales / jobs-closed report — never reinvent the rule.** (`coc`, `direction_pay`,
 `change_order` do NOT count. Pairs with the estimate-decouple model: an estimate is pre-sale;
 a claim + job materialize only when it's sold.)
+
+### ⭐ COMMISSIONS (canonical — never compute outside `get_commissions`)
+Commissions are paid **first payroll of each month, for everything sold the previous month**
+(period = `job_sales.sale_date` month). The salesperson (`job_sales.sold_by`) is **derived** from
+the sale event — `estimates.created_by` (conversion) or `sign_requests.sent_by` (signed doc),
+whichever is earliest. There is **no manual salesperson override** — so the estimate-create flow
+**must** stamp `created_by` (`NewEstimateModal` passes `p_created_by`); a sale with no recorded
+person shows as **unattributed** (`get_commissions.is_attributed = false`) rather than being
+dropped. Per-employee rate: `employees.commission_flat` (flat $/sale, wins) or
+`commission_percent` (% of the job's **invoice total** = `SUM(COALESCE(adjusted_total,total))`).
+**All commission math lives in `get_commissions(p_month)` — read it, never reinvent it.**
+(Deferred to Phase 2 when payroll runs in-app: admin UI to set rates, a monthly report, and a
+`commission_payouts` lock table so paid amounts can't shift if an invoice is later edited.)
 
 ---
 

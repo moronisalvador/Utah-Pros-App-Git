@@ -30,6 +30,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddContactModal from '@/components/AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
@@ -45,6 +46,7 @@ function IconX(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="current
 
 export default function NewEstimateModal({ db, onClose, contact = null }) {
   const navigate = useNavigate();
+  const { employee } = useAuth(); // who created the estimate → derives the sale's salesperson (commissions)
   const lockToCustomer = !!contact;
 
   const [selectedContact, setSelectedContact] = useState(contact);
@@ -140,6 +142,7 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
         p_property_city: addr.city || null,
         p_property_state: addr.state || null,
         p_property_zip: addr.zip || null,
+        p_created_by: employee?.id || null,
       });
       const id = Array.isArray(created) ? created[0]?.id : created?.id;
       if (id) { onClose?.(); navigate(`/estimates/${id}`); }      // navigating unmounts — leave busy set

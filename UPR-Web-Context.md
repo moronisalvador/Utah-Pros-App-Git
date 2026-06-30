@@ -323,6 +323,25 @@ separate future project (Phase 4 below, decision pending).
   **Future reports must read `job_sales` (or `get_jobs_closed`) — never reinvent the sale rule.** This pairs
   with the estimate-decoupling model (`20260625_estimate_decouple.sql`): an estimate is pre-sale, and a
   claim + job only materialize when it's sold.
+- **Commission foundation (lean v1) — DONE (migration `20260630_commission_foundation.sql`):** the base for
+  paying sales commissions (first payroll of each month, for everything sold the **previous month**). 
+  - **`job_sales` += `sold_by`** — the salesperson, **derived** from the sale event: `estimates.created_by`
+    (conversion) or `sign_requests.sent_by` (signed doc), whichever is earliest. No manual override, so the
+    estimate-create flow now stamps `created_by` (**`NewEstimateModal`** passes `p_created_by: employee?.id`;
+    it was previously null, the reason older sales are unattributed).
+  - **`employees.commission_percent` / `commission_flat`** (both nullable) — the per-employee rate. A rate set
+    ⇒ that employee earns; both null ⇒ none (the rate **is** the "is a salesperson" flag — no separate flag).
+    `commission_flat` (flat $/sale) wins over `commission_percent` (% of the job's invoice total) when both set.
+  - **`get_commissions(p_month date)`** — SECURITY DEFINER RPC, **the one place commissions are ever computed**.
+    Returns every sold job in the month (employee, job, division, sale_date, base = `SUM(COALESCE(adjusted_total,
+    total))`, commission, `commission_period`, `is_attributed`). Unattributed sales (`sold_by` null or no rate)
+    are returned with `is_attributed = false` so they're **visible, not silently dropped**.
+  - **Commissions effectively start now:** the 13 historical estimate-sales had no `created_by` (only the
+    signed-doc sales have `sent_by`), so older sales are unattributed; no backfill.
+  - **Deferred (Phase 2, when payroll runs in-app):** admin UI to set rates (Admin employee form), a monthly
+    commissions report reading `get_commissions`, and a `commission_payouts` lock table so paid amounts can't
+    shift if an invoice is later edited. **Cut from v1 deliberately:** per-employee basis options and an
+    `is_salesperson` flag (kept lean per the complexity review).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
