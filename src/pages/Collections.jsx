@@ -39,6 +39,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { canEditBilling } from '@/lib/claimUtils';
+import HelpLink from '@/components/HelpLink';
 import { PERIODS } from '@/components/collections/collTokens';
 import { SegControl, GhostButton, PrimaryButton } from '@/components/collections/collKit';
 import ARDashboard from '@/components/collections/ARDashboard';
@@ -102,7 +103,10 @@ export default function Collections() {
     <div className={`coll-page ${slide}`}>
       <header className="coll-header">
         <div>
-          <h1 className="coll-title">Collections</h1>
+          <h1 className="coll-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            Collections
+            <HelpLink anchor="invoicing" title="Invoicing & Financials guide" />
+          </h1>
           <div className="coll-subtitle">Accounts receivable · Utah Pros Restoration</div>
         </div>
         <div className="coll-actions">
