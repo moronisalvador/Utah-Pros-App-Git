@@ -262,22 +262,12 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
             </div>
           )}
 
-          {/* Notify client — emails the customer an appointment confirmation */}
-          <div style={{ ...M.field, padding: '10px 12px', background: notifyClient ? '#eff6ff' : 'var(--bg-secondary)', border: `1px solid ${notifyClient ? '#bfdbfe' : 'var(--border-light)'}`, borderRadius: 'var(--radius-md)' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
-              <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
-                style={{ marginTop: 2, width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
-              <span style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
-                  Email client a confirmation
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
-                  Sends the customer a confirmation now, plus reschedule/cancellation notices. Uncheck to keep this appointment silent.
-                </div>
-              </span>
-            </label>
-          </div>
+          {/* Notify customer — minimal toggle */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', margin: '2px 0 14px' }}>
+            <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
+              style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+            Notify customer
+          </label>
 
           {/* ── Crew with initials circles ── */}
           <div style={M.section}>
