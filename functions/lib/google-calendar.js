@@ -89,9 +89,14 @@ function titleCase(s) {
 // ─── SECTION: Event body ──────────────
 // Translates an appointment (+ its job, if any) into a Google Calendar event.
 export function buildEventBody(appt, job) {
-  const summary =
+  // Google event title = UPR appointment title + customer name (the job's insured),
+  // e.g. "Mold inspection — Jennifer Hansen". Calendar events with no job (PTO,
+  // meetings) just use the appointment title.
+  const baseTitle =
     (appt.title && appt.title.trim()) ||
-    (job ? `${titleCase(job.division) || 'Job'} — ${job.insured_name || job.job_number || 'Appointment'}` : 'UPR Appointment');
+    (job ? (titleCase(job.division) || 'Job') : 'UPR Appointment');
+  const customer = job?.insured_name?.trim();
+  const summary = customer ? `${baseTitle} — ${customer}` : baseTitle;
 
   let location;
   if (job) {
