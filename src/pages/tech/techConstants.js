@@ -49,6 +49,7 @@ export const DIV_GRADIENTS = {
   water:          'linear-gradient(135deg, #1e40af, #3b82f6)',
   mold:           'linear-gradient(135deg, #831843, #ec4899)',
   reconstruction: 'linear-gradient(135deg, #78350f, #f59e0b)',
+  remodeling:     'linear-gradient(135deg, #c0432a, #f2664a)',
   fire:           'linear-gradient(135deg, #7f1d1d, #ef4444)',
   contents:       'linear-gradient(135deg, #064e3b, #10b981)',
 };
@@ -57,6 +58,7 @@ export const DIV_PILL_COLORS = {
   water:          { bg: '#dbeafe', color: '#1e40af' },
   mold:           { bg: '#fce7f3', color: '#9d174d' },
   reconstruction: { bg: '#fef3c7', color: '#92400e' },
+  remodeling:     { bg: '#fdece8', color: '#c0432a' },
   fire:           { bg: '#fee2e2', color: '#b91c1c' },
   contents:       { bg: '#d1fae5', color: '#065f46' },
 };
@@ -65,6 +67,7 @@ export const DIV_BORDER_COLORS = {
   water: '#3b82f6',
   mold: '#ec4899',
   reconstruction: '#f59e0b',
+  remodeling: '#f2664a',
   fire: '#ef4444',
   contents: '#10b981',
 };
