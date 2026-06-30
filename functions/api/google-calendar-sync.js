@@ -28,7 +28,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { syncAppointment, removeSourceEvents } from '../lib/google-calendar.js';
+import { syncAppointment, removeSourceEvents, sendClientCancellation } from '../lib/google-calendar.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -55,9 +55,17 @@ export async function onRequestPost(context) {
   if (!sourceId) return jsonResponse({ error: 'Missing source_id' }, 400, request, env);
 
   try {
-    const result = op === 'delete'
-      ? await removeSourceEvents(env, db, sourceId)
-      : await syncAppointment(env, db, sourceId, { notify: payload.notify !== false });
+    let result;
+    if (op === 'delete') {
+      result = await removeSourceEvents(env, db, sourceId);
+      // The trigger rides the client's cancellation details along on delete
+      // (the appointment row is already gone, so we can't look them up here).
+      if (payload.cancel_client) {
+        await sendClientCancellation(env, payload.cancel_client, env.APP_BASE_URL || 'https://utahpros.app');
+      }
+    } else {
+      result = await syncAppointment(env, db, sourceId, { notify: payload.notify !== false });
+    }
     return jsonResponse({ ok: true, ...result }, 200, request, env);
   } catch (e) {
     return jsonResponse({ ok: false, error: String(e.message || e) }, 500, request, env);
