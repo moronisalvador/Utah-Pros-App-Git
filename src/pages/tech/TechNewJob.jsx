@@ -54,6 +54,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
+import TechHelpButton from '@/components/tech/TechHelpButton';
 
 // ─── SECTION: Helpers ──────────────
 // Push a new claim up to Encircle. Awaited by the caller (with an internal
@@ -405,6 +406,7 @@ export default function TechNewJob() {
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
           New Job
         </span>
+        <TechHelpButton topicKey="newjob" style={{ marginLeft: 'auto' }} />
       </div>
 
       {/* Scrollable form */}
