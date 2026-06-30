@@ -4,6 +4,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
+import HelpLink from '@/components/HelpLink';
 
 // Awaited by the caller (with an internal timeout) before the modal closes, so
 // the request isn't abandoned mid-flight. Always resolves.
@@ -204,9 +205,12 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
 
         <div className="conv-modal-header" style={{ flexShrink: 0 }}>
           <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>New Job</span>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
-            <IconX style={{ width: 18, height: 18 }} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+            <HelpLink anchor="how-it-works/creating-a-job" title="How creating a job works" />
+            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ width: 32, height: 32, padding: 0 }}>
+              <IconX style={{ width: 18, height: 18 }} />
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-3) var(--space-4) var(--space-4)' }}>

@@ -34,9 +34,10 @@
  *     system's stance that current A/R is a snapshot, not a period metric.
  *   - Address line under Claim · Job renders only if get_ar_invoices supplies
  *     job_address/job_city (additive RPC field) — absent today, shows gracefully.
- *   - Column sorting is client-side: clicking the Sent/Age/Total/Collected/Balance
- *     headers sorts the already-filtered rows. The default order is newest CREATED
- *     first (invoices.created_at, desc); null/undated values always sort last.
+ *   - Column sorting is client-side: clicking the Client/Sent/Age/Total/Collected/
+ *     Balance headers sorts the already-filtered rows (Client starts A→Z; the numeric/
+ *     date columns start descending). The default order is newest CREATED first
+ *     (invoices.created_at, desc); null/undated/unnamed values always sort last.
  * ════════════════════════════════════════════════
  */
 
@@ -81,15 +82,19 @@ const COL_ORDER = ['client', 'claimJob', 'sent', 'age', 'total', 'collected', 'b
 const LOCKED = ['client', 'balance'];
 
 // Headers the user can click to sort (the rest stay plain labels). Each maps to a
-// comparable primitive; a null value (undated / no due date) sinks to the bottom
-// regardless of direction so an empty cell never sorts to the top.
-const SORTABLE = ['sent', 'age', 'total', 'collected', 'balance'];
+// comparable primitive; a null value (undated / no due date / no client name) sinks to
+// the bottom regardless of direction so an empty cell never sorts to the top.
+const SORTABLE = ['client', 'sent', 'age', 'total', 'collected', 'balance'];
+// Text columns read most naturally A→Z on first click; numeric/date columns start descending
+// (biggest / most-overdue / newest first). Re-clicking the active header always flips direction.
+const ASC_FIRST = ['client'];
 // Default order for the A/R table: most recently CREATED invoice first. 'created' isn't a
 // visible column (no header arrow) — it just seeds the order; clicking any header overrides it.
 const DEFAULT_SORT = { key: 'created', dir: 'desc' };
 function sortValue(r, key, today) {
   switch (key) {
     case 'created':   return r.created_at ? new Date(r.created_at).getTime() : null;
+    case 'client':    return r.client_name ? r.client_name.toLowerCase() : null;
     case 'sent':      return r.sent_at ? new Date(r.sent_at).getTime() : null;
     case 'age':       return daysPastDue(r.due_date, today);   // overdue > 0, future < 0, none = null
     case 'total':     return Number(r.total || 0);
@@ -221,7 +226,9 @@ export default function ARDashboard({ db, navigate, period = 'All', modalOpen = 
   }, [filtered, sort, today]);
 
   const onSort = (key) =>
-    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+    setSort(s => (s.key === key
+      ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: ASC_FIRST.includes(key) ? 'asc' : 'desc' }));
 
   // Picking Open/Overdue/All (toggle or the Outstanding/Overdue headline) clears any aging-bucket
   // drill-down; clicking an aging cell toggles that band (and `filtered` then ignores `mode`).

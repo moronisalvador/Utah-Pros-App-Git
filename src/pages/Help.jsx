@@ -39,9 +39,9 @@ const PDF_URL = '/UPR-Invoicing-Financials-Guide.pdf';
 const DIAGRAM_URL = '/UPR-Hierarchy-Diagram.html';
 
 // ─── SECTION: Shared UI primitives ──────────────
-function Card({ children, style }) {
+function Card({ children, style, id }) {
   return (
-    <div style={{
+    <div id={id} style={{
       background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-lg)', padding: '20px 22px', marginBottom: 16,
       ...style,
@@ -375,7 +375,7 @@ function HowItWorksGuide() {
       </div>
 
       {/* 1. The mental model */}
-      <Card>
+      <Card id="mental-model">
         <SectionTitle n="1">The Mental Model</SectionTitle>
         <p style={{ margin: '0 0 16px', fontSize: 14, color: 'var(--text-secondary)' }}>
           Almost everything in UPR hangs off one simple chain. Read it top to bottom — each level can hold several of the level below it.
@@ -418,7 +418,7 @@ function HowItWorksGuide() {
       </Card>
 
       {/* 4. Creating a new job */}
-      <Card>
+      <Card id="creating-a-job">
         <SectionTitle n="4">Creating a New Job</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
           Most claims start here. Open <b>+ New → New Claim</b> in the top bar (or <b>+ New job</b> from a customer’s page) to open the <b>New Job</b> window. One trip through it creates the <b>customer</b>, the <b>claim</b>, and the first <b>job</b> together.
@@ -672,7 +672,7 @@ function InvoicingGuide() {
       </Card>
 
       {/* 5. Build & save */}
-      <Card>
+      <Card id="build-and-save">
         <SectionTitle n="5">Build &amp; Save to QuickBooks</SectionTitle>
         <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
           <b>Where:</b> the invoice builder (the page that opens after you start an invoice). The action buttons live in the <b>top toolbar</b>, next to “← Back”.
@@ -806,26 +806,40 @@ function InvoicingGuide() {
 
 // ─── SECTION: Controller (menu ⇄ guide, synced to the URL hash) ──────────────
 const GUIDE_IDS = GUIDES.map(g => g.id);
+// Parse the hash as "guide[/section]" — backward compatible with a bare
+// "#how-it-works"; the optional "/section" lets a feature screen deep-link
+// straight to a section (it gets scrolled into view on open).
 function readHash() {
-  const h = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#/, '');
-  return GUIDE_IDS.includes(h) ? h : 'hub';
+  const raw = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#/, '');
+  const [guide, section] = raw.split('/');
+  return GUIDE_IDS.includes(guide) ? { view: guide, section: section || null } : { view: 'hub', section: null };
 }
 
 export default function Help() {
-  const [view, setView] = useState(readHash);
+  const [{ view, section }, setState] = useState(readHash);
 
   // Keep the view in sync with the URL hash (deep links + browser back/forward).
   useEffect(() => {
-    const onHash = () => setView(readHash());
+    const onHash = () => setState(readHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  const open = (id) => { window.location.hash = id; setView(id); };
+  // When a contextual link targets a section (#guide/section), scroll to it
+  // once the guide view has mounted.
+  useEffect(() => {
+    if (view === 'hub' || !section) return;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [view, section]);
+
+  const open = (id) => { window.location.hash = id; setState({ view: id, section: null }); };
   const back = () => {
     // Drop the hash without adding a history entry, then show the menu.
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    setView('hub');
+    setState({ view: 'hub', section: null });
   };
 
   if (view === 'hub') return <HelpHub onOpen={open} />;

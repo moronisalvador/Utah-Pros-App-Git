@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import { LossIcon, LOSS_CONFIG, DIVISION_COLORS as DIV_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
+import HelpLink from '@/components/HelpLink';
 
 const STATUS_MAP = {
   open:          { label: 'Open',          bg: '#eff6ff', color: '#2563eb' },
@@ -132,7 +133,10 @@ export default function ClaimsList() {
       {/* Header */}
       <div className="jobs-header">
         <div>
-          <h1 className="page-title">Claims</h1>
+          <h1 className="page-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            Claims
+            <HelpLink anchor="how-it-works/mental-model" title="How claims, jobs & invoices fit together" />
+          </h1>
           <p className="page-subtitle">{filtered.length} of {claims.length} claims</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
