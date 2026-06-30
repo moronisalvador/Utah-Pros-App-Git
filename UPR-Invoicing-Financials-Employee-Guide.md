@@ -139,8 +139,10 @@ always an invoice that wasn't sent, or a payment that wasn't recorded.
 - ✅ **Mark the deductible received** as soon as it's collected.
 
 **Don't:**
-- ❌ **Don't try to make a second invoice for the same job** — open the existing one and
-  edit its lines.
+- ❌ **Don't make a duplicate invoice for the same job** — while the invoice is still open,
+  open the existing one and edit its lines instead. *(Exception: a genuine **supplement** after
+  the first invoice is already paid is fine — you can't edit a paid invoice, so make a new one.
+  It's numbered automatically, e.g. `R-2604-009-2`.)*
 - ❌ **Don't send a guess.** A sent invoice is a real bill in QuickBooks.
 - ❌ **Don't enter invoices or payments directly in QuickBooks** — always do it in UPR so
   the two stay in sync.

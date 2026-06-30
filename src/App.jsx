@@ -75,6 +75,8 @@ const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
 const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
+const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
+const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -86,6 +88,7 @@ const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
 const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
 const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
 const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
+const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
 const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
 const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
@@ -94,6 +97,7 @@ const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
 const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppointment'));
 const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
 const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
+const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 
@@ -122,6 +126,14 @@ function FeatureRoute({ flag, children }) {
 // Dev Tools — hardcoded to Moroni only, not role-based
 // Even other admins can't access this via direct URL
 function DevRoute({ children }) {
+  const { employee } = useAuth();
+  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  return children;
+}
+
+// Moroni-only pages (same hardcoded email gate as Dev Tools) — private analysis
+// surfaces that even other admins can't reach via direct URL.
+function MoroniRoute({ children }) {
   const { employee } = useAuth();
   if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
   return children;
@@ -180,6 +192,7 @@ function TechRoutes() {
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
+      <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
       <Route path="tech/appointment/:id" element={<ErrorBoundary section="TechAppointment"><TechAppointment /></ErrorBoundary>} />
       <Route path="tech/new-customer" element={<ErrorBoundary section="TechNewCustomer"><TechNewCustomer /></ErrorBoundary>} />
@@ -189,6 +202,7 @@ function TechRoutes() {
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
+      <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
       <Route path="tech/tools/oop-pricing" element={
         <FeatureRoute flag="tool:oop_pricing">
           <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
@@ -250,6 +264,14 @@ function WebRoutes() {
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+
+        {/* Homebuilding Entry Analysis — private to Moroni (side-nav link is Moroni-only too) */}
+        <Route path="homebuilding" element={
+          <MoroniRoute><ErrorBoundary section="Homebuilding Analysis"><HomebuildingAnalysis /></ErrorBoundary></MoroniRoute>
+        } />
+        <Route path="homebuilding/build" element={
+          <MoroniRoute><ErrorBoundary section="New Build Simulator"><NewBuildSimulator /></ErrorBoundary></MoroniRoute>
+        } />
         <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />

@@ -32,6 +32,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
   const [timeEnd, setTimeEnd] = useState(prefillTimeEnd || '15:30');
   const [notes, setNotes] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [notifyClient, setNotifyClient] = useState(true);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([...prefillTaskIds]);
   const [taskPool, setTaskPool] = useState([]);
@@ -157,6 +158,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
         type,
         status: 'scheduled',
         notes: notes.trim() || null,
+        notify_client: notifyClient,
         ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
       });
       const apptId = apptResult[0]?.id;
@@ -427,9 +429,16 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
         {/* Footer */}
         <div style={M.footer} className="appt-modal-footer">
           <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
-          <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
-            {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+              Notify customer
+            </label>
+            <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
+              {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -498,7 +507,7 @@ const M = {
     cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
   },
   footer: {
-    display: 'flex', justifyContent: 'flex-end', gap: 8,
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
     padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
   },
   cancelBtn: {

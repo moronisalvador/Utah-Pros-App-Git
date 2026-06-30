@@ -58,7 +58,7 @@ export async function onRequestPost(context) {
 
   let synced = 0, failed = 0;
   for (const id of apptIds) {
-    try { await syncAppointment(env, db, id); synced++; }
+    try { await syncAppointment(env, db, id, { notify: false }); synced++; }
     catch { failed++; }
   }
 

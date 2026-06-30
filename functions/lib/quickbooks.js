@@ -294,6 +294,7 @@ export async function createCustomer(env, payload) {
 export function divisionToQbo(division) {
   const d = (division || '').toLowerCase();
   if (d.includes('recon'))                                  return { itemId: '1010000201', itemName: 'Reconstruction/ Remodeling Services', className: 'Reconstruction' };
+  if (d.includes('remodel'))                                return { itemId: '1010000201', itemName: 'Reconstruction/ Remodeling Services', className: 'Reconstruction' };
   if (d.includes('mold'))                                   return { itemId: '1010000131', itemName: 'Mold Remediation Services',           className: null };
   if (d.includes('content'))                                return { itemId: '38',         itemName: 'Contents',                            className: null };
   if (d.includes('mit') || d.includes('water') || d.includes('dry'))

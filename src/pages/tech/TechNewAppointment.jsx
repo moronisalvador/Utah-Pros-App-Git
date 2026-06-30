@@ -92,6 +92,23 @@ export default function TechNewAppointment() {
       .catch(() => {});
   }, [db]);
 
+  /* ── Pre-select a job passed via ?jobId= (e.g. from a job page "Schedule appointment" button) ── */
+  useEffect(() => {
+    const jobId = searchParams.get('jobId');
+    if (!jobId) return;
+    let cancelled = false;
+    db.select('jobs', `id=eq.${jobId}&select=id,job_number,insured_name,division,address,city&limit=1`)
+      .then(rows => {
+        const j = rows?.[0];
+        if (!j || cancelled) return null;
+        setJob(j);
+        return db.rpc('get_unassigned_tasks', { p_job_id: j.id });
+      })
+      .then(data => { if (data && !cancelled) setTaskPool(Array.isArray(data) ? data : []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [searchParams, db]);
+
   /* ── Cleanup ── */
   useEffect(() => () => clearTimeout(searchTimer.current), []);
 
@@ -167,7 +184,7 @@ export default function TechNewAppointment() {
         if (t) { setSelectedTasks(prev => [...prev, t.id]); break; }
       }
       setNewTaskTitle('');
-    } catch (err) { toast('Failed to create task', 'error'); }
+    } catch { toast('Failed to create task', 'error'); }
   };
 
   /* ── Crew helpers ── */

@@ -8,13 +8,14 @@
  *   jobs were actually SOLD in the chosen period (this month, last 30 days, etc.),
  *   draws the little 30-day trend line, and works out whether sales are up or down
  *   versus the previous 30 days. It does NOT count estimates that are still just
- *   quotes — only real sales.
+ *   quotes — only real (sold) jobs.
  *
- * WHAT COUNTS AS A SALE (the one canonical rule — see the get_jobs_closed RPC):
- *   A job is "sold" when EITHER its estimate was converted to an invoice, OR it has
- *   a signed work authorization / reconstruction agreement. The sale date is the
- *   earliest of those events. All of that logic lives in the database view
- *   `job_sales`; this file just reads the count back per period.
+ * WHAT COUNTS AS A SOLD JOB (one canonical rule — see get_jobs_closed RPC):
+ *   A job is "real / sold" when a Work Authorization or Reconstruction Agreement is
+ *   signed, a QBO invoice is created, or its estimate is approved — captured by the
+ *   jobs.is_real_job flag (20260627_real_job_classification.sql, also used by billing).
+ *   The sale date is jobs.real_job_marked_at (when it became real). get_jobs_closed
+ *   returns one row per real job since a floor date; this file counts them per period.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (hook)
@@ -23,12 +24,13 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), ./usePolledRpc
- *   Data:      reads  → get_jobs_closed() RPC (which reads job_sales → estimates,
- *                       sign_requests, jobs)
+ *   Data:      reads  → get_jobs_closed() RPC (reads jobs.is_real_job / real_job_marked_at)
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - Floors the query to ~400 days so it never rescans all-time history.
+ *   - Counts JOBS, not claims — mitigation & reconstruction on one claim count
+ *     separately (each is its own sold job).
  *   - projected $ stays null (no projected-value line for sold jobs); the card
  *     hides that line when projected is falsy.
  * ════════════════════════════════════════════════
@@ -41,12 +43,20 @@ const DAY = 86400000;
 const SPARK_DAYS = 30;
 const VB_W = 234; // sparkline drawable width (viewBox 0 0 240 58)
 
-function periodStartTs(period, now) {
+// Returns the [startTs, endTs) window for the selected period. Every period
+// except "Prev mo" runs through `now`; "Prev mo" is a bounded prior calendar month.
+function periodRange(period, now) {
   const d = new Date(now);
-  if (period === 'QTD') return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime();
-  if (period === 'YTD') return new Date(d.getFullYear(), 0, 1).getTime();
-  if (period === 'Last 30') return now - 30 * DAY;
-  return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); // MTD
+  if (period === 'Prev mo') {
+    return {
+      startTs: new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime(),
+      endTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), // 1st of this month (exclusive)
+    };
+  }
+  if (period === 'QTD') return { startTs: new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime(), endTs: now };
+  if (period === 'YTD') return { startTs: new Date(d.getFullYear(), 0, 1).getTime(), endTs: now };
+  if (period === 'Last 30') return { startTs: now - 30 * DAY, endTs: now };
+  return { startTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), endTs: now }; // MTD
 }
 
 function buildSparkline(times, now) {
@@ -72,10 +82,13 @@ export function useJobsClosed(period = 'MTD') {
   const load = useCallback(async () => {
     const now = Date.now();
     const floor = new Date(now - 400 * DAY).toISOString().slice(0, 10);
+    // Count REAL (sold) jobs — jobs.is_real_job set by signed work-auth / QBO invoice /
+    // approved estimate (20260627_real_job_classification.sql). Dated by real_job_marked_at.
     const rows = await db.rpc('get_jobs_closed', { p_floor: floor });
     const times = (rows || []).map(r => r.sale_date && new Date(r.sale_date).getTime()).filter(Boolean);
 
-    const count = times.filter(t => t >= periodStartTs(period, now)).length;
+    const { startTs, endTs } = periodRange(period, now);
+    const count = times.filter(t => t >= startTs && t < endTs).length;
     const last30 = times.filter(t => t >= now - 30 * DAY).length;
     const prior30 = times.filter(t => t >= now - 60 * DAY && t < now - 30 * DAY).length;
     let delta = null;

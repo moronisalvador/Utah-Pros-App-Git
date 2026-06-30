@@ -15,6 +15,7 @@ const DIVISIONS = [
   { key: 'water',          emoji: '💧', label: 'Water Mitigation'      },
   { key: 'mold',           emoji: '🧫', label: 'Mold Remediation'      },
   { key: 'reconstruction', emoji: '🏗️', label: 'Repairs & Recon'       },
+  { key: 'remodeling',     emoji: '🔨', label: 'Remodel'               },
   { key: 'fire',           emoji: '🔥', label: 'Fire & Smoke'          },
   { key: 'contents',       emoji: '📦', label: 'Contents'              },
 ];

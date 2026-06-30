@@ -1,0 +1,63 @@
+name: CI
+
+# Pre-merge gate for production. main IS production (Cloudflare deploys main to
+# utahpros.app, and the native app loads /tech/* from the same build), so this
+# runs on every PR targeting main and blocks the merge if the app fails to build
+# or the test suite goes red. It also runs on push to main as a post-merge signal.
+#
+# What blocks a merge:  build + test  (both currently green)
+# What does NOT block:   lint          (175 pre-existing hygiene errors — runs for
+#                                       visibility only via continue-on-error until
+#                                       the baseline is cleaned up)
+#
+# NOTE: a passing workflow does not enforce anything by itself. To actually block
+# merges, mark the "verify" check as a Required status check in the repo's branch
+# protection rules for main (Settings → Branches).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Mirror the production build. Supabase URL/anon key come from repo secrets
+      # (same names the Capgo deploy workflow uses); the build also succeeds
+      # without them, so this stays green even if the secrets are unset.
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # Non-blocking until the 175-error lint baseline is cleared. Surfaces lint
+      # output in the run without failing the gate. Flip to blocking by removing
+      # continue-on-error once the baseline is green.
+      - name: Lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true

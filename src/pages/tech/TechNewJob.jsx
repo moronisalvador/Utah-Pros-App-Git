@@ -54,6 +54,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
+import TechHelpButton from '@/components/tech/TechHelpButton';
 
 // ─── SECTION: Helpers ──────────────
 // Push a new claim up to Encircle. Awaited by the caller (with an internal
@@ -91,6 +92,7 @@ const DIVISIONS = [
   { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
   { value: 'mold', emoji: '\u{1F9A0}', label: 'Mold', color: '#9d174d' },
   { value: 'reconstruction', emoji: '\u{1F3D7}\uFE0F', label: 'Recon', color: '#d97706' },
+  { value: 'remodeling', emoji: '\u{1F528}', label: 'Remodel', color: '#f2664a' },
   { value: 'fire', emoji: '\u{1F525}', label: 'Fire', color: '#dc2626' },
   { value: 'contents', emoji: '\u{1F4E6}', label: 'Contents', color: '#059669' },
 ];
@@ -102,6 +104,9 @@ const SOURCES = [
   { value: 'commercial', label: 'Commercial' },
   { value: 'tpa', label: 'TPA' },
 ];
+
+// division → emoji, for the existing-claim picker's mini job pills
+const DIV_EMOJI = DIVISIONS.reduce((m, d) => { m[d.value] = d.emoji; return m; }, {});
 
 function fmtPhone(phone) {
   if (!phone) return '';
@@ -157,6 +162,15 @@ export default function TechNewJob() {
   const s = (k, v) => sF(prev => ({ ...prev, [k]: v }));
   const isOop = f.insurance_company === OOP;
 
+  /* ── Claim state (new claim vs. file under one of the customer's existing claims) ── */
+  const [claimMode, setClaimMode] = useState('new');         // 'new' | 'existing'
+  const [contactClaims, setContactClaims] = useState([]);    // claims belonging to the selected contact
+  const [selectedClaimId, setSelectedClaimId] = useState(null);
+  const [editFromClaim, setEditFromClaim] = useState(false); // reveal prefilled fields under an existing claim
+  const selectedClaim = contactClaims.find(c => c.id === selectedClaimId) || null;
+  // When an existing claim is picked, collapse Address/Insurance/Claim# into a summary (still editable).
+  const claimLocked = claimMode === 'existing' && !!selectedClaimId && !editFromClaim;
+
   /* ── Cleanup search debounce timer on unmount ── */
   useEffect(() => () => clearTimeout(searchTimer.current), []);
 
@@ -186,11 +200,27 @@ export default function TechNewJob() {
     else { setResults([]); setShowDrop(false); }
   };
 
+  /* ── Load the selected customer's existing claims (for the "existing claim" picker) ── */
+  const loadContactClaims = useCallback(async (contactId) => {
+    if (!contactId) { setContactClaims([]); return; }
+    try {
+      const data = await db.rpc('get_customer_detail', { p_contact_id: contactId });
+      setContactClaims(Array.isArray(data?.claims) ? data.claims : []);
+    } catch {
+      setContactClaims([]);
+    }
+  }, [db]);
+
   const selectContact = c => {
     setContact(c);
     setContactSearch('');
     setShowDrop(false);
     setShowInlineCreate(false);
+    // Reset the claim choice for the newly-selected customer, then load their claims.
+    setClaimMode('new');
+    setSelectedClaimId(null);
+    setEditFromClaim(false);
+    setContactClaims([]);
     if (c.billing_address || c.billing_city) {
       sF(prev => ({
         ...prev,
@@ -200,10 +230,33 @@ export default function TechNewJob() {
         zip: c.billing_zip || '',
       }));
     }
+    loadContactClaims(c.id);
+  };
+
+  /* Pick one of the customer's existing claims — prefill loss/insurance fields from it */
+  const selectClaim = (cl) => {
+    setSelectedClaimId(cl.id);
+    const hasAddr = !!(cl.loss_address || cl.loss_city);
+    const hasCarrier = !!cl.insurance_carrier;
+    // If the claim is missing required loss/carrier data, open the fields so the tech can fill them.
+    setEditFromClaim(!(hasAddr && hasCarrier));
+    sF(prev => ({
+      ...prev,
+      address: cl.loss_address || '',
+      city: cl.loss_city || '',
+      state: cl.loss_state || prev.state,
+      zip: cl.loss_zip || '',
+      insurance_company: cl.insurance_carrier || '',
+      claim_number: cl.insurance_claim_number || '',
+    }));
   };
 
   const clearContact = () => {
     setContact(null);
+    setContactClaims([]);
+    setClaimMode('new');
+    setSelectedClaimId(null);
+    setEditFromClaim(false);
     sF(prev => ({ ...prev, address: '', city: '', state: 'UT', zip: '' }));
   };
 
@@ -308,14 +361,20 @@ export default function TechNewJob() {
         p_project_manager_id: null,
         p_lead_tech_id: employee?.id || null,
         p_internal_notes: f.internal_notes || null,
+        // When filing under an existing claim, reuse it instead of minting a new CLM.
+        p_existing_claim_id: claimMode === 'existing' ? selectedClaimId : null,
       });
       const jobNum = result?.job?.job_number || '';
       toast(jobNum ? `Job #${jobNum} created` : 'Job created');
-      // Await the Encircle push (bounded by an internal timeout) so the request
-      // completes while this screen is still alive — navigating immediately was
-      // abandoning the fire-and-forget call on mobile and silently losing the sync.
-      if (result?.claim_id) await syncClaimToEncircle(result.claim_id);
-      navigate(-1);
+      // Encircle: only push when we minted a NEW claim. A job filed under an
+      // existing claim is already synced — re-pushing would risk a duplicate.
+      // Awaited (with an internal timeout) so the request completes while this
+      // screen is still alive — a fire-and-forget call was abandoned on mobile.
+      if (claimMode === 'new' && result?.claim_id) await syncClaimToEncircle(result.claim_id);
+      // Open the new job's page instead of dead-ending back on the Dash.
+      const newJobId = result?.job?.id;
+      if (newJobId) navigate(`/tech/jobs/${newJobId}`, { replace: true });
+      else navigate(-1);
     } catch (err) {
       toast('Failed to create job: ' + (err.message || ''), 'error');
     } finally {
@@ -347,6 +406,7 @@ export default function TechNewJob() {
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
           New Job
         </span>
+        <TechHelpButton topicKey="newjob" style={{ marginLeft: 'auto' }} />
       </div>
 
       {/* Scrollable form */}
@@ -533,6 +593,90 @@ export default function TechNewJob() {
           )}
         </div>
 
+        {/* ═══ CLAIM ═══ */}
+        {contact && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={labelStyle}>Claim</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => { setClaimMode('new'); setSelectedClaimId(null); setEditFromClaim(false); }}
+                style={{
+                  flex: 1, height: 48, borderRadius: 'var(--tech-radius-button)',
+                  border: claimMode === 'new' ? '2px solid var(--accent)' : '2px solid var(--border-color)',
+                  background: claimMode === 'new' ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  fontSize: 14, fontWeight: 600,
+                  color: claimMode === 'new' ? 'var(--accent)' : 'var(--text-secondary)',
+                  cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                New claim
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (contactClaims.length) setClaimMode('existing'); }}
+                disabled={!contactClaims.length}
+                style={{
+                  flex: 1, height: 48, borderRadius: 'var(--tech-radius-button)',
+                  border: claimMode === 'existing' ? '2px solid var(--accent)' : '2px solid var(--border-color)',
+                  background: claimMode === 'existing' ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  fontSize: 14, fontWeight: 600,
+                  color: !contactClaims.length ? 'var(--text-tertiary)'
+                    : claimMode === 'existing' ? 'var(--accent)' : 'var(--text-secondary)',
+                  cursor: contactClaims.length ? 'pointer' : 'default',
+                  opacity: contactClaims.length ? 1 : 0.6,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                Existing claim{contactClaims.length ? ` (${contactClaims.length})` : ''}
+              </button>
+            </div>
+
+            {/* Existing-claim picker — this customer's claims only */}
+            {claimMode === 'existing' && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {contactClaims.map(cl => {
+                  const sel = selectedClaimId === cl.id;
+                  const jobs = cl.jobs || [];
+                  const loc = [cl.loss_address, cl.loss_city].filter(Boolean).join(', ');
+                  return (
+                    <button
+                      key={cl.id}
+                      type="button"
+                      onClick={() => selectClaim(cl)}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '12px 14px',
+                        borderRadius: 'var(--tech-radius-button)',
+                        border: sel ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                        background: sel ? 'var(--accent-light)' : 'var(--bg-primary)',
+                        cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                        minHeight: 'var(--tech-min-tap)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                          {cl.claim_number}
+                        </span>
+                        {jobs.length > 0 && (
+                          <span style={{ fontSize: 13 }}>
+                            {jobs.map(j => DIV_EMOJI[j.division] || '\u{1F4C1}').join(' ')}
+                          </span>
+                        )}
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                          {jobs.length} job{jobs.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      {loc && (
+                        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{loc}</div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ═══ DIVISION ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>Division <span style={{ color: '#ef4444' }}>*</span></div>
@@ -583,6 +727,41 @@ export default function TechNewJob() {
           </div>
         </div>
 
+        {claimLocked ? (
+          /* Existing-claim summary — Address / Insurance / Claim# come from the claim (tap Edit to change) */
+          <div style={{ marginBottom: 20 }}>
+            <div style={labelStyle}>Loss Details</div>
+            <div style={{
+              padding: '12px 14px', borderRadius: 'var(--tech-radius-card)',
+              border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                  {selectedClaim?.claim_number}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditFromClaim(true)}
+                  style={{
+                    marginLeft: 'auto', height: 32, padding: '0 14px', borderRadius: 'var(--radius-full)',
+                    border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
+                    fontSize: 12, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer',
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 2 }}>
+                {[f.address, f.city, f.state, f.zip].filter(Boolean).join(', ') || 'No address on claim'}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {isOop ? 'Out of pocket' : (f.insurance_company || 'No carrier')}
+                {f.claim_number ? ` · ${f.claim_number}` : ''}
+              </div>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* ═══ ADDRESS ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>Loss / Service Address <span style={{ color: '#ef4444' }}>*</span></div>
@@ -649,6 +828,8 @@ export default function TechNewJob() {
               style={inputStyle}
             />
           </div>
+        )}
+        </>
         )}
 
         {/* ═══ TYPE OF LOSS ═══ */}

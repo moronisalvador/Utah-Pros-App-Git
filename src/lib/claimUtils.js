@@ -6,8 +6,8 @@ export const toast  = (msg, type = 'success') => window.dispatchEvent(new Custom
 export const errToast = (msg) => toast(msg, 'error');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-export const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Reconstruction', fire: 'Fire', contents: 'Contents', general: 'General' };
-export const DIV_EMOJI  = { water: '\u{1F4A7}', mold: '\u{1F344}', reconstruction: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}', general: '\u{1F4C1}' };
+export const DIV_LABEL  = { water: 'Water', mold: 'Mold', reconstruction: 'Reconstruction', remodeling: 'Remodeling', fire: 'Fire', contents: 'Contents', general: 'General' };
+export const DIV_EMOJI  = { water: '\u{1F4A7}', mold: '\u{1F344}', reconstruction: '\u{1F528}', remodeling: '\u{1F528}', fire: '\u{1F525}', contents: '\u{1F4E6}', general: '\u{1F4C1}' };
 export const LOSS_TYPES = ['water', 'fire', 'mold', 'storm', 'sewer', 'vandalism', 'other'];
 export const CLAIM_STATUSES = ['open', 'in_progress', 'closed', 'denied', 'settled', 'supplementing'];
 // Who may edit billing / A/R (QuickBooks-affecting actions). Deliberately narrower than

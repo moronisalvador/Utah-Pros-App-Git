@@ -49,7 +49,7 @@ import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIVISIONS, PERIODS } from '@/components/overview/tokens';
 import {
-  RevenueRecognized, AvgTicket, OpenEstimates,
+  RevenueRecognized, PaymentsReceived, AvgTicket, OpenEstimates,
   NewJobsClosed, JobsCompleted,
   ActiveDrying, Collections,
   ActionRequired, EmployeeStatus,
@@ -60,6 +60,7 @@ import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus
 import { useCollections } from '@/components/overview/hooks/useCollections';
 import { useJobsClosed } from '@/components/overview/hooks/useJobsClosed';
 import { useRevenue } from '@/components/overview/hooks/useRevenue';
+import { usePaymentsReceived } from '@/components/overview/hooks/usePaymentsReceived';
 import { useAvgTicket } from '@/components/overview/hooks/useAvgTicket';
 import { useOpenEstimates } from '@/components/overview/hooks/useOpenEstimates';
 import { usePipeline } from '@/components/overview/hooks/usePipeline';
@@ -73,13 +74,13 @@ const ResponsiveGridLayout = WidthProvider(Responsive);
 // ─── SECTION: Default layout (seed; per-user saved layout overrides it) ──────────────
 // [x, y, w, h] on the 12-col large grid. h × rowHeight(70) + gaps = card height.
 const ORDER = ['revenue', 'avgTicket', 'openEstimates', 'newClaims', 'jobsCompleted',
-  'activeDrying', 'collections', 'actionRequired', 'employeeStatus', 'pipeline'];
+  'activeDrying', 'collections', 'actionRequired', 'employeeStatus', 'pipeline', 'payments'];
 const LG = {
   revenue: [0, 0, 4, 3], avgTicket: [4, 0, 4, 3], openEstimates: [8, 0, 4, 3],
   newClaims: [0, 3, 6, 2], jobsCompleted: [6, 3, 6, 2],
   activeDrying: [0, 5, 7, 4], collections: [7, 5, 5, 4],
   actionRequired: [0, 9, 6, 5], employeeStatus: [6, 9, 6, 4],
-  pipeline: [0, 14, 12, 4],
+  pipeline: [0, 14, 12, 4], payments: [0, 18, 4, 3],
 };
 const lgLayout = ORDER.map(i => ({ i, x: LG[i][0], y: LG[i][1], w: LG[i][2], h: LG[i][3], minW: 3, minH: 2 }));
 const xsLayout = (() => {
@@ -109,6 +110,7 @@ export default function Dashboard() {
   const coll = useCollections(canFin);
   const jobsClosed = useJobsClosed(period);
   const rev = useRevenue(period, canFin);
+  const pay = usePaymentsReceived(period, canFin);
   const avg = useAvgTicket(period, canFin);
   const est = useOpenEstimates();
   const pipeline = usePipeline();
@@ -144,6 +146,9 @@ export default function Dashboard() {
     avgTicket: canFin
       ? <AvgTicket periodLabel={periodLabel} showHandle={editing} data={avg.data ?? undefined} loading={avg.loading} error={avg.error} onRetry={avg.reload} />
       : <RestrictedCard spanClass="ovw-span-4" title="Avg ticket" showHandle={editing} />,
+    payments: canFin
+      ? <PaymentsReceived periodLabel={periodLabel} showHandle={editing} data={pay.data ?? undefined} loading={pay.loading} error={pay.error} onRetry={pay.reload} />
+      : <RestrictedCard spanClass="ovw-span-4" title="Payments received" showHandle={editing} />,
     openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} loading={est.loading} error={est.error} onRetry={est.reload} />,
     newClaims:      <NewJobsClosed periodLabel={periodLabel} showHandle={editing} data={jobsClosed.data ?? undefined} loading={jobsClosed.loading} error={jobsClosed.error} onRetry={jobsClosed.reload} />,
     jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} data={jobs.data ?? undefined} loading={jobs.loading} error={jobs.error} onRetry={jobs.reload} />,

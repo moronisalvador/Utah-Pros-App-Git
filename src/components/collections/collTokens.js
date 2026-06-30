@@ -109,6 +109,25 @@ export function daysPastDue(dueDate, today = midnight()) {
   return t == null ? null : Math.floor((today.getTime() - t) / 86400000);
 }
 
+// ─── SECTION: Aging buckets ──────────────
+// Single source of truth for the A/R aging boundaries + labels, shared by ARDashboard
+// (the on-screen breakdown) and arSnapshot (what the AI Copilot sees) so the two never
+// drift. bucketKey maps days-past-due → bucket; null/≤0 (undated or not-yet-due) = 'current'.
+export const AGING_BUCKETS = [
+  { key: 'current', label: 'Current' },
+  { key: 'b30',     label: '1–30 days' },
+  { key: 'b60',     label: '31–60 days' },
+  { key: 'b90',     label: '61–90 days' },
+  { key: 'b90p',    label: '90+ days' },
+];
+export function bucketKey(d) {
+  if (d == null || d <= 0) return 'current';
+  if (d <= 30) return 'b30';
+  if (d <= 60) return 'b60';
+  if (d <= 90) return 'b90';
+  return 'b90p';
+}
+
 // Invoice status word from balances/dates — shared by the A/R and Invoices tabs so
 // they always agree. paid → overdue → draft (unsent) → partial → sent.
 export function invoiceStatusKind(r, today = midnight()) {

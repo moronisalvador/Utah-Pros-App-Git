@@ -1,15 +1,29 @@
-import { Loader } from '@googlemaps/js-api-loader';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+// ─── KILL SWITCH ──────────────
+// Google Places address autocomplete is DISABLED on dev + main while the
+// @googlemaps/js-api-loader v2 migration is unresolved (it stopped returning
+// suggestions and could throw inside AddressAutocomplete, breaking the
+// job-creation modal). With this on, hasPlacesKey() returns false and
+// loadPlaces() resolves null, so every address field gracefully falls back to a
+// plain text input and the Maps script is never loaded — nothing can crash.
+// Flip to false to re-enable once the real fix lands
+// (see GOOGLE-AUTOFILL-FIX-HANDOFF.md / GOOGLE-INTEGRATIONS-HANDOFF.md).
+const AUTOCOMPLETE_DISABLED = true;
+
 let placesPromise = null;
 let warned = false;
+let configured = false;
 
 export function hasPlacesKey() {
+  if (AUTOCOMPLETE_DISABLED) return false;
   return Boolean(API_KEY);
 }
 
 export function loadPlaces() {
+  if (AUTOCOMPLETE_DISABLED) return Promise.resolve(null);
   if (!API_KEY) {
     if (!warned) {
       warned = true;
@@ -19,14 +33,15 @@ export function loadPlaces() {
   }
   if (placesPromise) return placesPromise;
 
-  const loader = new Loader({
-    apiKey: API_KEY,
-    version: 'weekly',
-    libraries: ['places'],
-  });
+  // @googlemaps/js-api-loader v2 functional API: configure once with setOptions(),
+  // then importLibrary() loads the Maps JS API on first call. (The old `new Loader()`
+  // class was removed in v2 — calling it throws "Loader is no longer available".)
+  if (!configured) {
+    setOptions({ key: API_KEY, v: 'weekly' });
+    configured = true;
+  }
 
-  placesPromise = loader
-    .importLibrary('places')
+  placesPromise = importLibrary('places')
     .then((places) => ({
       AutocompleteSuggestion: places.AutocompleteSuggestion,
       AutocompleteSessionToken: places.AutocompleteSessionToken,
@@ -34,7 +49,8 @@ export function loadPlaces() {
     }))
     .catch((err) => {
       placesPromise = null;
-      console.warn('[googleMaps] Failed to load Places library:', err?.message || err);
+      // TEMP DIAGNOSTIC (remove after fix): full error to reveal config cause.
+      console.error('[googleMaps] Failed to load Places library:', err);
       return null;
     });
 

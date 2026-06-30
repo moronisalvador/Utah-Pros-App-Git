@@ -20,6 +20,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const navigate = useNavigate();
   const { employee } = useAuth();
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
+  const hasJob = Boolean(appointment.job_id || appointment._jobId);
   const [title, setTitle] = useState(appointment.title || '');
   const [date, setDate] = useState(appointment.date || '');
   const [timeStart, setTimeStart] = useState(appointment.time_start?.slice(0, 5) || '');
@@ -28,12 +29,12 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [notes, setNotes] = useState(appointment.notes || '');
   const [status, setStatus] = useState(appointment.status || 'scheduled');
   const [isPrivate, setIsPrivate] = useState(!!appointment.is_private);
+  const [notifyClient, setNotifyClient] = useState(appointment.notify_client !== false);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [crewSearch, setCrewSearch] = useState('');
   const [nextVisitPrompt, setNextVisitPrompt] = useState(null); // null | 'asking' | 'pick_date'
   const [nextVisitDate, setNextVisitDate] = useState('');
@@ -43,8 +44,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
 
-  const isMitigationType = ['mitigation', 'monitoring'].includes(appointment.type) ||
-    ['water', 'mold', 'fire', 'contents'].includes(appointment._division);
 
   // Initialize crew from appointment data
   const initialCrew = (appointment.crew || []).map(c => ({
@@ -96,13 +95,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
     return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0][0].toUpperCase();
-  };
-
-  const fmtTime = (t) => {
-    if (!t) return '';
-    const [h, m] = t.split(':');
-    const hr = parseInt(h, 10);
-    return `${hr % 12 || 12}:${m}${hr >= 12 ? 'p' : 'a'}`;
   };
 
   const fmtApptDate = (d) => {
@@ -204,6 +196,12 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Set the client-notify preference BEFORE the update, so the reschedule
+      // email that update fires respects the current checkbox. Only on change.
+      if (hasJob && notifyClient !== (appointment.notify_client !== false)) {
+        await db.update('appointments', `id=eq.${appointment.id}`, { notify_client: notifyClient });
+      }
+
       await db.rpc('update_appointment', {
         p_appointment_id: appointment.id,
         p_title: title.trim() || null,
@@ -238,22 +236,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     } finally { setSaving(false); }
   };
 
-  // Finish appointment — complete it, release incomplete tasks
-  const handleFinish = async () => {
-    setShowFinishConfirm(false);
-    setSaving(true);
-    try {
-      await db.rpc('finish_appointment', { p_appointment_id: appointment.id });
-      // For mitigation appointments, ask about next visit
-      if (isMitigationType) {
-        setSaving(false);
-        setNextVisitPrompt('asking');
-      } else {
-        onSaved();
-      }
-    } catch (e) { console.error('Finish:', e); errToast('Failed: ' + e.message); }
-    finally { if (!isMitigationType) setSaving(false); }
-  };
 
   // Clone appointment to a specific date (for "schedule next visit")
   const handleCloneVisit = async (targetDate) => {
@@ -740,27 +722,14 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                 </>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-            {!isCompleted && (
-              showFinishConfirm ? (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    {tasks.filter(t => !t.is_completed).length > 0
-                      ? `${tasks.filter(t => !t.is_completed).length} task(s) incomplete — release to pool?`
-                      : 'Mark as completed?'}
-                  </span>
-                  <button onClick={handleFinish} disabled={saving}
-                    style={{ ...S.primaryBtn, background: '#10b981', padding: '6px 14px' }}>
-                    {saving ? '...' : 'Finish'}
-                  </button>
-                  <button onClick={() => setShowFinishConfirm(false)} style={S.ghostBtn}>Cancel</button>
-                </div>
-              ) : (
-                <button onClick={() => setShowFinishConfirm(true)} disabled={saving}
-                  style={{ ...S.outlineBtn, color: '#10b981', borderColor: '#10b981' }}>
-                  Finish
-                </button>
-              )
+            <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', alignItems: 'center' }}>
+            {hasJob && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={notifyClient}
+                  onChange={e => { setNotifyClient(e.target.checked); setDirty(true); }}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                Notify customer
+              </label>
             )}
               <button onClick={handleSave} disabled={saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)}
                 style={{ ...S.primaryBtn, opacity: (saving || !dirty || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.5 : 1 }}>

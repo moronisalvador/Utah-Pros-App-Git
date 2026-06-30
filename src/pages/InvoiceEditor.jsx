@@ -41,6 +41,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { canEditBilling } from '@/lib/claimUtils';
+import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import DatePicker from '@/components/DatePicker';
@@ -137,7 +138,6 @@ export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
   const { db, isFeatureEnabled, employee } = useAuth();
-  const canEdit = canEditBilling(employee?.role);
   const slide = usePageTransition();
 
   const dbRef = useRef(db);
@@ -170,6 +170,11 @@ export default function InvoiceEditor() {
   const payModalRef = useRef(null);
   const xactInputRef = useRef(null);
   const xactHydratedRef = useRef(false); // hydrate the persisted recap banner once per mount
+
+  // A locked invoice is read-only even for billing admins/managers — a guard against
+  // accidental edits to closed, fully-paid A/R. `locked` is opt-in (DB default false,
+  // never set automatically); the UI only reads it, never writes it. Role is still required.
+  const canEdit = canEditBilling(employee?.role) && !inv?.locked;
 
   // Org-wide online-pay setting (card/ACH) — informs the "this invoice is online-payable" banner.
   useEffect(() => {
@@ -561,6 +566,7 @@ export default function InvoiceEditor() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <GhostButton onClick={() => navigate(-1)} leftIcon={<IconBack />}>Back</GhostButton>
         <div className="inv-no-print" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <HelpLink anchor="invoicing/build-and-save" title="Invoicing & Financials guide" />
           {synced && inv.qbo_synced_at && <span style={{ fontSize: 11.5, color: C.faint, marginRight: 2 }}>✓ {fmtStamp(inv.qbo_synced_at)}</span>}
           {canEdit && (
             <PrimaryButton onClick={saveInvoice} style={{ opacity: (busy || subtotal <= 0) ? 0.6 : 1, pointerEvents: (busy || subtotal <= 0) ? 'none' : 'auto' }}>
@@ -599,6 +605,12 @@ export default function InvoiceEditor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', color: C.faint, textTransform: 'uppercase' }}>Invoice</span>
           <StatusBadge kind={stKind} />
+          {inv.locked && (
+            <span title="This invoice is locked and read-only. Unlock it from the database to make changes."
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: '#f3f4f6', color: '#6b7280', border: '1px solid #e5e7eb' }}>
+              🔒 Locked
+            </span>
+          )}
         </div>
         {job?.id ? (
           // The invoice number doubles as the work/job number — click it to open the job.

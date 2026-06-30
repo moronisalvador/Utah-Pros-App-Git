@@ -88,7 +88,8 @@ src/
     Collections.jsx               — "My Money" / Collections page (feature-flagged: page:collections), redesigned to
                                     the UPR design system (Jun 2026). FOUR tabs: A/R · Outstanding (ARDashboard —
                                     default-sorts newest CREATED first, client-side, via get_ar_invoices().created_at
-                                    added by 20260626_get_ar_invoices_created_at.sql; clickable column headers override),
+                                    added by 20260626_get_ar_invoices_created_at.sql; clickable column headers override —
+                                    Client/Sent/Age/Total/Collected/Balance, Client A→Z on first click, numeric/date cols descending-first),
                                     Invoices (InvoicesList, get_ar_invoices(), rows → /invoices/:id editor — also
                                     default-sorted newest CREATED first, client-side),
                                     Estimates (EstimatesList, get_estimates() which already returns created_at DESC,
@@ -108,10 +109,12 @@ src/
                                     active tab is synced to ?tab= (replace) so tabs are deep-linkable and the
                                     browser Back button (and builder "← Back") returns to the tab you were on.
     components/collections/       — Collections redesign pieces: collTokens.js (page-scoped UPR palette + $/date
-                                    formatters + period math + invoiceStatusKind + CSV), collKit.jsx (shared
+                                    formatters + period math + invoiceStatusKind + aging bucketKey/AGING_BUCKETS + CSV),
+                                    collKit.jsx (shared
                                     primitives: CollCard, Kpi, SegControl, SearchBox, StatusBadge, DivisionSquare,
                                     ProgressBar, Pill, PopoverButton + Filters/Columns, inline SVG icons),
                                     ARDashboard.jsx, InvoicesList.jsx, EstimatesList.jsx, PaymentsLedger.jsx,
+                                    ARChatBubble.jsx + arSnapshot.js (AI A/R Copilot — see note below),
                                     SearchSelect.jsx (typeahead dropdown for the QBO Item/Class pickers in the
                                     invoice & estimate builders), ActionMenu.jsx ("Manage ▾" dropdown in the
                                     builder top toolbar — two-click confirm for Revert/Delete). Styles
@@ -121,7 +124,12 @@ src/
                                     amber = aging. A/R TOP is ONE unified summary card — an Outstanding hero + an
                                     Overdue callout (both click-to-filter the table) over the aging bar + 5 buckets —
                                     which replaced the old 4 KPI tiles + a separate aging card (they showed the same
-                                    money twice). The A/R period switch scopes the WHOLE A/R view by invoice date
+                                    money twice). EACH aging bucket amount is also click-to-filter (Jul 2026): tapping
+                                    a band drills the table to the open invoices in that age range (state `bucket`;
+                                    `.coll-aging-btn`). A bucket OVERRIDES the Open/Overdue/All `mode` (aging applies
+                                    only to open invoices) and picking a mode/Outstanding/Overdue clears the bucket, so
+                                    exactly one slice is highlighted at a time; empty bands aren't clickable; the footer
+                                    + CSV + Copilot snapshot all follow the active band. The A/R period switch scopes the WHOLE A/R view by invoice date
                                     (summary + aging + table recompute; drafts/undated always shown; default All).
                                     A/R rows are deliberately de-noised: age is plain text (red only when overdue),
                                     QB shows only on a sync error, and there are NO per-row status pills (overdue →
@@ -130,6 +138,35 @@ src/
                                     from get_ar_invoices (job_address/job_city added by migration
                                     20260625_get_ar_invoices_address.sql). The Payments "Processing/in-flight" section
                                     from the design is omitted: get_payments_ledger returns cleared payments only.
+                                    AI A/R COPILOT (Jun 2026) — a floating, page-aware chat bubble on the A/R tab
+                                    (ARChatBubble.jsx, mounted by ARDashboard; worker functions/api/collections-chat.js,
+                                    Sonnet 4.6, non-streaming). On each send the browser builds a DETERMINISTIC snapshot
+                                    of exactly what's on screen — outstanding/overdue/aging totals, ranked top-debtors,
+                                    the filtered+sorted invoice list, and the view state — via buildArSnapshot()
+                                    (arSnapshot.js) and injects it into the system prompt, so most questions answer in
+                                    ONE call with no DB lookups and the numbers always match the screen (the model never
+                                    sums; code does). READ-ONLY drill-down tools map to existing data:
+                                    lookup_customer → get_customer_detail / search_contacts_for_job (phone/email +
+                                    claims/jobs), get_invoice_detail → invoices + invoice_line_items + payments (+
+                                    xactimate_meta), list_payments → get_payments_ledger, list_estimates → get_estimates,
+                                    get_job_detail → jobs select + get_job_financials, lookup_claim → claims select,
+                                    list_job_labor → get_job_labor_summary. Plus LIVE QuickBooks (read-only via qboFetch,
+                                    functions/lib/quickbooks.js — same OAuth as qbo-invoice/qbo-query, no new secrets):
+                                    qbo_customer (real-time QBO balance + open QBO invoices for a contact),
+                                    qbo_ar_summary (live total A/R + aging across open QBO invoices), and reconcile_qbo
+                                    (diffs the FULL UPR open A/R against ALL open QBO invoices in one pass — matched by
+                                    qbo_invoice_id ↔ QBO Invoice.Id, fallback qbo_doc_number ↔ DocNumber — and returns
+                                    categorized to-do lists: sync_errors, qbo_open_not_in_upr, upr_open_unsynced,
+                                    upr_open_not_open_in_qbo, balance_mismatch, with complete counts/$ totals + capped
+                                    per-item lists). QBO tools are intent-based — the worker builds the safe /query string
+                                    (the model never passes raw QQL). ADVISORY ONLY — it never
+                                    drafts/sends a message or creates/modifies any record (the human acts). Ephemeral
+                                    (no history tables). Auth: any logged-in session (the page is already access-gated);
+                                    reuses ANTHROPIC_API_KEY; logs worker_runs as 'collections-chat'. The shared aging
+                                    bucketKey/AGING_BUCKETS were lifted into collTokens.js so the snapshot's buckets can
+                                    never drift from ARDashboard's on-screen breakdown. The panel is non-blocking (no
+                                    backdrop — the live A/R view it reads stays scrollable) and hides under the
+                                    New-invoice/estimate modals (z 80/90 vs 200).
     ClaimsList.jsx                — List of all claims
     ClaimPage.jsx                 — Full claim detail page
     ClaimPage_header.jsx          — Claim page header component (partial/patch file)
@@ -145,6 +182,7 @@ src/
     OOPPricing.jsx                — Out-of-Pocket Pricing Calculator (Apr 20 2026). Route /tools/oop-pricing. Feature-flagged tool:oop_pricing (dev-only → Moroni). 2-column desktop / stacked mobile layout: LEFT inputs (job type pill, customer, labor, 5 equipment rows count×days, materials+fees, mold add-ons when job_type=mold, notes) / RIGHT sticky breakdown (customer-facing line items + big QUOTE TOTAL) + internal margin panel (hidden via .oop-no-print). Margin color tiers: green ≥20%, amber 10–20%, red <10% (with "Recommend decline or reprice" banner). Supports ?jobId=X prefill (reads jobs table → sets jobType from division + insured_name + address + shows linked chip) and ?quoteId=X rehydrate (loads via get_oop_quote). Browser print omits input column + sidebar + internal margin via @media print rules in index.css. Pricing math + form hydration extracted to src/lib/oopPricing.js (shared with TechOOPPricing.jsx).
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
+    Help.jsx                      — In-app Help & Guides centre (route /help, reached from the TopNav ? button + Sidebar; wrapped by SettingsLayout). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
   pages/tech/
@@ -157,7 +195,9 @@ src/
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, statusBarLight.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
-    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Training Docs, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
+    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
+    TechHelp.jsx                  — Field tech "Help & Guides" page (route /tech/help). Plain-language, big-tap how-to for the phone app: the timer (On My Way → Start Work → Pause → Finish), snap-first photos, the task checklist, moisture readings, schedule, claims, starting a new job (the + → New Job field flow, incl. new-vs-existing claim), plus a "Stuck?" → Send Feedback footer. Static content only (no DB). Reached from the standalone ? button in the TechDash greeting header (left of the ⋮ menu) and the More → Help & Guides row. Card content now lives in techHelpContent.jsx (shared with the contextual TechHelpSheet).
+    techHelpContent.jsx           — Shared field-tech help content: the TOPICS array ({key,Icon,title,lines,accent}) + the TopicCard renderer + topic icons. Imported by both TechHelp.jsx (full page) and TechHelpSheet.jsx (contextual sheet) so the wording never drifts. Static; file-level eslint-disable for react-refresh/only-export-components (intentional data+component module).
     TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
     TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (Resend HTML email) + /api/encircle-upload (general note posted to the linked claim) + /api/demo-sheet-pdf (renders the sheet to a PDF and attaches it to the job's Files via job_documents, category 'demo_sheet' — also surfaces on the customer page Files section) in parallel; ResultScreen shows per-channel success/fail (email, Encircle, PDF); final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
@@ -170,8 +210,11 @@ src/
     tech/DetailRow.jsx            — Shared label/value row for collapsed detail panels. Supports href (tel/mailto), mono, capitalize, multiline.
     tech/TimeTracker.jsx          — Static three-station row (OMW · Start · Finish) with timestamps under each. No live ticking. Between-step durations ("Travel: 23m", "On job: 4h") shown only after the right side of the interval is reached. Past stations greyed + non-tappable for techs (admin/PM edits via desktop). Pause is a secondary control; preserves original Start timestamp on Resume. Supports multi-visit via "Return to Job" flow. Time-Tracking PR-2 (Jun 26 2026): before OMW, calls clock_omw_precheck (src/lib/clockPrecheck.js) and shows ClockSupersedeSheet to confirm clocking out of another open job (or hard-block when clock_enforce_explicit_clockout is ON). Same precheck+sheet wired into TechDash ActiveCard's OMW.
     tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC.
+    tech/TechHelpSheet.jsx        — Bottom help sheet (PhotoNoteSheet structure: backdrop + slide-up, tech-fade-in/tech-slide-up, safe-area pad, grabber + ✕). Renders the requested topic's TopicCard first then the rest of TOPICS (from techHelpContent). NO navigation / no target=_blank (Capacitor-safe) — opens over the screen so an in-progress form isn't lost. Props {open,onClose,topicKey}.
+    tech/TechHelpButton.jsx       — Self-contained "?" button (dash help-button styling) that owns its open state and renders TechHelpSheet. One-line drop-in: <TechHelpButton topicKey="newjob" />. Used on TechNewJob (newjob), TechAppointment (timer, white-on-hero variant), TechClaims (claims).
     Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner
     Sidebar.jsx                   — Desktop nav + sign out button
+    HelpLink.jsx                  — Reusable contextual "?" that deep-links into a /help guide section in a NEW TAB (so in-progress modals/forms aren't lost). Props: anchor ("guide[/section]"), label, size, variant; reuses IconHelp. Used on CreateJobModal, InvoiceEditor, Collections, ClaimsList.
     AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
     AddRelatedJobModal.jsx        — Add sibling job under same claim
     CalendarView.jsx              — Week-calendar grid for Schedule page (division-tinted event cards via schedule/eventCardStyle.js; UPR design system, Jun 2026)
@@ -261,9 +304,10 @@ under `.ovw-*` in `index.css` (grid + responsive 12→2→1-col + hover + LIVE p
 
 **⚠ Dashboard-scoped palette (DO NOT confuse with app-wide DIVISION_COLORS):** this dashboard intentionally
 uses its OWN division colors — Mitigation teal `#0e9384`, Reconstruction purple `#8a5cf6`, Remodeling coral
-`#f2664a`, Mold pink `#ec4899` — and introduces a **"Remodeling"** division **only here**. The app-wide
-`DIVISION_COLORS` and the division enum are untouched. App-wide adoption + a real Remodeling division is a
-separate future project (Phase 4 below, decision pending).
+`#f2664a`, Mold pink `#ec4899`. **Remodeling is now a real app-wide division** (added Jun 29 2026): the
+`job_division` enum includes `remodeling`, new jobs/invoices number as `RM-YYMM-###`, it maps to the same QBO
+item/class as reconstruction (`divisionToQbo`), and it appears in the New Job form + all division color/label
+maps. This dashboard keeps its own scoped palette (above).
 
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
@@ -308,36 +352,36 @@ separate future project (Phase 4 below, decision pending).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
-- **"New Jobs Closed" card + canonical sale rule — DONE (migration `20260630_job_sales_canonical.sql`):**
-  The old **"New claims booked"** card (counted raw `claims` rows) was renamed to **"New Jobs Closed"** and
-  now counts **actual sales**, excluding estimate-only opportunities. The card reads the new
-  `get_jobs_closed(p_floor)` RPC (hook `useJobsClosed.js`, replacing `useNewClaims.js`). The dashboard grid
-  layout key stays `newClaims` (internal id) so saved per-user layouts aren't reset.
+- **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
+  `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
+  The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now
+  counts **real (sold) jobs**, excluding estimate-only opportunities. Card reads `get_jobs_closed(p_floor)`
+  (hook `useJobsClosed.js`, replacing `useNewClaims.js`); grid layout key stays `newClaims` (internal id) so
+  saved per-user layouts aren't reset.
 
-  ### ⭐ What counts as a SALE (THE canonical rule — all reporting must use this)
-  Encoded once in the **`job_sales`** view (`job_id, sale_date, first_sale_source`). A job is **Sold** when
-  EITHER **(a)** an estimate for it was converted to an invoice (`estimates.converted_invoice_id IS NOT NULL`;
-  sale date = `approved_at`), **OR (b)** it has a signed work authorization in `sign_requests`
-  (`status='signed'` AND `doc_type IN ('work_auth','recon_agreement')`; sale date = `signed_at`). A job's
-  `sale_date` is the **earliest** qualifying event. `coc`, `direction_pay`, and `change_order` do **NOT** count.
-  **Future reports must read `job_sales` (or `get_jobs_closed`) — never reinvent the sale rule.** This pairs
-  with the estimate-decoupling model (`20260625_estimate_decouple.sql`): an estimate is pre-sale, and a
-  claim + job only materialize when it's sold.
-- **Commission foundation (lean v1) — DONE (migration `20260630_commission_foundation.sql`):** the base for
-  paying sales commissions (first payroll of each month, for everything sold the **previous month**). 
-  - **`job_sales` += `sold_by`** — the salesperson, **derived** from the sale event: `estimates.created_by`
-    (conversion) or `sign_requests.sent_by` (signed doc), whichever is earliest. No manual override, so the
-    estimate-create flow now stamps `created_by` (**`NewEstimateModal`** passes `p_created_by: employee?.id`;
-    it was previously null, the reason older sales are unattributed).
+  ### ⭐ What counts as a SALE / REAL JOB (THE canonical rule — all reporting must use this)
+  **Single source of truth = `jobs.is_real_job`** (migration `20260627_real_job_classification.sql`). A job is
+  auto-flagged real when a **work-auth/recon agreement is signed**, a **QBO invoice** is created, or its
+  **estimate is approved** (`real_job_source`/`real_job_marked_at` record which & when); the office can force
+  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
+  read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
+  `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+- **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
+  month, for everything sold the **previous month**), built on `is_real_job`.
+  - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
+    else the approved `estimates.created_by`. So the estimate-create flow now stamps `created_by`
+    (**`NewEstimateModal`** passes `p_created_by: employee?.id`; it was previously null — why older sales are
+    unattributed).
   - **`employees.commission_percent` / `commission_flat`** (both nullable) — the per-employee rate. A rate set
-    ⇒ that employee earns; both null ⇒ none (the rate **is** the "is a salesperson" flag — no separate flag).
-    `commission_flat` (flat $/sale) wins over `commission_percent` (% of the job's invoice total) when both set.
+    ⇒ earns; both null ⇒ none (the rate **is** the "is a salesperson" flag). `commission_flat` (flat $/sale)
+    wins over `commission_percent` (% of the job's invoice total) when both set.
   - **`get_commissions(p_month date)`** — SECURITY DEFINER RPC, **the one place commissions are ever computed**.
-    Returns every sold job in the month (employee, job, division, sale_date, base = `SUM(COALESCE(adjusted_total,
-    total))`, commission, `commission_period`, `is_attributed`). Unattributed sales (`sold_by` null or no rate)
-    are returned with `is_attributed = false` so they're **visible, not silently dropped**.
-  - **Commissions effectively start now:** the 13 historical estimate-sales had no `created_by` (only the
-    signed-doc sales have `sent_by`), so older sales are unattributed; no backfill.
+    One row per real job; period = month of **`jobs.created_at`** (NOT `real_job_marked_at` — the backfill
+    stamped that to the migration date). Returns employee, job, division, base = `SUM(COALESCE(adjusted_total,
+    total))`, commission, `commission_period`, `is_attributed`. Unattributed sales (no derived person, or no
+    rate) are returned with `is_attributed = false` — **visible, not silently dropped**.
+  - **Commissions effectively start now:** most historical jobs have no recorded salesperson, so they're
+    unattributed; no backfill.
   - **Deferred (Phase 2, when payroll runs in-app):** admin UI to set rates (Admin employee form), a monthly
     commissions report reading `get_commissions`, and a `commission_payouts` lock table so paid amounts can't
     shift if an invoice is later edited. **Cut from v1 deliberately:** per-employee basis options and an
@@ -347,7 +391,7 @@ separate future project (Phase 4 below, decision pending).
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
   owned by a separate effort** — the widget reads `get_open_estimates_summary` and lights up automatically
   once `estimates` rows exist with an open `status` (no dashboard change needed).
-- **Phase 4 — decision pending:** app-wide palette + first-class "Remodeling" division (large ripple).
+- **Phase 4 — first-class "Remodeling" division shipped Jun 29 2026** (enum + `RM-` numbers + app-wide color/label maps + QBO mapping). The app-wide palette overhaul (recolor every division to the dashboard scheme) is still pending.
   **Ready-to-execute plan lives at `DASHBOARD-PHASE4-PLAN.md`** (repo root, dormant — start a session and say
   "execute DASHBOARD-PHASE4-PLAN.md", or rename to `*-TASK.md` to activate the Task File Protocol).
 
@@ -516,7 +560,7 @@ upr_mcp_audit           — UPR MCP tool-call audit (actor_email, tool, argument
 
 ### Jobs & Claims
 ```
-create_job_with_contact(...)    — Atomic job + contact creation
+create_job_with_contact(...)    — Atomic job + contact (+ claim) creation. Optional trailing p_existing_claim_id UUID (added Jun 29 2026): when set, files the new job under that EXISTING claim (reuses it, skips the claims INSERT) instead of always minting a fresh CLM-…; NULL (default) = unchanged behavior. Now a 32-arg signature — DROP+CREATE'd in one migration (20260629_create_job_with_contact_existing_claim.sql) to avoid a second PostgREST overload (PGRST203). Both callers (TechNewJob mobile, CreateJobModal desktop) use named args so they bind unchanged. TechNewJob's existing-claim picker is scoped to the selected contact's claims via get_customer_detail(p_contact_id).data.claims; on save TechNewJob now opens /tech/jobs/:id and only pushes to Encircle for new claims.
 add_related_job(...)            — Sibling job under same claim
 get_claim_jobs(p_claim_id)      — {claim, jobs[]}
 get_claim_detail(p_claim_id)    — Full claim detail
@@ -603,7 +647,7 @@ get_job_labor_summary(p_job_id) — Labor cost per job
 upsert_time_entry(...)          — Save time entry
 approve_time_entries(...)       — Bulk approve
 calc_time_entry_cost(...)       — Trigger fn on job_time_entries. NOTE (PR-4, Jun 27 2026): total_cost is a GENERATED column, NOT trigger-written. Expr is now round((coalesce(travel_minutes,0)/60 + coalesce(hours,0)) * coalesce(hourly_rate,0), 2) — i.e. drive time + on-site time × rate (was hours×rate only; changed via ALTER COLUMN ... SET EXPRESSION, which recomputed all rows). The trigger now ONLY fills hourly_rate from the employee when missing + stamps updated_at (its old total_cost assignment was always ignored by the generated column). get_payroll_summary is unaffected (recomputes pay from hours×rate, never reads stored total_cost); get_job_labor_summary + get_timesheet_entries sum stored total_cost so they now include drive time.
-get_tech_status_board()         — Live dispatch board: one row per active field_tech/supervisor (plus any employee currently clocked in or scheduled today) with derived status ('paused'|'on_site'|'omw'|'scheduled'|'idle'), status_since, current/next appointment, job, client_name, address. Sorted by status priority then name. Powers the Status Board tab on Time Tracking.
+get_tech_status_board()         — Live dispatch board: one row per active field_tech/supervisor (plus any employee currently clocked in or **on a crew for an appointment today**) with derived status ('paused'|'on_site'|'omw'|'scheduled'|'idle'), status_since, current/next appointment, job, client_name, address. Sorted by status priority then name. Powers the Status Board tab on Time Tracking + the Overview "Employee status" widget (useEmployeeStatus.js). FIX (Jun 30 2026, migration `20260630_status_board_denver_date_and_field_admins.sql`): (1) **timezone** — "today" was `a.date = CURRENT_DATE` (UTC); after ~6pm Denver it matched the wrong day and dropped today's scheduled crews. Now `(now() AT TIME ZONE 'America/Denver')::date`. (2) **field-working admins** — the old `next_appt` (future-only, role-gated) is replaced by a `today_appt` CTE + a WHERE that includes anyone on a crew for an appointment today regardless of role, so admins who run jobs (Ben/Juani) appear as 'scheduled' until they clock in (office-only staff with no appointment today still don't show; next_appt_time/title still only populate for genuinely-upcoming appointments). Same RETURNS TABLE signature (CREATE OR REPLACE). Also that day: a one-off data cleanup reset 4 appointments stuck en_route/in_progress/paused with no open clock back to 'scheduled'. PIN (Jun 30 2026, migration `20260630_status_board_pinned_employees.sql`): added `employees.show_on_status_board BOOLEAN DEFAULT false` and `OR e.show_on_status_board` to the WHERE, so specific people (owners/admins who occasionally do field work) can be pinned to always appear (read 'idle' until clocked in/scheduled) without including every office admin. Seeded true for the owner login (Moroni Salvador, email moroni@utah-pros.com). NB: a separate loginless test record "Moroni Tech" holds moroni.s@utah-pros.com — the two Moroni rows are distinct employees; the pin is keyed to the real login.
 ```
 
 ### Auth & Permissions
@@ -1245,7 +1289,7 @@ setup is finished.
 
 ## QuickBooks Online — Invoices (Jun 18 2026 — Phase 2a)
 
-**One invoice per job (= per division)** — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
+**One invoice per job (= per division)** is the norm — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. **A job can have more than one invoice when a supplement is needed** (you can't add lines to an already-paid invoice). The QBO `DocNumber` is unique per invoice: the number QBO already assigned, else `job_number` for the first invoice and `job_number-N` for the Nth (e.g. `R-2604-009`, then `R-2604-009-2`) — see `functions/api/qbo-invoice.js`. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
 
 **Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough (Items/Classes/Invoices); auth via `x-webhook-secret` or Supabase Bearer; tokens stay server-side.
 
@@ -1905,3 +1949,109 @@ package.json  — added "test": "vitest run" and vitest devDependency.
 that manifests as "Invalid hook call" in OfflineStatusPill. Clearing
 `node_modules/.vite` and restarting usually fixes it. Production bundle
 (`npm run build` / Cloudflare Pages) is unaffected.
+
+---
+
+## Homebuilding Entry Analysis (Moroni-only)
+
+Private planning page at `/homebuilding` (gated to `moroni@utah-pros.com` via `MoroniRoute`
+in `App.jsx`; side-nav link in `Sidebar.jsx` + desktop overflow entry in `navItems.jsx`).
+Rendered by `src/pages/HomebuildingAnalysis.jsx` (self-contained: inline styles + scoped
+`<style>`, inline-SVG icons, hand-built SVG radar — no recharts/lucide/Tailwind). Sections:
+three entry paths, per-market profiles, **Build Copilot** (AI chat), **Deal Modeler**,
+**AI Build & Value Estimator**, financing ladder, decisions, risk.
+
+### AI workers (Cloudflare Pages Functions)
+Both reuse the existing `ANTHROPIC_API_KEY` (Preview + Production) and re-check the logged-in
+user's email server-side (`moroni@utah-pros.com`).
+- `functions/api/homebuilding-chat.js` — Build Copilot chat. **Sonnet 4.6** + the `web_search`
+  server tool (current rates/prices/code editions), handles `pause_turn`. Non-streaming, so it
+  must finish inside Cloudflare's ~100s timeout — hence Sonnet + capped `max_uses`(3)/continuations(2);
+  the frontend also has a 95s AbortController. Gets the live deal-modeler state as context.
+- `functions/api/homebuilding-estimate.js` — AI estimator. **Sonnet 4.6**, single forced-tool
+  structured-output call (no web search). Inputs: region, beds, baths, sqft, stories, finish,
+  land, features → `{ build_cost{low,expected,high}, cost_per_sf, breakdown[], arv{...},
+  feature_notes[], confidence, assumptions[], notes[] }`. ARV anchored to comps, capped at the
+  neighborhood ceiling.
+
+### History tables (new) — chat + estimate persistence
+RLS enabled, **no public table policies**; access only via SECURITY DEFINER RPCs granted to
+`authenticated`. Read/written from the frontend via `db.rpc(...)` (workers do not persist).
+- `homebuilding_chats` — `id UUID PK, title TEXT, created_at, updated_at` (renameable conversations)
+- `homebuilding_chat_messages` — `id UUID PK, chat_id UUID FK→homebuilding_chats ON DELETE CASCADE, role TEXT('user'|'assistant'), content TEXT, created_at`
+- `homebuilding_estimates` — `id UUID PK, label TEXT, region TEXT, spec JSONB, estimate JSONB, created_at`
+
+### History RPCs (new)
+```
+list_homebuilding_chats()                                  -- ordered by updated_at desc
+create_homebuilding_chat(p_title)                          -- returns the new chat row
+rename_homebuilding_chat(p_id, p_title)
+delete_homebuilding_chat(p_id)                             -- cascades messages
+get_homebuilding_chat_messages(p_chat_id)                  -- ordered by created_at
+add_homebuilding_chat_message(p_chat_id, p_role, p_content) -- also touches chats.updated_at
+save_homebuilding_estimate(p_label, p_region, p_spec, p_estimate) -- returns the saved row
+list_homebuilding_estimates()                              -- newest first, limit 100
+rename_homebuilding_estimate(p_id, p_label)
+delete_homebuilding_estimate(p_id)
+```
+The Build Copilot loads/saves conversations (switch, rename, new, two-click delete); the AI
+Estimator auto-saves every run and shows a Saved-estimates list (view, rename, two-click delete).
+
+
+---
+
+## New Build simulator (Moroni-only)
+
+Full-page tool at `/homebuilding/build` (Moroni-only via `MoroniRoute`), reached from a "+ New Build"
+button in the Homebuilding Analysis title block. Rendered by `src/pages/NewBuildSimulator.jsx`.
+Numbers-first build planner: a standard Utah template seeds an editable itemized budget, a
+schedule (gantt), a construction-loan draw schedule, financing/returns, save/load projects, optional
+AI tuning, AI ARV estimate, and PDF export.
+
+### Engine — `src/lib/buildTemplate.js`
+Pure data + math (no UI). `PHASES` (trade line items w/ cost share, duration weeks, draw milestone),
+`FEATURES`, `DRAW_STAGES`. Functions: `computeLineItems(spec)` (trade lines total region/finish
+$/sf × sqft exactly; finish/story/bath scaling; feature add-ons), `computeSchedule`, `computeDraws`
+(sum to hard total), `computeFinancing` (mirrors the deal-modeler formula), `buildPlanFromSpec`,
+`defaultSpec`. Hard-cost $/sf already includes GC overhead & profit; soft + contingency are separate %.
+
+### Workers (Cloudflare Pages Functions) — Moroni-gated, reuse ANTHROPIC_API_KEY
+- `functions/api/homebuilding-plan-tune.js` — Sonnet 4.6, forced-tool structured output. Tunes the
+  template baseline (per-line totals + phase durations + soft/contingency %) to the spec/submarket.
+- `functions/api/homebuilding-build-plan-pdf.js` — pdf-lib; renders a multi-section Build Plan PDF
+  (cover, spec, budget table, schedule, draws, financing) and returns application/pdf bytes for
+  direct browser download (no storage). WinAnsi-sanitized text.
+
+### Table `homebuilding_build_projects` (new)
+`id UUID PK, label TEXT, region TEXT, spec JSONB, plan JSONB (lineItems/schedule/arv), created_at,
+updated_at`. RLS on, no public table policies; access via SECURITY DEFINER RPCs granted to
+`authenticated`:
+```
+list_homebuilding_build_projects()
+get_homebuilding_build_project(p_id)
+save_homebuilding_build_project(p_id, p_label, p_region, p_spec, p_plan)  -- null id = insert, else upsert
+rename_homebuilding_build_project(p_id, p_label)
+duplicate_homebuilding_build_project(p_id)
+delete_homebuilding_build_project(p_id)
+```
+Derived numbers (hard total, draws, months, financing) are recomputed on the page from the stored
+lineItems/schedule/arv; only those are persisted in `plan`.
+
+### City/submarket detail (buildTemplate.js `SUBMARKETS`)
+Per-city anchors for both regions — `{ name, psfMult (construction-cost nudge), lot (typical $),
+arvPsf (resale $/sf) }`. Wasatch: SLC east bench, SLC County, Draper, Lehi/Saratoga Springs, Eagle
+Mountain, Provo/Orem, Spanish Fork/Salem, Park City. Southern: St. George, Washington, Hurricane,
+Ivins, Santa Clara, Toquerville/LaVerkin. The Spec tab's submarket is a dropdown; picking a city sets
+the typical lot and scales the build cost (`submarketMult`). `computeArvBaseline(spec)` gives a quick
+comps-based ARV ("City comp ARV" button) from `arvPsf`; the AI estimate (now passed the submarket)
+refines it.
+
+### Floor-plan builder (New Build → "Floor Plan" tab)
+Drag room tiles from a palette onto a 1-ft grid (HTML5 DnD), then drag to move / pull the corner to
+resize (pointer events; window-level move/up driven by a ref). Room model in `buildTemplate.js`:
+`ROOM_TYPES` (each with fill, bed, bath, conditioned, default w/h ft), `roomDef`, and
+`floorplanTotals(fp)` → { conditioned sqft, bedrooms, bathrooms, rooms }. Garage + covered patio are
+excluded from conditioned sqft. The plan is stored in `plan.floorplan` (persists via the existing
+build-project RPC). **Sync to spec** writes sqft/bd/ba into the Spec and regenerates the budget +
+schedule from it (`buildPlanFromSpec`), so building a plan auto-costs it.
+

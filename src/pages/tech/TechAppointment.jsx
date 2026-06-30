@@ -36,7 +36,8 @@
  *                        (get_appointment_tasks); job_documents, jobs, rooms
  *                        (get_job_rooms); moisture_readings, rooms
  *                        (get_job_readings); equipment_placements, rooms
- *                        (get_job_equipment); job_documents (direct db.select)
+ *                        (get_job_equipment); job_documents, sign_requests
+ *                        (direct db.select)
  *              writes → job_tasks (toggle_appointment_task); job_documents
  *                        (insert_job_document, move_photo_to_room, + a direct
  *                         db.update for the photo caption); rooms (create_room);
@@ -70,6 +71,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
+import TechHelpButton from '@/components/tech/TechHelpButton';
 import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
 import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
@@ -108,6 +110,7 @@ export default function TechAppointment() {
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
+  const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [loading, setLoading] = useState(true);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -153,6 +156,13 @@ export default function TechAppointment() {
         ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`).catch(() => [])
         : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []);
       setDocs(docList || []);
+      // Work Authorization compliance — is there a signed one on the parent job?
+      if (jobId) {
+        const wa = await db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`).catch(() => []);
+        setWorkAuthSigned((wa || []).length > 0);
+      } else {
+        setWorkAuthSigned(true); // no parent job (e.g. private appt) → no alert
+      }
     } catch (e) {
       toast('Failed to load appointment', 'error');
     }
@@ -593,6 +603,7 @@ export default function TechAppointment() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <TechHelpButton topicKey="timer" style={{ width: 36, height: 36, background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)' }} />
             {appt.is_private && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -770,6 +781,35 @@ export default function TechAppointment() {
           <span style={{ fontSize: 10, fontWeight: 600 }}>Edit</span>
         </button>
       </div>
+
+      {/* Compliance alert — no signed Work Authorization on the parent job.
+          Tapping deep-links to the job's Documents hub with the Work Auth
+          request sheet pre-opened. */}
+      {job && !workAuthSigned && (
+        <button
+          onClick={() => navigate(`/tech/jobs/${job.id}/documents`, { state: { startEsign: 'work_auth' } })}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            padding: '12px var(--space-4)', minHeight: 52,
+            background: '#fef2f2', borderTop: '1px solid #fecaca', borderBottom: '1px solid #fecaca',
+            borderLeft: 'none', borderRight: 'none',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>No signed Work Authorization</div>
+            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>Tap to collect the customer&apos;s signature</div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
 
       <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 

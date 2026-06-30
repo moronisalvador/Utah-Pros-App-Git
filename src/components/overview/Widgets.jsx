@@ -116,12 +116,51 @@ export function RevenueRecognized({ periodLabel, showHandle, data = PLACEHOLDER.
   );
 }
 
+// Cash actually collected (by payment_date) — stays correct after invoices are
+// re-dated to loss date for the sales view. Mirrors RevenueRecognized.
+export function PaymentsReceived({ periodLabel, showHandle, data = PLACEHOLDER.payments, loading, error, onRetry }) {
+  return (
+    <Card
+      spanClass="ovw-span-4"
+      title="Payments received"
+      suffix={periodLabel}
+      showHandle={showHandle}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      right={data.delta ? <DeltaPill dir={data.delta.dir} pct={data.delta.pct} /> : null}
+    >
+      <div style={{ fontSize: 33, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>
+        {data.total}
+      </div>
+      <div style={{ display: 'flex', width: '100%', height: 14, borderRadius: 6, overflow: 'hidden', background: C.track }}>
+        {data.segments.map(s => (
+          <div key={s.key} style={{ width: `${s.pct}%`, background: s.color }} />
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px 14px', marginTop: 1 }}>
+        {data.segments.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flex: 'none' }} />
+            <span style={{ fontSize: 12.5, color: C.body, fontWeight: 500 }}>{s.label}</span>
+            <span style={{ fontSize: 12.5, color: C.ink, fontWeight: 700, marginLeft: 'auto', ...tnum }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+      <CardFooter>
+        <span style={{ fontSize: 11.5, color: C.faint, fontWeight: 500 }}>Cash collected · QBO + Stripe</span>
+        <FootLink to="/collections">View report →</FootLink>
+      </CardFooter>
+    </Card>
+  );
+}
+
 export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicket, loading, error, onRetry }) {
   return (
-    <Card spanClass="ovw-span-4" title="Avg ticket" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 1 }}>
+    <Card spanClass="ovw-span-4" title="Avg ticket" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry} gap={10}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 1 }}>
         {data.bars.map(b => (
-          <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10, lineHeight: 1.15 }}>
             <span style={{ width: 84, fontSize: 12, color: C.body, fontWeight: 500, flex: 'none' }}>{b.label}</span>
             <div style={{ flex: 1, height: 9, background: C.track, borderRadius: 999, overflow: 'hidden' }}>
               <div style={{ width: `${b.pct}%`, height: '100%', background: b.color, borderRadius: 999 }} />
@@ -130,8 +169,8 @@ export function AvgTicket({ periodLabel, showHandle, data = PLACEHOLDER.avgTicke
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f7fb', border: '1px solid #e9eef6', borderRadius: 10, padding: '9px 12px', marginTop: 'auto', marginBottom: 1 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f7fb', border: '1px solid #e9eef6', borderRadius: 10, padding: '9px 12px', marginTop: 'auto' }}>
+        <div style={{ flex: 1, minWidth: 0, lineHeight: 1.3 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.title }}>
             Avg claim <span style={{ fontWeight: 500, color: C.faint }}>· all jobs / loss</span>
           </div>

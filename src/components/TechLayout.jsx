@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
@@ -104,14 +104,11 @@ const TABS = [
 
 function InstallBanner() {
   const { employee } = useAuth();
-  const [dismissed, setDismissed] = useState(false);
+  // Read display-mode + dismissed state once during render (client-only SPA) —
+  // lazy init avoids a setState-in-effect cascade and a first-render banner flash.
+  const [dismissed, setDismissed] = useState(() => !!sessionStorage.getItem('pwa-dismissed'));
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
-    if (sessionStorage.getItem('pwa-dismissed')) setDismissed(true);
-  }, []);
+  const [isStandalone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches);
 
   // Android/Chrome: listen for install prompt
   useEffect(() => {
@@ -187,6 +184,7 @@ function InstallBanner() {
 
 export default function TechLayout() {
   const location = useLocation();
+  const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
   const { employee, db } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
   const [toasts, setToasts] = useState([]);
@@ -224,7 +222,12 @@ export default function TechLayout() {
 
   return (
     <div className="tech-layout">
-      <div className="tech-content">
+      {/* Keyed by pathname so each navigation remounts + replays the slide.
+          Back (POP) slides in from the left; forward (PUSH/REPLACE) from the right. */}
+      <div
+        key={location.pathname}
+        className={`tech-content tech-content--${navType === 'POP' ? 'back' : 'fwd'}`}
+      >
         <Outlet />
       </div>
 

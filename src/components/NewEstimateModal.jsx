@@ -38,7 +38,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 const TYPES = [['initial', 'Initial'], ['supplement', 'Supplement'], ['change_order', 'Change order'], ['final', 'Final']];
-const DIVISIONS = [['water', '\u{1F4A7}', 'Water'], ['mold', '\u{1F9A0}', 'Mold'], ['reconstruction', '\u{1F3D7}️', 'Reconstruction'], ['fire', '\u{1F525}', 'Fire'], ['contents', '\u{1F4E6}', 'Contents']];
+const DIVISIONS = [['water', '\u{1F4A7}', 'Water'], ['mold', '\u{1F9A0}', 'Mold'], ['reconstruction', '\u{1F3D7}️', 'Reconstruction'], ['remodeling', '\u{1F528}', 'Remodeling'], ['fire', '\u{1F525}', 'Fire'], ['contents', '\u{1F4E6}', 'Contents']];
 
 function IconSearch(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>); }
 function IconUser(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>); }

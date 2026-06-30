@@ -18,7 +18,7 @@ const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { de
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 const PRIORITY_OPTIONS=[{value:1,label:'Urgent',color:'#ef4444'},{value:2,label:'High',color:'#f59e0b'},{value:3,label:'Normal',color:'#2563eb'},{value:4,label:'Low',color:'#8b929e'}];
-const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
+const DIVISION_OPTIONS=[{value:'water',label:'Water'},{value:'mold',label:'Mold'},{value:'reconstruction',label:'Reconstruction'},{value:'remodeling',label:'Remodeling'},{value:'fire',label:'Fire'},{value:'contents',label:'Contents'}];
 const FILE_CATEGORIES=[{key:'photo',label:'Photos'},{key:'estimate',label:'Estimates'},{key:'invoice',label:'Invoices'},{key:'moisture_log',label:'Moisture Logs'},{key:'demo_sheet',label:'Scope Sheets'},{key:'receipt',label:'Receipts'},{key:'contract',label:'Contracts'},{key:'other',label:'Other'}];
 
 
@@ -95,6 +95,18 @@ export default function JobPage(){
     }catch(err){errToast('Failed to update phase: '+err.message);}finally{setSaving(false);}
   };
 
+  // Real-job vs estimate: manual override of the auto-classification (signed work-auth /
+  // QBO invoice / approved estimate). Drives the dashboard "New claims booked" tile.
+  const handleToggleReal=async()=>{
+    if(!job||saving)return;setSaving(true);
+    const next=!job.is_real_job;
+    try{
+      await db.rpc('set_job_real_job',{p_job_id:job.id,p_is_real:next,p_actor:currentUser?.id||null});
+      setJob(prev=>({...prev,is_real_job:next,real_job_source:'manual'}));
+      window.dispatchEvent(new CustomEvent('upr:toast',{detail:{message:next?'Marked as real job':'Marked as estimate',type:'success'}}));
+    }catch(e){errToast('Failed to update: '+e.message);}finally{setSaving(false);}
+  };
+
   const handleSoftDelete=async()=>{
     if(!job)return;setDeleting(true);
     try{
@@ -167,6 +179,11 @@ export default function JobPage(){
         </div>
         <div className="job-page-header-right">
           <span className={`status-badge status-${phaseClass(job.phase)}`}>{phaseLabel}</span>
+          <button onClick={handleToggleReal} disabled={saving}
+            title={job.is_real_job?`Real job${job.real_job_source?` (via ${job.real_job_source})`:''} — click to mark estimate`:'Estimate / lead — click to mark real job'}
+            style={{cursor:'pointer',borderRadius:'var(--radius-full)',padding:'2px 10px',fontSize:11,fontWeight:600,border:'1px solid',...(job.is_real_job?{background:'#f0fdf4',color:'#16a34a',borderColor:'#bbf7d0'}:{background:'var(--bg-tertiary)',color:'var(--text-tertiary)',borderColor:'var(--border-light)'})}}>
+            {job.is_real_job?'Real job':'Estimate'}
+          </button>
           <span style={{fontSize:13,fontWeight:600,color:priorityObj.color}}>{priorityObj.label}</span>
           {(job.is_cat_loss||job.has_asbestos||job.has_lead)&&(
             <div style={{display:'flex',gap:4}}>

@@ -56,6 +56,7 @@ export function IconCalculator(p){return(<svg viewBox="0 0 24 24" fill="none" st
 export function IconHelp(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>);}
 export function IconMarketing(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>);}
 export function IconEstimate(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 17.5V11"/><path d="M13.8 12.3a2 2 0 0 0-3.6 1.1c0 1.7 3.6.9 3.6 2.7a2 2 0 0 1-3.6 1.1"/></svg>);}
+export function IconHomebuilding(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 21h18"/><path d="M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg>);}
 
 // ─── SECTION: Legacy sidebar list (mobile + ≤1279px desktop — keep identical) ───
 // featureFlag: if set, this nav item is hidden when that flag is disabled.
@@ -110,6 +111,7 @@ export const OVERFLOW_ITEMS = [
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing' },
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,       featureFlag: 'page:leads' },
   { key: 'marketing',          label: 'Marketing',          path: '/marketing',          icon: IconMarketing,  featureFlag: 'page:marketing' },
+  { key: 'homebuilding',       label: 'Homebuilding',       path: '/homebuilding',       icon: IconHomebuilding, moroniOnly: true },
 ];
 
 // SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy

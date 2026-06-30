@@ -327,33 +327,33 @@ get_appointment_tasks(p_appointment_id)
 get_appointment_detail(p_appointment_id)
 get_my_appointments_today(p_employee_id)
 get_appointments_range(p_start_date, p_end_date)
-get_jobs_closed(p_floor DATE)  — sold jobs since a floor date; reads the job_sales view
+get_jobs_closed(p_floor DATE)  — real (sold) jobs since a floor date; reads jobs.is_real_job
 get_commissions(p_month DATE)  — per-sale commission rows for a month; THE only place commissions are computed
+set_job_real_job(p_job_id, p_is_real, p_actor)  — manual "Real job / Estimate" override
 ```
 
-### ⭐ What counts as a SALE (canonical — all reporting must use this)
-A job is **Sold** when EITHER (a) an estimate for it was converted to an invoice
-(`estimates.converted_invoice_id IS NOT NULL`, sale date = `approved_at`), OR (b) it has a
-signed work authorization (`sign_requests.status='signed'` AND
-`doc_type IN ('work_auth','recon_agreement')`, sale date = `signed_at`). The rule lives in
-the **`job_sales`** view (`job_id, sale_date, first_sale_source, sold_by`); the Overview
-"New Jobs Closed" card counts it via `get_jobs_closed`. **Read `job_sales` / `get_jobs_closed`
-for any sales / jobs-closed report — never reinvent the rule.** (`coc`, `direction_pay`,
-`change_order` do NOT count. Pairs with the estimate-decouple model: an estimate is pre-sale;
-a claim + job materialize only when it's sold.)
+### ⭐ What counts as a SALE / REAL JOB (canonical — all reporting must use this)
+The single source of truth is **`jobs.is_real_job`** (migration `20260627_real_job_classification.sql`).
+A job is auto-flagged real the moment ANY of these happens: a **Work Authorization or Reconstruction
+Agreement is signed**, a **QBO-synced invoice** is created, or its **estimate is approved**. The office
+can also force it via `set_job_real_job` (manual marks are never overwritten). `real_job_source` records
+which signal fired; `real_job_marked_at` is when. **Billing reports, the Overview "New Jobs Closed" card
+(`get_jobs_closed`), and commissions all read `is_real_job` — never reinvent "what's a real/sold job".**
+(A tech clocking in does NOT count — techs do estimate visits too. Pairs with the estimate-decouple model:
+an estimate is pre-sale; a claim + job materialize when it's sold.)
 
 ### ⭐ COMMISSIONS (canonical — never compute outside `get_commissions`)
-Commissions are paid **first payroll of each month, for everything sold the previous month**
-(period = `job_sales.sale_date` month). The salesperson (`job_sales.sold_by`) is **derived** from
-the sale event — `estimates.created_by` (conversion) or `sign_requests.sent_by` (signed doc),
-whichever is earliest. There is **no manual salesperson override** — so the estimate-create flow
-**must** stamp `created_by` (`NewEstimateModal` passes `p_created_by`); a sale with no recorded
-person shows as **unattributed** (`get_commissions.is_attributed = false`) rather than being
-dropped. Per-employee rate: `employees.commission_flat` (flat $/sale, wins) or
-`commission_percent` (% of the job's **invoice total** = `SUM(COALESCE(adjusted_total,total))`).
-**All commission math lives in `get_commissions(p_month)` — read it, never reinvent it.**
-(Deferred to Phase 2 when payroll runs in-app: admin UI to set rates, a monthly report, and a
-`commission_payouts` lock table so paid amounts can't shift if an invoice is later edited.)
+Commissions are paid **first payroll of each month, for everything sold the previous month**. A "sold job"
+is a real job (`is_real_job`); it's counted in the month of **`jobs.created_at`** (NOT `real_job_marked_at`
+— main's backfill stamped that to the migration date, which would bunch all history). The salesperson is
+**derived** per job (no manual override): the signed work-auth/recon **`sign_requests.sent_by`**, else the
+approved **`estimates.created_by`**. So the estimate-create flow **must** stamp `created_by`
+(`NewEstimateModal` passes `p_created_by`); a sale with no recorded person shows as **unattributed**
+(`get_commissions.is_attributed = false`) rather than being dropped. Per-employee rate:
+`employees.commission_flat` (flat $/sale, wins) or `commission_percent` (% of the job's **invoice total**
+= `SUM(COALESCE(adjusted_total,total))`). **All commission math lives in `get_commissions(p_month)` — read
+it, never reinvent it.** (Deferred to Phase 2 when payroll runs in-app: admin UI to set rates, a monthly
+report, and a `commission_payouts` lock table so paid amounts can't shift if an invoice is later edited.)
 
 ---
 
