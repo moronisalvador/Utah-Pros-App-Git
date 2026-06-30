@@ -57,7 +57,7 @@ export async function onRequestPost(context) {
   try {
     const result = op === 'delete'
       ? await removeSourceEvents(env, db, sourceId)
-      : await syncAppointment(env, db, sourceId);
+      : await syncAppointment(env, db, sourceId, { notify: payload.notify !== false });
     return jsonResponse({ ok: true, ...result }, 200, request, env);
   } catch (e) {
     return jsonResponse({ ok: false, error: String(e.message || e) }, 500, request, env);

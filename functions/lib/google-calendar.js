@@ -45,6 +45,7 @@
  */
 
 import { getValidAccessToken } from './google-drive.js';
+import { sendEmail } from './email.js';
 
 const CAL_API   = 'https://www.googleapis.com/calendar/v3/calendars';
 const TIMEZONE  = 'America/Denver';   // UPR ops timezone (appointments have no TZ of their own)
@@ -84,6 +85,73 @@ function djb2(str) {
 
 function titleCase(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// ─── SECTION: Notification helpers ──────────────
+const DAYS   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// A signature of just the WHEN — lets us detect a reschedule (vs a title/notes edit).
+function timeSignature(appt) {
+  return djb2(`${appt.date}|${appt.time_start || ''}|${appt.time_end || ''}|${appt.duration_days || 1}`);
+}
+
+function formatApptDate(dateStr) {
+  const dt = new Date(`${dateStr}T12:00:00Z`);   // noon UTC avoids DST/offset edges
+  return `${DAYS[dt.getUTCDay()]}, ${MONTHS[dt.getUTCMonth()]} ${dt.getUTCDate()}`;
+}
+
+function to12h(t) {
+  const [h, m] = normTime(t).split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function formatTimeRange(appt) {
+  if (!appt.time_start) return 'All day';
+  const end = appt.time_end || addHoursToTime(appt.time_start, DEFAULT_DURATION_HOURS);
+  return `${to12h(appt.time_start)} – ${to12h(end)}`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Builds the assignment / reschedule email. `kind` ∈ {'assigned','rescheduled'}.
+function buildNotificationEmail({ summary, appt, job, recipientName, kind, base }) {
+  const verb     = kind === 'rescheduled' ? 'Rescheduled' : "You're assigned";
+  const dateLine = `${formatApptDate(appt.date)} · ${formatTimeRange(appt)}`;
+  const where    = job ? [job.address, [job.city, job.state, job.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
+  const link     = appt.job_id ? `${base}/jobs/${appt.job_id}` : `${base}/schedule`;
+  const subject  = `${verb}: ${summary} (${dateLine})`;
+
+  const rows = [
+    ['When', dateLine],
+    where ? ['Where', where] : null,
+    appt.notes && appt.notes.trim() ? ['Notes', appt.notes.trim()] : null,
+  ].filter(Boolean);
+
+  const html = `
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;color:#111318">
+      <p style="font-size:15px">Hi ${esc(recipientName || 'there')},</p>
+      <p style="font-size:15px">${kind === 'rescheduled'
+        ? 'An appointment you\'re assigned to has been <strong>rescheduled</strong>:'
+        : 'You\'ve been <strong>assigned</strong> to an appointment:'}</p>
+      <div style="border:1px solid #e2e5e9;border-radius:8px;padding:16px;margin:12px 0">
+        <div style="font-size:17px;font-weight:600;margin-bottom:8px">${esc(summary)}</div>
+        ${rows.map(([k, v]) => `<div style="font-size:14px;margin:4px 0"><span style="color:#8b929e">${k}:</span> ${esc(v)}</div>`).join('')}
+      </div>
+      <p style="font-size:13px;color:#5f6672">This was added to your Google Calendar. <a href="${link}">Open in UPR</a></p>
+    </div>`;
+
+  const text = `Hi ${recipientName || 'there'},\n\n${kind === 'rescheduled'
+    ? 'An appointment you\'re assigned to has been rescheduled:'
+    : "You've been assigned to an appointment:"}\n\n${summary}\n` +
+    rows.map(([k, v]) => `${k}: ${v}`).join('\n') +
+    `\n\nAdded to your Google Calendar. Open in UPR: ${link}`;
+
+  return { subject, html, text };
 }
 
 // ─── SECTION: Event body ──────────────
@@ -252,11 +320,14 @@ export async function removeSourceEvents(env, db, sourceId) {
 // Syncs ONE appointment to EVERY assigned crew member's Google calendar, written
 // by the shared "writer" account (calendarId = each person's email, or 'primary'
 // for the writer). Idempotent — used by the trigger worker and the manual backfill.
-export async function syncAppointment(env, db, appointmentId) {
+export async function syncAppointment(env, db, appointmentId, opts = {}) {
+  const notify = opts.notify !== false;   // email on real changes; pass false for silent backfills
+  const base = env.APP_BASE_URL || 'https://utahpros.app';
+
   const rows = await db.select(
     'appointments',
     `id=eq.${appointmentId}&select=id,job_id,title,date,time_start,time_end,status,notes,duration_days,kind,is_private,` +
-    `appointment_crew(employee_id,role,employees(id,email)),` +
+    `appointment_crew(employee_id,role,employees(id,email,full_name)),` +
     `jobs(job_number,insured_name,address,city,state,zip,division,claim_number)`,
   );
   const appt = rows?.[0];
@@ -267,7 +338,7 @@ export async function syncAppointment(env, db, appointmentId) {
   }
 
   const writer = await getWriter(env, db);
-  if (!writer) return { created: 0, updated: 0, removed: 0, skipped: 0, errored: 0, crew: 0, note: 'no writer connected' };
+  if (!writer) return { created: 0, updated: 0, removed: 0, skipped: 0, errored: 0, emailed: 0, crew: 0, note: 'no writer connected' };
 
   const job = appt.jobs || null;
   // Each assigned crew member → the calendar we write to (their email).
@@ -276,18 +347,19 @@ export async function syncAppointment(env, db, appointmentId) {
   for (const c of appt.appointment_crew || []) {
     if (seen.has(c.employee_id)) continue;
     seen.add(c.employee_id);
-    crew.push({ employeeId: c.employee_id, email: c.employees?.email || null });
+    crew.push({ employeeId: c.employee_id, email: c.employees?.email || null, name: c.employees?.full_name || null });
   }
   const targetIds = new Set(crew.map((c) => c.employeeId));
 
   const body = buildEventBody(appt, job);
   const hash = eventHash(body);
+  const timeSig = timeSignature(appt);
   const links = await getLinks(db, appointmentId);
   const linkByEmp = new Map(links.map((l) => [l.employee_id, l]));
 
-  let created = 0, updated = 0, removed = 0, skipped = 0, errored = 0;
+  let created = 0, updated = 0, removed = 0, skipped = 0, errored = 0, emailed = 0;
 
-  for (const { employeeId, email } of crew) {
+  for (const { employeeId, email, name } of crew) {
     const link = linkByEmp.get(employeeId) || null;
     // The writer writes to its OWN primary; everyone else by their email (a
     // calendar the writer has been granted edit access to).
@@ -299,6 +371,7 @@ export async function syncAppointment(env, db, appointmentId) {
         continue;
       }
       let eventId = link?.google_event_id || null;
+      let didCreate = false;
       if (eventId) {
         // Existing event — update on the calendar it was created on.
         await updateEvent(writer.token, link.calendar_id || calId, eventId, body);
@@ -308,13 +381,37 @@ export async function syncAppointment(env, db, appointmentId) {
         // trigger fires collapse onto one event instead of duplicating.
         eventId = deterministicEventId(appointmentId, employeeId);
         const mode = await insertOrPatchEvent(writer.token, calId, eventId, body);
-        if (mode === 'created') created++; else updated++;
+        if (mode === 'created') { created++; didCreate = true; } else updated++;
       }
-      await writeLink(db, link, {
+
+      // ── Email decision (idempotent) ──
+      // firstCreate = the single run that actually created the event (others 409),
+      // and we've never emailed this person about this appointment.
+      const firstCreate = didCreate && !link?.assigned_notified_at;
+      let emailKind = null;
+      if (notify && email) {
+        if (firstCreate) emailKind = 'assigned';
+        else if (link?.time_sig && link.time_sig !== timeSig) emailKind = 'rescheduled';
+      }
+
+      const fields = {
         source_type: SOURCE, source_id: appointmentId, employee_id: employeeId,
-        google_event_id: eventId, calendar_id: calId, sync_hash: hash,
+        google_event_id: eventId, calendar_id: calId, sync_hash: hash, time_sig: timeSig,
         status: 'synced', last_error: null, synced_at: new Date().toISOString(),
-      });
+      };
+      // Mark "assigned-notified" on first create even for a silent backfill, so a
+      // later crew re-save can never re-fire the assigned email.
+      if (firstCreate) fields.assigned_notified_at = new Date().toISOString();
+
+      await writeLink(db, link, fields);
+
+      if (emailKind) {
+        try {
+          const mail = buildNotificationEmail({ summary: body.summary, appt, job, recipientName: name, kind: emailKind, base });
+          await sendEmail(env, { to: email, subject: mail.subject, html: mail.html, text: mail.text });
+          emailed++;
+        } catch { /* email failure must never break the sync */ }
+      }
     } catch (e) {
       errored++;
       await writeLink(db, link, {
@@ -336,5 +433,5 @@ export async function syncAppointment(env, db, appointmentId) {
     removed++;
   }
 
-  return { created, updated, removed, skipped, errored, crew: crew.length };
+  return { created, updated, removed, skipped, errored, emailed, crew: crew.length };
 }
