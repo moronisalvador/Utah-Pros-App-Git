@@ -88,7 +88,8 @@ src/
     Collections.jsx               — "My Money" / Collections page (feature-flagged: page:collections), redesigned to
                                     the UPR design system (Jun 2026). FOUR tabs: A/R · Outstanding (ARDashboard —
                                     default-sorts newest CREATED first, client-side, via get_ar_invoices().created_at
-                                    added by 20260626_get_ar_invoices_created_at.sql; clickable column headers override),
+                                    added by 20260626_get_ar_invoices_created_at.sql; clickable column headers override —
+                                    Client/Sent/Age/Total/Collected/Balance, Client A→Z on first click, numeric/date cols descending-first),
                                     Invoices (InvoicesList, get_ar_invoices(), rows → /invoices/:id editor — also
                                     default-sorted newest CREATED first, client-side),
                                     Estimates (EstimatesList, get_estimates() which already returns created_at DESC,
