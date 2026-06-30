@@ -262,13 +262,6 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
             </div>
           )}
 
-          {/* Notify customer — minimal toggle */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', margin: '2px 0 14px' }}>
-            <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
-              style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
-            Notify customer
-          </label>
-
           {/* ── Crew with initials circles ── */}
           <div style={M.section}>
             <div style={M.sectionTitle}>
@@ -436,9 +429,16 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
         {/* Footer */}
         <div style={M.footer} className="appt-modal-footer">
           <button style={M.cancelBtn} onClick={onClose}>Cancel</button>
-          <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
-            {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+              Notify customer
+            </label>
+            <button style={{ ...M.saveBtn, opacity: (saving || (timeStart && timeEnd && timeEnd <= timeStart)) ? 0.6 : 1 }} onClick={handleSave} disabled={saving || (timeStart && timeEnd && timeEnd <= timeStart)}>
+              {saving ? 'Saving...' : `Create appointment${selectedTasks.length > 0 ? ` (${selectedTasks.length} tasks)` : ''}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -507,7 +507,7 @@ const M = {
     cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
   },
   footer: {
-    display: 'flex', justifyContent: 'flex-end', gap: 8,
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
     padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
   },
   cancelBtn: {
