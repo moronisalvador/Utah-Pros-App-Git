@@ -41,6 +41,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
+import TechHelpButton from '@/components/tech/TechHelpButton';
 import { IconSearch } from '@/components/Icons';
 import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
@@ -120,9 +121,12 @@ export default function TechClaims() {
   return (
     <div className="tech-page" style={{ padding: 0 }}>
       <div style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
-        <div className="tech-page-header">
-          <div className="tech-page-title">Claims</div>
-          <div className="tech-page-subtitle">{claims.length} total</div>
+        <div className="tech-page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <div className="tech-page-title">Claims</div>
+            <div className="tech-page-subtitle">{claims.length} total</div>
+          </div>
+          <TechHelpButton topicKey="claims" />
         </div>
 
         {/* Scope toggle */}

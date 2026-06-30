@@ -71,6 +71,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
+import TechHelpButton from '@/components/tech/TechHelpButton';
 import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
 import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
@@ -602,6 +603,7 @@ export default function TechAppointment() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <TechHelpButton topicKey="timer" style={{ width: 36, height: 36, background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)' }} />
             {appt.is_private && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
