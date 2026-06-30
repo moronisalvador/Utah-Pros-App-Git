@@ -195,6 +195,79 @@ function buildNotificationEmail({ summary, appt, job, recipientName, kind, base 
   return { subject, html, text };
 }
 
+// ─── SECTION: Client email ──────────────
+// Customer-facing confirmation / reschedule / cancellation. Branded "Utah Pros
+// Restoration", no internal details (crew, claim #), no app link.
+export function buildClientEmail({ kind, clientName, date, timeStart, timeEnd, where }) {
+  const dateLabel = formatApptDate(date);
+  const timeLabel = formatTimeRange({ time_start: timeStart, time_end: timeEnd });
+  const dateLine  = `${dateLabel} · ${timeLabel}`;
+
+  const cfg = {
+    confirmed:   { accent: '#16a34a', heading: 'Appointment confirmed',  lead: 'Your appointment with Utah Pros Restoration is confirmed.', subject: `Your Utah Pros appointment is confirmed — ${dateLabel}` },
+    rescheduled: { accent: '#d97706', heading: 'Appointment rescheduled', lead: 'Your appointment with Utah Pros Restoration has been rescheduled.', subject: `Your Utah Pros appointment was rescheduled — ${dateLabel}` },
+    cancelled:   { accent: '#dc2626', heading: 'Appointment cancelled',   lead: 'Your appointment with Utah Pros Restoration has been cancelled.', subject: `Your Utah Pros appointment on ${dateLabel} was cancelled` },
+  }[kind] || {};
+
+  const rows = [
+    [kind === 'cancelled' ? 'Was scheduled for' : 'When', dateLine],
+    where && kind !== 'cancelled' ? ['Where', where] : null,
+  ].filter(Boolean);
+
+  const rowHtml = rows.map(([k, v]) => `
+            <tr>
+              <td style="padding:7px 0;font-size:11px;color:#8b929e;text-transform:uppercase;letter-spacing:.05em;vertical-align:top;width:110px">${k}</td>
+              <td style="padding:7px 0;font-size:14px;color:#111318;line-height:1.45;vertical-align:top">${esc(v)}</td>
+            </tr>`).join('');
+
+  const closing = kind === 'cancelled'
+    ? 'If you’d like to reschedule, just reply to this email and we’ll get you set up.'
+    : 'Need to make a change? Just reply to this email and we’ll take care of it.';
+
+  const html = `
+  <div style="background:#f4f5f7;padding:24px 12px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+      <tr><td style="padding:2px 4px 16px">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:34px;height:34px;background:#2563eb;border-radius:9px;color:#ffffff;font-weight:700;font-size:18px;text-align:center;vertical-align:middle">U</td>
+          <td style="padding-left:10px;font-size:15px;font-weight:600;color:#111318">Utah Pros Restoration</td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="background:#ffffff;border:1px solid #e2e5e9;border-radius:14px;overflow:hidden">
+        <div style="height:4px;background:${cfg.accent};line-height:4px;font-size:0">&nbsp;</div>
+        <div style="padding:24px">
+          <div style="font-size:18px;font-weight:600;color:#111318;margin:0 0 4px">${cfg.heading}</div>
+          <p style="font-size:15px;color:#5f6672;margin:14px 0 2px">Hi ${esc(clientName || 'there')},</p>
+          <p style="font-size:15px;color:#111318;margin:0 0 16px">${cfg.lead}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowHtml}</table>
+          <p style="font-size:14px;color:#5f6672;margin:20px 0 0;line-height:1.5">${closing}</p>
+        </div>
+      </td></tr>
+      <tr><td style="padding:16px 10px 4px;text-align:center;font-size:12px;color:#8b929e;line-height:1.5">
+        <span style="color:#b6bcc6">Utah Pros Restoration</span>
+      </td></tr>
+    </table>
+  </div>`;
+
+  const text = `Hi ${clientName || 'there'},\n\n${cfg.lead}\n\n` +
+    rows.map(([k, v]) => `${k}: ${v}`).join('\n') +
+    `\n\n${closing}\n\nUtah Pros Restoration`;
+
+  return { subject: cfg.subject, html, text };
+}
+
+// Sends the client a cancellation email from a trigger payload (the appointment
+// row is already gone by delete time, so the details ride along in `cancel`).
+export async function sendClientCancellation(env, cancel, base) {
+  if (!cancel?.email) return;
+  const mail = buildClientEmail({
+    kind: 'cancelled', clientName: cancel.name, date: cancel.date,
+    timeStart: cancel.time_start, timeEnd: cancel.time_end, where: '', base,
+  });
+  try { await sendEmail(env, { to: cancel.email, subject: mail.subject, html: mail.html, text: mail.text }); }
+  catch { /* never let a client email failure surface */ }
+}
+
 // ─── SECTION: Event body ──────────────
 // Translates an appointment (+ its job, if any) into a Google Calendar event.
 export function buildEventBody(appt, job) {
@@ -368,8 +441,9 @@ export async function syncAppointment(env, db, appointmentId, opts = {}) {
   const rows = await db.select(
     'appointments',
     `id=eq.${appointmentId}&select=id,job_id,title,date,time_start,time_end,status,notes,duration_days,kind,is_private,` +
+    `notify_client,client_notified_at,client_time_sig,` +
     `appointment_crew(employee_id,role,employees(id,email,full_name)),` +
-    `jobs(job_number,insured_name,address,city,state,zip,division,claim_number)`,
+    `jobs(job_number,insured_name,address,city,state,zip,division,claim_number,client_email)`,
   );
   const appt = rows?.[0];
 
@@ -462,6 +536,35 @@ export async function syncAppointment(env, db, appointmentId, opts = {}) {
     }
   }
 
+  // ── Client confirmation / reschedule (job appointments, opted in) ──
+  // Deduped with an atomic compare-and-set on the appointment row, so concurrent
+  // trigger fires can never double-email the customer.
+  let clientEmailed = 0;
+  if (notify && job && job.client_email && appt.notify_client) {
+    const now = new Date().toISOString();
+    const where = [job.address, [job.city, job.state, job.zip].filter(Boolean).join(' ').trim()].filter(Boolean).join(', ');
+    const sendClient = async (kind) => {
+      const mail = buildClientEmail({ kind, clientName: job.insured_name, date: appt.date, timeStart: appt.time_start, timeEnd: appt.time_end, where, base });
+      try { await sendEmail(env, { to: job.client_email, subject: mail.subject, html: mail.html, text: mail.text }); clientEmailed++; }
+      catch { /* client email must never break the sync */ }
+    };
+    try {
+      if (!appt.client_notified_at) {
+        // Claim the "confirmed" send: only one fire wins (WHERE client_notified_at IS NULL).
+        const claimed = await db.update('appointments',
+          `id=eq.${appointmentId}&client_notified_at=is.null`,
+          { client_notified_at: now, client_time_sig: timeSig });
+        if (claimed && claimed.length) await sendClient('confirmed');
+      } else if (appt.client_time_sig && appt.client_time_sig !== timeSig) {
+        // Compare-and-set the time signature: only the fire that flips it sends.
+        const claimed = await db.update('appointments',
+          `id=eq.${appointmentId}&client_time_sig=eq.${appt.client_time_sig}`,
+          { client_time_sig: timeSig });
+        if (claimed && claimed.length) await sendClient('rescheduled');
+      }
+    } catch { /* never break the sync on a client-email hiccup */ }
+  }
+
   // Remove events for people no longer on the crew.
   for (const link of links) {
     if (targetIds.has(link.employee_id)) continue;
@@ -474,5 +577,5 @@ export async function syncAppointment(env, db, appointmentId, opts = {}) {
     removed++;
   }
 
-  return { created, updated, removed, skipped, errored, emailed, crew: crew.length };
+  return { created, updated, removed, skipped, errored, emailed, clientEmailed, crew: crew.length };
 }

@@ -32,6 +32,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
   const [timeEnd, setTimeEnd] = useState(prefillTimeEnd || '15:30');
   const [notes, setNotes] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [notifyClient, setNotifyClient] = useState(true);
   const [selectedCrew, setSelectedCrew] = useState([]);
   const [selectedTasks, setSelectedTasks] = useState([...prefillTaskIds]);
   const [taskPool, setTaskPool] = useState([]);
@@ -157,6 +158,7 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
         type,
         status: 'scheduled',
         notes: notes.trim() || null,
+        notify_client: notifyClient,
         ...(canTogglePrivate && isPrivate ? { is_private: true } : {}),
       });
       const apptId = apptResult[0]?.id;
@@ -259,6 +261,23 @@ function CreateAppointmentModal({ jobId, jobName, jobDivision, dateKey, prefillT
               </label>
             </div>
           )}
+
+          {/* Notify client — emails the customer an appointment confirmation */}
+          <div style={{ ...M.field, padding: '10px 12px', background: notifyClient ? '#eff6ff' : 'var(--bg-secondary)', border: `1px solid ${notifyClient ? '#bfdbfe' : 'var(--border-light)'}`, borderRadius: 'var(--radius-md)' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={notifyClient} onChange={e => setNotifyClient(e.target.checked)}
+                style={{ marginTop: 2, width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+              <span style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                  Email client a confirmation
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                  Sends the customer a confirmation now, plus reschedule/cancellation notices. Uncheck to keep this appointment silent.
+                </div>
+              </span>
+            </label>
+          </div>
 
           {/* ── Crew with initials circles ── */}
           <div style={M.section}>
