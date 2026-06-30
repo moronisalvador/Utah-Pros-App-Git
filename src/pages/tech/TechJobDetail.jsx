@@ -5,12 +5,13 @@
  *
  * WHAT THIS DOES (plain language):
  *   The detail screen for a single job, as a field technician sees it. Up top
- *   it shows the customer, address, and a Navigate/Call action bar; below that,
- *   a breadcrumb back to the parent claim, the next/now appointment, the job's
- *   appointments (split into Upcoming and Past), and a grid of photos & notes
- *   with buttons to add more. A collapsible "Job details" panel at the bottom
- *   holds reference info (carrier, policy, adjuster, etc.). Admins/managers get
- *   a menu to merge or archive the job.
+ *   it shows the customer, address, and a Call/Navigate/Message/Documents
+ *   action bar, plus a red alert when the job has no signed Work Authorization.
+ *   Below that: a breadcrumb back to the parent claim, a collapsible "Job
+ *   details" panel (address, carrier, policy, adjuster, etc.), the next/now
+ *   appointment, the job's appointments (Upcoming and Past), and a grid of
+ *   photos & notes with buttons to add more. Admins/managers get a menu to
+ *   merge or archive the job.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/jobs/:jobId
@@ -28,8 +29,8 @@
  *              @/components/PullToRefresh
  *   Data:      All access goes through the db client from useAuth (RPC + REST).
  *              Tables below were resolved from each call/RPC, not guessed:
- *              reads  → jobs, claims, job_documents (direct db.select);
- *                        contact_jobs, contacts (get_job_contacts);
+ *              reads  → jobs, claims, job_documents, sign_requests (direct
+ *                        db.select); contact_jobs, contacts (get_job_contacts);
  *                        appointment_crew, appointments, employees, job_tasks,
  *                        jobs (get_claim_appointments)
  *              writes → job_documents (insert_job_document — photos and notes)
@@ -46,6 +47,9 @@
  *   - Appointments come from the claim-wide get_claim_appointments, then are
  *     filtered down to this job's id client-side.
  *   - Sets a light status bar on mount and restores the dark one on unmount.
+ *   - The Documents action opens /tech/jobs/:jobId/documents (the e-signature
+ *     hub). The "No signed Work Authorization" banner reads sign_requests and
+ *     deep-links there with the Work Auth request sheet pre-opened.
  *   - Sub-components in this file: formatLossDate, titleCase, AppointmentCard.
  * ════════════════════════════════════════════════
  */
@@ -142,6 +146,7 @@ export default function TechJobDetail() {
   const [claim, setClaim] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [docs, setDocs] = useState([]);
+  const [workAuthSigned, setWorkAuthSigned] = useState(true); // assume signed until checked — avoids a banner flash before load
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -179,7 +184,7 @@ export default function TechJobDetail() {
       }
       setJob(j);
 
-      const [contacts, claimRows, allAppts, docList] = await Promise.all([
+      const [contacts, claimRows, allAppts, docList, workAuth] = await Promise.all([
         db.rpc('get_job_contacts', { p_job_id: jobId }).catch(() => []),
         j.claim_id
           ? db.select('claims', `id=eq.${j.claim_id}&select=id,claim_number`).catch(() => [])
@@ -188,6 +193,7 @@ export default function TechJobDetail() {
           ? db.rpc('get_claim_appointments', { p_claim_id: j.claim_id }).catch(() => [])
           : Promise.resolve([]),
         db.select('job_documents', `job_id=eq.${jobId}&order=created_at.desc`).catch(() => []),
+        db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`).catch(() => []),
       ]);
       const list = Array.isArray(contacts) ? contacts : [];
       const primary = list.find(c => c.is_primary) || list[0] || null;
@@ -196,6 +202,7 @@ export default function TechJobDetail() {
       const jobAppts = (allAppts || []).filter(a => a.job_id === jobId);
       setAppointments(jobAppts);
       setDocs(docList || []);
+      setWorkAuthSigned((workAuth || []).length > 0);
     } catch (e) {
       setLoadError(e.message || 'Failed to load job');
       toast('Failed to load job', 'error');
@@ -359,7 +366,39 @@ export default function TechJobDetail() {
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
-      <ActionBar phone={phone} address={address} />
+      <ActionBar
+        phone={phone}
+        address={address}
+        onDocuments={() => navigate(`/tech/jobs/${jobId}/documents`)}
+      />
+
+      {/* Compliance alert — no signed Work Authorization on file. Tapping jumps
+          to the Documents hub with the Work Auth request sheet pre-opened. */}
+      {!workAuthSigned && (
+        <button
+          onClick={() => navigate(`/tech/jobs/${jobId}/documents`, { state: { startEsign: 'work_auth' } })}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            padding: '12px var(--space-4)', minHeight: 52,
+            background: '#fef2f2', borderTop: '1px solid #fecaca', borderBottom: '1px solid #fecaca',
+            borderLeft: 'none', borderRight: 'none',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>No signed Work Authorization</div>
+            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>Tap to collect the customer&apos;s signature</div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
 
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
       {/* Claim breadcrumb — division-tinted, division-bordered card.
@@ -406,6 +445,79 @@ export default function TechJobDetail() {
           </button>
         );
       })()}
+
+      {/* Job details — reference info, surfaced directly under the claim card */}
+      <div style={{ padding: '16px var(--space-4) 0' }}>
+        <button
+          onClick={() => setDetailsOpen(v => !v)}
+          style={{
+            width: '100%', minHeight: 48, padding: '12px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <span>Job details</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {detailsOpen && (
+          <div style={{
+            marginTop: 8, padding: '14px 16px',
+            borderRadius: 12, background: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+          }}>
+            <DetailRow label="Address" value={address || null} />
+            <DetailRow label="Phase" value={phaseLabel} />
+            <DetailRow label="Status" value={titleCase(job.status || 'active')} />
+            <DetailRow label="Division" value={titleCase(job.division)} />
+            <DetailRow label="Date of loss" value={formatLossDate(job.date_of_loss)} />
+            <DetailRow label="Type of loss" value={job.type_of_loss ? titleCase(job.type_of_loss) : null} />
+            <DetailRow label="Carrier" value={job.insurance_company || 'Out of pocket'} />
+            <DetailRow label="Policy #" value={job.policy_number} mono />
+            <DetailRow label="Claim #" value={job.claim_number} mono />
+            {isAdmin && typeof job.deductible === 'number' && (
+              <DetailRow label="Deductible" value={`$${Number(job.deductible).toFixed(2)}`} />
+            )}
+            {job.ar_notes && <DetailRow label="Notes" value={job.ar_notes} multiline />}
+
+            {(contact || job.insured_name) && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Insured / Homeowner
+                </div>
+                <DetailRow label="Name" value={contact?.name || job.insured_name} />
+                <DetailRow label="Phone" value={contact?.phone || job.client_phone} href={(contact?.phone || job.client_phone) ? `tel:${contact?.phone || job.client_phone}` : null} />
+                <DetailRow label="Email" value={contact?.email || job.client_email} href={(contact?.email || job.client_email) ? `mailto:${contact?.email || job.client_email}` : null} />
+              </>
+            )}
+
+            {(job.adjuster_name || job.adjuster_phone || job.adjuster_email) && (
+              <>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginTop: 14, marginBottom: 6,
+                }}>
+                  Adjuster
+                </div>
+                <DetailRow label="Name" value={job.adjuster_name} />
+                <DetailRow label="Phone" value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
+                <DetailRow label="Email" value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {(() => {
         const nowNext = pickNowNext(appointments, employee?.id);
@@ -495,7 +607,7 @@ export default function TechJobDetail() {
         const hasAny = photos.length + notes.length > 0;
 
         return (
-          <div style={{ padding: '22px var(--space-4) 0' }}>
+          <div style={{ padding: '22px var(--space-4) calc(28px + env(safe-area-inset-bottom, 0px))' }}>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               marginBottom: 4,
@@ -623,78 +735,6 @@ export default function TechJobDetail() {
           </div>
         );
       })()}
-
-      {/* Collapsed Job details — reference info at bottom */}
-      <div style={{ padding: '18px var(--space-4) calc(24px + env(safe-area-inset-bottom, 0px))' }}>
-        <button
-          onClick={() => setDetailsOpen(v => !v)}
-          style={{
-            width: '100%', minHeight: 48, padding: '12px 16px',
-            borderRadius: 12, background: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <span>Job details</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-
-        {detailsOpen && (
-          <div style={{
-            marginTop: 8, padding: '14px 16px',
-            borderRadius: 12, background: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-          }}>
-            <DetailRow label="Phase" value={phaseLabel} />
-            <DetailRow label="Status" value={titleCase(job.status || 'active')} />
-            <DetailRow label="Division" value={titleCase(job.division)} />
-            <DetailRow label="Date of loss" value={formatLossDate(job.date_of_loss)} />
-            <DetailRow label="Type of loss" value={job.type_of_loss ? titleCase(job.type_of_loss) : null} />
-            <DetailRow label="Carrier" value={job.insurance_company || 'Out of pocket'} />
-            <DetailRow label="Policy #" value={job.policy_number} mono />
-            <DetailRow label="Claim #" value={job.claim_number} mono />
-            {isAdmin && typeof job.deductible === 'number' && (
-              <DetailRow label="Deductible" value={`$${Number(job.deductible).toFixed(2)}`} />
-            )}
-            {job.ar_notes && <DetailRow label="Notes" value={job.ar_notes} multiline />}
-
-            {(contact || job.insured_name) && (
-              <>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                  marginTop: 14, marginBottom: 6,
-                }}>
-                  Insured / Homeowner
-                </div>
-                <DetailRow label="Name" value={contact?.name || job.insured_name} />
-                <DetailRow label="Phone" value={contact?.phone || job.client_phone} href={(contact?.phone || job.client_phone) ? `tel:${contact?.phone || job.client_phone}` : null} />
-                <DetailRow label="Email" value={contact?.email || job.client_email} href={(contact?.email || job.client_email) ? `mailto:${contact?.email || job.client_email}` : null} />
-              </>
-            )}
-
-            {(job.adjuster_name || job.adjuster_phone || job.adjuster_email) && (
-              <>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                  marginTop: 14, marginBottom: 6,
-                }}>
-                  Adjuster
-                </div>
-                <DetailRow label="Name" value={job.adjuster_name} />
-                <DetailRow label="Phone" value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
-                <DetailRow label="Email" value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
-              </>
-            )}
-          </div>
-        )}
-      </div>
 
       </PullToRefresh>
 
