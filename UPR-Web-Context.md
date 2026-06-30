@@ -382,10 +382,16 @@ maps. This dashboard keeps its own scoped palette (above).
     rate) are returned with `is_attributed = false` — **visible, not silently dropped**.
   - **Commissions effectively start now:** most historical jobs have no recorded salesperson, so they're
     unattributed; no backfill.
-  - **Deferred (Phase 2, when payroll runs in-app):** admin UI to set rates (Admin employee form), a monthly
-    commissions report reading `get_commissions`, and a `commission_payouts` lock table so paid amounts can't
-    shift if an invoice is later edited. **Cut from v1 deliberately:** per-employee basis options and an
-    `is_salesperson` flag (kept lean per the complexity review).
+  - **Admin UI — DONE (migration `20260630_employee_commission_rates.sql`):** **Settings → Payroll →
+    Commissions** (`CommissionsPanel` in `src/pages/Settings.jsx`) lists every employee with a Type
+    (None / Percent / Flat) + Rate, saved per row. Reads `get_employee_commissions()`, writes
+    `upsert_employee_commission(p_employee_id, p_percent, p_flat)` (percent XOR flat; both null clears it).
+  - **Help guide — DONE:** "Estimates, Jobs, Sales & Commissions" (`src/pages/Help.jsx`) explains the whole
+    flow in plain language for staff.
+  - **Deferred (Phase 2, when payroll runs in-app):** a monthly commissions **report** reading
+    `get_commissions`, and a `commission_payouts` lock table so paid amounts can't shift if an invoice is
+    later edited. **Cut from v1 deliberately:** per-employee basis options and an `is_salesperson` flag
+    (the rate is the flag).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
