@@ -417,9 +417,51 @@ function HowItWorksGuide() {
         </div>
       </Card>
 
-      {/* 4. Tour of the app */}
+      {/* 4. Creating a new job */}
       <Card>
-        <SectionTitle n="4">A Tour of the Main Screens</SectionTitle>
+        <SectionTitle n="4">Creating a New Job</SectionTitle>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          Most claims start here. Open <b>+ New → New Claim</b> in the top bar (or <b>+ New job</b> from a customer’s page) to open the <b>New Job</b> window. One trip through it creates the <b>customer</b>, the <b>claim</b>, and the first <b>job</b> together.
+        </p>
+        <Steps items={[
+          '<b>Client</b> — search by name, phone, or email <i>first</i>. If they come up (you’ll see how many jobs they already have), pick them. New to us? Click <b>+ New</b> to add them. <i>(If the phone is already on file, it quietly reuses that customer instead of making a duplicate.)</i>',
+          '<b>Division</b> — pick the one trade this job is: 💧 Water, 🦠 Mold, 🏗️ Recon, 🔨 Remodel, 🔥 Fire, or 📦 Contents. A job is always <b>one</b> division.',
+          '<b>Loss / Service Address</b> — this prefills from the customer’s billing address. <b>Change it if the loss is at a different property.</b>',
+          '<b>Claim details</b> — set the <b>Date of Loss</b> and <b>Type of Loss</b>, and choose the <b>Insurance Carrier</b> (required). Add the <b>Claim #</b> when you have it. No insurance? Pick <b>Out of pocket / No insurance</b> — that switches the work authorization to the private-pay clause that protects UPR if they file a claim later.',
+          '<b>Notes</b> (optional) — loss details, gate codes, special instructions.',
+          'Click <b>Create Job</b>. It creates the customer + claim + job and pushes the claim to <b>Encircle</b> (you get a toast either way).',
+        ]} />
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 8, fontSize: 14 }}>✓ DO</div>
+            <Bullets color="#16a34a" items={[
+              '<b>Search for the customer first.</b> Reuse the existing record so you don’t split their history across duplicates.',
+              '<b>One job per division.</b> Need water mitigation <i>and</i> a rebuild? Make the water job now and add the reconstruction job separately — each gets its own job and invoice.',
+              'Fill in <b>Date</b> and <b>Type of Loss</b> — they flow into the claim and the paperwork.',
+              'Pick the <b>real carrier</b>, or <b>Out of pocket</b> for cash jobs — it sets the right work authorization.',
+              'Double-check the <b>service address</b> when the loss isn’t at the billing address.',
+            ]} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 8, fontSize: 14 }}>✕ DON’T</div>
+            <Bullets color="#dc2626" items={[
+              'Don’t create a new customer before searching — duplicates split a person’s history.',
+              'Don’t pile two divisions into one job — make a second job instead.',
+              'Don’t hand-type claim or job numbers — they’re assigned for you (<b>CLM-…</b>, <b>WTR-…</b>).',
+              'Don’t skip the carrier — it’s required, and a fake one for a cash job creates the wrong paperwork (use <b>Out of pocket</b>).',
+            ]} />
+          </div>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Callout tone="blue">
+            <b>What one click sets up:</b> New Job creates the <b>customer</b> (if new), the <b>claim</b> for that loss, and the <b>first job</b> under it — then syncs the claim to Encircle. Another division for the same loss is just <b>another job on the same claim</b>.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 5. Tour of the app */}
+      <Card>
+        <SectionTitle n="5">A Tour of the Main Screens</SectionTitle>
         <p style={{ margin: '0 0 14px', fontSize: 14, color: 'var(--text-secondary)' }}>
           What each area of the menu is for. (You’ll only see the areas your role and turned-on features allow.)
         </p>
@@ -439,9 +481,9 @@ function HowItWorksGuide() {
         </div>
       </Card>
 
-      {/* 5. The divisions */}
+      {/* 6. The divisions */}
       <Card>
-        <SectionTitle n="5">The Seven Divisions</SectionTitle>
+        <SectionTitle n="6">The Seven Divisions</SectionTitle>
         <p style={{ margin: '0 0 14px', fontSize: 14, color: 'var(--text-secondary)' }}>
           Every job is one of these. The division sets the crew, the job-number prefix, and the QuickBooks category.
         </p>
@@ -460,9 +502,9 @@ function HowItWorksGuide() {
         </div>
       </Card>
 
-      {/* 6. Where do I…? */}
+      {/* 7. Where do I…? */}
       <Card>
-        <SectionTitle n="6">“I want to… → go here”</SectionTitle>
+        <SectionTitle n="7">“I want to… → go here”</SectionTitle>
         <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           {TASKS.map(([want, where], i) => (
             <div key={i} style={{
@@ -478,9 +520,9 @@ function HowItWorksGuide() {
         </div>
       </Card>
 
-      {/* 7. Glossary */}
+      {/* 8. Glossary */}
       <Card>
-        <SectionTitle n="7">Words We Use</SectionTitle>
+        <SectionTitle n="8">Words We Use</SectionTitle>
         <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           {TERMS.map(([term, def], i) => (
             <div key={term} style={{
