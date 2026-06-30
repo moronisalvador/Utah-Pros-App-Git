@@ -20,6 +20,7 @@ function IconEyeOff(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="curre
 function IconRefresh(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.1"/></svg>);}
 function IconChevronLeft(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="15 18 9 12 15 6"/></svg>);}
 function IconDrive(p){return(<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M7.71 3.5 1.15 15l3.43 5.94 6.56-11.37L7.71 3.5zM22.85 15 16.29 3.5H9.43l6.56 11.5h6.86zM4.93 16.06 8.36 22h11.49l-3.43-5.94H4.93z"/></svg>);}
+function IconPercent(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>);}
 
 /* ═══ NAV GROUPS ═══ */
 const SETTINGS_NAV = [
@@ -29,6 +30,9 @@ const SETTINGS_NAV = [
   ]},
   { group: 'Documents', tabs: [
     { key: 'templates', label: 'Document Templates', icon: IconFileText },
+  ]},
+  { group: 'Payroll', tabs: [
+    { key: 'commissions', label: 'Commissions', icon: IconPercent },
   ]},
   { group: 'Integrations', tabs: [
     { key: 'integrations', label: 'Google Drive', icon: IconDrive },
@@ -208,6 +212,168 @@ function substituteVarsPreview(text, withInsurance = true) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   COMMISSIONS PANEL — set each person's sales-commission rate
+   ═══════════════════════════════════════════════════════════════════ */
+// One number drives commissions: a % of the job's invoice, OR a flat $ per sale
+// (flat wins when both are set; see get_commissions). A rate set = that person
+// is a salesperson; cleared = they earn nothing. Reads/writes via the
+// get_employee_commissions / upsert_employee_commission RPCs.
+const ROLE_LABELS = { admin: 'Admin', project_manager: 'Project Manager', supervisor: 'Supervisor', field_tech: 'Field Tech', office: 'Office' };
+
+function rowFromEmployee(e) {
+  // Derive the editable shape: flat wins over percent (matches get_commissions).
+  const type = e.commission_flat != null ? 'flat' : e.commission_percent != null ? 'percent' : 'none';
+  const value = type === 'flat' ? String(e.commission_flat) : type === 'percent' ? String(e.commission_percent) : '';
+  return { type, value };
+}
+
+function CommissionsPanel({ db }) {
+  const [employees, setEmployees] = useState([]);
+  const [draft, setDraft] = useState({});        // { [id]: { type, value } }
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState(null);
+  const [showInactive, setShowInactive] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_employee_commissions');
+      setEmployees(rows || []);
+      setDraft(Object.fromEntries((rows || []).map(e => [e.id, rowFromEmployee(e)])));
+    } catch (err) { errToast('Failed to load commissions: ' + (err.message || err)); }
+    finally { setLoading(false); }
+  }, [db]);
+  useEffect(() => { load(); }, [load]);
+
+  const isDirty = (e) => {
+    const o = rowFromEmployee(e), d = draft[e.id] || o;
+    return d.type !== o.type || (d.type !== 'none' && d.value.trim() !== o.value);
+  };
+  const setRow = (id, patch) => setDraft(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+
+  const save = async (e) => {
+    const d = draft[e.id];
+    const num = d.type === 'none' ? null : Number(d.value);
+    if (d.type !== 'none' && (!Number.isFinite(num) || num < 0)) { errToast('Enter a valid rate (0 or more)'); return; }
+    setSavingId(e.id);
+    try {
+      await db.rpc('upsert_employee_commission', {
+        p_employee_id: e.id,
+        p_percent: d.type === 'percent' ? num : null,
+        p_flat:    d.type === 'flat'    ? num : null,
+      });
+      okToast(`Saved ${e.full_name}'s commission`);
+      await load();
+    } catch (err) { errToast('Failed to save: ' + (err.message || err)); }
+    finally { setSavingId(null); }
+  };
+
+  if (loading) return <div className="settings-panel"><div className="spinner" /></div>;
+
+  const visible = employees.filter(e => showInactive || e.is_active !== false);
+  const earners = employees.filter(e => e.commission_percent != null || e.commission_flat != null).length;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+        <div>
+          <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Commissions</h2>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+            {earners} {earners === 1 ? 'person earns' : 'people earn'} commission · paid first payroll of the month, for everything sold the previous month
+          </p>
+        </div>
+      </div>
+
+      <div style={{
+        background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 'var(--radius-md)',
+        padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-primary)', margin: '12px 0 16px',
+      }}>
+        Set a <b>Percent</b> of the job’s invoice (e.g. 8 = 8%) <b>or</b> a <b>Flat</b> amount per sale (e.g. 250). A flat amount
+        wins if both could apply. Leave it <b>None</b> for anyone who isn’t a salesperson. Full details in
+        <b> Help → Estimates, Jobs, Sales &amp; Commissions</b>.
+      </div>
+
+      {/* Header row */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.1fr 1.2fr auto', gap: 12, alignItems: 'center',
+        padding: '8px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+        border: '1px solid var(--border-color)', borderBottom: 'none',
+        fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase',
+      }}>
+        <span>Employee</span><span>Role</span><span>Type</span><span>Rate</span><span />
+      </div>
+
+      <div style={{ border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', overflow: 'hidden' }}>
+        {visible.map((e, i) => {
+          const d = draft[e.id] || { type: 'none', value: '' };
+          const dirty = isDirty(e);
+          const inactive = e.is_active === false;
+          return (
+            <div key={e.id} style={{
+              display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.1fr 1.2fr auto', gap: 12, alignItems: 'center',
+              padding: '9px 14px', background: 'var(--bg-primary)',
+              borderBottom: i < visible.length - 1 ? '1px solid var(--border-light)' : 'none',
+              opacity: inactive ? 0.55 : 1,
+            }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {e.full_name}{inactive ? ' (inactive)' : ''}
+              </span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{ROLE_LABELS[e.role] || e.role || '—'}</span>
+              <select
+                value={d.type}
+                onChange={ev => setRow(e.id, { type: ev.target.value, value: ev.target.value === 'none' ? '' : d.value })}
+                style={{
+                  fontSize: 13, padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                }}
+              >
+                <option value="none">None</option>
+                <option value="percent">Percent %</option>
+                <option value="flat">Flat $</option>
+              </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {d.type === 'flat' && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>$</span>}
+                <input
+                  type="number" min="0" step="any" inputMode="decimal"
+                  disabled={d.type === 'none'}
+                  value={d.type === 'none' ? '' : d.value}
+                  placeholder={d.type === 'none' ? '—' : d.type === 'flat' ? '250' : '8'}
+                  onChange={ev => setRow(e.id, { value: ev.target.value })}
+                  style={{
+                    width: 90, fontSize: 13, padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-color)', background: d.type === 'none' ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+                {d.type === 'percent' && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>%</span>}
+              </div>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!dirty || savingId === e.id}
+                onClick={() => save(e)}
+                style={{ opacity: dirty ? 1 : 0.4, cursor: dirty ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+              >
+                {savingId === e.id ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          );
+        })}
+        {visible.length === 0 && (
+          <div style={{ padding: '20px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No employees.</div>
+        )}
+      </div>
+
+      <button
+        onClick={() => setShowInactive(v => !v)}
+        style={{ marginTop: 12, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: 600, color: 'var(--accent)', padding: 0 }}
+      >
+        {showInactive ? 'Hide inactive employees' : 'Show inactive employees'}
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN SETTINGS PAGE
    ═══════════════════════════════════════════════════════════════════ */
 export default function Settings() {
@@ -291,6 +457,7 @@ export default function Settings() {
           {tab === 'carriers'  && <LookupTable title="Insurance Carriers" subtitle={`${carriers.length} carriers`}  items={carriers}  onSave={saveCarrier}  onDelete={deleteCarrier}  columns={[{key:'name',label:'Carrier Name',flex:3,required:true},{key:'short_name',label:'Code',flex:1,placeholder:'SF'},{key:'sort_order',label:'Order',flex:0.5,type:'number',placeholder:'999'}]} newItemDefaults={{name:'',short_name:'',sort_order:999}}/>}
           {tab === 'referrals' && <LookupTable title="Referral Sources"   subtitle={`${referrals.length} sources`}  items={referrals} onSave={saveReferral} onDelete={deleteReferral} columns={[{key:'name',label:'Source Name',flex:3,required:true},{key:'category',label:'Category',flex:2,type:'select',options:REF_CATEGORIES},{key:'sort_order',label:'Order',flex:0.5,type:'number',placeholder:'999'}]} newItemDefaults={{name:'',category:'other',sort_order:999}}/>}
           {tab === 'templates' && <DocumentTemplatesPanel db={db} />}
+          {tab === 'commissions' && <CommissionsPanel db={db} />}
           {tab === 'integrations' && <GoogleDriveIntegrationPanel db={db} />}
         </div>
       </div>

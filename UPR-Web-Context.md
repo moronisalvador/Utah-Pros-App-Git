@@ -312,9 +312,9 @@ maps. This dashboard keeps its own scoped palette (above).
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
-  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
-  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New Jobs Closed). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New Jobs Closed
+  (`get_jobs_closed` — see the canonical sale rule below), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
   reads ~0 until jobs reach a terminal phase, then lights up automatically). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
@@ -352,6 +352,46 @@ maps. This dashboard keeps its own scoped palette (above).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
+  `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
+  The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now
+  counts **real (sold) jobs**, excluding estimate-only opportunities. Card reads `get_jobs_closed(p_floor)`
+  (hook `useJobsClosed.js`, replacing `useNewClaims.js`); grid layout key stays `newClaims` (internal id) so
+  saved per-user layouts aren't reset.
+
+  ### ⭐ What counts as a SALE / REAL JOB (THE canonical rule — all reporting must use this)
+  **Single source of truth = `jobs.is_real_job`** (migration `20260627_real_job_classification.sql`). A job is
+  auto-flagged real when a **work-auth/recon agreement is signed**, a **QBO invoice** is created, or its
+  **estimate is approved** (`real_job_source`/`real_job_marked_at` record which & when); the office can force
+  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
+  read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
+  `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+- **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
+  month, for everything sold the **previous month**), built on `is_real_job`.
+  - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
+    else the approved `estimates.created_by`. So the estimate-create flow now stamps `created_by`
+    (**`NewEstimateModal`** passes `p_created_by: employee?.id`; it was previously null — why older sales are
+    unattributed).
+  - **`employees.commission_percent` / `commission_flat`** (both nullable) — the per-employee rate. A rate set
+    ⇒ earns; both null ⇒ none (the rate **is** the "is a salesperson" flag). `commission_flat` (flat $/sale)
+    wins over `commission_percent` (% of the job's invoice total) when both set.
+  - **`get_commissions(p_month date)`** — SECURITY DEFINER RPC, **the one place commissions are ever computed**.
+    One row per real job; period = month of **`jobs.created_at`** (NOT `real_job_marked_at` — the backfill
+    stamped that to the migration date). Returns employee, job, division, base = `SUM(COALESCE(adjusted_total,
+    total))`, commission, `commission_period`, `is_attributed`. Unattributed sales (no derived person, or no
+    rate) are returned with `is_attributed = false` — **visible, not silently dropped**.
+  - **Commissions effectively start now:** most historical jobs have no recorded salesperson, so they're
+    unattributed; no backfill.
+  - **Admin UI — DONE (migration `20260630_employee_commission_rates.sql`):** **Settings → Payroll →
+    Commissions** (`CommissionsPanel` in `src/pages/Settings.jsx`) lists every employee with a Type
+    (None / Percent / Flat) + Rate, saved per row. Reads `get_employee_commissions()`, writes
+    `upsert_employee_commission(p_employee_id, p_percent, p_flat)` (percent XOR flat; both null clears it).
+  - **Help guide — DONE:** "Estimates, Jobs, Sales & Commissions" (`src/pages/Help.jsx`) explains the whole
+    flow in plain language for staff.
+  - **Deferred (Phase 2, when payroll runs in-app):** a monthly commissions **report** reading
+    `get_commissions`, and a `commission_payouts` lock table so paid amounts can't shift if an invoice is
+    later edited. **Cut from v1 deliberately:** per-employee basis options and an `is_salesperson` flag
+    (the rate is the flag).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is

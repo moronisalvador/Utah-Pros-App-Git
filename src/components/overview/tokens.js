@@ -126,9 +126,9 @@ export const PLACEHOLDER = {
     ],
   },
 
-  newClaims: {
+  jobsClosed: {
     count: 14,
-    projected: '$108K projected',
+    projected: null,
     delta: { dir: 'up', pct: 18 },
     // sparkline SVG point strings (viewBox 0 0 240 58)
     line: '0,48 30,42 60,45 90,31 120,35 150,22 180,26 210,12 234,7',
