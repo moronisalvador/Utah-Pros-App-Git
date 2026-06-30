@@ -17,13 +17,20 @@
  *
  * DEPENDS ON:
  *   Packages:  none (pure fetch, runs in Cloudflare V8 isolates)
- *   Internal:  ./google-drive.js (getValidAccessToken — shared per-employee token
- *              refresh), ./supabase.js (service-role REST client, passed in)
- *   Data:      reads  → appointments, appointment_crew, jobs, user_google_accounts
+ *   Internal:  ./google-drive.js (getValidAccessToken — the writer's per-user
+ *              token + refresh), ./supabase.js (service-role client, passed in)
+ *   Data:      reads  → appointments, appointment_crew, jobs, user_google_accounts,
+ *                       integration_config (writer)
  *              writes → google_calendar_links (event-id mapping per person)
  *   External:  www.googleapis.com/calendar/v3 (Google Calendar API)
  *
  * NOTES / GOTCHAS:
+ *   - WRITES VIA A SHARED "WRITER" ACCOUNT. One connected account (whose Google
+ *     login has "make changes to events" access to other staff calendars) writes
+ *     each person's event to THEIR calendar — by calendarId = their email, or
+ *     'primary' for the writer's own. Only the writer connects; everyone else just
+ *     needs to have shared their calendar with the writer. If the writer lacks
+ *     access to someone's calendar, that person errors (logged) — others still sync.
  *   - SOURCE-AGNOSTIC BY DESIGN. The mapping is keyed by (source_type, source_id,
  *     employee_id). Today source_type='appointment'; when scheduling moves to
  *     job_schedules this layer is unchanged — only the caller passes a different
@@ -126,9 +133,11 @@ export function eventHash(body) {
   return djb2(JSON.stringify({ s: body.summary, l: body.location, d: body.description, st: body.start, en: body.end }));
 }
 
-// ─── SECTION: Google Calendar API (per employee) ──────────────
-async function calFetch(env, employeeId, path, method, body) {
-  const { accessToken } = await getValidAccessToken(env, employeeId);
+// ─── SECTION: Google Calendar API ──────────────
+// Every call carries a delegated access token that acts AS one employee, so the
+// event lands on THAT person's 'primary' calendar. The token is minted once per
+// employee in the orchestrator and threaded through here.
+async function calFetch(accessToken, path, method, body) {
   const res = await fetch(`${CAL_API}${path}`, {
     method,
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -140,11 +149,11 @@ async function calFetch(env, employeeId, path, method, body) {
   return res.status === 204 ? null : res.json();
 }
 
-export function updateEvent(env, employeeId, calendarId, eventId, body) {
-  return calFetch(env, employeeId, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'PATCH', body);
+function updateEvent(accessToken, calendarId, eventId, body) {
+  return calFetch(accessToken, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'PATCH', body);
 }
-export function deleteEvent(env, employeeId, calendarId, eventId) {
-  return calFetch(env, employeeId, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'DELETE');
+function deleteEvent(accessToken, calendarId, eventId) {
+  return calFetch(accessToken, `/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, 'DELETE');
 }
 
 // Google event ids must be base32hex (chars 0-9a-v, length 5–1024). UUID hex
@@ -158,8 +167,7 @@ function deterministicEventId(sourceId, employeeId) {
 // Create an event with an explicit deterministic id. If that id already exists
 // (a concurrent fire or a prior sync created it), Google returns 409 → we PATCH
 // it instead. This makes initial creation idempotent and duplicate-proof.
-async function insertOrPatchEvent(env, employeeId, calendarId, eventId, body) {
-  const { accessToken } = await getValidAccessToken(env, employeeId);
+async function insertOrPatchEvent(accessToken, calendarId, eventId, body) {
   const auth = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
   const collection = `${CAL_API}/${encodeURIComponent(calendarId)}/events`;
 
@@ -178,6 +186,24 @@ async function getLinks(db, sourceId) {
     'google_calendar_links',
     `source_type=eq.${SOURCE}&source_id=eq.${sourceId}&select=*`,
   );
+}
+
+// The "writer": the connected account whose Google login can edit other staff
+// calendars. Configurable via integration_config.gcal_writer_employee_id, else
+// the single connected account. Returns { writerId, token } or null.
+async function getWriter(env, db) {
+  const cfg = await db.select('integration_config', `key=eq.gcal_writer_employee_id&limit=1`);
+  let writerId = cfg?.[0]?.value || null;
+  if (!writerId) {
+    const accts = await db.select(
+      'user_google_accounts',
+      `refresh_token=not.is.null&scopes=ilike.*calendar*&select=employee_id&order=connected_at.asc&limit=1`,
+    );
+    writerId = accts?.[0]?.employee_id || null;
+  }
+  if (!writerId) return null;
+  const { accessToken } = await getValidAccessToken(env, writerId);
+  return { writerId, token: accessToken };
 }
 
 async function writeLink(db, existing, fields) {
@@ -205,10 +231,11 @@ async function writeLink(db, existing, fields) {
 // link rows deleted. Keeps the rows so we never re-create a removed event.
 export async function removeSourceEvents(env, db, sourceId) {
   const links = await getLinks(db, sourceId);
+  const writer = await getWriter(env, db);
   for (const link of links) {
     if (link.status === 'deleted') continue;
-    if (link.google_event_id) {
-      try { await deleteEvent(env, link.employee_id, link.calendar_id || 'primary', link.google_event_id); }
+    if (link.google_event_id && writer) {
+      try { await deleteEvent(writer.token, link.calendar_id || 'primary', link.google_event_id); }
       catch { /* best-effort: mark deleted regardless */ }
     }
     await writeLink(db, link, { status: 'deleted', google_event_id: null, last_error: null, synced_at: new Date().toISOString() });
@@ -217,14 +244,14 @@ export async function removeSourceEvents(env, db, sourceId) {
 }
 
 // ─── SECTION: Orchestrator ──────────────
-// Syncs ONE appointment to every assigned crew member who has connected Google
-// Calendar. Idempotent — safe to call repeatedly (used by the trigger worker and
-// the manual "sync my calendar" backfill).
+// Syncs ONE appointment to EVERY assigned crew member's Google calendar, written
+// by the shared "writer" account (calendarId = each person's email, or 'primary'
+// for the writer). Idempotent — used by the trigger worker and the manual backfill.
 export async function syncAppointment(env, db, appointmentId) {
   const rows = await db.select(
     'appointments',
     `id=eq.${appointmentId}&select=id,job_id,title,date,time_start,time_end,status,notes,duration_days,kind,is_private,` +
-    `appointment_crew(employee_id,role),` +
+    `appointment_crew(employee_id,role,employees(id,email)),` +
     `jobs(job_number,insured_name,address,city,state,zip,division,claim_number)`,
   );
   const appt = rows?.[0];
@@ -234,18 +261,19 @@ export async function syncAppointment(env, db, appointmentId) {
     return removeSourceEvents(env, db, appointmentId);
   }
 
-  const job = appt.jobs || null;
-  const crewIds = [...new Set((appt.appointment_crew || []).map((c) => c.employee_id))];
+  const writer = await getWriter(env, db);
+  if (!writer) return { created: 0, updated: 0, removed: 0, skipped: 0, errored: 0, crew: 0, note: 'no writer connected' };
 
-  // Which of those crew members have a usable Google Calendar connection?
-  let connectedIds = [];
-  if (crewIds.length) {
-    const accts = await db.select(
-      'user_google_accounts',
-      `employee_id=in.(${crewIds.join(',')})&refresh_token=not.is.null&scopes=ilike.*calendar*&select=employee_id`,
-    );
-    connectedIds = accts.map((a) => a.employee_id);
+  const job = appt.jobs || null;
+  // Each assigned crew member → the calendar we write to (their email).
+  const crew = [];
+  const seen = new Set();
+  for (const c of appt.appointment_crew || []) {
+    if (seen.has(c.employee_id)) continue;
+    seen.add(c.employee_id);
+    crew.push({ employeeId: c.employee_id, email: c.employees?.email || null });
   }
+  const targetIds = new Set(crew.map((c) => c.employeeId));
 
   const body = buildEventBody(appt, job);
   const hash = eventHash(body);
@@ -254,25 +282,27 @@ export async function syncAppointment(env, db, appointmentId) {
 
   let created = 0, updated = 0, removed = 0, skipped = 0, errored = 0;
 
-  // Upsert events for currently-connected crew.
-  for (const employeeId of connectedIds) {
+  for (const { employeeId, email } of crew) {
     const link = linkByEmp.get(employeeId) || null;
-    const calId = link?.calendar_id || 'primary';
+    // The writer writes to its OWN primary; everyone else by their email (a
+    // calendar the writer has been granted edit access to).
+    const calId = employeeId === writer.writerId ? 'primary' : email;
     try {
+      if (!calId) throw new Error('Employee has no email — cannot target their calendar');
       if (link?.google_event_id && link.sync_hash === hash && link.status === 'synced') {
         skipped++;
         continue;
       }
       let eventId = link?.google_event_id || null;
       if (eventId) {
-        // Existing event (incl. any legacy random ids) — update in place.
-        await updateEvent(env, employeeId, calId, eventId, body);
+        // Existing event — update on the calendar it was created on.
+        await updateEvent(writer.token, link.calendar_id || calId, eventId, body);
         updated++;
       } else {
         // First sync for this person — deterministic id makes concurrent
         // trigger fires collapse onto one event instead of duplicating.
         eventId = deterministicEventId(appointmentId, employeeId);
-        const mode = await insertOrPatchEvent(env, employeeId, calId, eventId, body);
+        const mode = await insertOrPatchEvent(writer.token, calId, eventId, body);
         if (mode === 'created') created++; else updated++;
       }
       await writeLink(db, link, {
@@ -289,18 +319,17 @@ export async function syncAppointment(env, db, appointmentId) {
     }
   }
 
-  // Remove events for people no longer connected or no longer on the crew.
-  const connectedSet = new Set(connectedIds);
+  // Remove events for people no longer on the crew.
   for (const link of links) {
-    if (connectedSet.has(link.employee_id)) continue;
+    if (targetIds.has(link.employee_id)) continue;
     if (link.status === 'deleted') continue;
     if (link.google_event_id) {
-      try { await deleteEvent(env, link.employee_id, link.calendar_id || 'primary', link.google_event_id); }
+      try { await deleteEvent(writer.token, link.calendar_id || 'primary', link.google_event_id); }
       catch { /* best-effort */ }
     }
     await writeLink(db, link, { status: 'deleted', google_event_id: null, synced_at: new Date().toISOString() });
     removed++;
   }
 
-  return { created, updated, removed, skipped, errored, connected: connectedIds.length };
+  return { created, updated, removed, skipped, errored, crew: crew.length };
 }
