@@ -468,16 +468,6 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
             </div>
           )}
 
-          {/* Notify customer — minimal toggle */}
-          {hasJob && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', margin: '2px 0 16px' }}>
-              <input type="checkbox" checked={notifyClient}
-                onChange={e => { setNotifyClient(e.target.checked); setDirty(true); }}
-                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
-              Notify customer
-            </label>
-          )}
-
           {/* ── Crew ── */}
           <div style={S.section}>
             <div style={S.sectionTitle}>
@@ -758,7 +748,15 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
                 </>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', alignItems: 'center' }}>
+            {hasJob && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={notifyClient}
+                  onChange={e => { setNotifyClient(e.target.checked); setDirty(true); }}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                Notify customer
+              </label>
+            )}
             {!isCompleted && (
               showFinishConfirm ? (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
