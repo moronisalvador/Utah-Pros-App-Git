@@ -59,4 +59,12 @@
 - **Remodeling reporting fix**: reclassified 4 remodel jobs `reconstruction→remodeling`; split Virginia Roundy remodel to R-2604-260; repointed her misrouted payment. Dashboard Remodeling now Revenue $31,828.66 / Payments $22,638.81 / Avg $6,365.73 (was $0).
 - **Remodeling UI**: already in `main` (prior rollout); PR **#154** completed the tech-app color gap (merged).
 - **Tanra Hill** payment-trigger regression fixed & verified; mitigation invoice W-2606-022 payment recorded.
+- **Claim-number collision fixed (serious — 2026-06-30)**: Tanner Johnson's new claim got
+  `CLM-2606-167`, already held by Dorothy Killian, so the Encircle sync linked Tanner's job to
+  Dorothy's Encircle claim. Cause: `generate_claim_number()` used a sequence that drifted behind
+  the real max because imported/backfilled claims were inserted with explicit numbers. Fixes:
+  (a) resynced the sequence; (b) gave Tanner a fresh number **CLM-2606-172** + his own Encircle
+  claim **4764070**, restored Dorothy; (c) migration `20260630_harden_claim_number_generation`
+  — UNIQUE constraint on `claims.claim_number` + drift-proof generator (max+1, advisory lock);
+  (d) hardened the Encircle worker to verify policyholder/address before linking a CLM match.
 - **Paul Engman** mitigation reconciled (found 6/30 via the WF bank cross-check): his $10,538.19 State Farm check had been deposited straight to Sales (QBO Deposit 5555, no invoice). Created QBO invoice **26-20** + payment 5604, relinked Deposit 5555 to the payment (income counted once, stays in …2227); consolidated onto his EXISTING records (contact qbo 567→**579**, claim **CLM-2603-002**, water job **"26-20"**, Encircle **4422148**, real phone/email) and deleted the duplicate customer/contact/claim/job first created under the "Engemann" spelling. Recon job **R-2604-024** still open (separate scope).
