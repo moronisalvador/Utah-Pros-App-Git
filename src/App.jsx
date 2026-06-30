@@ -97,6 +97,7 @@ const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
 const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppointment'));
 const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
 const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
+const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 
@@ -201,6 +202,7 @@ function TechRoutes() {
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
+      <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
       <Route path="tech/tools/oop-pricing" element={
         <FeatureRoute flag="tool:oop_pricing">
           <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>

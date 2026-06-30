@@ -731,7 +731,7 @@ export default function TechDash() {
     try {
       const result = await db.rpc('get_my_appointments_today', { p_employee_id: employee.id });
       setAppointments(result || []);
-    } catch (e) {
+    } catch {
       toast('Failed to load appointments', 'error');
     }
     setLoading(false);
@@ -954,6 +954,26 @@ export default function TechDash() {
     </div>
   );
 
+  // Standalone Help button — sits just left of the ⋮ menu in the greeting header.
+  const helpButton = (
+    <button
+      onClick={() => navigate('/tech/help')}
+      aria-label="Help and guides"
+      style={{
+        position: 'absolute', top: 'var(--space-3)', right: 'calc(var(--space-4) + 40px + var(--space-2))', zIndex: 20,
+        width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+        background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+        border: '1px solid var(--border-light)',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        touchAction: 'manipulation',
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    </button>
+  );
+
   // "Away from jobsite" reminder banner — null when not needed.
   // Sticks under the greeting header in both empty and populated branches.
   const awayBanner = awayFromJobsite ? (
@@ -1061,6 +1081,7 @@ export default function TechDash() {
     return (
       <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
+          {helpButton}
           {menuButton}
           <div className="tech-dash-date">{dateStr}</div>
           <div className="tech-dash-name">Hey {firstName} 👋</div>
@@ -1104,6 +1125,7 @@ export default function TechDash() {
     <div className="tech-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
       {/* Greeting — fixed, never moves on pull-to-refresh */}
       <div className="tech-dash-greeting-sticky" style={{ position: 'relative' }}>
+        {helpButton}
         {menuButton}
         <div className="tech-dash-date">{dateStr}</div>
         <div className="tech-dash-name">Hey {firstName} 👋</div>
