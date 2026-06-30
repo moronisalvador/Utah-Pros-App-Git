@@ -23,15 +23,20 @@
 
 3. **Unapplied payment 4691** ($562.50) — apply/clear it.
 
-4. **Wells Fargo bank-deposit reconciliation (NEW — 2026-06-30)** — checking acct **…2227**.
-   Bank deposits don't 1:1 match UPR "payments received." Expected reasons to verify:
-   batched deposits (one deposit = many payments), timing lag (payment date vs deposit date),
-   **Moju Advisory transfers** (owner transfers, not customer revenue), **overdraft credit-line
-   transfers** (not revenue), Stripe/QBO Payments deposited **net of fees**. Map each bank credit
-   → UPR/QBO payment. (June sample: 21 credits = $86,163.11; $81,624.44 deposits/Moju,
-   $4,538.67 overdraft transfers.)
+4. **Direct-to-Sales deposit sweep (NEW — "Ben pattern")** — the bookkeeper sometimes deposits
+   customer checks **straight to the Sales income account without applying them to an invoice**,
+   so the job is unbilled/untracked in UPR & QBO even though the cash lands in checking …2227.
+   Paul Engman's $10,538.19 (found 6/30) was one. **Action:** scan all Q2 QBO Deposits whose
+   lines post to an income account with **no linked Payment**, then for each: create customer →
+   invoice → apply payment → relink the deposit → mirror to UPR. (Likely more hidden like Paul.)
 
-5. **FINAL Q2 automated sweep** (do LAST) — programmatic proof that every Q2 QBO invoice &
+5. **Wells Fargo bank rec — METHOD RESOLVED (June ties exactly).** Bank deposits never 1:1 equal
+   UPR "payments received"; they **bridge**: UPR payments − in-transit (recorded, not yet
+   deposited) − non-customer credits (Moju owner transfers + overdraft credit-line) − May
+   float-in = bank. June reconciles to the dollar ($75,388 both sides). This is by design, NOT a
+   discrepancy — re-run the bridge per month. (June bank …2227: 21 credits = $86,163.11.)
+
+6. **FINAL Q2 automated sweep** (do LAST) — programmatic proof that every Q2 QBO invoice &
    payment has a matching, correctly-linked UPR record, payment dates match, division totals
    tie to QBO, zero orphans/unapplied. This is the certification step.
 
@@ -54,3 +59,4 @@
 - **Remodeling reporting fix**: reclassified 4 remodel jobs `reconstruction→remodeling`; split Virginia Roundy remodel to R-2604-260; repointed her misrouted payment. Dashboard Remodeling now Revenue $31,828.66 / Payments $22,638.81 / Avg $6,365.73 (was $0).
 - **Remodeling UI**: already in `main` (prior rollout); PR **#154** completed the tech-app color gap (merged).
 - **Tanra Hill** payment-trigger regression fixed & verified; mitigation invoice W-2606-022 payment recorded.
+- **Paul Engman** mitigation reconciled (found 6/30 via the WF bank cross-check): his $10,538.19 State Farm check had been deposited straight to Sales (QBO Deposit 5555, no invoice). Created QBO invoice **26-20** + payment 5604, relinked Deposit 5555 to the payment (income counted once, stays in …2227); consolidated onto his EXISTING records (contact qbo 567→**579**, claim **CLM-2603-002**, water job **"26-20"**, Encircle **4422148**, real phone/email) and deleted the duplicate customer/contact/claim/job first created under the "Engemann" spelling. Recon job **R-2604-024** still open (separate scope).
