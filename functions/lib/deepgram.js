@@ -28,6 +28,12 @@
  *     `paragraphs.transcript` string, so the label format is ours to control.
  *     Falls back to the plain `alternatives[0].transcript` when diarization
  *     data isn't present (e.g. diarize turned off, or a one-speaker call).
+ *   - buildTranscriptAnalysis() produces the richer structured object stored in
+ *     inbound_leads.transcript_analysis: speaker-attributed turns PLUS Deepgram
+ *     Audio Intelligence (summary, sentiment, topics, entities). Speakers come
+ *     from the audio CHANNEL when the recording is stereo (CallRail records
+ *     Agent + Customer on separate channels → exact labels, no guessing), and
+ *     fall back to diarization ("Speaker N") when the audio is mono.
  * ════════════════════════════════════════════════
  */
 
@@ -68,4 +74,110 @@ export function formatDeepgramTranscript(deepgramJson) {
   if (typeof alt.transcript === 'string' && alt.transcript.trim()) return alt.transcript.trim();
 
   return null;
+}
+
+// Channel index → human role. CallRail records the business line (Agent) and the
+// caller (Customer) on separate channels; Deepgram preserves that as channel 0/1.
+// If a live call proves the mapping is reversed, flip these two labels.
+const CHANNEL_ROLE = { 0: 'Agent', 1: 'Customer' };
+
+// Build speaker turns from stereo utterances (each tagged with a `channel`),
+// ordered by start time so the two channels interleave into one conversation.
+function turnsFromUtterances(utterances) {
+  return utterances
+    .filter((u) => u && typeof u.transcript === 'string' && u.transcript.trim())
+    .slice()
+    .sort((a, b) => (a.start ?? 0) - (b.start ?? 0))
+    .map((u) => ({
+      speaker: CHANNEL_ROLE[u.channel] || `Channel ${(u.channel ?? 0) + 1}`,
+      text: u.transcript.trim(),
+    }));
+}
+
+// Build speaker turns from diarized paragraphs (mono audio) — "Speaker N", 1-based.
+function turnsFromParagraphs(paras) {
+  return paras
+    .map((p) => {
+      const text = (p?.sentences || [])
+        .map((s) => (typeof s === 'string' ? s : s?.text || ''))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      if (!text) return null;
+      const speaker = Number.isInteger(p?.speaker) ? `Speaker ${p.speaker + 1}` : 'Speaker';
+      return { speaker, text };
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Turn a Deepgram response into the structured analysis stored in
+ * inbound_leads.transcript_analysis. Returns null when there's no usable
+ * transcript at all; otherwise an object with speaker-attributed turns and
+ * whatever Audio Intelligence features Deepgram returned. Every field is
+ * best-effort (defensive against Deepgram shape drift) — a missing feature is
+ * null / [], never a throw.
+ */
+export function buildTranscriptAnalysis(deepgramJson) {
+  const results = deepgramJson?.results;
+  const alt = results?.channels?.[0]?.alternatives?.[0];
+
+  // Prefer channel-based turns (stereo) — exact Agent/Customer separation.
+  const utterances = Array.isArray(results?.utterances) ? results.utterances : [];
+  const channelCount = Array.isArray(results?.channels) ? results.channels.length : 0;
+  const utteranceChannels = new Set(utterances.map((u) => u?.channel));
+  const isMultichannel = channelCount > 1 || utteranceChannels.size > 1;
+
+  let turns = [];
+  let speakerMode = 'diarize';
+  if (isMultichannel && utterances.length) {
+    turns = turnsFromUtterances(utterances);
+    speakerMode = 'channel';
+  } else if (Array.isArray(alt?.paragraphs?.paragraphs) && alt.paragraphs.paragraphs.length) {
+    turns = turnsFromParagraphs(alt.paragraphs.paragraphs);
+    speakerMode = 'diarize';
+  }
+
+  // Nothing usable at all → null. This MUST mirror formatDeepgramTranscript's full
+  // fallback ladder (paragraphs.paragraphs → paragraphs.transcript → transcript),
+  // otherwise a row could get flat text but null analysis and be re-transcribed
+  // (re-billed) on every backfill run. `turns` covers the first tier; check the
+  // other two here.
+  const hasFlatText =
+    (typeof alt?.transcript === 'string' && alt.transcript.trim()) ||
+    (typeof alt?.paragraphs?.transcript === 'string' && alt.paragraphs.transcript.trim());
+  if (!turns.length && !hasFlatText) return null;
+
+  // ── Audio Intelligence (all optional) ──
+  const summary =
+    (typeof results?.summary?.short === 'string' && results.summary.short.trim()) || null;
+
+  const avg = results?.sentiments?.average;
+  const sentiment =
+    avg && typeof avg.sentiment === 'string'
+      ? { label: avg.sentiment, score: typeof avg.sentiment_score === 'number' ? avg.sentiment_score : null }
+      : null;
+
+  // Topics: flatten every segment's topics, dedupe, keep first-seen order.
+  const topicSegs = results?.topics?.segments || [];
+  const topics = [];
+  for (const seg of topicSegs) {
+    for (const t of seg?.topics || []) {
+      if (t?.topic && !topics.includes(t.topic)) topics.push(t.topic);
+    }
+  }
+
+  // Entities: from the first channel's alternative; dedupe by label+value.
+  const rawEntities = alt?.entities || [];
+  const entities = [];
+  const seen = new Set();
+  for (const e of rawEntities) {
+    if (!e?.value) continue;
+    const key = `${e.label || ''}:${e.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entities.push({ label: e.label || null, value: e.value });
+  }
+
+  return { model: 'nova-3', speakerMode, turns, summary, sentiment, topics, entities };
 }

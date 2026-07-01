@@ -18,12 +18,13 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
  *              (getAuthHeader for the recording proxy fetch)
- *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK);
+ *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
+ *                       incl. transcript_analysis for the conversation view);
  *                       call recordings via GET /api/callrail-recording
  *              writes → inbound_leads.lead_status (via update_lead_status RPC);
- *                       inbound_leads.transcription via POST /api/transcribe-call
- *                       (the "Transcribe" button — Deepgram, since CallRail's plan
- *                       doesn't expose transcripts)
+ *                       inbound_leads.transcription + transcript_analysis via POST
+ *                       /api/transcribe-call (the "Transcribe" button — Deepgram,
+ *                       since CallRail's plan doesn't expose transcripts)
  *
  * NOTES / GOTCHAS:
  *   - A lead with no linked contact shows the raw caller_number/"Web form"
@@ -98,6 +99,50 @@ function RecordingPlayer({ src }) {
   );
 }
 
+// Renders a call transcript. With structured analysis (new rows) it shows a
+// conversation view — summary, sentiment, topics, then speaker-labeled turns.
+// Without it (older text-only rows) it falls back to the flat text, which now
+// preserves line breaks via the .crm-call-row-transcript `white-space` rule.
+function TranscriptView({ analysis, text }) {
+  if (!analysis || !Array.isArray(analysis.turns) || analysis.turns.length === 0) {
+    return <p className="crm-call-row-transcript">{text}</p>;
+  }
+  const sentiment = analysis.sentiment?.label;
+  return (
+    <div className="crm-transcript">
+      {analysis.summary && (
+        <div className="crm-transcript-summary">
+          <div className="crm-transcript-summary-label">Summary</div>
+          <div className="crm-transcript-summary-text">{analysis.summary}</div>
+        </div>
+      )}
+      {(sentiment || (analysis.topics && analysis.topics.length > 0)) && (
+        <div className="crm-transcript-tags">
+          {sentiment && (
+            <span className={`crm-badge crm-badge-sentiment-${sentiment}`}>{sentiment}</span>
+          )}
+          {(analysis.topics || []).map((t) => (
+            <span key={t} className="crm-timeline-badge">{t}</span>
+          ))}
+        </div>
+      )}
+      <div className="crm-transcript-turns">
+        {analysis.turns.map((turn, i) => (
+          <div className="crm-transcript-turn" key={i}>
+            <span className="crm-transcript-speaker" data-role={turn.speaker}>{turn.speaker}</span>
+            <span className="crm-transcript-text">{turn.text}</span>
+          </div>
+        ))}
+      </div>
+      {analysis.entities && analysis.entities.length > 0 && (
+        <div className="crm-transcript-entities">
+          Detected: {analysis.entities.map((e) => e.value).join(', ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LeadRow({ lead, onStatusChange }) {
   const contactLabel = lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
   const [audioUrl, setAudioUrl] = useState(null);
@@ -105,6 +150,7 @@ function LeadRow({ lead, onStatusChange }) {
   const [showTranscript, setShowTranscript] = useState(false);
   // Transcript can arrive after load (staff clicks Transcribe), so track it locally.
   const [transcription, setTranscription] = useState(lead.transcription);
+  const [analysis, setAnalysis] = useState(lead.transcript_analysis);
   const [transcribing, setTranscribing] = useState(false);
 
   // Free the blob URL when the row unmounts / a new one replaces it.
@@ -150,6 +196,7 @@ function LeadRow({ lead, onStatusChange }) {
         throw new Error(data?.errors?.[0]?.error || data?.error || `unexpected response (${res.status})`);
       }
       setTranscription(data.transcription);
+      if (data.analysis) setAnalysis(data.analysis);
       setShowTranscript(true);
     } catch (e) {
       console.error('[transcribe-call]', e?.message || e);
@@ -201,7 +248,7 @@ function LeadRow({ lead, onStatusChange }) {
               <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
                 {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
               </button>
-              {showTranscript && <p className="crm-call-row-transcript">{transcription}</p>}
+              {showTranscript && <TranscriptView analysis={analysis} text={transcription} />}
             </>
           ) : (
             lead.recording_url && (
