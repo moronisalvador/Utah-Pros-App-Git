@@ -5963,6 +5963,17 @@ tr:hover td { background: var(--bg-secondary); }
   background: none; border: none; padding: 0; margin-right: 16px; cursor: pointer;
 }
 .crm-call-row-play:disabled { color: var(--crm-text-tertiary); cursor: default; }
+/* "Waiting for recording & transcript…" — shown on a fresh call while CallRail
+   processes the recording; the page auto-refreshes it into Play/transcript. */
+.crm-call-awaiting {
+  display: inline-flex; align-items: center; gap: 8px; margin-right: 16px;
+  font-size: 13px; font-weight: 600; color: var(--crm-text-secondary);
+}
+.crm-awaiting-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--crm-accent);
+  animation: crm-awaiting-pulse 1.2s ease-in-out infinite;
+}
+@keyframes crm-awaiting-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 .crm-audio { display: flex; align-items: center; gap: var(--space-3); margin-top: 6px; max-width: 360px; }
 .crm-audio-btn {
   flex-shrink: 0; width: 30px; height: 30px; border-radius: 9999px; border: none; cursor: pointer;

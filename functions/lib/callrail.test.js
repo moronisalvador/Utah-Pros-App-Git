@@ -30,6 +30,7 @@ import {
   boolish,
   extractCallId,
   callrailApiRecordingUrl,
+  shouldAutoTranscribe,
 } from './callrail.js';
 
 // The real, form-decoded payload for a live inbound call (subset of the ~110
@@ -173,5 +174,31 @@ describe('callrailApiRecordingUrl', () => {
   it('returns null when account id or call id is missing', () => {
     expect(callrailApiRecordingUrl(null, 'CAL1')).toBeNull();
     expect(callrailApiRecordingUrl('635117922', null)).toBeNull();
+  });
+});
+
+describe('shouldAutoTranscribe', () => {
+  const base = {
+    source_type: 'call',
+    recording_url: 'https://api.callrail.com/v3/a/635117922/calls/CAL1/recording.json',
+    transcription: null,
+    transcript_analysis: null,
+  };
+  it('is true for a call with an api recording and no transcript yet', () => {
+    expect(shouldAutoTranscribe(base)).toBe(true);
+  });
+  it('is false once already transcribed (idempotent — never re-bill)', () => {
+    expect(shouldAutoTranscribe({ ...base, transcription: 'hello' })).toBe(false);
+    expect(shouldAutoTranscribe({ ...base, transcript_analysis: { turns: [] } })).toBe(false);
+  });
+  it('is false when there is no recording yet (in-progress call)', () => {
+    expect(shouldAutoTranscribe({ ...base, recording_url: null })).toBe(false);
+  });
+  it('is false for the app.callrail.com URL form (only the api form streams)', () => {
+    expect(shouldAutoTranscribe({ ...base, recording_url: 'https://app.callrail.com/calls/CAL1/recording/redirect?access_key=x' })).toBe(false);
+  });
+  it('is false for a form lead or a null lead', () => {
+    expect(shouldAutoTranscribe({ ...base, source_type: 'form' })).toBe(false);
+    expect(shouldAutoTranscribe(null)).toBe(false);
   });
 });

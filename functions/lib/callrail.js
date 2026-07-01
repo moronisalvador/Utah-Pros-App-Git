@@ -140,3 +140,17 @@ export function callrailApiRecordingUrl(accountId, callId) {
   if (!accountId || !callId) return null;
   return `https://api.callrail.com/v3/a/${accountId}/calls/${callId}/recording.json`;
 }
+
+// Should the webhook auto-transcribe this lead right now? True only for a CALL
+// whose recording is available in the streamable api.callrail.com form and that
+// hasn't been transcribed yet. The transcription guard makes it idempotent —
+// CallRail sends several webhooks per call, but only the recording-ready one
+// passes, and once transcribed a re-delivery is skipped (never re-bills Deepgram).
+export function shouldAutoTranscribe(lead) {
+  return !!lead
+    && lead.source_type === 'call'
+    && typeof lead.recording_url === 'string'
+    && /^https:\/\/api\.callrail\.com\//.test(lead.recording_url)
+    && !lead.transcription
+    && !lead.transcript_analysis;
+}

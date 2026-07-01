@@ -107,8 +107,10 @@ async function nameSpeakers(env, analysis) {
 }
 
 // Transcribe one lead's recording and store it. Returns the transcript length;
-// throws with a precise reason so the caller can log/surface it.
-async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
+// throws with a precise reason so the caller can log/surface it. Exported so the
+// CallRail webhook can auto-transcribe a call the moment its recording lands
+// (callrail-webhook.js), not just this on-demand endpoint.
+export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
   const recUrl = lead.recording_url;
   if (!recUrl || !/^https:\/\/api\.callrail\.com\//.test(recUrl)) {
     throw new Error('no/invalid recording URL');
