@@ -2222,7 +2222,16 @@ set_lead_transcription(p_lead_id, p_transcription, p_source default 'deepgram', 
   (payload notes `has_analysis`). `SECURITY DEFINER`, granted `anon, authenticated`. Modeled on
   `update_lead_status`. **v2 (migration `20260701_crm_call_transcription_analysis.sql`)** dropped
   the original 3-arg version and recreated it with `p_analysis`.
+set_lead_caller_name(p_lead_id, p_name) — stores a transcript-detected caller name on the lead
+  (`caller_name`, only-if-blank) and backfills a LINKED contact's name only when that name is
+  currently blank. **Never creates a contact** (raw-call spam must not pollute contacts — same
+  stance as ingestion). `SECURITY DEFINER`, granted `anon, authenticated`, logs
+  `crm_lead_caller_named`. (migration `20260701_crm_caller_name.sql`.)
 ```
+
+**`inbound_leads.caller_name text`** (migration `20260701_crm_caller_name.sql`, additive) — a
+name detected from the call transcript by the Claude naming pass (see transcribe-call.js). The Call
+Log prefers `contact.name` → `caller_name` → the raw phone number for the row label.
 
 **`inbound_leads` columns added** (two additive migrations):
 - `20260701_crm_call_transcription.sql`: `transcription_source text` + `transcribed_at timestamptz`
@@ -2334,6 +2343,16 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          a pasted key, not a Cloudflare env var, same pattern as CallRail's. First
                          live run confirms the stereo download + exact Audio-Intelligence field paths
                          (parser is defensive; unconfirmed shapes degrade to null/[], never throw).
+                         **Speaker naming (best-effort):** after Deepgram, a Claude Haiku pass
+                         (`functions/lib/speakerNaming.js` — pure buildSpeakerPrompt/
+                         parseSpeakerIdentities/applySpeakerIdentities, unit-tested) identifies which
+                         speaker is the Agent vs Customer and each person's name, relabeling the
+                         `transcript_analysis` turns (each turn gains a `role`). The caller's name is
+                         stored via `set_lead_caller_name`. Needs `ANTHROPIC_API_KEY` (Cloudflare env,
+                         already set for the chat workers); any failure leaves Speaker 1/2 untouched.
+                         Topics are capped to the 6 most-confident in `buildTranscriptAnalysis`
+                         (Deepgram over-tags). The Call Log renders turns as grouped speaker blocks
+                         (consecutive same-speaker turns merged; name bold-blue; tinted by role).
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
