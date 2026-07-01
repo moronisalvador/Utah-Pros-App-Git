@@ -2586,6 +2586,22 @@ shared dev/main Supabase project):
   through `contact_jobs` (notes are job-scoped, not contact-scoped, hence the join), and `estimates`
   (`contact_id` is direct). Ordered newest-first across all four sources.
 
+**Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
+the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
+the board was empty and untestable, and there was no way to add a walk-in/referral lead by hand.
+Added a **"+ New lead"** button on `CrmLeads.jsx` (and in its empty state) opening a create panel
+(name/phone/source/value), backed by a new `create_manual_lead(p_phone, p_name, p_source, p_value,
+p_org_id, p_created_by)` RPC (`SECURITY DEFINER`, granted `anon, authenticated`). It matches or
+creates a `contacts` row by phone (name backfilled only when blank), then inserts an `inbound_leads`
+row and logs a `crm_lead_created_manual` `system_events` row. **Additive-only — no schema change**:
+a manual lead has no CallRail id so the RPC synthesizes a unique `manual:<uuid>` `callrail_id` (that
+column is NOT NULL + UNIQUE), and uses `source_type='form'` because the `source_type` CHECK only
+allows `call`/`form` and an additive change must not alter that live constraint — the real origin
+lives in the `source` column (e.g. `Referral`, `Walk-in`). Verified live against the TEST org
+(create → assert one lead + one contact by phone → a second same-phone lead reuses the one contact →
+cleaned up); integration test at `supabase/tests/crm_manual_lead.test.js` (committed test-first,
+self-skips without live creds, same as the Phase 0/1 suites).
+
 **Frontend** (`src/pages/crm/`), replacing their Phase 1 `CrmStubPage.jsx` placeholders:
 - **CrmLeads.jsx** (`/crm/leads`) — a real Kanban board, reusing `Production.jsx`'s drag-and-drop
   pattern (desktop-only `draggable`, gated by the same `isTouchDevice()` check) rather than building
