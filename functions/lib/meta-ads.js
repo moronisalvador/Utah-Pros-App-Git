@@ -146,9 +146,11 @@ export async function fetchCampaignSpend(env, startDate, endDate) {
     access_token:   accessToken,
   });
 
+  const MAX_PAGES = 50; // hard cap — guards against a runaway pagination loop
   const rows = [];
   let url = `${GRAPH_BASE}/act_${adAccountId}/insights?${params.toString()}`;
-  while (url) {
+  let page = 0;
+  while (url && page < MAX_PAGES) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Meta Insights API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data = await res.json();
@@ -165,6 +167,7 @@ export async function fetchCampaignSpend(env, startDate, endDate) {
       });
     }
     url = data.paging?.next || null;
+    page++;
   }
   return rows;
 }
