@@ -64,12 +64,15 @@ export default function CarrierSelect({ value, onChange, carriers = [], onAdd, r
     };
   }, [open, isMobile, recomputePos]);
 
-  // Body scroll lock while the mobile sheet is open
+  // Body scroll lock while the mobile sheet is open. Always restore to '' (not
+  // a captured "previous" value) — if isMobile flips while open (e.g. a resize/
+  // orientation change), re-running this effect would otherwise capture 'hidden'
+  // as the "previous" value and permanently lock body scroll on close, since
+  // nothing else in the app ever sets a real overflow value on body.
   useEffect(() => {
     if (!open || !isMobile) return;
-    const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return () => { document.body.style.overflow = ''; };
   }, [open, isMobile]);
 
   // Outside-click close — checks both wrapper and panel (panel is portaled)
