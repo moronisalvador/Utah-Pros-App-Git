@@ -2197,13 +2197,21 @@ upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_cal
   — True upsert-and-merge keyed on callrail_id (CallRail redelivers webhooks for the same call as
   the recording/transcript become available later): fields present in the new payload overwrite,
   null fields preserve whatever was already saved. p_org_id defaults to the real Utah Pros org when
-  omitted; callers pass the "Utah Pros — TEST" org id explicitly for test rows. Contact
-  match/create is by caller_number ONLY, and only when
-  `NOT spam_flag AND (duration_sec IS NULL OR duration_sec >= 15)` — this is the spam/robocall/
-  wrong-number filter, mirrored as a pure JS predicate `shouldCreateContact({spam_flag,
-  duration_sec})` in `functions/lib/callrail.js` (vitest-covered) for anywhere that needs the same
-  rule client-side; the SQL RPC is the actual server-side enforcement. Every call writes a
-  `system_events` row (`crm_lead_created` or `crm_lead_updated`).
+  omitted; callers pass the "Utah Pros — TEST" org id explicitly for test rows. **NEVER auto-creates
+  a contact** (`20260701_crm_lead_no_autocreate_contact.sql`): it LINKS the lead to an existing
+  contact when one already matches `caller_number` (so a known customer's call lands on their
+  timeline), but an unknown number stays a contact-free lead — most inbound calls are
+  spam/wrong-numbers/price-shoppers, and auto-creating a contact per call floods the contacts table
+  (and, via `trg_qbo_customer_sync`, QuickBooks). A contact is created only when the lead is
+  qualified: it books (the app's find-or-create-by-phone flows) or staff run `promote_lead_to_contact`.
+  (This retired the old `shouldCreateContact` spam-gate predicate + `functions/lib/callrail.js`, now
+  moot since nothing is auto-created.) Every call writes a `system_events` row (`crm_lead_created`
+  or `crm_lead_updated`).
+promote_lead_to_contact(p_lead_id, p_name, p_email, p_created_by) — the CRM "Add as customer" action
+  (Leads board detail panel, shown for a contact-free lead): find-or-creates a contact by the lead's
+  `caller_number` (already E.164 from CallRail), backfills name/email where blank, links this lead
+  **and any other still-unlinked leads from the same number**, and logs a `crm_lead_promoted`
+  system_events row. `SECURITY DEFINER`, granted `anon, authenticated`.
 update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
   logs a `crm_lead_status_updated` system_events row.
 ```

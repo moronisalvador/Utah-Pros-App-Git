@@ -27,7 +27,9 @@
  *                       get_contact_activity RPC (opened lead's timeline)
  *              writes → lead_pipeline_stage (via move_lead_to_stage RPC),
  *                       inbound_leads + contacts (via create_manual_lead RPC —
- *                       the "+ New lead" manual-entry button)
+ *                       the "+ New lead" manual-entry button; and
+ *                       promote_lead_to_contact — the "+ Add as customer" action
+ *                       that turns a raw lead into a linked contact)
  *
  * NOTES / GOTCHAS:
  *   - A lead with no lead_pipeline_stage row yet reads as sitting in the
@@ -198,6 +200,8 @@ export default function CrmLeads() {
           currentStageId={stagePositions[selectedLead.id]?.stage_id ?? sortedStages[0]?.id}
           onClose={() => setSelectedLead(null)}
           onMoveStage={(stageId) => moveLead(selectedLead, stageId)}
+          createdBy={employee?.id || null}
+          onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load(); }}
           db={db}
         />
       )}
@@ -285,9 +289,29 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
 /* ═══════════════════════════════════════════════════
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
-function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, db }) {
+function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, onPromoted, db }) {
   const [activity, setActivity] = useState([]);
   const [loadingActivity, setLoadingActivity] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [promoteName, setPromoteName] = useState('');
+  const [promoteEmail, setPromoteEmail] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const promote = useCallback(async () => {
+    setSaving(true);
+    try {
+      await db.rpc('promote_lead_to_contact', {
+        p_lead_id: lead.id,
+        p_name: promoteName.trim() || null,
+        p_email: promoteEmail.trim() || null,
+        p_created_by: createdBy,
+      });
+      onPromoted();
+    } catch {
+      err('Failed to add the customer');
+      setSaving(false);
+    }
+  }, [db, lead.id, promoteName, promoteEmail, createdBy, onPromoted]);
 
   const loadActivity = useCallback(async () => {
     if (!lead.contact_id) return;
@@ -332,6 +356,29 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, d
           {lead.value != null && <div className="crm-panel-row"><span>Value</span><span>{formatMoney(lead.value)}</span></div>}
           <div className="crm-panel-row"><span>Occurred</span><span>{lead.occurred_at ? new Date(lead.occurred_at).toLocaleString() : '—'}</span></div>
         </div>
+
+        {!lead.contact_id && (
+          <div className="crm-panel-section">
+            {!promoting ? (
+              <>
+                <p className="crm-panel-empty">Not a customer yet — raw calls stay contact-free until you qualify them.</p>
+                <button className="crm-btn crm-btn-primary" onClick={() => setPromoting(true)}>+ Add as customer</button>
+              </>
+            ) : (
+              <>
+                <label className="crm-panel-label" htmlFor="promote-name">Name</label>
+                <input id="promote-name" className="crm-input" value={promoteName} onChange={e => setPromoteName(e.target.value)} placeholder="Jane Homeowner" autoFocus />
+                <label className="crm-panel-label" htmlFor="promote-email" style={{ marginTop: 'var(--space-3)' }}>Email</label>
+                <input id="promote-email" className="crm-input" value={promoteEmail} onChange={e => setPromoteEmail(e.target.value)} placeholder="optional" inputMode="email" />
+                <div className="crm-panel-actions" style={{ paddingLeft: 0, paddingRight: 0 }}>
+                  <button className="crm-btn crm-btn-primary" onClick={promote} disabled={saving}>{saving ? 'Adding…' : 'Add as customer'}</button>
+                  <button className="crm-btn crm-btn-ghost" onClick={() => setPromoting(false)}>Cancel</button>
+                </div>
+                <p className="crm-panel-empty">Creates a contact from this number ({lead.caller_number}) and links this lead to it.</p>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="crm-panel-section">
           <div className="crm-panel-section-title">Activity</div>
