@@ -466,19 +466,20 @@ acceptance criteria, and an independent `crm-phase-reviewer` pass — before its
 ### Phase 0 — Progress tracking + shell skeleton
 
 > **Branch:** `crm/phase-0-scaffold` — cut off `dev`.
-> **Prerequisite:** `crm/foundation` merged into `dev` (roadmap + `.claude/` tooling present).
+> **Prerequisite:** none beyond current `dev` — the roadmap + `.claude/` tooling are already merged into `dev`. Phase 0 is the first build phase.
 > **Read scope:** this block + `CLAUDE.md` (generic build & close-out rules).
 > **Close-out checklist (all true before the `dev → main` PR):**
-> - [ ] Test-first, now green: `set_crm_phase_status(p_phase_key, p_status)` sets `status` + stamps `shipped_at` and is idempotent — integration test vs the Supabase `dev` branch.
-> - [ ] Acceptance: `/crm/roadmap` renders every `crm_build_phases` row as a read-only checklist, gated by `page:crm` (invisible to other employees); `crm_orgs` seeded with the real Utah Pros org **and** a disposable `… — TEST` org; `set_crm_phase_status` flips a row to `shipped`.
+> - [ ] Test-first, now green: `set_crm_phase_status` / `set_crm_stage_status` set status + stamp `shipped_at`, and `get_crm_build_progress()` rolls up stage done/total counts correctly — integration test vs the Supabase `dev` branch.
+> - [ ] Acceptance: `/crm/roadmap` renders every phase with its status, its **stages as a checklist**, and a **per-phase progress bar** (e.g. `3/7`) + overall progress, gated by `page:crm` (invisible to other employees); `crm_orgs` seeded with the real Utah Pros org **and** a disposable `… — TEST` org.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass.
 > - [ ] `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off.
-> - [ ] Visual: the `/crm/roadmap` checklist at `crm-phase-0-scaffold.utah-pros-app-git.pages.dev`.
-> - [ ] Dogfood the close-out: set the `phase-0` row to `shipped` via `set_crm_phase_status`.
-> - [ ] `UPR-Web-Context.md` updated (`crm_orgs`, `crm_build_phases` tables, `set_crm_phase_status` RPC, `/crm/roadmap` page, `page:crm` flag).
+> - [ ] Visual: the `/crm/roadmap` progress page at `crm-phase-0-scaffold.utah-pros-app-git.pages.dev`.
+> - [ ] Dogfood the close-out: mark phase-0's stages `done` and phase-0 `shipped` via the RPCs.
+> - [ ] `UPR-Web-Context.md` updated (`crm_orgs`, `crm_build_phases`, `crm_build_stages` tables; `get_crm_build_progress` / `set_crm_phase_status` / `set_crm_stage_status` RPCs; `/crm/roadmap` page; `page:crm` flag).
 
 Phase 0 is the minimal scaffold everything else plugs into — the first migration and the
-first `/crm` route — kept deliberately small:
+first `/crm` route — plus the always-current build tracker that means we never have to
+remember where the build stopped:
 
 - **`crm_orgs`** — `id, name, is_test BOOLEAN DEFAULT false, created_at`. Seeded with the
   real **Utah Pros Restoration** org and a disposable **"Utah Pros — TEST"** org
@@ -486,15 +487,29 @@ first `/crm` route — kept deliberately small:
   enabled at creation. This is the `org_id` tenancy seam every later CRM table carries.
 - **`crm_build_phases`** — `phase_key TEXT PK, title TEXT, status TEXT CHECK (status IN
   ('planned','in_progress','shipped')) DEFAULT 'planned', shipped_at TIMESTAMPTZ,
-  sort_order INT`. Seeded one row per phase in this roadmap (0, 1, 2, 3, 4a–4d, 5). RLS
-  enabled at creation.
-- **`set_crm_phase_status(p_phase_key, p_status)`** RPC (SECURITY DEFINER) — the
-  one-call close-out step every phase runs; stamps `shipped_at = now()` on `shipped`.
-- **Minimal shell + progress page** — the `page:crm` feature flag (with
+  sort_order INT`. One row per phase (0, 1, 2, 3, 4a–4d, 5). RLS enabled at creation.
+- **`crm_build_stages`** — `id, phase_key TEXT FK→crm_build_phases, title TEXT, status
+  TEXT CHECK (status IN ('todo','in_progress','done')) DEFAULT 'todo', sort_order INT`.
+  The sub-steps/to-dos inside each phase, seeded from each phase's close-out checklist in
+  this roadmap. RLS enabled at creation. This is what makes the page show *stage-level*
+  progress, not just a phase checkbox.
+- **RPCs** (SECURITY DEFINER, granted anon+authenticated): `get_crm_build_progress()`
+  returns phases with their nested stages and a done/total count per phase (+ overall);
+  `set_crm_phase_status(p_phase_key, p_status)` and `set_crm_stage_status(p_stage_id,
+  p_status)` are the one-call updates every phase runs at its close (`shipped_at = now()`
+  on `shipped`).
+- **Minimal shell + roadmap page** — the `page:crm` feature flag (with
   `dev_only_user_id`), the `/crm` route tree + `FeatureRoute` gate + a bare `CrmLayout`,
-  and the read-only **`/crm/roadmap`** page rendering `crm_build_phases` as a checklist
-  (planned / in-progress / shipped). Phase 1 replaces the bare layout with the full
-  designed shell; Phase 0 just establishes the route + flag + progress view.
+  and the read-only **`/crm/roadmap`** page: every phase with its status, its stages as a
+  checklist, and a progress bar per phase + overall. It reads `get_crm_build_progress()`
+  and is the **single source of truth for where the build is** — replacing any external
+  tracker (no Asana/Trello; the page + git are the record). Phase 1 replaces the bare
+  layout with the full designed shell; Phase 0 just establishes the route, flag, and
+  progress view.
+
+**Every later phase, at its close, updates this page** via the status RPCs (baked into
+each phase's close-out checklist and the `CLAUDE.md` CRM Phase Workflow). Open
+`/crm/roadmap` any time to see exactly what's done and what's next.
 
 ### Phase 1 — CRM shell + CallRail lead ingestion (calls + form submissions)
 

@@ -145,7 +145,7 @@ The new CRM side ships in sequential phases, each its own branch/PR. **Per-phase
 - **Isolation is the `page:crm` flag + `dev_only_user_id`** (not a branch) — `/crm/*` stays invisible to other employees on `dev` and `main` until the flag opens.
 - **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR.
 
-⚠️ `crm_build_phases` does not exist yet (checked live via MCP `upr_schema` — not in the table list). **Phase 0** in `docs/crm-roadmap.md` creates it (`phase_key, title, status, shipped_at, sort_order`) along with a read-only `/crm/roadmap` progress page; build Phase 0 before Phase 1.
+⚠️ `crm_build_phases` does not exist yet (checked live via MCP `upr_schema` — not in the table list). **Phase 0** in `docs/crm-roadmap.md` creates it (`phase_key, title, status, shipped_at, sort_order`) plus `crm_build_stages` (per-phase sub-steps) and a read-only `/crm/roadmap` progress page (phase + stage progress); build Phase 0 before Phase 1.
 
 ---
 *Full DB schema/RPCs/iOS build → `UPR-Web-Context.md` (not duplicated here — verify columns live via MCP schema tools or `information_schema.columns`, not memory). UI/design tokens → `UPR-Design-System.md`. Billing/QBO/Xactimate → `BILLING-CONTEXT.md`. Encircle API → `ENCIRCLE_API_REFERENCE.md`. Email deliverability → `EMAIL-DELIVERABILITY.md`. QBO sync internals → `UPR-QBO-SYNC-PROTOCOL.md`.*
