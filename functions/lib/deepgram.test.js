@@ -20,7 +20,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { formatDeepgramTranscript } from './deepgram.js';
+import { formatDeepgramTranscript, buildTranscriptAnalysis } from './deepgram.js';
 
 // A trimmed-down shape of a real Deepgram pre-recorded response with
 // diarize=true + smart_format (paragraphs, each tagged with a speaker index).
@@ -101,5 +101,93 @@ describe('formatDeepgramTranscript', () => {
     expect(formatDeepgramTranscript(undefined)).toBeNull();
     expect(formatDeepgramTranscript({})).toBeNull();
     expect(formatDeepgramTranscript('nope')).toBeNull();
+  });
+});
+
+// A stereo (multichannel) Deepgram response: CallRail records Agent + Customer on
+// separate channels, so utterances carry a `channel` (0=Agent, 1=Customer) and we
+// build the conversation by interleaving them by start time — no diarization guessing.
+const multichannel = {
+  results: {
+    channels: [
+      { alternatives: [{ transcript: 'Hi, this is Ben with Utah Pros. How can I help you?', entities: [{ label: 'PERSON', value: 'Ben' }] }] },
+      { alternatives: [{ transcript: 'Hi, this is Colton with Cascade Roofing.' }] },
+    ],
+    utterances: [
+      { start: 6.0, channel: 0, transcript: 'How can I help you?' },
+      { start: 0.5, channel: 0, transcript: 'Hi, this is Ben with Utah Pros.' },
+      { start: 3.0, channel: 1, transcript: 'Hi, this is Colton with Cascade Roofing.' },
+    ],
+    summary: { result: 'success', short: 'A roofing contractor introduces himself and pitches a partnership.' },
+    sentiments: { average: { sentiment: 'positive', sentiment_score: 0.42 } },
+    topics: {
+      segments: [
+        { topics: [{ topic: 'roofing', confidence_score: 0.9 }] },
+        { topics: [{ topic: 'partnership', confidence_score: 0.8 }, { topic: 'roofing', confidence_score: 0.7 }] },
+      ],
+    },
+  },
+};
+
+// A mono (single-channel) response — diarization is the only speaker signal.
+const diarizedOnly = {
+  results: {
+    channels: [
+      {
+        alternatives: [
+          {
+            transcript: 'Hello. Hi there.',
+            paragraphs: {
+              paragraphs: [
+                { speaker: 0, sentences: [{ text: 'Hello.' }] },
+                { speaker: 1, sentences: [{ text: 'Hi there.' }] },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  },
+};
+
+describe('buildTranscriptAnalysis', () => {
+  it('builds Agent/Customer turns from stereo utterances, ordered by start time', () => {
+    const a = buildTranscriptAnalysis(multichannel);
+    expect(a.speakerMode).toBe('channel');
+    expect(a.turns).toEqual([
+      { speaker: 'Agent', text: 'Hi, this is Ben with Utah Pros.' },
+      { speaker: 'Customer', text: 'Hi, this is Colton with Cascade Roofing.' },
+      { speaker: 'Agent', text: 'How can I help you?' },
+    ]);
+  });
+
+  it('extracts summary, sentiment, deduped topics, and entities', () => {
+    const a = buildTranscriptAnalysis(multichannel);
+    expect(a.summary).toBe('A roofing contractor introduces himself and pitches a partnership.');
+    expect(a.sentiment).toEqual({ label: 'positive', score: 0.42 });
+    expect(a.topics).toEqual(['roofing', 'partnership']);
+    expect(a.entities).toEqual([{ label: 'PERSON', value: 'Ben' }]);
+  });
+
+  it('falls back to diarized Speaker turns when the audio is mono (one channel)', () => {
+    const a = buildTranscriptAnalysis(diarizedOnly);
+    expect(a.speakerMode).toBe('diarize');
+    expect(a.turns).toEqual([
+      { speaker: 'Speaker 1', text: 'Hello.' },
+      { speaker: 'Speaker 2', text: 'Hi there.' },
+    ]);
+    // No intelligence features requested/returned → empty, not throwing.
+    expect(a.summary).toBeNull();
+    expect(a.sentiment).toBeNull();
+    expect(a.topics).toEqual([]);
+    expect(a.entities).toEqual([]);
+  });
+
+  it('returns null for null / garbage / no transcript content', () => {
+    expect(buildTranscriptAnalysis(null)).toBeNull();
+    expect(buildTranscriptAnalysis(undefined)).toBeNull();
+    expect(buildTranscriptAnalysis({})).toBeNull();
+    expect(buildTranscriptAnalysis('nope')).toBeNull();
+    expect(buildTranscriptAnalysis({ results: { channels: [] } })).toBeNull();
   });
 });
