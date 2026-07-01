@@ -71,6 +71,7 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
   };
 
   const disconnect = async () => {
+    if (!confirmingDisconnect) { setConfirmingDisconnect(true); return; }
     setSaving(true);
     try {
       const auth = await getAuthHeader();
@@ -101,15 +102,14 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
       {connected ? (
         <div className="crm-integration-card-body">
           <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
-          {confirmingDisconnect ? (
-            <div className="crm-integration-confirm-row">
-              <span>Disconnect CallRail?</span>
-              <button className="crm-btn crm-btn-danger" onClick={disconnect} disabled={saving}>Confirm</button>
-              <button className="crm-btn crm-btn-ghost" onClick={() => setConfirmingDisconnect(false)}>Cancel</button>
-            </div>
-          ) : (
-            <button className="crm-btn crm-btn-ghost" onClick={() => setConfirmingDisconnect(true)}>Disconnect</button>
-          )}
+          <button
+            className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
+            onClick={disconnect}
+            onBlur={() => setConfirmingDisconnect(false)}
+            disabled={saving}
+          >
+            {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
+          </button>
         </div>
       ) : (
         <div className="crm-integration-card-body">
