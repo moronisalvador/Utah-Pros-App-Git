@@ -68,9 +68,30 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put COOKIE_ENCRYPTION_KEY   # e.g. `openssl rand -hex 32`
 npx wrangler secret put ENCIRCLE_API_KEY        # for the encircle_* tools (same token the Pages functions use)
 npx wrangler secret put RESEND_API_KEY          # for the resend_* email tools (same token the Pages functions use)
+
+# ── Optional: the newer integration modules (each dormant until its secret is set) ──
+# CallRail + Deepgram need NO secret here — they reuse the tokens already stored in
+# Supabase integration_credentials (providers 'callrail' / 'deepgram').
+npx wrangler secret put STRIPE_SECRET_KEY               # stripe_* tools
+npx wrangler secret put TWILIO_ACCOUNT_SID              # twilio_* tools
+npx wrangler secret put TWILIO_AUTH_TOKEN
+# npx wrangler secret put TWILIO_MESSAGING_SERVICE_SID  # (optional) preferred SMS sender
+# npx wrangler secret put TWILIO_PHONE_NUMBER           # (optional) fallback From number
+npx wrangler secret put GOOGLE_ADS_CLIENT_ID            # google_ads_* tools (refreshes the stored token)
+npx wrangler secret put GOOGLE_ADS_CLIENT_SECRET
+npx wrangler secret put GOOGLE_ADS_DEVELOPER_TOKEN
+npx wrangler secret put GOOGLE_ADS_CUSTOMER_ID
+# npx wrangler secret put GOOGLE_ADS_LOGIN_CUSTOMER_ID  # (optional) MCC/manager account
+npx wrangler secret put META_APP_ID                     # meta_ads_* tools (re-exchanges the stored token)
+npx wrangler secret put META_APP_SECRET
+npx wrangler secret put META_AD_ACCOUNT_ID
+npx wrangler secret put GITHUB_TOKEN                    # github_* tools (a PAT)
+# npx wrangler secret put GITHUB_DEFAULT_REPO           # (optional) "owner/repo" default
 ```
-The last two are optional — the `encircle_*` / `resend_*` tools simply return a
-clear "not configured" error until their key is set.
+`ENCIRCLE_API_KEY` / `RESEND_API_KEY` and every secret in the block above are
+optional — each integration's tools simply return a clear "not configured" (or
+"not connected in UPR") error until the relevant secret / stored credential is
+present.
 Confirm `ALLOWED_EMAIL` in `wrangler.toml` is your address, then redeploy:
 ```bash
 npx wrangler deploy
@@ -128,11 +149,40 @@ real email — guarded)*, `resend_get_email` (delivery status by id),
 endpoint — batch send, audiences, broadcasts, api-keys)*. Requires the
 `RESEND_API_KEY` secret on the worker.
 
-> **Google / Workspace** (Gmail, Drive, Calendar) is intentionally **not** in
-> this server — there is no Google data-API key here (the Google OAuth in this
+**CallRail (call tracking) + Deepgram (transcription):** `callrail_list_calls`,
+`callrail_get_call`, `callrail_list_form_submissions`, `callrail_get_recording`
+*(resolve a signed audio URL)*, `callrail_transcribe` *(guarded — paid Deepgram
+call)*, and generic `callrail_get` / `callrail_request`. Reuses the `callrail` /
+`deepgram` keys already in `integration_credentials` — no worker secret needed;
+the CallRail account id is resolved automatically.
+
+**Stripe (card payments + payouts):** `stripe_get_balance`, `stripe_list_charges`,
+`stripe_retrieve_charge`, `stripe_list_payouts`, `stripe_list_external_accounts`,
+`stripe_create_payout` *(moves real money — guarded)*, `stripe_create_payment_link`
+*(guarded)*, and generic `stripe_get` / `stripe_request`. Requires `STRIPE_SECRET_KEY`.
+
+**Twilio (SMS/MMS):** `twilio_list_messages`, `twilio_get_message`,
+`twilio_send_sms` *(sends a real text — guarded)*, and generic `twilio_get` /
+`twilio_request`. Requires `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN`.
+
+**Google Ads / Meta Ads (spend reporting):** `google_ads_campaign_spend`,
+`google_ads_query` *(raw GAQL)*, `meta_ads_insights`, `meta_ads_get` *(any Graph
+read)*. Reuse the `google_ads` / `meta_ads` OAuth tokens already stored in
+`integration_credentials`; each also needs its app-credential + account-id secrets
+(see setup). Read-only.
+
+**GitHub (repo / PRs / issues):** `github_list_prs`, `github_get_pr`,
+`github_list_issues`, `github_search_code`, `github_create_issue` *(guarded)*, and
+generic `github_get` / `github_request`. Requires `GITHUB_TOKEN`; set
+`GITHUB_DEFAULT_REPO` so repo-scoped tools default to the UPR repo.
+
+> **Google Workspace** (Gmail, Drive, Calendar) is intentionally **not** in this
+> server — there is no Workspace data-API key here (the Google OAuth in this
 > worker is only for owner *login*). Use the dedicated Gmail / Google Drive /
 > Google Calendar MCP connectors in Claude for that; adding Workspace here would
-> need separate Google OAuth scopes + consent.
+> need separate Google OAuth scopes + consent. **Google Ads is separate** from
+> Workspace — it uses its own developer-token app and the company-wide
+> `google_ads` connection, so it *is* included above.
 
 Every **[WRITE]** tool, called without `confirm: true`, returns a **preview** of
 exactly what it would change and does nothing — call again with `confirm: true`

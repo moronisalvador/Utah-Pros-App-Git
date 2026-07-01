@@ -33,3 +33,25 @@ ALLOWED_EMAIL = "moroni.s@utah-pros.com"
 #   GOOGLE_CLIENT_ID             Google OAuth client (for the login screen)
 #   GOOGLE_CLIENT_SECRET         Google OAuth client secret
 #   COOKIE_ENCRYPTION_KEY        random 32+ char string (openssl rand -hex 32)
+#   ENCIRCLE_API_KEY             (optional) enables the encircle_* tools
+#   RESEND_API_KEY               (optional) enables the resend_* email tools
+#
+#   ── New integration modules (each optional; its tools stay dormant until set) ──
+#   CallRail + Deepgram: reuse the tokens already in integration_credentials
+#     (providers 'callrail' / 'deepgram') — NO worker secret needed. Account id is
+#     resolved from integration_config; override with CALLRAIL_ACCOUNT_ID if needed.
+#   STRIPE_SECRET_KEY            Stripe secret key — enables the stripe_* tools
+#   TWILIO_ACCOUNT_SID           enables the twilio_* tools (with TWILIO_AUTH_TOKEN)
+#   TWILIO_AUTH_TOKEN            Twilio auth token
+#   TWILIO_MESSAGING_SERVICE_SID (optional) preferred SMS sender; else TWILIO_PHONE_NUMBER
+#   TWILIO_PHONE_NUMBER          (optional) fallback From number for twilio_send_sms
+#   GOOGLE_ADS_CLIENT_ID         Google Ads OAuth app (refreshes the google_ads token)
+#   GOOGLE_ADS_CLIENT_SECRET     Google Ads OAuth secret
+#   GOOGLE_ADS_DEVELOPER_TOKEN   Google Ads developer token
+#   GOOGLE_ADS_CUSTOMER_ID       target customer id (digits, dashes ok)
+#   GOOGLE_ADS_LOGIN_CUSTOMER_ID (optional) MCC/manager account id
+#   META_APP_ID                  Meta app id (re-exchanges the meta_ads long-lived token)
+#   META_APP_SECRET              Meta app secret
+#   META_AD_ACCOUNT_ID           ad account id (act_ prefix optional)
+#   GITHUB_TOKEN                 GitHub PAT — enables the github_* tools
+#   GITHUB_DEFAULT_REPO          (optional) "owner/repo" default for repo-scoped tools
