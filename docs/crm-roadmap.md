@@ -576,6 +576,11 @@ confirmation this is actually how the site's quote form is wired before build st
   > and each person (best-effort), and auto-captures the caller's name onto the
   > lead (`caller_name`; backfills a blank linked contact, never creates one). The
   > transcript renders as grouped speaker blocks; topics capped to the top 6.
+  > **Attribution + qualify (shipped):** each call shows a **campaign label** for the
+  > tracking number it was dialed from (CallRail leaves campaign/source empty on
+  > direct dials, so the number is the ad-source identity) — labels live in
+  > `crm_tracking_numbers`, editable inline on the Call Log. Each lead also has an
+  > inline **notes + dollar value** editor (`set_lead_details`).
 - **Ingestion RPC**: `upsert_lead_from_callrail(...)` (SECURITY DEFINER) —
   - Matches/creates a contact by **`caller_number`** (never `tracking_number`, which
     is UPR's own number) exactly like `twilio-webhook.js:78` does today
