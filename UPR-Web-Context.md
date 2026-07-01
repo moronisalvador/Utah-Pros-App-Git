@@ -2214,7 +2214,16 @@ promote_lead_to_contact(p_lead_id, p_name, p_email, p_created_by) — the CRM "A
   system_events row. `SECURITY DEFINER`, granted `anon, authenticated`.
 update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
   logs a `crm_lead_status_updated` system_events row.
+set_lead_transcription(p_lead_id, p_transcription, p_source default 'deepgram') — stores a call
+  transcript we generated ourselves (see transcribe-call.js). Sets `transcription`,
+  `transcription_source`, `transcribed_at`, bumps `updated_at`, logs `crm_call_transcribed`.
+  `SECURITY DEFINER`, granted `anon, authenticated`. Modeled on `update_lead_status`.
 ```
+
+**`inbound_leads` columns added** (migration `20260701_crm_call_transcription.sql`, additive):
+`transcription_source text` + `transcribed_at timestamptz` — record WHERE a transcript came from
+(`'deepgram'` today) and WHEN, so a future source (or CallRail's CI, if ever enabled) is
+distinguishable. The `transcription` text column itself already existed.
 
 **Existing RPC widened**: `get_integration_status(p_provider)` (originally QBO-only) only checked
 `refresh_token IS NOT NULL` for "connected". CallRail has no OAuth — its API key lives in
@@ -2286,7 +2295,28 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          **custom** player (`RecordingPlayer` — a hidden `<audio>` engine + CRM-styled
                          play/pause, seek, and time), not the browser's default control chrome. Each
                          call row also has a collapsible **"Show transcript"** toggle (only when a
-                         transcript exists).
+                         transcript exists), and a **"Transcribe"** button when a recording exists
+                         but no transcript does (calls transcribe-call.js below). The
+                         recording-URL resolution (direct-audio-stream vs. JSON→signed-URL) now lives
+                         in the shared `resolveCallRecording()` (functions/lib/callrail-api.js),
+                         reused by transcribe-call.js.
+transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES because our CallRail
+                         plan doesn't expose transcripts via the API (that needs CallRail's Premium
+                         Conversation Intelligence add-on, ~$110/mo — confirmed live: `transcription`,
+                         `lead_score`, `lead_explanation` all come back null even on long answered
+                         calls). Body `{ lead_id }` (one call, from the Call Log Transcribe button) or
+                         `{ backfill: true, days?: 30 }` (every recent call with a recording but no
+                         transcript). Reads the Deepgram + CallRail keys from integration_credentials,
+                         resolves the recording via `resolveCallRecording()`, then hands Deepgram the
+                         signed URL (`model=nova-2&diarize=true&punctuate=true&smart_format=true`) so it
+                         fetches the audio itself (no Worker buffering; falls back to POSTing bytes when
+                         CallRail streams directly), formats the result via `formatDeepgramTranscript()`
+                         (functions/lib/deepgram.js — pure, unit-tested; speaker-labeled "Speaker N:"
+                         turns), and stores it via `set_lead_transcription`. Backfill hard-capped at 200
+                         leads (MAX_BACKFILL) to guard against a runaway paid-API fan-out. Logs one
+                         worker_runs row per invocation. **Deepgram key** lives in
+                         integration_credentials (provider='deepgram') — a pasted key, not a Cloudflare
+                         env var, same pattern as CallRail's.
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
