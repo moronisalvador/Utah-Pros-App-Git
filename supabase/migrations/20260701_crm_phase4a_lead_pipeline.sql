@@ -58,9 +58,10 @@ WHERE NOT EXISTS (SELECT 1 FROM pipeline_stages ps WHERE ps.org_id = o.id);
 
 -- 2. lead_pipeline_stage — current stage per lead ─────────────────────────────
 -- One row per lead that has been placed on the board; a lead with no row
--- here reads as sitting in the first stage (lowest sort_order) — see
--- get_leads_pipeline() and src/lib/crmPipeline.js's groupLeadsByStage(),
--- which apply the same fallback on the frontend.
+-- here reads as sitting in the first stage (lowest sort_order) — the Leads
+-- board (src/pages/crm/CrmLeads.jsx) fetches this table directly and applies
+-- that same fallback client-side via src/lib/crmPipeline.js's
+-- groupLeadsByStage(), rather than a dedicated read RPC.
 CREATE TABLE IF NOT EXISTS lead_pipeline_stage (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id     uuid NOT NULL UNIQUE REFERENCES inbound_leads(id) ON DELETE CASCADE,
