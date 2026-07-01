@@ -5861,6 +5861,7 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-integration-callrail: #f97316;
   --crm-integration-google: #4285f4;
   --crm-integration-meta: #0866ff;
+  --crm-channel-insurance: #d97706;
   --crm-text-on-accent: #ffffff;
 }
 
@@ -6070,3 +6071,55 @@ tr:hover td { background: var(--bg-secondary); }
   .crm-sidebar-footer-link:hover { opacity: 1; text-decoration: underline; }
   .crm-content { overflow-y: auto; padding: var(--space-6) var(--space-6); }
 }
+
+/* ── CRM Phase 3 — Attribution + funnel dashboard (docs/crm-roadmap.md) ── */
+.crm-page-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+
+/* Date-range picker */
+.crm-range { display: inline-flex; gap: 2px; background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: 3px; }
+.crm-range-btn {
+  font-family: inherit; font-size: 12px; font-weight: 600; color: var(--crm-text-secondary);
+  background: transparent; border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
+}
+.crm-range-btn:hover { color: var(--crm-text-primary); }
+.crm-range-btn.active { background: var(--crm-bg-card); color: var(--crm-text-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+
+/* KPI metric cards */
+.crm-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+.crm-metric { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-4); }
+.crm-metric-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-tertiary); }
+.crm-metric-value { font-size: 24px; font-weight: 800; color: var(--crm-text-primary); margin-top: 4px; line-height: 1.1; }
+.crm-metric-sub { font-size: 11px; color: var(--crm-text-tertiary); margin-top: 2px; }
+
+/* Cards + section headings */
+.crm-card { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-5); margin-bottom: var(--space-5); }
+.crm-section-title { font-size: 15px; font-weight: 700; color: var(--crm-text-primary); margin: 0 0 var(--space-4); }
+.crm-section-hint { font-size: 12px; font-weight: 500; color: var(--crm-text-tertiary); }
+.crm-note { font-size: 12px; color: var(--crm-text-tertiary); margin: var(--space-3) 0 0; }
+
+/* Funnel */
+.crm-funnel { display: flex; flex-direction: column; gap: var(--space-4); }
+.crm-funnel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.crm-funnel-label { font-size: 13px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-funnel-count { font-size: 16px; font-weight: 800; color: var(--crm-text-primary); }
+.crm-funnel-track { height: 12px; background: var(--crm-bg-content); border-radius: 6px; overflow: hidden; }
+.crm-funnel-bar { height: 100%; background: var(--crm-accent); border-radius: 6px; transition: width 0.3s ease; }
+.crm-funnel-rate { font-size: 11px; color: var(--crm-text-tertiary); margin-top: 4px; }
+
+/* Data table */
+.crm-table-wrap { overflow-x: auto; }
+.crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.crm-table th {
+  text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--crm-text-tertiary); padding: 8px 10px; border-bottom: 1px solid var(--crm-border); white-space: nowrap;
+}
+.crm-table td { padding: 10px; border-bottom: 1px solid var(--crm-border); color: var(--crm-text-primary); white-space: nowrap; }
+.crm-table tbody tr:last-child td { border-bottom: none; }
+.crm-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.crm-channel-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; background: var(--crm-text-tertiary); }
+.crm-channel-google_ads { background: var(--crm-integration-google); }
+.crm-channel-meta_ads { background: var(--crm-integration-meta); }
+.crm-channel-organic { background: var(--crm-success); }
+.crm-channel-referral { background: var(--crm-accent); }
+.crm-channel-insurance { background: var(--crm-channel-insurance); }
+.crm-channel-other { background: var(--crm-text-tertiary); }
