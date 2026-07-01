@@ -27,7 +27,11 @@
  *                           transcript_analysis), integration_credentials
  *                           (provider='deepgram' + provider='callrail' keys)
  *                  writes → inbound_leads.transcription + transcript_analysis (via
- *                           set_lead_transcription RPC), system_events, worker_runs
+ *                           set_lead_transcription RPC); inbound_leads.caller_name +
+ *                           a blank linked contact's name (via set_lead_caller_name);
+ *                           system_events, worker_runs
+ *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
+ *                  (Claude Haiku — names the Agent/Customer speakers, best-effort)
  *
  * NOTES / GOTCHAS:
  *   - Requests nova-3 + multichannel + Audio Intelligence (summary/sentiment/topics/
@@ -51,8 +55,17 @@ import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
 import { formatDeepgramTranscript, buildTranscriptAnalysis } from '../lib/deepgram.js';
+import { buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities } from '../lib/speakerNaming.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const NAMING_MODEL = 'claude-haiku-4-5-20251001'; // cheap/fast — a simple extraction
+const NAMING_SYSTEM = `You label the speakers in a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting.
+
+Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
+{"speakers":{"<label>":{"role":"agent"|"customer","name":<first name or null>}, ...},"caller_name":<the CUSTOMER's first name or null>}
+
+Use the EXACT speaker labels from the transcript as the keys. Only set a name if the person actually states their name in the call — otherwise null. A name is a person's name, never a company name.`;
 // nova-3 (best accuracy) + multichannel (CallRail records Agent/Customer on
 // separate channels → exact speaker separation; diarize is the mono fallback) +
 // utterances (per-turn segments) + Audio Intelligence (summary/sentiment/topics/
@@ -68,9 +81,34 @@ export async function onRequestOptions(context) {
 
 // ─── SECTION: Helpers ──────────────
 
+// Best-effort: ask Claude which speaker is the Agent vs the Customer and each
+// person's name, then relabel the analysis turns. Returns { analysis, callerName }.
+// Any failure (no key, API error, unparseable answer) leaves the analysis as-is —
+// naming is an enrichment, never a hard dependency of transcription.
+async function nameSpeakers(env, analysis) {
+  const turns = analysis?.turns || [];
+  const prompt = buildSpeakerPrompt(turns);
+  if (!env.ANTHROPIC_API_KEY || !prompt) return { analysis, callerName: null };
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: NAMING_MODEL, max_tokens: 400, system: NAMING_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) return { analysis, callerName: null };
+    const data = await res.json().catch(() => null);
+    const out = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const identities = parseSpeakerIdentities(out);
+    if (!identities) return { analysis, callerName: null };
+    return { analysis: applySpeakerIdentities(analysis, identities), callerName: identities.caller_name };
+  } catch {
+    return { analysis, callerName: null };
+  }
+}
+
 // Transcribe one lead's recording and store it. Returns the transcript length;
 // throws with a precise reason so the caller can log/surface it.
-async function transcribeLead(db, lead, callrailKey, deepgramKey) {
+async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
   const recUrl = lead.recording_url;
   if (!recUrl || !/^https:\/\/api\.callrail\.com\//.test(recUrl)) {
     throw new Error('no/invalid recording URL');
@@ -110,9 +148,13 @@ async function transcribeLead(db, lead, callrailKey, deepgramKey) {
   // transcript_analysis IS NULL, so a null here would re-transcribe (re-bill) the
   // row on every run. buildTranscriptAnalysis is aligned to be non-null whenever
   // `text` is, but keep a sentinel as a hard backstop against Deepgram shape drift.
-  const analysis =
+  let analysis =
     buildTranscriptAnalysis(json) ||
     { model: 'nova-3', speakerMode: 'text', turns: [], summary: null, sentiment: null, topics: [], entities: [] };
+
+  // Name the speakers (Agent/Customer + real names) — best-effort enrichment.
+  const named = await nameSpeakers(env, analysis);
+  analysis = named.analysis;
 
   await db.rpc('set_lead_transcription', {
     p_lead_id: lead.id,
@@ -120,7 +162,16 @@ async function transcribeLead(db, lead, callrailKey, deepgramKey) {
     p_source: 'deepgram',
     p_analysis: analysis,
   });
-  return { id: lead.id, chars: text.length, transcription: text, analysis };
+
+  // Auto-name the lead from the caller's detected name (fills caller_name; backfills
+  // a linked contact's name only if blank; never creates a contact). Best-effort.
+  if (named.callerName) {
+    try {
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: named.callerName });
+    } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
+  }
+
+  return { id: lead.id, chars: text.length, transcription: text, analysis, callerName: named.callerName || null };
 }
 
 // ─── SECTION: Handler ──────────────
@@ -153,13 +204,15 @@ export async function onRequestPost(context) {
     if (body.backfill) {
       const days = Number(body.days) > 0 ? Number(body.days) : 30;
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      // Target calls that lack a transcript OR lack the structured analysis, so a
-      // row transcribed before this v2 upgrade gets re-enriched exactly once (then
-      // has both and is skipped). Avoids re-charging fully-processed calls.
+      // Default: target calls that lack a transcript OR the structured analysis, so a
+      // row transcribed before an upgrade gets re-enriched exactly once (then has both
+      // and is skipped) — avoids re-charging fully-processed calls. With `force:true`
+      // re-process EVERY recent call (e.g. to apply speaker naming / a new layout to
+      // already-transcribed rows) — still capped at MAX_BACKFILL.
+      const freshOnly = body.force ? '' : '&or=(transcription.is.null,transcript_analysis.is.null)';
       leads = await db.select(
         'inbound_leads',
-        `source_type=eq.call&recording_url=not.is.null` +
-          `&or=(transcription.is.null,transcript_analysis.is.null)&occurred_at=gte.${startDate}` +
+        `source_type=eq.call&recording_url=not.is.null${freshOnly}&occurred_at=gte.${startDate}` +
           `&select=id,recording_url&order=occurred_at.desc&limit=${MAX_BACKFILL}`
       );
     } else if (body.lead_id) {
@@ -190,7 +243,7 @@ export async function onRequestPost(context) {
       continue;
     }
     try {
-      const r = await transcribeLead(db, lead, callrailKey, deepgramKey);
+      const r = await transcribeLead(db, env, lead, callrailKey, deepgramKey);
       processed++;
       single = r;
     } catch (e) {
@@ -218,6 +271,7 @@ export async function onRequestPost(context) {
       // OR the existing one when skipped) so the UI updates inline either way.
       transcription: leads.length === 1 && single ? single.transcription : undefined,
       analysis: leads.length === 1 && single ? single.analysis : undefined,
+      callerName: leads.length === 1 && single ? (single.callerName || null) : undefined,
     },
     200,
     request,

@@ -572,6 +572,10 @@ confirmation this is actually how the site's quote form is wired before build st
   > sentiment badge, topic chips, Agent/Customer turns). Strategic upside: the
   > transcripts + entities live in our DB, feeding future lead-name capture /
   > scoring, instead of being locked in CallRail.
+  > **Speaker naming (shipped):** a Claude Haiku pass names the Agent vs Customer
+  > and each person (best-effort), and auto-captures the caller's name onto the
+  > lead (`caller_name`; backfills a blank linked contact, never creates one). The
+  > transcript renders as grouped speaker blocks; topics capped to the top 6.
 - **Ingestion RPC**: `upsert_lead_from_callrail(...)` (SECURITY DEFINER) —
   - Matches/creates a contact by **`caller_number`** (never `tracking_number`, which
     is UPR's own number) exactly like `twilio-webhook.js:78` does today

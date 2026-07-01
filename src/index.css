@@ -5865,6 +5865,8 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-channel-insurance: #d97706;
   --crm-text-on-accent: #ffffff;
   --crm-success-bg: #ecfdf5;
+  --crm-speaker: #2563eb;      /* bold blue for transcript speaker names */
+  --crm-speaker-bg: #eff6ff;   /* subtle blue tint for the Agent block */
 }
 
 .crm-sidebar {
@@ -5963,11 +5965,17 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-transcript-summary-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-tertiary); margin-bottom: 2px; }
 .crm-transcript-summary-text { font-size: 13px; color: var(--crm-text-primary); }
 .crm-transcript-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-.crm-transcript-turns { display: flex; flex-direction: column; gap: 8px; }
-.crm-transcript-turn { font-size: 13px; line-height: 1.45; }
-.crm-transcript-speaker { font-weight: 700; margin-right: 6px; color: var(--crm-accent); }
-.crm-transcript-speaker[data-role="Customer"] { color: var(--crm-channel-insurance); }
-.crm-transcript-text { color: var(--crm-text-secondary); }
+/* Grouped speaker blocks: consecutive same-speaker turns merged into one tinted
+   block with the name on its own bold blue line + a colored left edge by role. */
+.crm-transcript-turns { display: flex; flex-direction: column; gap: 10px; }
+.crm-transcript-block {
+  padding: 8px 12px; border-left: 3px solid var(--crm-border);
+  border-radius: 0 var(--crm-radius) var(--crm-radius) 0; background: var(--crm-bg-content);
+}
+.crm-transcript-block[data-role="agent"] { border-left-color: var(--crm-speaker); background: var(--crm-speaker-bg); }
+.crm-transcript-speaker { font-weight: 700; color: var(--crm-speaker); font-size: 13px; margin-bottom: 3px; }
+.crm-transcript-text { margin: 0 0 4px; font-size: 13px; line-height: 1.5; color: var(--crm-text-primary); }
+.crm-transcript-text:last-child { margin-bottom: 0; }
 .crm-transcript-entities { margin-top: 10px; font-size: 12px; color: var(--crm-text-tertiary); }
 
 .crm-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 9999px; }

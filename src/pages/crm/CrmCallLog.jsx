@@ -99,15 +99,37 @@ function RecordingPlayer({ src }) {
   );
 }
 
+// Merge consecutive turns from the SAME speaker into one block, so a monologue
+// isn't chopped into a dozen repeated-label rows. Returns [{speaker, role, texts[]}].
+function groupTurns(turns) {
+  const blocks = [];
+  for (const turn of turns) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.speaker === turn.speaker) {
+      last.texts.push(turn.text);
+    } else {
+      blocks.push({ speaker: turn.speaker, role: turn.role || null, texts: [turn.text] });
+    }
+  }
+  return blocks;
+}
+
+// Only show a handful of topic chips (Deepgram over-tags; new rows are already
+// capped in the worker, this also tidies pre-cap rows).
+const MAX_TOPIC_CHIPS = 6;
+
 // Renders a call transcript. With structured analysis (new rows) it shows a
-// conversation view — summary, sentiment, topics, then speaker-labeled turns.
-// Without it (older text-only rows) it falls back to the flat text, which now
-// preserves line breaks via the .crm-call-row-transcript `white-space` rule.
+// conversation view — summary, sentiment, topics, then speaker turns grouped by
+// speaker (name on its own bold line, tinted by role). Without analysis (older
+// text-only rows) it falls back to the flat text, which preserves line breaks via
+// the .crm-call-row-transcript `white-space` rule.
 function TranscriptView({ analysis, text }) {
   if (!analysis || !Array.isArray(analysis.turns) || analysis.turns.length === 0) {
     return <p className="crm-call-row-transcript">{text}</p>;
   }
   const sentiment = analysis.sentiment?.label;
+  const topics = (analysis.topics || []).slice(0, MAX_TOPIC_CHIPS);
+  const blocks = groupTurns(analysis.turns);
   return (
     <div className="crm-transcript">
       {analysis.summary && (
@@ -116,21 +138,23 @@ function TranscriptView({ analysis, text }) {
           <div className="crm-transcript-summary-text">{analysis.summary}</div>
         </div>
       )}
-      {(sentiment || (analysis.topics && analysis.topics.length > 0)) && (
+      {(sentiment || topics.length > 0) && (
         <div className="crm-transcript-tags">
           {sentiment && (
             <span className={`crm-badge crm-badge-sentiment-${sentiment}`}>{sentiment}</span>
           )}
-          {(analysis.topics || []).map((t) => (
+          {topics.map((t) => (
             <span key={t} className="crm-timeline-badge">{t}</span>
           ))}
         </div>
       )}
       <div className="crm-transcript-turns">
-        {analysis.turns.map((turn, i) => (
-          <div className="crm-transcript-turn" key={i}>
-            <span className="crm-transcript-speaker" data-role={turn.speaker}>{turn.speaker}</span>
-            <span className="crm-transcript-text">{turn.text}</span>
+        {blocks.map((b, i) => (
+          <div className="crm-transcript-block" data-role={b.role || 'unknown'} key={i}>
+            <div className="crm-transcript-speaker">{b.speaker}</div>
+            {b.texts.map((t, j) => (
+              <p className="crm-transcript-text" key={j}>{t}</p>
+            ))}
           </div>
         ))}
       </div>
@@ -144,7 +168,9 @@ function TranscriptView({ analysis, text }) {
 }
 
 function LeadRow({ lead, onStatusChange }) {
-  const contactLabel = lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
+  // caller_name (detected from the transcript) can arrive after load, so track it.
+  const [callerName, setCallerName] = useState(lead.caller_name);
+  const contactLabel = lead.contact?.name || callerName || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
   const [audioUrl, setAudioUrl] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
@@ -197,6 +223,7 @@ function LeadRow({ lead, onStatusChange }) {
       }
       setTranscription(data.transcription);
       if (data.analysis) setAnalysis(data.analysis);
+      if (data.callerName) setCallerName(data.callerName);
       setShowTranscript(true);
     } catch (e) {
       console.error('[transcribe-call]', e?.message || e);

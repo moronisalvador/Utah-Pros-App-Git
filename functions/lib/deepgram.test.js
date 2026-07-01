@@ -169,6 +169,31 @@ describe('buildTranscriptAnalysis', () => {
     expect(a.entities).toEqual([{ label: 'PERSON', value: 'Ben' }]);
   });
 
+  it('caps topics to the 6 most confident (Deepgram over-generates noise)', () => {
+    const many = {
+      results: {
+        channels: [{ alternatives: [{ transcript: 'x', paragraphs: { paragraphs: [{ speaker: 0, sentences: [{ text: 'x' }] }] } }] }],
+        topics: {
+          segments: [{
+            topics: [
+              { topic: 'mold', confidence_score: 0.99 },
+              { topic: 'watermelon', confidence_score: 0.10 },
+              { topic: 'costs', confidence_score: 0.90 },
+              { topic: 'cleaning', confidence_score: 0.80 },
+              { topic: 'baking', confidence_score: 0.05 },
+              { topic: 'respirator', confidence_score: 0.70 },
+              { topic: 'hazmat', confidence_score: 0.60 },
+              { topic: 'storing', confidence_score: 0.20 },
+            ],
+          }],
+        },
+      },
+    };
+    const a = buildTranscriptAnalysis(many);
+    expect(a.topics).toEqual(['mold', 'costs', 'cleaning', 'respirator', 'hazmat', 'storing']);
+    expect(a.topics).toHaveLength(6);
+  });
+
   it('falls back to diarized Speaker turns when the audio is mono (one channel)', () => {
     const a = buildTranscriptAnalysis(diarizedOnly);
     expect(a.speakerMode).toBe('diarize');
