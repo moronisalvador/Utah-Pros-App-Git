@@ -28,6 +28,11 @@
  *     exactly one account today.
  *   - Returns null (never throws) when the id can't be determined — callers
  *     surface a clear "couldn't determine the account" error instead.
+ *   - resolveCallRecording() is the one place that turns a CallRail recording
+ *     URL into playable audio: CallRail's recording endpoint either streams the
+ *     audio directly OR returns JSON pointing at a short-lived signed CDN URL.
+ *     Shared by callrail-recording.js (streams it to the browser) and
+ *     transcribe-call.js (hands the signed URL to Deepgram, or the bytes).
  * ════════════════════════════════════════════════
  */
 
@@ -58,6 +63,48 @@ export async function resolveCallRailAccountId(db, apiKey, env) {
     await db.insert('integration_config', { key: 'callrail_account_id', value: String(id) });
   }
   return String(id);
+}
+
+/**
+ * Resolve a CallRail recording URL to playable audio. CallRail's recording
+ * endpoint responds one of two ways, and this normalizes both:
+ *   { kind: 'url',    url }             — a short-lived signed CDN URL that is
+ *                                         publicly fetchable WITHOUT our API key
+ *                                         (what Deepgram's URL-ingest needs).
+ *   { kind: 'stream', response, contentType }
+ *                                       — CallRail streamed the audio directly
+ *                                         (already authed); consume response.body.
+ *   { kind: 'error',  status, reason, contentType?, detail?, snippet? }
+ *                                       — surfaces exactly what went wrong.
+ * Never throws on a bad HTTP response — returns an 'error' shape so callers can
+ * report a precise reason instead of a silent dead player.
+ */
+export async function resolveCallRecording(apiKey, recordingUrl) {
+  const upstream = await fetch(recordingUrl, { headers: authHeader(apiKey) });
+  if (!upstream.ok || !upstream.body) {
+    return { kind: 'error', status: upstream.status, reason: 'fetch-failed' };
+  }
+
+  const ct = (upstream.headers.get('Content-Type') || '').toLowerCase();
+
+  // CallRail streamed the audio directly — hand back the authed response.
+  if (ct.startsWith('audio/') || ct.includes('octet-stream')) {
+    return { kind: 'stream', response: upstream, contentType: ct };
+  }
+
+  // CallRail returned JSON describing WHERE the audio lives (a signed URL).
+  if (ct.includes('application/json')) {
+    const data = await upstream.json().catch(() => null);
+    const mediaUrl = data && (data.url || data.recording || data.media_url || data.audio_url);
+    if (!mediaUrl) {
+      return { kind: 'error', status: upstream.status, reason: 'json-no-url', detail: data };
+    }
+    return { kind: 'url', url: mediaUrl };
+  }
+
+  // Something unexpected (HTML error page, redirect stub, …) — keep a snippet.
+  const snippet = (await upstream.text().catch(() => '')).slice(0, 300);
+  return { kind: 'error', status: upstream.status, reason: 'unexpected', contentType: ct, snippet };
 }
 
 /**

@@ -556,6 +556,16 @@ confirmation this is actually how the site's quote form is wired before build st
   Estimates module (see `UPR-Web-Context.md` conventions section). Store only the
   CallRail-hosted `recording_url` link rather than re-downloading audio into Supabase
   storage — avoids duplicating storage and compliance surface for a first pass.
+  > **Transcripts (resolved post-launch): sourced from Deepgram, NOT CallRail.**
+  > Our CallRail plan returns `transcription: null` on every call — CallRail's API only
+  > exposes transcripts with its **Premium Conversation Intelligence add-on (~$110/mo)**.
+  > Rather than pay that, we transcribe the recording ourselves with **Deepgram Nova**
+  > (~$0.0043/min ≈ $0.73/mo at our volume) and write the result into this same
+  > `transcription` column via `set_lead_transcription`. See `functions/api/transcribe-call.js`
+  > + `functions/lib/deepgram.js`. Two additive columns (`transcription_source`,
+  > `transcribed_at`, migration `20260701_crm_call_transcription.sql`) record provenance.
+  > Strategic upside: the transcripts live in our DB, feeding future lead-name capture /
+  > scoring, instead of being locked in CallRail.
 - **Ingestion RPC**: `upsert_lead_from_callrail(...)` (SECURITY DEFINER) —
   - Matches/creates a contact by **`caller_number`** (never `tracking_number`, which
     is UPR's own number) exactly like `twilio-webhook.js:78` does today
