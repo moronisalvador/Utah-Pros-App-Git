@@ -26,11 +26,12 @@
  * NOTES / GOTCHAS:
  *   - INTEGRATION test vs the live shared Supabase; self-skips without creds
  *     (same pattern as the Phase 0/1 suites).
- *   - QBO-SAFE BY DESIGN: the `trg_qbo_customer_sync` AFTER-INSERT trigger mints
- *     a real QuickBooks customer when a contact is INSERTed with a name. This
- *     suite only ever creates a contact WITHOUT a name (trigger no-ops on null
- *     name), and adds the name via a later UPDATE (no INSERT → trigger never
- *     fires). So it exercises the name-backfill path without touching QBO.
+ *   - QBO-SAFE BY DESIGN (belt-and-suspenders): as of Phase B the
+ *     `trg_qbo_customer_sync` trigger is a no-op (QBO customers are created at
+ *     invoice/estimate time, not on contact insert), so no insert here can mint
+ *     a QuickBooks customer. This suite additionally only ever creates a contact
+ *     WITHOUT a name and adds the name via a later UPDATE — so it stays safe
+ *     even if that trigger is ever restored.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
