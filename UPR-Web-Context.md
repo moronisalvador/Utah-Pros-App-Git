@@ -2659,6 +2659,184 @@ all verification queries against real (non-test-org) rows were read-only or exer
 disposable TEST-org rows that were deleted immediately after (see the migration's own commit
 message).
 
+### Phase 4c — Email campaigns
+
+Built **before Phase 4b** (text blasts) via an explicit, authorized reprioritization: 4b is
+blocked on Twilio A2P 10DLC carrier approval (external, days-to-weeks); email runs on Resend,
+already integrated, with no such dependency. The roadmap's own hard prerequisite — the CRM shell +
+Phases 3/4a merged into `dev` — was confirmed live before this build started (branch diffed 0/0
+against `origin/dev` at the tip carrying PR #195/#196). 4b's mention as 4c's prerequisite in
+`docs/crm-roadmap.md` is the linear-chain default, not a real code/data dependency — 4c introduces
+its own tables and touches nothing 4b would have added.
+
+**New tables** (`supabase/migrations/20260701_crm_phase4c_email_campaigns.sql`, applied to the live
+shared dev/main Supabase project) — deliberately NOT built on the pre-existing `campaigns`/
+`campaign_recipients` tables (already live, queried by `Marketing.jsx` before this phase): those are
+hard-wired for SMS — `campaigns.campaign_type` has a CHECK constraint with no `'email_blast'` value,
+and `campaign_recipients.phone` is `NOT NULL` with no email column. Adding either would mean
+ALTERing a live table, forbidden by this phase's additive-only rule — so email campaigns get fully
+separate tables and the legacy SMS tables are left untouched for Phase 4b:
+```
+email_suppressions          — id, org_id (FK crm_orgs), email, reason ('unsubscribed'|'bounced'|
+                               'complained'|'manual', default 'unsubscribed'), source,
+                               suppressed_at, created_at. UNIQUE on lower(email) — an address is
+                               suppressed regardless of casing on a later send. This is the
+                               compliance-critical list every send checks.
+email_campaigns              — id, org_id, name, subject, template_id (FK message_templates,
+                               nullable — best-effort only, see NOTES below), body_html,
+                               audience_filter jsonb, status ('draft'|'sending'|'sent'|'failed'),
+                               audience_count, total_sent, total_suppressed, total_failed,
+                               scheduled_at, sent_at, created_by (FK employees), created_at,
+                               updated_at.
+email_campaign_recipients     — id, campaign_id (FK email_campaigns, CASCADE), contact_id (FK
+                               contacts, CASCADE), email, status ('pending'|'sent'|'suppressed'|
+                               'failed'), resend_id, error_message, sent_at, created_at.
+                               UNIQUE(campaign_id, contact_id) — the snapshotted audience for one
+                               send.
+```
+All three RLS-enabled at creation (`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)`),
+writes via RPC only.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `preview_email_audience(p_filter, p_org_id) → TABLE(contact_id, name, email)` — segmentation off
+  `contacts`/`referral_sources` per the roadmap: filters on `referral_source` (matches
+  `contacts.referral_source`), `role`, and a `tags` jsonb containment check. Always excludes no-email,
+  `dnd`, and any suppressed address regardless of filter — non-negotiable. Deliberately does **not**
+  filter on `contacts.opt_in_status` (that's the SMS/TCPA opt-in flag) — US marketing email is
+  governed by CAN-SPAM, which is opt-out based, not opt-in based.
+- `get_email_campaigns(p_org_id)` — read helper, defaults to the real org.
+- `upsert_email_campaign(p_id, p_name, p_subject, p_template_id, p_body_html, p_audience_filter,
+  p_org_id, p_created_by)` — create (`p_id` NULL) or edit a still-`draft` campaign; recomputes
+  `audience_count` via `preview_email_audience` on every save.
+- `delete_email_campaign(p_id)` — refuses (raises) unless the campaign is `draft`/`failed`.
+- `queue_email_campaign(p_campaign_id)` — snapshots the resolved audience into
+  `email_campaign_recipients` (idempotent — `ON CONFLICT DO NOTHING`), flips status to `sending`.
+- `record_email_campaign_send(p_recipient_id, p_status, p_resend_id, p_error_message)` — per-recipient
+  result + campaign counter rollup; auto-flips the campaign to `sent` once no `pending` recipients
+  remain, so the worker never needs a separate "finalize" call.
+- `email_unsubscribe(p_email, p_recipient_id, p_org_id)` — the public unsubscribe write path. Given a
+  recipient id, resolves its email/marks that `email_campaign_recipients` row `suppressed`; either
+  way upserts `email_suppressions` (`ON CONFLICT (lower(email)) DO UPDATE` — repeat clicks never
+  error/duplicate).
+
+**Shared send foundation** (`functions/lib/`, built now so Phase 4b can add its SMS branch
+additively rather than a rewrite):
+```
+email-consent.js    — emailAllows({ email, suppressed, dnd }) → boolean. Pure predicate, no I/O —
+                       refuses on no email, suppressed, or dnd; allows otherwise. Test-first:
+                       email-consent.test.js (5 vitest units) committed at 095ab01 before this file
+                       existed — confirmed genuinely failing (import error) at that commit, green
+                       once the implementation landed.
+automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, variables, env, extra)
+                       — the generic single-send entry point Phase 4d's fixed automations will call;
+                       'sms' throws (documented Phase 4b TODO), 'email' looks up the contact +
+                       optional message_templates row (matched by title — that table has no
+                       channel/key column, so this is a best-effort reuse of its variable-
+                       substitution *pattern*, not a real integration) then calls sendGatedEmail.
+                       sendGatedEmail(env, { contact, subject, html, recipientId }) is the ONE path
+                       to sendEmail() for any marketing message — both sendAutomatedMessage('email')
+                       and the campaign worker call it, so the suppression/consent check is
+                       structurally unbypassable. It checks email_suppressions (case-insensitive
+                       ilike lookup) + contact.dnd via emailAllows(), appends an unsubscribe footer
+                       link, and sets List-Unsubscribe/List-Unsubscribe-Post headers (RFC 8058
+                       one-click). The unsubscribe link carries `?rid=<recipient id>` when the caller
+                       has one (campaign sends) so a click flips that exact recipient row, or a plain
+                       `?email=` link otherwise (a future non-campaign automation send).
+email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
+                       `headers` object untouched) — the only change to this pre-existing
+                       transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
+                       water-loss-report) is unaffected since the param defaults to unset.
+```
+
+**Workers**:
+```
+send-email-campaign.js  — POST, authenticated (Supabase session bearer token, verified against
+                           /auth/v1/user with the anon key). Queues the campaign's audience, then
+                           loops recipients: re-fetches each contact's LIVE name + dnd (not the
+                           queue-time snapshot — a large campaign can take a while, and dnd could
+                           change mid-send) before calling sendGatedEmail, records each result via
+                           record_email_campaign_send, and logs one worker_runs row. Never calls
+                           sendEmail() directly — always through sendGatedEmail so the suppression
+                           gate can't be bypassed. Disclosed gap: the recipient loop runs
+                           synchronously in the request; a campaign large enough to risk the
+                           Cloudflare Pages Function execution-time limit would need a batched/queued
+                           redesign — not built this phase since no real campaign has been sent yet.
+email-unsubscribe.js    — public GET/POST (no auth by design — RFC 8058 one-click unsubscribe
+                           requires an unauthenticated POST to succeed), reached from the campaign
+                           email footer link and List-Unsubscribe-Post. Accepts `?rid=` (preferred,
+                           resolves the exact recipient + campaign) or `?email=` (fallback), calls
+                           email_unsubscribe, always returns a 200 HTML confirmation page except when
+                           neither param is present (400).
+```
+
+**Frontend**: `src/pages/Marketing.jsx` (pre-existing page, rewritten) — a simple Email/SMS tab
+switcher. SMS tab unchanged (still Phase 4b's "coming soon" stub reading the legacy `campaigns`
+table). Email tab (`EmailCampaignsTab`/`EmailCampaignForm`) — campaign list with status/audience/
+sent/suppressed/failed counts, a simple builder (name, subject, body with `{{name}}` substitution,
+referral-source + role segmentation dropdowns), a live "Preview audience" count
+(`preview_email_audience`), save-as-draft/edit/delete (two-click inline confirm, no modal), and
+"Send now" (calls `POST /api/send-email-campaign` via `getAuthHeader()`, same pattern
+`CrmIntegrations.jsx` uses for its worker calls). New `.marketing-*` CSS block in `src/index.css` —
+plain app tokens (`--space-*`/`--text-*`), not the CRM shell's `--crm-*` scope, since this page lives
+outside `/crm/*`.
+
+**`page:marketing` flag**: gained a `dev_only_user_id` (Moroni's employee id) this phase via a data
+`UPDATE` (not a schema change) so the new Email tab is previewable — `enabled` stays `false`, so
+every other employee still sees nothing, unchanged from before this phase.
+
+**Test-first**: `functions/lib/email-consent.test.js` (5 units) committed at `095ab01`, confirmed
+genuinely failing (import error) before `email-consent.js` existed at `4e63d64`.
+
+**`npm run test` (94 pass / 9 skip) + `npm run build` + `npx eslint`**: all green on every changed
+file.
+
+**Independent review**: `upr-pattern-checker` — clean, no violations (RLS + explicit policies on all
+three new tables at creation, no ALTER/DROP/rename of any pre-existing table, `useAuth()`-only `db`
+in `Marketing.jsx`, no `alert()`/`confirm()`, two-click inline delete confirm, no hardcoded hex in
+the new CSS). `crm-phase-reviewer` (Opus, weighted on the `emailAllows` gate + unsubscribe wiring)
+traced every `sendEmail()` caller and confirmed the campaign path only ever reaches it through
+`sendGatedEmail`; traced the full unsubscribe loop end-to-end (footer link → RPC → suppression table
+→ excluded from the next `preview_email_audience`/`sendGatedEmail` check) and confirmed it genuinely
+closes; confirmed test-first ordering by running the test at its own commit (failed, as expected).
+First pass returned **DO-NOT-SHIP-YET** on 3 items: (1) `{{name}}` was rendering the recipient's
+*email address* — `send-email-campaign.js` was substituting `recipient.email` instead of a real
+name; (2) the campaign worker's `dnd` re-check was dead (always passed `undefined`); (3) the
+suppression lookup was case-sensitive while every other suppression check in the system is
+case-insensitive. Fixed (`61dd57a`): the worker now re-fetches each contact's live `name`+`dnd` at
+send time instead of trusting the queue-time snapshot, and `isEmailSuppressed` uses a case-insensitive
+`ilike` lookup. Also fixed a related cosmetic gap the reviewer flagged (a dead `?campaign=` query
+param on the unsubscribe link that the endpoint never read) by switching to `?rid=<recipient id>`,
+which the `email_unsubscribe` RPC uses to actually flip that recipient's row to `suppressed`. A
+narrow confirmation pass re-verified all four fixes directly against the current file contents
+(not the commit message) before this doc was written. All fixes were additionally verified live via
+the Supabase MCP (`execute_sql`): queued a disposable TEST-org campaign/recipient, unsubscribed via
+the `rid` path, confirmed the recipient row flipped to `suppressed`, confirmed a case-insensitive
+suppression match — then cleaned up every test row.
+
+**Owner-gated, disclosed as such (not a forgotten step)**: "Send now" has never been exercised
+against a real Resend send + a real inbox click on the unsubscribe link — this sandbox has no
+outbound egress to Supabase/Resend from a browser session, and sending real email requires a
+connected Resend domain already live in production (see `EMAIL-DELIVERABILITY.md`), not something to
+trigger from this build session. The RPC-level behavior (audience resolution, queueing, per-recipient
+gating, unsubscribe) is verified live per above; the actual email delivery + inbox rendering + a real
+one-click unsubscribe round-trip needs a logged-in Moroni session against the branch preview. The
+recipient loop's synchronous-execution-time risk at real campaign scale (see workers section above)
+is also disclosed, not silently capped.
+**Sending-subdomain flag (per the task's explicit ask)**: this phase sends marketing volume from the
+same `restoration@utahpros.app` address `EMAIL-DELIVERABILITY.md` documents for transactional mail
+(esign, invoices, 2FA). That file's own §5 already recommends a dedicated sending subdomain
+(`send.utah-pros.com`) as "the highest-impact upgrade" specifically to protect a shared domain's
+reputation once volume increases — marketing sends are exactly that increase. No code change is
+needed to adopt it (`EMAIL_FROM`/`EMAIL_REPLY_TO` env vars, already read by `functions/lib/email.js`)
+but it wasn't set up in this session (a new Resend-verified subdomain + DNS records, which needs
+Moroni's access to `utah-pros.com` DNS) — flagged here rather than silently reusing the transactional
+sender at real volume.
+
+**Dogfooding**: `crm_build_stages` for `phase-4c` reconciled and `crm_build_phases('4c')` status set
+via the status RPCs — see the close-out reconciliation in this session for exactly which stages
+flipped to `done` vs. stayed `todo` (the owner-gated real-send/visual-check items stay open, with the
+reason stated above, not silently marked done).
+
 ## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
 
 A logged-out, public mirror of `/crm/roadmap` — no auth, no `page:crm` flag, no CRM shell. Built so
