@@ -37,6 +37,10 @@
  * ════════════════════════════════════════════════
  */
 
+// Deepgram's topic detector over-generates; cap the stored/displayed set to the
+// most confident few so the Call Log shows a short, relevant chip row.
+const TOP_TOPICS = 6;
+
 /**
  * Normalize a Deepgram pre-recorded ("listen") response into readable, optionally
  * speaker-labeled text. Returns a trimmed string, or null when there is nothing
@@ -158,14 +162,21 @@ export function buildTranscriptAnalysis(deepgramJson) {
       ? { label: avg.sentiment, score: typeof avg.sentiment_score === 'number' ? avg.sentiment_score : null }
       : null;
 
-  // Topics: flatten every segment's topics, dedupe, keep first-seen order.
-  const topicSegs = results?.topics?.segments || [];
-  const topics = [];
-  for (const seg of topicSegs) {
+  // Topics: Deepgram over-generates (20+ per call, incl. noise like "watermelon").
+  // Keep each topic's best confidence, then take the TOP_TOPICS most confident so
+  // the UI shows a short, relevant set instead of a chip wall.
+  const topicScore = new Map();
+  for (const seg of results?.topics?.segments || []) {
     for (const t of seg?.topics || []) {
-      if (t?.topic && !topics.includes(t.topic)) topics.push(t.topic);
+      if (!t?.topic) continue;
+      const score = typeof t.confidence_score === 'number' ? t.confidence_score : 0;
+      if (!topicScore.has(t.topic) || score > topicScore.get(t.topic)) topicScore.set(t.topic, score);
     }
   }
+  const topics = [...topicScore.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_TOPICS)
+    .map(([topic]) => topic);
 
   // Entities: from the first channel's alternative; dedupe by label+value.
   const rawEntities = alt?.entities || [];
