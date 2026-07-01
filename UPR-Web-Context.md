@@ -2316,7 +2316,10 @@ get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest
   *ring* time (near-instant), add a CallRail **"Call Started"** webhook pointing at the same
   `/api/callrail-webhook?secret=…` endpoint — ingestion already handles it (the mapper tolerates the
   missing duration/recording and `upsert_lead_from_callrail` is idempotent on `callrail_id`, so the
-  post-call event enriches the same row). An in-progress lead renders with duration `—`.
+  post-call event enriches the same row). An in-progress lead renders with duration `—` plus a
+  pulsing **"Waiting for recording & transcript…"** indicator (`isAwaitingRecording`: a call with no
+  recording seen in the last 10 min) so a fresh 0:00 row never looks broken — the page auto-refreshes
+  it into Play/transcript once CallRail delivers and the webhook auto-transcribes.
 ```
 
 **New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
@@ -2365,7 +2368,14 @@ callrail-webhook.js   — POST, receives CallRail's call/form events, maps paylo
                          (mapCallPayload/mapFormPayload/pickCallId/boolish/isAllowedRecordingUrl),
                          unit-tested against the real payload in `functions/lib/callrail.test.js`.
                          `boolish()` fixes a form-encoding trap where the string "false" was truthy
-                         and mis-flagged clean calls as spam. Always returns 200 except on a
+                         and mis-flagged clean calls as spam. **Auto-transcribe:** after the upsert,
+                         if `shouldAutoTranscribe(lead)` (a call with an api-form recording and no
+                         transcript yet), it runs Deepgram in the background via `context.waitUntil`
+                         (imports `transcribeLead` from transcribe-call.js) — so the transcript +
+                         summary are ready within seconds of the recording landing, no manual click.
+                         Idempotent: only the recording-ready delivery passes, and a re-delivery after
+                         the transcript exists is skipped (never re-bills Deepgram); best-effort, so a
+                         failed auto-transcript never fails the webhook. Always returns 200 except on a
                          bad/missing secret (403), to avoid a CallRail retry storm.
 callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
                          DELETE (disconnect), all authenticated. Writes integration_credentials
