@@ -80,7 +80,16 @@ export async function resolveCallRailAccountId(db, apiKey, env) {
  * report a precise reason instead of a silent dead player.
  */
 export async function resolveCallRecording(apiKey, recordingUrl) {
-  const upstream = await fetch(recordingUrl, { headers: authHeader(apiKey) });
+  // Guard the fetch: some URLs (notably CallRail's app.callrail.com signed
+  // "recording/redirect" links) THROW when fetched server-side with the auth
+  // header. Unhandled, that crashes the Worker → Cloudflare returns a raw 502
+  // (text/html). Catch it so callers always get a clean error shape instead.
+  let upstream;
+  try {
+    upstream = await fetch(recordingUrl, { headers: authHeader(apiKey) });
+  } catch (e) {
+    return { kind: 'error', status: 0, reason: 'fetch-failed', detail: String(e?.message || e) };
+  }
   if (!upstream.ok || !upstream.body) {
     return { kind: 'error', status: upstream.status, reason: 'fetch-failed' };
   }
