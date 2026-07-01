@@ -2303,6 +2303,12 @@ get_tracking_numbers() → (tracking_number, label, call_count) — every DISTIN
 set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign label for a tracking
   number (on the org's row). Both `SECURITY DEFINER`, granted `anon, authenticated`.
   (migration `20260701_crm_tracking_numbers.sql`.)
+get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest leads with the linked
+  `contact` ({name, phone}) embedded — mirrors the old `select=*,contact:contacts(name,phone)` shape
+  exactly. `SECURITY DEFINER`, `STABLE`, granted `anon, authenticated`. **Why an RPC and not a GET
+  select:** a GET is cacheable, so returning to the Call Log after a soft navigation showed a STALE
+  cached list (a just-landed live call was missing until a hard refresh); an RPC is a POST, which
+  browsers never cache. `CrmCallLog.jsx` `load()` calls this. (migration `20260701_crm_get_inbound_leads.sql`.)
 ```
 
 **New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
@@ -2343,11 +2349,16 @@ callrail-webhook.js   — POST, receives CallRail's call/form events, maps paylo
                          ('callrail_webhook_secret') — a documented placeholder (CallRail lets you
                          fully customize the webhook target URL, so this avoids guessing at an
                          unverified HMAC/signature-header scheme); confirm against CallRail's actual
-                         webhook docs/dashboard and adjust if it differs. Payload field names
-                         (mapCallPayload/mapFormPayload) are also best-effort with defensive
-                         multi-key fallbacks — same open item, unverified against a live CallRail
-                         payload in this session. Always returns 200 except on a bad/missing secret
-                         (403), to avoid a CallRail retry storm.
+                         webhook docs/dashboard and adjust if it differs. **Payload shape CONFIRMED
+                         against a live delivery:** CallRail POSTs `application/x-www-form-urlencoded`
+                         (NOT JSON), so the worker parses text→JSON→URLSearchParams; every decoded
+                         value is a string, and the call id is under `resource_id` (no top-level
+                         `id`). The pure mappers now live in `functions/lib/callrail.js`
+                         (mapCallPayload/mapFormPayload/pickCallId/boolish/isAllowedRecordingUrl),
+                         unit-tested against the real payload in `functions/lib/callrail.test.js`.
+                         `boolish()` fixes a form-encoding trap where the string "false" was truthy
+                         and mis-flagged clean calls as spam. Always returns 200 except on a
+                         bad/missing secret (403), to avoid a CallRail retry storm.
 callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
                          DELETE (disconnect), all authenticated. Writes integration_credentials
                          (provider='callrail', key in access_token) and generates the webhook
@@ -2395,8 +2406,12 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          so this proxy takes a `lead_id`, reads that lead's recording_url + the
                          CallRail API key from integration_credentials, fetches with the
                          `Authorization: Token token="…"` header, and streams the audio back. SSRF
-                         guard: only proxies an `api.callrail.com` URL stored on that lead; the key
-                         never reaches the client. Robust to CallRail's response shape: streams
+                         guard (`isAllowedRecordingUrl`, functions/lib/callrail.js): proxies only a
+                         CallRail-hosted URL stored on that lead — the `api.callrail.com` REST form
+                         (backfill) OR the `app.callrail.com/calls/{id}/recording/redirect?access_key=…`
+                         signed redirect the LIVE webhook delivers (the latter was previously rejected
+                         with 400 "Unsupported recording URL", breaking playback of live calls). The
+                         key never reaches the client. Robust to CallRail's response shape: streams
                          audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
                          streams that, else returns a 502 with the upstream status + body snippet so
                          a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
