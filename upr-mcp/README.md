@@ -171,10 +171,20 @@ read)*. Reuse the `google_ads` / `meta_ads` OAuth tokens already stored in
 `integration_credentials`; each also needs its app-credential + account-id secrets
 (see setup). Read-only.
 
-**GitHub (repo / PRs / issues):** `github_list_prs`, `github_get_pr`,
-`github_list_issues`, `github_search_code`, `github_create_issue` *(guarded)*, and
-generic `github_get` / `github_request`. Requires `GITHUB_TOKEN`; set
-`GITHUB_DEFAULT_REPO` so repo-scoped tools default to the UPR repo.
+**GitHub (repo / PRs / issues / commits):** reads — `github_list_prs`,
+`github_get_pr`, `github_list_issues`, `github_search_code`, `github_get_file`
+*(the REST "pull")*, `github_list_commits`, `github_get_commit`,
+`github_list_branches`, generic `github_get`; guarded writes — `github_merge_pr`,
+`github_create_pr`, `github_update_pr`, `github_create_branch`,
+`github_commit_file` *(the REST "push")*, `github_create_issue`,
+`github_add_comment`, generic `github_request`. A Worker has no git binary, so
+"push/pull" are the Contents/Git-data API, not raw git.
+**Token:** read from `integration_credentials` (provider=`github`) first — set it on
+the app's **admin API-keys page** (`/admin/integrations`), no `wrangler` needed —
+falling back to a `GITHUB_TOKEN` worker secret. Default repo comes from
+`integration_config.github_default_repo` (also set on that page) or
+`GITHUB_DEFAULT_REPO`. The PAT needs **Contents R/W, Pull requests R/W, Issues
+R/W** (fine-grained), or classic `repo`.
 
 > **Google Workspace** (Gmail, Drive, Calendar) is intentionally **not** in this
 > server — there is no Workspace data-API key here (the Google OAuth in this

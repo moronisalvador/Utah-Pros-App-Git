@@ -76,6 +76,7 @@ const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ defa
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
 const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
+const AdminIntegrations = lazyRetry(() => import('@/pages/admin/AdminIntegrations'));
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
 const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
@@ -373,6 +374,7 @@ function WebRoutes() {
           <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
           <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
           <Route path="admin/demo-sheet-builder" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
+          <Route path="admin/integrations" element={<AdminRoute><ErrorBoundary section="AdminIntegrations"><AdminIntegrations /></ErrorBoundary></AdminRoute>} />
           <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
           {/* Dev Tools — Moroni only, not role-based */}
           <Route path="dev-tools" element={<DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>} />
