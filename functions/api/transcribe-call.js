@@ -204,13 +204,15 @@ export async function onRequestPost(context) {
     if (body.backfill) {
       const days = Number(body.days) > 0 ? Number(body.days) : 30;
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      // Target calls that lack a transcript OR lack the structured analysis, so a
-      // row transcribed before this v2 upgrade gets re-enriched exactly once (then
-      // has both and is skipped). Avoids re-charging fully-processed calls.
+      // Default: target calls that lack a transcript OR the structured analysis, so a
+      // row transcribed before an upgrade gets re-enriched exactly once (then has both
+      // and is skipped) — avoids re-charging fully-processed calls. With `force:true`
+      // re-process EVERY recent call (e.g. to apply speaker naming / a new layout to
+      // already-transcribed rows) — still capped at MAX_BACKFILL.
+      const freshOnly = body.force ? '' : '&or=(transcription.is.null,transcript_analysis.is.null)';
       leads = await db.select(
         'inbound_leads',
-        `source_type=eq.call&recording_url=not.is.null` +
-          `&or=(transcription.is.null,transcript_analysis.is.null)&occurred_at=gte.${startDate}` +
+        `source_type=eq.call&recording_url=not.is.null${freshOnly}&occurred_at=gte.${startDate}` +
           `&select=id,recording_url&order=occurred_at.desc&limit=${MAX_BACKFILL}`
       );
     } else if (body.lead_id) {
