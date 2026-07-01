@@ -69,10 +69,18 @@ function firstOf(obj, keys) {
   return null;
 }
 
+// The call id — top-level under any of several keys, or nested in a resource wrapper.
+// (Round 1: broadened defensively; exact key confirmed from the captured live payload.)
+function pickCallId(body) {
+  return firstOf(body, ['id', 'call_id', 'callrail_id', 'resource_id'])
+    || firstOf(body?.call || {}, ['id', 'call_id', 'callrail_id'])
+    || firstOf(body?.resource || {}, ['id', 'call_id']);
+}
+
 // Best-effort mapping of a CallRail "call" webhook payload — see NOTES above.
 function mapCallPayload(body) {
   return {
-    p_callrail_id:     String(firstOf(body, ['id', 'call_id', 'callrail_id'])),
+    p_callrail_id:     String(pickCallId(body)),
     p_source_type:     'call',
     p_tracking_number: firstOf(body, ['tracking_phone_number', 'tracking_number']),
     p_caller_number:   firstOf(body, ['customer_phone_number', 'caller_number', 'from_number']),
@@ -125,20 +133,33 @@ export async function onRequestPost(context) {
     return new Response('Forbidden', { status: 403 });
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON payload' }, 400, request, env);
+  // Read the body once as text, then try JSON, then form-encoding — CallRail may
+  // POST either. `raw` is kept so we can capture the exact bytes when mapping fails.
+  const raw = await request.text().catch(() => '');
+  let body = null;
+  try { body = JSON.parse(raw); } catch { /* not JSON — try form below */ }
+  if (!body) {
+    try { body = Object.fromEntries(new URLSearchParams(raw)); } catch { /* not form either */ }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    await db.insert('worker_runs', {
+      worker_name: 'callrail-webhook', status: 'error', records_processed: 0,
+      error_message: ('Unparseable payload — raw: ' + raw).slice(0, 1500),
+      started_at: startedAt, completed_at: new Date().toISOString(),
+    });
+    return jsonResponse({ ok: false, error: 'Unparseable payload' }, 200, request, env);
   }
 
   const isForm = !!firstOf(body, ['form_data', 'formdata']) || body?.event_type === 'form_submission';
   const params = isForm ? mapFormPayload(body) : mapCallPayload(body);
 
   if (!params.p_callrail_id || params.p_callrail_id === 'null') {
+    // Capture the RAW payload so we can map the real field names — the id key isn't
+    // where we guessed. (Round 1: diagnostic capture; Round 2 fixes the mapping.)
     await db.insert('worker_runs', {
       worker_name: 'callrail-webhook', status: 'error', records_processed: 0,
-      error_message: 'Payload missing an id field', started_at: startedAt, completed_at: new Date().toISOString(),
+      error_message: ('Payload missing an id field — raw: ' + raw).slice(0, 1500),
+      started_at: startedAt, completed_at: new Date().toISOString(),
     });
     // Still 200 — malformed payload isn't something CallRail should retry forever.
     return jsonResponse({ ok: false, error: 'Missing lead id in payload' }, 200, request, env);
