@@ -112,7 +112,7 @@ function GitHubCard() {
     <div className="crm-integration-card">
       <div className="crm-integration-card-head">
         <div className="crm-integration-card-title">
-          <span className="crm-integration-badge">GH</span>
+          <span className="crm-integration-badge crm-integration-badge-github">GH</span>
           GitHub
         </div>
         <span className={`crm-integration-status${connected ? ' connected' : ''}`}>

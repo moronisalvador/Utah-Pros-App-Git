@@ -5861,6 +5861,7 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-integration-callrail: #f97316;
   --crm-integration-google: #4285f4;
   --crm-integration-meta: #0866ff;
+  --crm-integration-github: #1f2328;
   --crm-channel-insurance: #d97706;
   --crm-text-on-accent: #ffffff;
   --crm-success-bg: #ecfdf5;
@@ -5987,6 +5988,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-integration-badge-callrail { background: var(--crm-integration-callrail); }
 .crm-integration-badge-google { background: var(--crm-integration-google); }
 .crm-integration-badge-meta { background: var(--crm-integration-meta); }
+.crm-integration-badge-github { background: var(--crm-integration-github); }
 .crm-integration-actions-row { display: flex; gap: var(--space-2); }
 .crm-integration-status { font-size: 11px; font-weight: 700; color: var(--crm-text-tertiary); }
 .crm-integration-status.connected { color: var(--crm-success); }
