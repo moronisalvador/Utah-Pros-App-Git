@@ -20,12 +20,18 @@
  *   Packages:  none
  *   Internal:  none
  *   Exports:   shouldReloadForStaleChunk(nowMs, lastMs, windowMs?) → boolean
+ *              buildResetUrl(pathname) → string
  *
  * NOTES / GOTCHAS:
  *   - Time-based on purpose. The previous guard used a boolean flag that was
  *     CLEARED on any successful chunk load, so a sibling chunk loading fine
  *     re-armed the reload and a persistently-missing chunk looped forever.
  *     A timestamp can't be cleared by unrelated successes.
+ *   - buildResetUrl points at the static /reset page, which is served with a
+ *     `Clear-Site-Data: "cache"` header (see public/_headers). Bouncing a failed
+ *     chunk load through /reset evicts the browser's HTTP cache of a poisoned
+ *     immutable /assets/*.js — which a plain reload can't do — then returns to
+ *     the original path. "cache" only, so it never logs the user out.
  * ════════════════════════════════════════════════
  */
 
@@ -37,4 +43,14 @@
  */
 export function shouldReloadForStaleChunk(nowMs, lastMs, windowMs = 20000) {
   return nowMs - lastMs > windowMs;
+}
+
+/**
+ * Build the URL to the /reset recovery page, carrying the path to return to
+ * after the cache is cleared. Encoded so a path with its own query/hash survives.
+ * @param {string} pathname - where to send the user back (defaults to '/').
+ * @returns {string} e.g. '/reset?to=%2Fcrm%2Fcall-log'
+ */
+export function buildResetUrl(pathname) {
+  return `/reset?to=${encodeURIComponent(pathname || '/')}`;
 }

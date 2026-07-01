@@ -22,7 +22,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { shouldReloadForStaleChunk } from './staleChunkReload.js';
+import { shouldReloadForStaleChunk, buildResetUrl } from './staleChunkReload.js';
 
 describe('shouldReloadForStaleChunk', () => {
   it('reloads when it has never reloaded (last = 0)', () => {
@@ -46,5 +46,21 @@ describe('shouldReloadForStaleChunk', () => {
   it('honors a custom window', () => {
     expect(shouldReloadForStaleChunk(105000, 100000, 3000)).toBe(true); // 5s > 3s window
     expect(shouldReloadForStaleChunk(102000, 100000, 3000)).toBe(false); // 2s < 3s window
+  });
+});
+
+describe('buildResetUrl', () => {
+  it('builds a /reset URL with the return path encoded', () => {
+    expect(buildResetUrl('/crm/call-log')).toBe('/reset?to=%2Fcrm%2Fcall-log');
+  });
+
+  it('defaults to "/" when the path is empty/missing', () => {
+    expect(buildResetUrl('')).toBe('/reset?to=%2F');
+    expect(buildResetUrl(undefined)).toBe('/reset?to=%2F');
+    expect(buildResetUrl(null)).toBe('/reset?to=%2F');
+  });
+
+  it('encodes query strings in the return path so they survive the round-trip', () => {
+    expect(buildResetUrl('/a?b=c')).toBe('/reset?to=%2Fa%3Fb%3Dc');
   });
 });
