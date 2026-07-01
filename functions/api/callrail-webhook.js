@@ -15,13 +15,11 @@
  *
  * DEPENDS ON:
  *   Packages:      none (uses the platform fetch)
- *   Internal:      ../lib/supabase.js (service-role client), ../lib/cors.js,
- *                  ../lib/callrail.js (shouldCreateContact — used only for
- *                  logging/telemetry here; upsert_lead_from_callrail is the
- *                  actual server-side enforcement)
- *   Data:          reads  → integration_config (webhook shared secret)
- *                  writes → inbound_leads, contacts, system_events (all via
- *                           the upsert_lead_from_callrail RPC), worker_runs
+ *   Internal:      ../lib/supabase.js (service-role client), ../lib/cors.js
+ *   Data:          reads  → integration_config (webhook shared secret),
+ *                           contacts (linked by phone — never created here)
+ *                  writes → inbound_leads, system_events (via the
+ *                           upsert_lead_from_callrail RPC), worker_runs
  *
  * NOTES / GOTCHAS:
  *   - AUTH IS A DOCUMENTED PLACEHOLDER (docs/crm-roadmap.md "Open items to

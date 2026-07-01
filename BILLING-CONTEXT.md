@@ -238,6 +238,12 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
     trigger so contacts are **not** auto-synced to QBO on creation — only when transacted with. Apply
     the gating migration **only after Phase A is live on `main`** (one shared Supabase serves dev+main,
     so gating before the self-heal reaches production would break production invoicing for new contacts).
+    - **Also fix in Phase B — the "name added after insert" hole:** `trg_qbo_customer_sync` is
+      `AFTER INSERT` only, so a contact created *without* a name (trigger no-ops on null name) and
+      given one *later* via UPDATE is **never** synced to QBO. This is reachable now that
+      `promote_lead_to_contact` (and `create_manual_lead`) allow a name-optional create. The Phase B
+      rework should cover the name-added-later case (e.g. an `AFTER UPDATE OF name` path or the
+      invoice/estimate self-heal, which already handles it since it syncs at transaction time).
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
