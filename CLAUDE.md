@@ -143,7 +143,7 @@ The new CRM side ships in sequential phases, each its own branch/PR. **Per-phase
 - **Never start phase N+1 until phase N's PR has merged into `dev`.** Phases build on each other — no parallel/out-of-order work.
 - **Migrations in a CRM phase are additive-only:** new tables/columns only, each RLS-enabled at creation (Rule 7). **No `ALTER`/`DROP`/rename of a live table inside a phase** — destructive changes to shared data need their own separate reviewed change. Apply + verify on `dev` before the `dev → main` PR (one shared Supabase — see Deployment).
 - **Isolation is the `page:crm` flag + `dev_only_user_id`** (not a branch) — `/crm/*` stays invisible to other employees on `dev` and `main` until the flag opens.
-- **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR.
+- **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR. **Open the `dev` PR as a draft (per the harness default), then immediately mark it ready for review** — every CRM phase's PR should end the session ready for review, not sitting as a draft.
 
 ⚠️ `crm_build_phases` does not exist yet (checked live via MCP `upr_schema` — not in the table list). **Phase 0** in `docs/crm-roadmap.md` creates it (`phase_key, title, status, shipped_at, sort_order`) plus `crm_build_stages` (per-phase sub-steps) and a read-only `/crm/roadmap` progress page (phase + stage progress); build Phase 0 before Phase 1.
 
