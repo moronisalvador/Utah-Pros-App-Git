@@ -20,11 +20,11 @@
  *              (getAuthHeader for the recording proxy fetch)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
  *                       incl. transcript_analysis for the conversation view);
- *                       crm_tracking_numbers labels via get_tracking_numbers RPC;
+ *                       crm_tracking_numbers titles via get_tracking_numbers RPC
+ *                       (READ-ONLY here — titles are edited in CrmSettings.jsx);
  *                       call recordings via GET /api/callrail-recording
  *              writes → inbound_leads.lead_status (update_lead_status RPC);
  *                       inbound_leads.notes + value (set_lead_details RPC);
- *                       crm_tracking_numbers.label (set_tracking_number_label RPC);
  *                       inbound_leads.transcription + transcript_analysis via POST
  *                       /api/transcribe-call (the "Transcribe" button — Deepgram,
  *                       since CallRail's plan doesn't expose transcripts)
