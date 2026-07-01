@@ -25,8 +25,10 @@
  *
  * NOTES / GOTCHAS:
  *   - Takes a lead_id (NOT a raw URL) and only proxies the recording_url stored
- *     on that lead, and only when it is an api.callrail.com URL — so this can't
- *     be turned into an open proxy (SSRF guard).
+ *     on that lead, and only when it is a CallRail-hosted URL (api.callrail.com
+ *     REST form, or the app.callrail.com signed recording/redirect the live
+ *     webhook delivers) — so this can't be turned into an open proxy (SSRF
+ *     guard, isAllowedRecordingUrl in ../lib/callrail.js).
  *   - The API key is read from integration_credentials and sent as CallRail's
  *     `Authorization: Token token="…"` header; it is never exposed to the client.
  *   - CallRail's recording endpoint may 302 to a signed CDN URL; the platform
@@ -37,6 +39,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
+import { isAllowedRecordingUrl } from '../lib/callrail.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -55,8 +58,10 @@ export async function onRequestGet(context) {
   const [lead] = await db.select('inbound_leads', `id=eq.${leadId}&select=recording_url`);
   const recUrl = lead?.recording_url;
   if (!recUrl) return jsonResponse({ error: 'No recording for this lead' }, 404, request, env);
-  // SSRF guard: only ever proxy a CallRail-hosted recording URL.
-  if (!/^https:\/\/api\.callrail\.com\//.test(recUrl)) {
+  // SSRF guard: only ever proxy a CallRail-hosted recording URL. Accepts both
+  // the api.callrail.com REST form (backfill) AND the app.callrail.com signed
+  // redirect the live webhook delivers — see isAllowedRecordingUrl.
+  if (!isAllowedRecordingUrl(recUrl)) {
     return jsonResponse({ error: 'Unsupported recording URL' }, 400, request, env);
   }
 

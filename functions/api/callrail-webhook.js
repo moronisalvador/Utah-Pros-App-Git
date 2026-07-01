@@ -30,12 +30,13 @@
  *     unverified HMAC scheme. CONFIRM against CallRail's current webhook
  *     docs/dashboard at connect time; switch to header-signature validation
  *     here if CallRail's actual mechanism differs.
- *   - PAYLOAD FIELD NAMES ARE BEST-EFFORT (same open item): CallRail's exact
- *     JSON keys per event type aren't verified against a live payload in
- *     this session. mapCallPayload()/mapFormPayload() below use defensive
- *     multi-key fallbacks (matching the style already used in
- *     sync-encircle.js for the same reason) — adjust the key names against a
- *     real webhook delivery before relying on this in production.
+ *   - PAYLOAD SHAPE IS CONFIRMED against a live delivery: CallRail POSTs the
+ *     call webhook as `application/x-www-form-urlencoded` (NOT JSON), so after
+ *     decoding every value is a string, and the call id arrives under
+ *     `resource_id` (there is no top-level `id`). The pure mappers
+ *     (mapCallPayload/mapFormPayload in ../lib/callrail.js) handle both — they
+ *     coerce boolean-ish strings and Number()-ify duration. See
+ *     functions/lib/callrail.test.js, which pins the real payload as a fixture.
  *   - Always returns 200 on processing errors (only 403 on a bad/missing
  *     secret) so CallRail doesn't enter a retry storm — mirrors
  *     twilio-webhook.js's same choice, and the cross-cutting "guard against
@@ -47,7 +48,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { transcriptText } from '../lib/callrail-api.js';
+import { firstOf, mapCallPayload, mapFormPayload } from '../lib/callrail.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -60,67 +61,6 @@ async function checkSecret(request, db) {
   if (!provided) return false;
   const [row] = await db.select('integration_config', `key=eq.callrail_webhook_secret&select=value`);
   return !!row?.value && row.value === provided;
-}
-
-function firstOf(obj, keys) {
-  for (const k of keys) {
-    if (obj?.[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
-  }
-  return null;
-}
-
-// The call id — top-level under any of several keys, or nested in a resource wrapper.
-// (Round 1: broadened defensively; exact key confirmed from the captured live payload.)
-function pickCallId(body) {
-  return firstOf(body, ['id', 'call_id', 'callrail_id', 'resource_id'])
-    || firstOf(body?.call || {}, ['id', 'call_id', 'callrail_id'])
-    || firstOf(body?.resource || {}, ['id', 'call_id']);
-}
-
-// Best-effort mapping of a CallRail "call" webhook payload — see NOTES above.
-function mapCallPayload(body) {
-  return {
-    p_callrail_id:     String(pickCallId(body)),
-    p_source_type:     'call',
-    p_tracking_number: firstOf(body, ['tracking_phone_number', 'tracking_number']),
-    p_caller_number:   firstOf(body, ['customer_phone_number', 'caller_number', 'from_number']),
-    p_duration_sec:    firstOf(body, ['duration', 'duration_sec']),
-    p_spam_flag:       !!firstOf(body, ['spam', 'spam_flag']),
-    p_source:          firstOf(body, ['source', 'utm_source']),
-    p_medium:          firstOf(body, ['medium', 'utm_medium']),
-    p_campaign:        firstOf(body, ['campaign', 'utm_campaign']),
-    p_recording_url:   firstOf(body, ['recording', 'recording_url']),
-    p_transcription:   transcriptText(firstOf(body, ['transcription', 'transcript'])),
-    p_form_data:       null,
-    p_lead_status:     firstOf(body, ['lead_status']) || 'new',
-    p_value:           firstOf(body, ['value']),
-    p_direction:       firstOf(body, ['direction']),
-    p_occurred_at:     firstOf(body, ['start_time', 'created_at', 'occurred_at']) || new Date().toISOString(),
-    p_raw_payload:     body,
-  };
-}
-
-// Best-effort mapping of a CallRail "form submission" webhook payload.
-function mapFormPayload(body) {
-  return {
-    p_callrail_id:     String(firstOf(body, ['id', 'form_id', 'callrail_id'])),
-    p_source_type:     'form',
-    p_tracking_number: null,
-    p_caller_number:   firstOf(body, ['phone_number', 'customer_phone_number']),
-    p_duration_sec:    null,
-    p_spam_flag:       !!firstOf(body, ['spam', 'spam_flag']),
-    p_source:          firstOf(body, ['source', 'utm_source']),
-    p_medium:          firstOf(body, ['medium', 'utm_medium']),
-    p_campaign:        firstOf(body, ['campaign', 'utm_campaign']),
-    p_recording_url:   null,
-    p_transcription:   null,
-    p_form_data:       firstOf(body, ['form_data', 'formdata']) || body,
-    p_lead_status:     'new',
-    p_value:           firstOf(body, ['value']),
-    p_direction:       'inbound',
-    p_occurred_at:     firstOf(body, ['created_at', 'occurred_at']) || new Date().toISOString(),
-    p_raw_payload:     body,
-  };
 }
 
 export async function onRequestPost(context) {
