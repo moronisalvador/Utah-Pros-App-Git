@@ -2239,7 +2239,12 @@ callrail-connect.js   — GET (read the webhook secret) / POST (save API key, re
                          Google-Drive-specific despite the file name).
 callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). Pulls historical
                          CALLS ONLY via CallRail's v3 list-calls API and upserts through the same
-                         RPC. CALLRAIL_ACCOUNT_ID env var + the connected API key are both required.
+                         RPC. Needs the connected API key + the CallRail account id; the account id
+                         is resolved by functions/lib/callrail-api.js resolveCallRailAccountId()
+                         (saved integration_config('callrail_account_id') → CALLRAIL_ACCOUNT_ID env
+                         → auto-discovered via CallRail's /v3/a.json and persisted). callrail-connect
+                         POST also resolves+stores it on connect (and thereby validates the key), so
+                         no Cloudflare env var is required — a pasted key is enough.
                          Endpoint path/field names are unverified against a live account — same
                          open item as the webhook. Hard-capped at 50 pages to guard against a
                          runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for

@@ -43,6 +43,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
+import { resolveCallRailAccountId } from '../lib/callrail-api.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -88,6 +89,10 @@ export async function onRequestPost(context) {
       value: crypto.randomUUID(),
     });
   }
+
+  // Resolve + store the account id the backfill needs (also validates the key
+  // against CallRail). Best-effort — a failure here doesn't block connecting.
+  await resolveCallRailAccountId(db, apiKey, env).catch(() => {});
 
   return jsonResponse({ connected: true, secret: secretRow.value }, 200, request, env);
 }
