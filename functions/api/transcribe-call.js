@@ -23,12 +23,18 @@
  *                  (getActorEmployee), ../lib/callrail-api.js (resolveCallRecording),
  *                  ../lib/deepgram.js (formatDeepgramTranscript)
  *   External API:  CallRail (the call's recording), Deepgram (api.deepgram.com)
- *   Data:          reads  → inbound_leads (recording_url), integration_credentials
+ *   Data:          reads  → inbound_leads (recording_url, transcription,
+ *                           transcript_analysis), integration_credentials
  *                           (provider='deepgram' + provider='callrail' keys)
- *                  writes → inbound_leads.transcription (via set_lead_transcription
- *                           RPC), system_events (via that RPC), worker_runs
+ *                  writes → inbound_leads.transcription + transcript_analysis (via
+ *                           set_lead_transcription RPC), system_events, worker_runs
  *
  * NOTES / GOTCHAS:
+ *   - Requests nova-3 + multichannel + Audio Intelligence (summary/sentiment/topics/
+ *     entities) in one call. CallRail records Agent/Customer on separate channels, so
+ *     multichannel gives exact speaker separation (diarize is the mono fallback). The
+ *     structured result (turns + intelligence) is built by buildTranscriptAnalysis()
+ *     and stored in inbound_leads.transcript_analysis; the flat text stays too.
  *   - We hand Deepgram the SIGNED CDN URL when CallRail gives us one, so Deepgram
  *     fetches the audio itself and we don't buffer a long call in the Worker.
  *     Only when CallRail streams audio directly do we download the bytes and POST
@@ -44,11 +50,17 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
-import { formatDeepgramTranscript } from '../lib/deepgram.js';
+import { formatDeepgramTranscript, buildTranscriptAnalysis } from '../lib/deepgram.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
+// nova-3 (best accuracy) + multichannel (CallRail records Agent/Customer on
+// separate channels → exact speaker separation; diarize is the mono fallback) +
+// utterances (per-turn segments) + Audio Intelligence (summary/sentiment/topics/
+// entities). All in one request. See functions/lib/deepgram.js for the parsing.
 const DEEPGRAM_URL =
-  'https://api.deepgram.com/v1/listen?model=nova-2&diarize=true&punctuate=true&smart_format=true';
+  'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true' +
+  '&utterances=true&multichannel=true&diarize=true' +
+  '&summarize=v2&sentiment=true&topics=true&detect_entities=true';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -94,13 +106,15 @@ async function transcribeLead(db, lead, callrailKey, deepgramKey) {
   const json = await dgRes.json();
   const text = formatDeepgramTranscript(json);
   if (!text) throw new Error('Deepgram returned an empty transcript');
+  const analysis = buildTranscriptAnalysis(json);
 
   await db.rpc('set_lead_transcription', {
     p_lead_id: lead.id,
     p_transcription: text,
     p_source: 'deepgram',
+    p_analysis: analysis,
   });
-  return { id: lead.id, chars: text.length, transcription: text };
+  return { id: lead.id, chars: text.length, transcription: text, analysis };
 }
 
 // ─── SECTION: Handler ──────────────
@@ -133,15 +147,19 @@ export async function onRequestPost(context) {
     if (body.backfill) {
       const days = Number(body.days) > 0 ? Number(body.days) : 30;
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      // Target calls that lack a transcript OR lack the structured analysis, so a
+      // row transcribed before this v2 upgrade gets re-enriched exactly once (then
+      // has both and is skipped). Avoids re-charging fully-processed calls.
       leads = await db.select(
         'inbound_leads',
-        `source_type=eq.call&recording_url=not.is.null&transcription=is.null&occurred_at=gte.${startDate}` +
+        `source_type=eq.call&recording_url=not.is.null` +
+          `&or=(transcription.is.null,transcript_analysis.is.null)&occurred_at=gte.${startDate}` +
           `&select=id,recording_url&order=occurred_at.desc&limit=${MAX_BACKFILL}`
       );
     } else if (body.lead_id) {
-      // Select `transcription` too so we can short-circuit an already-transcribed
-      // lead server-side (idempotency guard — see the loop below).
-      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url,transcription`);
+      // Select transcription + analysis too so we can short-circuit an already-fully-
+      // processed lead server-side (idempotency guard — see the loop below).
+      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url,transcription,transcript_analysis`);
     } else {
       return jsonResponse({ error: 'Provide lead_id or backfill:true' }, 400, request, env);
     }
@@ -156,13 +174,13 @@ export async function onRequestPost(context) {
   let single = null;
 
   for (const lead of leads) {
-    // Idempotency / don't-double-charge guard: never re-transcribe a lead that
-    // already has a transcript unless the caller explicitly forces it. (The
-    // backfill branch already filters transcription=is.null, so this only bites
-    // a re-POST of the single-lead path — a paid Deepgram call avoided.)
-    if (lead.transcription && !body.force) {
+    // Idempotency / don't-double-charge guard: skip a lead that already has BOTH a
+    // transcript AND the structured analysis, unless the caller forces it. (A row
+    // with text but no analysis — transcribed before v2 — is intentionally NOT
+    // skipped so it gets re-enriched once with nova-3 + intelligence.)
+    if (lead.transcription && lead.transcript_analysis && !body.force) {
       skipped++;
-      single = { id: lead.id, chars: lead.transcription.length, transcription: lead.transcription };
+      single = { id: lead.id, chars: lead.transcription.length, transcription: lead.transcription, analysis: lead.transcript_analysis };
       continue;
     }
     try {
@@ -190,9 +208,10 @@ export async function onRequestPost(context) {
       skipped,
       errored: errors.length,
       errors: errors.slice(0, 10),
-      // On a single-lead request, hand the transcript back (freshly made OR the
-      // existing one when skipped) so the UI updates inline either way.
+      // On a single-lead request, hand the transcript + analysis back (freshly made
+      // OR the existing one when skipped) so the UI updates inline either way.
       transcription: leads.length === 1 && single ? single.transcription : undefined,
+      analysis: leads.length === 1 && single ? single.analysis : undefined,
     },
     200,
     request,
