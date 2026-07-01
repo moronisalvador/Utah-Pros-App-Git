@@ -42,6 +42,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
+import { normalizePhone } from '@/lib/phone';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
 const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
@@ -224,11 +225,17 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
 
   const save = useCallback(async () => {
-    if (!phone.trim()) { err('A phone number is required'); return; }
+    // Normalize to E.164 (+1XXXXXXXXXX) — the SAME canonical form CallRail
+    // ingestion and every other create-contact flow use — so a hand-entered
+    // lead matches (never duplicates) an existing contact keyed on the unique
+    // phone column. A raw "(801) 555-0100" would otherwise be a different
+    // string than CallRail's "+18015550100" and silently split the person.
+    const normalized = normalizePhone(phone);
+    if (!normalized) { err('Enter a valid phone number'); return; }
     setSaving(true);
     try {
       await db.rpc('create_manual_lead', {
-        p_phone: phone.trim(),
+        p_phone: normalized,
         p_name: name.trim() || null,
         p_source: source.trim() || 'Manual entry',
         p_value: value.trim() ? Number(value) : null,
