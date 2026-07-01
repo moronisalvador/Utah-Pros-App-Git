@@ -34,11 +34,13 @@
  *                  (Claude Haiku — names the Agent/Customer speakers, best-effort)
  *
  * NOTES / GOTCHAS:
- *   - Requests nova-3 + multichannel + Audio Intelligence (summary/sentiment/topics/
- *     entities) in one call. CallRail records Agent/Customer on separate channels, so
- *     multichannel gives exact speaker separation (diarize is the mono fallback). The
- *     structured result (turns + intelligence) is built by buildTranscriptAnalysis()
- *     and stored in inbound_leads.transcript_analysis; the flat text stays too.
+ *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
+ *     entities) in one call. CallRail gives us a MONO recording, so `multichannel`
+ *     is intentionally NOT requested (on a 1-channel file it suppresses diarization);
+ *     diarize separates the two voices, and when mono defeats it (one speaker),
+ *     resegmentSpeakers() rebuilds the turns with Claude. The structured result
+ *     (turns + intelligence) is built by buildTranscriptAnalysis() and stored in
+ *     inbound_leads.transcript_analysis; the flat text stays too.
  *   - We hand Deepgram the SIGNED CDN URL when CallRail gives us one, so Deepgram
  *     fetches the audio itself and we don't buffer a long call in the Worker.
  *     Only when CallRail streams audio directly do we download the bytes and POST
@@ -55,7 +57,10 @@ import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
 import { formatDeepgramTranscript, buildTranscriptAnalysis } from '../lib/deepgram.js';
-import { buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities } from '../lib/speakerNaming.js';
+import {
+  buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities,
+  needsResegment, buildResegmentPrompt, parseResegmentedTurns,
+} from '../lib/speakerNaming.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -66,14 +71,21 @@ Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
 {"speakers":{"<label>":{"role":"agent"|"customer","name":<first name or null>}, ...},"caller_name":<the CUSTOMER's first name or null>}
 
 Use the EXACT speaker labels from the transcript as the keys. Only set a name if the person actually states their name in the call — otherwise null. A name is a person's name, never a company name.`;
-// nova-3 (best accuracy) + multichannel (CallRail records Agent/Customer on
-// separate channels → exact speaker separation; diarize is the mono fallback) +
-// utterances (per-turn segments) + Audio Intelligence (summary/sentiment/topics/
-// entities). All in one request. See functions/lib/deepgram.js for the parsing.
+// nova-3 (best accuracy) + diarize (speaker separation) + utterances (per-turn
+// segments) + Audio Intelligence (summary/sentiment/topics/entities), one request.
+// NOTE: `multichannel` was DROPPED — CallRail hands us a MONO recording (both
+// voices on one channel), and multichannel on a 1-channel file makes Deepgram
+// treat the whole call as a single "channel 0" speaker, SUPPRESSING diarization.
+// diarize alone gives it a fair shot at splitting the two voices; when it still
+// can't (mono is hard), needsResegment → Claude rebuilds the turns (see below).
 const DEEPGRAM_URL =
   'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true' +
-  '&utterances=true&multichannel=true&diarize=true' +
+  '&utterances=true&diarize=true' +
   '&summarize=v2&sentiment=true&topics=true&detect_entities=true';
+
+// System prompt for the re-segmentation pass (mono-recording rescue). Shares the
+// Agent/Customer framing with NAMING_SYSTEM but asks Claude to REBUILD the turns.
+const RESEGMENT_SYSTEM = `You are given a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that was NOT split by speaker. One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting. Split the words into an ordered list of speaker turns and label each. Return ONLY the requested JSON — no prose, no markdown.`;
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -101,6 +113,31 @@ async function nameSpeakers(env, analysis) {
     const identities = parseSpeakerIdentities(out);
     if (!identities) return { analysis, callerName: null };
     return { analysis: applySpeakerIdentities(analysis, identities), callerName: identities.caller_name };
+  } catch {
+    return { analysis, callerName: null };
+  }
+}
+
+// Mono-recording rescue: when diarization collapsed the whole call into ONE
+// speaker (CallRail gives us mono), relabeling can't help — there's nothing to
+// separate. So ask Claude to REBUILD the Agent/Customer turns from the raw
+// transcript. Same best-effort contract as nameSpeakers: any failure (no key,
+// API error, unparseable answer) returns the analysis unchanged.
+async function resegmentSpeakers(env, analysis, transcriptText) {
+  const prompt = buildResegmentPrompt(transcriptText);
+  if (!env.ANTHROPIC_API_KEY || !prompt) return { analysis, callerName: null };
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: NAMING_MODEL, max_tokens: 4096, system: RESEGMENT_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) return { analysis, callerName: null };
+    const data = await res.json().catch(() => null);
+    const out = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const parsed = parseResegmentedTurns(out);
+    if (!parsed) return { analysis, callerName: null };
+    return { analysis: { ...analysis, turns: parsed.turns, speakerMode: 'resegment' }, callerName: parsed.caller_name };
   } catch {
     return { analysis, callerName: null };
   }
@@ -154,9 +191,20 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     buildTranscriptAnalysis(json) ||
     { model: 'nova-3', speakerMode: 'text', turns: [], summary: null, sentiment: null, topics: [], entities: [] };
 
-  // Name the speakers (Agent/Customer + real names) — best-effort enrichment.
-  const named = await nameSpeakers(env, analysis);
-  analysis = named.analysis;
+  // Separate the speakers (Agent/Customer + real names) — best-effort enrichment.
+  // Normally diarization gives ≥2 speakers and we just relabel them. But CallRail's
+  // MONO recording can collapse the call into ONE speaker — then rebuild the turns
+  // from the transcript with Claude instead of relabeling nothing.
+  let callerName = null;
+  if (needsResegment(analysis)) {
+    const r = await resegmentSpeakers(env, analysis, text);
+    analysis = r.analysis;
+    callerName = r.callerName;
+  } else {
+    const named = await nameSpeakers(env, analysis);
+    analysis = named.analysis;
+    callerName = named.callerName;
+  }
 
   await db.rpc('set_lead_transcription', {
     p_lead_id: lead.id,
@@ -167,13 +215,13 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
 
   // Auto-name the lead from the caller's detected name (fills caller_name; backfills
   // a linked contact's name only if blank; never creates a contact). Best-effort.
-  if (named.callerName) {
+  if (callerName) {
     try {
-      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: named.callerName });
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName });
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
-  return { id: lead.id, chars: text.length, transcription: text, analysis, callerName: named.callerName || null };
+  return { id: lead.id, chars: text.length, transcription: text, analysis, callerName: callerName || null };
 }
 
 // ─── SECTION: Handler ──────────────

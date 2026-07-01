@@ -2459,11 +2459,16 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          resolves the recording via `resolveCallRecording()`, then hands Deepgram the
                          signed URL so it fetches the audio itself (no Worker buffering; falls back to
                          POSTing bytes when CallRail streams directly). **v2 request** (one call):
-                         `model=nova-3&smart_format&punctuate&utterances&multichannel&diarize` +
-                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`. CallRail
-                         records Agent/Customer on **separate stereo channels**, so `multichannel`
-                         gives exact speaker separation (Agent/Customer labels); `diarize` is the mono
-                         fallback ("Speaker N"). Stores BOTH the flat text (`formatDeepgramTranscript`)
+                         `model=nova-3&smart_format&punctuate&utterances&diarize` +
+                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`.
+                         **`multichannel` was DROPPED** — CallRail actually hands us a **MONO**
+                         recording, and multichannel on a 1-channel file makes Deepgram treat the whole
+                         call as one "channel 0" speaker, SUPPRESSING diarization (a two-person call
+                         collapsed into a single "Agent" block). `diarize` alone separates the voices;
+                         when mono still defeats it (≤1 speaker → `needsResegment`), a Claude pass
+                         (`resegmentSpeakers` + pure `buildResegmentPrompt`/`parseResegmentedTurns`)
+                         **rebuilds** the Agent/Customer turns from the raw transcript
+                         (`speakerMode='resegment'`). Stores BOTH the flat text (`formatDeepgramTranscript`)
                          and the structured `transcript_analysis` (`buildTranscriptAnalysis` — pure,
                          unit-tested: turns + summary + sentiment + topics + entities) via
                          `set_lead_transcription`. **Idempotency:** the single-lead guard skips only
@@ -2472,14 +2477,17 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          rows get re-enriched once with nova-3 + intelligence, then are skipped.
                          Backfill hard-capped at 200 (MAX_BACKFILL); logs one worker_runs row.
                          **Deepgram key** lives in integration_credentials (provider='deepgram') —
-                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. First
-                         live run confirms the stereo download + exact Audio-Intelligence field paths
-                         (parser is defensive; unconfirmed shapes degrade to null/[], never throw).
+                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. Confirmed
+                         live: CallRail's download is MONO (hence the diarize + re-segment path above);
+                         the parser is defensive — unconfirmed Audio-Intelligence shapes degrade to
+                         null/[], never throw.
                          **Speaker naming (best-effort):** after Deepgram, a Claude Haiku pass
                          (`functions/lib/speakerNaming.js` — pure buildSpeakerPrompt/
                          parseSpeakerIdentities/applySpeakerIdentities, unit-tested) identifies which
                          speaker is the Agent vs Customer and each person's name, relabeling the
-                         `transcript_analysis` turns (each turn gains a `role`). The caller's name is
+                         `transcript_analysis` turns (each turn gains a `role`). **When diarization
+                         collapsed to one speaker** (mono), the worker instead runs `resegmentSpeakers`
+                         (above), which rebuilds AND names the turns in one pass. The caller's name is
                          stored via `set_lead_caller_name`. Needs `ANTHROPIC_API_KEY` (Cloudflare env,
                          already set for the chat workers); any failure leaves Speaker 1/2 untouched.
                          Topics are capped to the 6 most-confident in `buildTranscriptAnalysis`
