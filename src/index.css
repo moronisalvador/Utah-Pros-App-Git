@@ -5937,6 +5937,12 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .crm-call-row-detail { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--crm-border); font-size: 13px; }
 .crm-call-row-detail a { color: var(--crm-accent); font-weight: 600; }
+.crm-call-row-play {
+  font-family: inherit; font-size: 13px; font-weight: 600; color: var(--crm-accent);
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.crm-call-row-play:disabled { color: var(--crm-text-tertiary); cursor: default; }
+.crm-call-row-audio { display: block; width: 100%; max-width: 340px; height: 36px; margin-top: 4px; }
 .crm-call-row-transcript { margin: 6px 0 0; color: var(--crm-text-secondary); font-style: italic; }
 
 .crm-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 9999px; }
