@@ -25,6 +25,7 @@ const ROLES = [
   { key: 'project_manager', label: 'Project Manager' },
   { key: 'supervisor', label: 'Supervisor' },
   { key: 'field_tech', label: 'Field Tech' },
+  { key: 'crm_partner', label: 'CRM Partner (external)' },
 ];
 
 const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
@@ -455,6 +456,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
     role: employee?.role || 'field_tech',
     hourly_rate: employee?.hourly_rate ?? '',
     overtime_rate: employee?.overtime_rate ?? '',
+    is_external: employee?.is_external ?? false,
     password: '',
   });
 
@@ -477,6 +479,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         if (form.role !== employee.role) payload.role = form.role;
         if (form.hourly_rate !== (employee.hourly_rate ?? '')) payload.hourly_rate = form.hourly_rate;
         if (form.overtime_rate !== (employee.overtime_rate ?? '')) payload.overtime_rate = form.overtime_rate;
+        if (form.is_external !== (employee.is_external ?? false)) payload.is_external = form.is_external;
         if (form.password) payload.password = form.password;
 
         const res = await fetch('/api/admin-users', {
@@ -502,6 +505,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
             phone: form.phone,
             hourly_rate: form.hourly_rate,
             overtime_rate: form.overtime_rate,
+            is_external: form.is_external,
           }),
         });
         const data = await res.json();
@@ -593,6 +597,17 @@ function EmployeeModal({ employee, onClose, onSaved }) {
                   <option key={r.key} value={r.key}>{r.label}</option>
                 ))}
               </select>
+            </div>
+            <div className="admin-field">
+              <label className="admin-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={form.is_external}
+                  onChange={e => set('is_external', e.target.checked)}
+                />
+                External account (vendor/agency — not internal staff)
+              </label>
+              <span className="admin-field-hint">Reporting/audit marker only — a CRM Partner's actual access is scoped entirely by their Role above.</span>
             </div>
             <div className="admin-field">
               {isEdit ? (

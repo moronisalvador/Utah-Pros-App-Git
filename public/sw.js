@@ -33,6 +33,9 @@ self.addEventListener('activate', (event) => {
     try {
       const clients = await self.clients.matchAll({ type: 'window' });
       for (const c of clients) {
+        // postMessage as a belt-and-suspenders in case navigate() is a no-op
+        // (main.jsx listens and bounces through /reset); then force the reload.
+        try { c.postMessage({ type: 'upr-reset' }); } catch (err) { /* ignore */ }
         try { await c.navigate(c.url); } catch (err) { /* ignore */ }
       }
     } catch (err) { /* ignore */ }

@@ -31,6 +31,7 @@
 
 ## Docs
 - [ ] `UPR-Web-Context.md` updated if this touched tables / RPCs / components / pages / workers (Rule 9)
+- [ ] **CRM phase only:** `crm_build_stages` reconciled — every `done` reflects real, verified work; every finished stage is actually flipped `done` (not left as `todo`); any still-open stage is genuinely unfinished or owner-blocked, with the reason disclosed here or in `UPR-Web-Context.md` — not forgotten
 - [ ] Other docs updated (if relevant):
 
 ## Migrations (if any)
