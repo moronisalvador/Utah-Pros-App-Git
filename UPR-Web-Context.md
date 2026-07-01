@@ -1,5 +1,7 @@
 # UPR Web Platform — Context Document
-Last updated: June 20, 2026 (Stripe S3 — card payments & fee automation, dormant)
+Last updated: July 1, 2026 (accuracy audit — corrected table/employee/flag counts, DevTools tab count,
+Capgo pipeline status, PostgREST select() gotcha, divisionToQbo remodel bucket, and other drift; see
+git history for the full findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -185,6 +187,11 @@ src/
     Help.jsx                      — In-app Help & Guides centre (route /help, reached from the TopNav ? button + Sidebar; wrapped by SettingsLayout). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
+    Legal.jsx                     — Public /terms + /privacy pages (required by Intuit's QBO production profile)
+    AdminFeedback.jsx             — Tech feedback inbox (route /tech-feedback, admin-only)
+    AdminDemoSheetBuilder.jsx     — Scope-sheet schema builder (route /admin/demo-sheet-builder)
+    ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
+    PaymentSettings.jsx           — Stripe pay-link + payout settings (route /payments/settings)
   pages/tech/
     TechDash.jsx                  — Field tech dashboard: sticky greeting (doesn't scroll on pull-to-refresh), active cards with client name + task progress bar + Photo/Notes/Clock In, timeline future rows, compact completed rows, upcoming 7-day preview when 0 appointments today, snap-first photo flow (auto-upload, optional caption via toast). Time-Tracking PR-2: ActiveCard OMW runs clock_omw_precheck + ClockSupersedeSheet. PR-3: red "You're still clocked in" banner when the tech has an open LIVE entry and Denver local time ≥ 17:00 (denverHour() helper), linking to the appointment to finish the day; the midnight split is the backend safety net.
     TechSchedule.jsx              — Field tech 14-day schedule: type icons, jump-to-today FAB
@@ -248,7 +255,11 @@ src/
     SettingsLayout.jsx            — Settings hub shell: left sub-rail (≥1024px) wrapping the system pages; display:contents passthrough below 1024px
 
 functions/
-  api/
+  api/                            — 58 files total; only the SMS/Esign/Encircle/demo-sheet workers below are
+                                    inventoried here. QBO, Stripe, Google Drive/Calendar, and Homebuilding AI
+                                    workers (~41 files) are documented in their own sections further down this
+                                    doc instead of duplicated here — see CLAUDE.md's Workers section for the
+                                    full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
     process-scheduled.js          — Cron: process scheduled SMS messages (60s)
     resend-esign.js               — Resend esign email for existing pending request
@@ -365,7 +376,8 @@ maps. This dashboard keeps its own scoped palette (above).
 
 ---
 
-## Database — All Tables (69 total, as of Mar 27 2026)
+## Database — All Tables (91 base tables live as of Jul 1 2026 — table count drifts fast with every
+migration; verify via `upr_schema`/`upr_describe` MCP tools rather than trusting this number)
 
 ### Core Business
 ```
@@ -390,7 +402,8 @@ job_assignments         — Job-to-employee assignments
 job_checklists          — Checklist instances on jobs
 job_costs               — Job cost line items
 job_equipment           — Equipment on jobs
-job_equipment_costs     — Equipment cost tracking
+equipment_placements    — Equipment placed on a job (replaced the earlier planned job_equipment_costs,
+                          which was never shipped — see Encircle Replacement Phase 2 Hydro below)
 job_time_entries        — Time entries per job (has travel_minutes NUMERIC column — computed on clock-in from travel_start; Phase 5 added travel_start_lat/lng + clock_in_lat/lng NUMERIC(9,6) captured from iOS Geolocation). Time-Tracking PR-1 (Jun 26 2026) added split/lineage columns auto_continued BOOL, continued_from UUID→self, auto_split_seq INT, source TEXT (for the future midnight-split work), and a partial unique index uq_jte_one_open_clock_per_employee on (employee_id) WHERE clock_out IS NULL AND travel_start IS NOT NULL — enforces ≤1 open LIVE entry per employee (manual rows have travel_start NULL and are excluded).
 job_number_sequences    — Auto-increment job number tracking
 active_jobs             — View: currently active jobs
@@ -446,7 +459,9 @@ demo_sheets             — VIEW over forms WHERE form_type='demo_sheet' (legacy
 rooms                   — Per-CLAIM physical rooms (water/mold/recon share same structure).
                           Columns: id, claim_id (FK claims, CASCADE), name, area_sqft, ceiling_height_ft,
                           sort_order, client_id UUID UNIQUE (offline idempotency key),
-                          created_by (FK employees), created_at, deleted_at (soft).
+                          created_by (FK employees), created_at, deleted_at (soft),
+                          encircle_room_id BIGINT, encircle_structure_id BIGINT (added later, undated —
+                          links a room back to its Encircle source when imported).
                           Added Apr 17 2026 as part of Encircle replacement Phase 1.
                           NOTE: Earlier draft had job_id; refactored to claim_id on Apr 17 so jobs
                           under the same claim share rooms.
@@ -501,9 +516,10 @@ sub_confirmations       — Subcontractor job confirmations
 
 ### Admin & Config
 ```
-employees               — 14 rows — Staff (6 auth-linked, 8 unlinked)
+employees               — 15 rows as of Jul 1 2026 (8 auth-linked, 7 unlinked) — Staff. Row count drifts
+                          with hiring — see the Employees section below or query live for current roster.
 nav_permissions         — 66 rows — Role-based nav access
-feature_flags           — 14 rows — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
+feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
 automation_rules        — Workflow automation rules
@@ -566,7 +582,7 @@ toggle_appointment_task(...)    — Toggle task complete
 get_job_schedule(p_job_id)      — Schedule for one job
 get_job_schedules(...)          — All job schedules
 get_my_appointments_today(...)  — Today's appointments for employee
-get_dispatch_board(...)         — Dispatch board data (kind='job' appointments only — joins to jobs so events naturally excluded). Each job row includes claim_id + date_of_loss (from the linked claim, via j.claim_id; added Jun 18 2026 for the schedule job picker).
+get_dispatch_board(p_start_date, p_end_date, p_auto_show) — Dispatch board data (kind='job' appointments only — joins to jobs so events naturally excluded). Each job row includes claim_id + date_of_loss (from the linked claim, via j.claim_id; added Jun 18 2026 for the schedule job picker).
 get_dispatch_events(p_start_date, p_end_date) — Returns non-job calendar events (kind='event') with assigned crew; shape mirrors per-appointment object in get_dispatch_board. Added Apr 17 2026.
 get_dispatch_panel_jobs(...)    — Jobs panel for dispatch. Returns id, insured_name, job_number, division, phase, address, date_of_loss (from linked claim, added Jun 18 2026), on_board, in_production, appointment_count.
 get_schedule_templates()        — All schedule templates
@@ -658,6 +674,9 @@ delete_referral_source(p_id)
 ```
 get_feature_flags()             — Returns all flag rows ordered by category, label
 upsert_feature_flag(p_key, p_enabled, p_dev_only_user_id, p_category, p_label, p_description, p_updated_by, p_force_disabled)
+  — ⚠️ two overloads exist live (this 8-arg one, plus an older 7-arg version without p_force_disabled) —
+  the same PGRST203-ambiguity risk called out elsewhere in this doc for other RPCs. Drop the 7-arg
+  overload next time this function is touched.
 delete_feature_flag(p_key)
 ```
 
@@ -963,24 +982,50 @@ doc-category keys unchanged). Two new schema capabilities:
   from one ~1.9 MB chunk to ~335 KB + per-page chunks. Draft load fetches `get_demo_sheet` once
   (deduped between the schema + bootstrap effects); job totals are `useMemo`-ized.
 
+### Other RPC families (documented in their own sections, not duplicated here)
+These exist live and are correctly documented elsewhere in this doc — listed here only so this
+catalog doesn't read as exhaustive when it isn't:
+- **Homebuilding AI** (16 RPCs — chat/estimate/build-project CRUD) — see "Homebuilding Entry Analysis"
+  and "New Build simulator" sections below.
+- **In-App Notifications** (`create_notification`, `get_notifications`, `get_unread_notification_count`,
+  `mark_notification_read`, `mark_all_notifications_read`) — see "In-App Notifications" below.
+- **Commissions/payroll** (`get_commissions`, `get_employee_commissions`, `upsert_employee_commission`) —
+  live, but genuinely undocumented anywhere in this doc as of this audit; confirm with the owner whether
+  this is a shipped-but-undocumented feature or in-progress before relying on it.
+- **Billing** (`create_invoice_for_job`, `convert_estimate_to_invoice`, `get_job_financials`,
+  `get_ar_invoices`, `get_payments_ledger`, `get_open_estimates_summary`, etc.) — see the QuickBooks
+  Online sections below and `BILLING-CONTEXT.md`.
+
 ---
 
 ## Feature Flags System (Phase 1A complete, 1B wired in AuthContext)
 
-**Table:** `feature_flags` — 19 rows as of Jun 2026 (mixed on / off / dev-only). The table below is the original Phase-1A seed; new flags are now added via the self-registering registry (see below), and `feature:ai_xactimate` (Jun 2026, AI Xactimate Import) is live + ON.
+**Table:** `feature_flags` — 20 rows as of Jul 1 2026 (mixed on / off / dev-only; row count drifts as
+flags are added via the self-registering registry below — verify live via `upr_select` rather than
+trusting this number). Original Phase-1A seed plus everything added since:
 
-| Key | Category | Label |
-|-----|----------|-------|
-| `page:leads` | page | Leads |
-| `page:marketing` | page | Marketing |
-| `page:time_tracking` | page | Time Tracking |
-| `page:collections` | page | Collections |
-| `page:encircle_import` | pages | Encircle Import |
-| `tool:bulk_sms` | tool | Bulk Messaging |
-| `tool:search_export` | tool | Search & Export |
-| `tool:oop_pricing` | tool | OOP Pricing Calculator (dev-only → Moroni, Apr 20 2026) |
-| `feature:pwa` | feature | PWA |
-| `feature:twilio_live` | feature | Twilio Live SMS |
+| Key | Category | Label | Enabled |
+|-----|----------|-------|---------|
+| `page:leads` | page | Leads | off |
+| `page:marketing` | page | Marketing | off |
+| `page:time_tracking` | page | Time Tracking | on |
+| `page:collections` | page | Collections | on |
+| `page:estimates` | page | Estimates | **on** — no longer dormant, see QBO Estimates section |
+| `page:overview` | page | Overview Dashboard | on |
+| `page:encircle_import` | pages | Encircle Import | on |
+| `page:water_loss_report` | reports | Water Loss Report PDF | off, dev-only |
+| `page:tech_rooms` | tech | Tech: Rooms & Photo Organization | off, dev-only |
+| `page:tech_moisture` | tech | Tech: Moisture Readings (Hydro) | off, dev-only |
+| `page:tech_equipment` | tech | Tech: Equipment Placements | off, dev-only |
+| `tool:bulk_sms` | tool | Bulk Messaging | off |
+| `tool:search_export` | tool | Search & Export | off |
+| `tool:oop_pricing` | tool | OOP Pricing Calculator (dev-only → Moroni, Apr 20 2026) | off, dev-only |
+| `feature:pwa` | feature | PWA | on |
+| `feature:twilio_live` | feature | Twilio Live SMS | off |
+| `feature:billing` | feature | Billing & Invoicing | on |
+| `feature:ai_xactimate` | feature | AI Xactimate Import | on |
+| `offline:queue` | infra | Offline Queue + Service Worker | off, dev-only |
+| `clock_enforce_explicit_clockout` | time_tracking | Enforce explicit clock-out | off |
 
 **AuthContext integration (Phase 1B — complete, access control updated Mar 27 2026):**
 - `featureFlags` — keyed object `{ 'page:marketing': { enabled, dev_only_user_id, force_disabled, ... } }`
@@ -1005,28 +1050,31 @@ dark-launch a feature OFF, set `enabled: false` on its registry entry. Add a fla
 appending one line to `EXPLICIT_FLAGS`, or just set `featureFlag` on a nav item — it self-registers
 on the next DevTools open.
 
-**Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 7 tabs (Moroni-only route)
+**Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 9 tabs (Moroni-only route) —
+Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.
 
 ---
 
-## Employees (14 total)
+## Employees (15 total as of Jul 1 2026 — headcount changes with hiring, verify live before relying
+on this table)
 
 | Name | Role | Auth |
 |------|------|------|
 | Moroni Salvador | admin | ✅ linked |
 | Ben Palmieri | admin | ✅ linked |
-| Juani Sajtroch | supervisor | ✅ linked |
+| Juani Sajtroch | admin | ✅ linked |
 | Marcelo Estefens | project_manager | ✅ linked |
-| Matheus Almeida | field_tech | ✅ linked |
+| Matheus Almeida | supervisor | ✅ linked |
 | Thiago Tobias | admin | ✅ linked |
+| Marcelo Bigheti | field_tech | ✅ linked |
+| Nano Suarez | field_tech | ✅ linked |
 | Admin User | admin | ❌ unlinked |
 | Alan Nobre | field_tech | ❌ no email |
 | Amaury Evangelista | supervisor | ❌ no email |
 | Diego Henriques | field_tech | ❌ no email |
 | Elias Almeida | field_tech | ❌ no email |
-| Marcelo Bigheti | field_tech | ❌ no email |
 | Marcio Silveira | supervisor | ❌ no email |
-| Nano Suarez | field_tech | ❌ email set, unlinked |
+| Moroni Tech | field_tech | ❌ email set, unlinked |
 
 **Invite flow:** Admin → Send Invite → creates auth → links `auth_user_id` → sends email → `/set-password` → sets password → auto-redirects Dashboard
 
@@ -1194,8 +1242,8 @@ mapping is source-agnostic.
   `functions/lib/google-calendar.js` (`syncAppointment`, `removeSourceEvents`,
   `buildEventBody`). Times sent with explicit `timeZone: 'America/Denver'` (appointments
   store local date+TIME, no TZ). `status='cancelled'` or a deleted appointment removes the events.
-- **`integration_config`:** `gcal_worker_url` (seeded to the **dev** host — flip to
-  `https://utahpros.app/api/google-calendar-sync` on production release) + `gcal_webhook_secret`.
+- **`integration_config`:** `gcal_worker_url` — **already flipped to production**
+  (`https://utahpros.app/api/google-calendar-sync`, confirmed live Jul 1 2026) + `gcal_webhook_secret`.
 - **Requires** the same Google Cloud OAuth client + Cloudflare env vars as Drive
   (`GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`), plus the calendar scope on the OAuth consent screen.
 
@@ -1271,7 +1319,7 @@ setup is finished.
 
 **Read-time repoint (`migrations/20260618_get_job_financials.sql` + `lib/claimUtils.js`):** the `invoices` table is the **source of truth** for the Financials/Collections views. RPC `get_job_financials(p_job_ids uuid[] DEFAULT NULL) RETURNS TABLE(job_id, invoice_count, invoiced, collected, balance_due, deductible, insurance_responsibility, homeowner_responsibility, depreciation_withheld, depreciation_released, invoiced_date)` rolls up **pushed** invoices per job (`qbo_invoice_id IS NOT NULL`; granted `anon, authenticated`). `claimUtils.withJobFinancials(db, jobs)` overlays that rollup onto job objects (attaches `job._fin`, overrides `invoiced_value`; `collected_value` only when invoice `amount_paid > 0`) with **COALESCE fallback** to the legacy `jobs` fields — a job with no pushed invoices renders exactly as before. `getBalances()` prefers `job._fin` (invoiced + deductible) when present, else legacy. Wired into `ClaimCollectionPage`, `ClaimPage`, `Jobs`, `Production`, `JobPage`. `CustomerPage` (`get_customer_detail`) and `MergeModal` still read `jobs.invoiced_value`, kept accurate by the AR-sync trigger. The trigger is **retained** as a denormalized projection (belt-and-suspenders + covers the non-overlaid consumers); read-time and trigger use identical definitions so they always agree. Rollup failures degrade silently to legacy values.
 
-**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. **Invoice numbering (Jun 20 2026):** the worker sends the **job number as the QBO `DocNumber`** (on create + update; unique since one invoice per job, ≤21 chars). The QBO company has *Custom transaction numbers* ON — so when we sent no DocNumber, QBO left the invoice number **blank**; supplying the job number fixes that and makes the QBO invoice number == the job number. (If that QBO setting is ever OFF, QBO ignores the supplied number and auto-numbers — still safe.) The worker captures `qboInv.DocNumber` back into **`invoices.qbo_doc_number`**, and the UI displays that (UPR's `INV-######` is only the pre-send draft handle). **QBO memo (standard):** `Date of loss: <dol> · Job: <job#> · Claim: <claim#> · Service Address: <full addr>` — written to BOTH `CustomerMemo` (prints on the invoice; needs QBO *Sales → Message to customer*, on by default) and `PrivateNote` (internal). The job's **service address** (`jobs.address/city/state/zip`, claim loss-address fallback — can differ from billing) + date of loss come from the job (claim fallback). The address also goes to the invoice's structured **`ShipAddr` (Ship To)** — full length, no 31-char cap, prints when QBO *Sales → Shipping* is on. We **no longer write the legacy 31-char custom field** — on QBO Advanced the enhanced/named custom fields aren't writable via the v3 API (only the 3 legacy string fields are; Intuit's GraphQL Custom Fields API is Gold/Platinum-partner-gated), so Ship To + CustomerMemo are the right writable homes. `get_ar_invoices` / `get_payments_ledger` return `qbo_doc_number`; linkage is by `qbo_invoice_id` (internal id).
+**Division → QBO (`lib/quickbooks.js` `divisionToQbo`):** recon→Item `1010000201` + class Reconstruction; **remodeling→same Item/class as recon** (added Jun 29 2026 — remodeling maps onto Reconstruction, not its own bucket, see the Overview Dashboard section above); water/mit→Item `1010000071` + class Mitigation; mold→Item `1010000131` (no class); contents→Item `38` (no class). Insurance-adjustment item `1010000231`. Class Ids resolved at runtime by name. **Note:** `BILLING-CONTEXT.md` is the current, more detailed source for the QBO/billing architecture — this doc's Phase 1/2a/2b/2c framing below is historical/narrative and the two docs use different organizing schemes for the same subsystem; prefer `BILLING-CONTEXT.md` when they disagree. **Invoice numbering (Jun 20 2026):** the worker sends the **job number as the QBO `DocNumber`** (on create + update; unique since one invoice per job, ≤21 chars). The QBO company has *Custom transaction numbers* ON — so when we sent no DocNumber, QBO left the invoice number **blank**; supplying the job number fixes that and makes the QBO invoice number == the job number. (If that QBO setting is ever OFF, QBO ignores the supplied number and auto-numbers — still safe.) The worker captures `qboInv.DocNumber` back into **`invoices.qbo_doc_number`**, and the UI displays that (UPR's `INV-######` is only the pre-send draft handle). **QBO memo (standard):** `Date of loss: <dol> · Job: <job#> · Claim: <claim#> · Service Address: <full addr>` — written to BOTH `CustomerMemo` (prints on the invoice; needs QBO *Sales → Message to customer*, on by default) and `PrivateNote` (internal). The job's **service address** (`jobs.address/city/state/zip`, claim loss-address fallback — can differ from billing) + date of loss come from the job (claim fallback). The address also goes to the invoice's structured **`ShipAddr` (Ship To)** — full length, no 31-char cap, prints when QBO *Sales → Shipping* is on. We **no longer write the legacy 31-char custom field** — on QBO Advanced the enhanced/named custom fields aren't writable via the v3 API (only the 3 legacy string fields are; Intuit's GraphQL Custom Fields API is Gold/Platinum-partner-gated), so Ship To + CustomerMemo are the right writable homes. `get_ar_invoices` / `get_payments_ledger` return `qbo_doc_number`; linkage is by `qbo_invoice_id` (internal id).
 
 **Status:** foundation + push worker + Billing UI + AR mapping trigger + **read-time repoint** (dashboard reads `invoices` via `get_job_financials`, legacy fallback) live on prod, validated (real QBO invoice created/deleted; AR-sync trigger verified; `get_job_financials` applied + returns clean with the table empty; full Vite build passes). **Remaining 2a:** flip `auto_draft_invoices` → `'true'` once Moroni has tested the Billing UI on prod. **2b:** UPR invoice editing UI (line items, adjustments) + two-way sync — then surface the richer rollup fields the dashboard now has access to (insurance/homeowner split, depreciation). **2c:** payments sync → invoice `amount_paid` (`collected` auto-switches to invoice-sourced once `> 0`). **Future:** once invoicing is steady-state, retire the hand-entered Revenue editor + `jobs.invoiced_value` mirror and drop the trigger.
 
@@ -1309,8 +1357,9 @@ invoice** button on the Collections hub header.
 ## QuickBooks Online — Estimates (Jun 25 2026)
 
 A full line-item **estimate builder** that mirrors the invoice tool, syncs to QBO, and
-converts to an invoice. Ships **dormant** behind the `page:estimates` feature flag
-(seeded **disabled** — a missing flag would read as ON, so the OFF row is required).
+converts to an invoice. Shipped **dormant** behind the `page:estimates` feature flag at first
+(seeded **disabled** — a missing flag would read as ON, so the OFF row was required); **the flag is
+now `enabled: true` live (confirmed Jul 1 2026) — estimates are live, not dormant.**
 Edits gated by `canEditBilling` (admin + manager), same as invoices.
 
 **Estimates are PRE-SALE and decoupled from jobs** (decouple migration
@@ -1579,9 +1628,10 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 - QBO read: `qbo_query`, `qbo_get`, `qbo_list_invoices`, `qbo_list_payments`, `qbo_list_estimates`, `qbo_report`.
 - QBO write: `qbo_create_invoice`, `qbo_update_invoice`, `qbo_delete_invoice` (refuses invoices with payments), `qbo_create_payment`, `qbo_relink_payment`, `qbo_delete_payment`, `qbo_create_customer`, `qbo_update_customer`, `qbo_create_item`, `qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`, `qbo_send_invoice` (emails the customer), `qbo_create_estimate`.
 - UPR DB: `upr_select`, `upr_rpc` (any of the ~150 RPCs — **mutating fns gated**: names not starting get_/list_/search_/preview_/count_/fetch_ require `confirm`), `upr_schema` (tables + functions), `upr_describe` (a table's columns / an RPC's params), `upr_search` (cross-entity find: contacts/jobs/claims), `upr_insert`, `upr_update`, `upr_delete` (filter required).
+- **Encircle + Resend (undocumented until this audit — ~22 tools total, `upr-mcp/src/encircle.js` + `resend.js`):** mirrors the Encircle and Resend REST APIs (claims/rooms/notes/media/assignments for Encircle; domains/emails for Resend) the same way the QBO tools mirror QuickBooks — see those source files for the exact tool list rather than duplicating it here.
 
 **New table:** `upr_mcp_audit` (see Logging & Monitoring). **New RPC:** `get_upr_mcp_audit(p_limit)`.
-**Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
+**Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, encircle.js, resend.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
 
 ---
 
@@ -1608,7 +1658,10 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 
 ---
 
-## Native iOS App (Capacitor) — In Progress
+## Native iOS App (Capacitor) — mostly shipped
+
+Camera, push registration, geolocation, biometric gate, and the Capgo OTA updater below are all
+live, not in-progress. Only the privacy-screen plugin (see Deferred below) is genuinely still pending.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -1622,17 +1675,17 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (statusBarLight/Dark, hideSplash). Splash held until React mounts, status bar flips to light on TechAppointment's gradient hero and back to dark elsewhere.
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeBiometric.js` + `<BiometricGate>` in App.jsx. Cold-launch gate on native: if a Supabase session exists and the flag is set, show "Unlocking UPR…" lock screen and prompt Face ID / Touch ID / passcode. Cancel or failure → sign out + show login. Flag is enabled in Login.jsx after a successful password login on native, cleared in AuthContext.logout. Token still lives in localStorage — full Keychain migration is future hardening.
   - `@capgo/capacitor-updater` — OTA React/CSS/HTML updates without App Store resubmit. `src/lib/nativeUpdater.js` exposes `markBundleReady()` (called on App.jsx mount — critical, Capgo rolls back otherwise), plus `checkForUpdate` and `getCurrentBundleInfo` helpers. `capacitor.config.json` plugin config: `autoUpdate: true`, `defaultChannel: production`, auto-cleanup on success/fail.
-- **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` runs on push to `main` (production channel) or `dev` (beta channel). Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. One-time setup on Capgo dashboard: create app, generate API token.
+- **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
 - **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
-- **Task tracker:** `CAPACITOR-TASK.md` (removed when all phases ship)
+- **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
 
 ---
 
 ## PostgREST / Supabase Gotchas
 - New tables need `SECURITY DEFINER` RPCs — REST API schema cache doesn't update immediately
 - RLS anon policies require `TO anon` clause — `USING (true)` alone is insufficient
-- `db.select()` silently returns `[]` on 404 — silent `.catch(() => [])` masks errors
+- `db.select()` **throws** on any non-OK response (400/404/500) — it does NOT silently return `[]`. (Corrected Jul 1 2026 — this doc previously repeated a false claim also found in CLAUDE.md; verified against `src/lib/supabase.js:56-58`.) Always wrap in try/catch.
 - Always inspect actual column names via `information_schema.columns` before writing queries
 - `job_notes` uses column `body`, NOT `content`
 - `write_file` for full rewrites — `edit_file` fails silently on CRLF files
@@ -1640,7 +1693,9 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 
 ---
 
-## Dev Tools Roadmap Status (as of Mar 27 2026)
+## Dev Tools Roadmap Status (phases below complete as of Mar 27 2026; the Integrations tab — QBO/etc.
+connection management, documented in its own sections above — shipped after this table and is the
+9th tab, added Jul 1 2026 to fix the doc's stale "8 tabs" count)
 
 | Phase | Item | Status |
 |-------|------|--------|
@@ -1662,7 +1717,7 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 | 6B | Table inspector (15 tables, row count, recent rows) | ✅ Done |
 | 6C | `bust_postgrest_cache()` RPC + button | ✅ Done |
 
-**All DevTools phases complete.** 8 tabs: Flags, Health, Employees, Workers, Backfill, Integrity, Messaging, Advanced.
+**All DevTools phases complete.** 9 tabs: Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.
 
 **Backfill tab** (Apr 18 2026) — 6-month Encircle historical importer UI.
 - Date-range + `date_field` (`date_of_loss` | `created_at`) picker
@@ -1692,24 +1747,35 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 - `encircle_synced_at TIMESTAMPTZ` — when the link was established
 - `encircle_sync_error TEXT` — last sync error message (cleared on success)
 
-**DevRoute access:** `employee?.email === 'moroni@utah-pros.com'` — hardcoded, not role-based
+**DevRoute access:** `employee?.email === 'moroni@utah-pros.com'` — hardcoded, not role-based. **Note:**
+the UPR MCP Server's `ALLOWED_EMAIL` uses `moroni.s@utah-pros.com` (with a dot) instead — two different
+owner-only gates use two different email strings for the same person. Not a bug (both work), just worth
+knowing before assuming they're interchangeable.
 
 ---
 
 ## Known Pending Items
-1. **Twilio go-live** — blocked on ID verification; 7 env vars need setting in Cloudflare
-2. **Auth linking** — 8 employees have no `auth_user_id`; need emails added via Admin → Send Invite
-3. **Search + export** — `tool:search_export` feature flag ready, page not built
-4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built
-5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile` at `F:\APPS\Restoration APP\UPR-Mobile`
-6. **`toggle_appointment_task`** — was returning 404 as of Mar 28; needs verification that RPC exists and matches frontend call signature (`p_task_id`, `p_employee_id`)
-7. **TECH-UI-TASK.md cleanup** — file should be deleted after all tech UI changes verified working
-8. **Task assignment logic** — tasks belong to appointments, not employees. `get_assigned_tasks` must join through `appointment_crew` to find a tech's tasks. Verify this RPC works correctly.
-9. **Photo/note query fix** — TechAppointment must query `job_documents` by BOTH `appointment_id` OR `job_id` (fallback for pre-fix docs)
-10. **~~TechJobDetail follow-up~~ COMPLETE (Apr 16 2026)** — `/tech/jobs/:jobId` now renders the purpose-built `TechJobDetail.jsx`; `/tech/jobs/:jobId/photos` renders `TechJobAlbum.jsx`. Shared primitives (Hero, ActionBar, NowNextTile, PhotosGroup, Lightbox, DetailRow) promoted to `src/components/tech/`; small helpers (formatTime, relativeDate, photoDateTime, fileUrl, openMap) promoted to `src/lib/techDateUtils.js`. Desktop `JobPage` unchanged at `/jobs/:jobId`.
-11. **Desktop ClaimPage photo URL bug** — noticed during TechClaimDetail build: desktop `ClaimPage.jsx` builds photo URLs as `${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}` but `doc.file_path` already starts with `job-files/`, producing a double prefix. TechClaimDetail uses the correct pattern: `${db.baseUrl}/storage/v1/object/public/${doc.file_path}`. Desktop photos may not be loading — verify.
-12. **In-app SMS** — TechClaimDetail + TechAppointment Message buttons open native `sms:` compose; swap to in-app Messages flow when available (search `TODO: switch to in-app SMS` in tech files).
-13. **Claim-level photo attachments** — TechClaimDetail uploads with `p_appointment_id: null`. On multi-job claims, the tech is prompted to pick which job the photo attaches to. Single-job claims direct-fire to `jobs[0].id`.
+(Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note
+appointment_id-OR-job_id fix are both done — and flagged 3 as unverified rather than asserted true.)
+
+1. **Twilio go-live** — blocked on ID verification. *Env var count unverified: only 4 distinct
+   `TWILIO_*` vars found in code as of this audit, not the 7 previously claimed — recheck before relying
+   on that number.*
+2. **Auth linking** — some employees have no `auth_user_id` (headcount changes — see Employees section
+   for current roster rather than trusting a hardcoded count here); add emails via Admin → Send Invite.
+3. **Search + export** — `tool:search_export` feature flag ready, page not built (confirmed still true).
+4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built (confirmed still true).
+5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile`. *Unverified — external repo,
+   can't confirm current state from here.*
+6. **`toggle_appointment_task`** — frontend call sites (`TechAppointment.jsx`, `TechEditAppointment.jsx`,
+   `TechTasks.jsx`) look correctly wired to `(p_task_id, p_employee_id)`; RPC exists live but its
+   definition wasn't found in a `supabase/migrations/` file, so its exact server-side signature is
+   unverified from the repo alone.
+7. **Task assignment logic** — tasks belong to appointments, not employees. `get_assigned_tasks` must join through `appointment_crew` to find a tech's tasks. Frontend call sites look correct as of this audit.
+8. **~~TechJobDetail follow-up~~ COMPLETE (Apr 16 2026)** — `/tech/jobs/:jobId` now renders the purpose-built `TechJobDetail.jsx`; `/tech/jobs/:jobId/photos` renders `TechJobAlbum.jsx`. Shared primitives (Hero, ActionBar, NowNextTile, PhotosGroup, Lightbox, DetailRow) promoted to `src/components/tech/`; small helpers (formatTime, relativeDate, photoDateTime, fileUrl, openMap) promoted to `src/lib/techDateUtils.js`. Desktop `JobPage` unchanged at `/jobs/:jobId`.
+9. **Desktop ClaimPage photo URL bug** — confirmed still present (Jul 1 2026): `ClaimPage.jsx` builds photo URLs as `${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}` but `doc.file_path` already starts with `job-files/`, producing a double prefix. TechClaimDetail uses the correct pattern: `${db.baseUrl}/storage/v1/object/public/${doc.file_path}`. Desktop photos may not be loading — still needs a fix.
+10. **In-app SMS** — TechClaimDetail + TechAppointment Message buttons open native `sms:` compose; swap to in-app Messages flow when available (confirmed still a live `TODO: switch to in-app SMS` comment in tech files).
+11. **Claim-level photo attachments** — TechClaimDetail uploads with `p_appointment_id: null`. On multi-job claims, the tech is prompted to pick which job the photo attaches to. Single-job claims direct-fire to `jobs[0].id`.
 
 ---
 
@@ -1767,6 +1833,10 @@ supabase/migrations/
   20260420_phase1_rooms.sql               — table, RPCs, insert_job_document extension
   20260417_phase1_rooms_claim_scoped.sql  — job_id → claim_id refactor + get_claim_rooms
 ```
+⚠️ **Filename dates contradict this listing order** (0417 sorts before 0420) — both files landed in the
+same commit, so true applied order can't be reconstructed from git alone. Content is directionally
+correct (0420 has the base `create_room`/`get_job_rooms`; 0417 has the claim-scoped versions +
+`get_claim_rooms`) — treat the exact sequencing as unverified rather than trusting the order above.
 
 ### Client ID idempotency contract
 - Every new table has `client_id UUID UNIQUE`.
@@ -1910,11 +1980,13 @@ package.json  — added "test": "vitest run" and vitest devDependency.
 - StalledWidget mounted at the top of the scrollable PullToRefresh region.
   Returns null when nothing is stalled (zero footprint on clean days).
 
-### Known dev-server quirk (not blocking)
+### Known dev-server quirk (not blocking, unverified as of Jul 1 2026)
 `npm run dev` intermittently hits a Vite deps-cache version-hash mismatch
 that manifests as "Invalid hook call" in OfflineStatusPill. Clearing
 `node_modules/.vite` and restarting usually fixes it. Production bundle
-(`npm run build` / Cloudflare Pages) is unaffected.
+(`npm run build` / Cloudflare Pages) is unaffected. *Not re-confirmed by this audit (no code
+artifact to check statically) — if you haven't hit this recently, it may be stale; drop it next
+edit if so.*
 
 ---
 
@@ -2013,7 +2085,8 @@ comps-based ARV ("City comp ARV" button) from `arvPsf`; the AI estimate (now pas
 refines it.
 
 ### Floor-plan builder (New Build → "Floor Plan" tab)
-Drag room tiles from a palette onto a 1-ft grid (HTML5 DnD), then drag to move / pull the corner to
+Drag room tiles from a palette onto a 0.5-ft (6") grid (HTML5 DnD; `GRID_FT = 0.5` in
+`NewBuildSimulator.jsx` — corrected Jul 1 2026, was documented as 1-ft), then drag to move / pull the corner to
 resize (pointer events; window-level move/up driven by a ref). Room model in `buildTemplate.js`:
 `ROOM_TYPES` (each with fill, bed, bath, conditioned, default w/h ft), `roomDef`, and
 `floorplanTotals(fp)` → { conditioned sqft, bedrooms, bathrooms, rooms }. Garage + covered patio are
