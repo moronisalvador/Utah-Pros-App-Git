@@ -5939,7 +5939,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-call-row-detail a { color: var(--crm-accent); font-weight: 600; }
 .crm-call-row-play {
   font-family: inherit; font-size: 13px; font-weight: 600; color: var(--crm-accent);
-  background: none; border: none; padding: 0; cursor: pointer;
+  background: none; border: none; padding: 0; margin-right: 16px; cursor: pointer;
 }
 .crm-call-row-play:disabled { color: var(--crm-text-tertiary); cursor: default; }
 .crm-call-row-audio { display: block; width: 100%; max-width: 340px; height: 36px; margin-top: 4px; }

@@ -51,6 +51,7 @@ function LeadRow({ lead, onStatusChange }) {
   const contactLabel = lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
   const [audioUrl, setAudioUrl] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Free the blob URL when the row unmounts / a new one replaces it.
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
@@ -116,7 +117,14 @@ function LeadRow({ lead, onStatusChange }) {
                   {loadingRec ? 'Loading…' : '▶ Play recording'}
                 </button>
           )}
-          {lead.transcription && <p className="crm-call-row-transcript">{lead.transcription}</p>}
+          {lead.transcription && (
+            <>
+              <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
+                {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
+              </button>
+              {showTranscript && <p className="crm-call-row-transcript">{lead.transcription}</p>}
+            </>
+          )}
         </div>
       )}
     </div>
