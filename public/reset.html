@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Updating…</title>
+  </head>
+  <body>
+    <!--
+      Cache-recovery bounce page. Served with `Clear-Site-Data: "cache"` (public/_headers),
+      so loading it evicts the browser's HTTP cache + Cache API — including a poisoned,
+      immutable /assets/*.js that a normal reload can't clear. The app redirects here
+      (via buildResetUrl) when a chunk fails to load; this then returns the user to where
+      they were, now on fresh assets. "cache" only — the login/session is untouched.
+    -->
+    <p>Updating to the latest version…</p>
+    <script>
+      (function () {
+        try {
+          var to = new URLSearchParams(window.location.search).get('to') || '/';
+          // Same-origin absolute paths only — reject full URLs and protocol-relative //.
+          if (to.charAt(0) !== '/' || to.charAt(1) === '/') to = '/';
+          window.location.replace(to);
+        } catch (e) {
+          window.location.replace('/');
+        }
+      })();
+    </script>
+  </body>
+</html>
