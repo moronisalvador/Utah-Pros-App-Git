@@ -35,6 +35,10 @@ import { metaGet, campaignInsights as metaCampaignInsights } from './metaads.js'
 import {
   githubGet, githubRequest, listPulls as githubListPulls, getPull as githubGetPull,
   listIssues as githubListIssues, searchCode as githubSearchCode, createIssue as githubCreateIssue,
+  mergePull as githubMergePull, createPull as githubCreatePull, updatePull as githubUpdatePull,
+  createBranch as githubCreateBranch, getFile as githubGetFile, commitFile as githubCommitFile,
+  listCommits as githubListCommits, getCommit as githubGetCommit, listBranches as githubListBranches,
+  addComment as githubAddComment,
 } from './github.js';
 import { supabase } from './supabase.js';
 
@@ -858,6 +862,84 @@ export const TOOLS = {
       return githubCreateIssue(env, a);
     },
   },
+  github_merge_pr: {
+    write: true,
+    description: 'Merge a pull request (defaults to GITHUB_DEFAULT_REPO). number required; merge_method = squash (default) | merge | rebase; optional commit_title/commit_message, repo. Merges real code — previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, merge_method: { type: 'string' }, commit_title: { type: 'string' }, commit_message: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Merge PR #${a.number}${a.repo ? ' in ' + a.repo : ''} via ${a.merge_method || 'squash'}.`, { number: a.number, merge_method: a.merge_method || 'squash' });
+      return githubMergePull(env, a);
+    },
+  },
+  github_create_pr: {
+    write: true,
+    description: 'Open a pull request (defaults to GITHUB_DEFAULT_REPO). title + head (source branch) + base (target branch) required; optional body, draft, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, title: { type: 'string' }, head: { type: 'string' }, base: { type: 'string' }, body: { type: 'string' }, draft: { type: 'boolean' }, confirm: { type: 'boolean' } }, required: ['title', 'head', 'base'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Open PR "${a.title}" (${a.head} → ${a.base})${a.repo ? ' in ' + a.repo : ''}.`, { title: a.title, head: a.head, base: a.base, draft: !!a.draft });
+      return githubCreatePull(env, a);
+    },
+  },
+  github_update_pr: {
+    write: true,
+    description: 'Edit a pull request or close/reopen it (defaults to GITHUB_DEFAULT_REPO). number required; optional title, body, state (open/closed), base, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, title: { type: 'string' }, body: { type: 'string' }, state: { type: 'string' }, base: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Update PR #${a.number}${a.state ? ` (state → ${a.state})` : ''}${a.repo ? ' in ' + a.repo : ''}.`, { number: a.number, title: a.title, state: a.state, base: a.base });
+      return githubUpdatePull(env, a);
+    },
+  },
+  github_create_branch: {
+    write: true,
+    description: 'Create a branch (defaults to GITHUB_DEFAULT_REPO). branch (new name) required; from = base branch or sha (default the repo HEAD); optional repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, branch: { type: 'string' }, from: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['branch'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Create branch "${a.branch}" from ${a.from || 'HEAD'}${a.repo ? ' in ' + a.repo : ''}.`, { branch: a.branch, from: a.from || 'HEAD' });
+      return githubCreateBranch(env, a);
+    },
+  },
+  github_get_file: {
+    write: false,
+    description: 'Read a file from the repo (the REST "pull"). path required; optional ref (branch/tag/sha), repo. Returns GitHub\'s content object incl. the blob sha needed to update it.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, path: { type: 'string' }, ref: { type: 'string' } }, required: ['path'] },
+    run: (env, a) => githubGetFile(env, a),
+  },
+  github_commit_file: {
+    write: true,
+    description: 'Create or update a file and commit it (the REST "push"). path + content (plain text) + message required; pass sha (the existing file\'s blob sha from github_get_file) to UPDATE, omit to CREATE; optional branch, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' }, sha: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['path', 'content', 'message'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${a.sha ? 'Update' : 'Create'} ${a.path}${a.branch ? ' on ' + a.branch : ''}${a.repo ? ' in ' + a.repo : ''} — "${a.message}".`, { path: a.path, branch: a.branch, update: !!a.sha, bytes: String(a.content || '').length });
+      return githubCommitFile(env, a);
+    },
+  },
+  github_list_commits: {
+    write: false,
+    description: 'List commits in a repo (defaults to GITHUB_DEFAULT_REPO). Optional sha (branch/sha to start from), path (commits touching a file), per_page, repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, sha: { type: 'string' }, path: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListCommits(env, a),
+  },
+  github_get_commit: {
+    write: false,
+    description: 'Fetch one commit by ref/sha (defaults to GITHUB_DEFAULT_REPO), including its file diffs. ref required; optional repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, ref: { type: 'string' } }, required: ['ref'] },
+    run: (env, a) => githubGetCommit(env, a),
+  },
+  github_list_branches: {
+    write: false,
+    description: 'List branches in a repo (defaults to GITHUB_DEFAULT_REPO). Optional per_page, repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListBranches(env, a),
+  },
+  github_add_comment: {
+    write: true,
+    description: 'Comment on a pull request or issue (defaults to GITHUB_DEFAULT_REPO). number + body required; optional repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, body: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number', 'body'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Comment on #${a.number}${a.repo ? ' in ' + a.repo : ''}: "${String(a.body || '').slice(0, 120)}".`, { number: a.number, body: a.body });
+      return githubAddComment(env, a);
+    },
+  },
   github_get: {
     write: false,
     description: 'Power tool: GET any GitHub REST path (read-only). e.g. "/repos/{owner}/{repo}/commits", "/user". Use for endpoints without a dedicated tool.',
@@ -887,7 +969,7 @@ export function toolList() {
       annotations: {
         title: name,
         readOnlyHint: readOnly,
-        destructiveHint: readOnly ? false : /delete|relink|send|update|rpc|create|payout|payment_link|transcribe|sms|request/i.test(name),
+        destructiveHint: readOnly ? false : /delete|relink|send|update|rpc|create|payout|payment_link|transcribe|sms|request|merge|commit|comment|branch/i.test(name),
         openWorldHint: true,
       },
     };
