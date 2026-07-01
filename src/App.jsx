@@ -65,6 +65,7 @@ const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
+const Status = lazyRetry(() => import('@/pages/Status'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
@@ -77,6 +78,16 @@ const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
 const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
+const CrmLayout = lazyRetry(() => import('@/components/CrmLayout'));
+const CrmRoadmap = lazyRetry(() => import('@/pages/crm/CrmRoadmap'));
+const CrmOverview = lazyRetry(() => import('@/pages/crm/CrmOverview'));
+const CrmLeads = lazyRetry(() => import('@/pages/crm/CrmLeads'));
+const CrmCallLog = lazyRetry(() => import('@/pages/crm/CrmCallLog'));
+const CrmTasks = lazyRetry(() => import('@/pages/crm/CrmTasks'));
+const CrmAttribution = lazyRetry(() => import('@/pages/crm/CrmAttribution'));
+const CrmReports = lazyRetry(() => import('@/pages/crm/CrmReports'));
+const CrmIntegrations = lazyRetry(() => import('@/pages/crm/CrmIntegrations'));
+const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -242,6 +253,10 @@ function WebRoutes() {
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
+          visitor via the anon-granted get_crm_build_progress RPC. The ONLY
+          public CRM surface; every other /crm/* route stays behind page:crm. */}
+      <Route path="/status" element={<ErrorBoundary section="Status"><Status /></ErrorBoundary>} />
 
 
       {/* Tech layout — field_tech role, no sidebar */}
@@ -316,6 +331,25 @@ function WebRoutes() {
         <Route path="import/encircle" element={
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
         } />
+
+        {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each
+            phase is ready for wider rollout (page:crm dev_only_user_id flag). */}
+        <Route path="crm" element={
+          <FeatureRoute flag="page:crm">
+            <ErrorBoundary section="CRM"><CrmLayout /></ErrorBoundary>
+          </FeatureRoute>
+        }>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="roadmap" element={<CrmRoadmap />} />
+          <Route path="overview" element={<CrmOverview />} />
+          <Route path="leads" element={<CrmLeads />} />
+          <Route path="call-log" element={<CrmCallLog />} />
+          <Route path="tasks" element={<CrmTasks />} />
+          <Route path="attribution" element={<CrmAttribution />} />
+          <Route path="reports" element={<CrmReports />} />
+          <Route path="integrations" element={<CrmIntegrations />} />
+          <Route path="settings" element={<CrmSettings />} />
+        </Route>
 
         {/* Tools */}
         <Route path="tools/oop-pricing" element={

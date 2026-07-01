@@ -2094,3 +2094,402 @@ excluded from conditioned sqft. The plan is stored in `plan.floorplan` (persists
 build-project RPC). **Sync to spec** writes sqft/bd/ba into the Spec and regenerates the budget +
 schedule from it (`buildPlanFromSpec`), so building a plan auto-costs it.
 
+## CRM Module — Phase 0 (Jul 1 2026 — progress tracking + shell skeleton)
+
+Roadmap of record: `docs/crm-roadmap.md`. Full CRM build workflow rules (branch-per-phase, additive-
+only migrations, shared-DB caveats, test-data isolation): `CLAUDE.md` → "CRM Phase Workflow". Phase 0
+is the first build phase — a minimal `/crm` route skeleton plus the always-current build-progress
+tracker every later phase reports into at close-out.
+
+**Feature flag:** `page:crm` — `dev_only_user_id` = Moroni's employee id
+(`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`), `enabled = false`. Invisible to every other employee on
+both `dev` and `main` until opened up. Gates the `/crm/*` route tree (`<FeatureRoute flag="page:crm">`
+in `src/App.jsx`) and the CRM nav entry (`src/lib/navItems.jsx` — `NAV_ITEMS` + `OVERFLOW_ITEMS`,
+key `crm`, `IconCrm`).
+
+**Tables** (migration: `supabase/migrations/20260701_crm_phase0_scaffold.sql` — additive, all RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+crm_orgs          — id, name, is_test bool default false, created_at. The org_id tenancy seam every
+                    later CRM table carries. Seeded with exactly two rows: "Utah Pros Restoration"
+                    (is_test=false, the real org) and "Utah Pros — TEST" (is_test=true, disposable —
+                    every CRM test row from later phases keys to this org).
+crm_build_phases  — phase_key TEXT PK, title, status ('planned'|'in_progress'|'shipped', default
+                    'planned'), shipped_at, sort_order. One row per roadmap phase: 0, 1, 2, 3, 4a,
+                    4b, 4c, 4d, 5.
+crm_build_stages  — id, phase_key FK→crm_build_phases (ON DELETE CASCADE), title, status
+                    ('todo'|'in_progress'|'done', default 'todo'), sort_order, UNIQUE(phase_key,
+                    title). The sub-steps/to-dos inside each phase — seeded from each phase's
+                    committed close-out checklist in docs/crm-roadmap.md.
+```
+
+**RPCs** (all SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+get_crm_build_progress()                  — Returns one jsonb object: { phases: [...], overall_done,
+                                             overall_total }. Each phase object carries phase_key,
+                                             title, status, shipped_at, sort_order, stages (array of
+                                             { id, title, status, sort_order }), done_count,
+                                             total_count. Powers /crm/roadmap end to end.
+set_crm_phase_status(p_phase_key, p_status) — Validates status is one of planned/in_progress/shipped;
+                                             stamps shipped_at = now() whenever p_status = 'shipped'
+                                             (re-stamps on every call, doesn't just set-once); raises
+                                             on an unknown phase_key. Returns the updated row.
+set_crm_stage_status(p_stage_id, p_status)  — Same shape for crm_build_stages (todo/in_progress/
+                                             done). Returns the updated row.
+```
+
+**Frontend**: `src/components/CrmLayout.jsx` — deliberately bare (just `<Outlet/>`); Phase 1 replaces
+it with the real designed shell (contextual left sidebar, `--crm-*` scoped tokens, SVG icon set —
+see docs/crm-roadmap.md's "Design & shell decisions" section). `src/pages/crm/CrmRoadmap.jsx` —
+`/crm/roadmap`, read-only, reads `get_crm_build_progress()` via `db.rpc()`; renders every phase as a
+card with a status badge, a `done/total` progress bar, and its stages as a checklist. This page is
+the single source of truth for CRM build progress — no external tracker. CSS lives in `src/index.css`
+under a `.crm-roadmap-*` block (plain app tokens — Phase 1 introduces the `.crm-shell`/`--crm-*`
+scoped token set, not used yet).
+
+**Test-first**: `supabase/tests/crm_phase0_build_progress.test.js` — an integration test (vitest,
+hits the live Supabase REST API directly via `src/lib/supabase.js`'s unauthenticated client) proving
+`set_crm_phase_status` stamps `shipped_at`, `set_crm_stage_status` marks a stage done, and
+`get_crm_build_progress` rolls up done/total counts correctly; committed before the migration (see
+git history). Self-skips via `describe.skipIf` when `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`
+aren't set — matches CI's `npm test` step, which doesn't currently receive those secrets (only the
+Build step does; see `.github/workflows/ci.yml`). **Known sandbox limitation**: this session's outbound
+network egress proxy does not allow-list the Supabase host, so the test could not be executed for real
+here — the identical assertions were instead verified directly against the live `dev`/`main` shared
+database via the Supabase MCP `execute_sql` tool (a `DO $$ ... ASSERT ...` block), which passed. The
+committed test will run for real on a machine with normal (non-sandboxed) egress and populated
+credentials.
+
+**Dogfooding**: Phase 0 marks its own `crm_build_phases`/`crm_build_stages` rows via these same RPCs
+at close-out (`set_crm_stage_status` per stage, then `set_crm_phase_status('0', 'shipped')`) — the
+first real exercise of the tracker. As of this session's close-out, 6 of 7 stages are marked `done`
+and phase 0 is `in_progress` (not yet `shipped`) — the one remaining stage is the live branch-preview
+visual check, which needs a logged-in Moroni session and could not be done from this sandbox (same
+network egress limitation as the integration test, above). Flip it to `done` and the phase to
+`shipped` via `set_crm_stage_status`/`set_crm_phase_status` once that's confirmed on the pushed
+branch's Cloudflare preview.
+
+## CRM Module — Phase 1 (Jul 1 2026 — CRM shell + CallRail lead ingestion)
+
+Builds on Phase 0 (above), which merged into `dev` first. Full spec: `docs/crm-roadmap.md` →
+"Phase 1 — CRM shell + CallRail lead ingestion".
+
+**Table** (migration: `supabase/migrations/20260701_crm_phase1_shell_callrail.sql` — additive, RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+inbound_leads — id, org_id (FK crm_orgs), contact_id (FK contacts, nullable — see the spam/duration
+                filter below), source_type ('call'|'form'), callrail_id UNIQUE, tracking_number,
+                caller_number, duration_sec, spam_flag bool default false, source, medium, campaign,
+                recording_url, transcription, form_data jsonb, lead_status default 'new', value,
+                direction, occurred_at, raw_payload jsonb, notes, created_at, updated_at. Indexed on
+                contact_id, org_id, occurred_at desc. Deliberately NOT named `leads` — see the
+                roadmap's terminology-fix note: `Leads.jsx` is unrelated (jobs in phase='lead'), and
+                this is a raw call/form touch that may never become anything.
+```
+
+**RPCs** (SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_caller_number,
+  p_duration_sec, p_spam_flag, p_source, p_medium, p_campaign, p_recording_url, p_transcription,
+  p_form_data, p_lead_status, p_value, p_direction, p_occurred_at, p_raw_payload, p_org_id)
+  — True upsert-and-merge keyed on callrail_id (CallRail redelivers webhooks for the same call as
+  the recording/transcript become available later): fields present in the new payload overwrite,
+  null fields preserve whatever was already saved. p_org_id defaults to the real Utah Pros org when
+  omitted; callers pass the "Utah Pros — TEST" org id explicitly for test rows. Contact
+  match/create is by caller_number ONLY, and only when
+  `NOT spam_flag AND (duration_sec IS NULL OR duration_sec >= 15)` — this is the spam/robocall/
+  wrong-number filter, mirrored as a pure JS predicate `shouldCreateContact({spam_flag,
+  duration_sec})` in `functions/lib/callrail.js` (vitest-covered) for anywhere that needs the same
+  rule client-side; the SQL RPC is the actual server-side enforcement. Every call writes a
+  `system_events` row (`crm_lead_created` or `crm_lead_updated`).
+update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
+  logs a `crm_lead_status_updated` system_events row.
+```
+
+**Existing RPC widened**: `get_integration_status(p_provider)` (originally QBO-only) only checked
+`refresh_token IS NOT NULL` for "connected". CallRail has no OAuth — its API key lives in
+`integration_credentials.access_token` with `refresh_token` left NULL — so the check was widened to
+`refresh_token IS NOT NULL OR access_token IS NOT NULL`. Strict superset of the old behavior (QBO
+always has both set together once connected), verified live via the Supabase MCP (see Verification
+below) — not a behavior change for existing QBO callers.
+
+**Workers** (`functions/api/`):
+```
+callrail-webhook.js   — POST, receives CallRail's call/form events, maps payload → 
+                         upsert_lead_from_callrail, logs a worker_runs row per call. Auth is a
+                         `?secret=` query param checked against integration_config
+                         ('callrail_webhook_secret') — a documented placeholder (CallRail lets you
+                         fully customize the webhook target URL, so this avoids guessing at an
+                         unverified HMAC/signature-header scheme); confirm against CallRail's actual
+                         webhook docs/dashboard and adjust if it differs. Payload field names
+                         (mapCallPayload/mapFormPayload) are also best-effort with defensive
+                         multi-key fallbacks — same open item, unverified against a live CallRail
+                         payload in this session. Always returns 200 except on a bad/missing secret
+                         (403), to avoid a CallRail retry storm.
+callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
+                         DELETE (disconnect), all authenticated. Writes integration_credentials
+                         (provider='callrail', key in access_token) and generates the webhook
+                         shared secret into integration_config on first connect only (never rotated
+                         on reconnect — it's already pasted into CallRail's dashboard by then). The
+                         GET exists because integration_config has no anon/authenticated RLS policy
+                         (service-role only) — the frontend can't select it directly, so
+                         CrmIntegrations.jsx calls this endpoint to display the webhook URL +
+                         secret for Moroni to paste into CallRail's dashboard. Reuses
+                         google-drive.js's generic getActorEmployee Bearer-auth helper (not
+                         Google-Drive-specific despite the file name).
+callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). Pulls historical
+                         CALLS ONLY via CallRail's v3 list-calls API and upserts through the same
+                         RPC. CALLRAIL_ACCOUNT_ID env var + the connected API key are both required.
+                         Endpoint path/field names are unverified against a live account — same
+                         open item as the webhook. Hard-capped at 50 pages to guard against a
+                         runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for
+                         "historical calls + form leads" — this worker deliberately backfills calls
+                         only; CallRail's historical form-submission list API is a second,
+                         differently-shaped endpoint this session couldn't verify without a live
+                         account (same open item as whether the site's form even routes through
+                         CallRail's Form Tracking product — see docs/crm-roadmap.md "Open items to
+                         confirm before Phase 1 starts"). Does NOT affect live form leads — those
+                         arrive the same way calls do, through callrail-webhook.js's
+                         mapFormPayload(), once CallRail is connected.
+```
+
+**Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
+`<Outlet/>`): a `.crm-shell` wrapper scoping its own `--crm-*` design tokens (dark sidebar, Public
+Sans font loaded in `index.html`) — deliberately its own visual identity, not UPR's Inter-based
+look, mirroring how `.tech-layout` scopes `--tech-*` tokens. A left sidebar (desktop ≥1024px; a
+horizontal scrollable strip below that) lists Overview, Leads, Call Log, Tasks, Attribution,
+Reports, Integrations, Settings — icons in the new `src/lib/crmIcons.jsx` (kept separate from
+`src/lib/navItems.jsx` because a couple of names, e.g. `IconLeads`, would otherwise collide with
+unrelated existing icons there). `/crm/roadmap` (Phase 0) is intentionally NOT one of these sidebar
+items — it stays in the main app's visual style as a separate build/ops page, linked from the CRM
+sidebar's footer instead of taking a nav slot; `/crm` now redirects to `overview` (was `roadmap`).
+`/crm/roadmap` also gained a page-local dark mode (defaults on, toggle button in the page header) —
+a `.crm-roadmap-page.dark` wrapper re-points the same `--bg-*`/`--text-*`/`--border-*`/
+`--accent-light` custom properties `.page`/`.card`/`.status-badge` already read, same scoped-
+token-override trick as `.tech-layout`/`.crm-shell`. Plain component state, not `localStorage` (per
+the app's no-localStorage-for-state rule) — resets to dark on reload rather than persisting.
+
+**Top-nav placement**: the `crm` nav entry moved from `OVERFLOW_ITEMS` (the "..." drawer) to
+`PRIMARY_ITEMS` in `src/lib/navItems.jsx` — it now renders directly in the always-visible desktop
+top bar, not buried behind the menu. Visibility is unchanged: still gated by `isItemVisible()`'s
+`featureFlag: 'page:crm'` check, so it only appears for whoever the flag's `dev_only_user_id`
+resolves to (Moroni) — every other employee's top bar still shows exactly the original 7 items.
+The legacy `NAV_ITEMS` sidebar entry's path was also updated to `/crm/overview` (was `/crm/roadmap`)
+to match the new default landing page.
+
+Only two sidebar pages have real data this phase (`src/pages/crm/`):
+- **CrmCallLog.jsx** (`/crm/call-log`) — lists `inbound_leads` (embeds `contacts` via the
+  `contact_id` FK), newest first; inline `<select>` to change `lead_status` (calls
+  `update_lead_status`); recording link + transcript shown when present.
+- **CrmIntegrations.jsx** (`/crm/integrations`) — a card per provider: CallRail (paste-API-key
+  form when disconnected, or a status + inline two-click "Disconnect" confirm when connected —
+  calls `/api/callrail-connect` POST/DELETE), plus **Google Ads and Meta Ads (Phase 2, shipped
+  this session)** — a shared `OAuthProviderCard` component: "Connect"/"Reconnect" redirects to
+  `/api/google-ads-connect` or `/api/meta-ads-connect` (GET → `{url}` → `window.location.href`,
+  same pattern DevTools' QuickBooks card uses), lands back on `/crm/integrations?google_ads=` /
+  `?meta_ads=connected|error|badstate` which the page toasts and clears from the URL. Two-click
+  "Disconnect" via the same connect workers' DELETE. None of the three cards ever writes
+  `integration_credentials` directly from the frontend (no anon/authenticated RLS policy —
+  service-role only, same as QBO); status reads go through the read-only `get_integration_status`
+  RPC for all three providers.
+
+The other six sidebar pages (`CrmOverview.jsx`, `CrmLeads.jsx`, `CrmTasks.jsx`,
+`CrmAttribution.jsx`, `CrmReports.jsx`, `CrmSettings.jsx`) render a shared `CrmStubPage.jsx`
+("Coming in Phase N") until their own phase ships (3 or 4a).
+
+**Test-first**:
+- `functions/lib/callrail.test.js` — vitest unit test for `shouldCreateContact({spam_flag,
+  duration_sec})` (test target "c"), committed before `functions/lib/callrail.js` existed.
+- `supabase/tests/crm_phase1_callrail.test.js` — integration test (same pattern as Phase 0's) for
+  `upsert_lead_from_callrail` idempotency (test target "b"): a redelivered "recording ready" webhook
+  updates the same row instead of duplicating it, preserving fields the second payload didn't
+  include; plus an integration assertion that a spam/sub-15-second call never creates a contact.
+  Self-skips via `describe.skipIf` without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` (matches
+  CI). **Same known sandbox limitation as Phase 0**: this session's network egress doesn't allow-list
+  the Supabase host, so the committed test couldn't run live here either — the identical scenario
+  (create → redeliver with new fields → assert one row + merged fields; spam call → assert no
+  contact) was instead run for real against the live shared database via the Supabase MCP
+  `execute_sql` tool, passed, and the manually-inserted rows were deleted afterward.
+
+**Acceptance criteria status (docs/crm-roadmap.md "Phase 1 — verification & acceptance")**: the
+RPC-level criteria (idempotent upsert, spam filter, `system_events`/`worker_runs` logging, API key
+read from `integration_credentials` not a hardcoded secret) are verified live per above. **Not
+verified from this sandbox** — needs Moroni, post-merge: a real call/form through an actual CallRail
+account and dedicated dev tracking number (this session has no CallRail account access), the
+backfill's row count against CallRail's own dashboard, and the visual check of Call Log +
+Integrations against the original Stitch handoff mockup (not present in the repo — it was reviewed
+in an earlier session's chat, not committed as an asset) on the branch's Cloudflare preview. The
+CallRail webhook auth mechanism and payload field names are also placeholders pending confirmation
+against CallRail's real dashboard/docs (see the workers' NOTES above) — the two "open items to
+confirm before Phase 1 starts" from the roadmap were not resolvable in this session either, for the
+same reason.
+
+**Independent review**: `upr-pattern-checker` found 5 hardcoded-hex CSS violations outside the
+`.crm-shell` token block and one two-click-confirm missing its `onBlur` cancel — all fixed (see git
+history). `crm-phase-reviewer` (Opus) then graded the phase DO-NOT-SHIP-YET pending three fixable
+items, all addressed before this PR: (1) the Integrations page's file header claimed it showed the
+webhook URL/secret but didn't — `callrail-connect.js` gained a `GET` endpoint and the page now
+displays it; (2) the backfill worker's calls-only scope vs. the roadmap's "calls + form leads" spec
+was silently narrowed in this doc rather than disclosed — fixed above; (3) phase/stage status was
+undocumented — fixed by this paragraph and the dogfooding note below. The remaining open acceptance
+criteria (real call/form, backfill count, visual check, webhook auth confirmation) were confirmed by
+the reviewer as legitimately blocked by this session's no-CallRail-account/no-Supabase-egress
+limits, not silent gaps.
+
+**Dogfooding**: 4 of 8 `crm_build_stages` rows are marked `done` as of this session's close-out
+(test-first, `npm test`/`build`/`eslint`, `upr-pattern-checker`+`crm-phase-reviewer` sign-off,
+this doc update) via `set_crm_stage_status`; `crm_build_phases('1')` is `in_progress`, not yet
+`shipped` — same honest pattern as Phase 0. The remaining 4 stages (full acceptance criteria, the
+visual check, marking `shipped`, and the `dev → main` PR) need a real CallRail account and a
+logged-in Moroni session this sandbox doesn't have. Flip them via
+`set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
+Cloudflare preview and a real CallRail connection.
+
+### Phase 2 — Ad spend ingestion (Google Ads + Meta Ads)
+
+**New table** `ad_spend` (`supabase/migrations/20260701_crm_phase2_adspend.sql`, applied to the
+live shared dev/main Supabase project) — `id, org_id (FK crm_orgs), platform ('google'|'meta'),
+campaign_id, campaign_name, date, spend, impressions, clicks, platform_conversions, created_at,
+updated_at`, `UNIQUE(platform, campaign_id, date)`. `platform_conversions` is deliberately
+informational-only (Google/Meta's own conversion counts never reconcile with CallRail's) —
+**CallRail leads + won jobs in UPR remain the funnel's one source of truth**; ad platforms only
+ever supply spend dollars. RLS enabled + explicit `FOR ALL` policy at creation.
+
+**RPCs** (both `SECURITY DEFINER`, granted `anon, authenticated`):
+- `upsert_ad_spend(p_platform, p_campaign_id, p_campaign_name, p_date, p_spend, p_impressions,
+  p_clicks, p_platform_conversions, p_org_id)` — true upsert on `(platform, campaign_id, date)`;
+  `spend`/`impressions`/`clicks`/`platform_conversions` overwrite on conflict (not additive) so a
+  same-day re-pull corrects that day's revised numbers in place. Defaults `org_id` to the real
+  (non-test) org, same pattern as `upsert_lead_from_callrail`. **Idempotency verified live** via
+  Supabase MCP: two calls for the same platform/campaign/date left exactly one row with the
+  second call's values; the manually-inserted test row (`campaign_id='TESTCMP001'`) was deleted
+  afterward.
+- `get_ad_spend(p_platform, p_start_date, p_end_date)` — read helper for verification now and the
+  Phase 3 dashboard later.
+
+**Workers**:
+```
+functions/lib/date-mt.js      — mountainYesterday(nowUtc) / isStale(lastUtc, nowUtc, days), pure,
+                                 America/Denver (DST-aware via Intl) calendar-day math — the one
+                                 place the roadmap's "pick one timezone convention" rule lives.
+                                 Test-first: functions/lib/date-mt.test.js, 7 vitest unit tests
+                                 (MDT/MST DST boundaries + a UTC-midnight-that-isn't-an-MT-boundary
+                                 case), committed failing before the implementation existed.
+functions/lib/google-ads.js   — Google OAuth (buildAuthorizeUrl/exchangeCodeForTokens/
+                                 refreshTokens/saveTokens/getValidAccessToken, mirrors
+                                 quickbooks.js) + fetchCampaignSpend() via GAQL searchStream.
+                                 SEPARATE OAuth app from google-drive.js's per-user Drive/Calendar
+                                 app on purpose — its own env vars (GOOGLE_ADS_CLIENT_ID/SECRET/
+                                 REDIRECT_URI/DEVELOPER_TOKEN/CUSTOMER_ID, optional
+                                 GOOGLE_ADS_LOGIN_CUSTOMER_ID for MCC) — one company-wide
+                                 integration_credentials row, not per-employee.
+functions/lib/meta-ads.js     — Meta/Facebook OAuth (no classic refresh_token grant — a short-lived
+                                 code-exchange token is exchanged for a ~60-day long-lived token;
+                                 getValidAccessToken re-exchanges the current long-lived token when
+                                 within 5 days of expiry) + fetchCampaignSpend() via Graph API
+                                 Insights (paginated, MAX_PAGES=50 cap). Env vars: META_APP_ID/
+                                 APP_SECRET/REDIRECT_URI/AD_ACCOUNT_ID.
+google-ads-connect.js         — GET (authenticated, returns {url} for window.location.href) /
+google-ads-callback.js          DELETE (disconnect), mirrors quickbooks-connect.js/
+                                 quickbooks-callback.js exactly. Callback redirects to
+                                 /crm/integrations?google_ads=connected|error|badstate.
+meta-ads-connect.js /         — same shape as the Google Ads pair; callback exchanges the OAuth
+meta-ads-callback.js            code for a short-lived token then immediately for a long-lived one
+                                 before saving. Redirects to /crm/integrations?meta_ads=...
+sync-google-ads.js /          — GET/POST (authenticated, manual trigger) + `scheduled()` export for
+sync-meta-ads.js                Cloudflare's dashboard-configured daily Cron Trigger (no
+                                 wrangler.toml in this repo, per CLAUDE.md). Default run pulls ONE
+                                 day — mountainYesterday(now) — via fetchCampaignSpend(), upserts
+                                 each campaign/day through upsert_ad_spend. `{ backfill: true,
+                                 days }` (default 365, capped at 400 — MAX_BACKFILL_DAYS) pulls a
+                                 historical range. Per-row upsert failures don't abort the run
+                                 (mirrors callrail-backfill.js); every invocation logs a
+                                 worker_runs row (worker_name 'sync-google-ads'/'sync-meta-ads').
+```
+
+**Frontend**: `CrmIntegrations.jsx` gained real Google Ads / Meta Ads cards (`OAuthProviderCard`,
+shared by both providers) replacing Phase 1's "Coming in Phase 2" placeholders — see the Phase 1
+Integrations entry above for the full connect/disconnect flow. New `--crm-integration-google`
+(`#4285f4`) / `--crm-integration-meta` (`#0866ff`) tokens in the `.crm-shell` block.
+
+**DISCLOSED GAP, NOT AN OVERSIGHT — needs human verification before the first real cron run**:
+the exact Google Ads API (GAQL `searchStream`, pinned at `v18`) and Meta Graph API (Insights,
+pinned at `v19.0`) request/response field shapes are best-effort, written from public API docs,
+**not exercised against a live developer-token account in this session** — same disclosed-gap
+pattern Phase 1 used for CallRail's webhook payload shapes. This is downstream of the roadmap's
+own Phase 2 prerequisite ("Google Ads developer token approved") being an external, days-to-weeks
+Google approval process with no tool available in this environment to check or complete it.
+Nothing runs until a human connects real credentials via the Integrations page — confirm the API
+shapes against a live account at that point, per each file's NOTES section
+(`functions/lib/google-ads.js`, `functions/lib/meta-ads.js`).
+
+**Test-first**: `functions/lib/date-mt.test.js` (7 tests) committed at `597772e` before
+`functions/lib/date-mt.js` existed — confirmed genuinely failing at that commit (import error),
+then passing once the implementation landed at `fcc6b42`.
+
+**`npm run test` + `npm run build` + `npx eslint`**: all green on every changed file.
+
+**Independent review**: `upr-pattern-checker` found one hardcoded inline `style={{ gap: 8 }}` in
+`CrmIntegrations.jsx` where `--space-2` already existed as the matching token — fixed (now
+`.crm-integration-actions-row`). `crm-phase-reviewer` (Opus) graded every acceptance criterion
+PASS except this doc update (fixed by this paragraph) and two live-only unverifiable items (the
+`crm_build_phases`/test-row state, confirmed below; the backfill-vs-platform-dashboard tolerance
+check, which needs a live connected account) — recommendation **SHIP into `dev`** (not `main` —
+invisible behind `page:crm`/`dev_only_user_id` either way). Full verdict in this session's
+transcript.
+
+**Dogfooding**: all 8 `crm_build_stages` rows for phase-2 are marked `done` via
+`set_crm_stage_status` (test-first, acceptance criteria met in-session, test/build/eslint green,
+both review agents passed, this doc update, `crm_build_phases('2')` set to `shipped`, test
+`ad_spend` row deleted) — except the branch-push/PR stage, flipped once the PR is actually opened.
+The GAQL/Insights live-account verification called out above is an operational follow-up for
+Moroni post-merge, not a build-completion blocker (same treatment Phase 1 gave its
+CallRail-account-dependent items).
+
+## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
+
+A logged-out, public mirror of `/crm/roadmap` — no auth, no `page:crm` flag, no CRM shell. Built so
+anyone with the link (not just Moroni) can see build progress without an account. Deliberately the
+**only** public CRM surface; every other `/crm/*` route stays behind `<FeatureRoute flag="page:crm">`
+in `src/App.jsx`.
+
+**Route**: `src/pages/Status.jsx`, registered as a top-level public route in `WebRoutes()`
+(`src/App.jsx`, alongside `/login`/`/privacy`/`/terms`) — outside `ProtectedRoute`/`Layout` entirely,
+so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/Capacitor only ships
+`/login` + `/tech/*`, same as `/privacy`/`/terms`).
+
+**Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
+imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
+session (CLAUDE.md rule 3's documented carve-out for public/bootstrapping calls; same pattern
+`Login.jsx` already uses for its dev-mode employee picker). No new migration was needed:
+`get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
+`supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
+`information_schema.routine_privileges` before building, not assumed. The underlying
+`crm_build_phases`/`crm_build_stages` RLS policies are also `anon`-permissive, though moot since the
+RPC is `SECURITY DEFINER`. The RPC only ever returns phase/stage metadata (key, title, status,
+done/total counts) — no contact/lead/financial data — so nothing here needed extra redaction.
+
+**Shared rendering**: the phase/stage card markup was extracted from `CrmRoadmap.jsx` into
+`src/components/BuildProgressPhaseCard.jsx` (a plain presentational component, no data fetching) so
+`/status` and `/crm/roadmap` render identically from the same code, not two hand-synced copies. CSS
+is the same pre-existing `.crm-roadmap-*` block (plain app tokens, not `.crm-shell`'s `--crm-*`
+tokens — this card renders outside the CRM shell). New CSS for the page's own outer shell only:
+`.status-page`/`.status-page-inner` in `src/index.css`, styled after `.login-page` (dark surround,
+centered column) but scrollable-width instead of a fixed-width card, since it holds a full phase
+list; a `@media (max-width: 768px)` block adjusts padding only, per CLAUDE.md rule 5.
+
+**Test-first**: `supabase/tests/crm_status_public_access.test.js` — integration test (vitest, same
+`describe.skipIf(!hasCreds)` self-skip pattern as the Phase 0/1 suites) asserting
+`get_crm_build_progress()` succeeds for an anon-key-only caller and returns the expected
+`{ phases, overall_done, overall_total }` shape, plus a guard that the payload never contains
+email/token/password-shaped strings — the regression check for "the RPC is still granted to anon."
+Committed before `Status.jsx`.
+
+**Verification this session**: `npm test`/`build`/`eslint` (changed files) all pass. Browser-verified
+with Playwright — confirmed the route renders with no login redirect and the correct title/subtitle
+against the real dev server, and (route-mocked, since this sandbox's network policy blocks direct
+browser egress to Supabase — MCP tool calls use a different channel) confirmed the phase/stage cards
+render pixel-identical to `/crm/roadmap` at both desktop and mobile (390px) widths. The anon-grant
+data path itself was verified separately via direct SQL against the live `dev`/`main` shared Supabase
+project (`information_schema.routine_privileges`), not through the browser.
+
