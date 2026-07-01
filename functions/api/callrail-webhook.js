@@ -48,8 +48,9 @@
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { firstOf, mapCallPayload, mapFormPayload, extractCallId, callrailApiRecordingUrl } from '../lib/callrail.js';
+import { firstOf, mapCallPayload, mapFormPayload, extractCallId, callrailApiRecordingUrl, shouldAutoTranscribe } from '../lib/callrail.js';
 import { resolveCallRailAccountId } from '../lib/callrail-api.js';
+import { transcribeLead } from './transcribe-call.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -62,6 +63,18 @@ async function checkSecret(request, db) {
   if (!provided) return false;
   const [row] = await db.select('integration_config', `key=eq.callrail_webhook_secret&select=value`);
   return !!row?.value && row.value === provided;
+}
+
+// Auto-transcribe a call the moment its recording is available. Best-effort and
+// run in the background (context.waitUntil) so the webhook still returns 200
+// instantly — a failed auto-transcript must never fail the webhook.
+async function autoTranscribe(db, env, lead) {
+  try {
+    const [dg] = await db.select('integration_credentials', 'provider=eq.deepgram&select=access_token');
+    const [cr] = await db.select('integration_credentials', 'provider=eq.callrail&select=access_token');
+    if (!dg?.access_token || !cr?.access_token) return;
+    await transcribeLead(db, env, lead, cr.access_token, dg.access_token);
+  } catch { /* best-effort — leave the manual Transcribe button as the fallback */ }
 }
 
 export async function onRequestPost(context) {
@@ -127,6 +140,12 @@ export async function onRequestPost(context) {
       worker_name: 'callrail-webhook', status: 'completed', records_processed: 1,
       started_at: startedAt, completed_at: new Date().toISOString(),
     });
+    // Auto-transcribe once the recording lands (background, non-blocking). Only the
+    // recording-ready delivery passes the guard, and a re-delivery after the
+    // transcript exists is skipped — so Deepgram is never re-billed for a call.
+    if (shouldAutoTranscribe(lead)) {
+      context.waitUntil(autoTranscribe(db, env, lead));
+    }
     return jsonResponse({ ok: true, lead_id: lead.id }, 200, request, env);
   } catch (e) {
     await db.insert('worker_runs', {

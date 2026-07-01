@@ -63,6 +63,16 @@ function formatDuration(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// A call with no recording yet, seen in the last 10 minutes, is almost certainly
+// still being processed by CallRail (recordings land ~1–3 min after hang-up, then
+// we auto-transcribe). Show a "waiting" state so a fresh 0:00 row — which the page
+// auto-refreshes into the finished call — never looks broken.
+function isAwaitingRecording(lead) {
+  if (lead.source_type !== 'call' || lead.recording_url) return false;
+  const t = new Date(lead.occurred_at || lead.created_at || 0).getTime();
+  return t > 0 && (Date.now() - t) < 10 * 60 * 1000;
+}
+
 function fmtTime(sec) {
   if (!sec || Number.isNaN(sec) || !Number.isFinite(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -331,6 +341,12 @@ function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
         </select>
       </div>
       <div className="crm-call-row-detail">
+        {isAwaitingRecording(lead) && (
+          <span className="crm-call-awaiting">
+            <span className="crm-awaiting-dot" aria-hidden="true" />
+            Waiting for recording &amp; transcript…
+          </span>
+        )}
         {lead.recording_url && (
           audioUrl
             ? <RecordingPlayer src={audioUrl} />
