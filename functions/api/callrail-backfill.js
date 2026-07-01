@@ -7,7 +7,10 @@
  *   A one-time, manually-triggered catch-up. It asks CallRail for calls it
  *   already has on file (not just new ones going forward) and saves them the
  *   same way the live webhook does, so the Call Log isn't empty on day one.
- *   Not a cron job — someone clicks a button to run it.
+ *   Not a cron job — someone clicks a button to run it. CALLS ONLY for now —
+ *   see NOTES on why historical form leads are deliberately not backfilled
+ *   yet (new form leads still arrive live via callrail-webhook.js once
+ *   CallRail is connected; this only affects pre-connection history).
  *
  * ENDPOINT:
  *   POST /api/callrail-backfill   (authenticated — Supabase Bearer)
@@ -30,6 +33,16 @@
  *     header format, and response field names against CallRail's v3 API
  *     docs before running this against a real account — same caveat as
  *     callrail-webhook.js's payload mapping (kept consistent with it here).
+ *   - DISCLOSED GAP, NOT AN OVERSIGHT: the roadmap's Phase 1 spec asks the
+ *     backfill to cover "historical calls + form leads." This worker only
+ *     backfills calls (`/v3/a/{account}/calls.json`) — CallRail's historical
+ *     form-submission list endpoint is a second, differently-shaped API this
+ *     session couldn't verify without a live account (same open item as
+ *     whether the site's form even routes through CallRail's Form Tracking
+ *     product at all — see roadmap "Open items to confirm before Phase 1
+ *     starts"). Deferred rather than guessed at. Does not affect *live* form
+ *     leads once CallRail is connected — those arrive the same way calls do,
+ *     through callrail-webhook.js's mapFormPayload().
  *   - Paginates defensively (stops after `per_page` returns fewer rows than
  *     requested, or after a hard cap) rather than assuming a `has_more` flag.
  * ════════════════════════════════════════════════

@@ -5918,6 +5918,8 @@ tr:hover td { background: var(--bg-secondary); }
   flex: 1; font-family: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--crm-border);
   border-radius: var(--crm-radius); background: var(--crm-bg-content); color: var(--crm-text-primary);
 }
+.crm-integration-webhook { margin: var(--space-3) 0; }
+.crm-integration-webhook .crm-integration-input { font-family: var(--font-mono); font-size: 11px; }
 
 @media (min-width: 1024px) {
   .crm-shell { flex-direction: row; height: 100%; }

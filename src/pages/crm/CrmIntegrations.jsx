@@ -19,20 +19,15 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
  *              (getAuthHeader, for the authenticated worker calls)
- *   Data:      reads  → integration_credentials, integration_config
- *                       (via get_integration_status RPC + a direct select
- *                       of the webhook secret — both read-only, no secrets
- *                       exposed by get_integration_status itself)
+ *   Data:      reads  → integration_credentials (via get_integration_status
+ *                       RPC — read-only, never exposes the key itself),
+ *                       integration_config's webhook secret (via the
+ *                       callrail-connect worker's GET, service-role — the
+ *                       frontend never selects that table directly, since
+ *                       it's RLS-enabled with no anon/authenticated policy)
  *              writes → integration_credentials, integration_config (via
  *                       the callrail-connect worker, service-role — never
  *                       directly from the frontend)
- *
- * NOTES / GOTCHAS:
- *   - The webhook secret is fetched via a plain `db.select` on
- *     integration_config, which is RLS-enabled with NO anon/authenticated
- *     policy (service-role only) — same as integration_credentials. That
- *     select will simply return an empty array for a non-service-role
- *     caller; the UI treats a missing secret as "connect CallRail first."
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
@@ -42,11 +37,43 @@ import { getAuthHeader } from '@/lib/realtime';
 function ok(message) { window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } })); }
 function err(message) { window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } })); }
 
+function WebhookUrlBlock({ secret }) {
+  if (!secret) return null;
+  const webhookUrl = `${window.location.origin}/api/callrail-webhook?secret=${secret}`;
+
+  const copy = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    ok('Webhook URL copied');
+  };
+
+  return (
+    <div className="crm-integration-webhook">
+      <label className="crm-integration-label">Webhook URL — paste into CallRail's webhook settings for each event type</label>
+      <div className="crm-integration-connect-row">
+        <input className="crm-integration-input" type="text" readOnly value={webhookUrl} onFocus={(e) => e.target.select()} />
+        <button className="crm-btn crm-btn-ghost" onClick={copy}>Copy</button>
+      </div>
+    </div>
+  );
+}
+
 function CallRailCard({ status, onConnected, onDisconnected }) {
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [secret, setSecret] = useState(null);
   const connected = !!status?.connected;
+
+  const loadSecret = useCallback(async () => {
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch('/api/callrail-connect', { method: 'GET', headers: auth });
+      const data = await res.json().catch(() => ({}));
+      setSecret(data.secret || null);
+    } catch { /* non-fatal — webhook URL block just stays hidden */ }
+  }, []);
+
+  useEffect(() => { if (connected) loadSecret(); }, [connected, loadSecret]);
 
   const connect = async () => {
     if (!apiKey.trim()) return;
@@ -62,6 +89,7 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
       if (!res.ok) throw new Error(data.error || res.statusText);
       ok('CallRail connected');
       setApiKey('');
+      setSecret(data.secret || null);
       onConnected();
     } catch (e) {
       err('Could not connect CallRail: ' + e.message);
@@ -102,6 +130,7 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
       {connected ? (
         <div className="crm-integration-card-body">
           <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
+          <WebhookUrlBlock secret={secret} />
           <button
             className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
             onClick={disconnect}

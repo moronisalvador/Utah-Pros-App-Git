@@ -14,8 +14,12 @@
  *   reconnect, since it's already been pasted into CallRail's dashboard.
  *
  * ENDPOINT:
+ *   GET    /api/callrail-connect     (authenticated — Supabase Bearer)
+ *          returns { secret: string|null } — the webhook shared secret, so
+ *          the Integrations page can show the webhook URL to paste into
+ *          CallRail's dashboard. null before the first connect.
  *   POST   /api/callrail-connect     (authenticated — Supabase Bearer)
- *          body: { api_key: string }
+ *          body: { api_key: string } — returns { connected: true, secret }
  *   DELETE /api/callrail-connect     (authenticated — Supabase Bearer)
  *
  * DEPENDS ON:
@@ -44,6 +48,17 @@ export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const db = supabase(env);
+
+  const employee = await getActorEmployee(request, env, db);
+  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+
+  const [row] = await db.select('integration_config', `key=eq.callrail_webhook_secret&select=value`);
+  return jsonResponse({ secret: row?.value || null }, 200, request, env);
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
@@ -66,15 +81,15 @@ export async function onRequestPost(context) {
 
   // Generate the webhook shared secret once — never rotate it on reconnect,
   // since it's already pasted into CallRail's dashboard by then.
-  const [existingSecret] = await db.select('integration_config', `key=eq.callrail_webhook_secret`);
-  if (!existingSecret) {
-    await db.insert('integration_config', {
+  let [secretRow] = await db.select('integration_config', `key=eq.callrail_webhook_secret&select=value`);
+  if (!secretRow) {
+    [secretRow] = await db.insert('integration_config', {
       key: 'callrail_webhook_secret',
       value: crypto.randomUUID(),
     });
   }
 
-  return jsonResponse({ connected: true }, 200, request, env);
+  return jsonResponse({ connected: true, secret: secretRow.value }, 200, request, env);
 }
 
 export async function onRequestDelete(context) {

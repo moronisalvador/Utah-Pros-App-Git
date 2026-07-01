@@ -2226,19 +2226,31 @@ callrail-webhook.js   — POST, receives CallRail's call/form events, maps paylo
                          multi-key fallbacks — same open item, unverified against a live CallRail
                          payload in this session. Always returns 200 except on a bad/missing secret
                          (403), to avoid a CallRail retry storm.
-callrail-connect.js   — POST (save API key) / DELETE (disconnect), authenticated. Writes
-                         integration_credentials (provider='callrail', key in access_token) and
-                         generates the webhook shared secret into integration_config on first
-                         connect only (never rotated on reconnect — it's already pasted into
-                         CallRail's dashboard by then). Reuses google-drive.js's generic
-                         getActorEmployee Bearer-auth helper (not Google-Drive-specific despite the
-                         file name).
+callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
+                         DELETE (disconnect), all authenticated. Writes integration_credentials
+                         (provider='callrail', key in access_token) and generates the webhook
+                         shared secret into integration_config on first connect only (never rotated
+                         on reconnect — it's already pasted into CallRail's dashboard by then). The
+                         GET exists because integration_config has no anon/authenticated RLS policy
+                         (service-role only) — the frontend can't select it directly, so
+                         CrmIntegrations.jsx calls this endpoint to display the webhook URL +
+                         secret for Moroni to paste into CallRail's dashboard. Reuses
+                         google-drive.js's generic getActorEmployee Bearer-auth helper (not
+                         Google-Drive-specific despite the file name).
 callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). Pulls historical
-                         calls via CallRail's v3 list-calls API and upserts through the same RPC.
-                         CALLRAIL_ACCOUNT_ID env var + the connected API key are both required.
-                         Endpoint path/field names are also unverified against a live account —
-                         same open item as the webhook. Hard-capped at 50 pages to guard against a
-                         runaway pagination loop.
+                         CALLS ONLY via CallRail's v3 list-calls API and upserts through the same
+                         RPC. CALLRAIL_ACCOUNT_ID env var + the connected API key are both required.
+                         Endpoint path/field names are unverified against a live account — same
+                         open item as the webhook. Hard-capped at 50 pages to guard against a
+                         runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for
+                         "historical calls + form leads" — this worker deliberately backfills calls
+                         only; CallRail's historical form-submission list API is a second,
+                         differently-shaped endpoint this session couldn't verify without a live
+                         account (same open item as whether the site's form even routes through
+                         CallRail's Form Tracking product — see docs/crm-roadmap.md "Open items to
+                         confirm before Phase 1 starts"). Does NOT affect live form leads — those
+                         arrive the same way calls do, through callrail-webhook.js's
+                         mapFormPayload(), once CallRail is connected.
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
@@ -2292,4 +2304,25 @@ CallRail webhook auth mechanism and payload field names are also placeholders pe
 against CallRail's real dashboard/docs (see the workers' NOTES above) — the two "open items to
 confirm before Phase 1 starts" from the roadmap were not resolvable in this session either, for the
 same reason.
+
+**Independent review**: `upr-pattern-checker` found 5 hardcoded-hex CSS violations outside the
+`.crm-shell` token block and one two-click-confirm missing its `onBlur` cancel — all fixed (see git
+history). `crm-phase-reviewer` (Opus) then graded the phase DO-NOT-SHIP-YET pending three fixable
+items, all addressed before this PR: (1) the Integrations page's file header claimed it showed the
+webhook URL/secret but didn't — `callrail-connect.js` gained a `GET` endpoint and the page now
+displays it; (2) the backfill worker's calls-only scope vs. the roadmap's "calls + form leads" spec
+was silently narrowed in this doc rather than disclosed — fixed above; (3) phase/stage status was
+undocumented — fixed by this paragraph and the dogfooding note below. The remaining open acceptance
+criteria (real call/form, backfill count, visual check, webhook auth confirmation) were confirmed by
+the reviewer as legitimately blocked by this session's no-CallRail-account/no-Supabase-egress
+limits, not silent gaps.
+
+**Dogfooding**: 4 of 8 `crm_build_stages` rows are marked `done` as of this session's close-out
+(test-first, `npm test`/`build`/`eslint`, `upr-pattern-checker`+`crm-phase-reviewer` sign-off,
+this doc update) via `set_crm_stage_status`; `crm_build_phases('1')` is `in_progress`, not yet
+`shipped` — same honest pattern as Phase 0. The remaining 4 stages (full acceptance criteria, the
+visual check, marking `shipped`, and the `dev → main` PR) need a real CallRail account and a
+logged-in Moroni session this sandbox doesn't have. Flip them via
+`set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
+Cloudflare preview and a real CallRail connection.
 
