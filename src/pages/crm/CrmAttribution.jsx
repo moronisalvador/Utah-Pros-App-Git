@@ -39,11 +39,7 @@ import { RangePicker, MetricCard, ChannelTable } from './attributionParts';
 import { deriveRows, rangeToDates, toNumberRow } from './attributionData';
 
 export default function CrmAttribution() {
-  const { db, employee } = useAuth();
-  // Revenue/ROAS is real invoiced-dollar data — get_attribution_rollup already
-  // returns 0 for a crm_partner caller, but hide the UI outright rather than
-  // show a confusing "$0"/"—" everywhere.
-  const hideRevenue = employee?.role === 'crm_partner';
+  const { db } = useAuth();
   const [range, setRange] = useState('all');
   const [raw, setRaw] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -94,15 +90,15 @@ export default function CrmAttribution() {
         <>
           <div className="crm-metric-grid">
             <MetricCard label="Paid spend" value={fmtMoney(totals.paid_spend)} sub="Google + Meta" />
-            {!hideRevenue && <MetricCard label="Paid ROAS" value={fmtRatio(totals.roas)} sub="revenue ÷ spend" />}
+            <MetricCard label="Paid ROAS" value={fmtRatio(totals.roas)} sub="revenue ÷ spend" />
             <MetricCard label="Cost / lead" value={fmtMoney(totals.cost_per_lead)} sub="paid channels" />
-            {!hideRevenue && <MetricCard label="Revenue" value={fmtMoney(totals.revenue)} sub="all channels" />}
+            <MetricCard label="Revenue" value={fmtMoney(totals.revenue)} sub="all channels" />
             <MetricCard label="Won jobs" value={totals.won_jobs.toLocaleString('en-US')} sub="all channels" />
           </div>
 
           <div className="crm-card">
             <h2 className="crm-section-title">By channel</h2>
-            <ChannelTable rows={rows} hideRevenue={hideRevenue} />
+            <ChannelTable rows={rows} />
             <p className="crm-note">Referral, Organic and Insurance carry no ad spend, so their cost-per-lead, cost-per-job and ROAS show “—”, not “0”.</p>
             <p className="crm-note">Leads are credited to the source of the call/form itself; revenue is credited to the contact’s most recent (last-touch) source. For a contact with more than one touch these can differ — see docs/crm-phase3-attribution-model.md.</p>
           </div>

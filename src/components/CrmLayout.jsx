@@ -62,10 +62,11 @@ const SIDEBAR_ITEMS = [
 export default function CrmLayout() {
   const { employee } = useAuth();
   const isPartner = employee?.role === 'crm_partner';
-  // Settings (pipeline config) and the internal build-roadmap tracker stay
-  // internal-only even though the rest of the CRM is open to a partner.
+  // A crm_partner sees the whole CRM — Settings included — except
+  // Integrations (shared platform OAuth credentials) and the internal
+  // build-roadmap tracker (an engineering artifact, not a CRM feature).
   const visibleItems = isPartner
-    ? SIDEBAR_ITEMS.filter(item => item.key !== 'settings')
+    ? SIDEBAR_ITEMS.filter(item => item.key !== 'integrations')
     : SIDEBAR_ITEMS;
 
   return (
