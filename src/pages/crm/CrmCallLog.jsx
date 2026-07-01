@@ -20,7 +20,10 @@
  *              (getAuthHeader for the recording proxy fetch)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK);
  *                       call recordings via GET /api/callrail-recording
- *              writes → inbound_leads.lead_status (via update_lead_status RPC)
+ *              writes → inbound_leads.lead_status (via update_lead_status RPC);
+ *                       inbound_leads.transcription via POST /api/transcribe-call
+ *                       (the "Transcribe" button — Deepgram, since CallRail's plan
+ *                       doesn't expose transcripts)
  *
  * NOTES / GOTCHAS:
  *   - A lead with no linked contact shows the raw caller_number/"Web form"
@@ -100,6 +103,9 @@ function LeadRow({ lead, onStatusChange }) {
   const [audioUrl, setAudioUrl] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  // Transcript can arrive after load (staff clicks Transcribe), so track it locally.
+  const [transcription, setTranscription] = useState(lead.transcription);
+  const [transcribing, setTranscribing] = useState(false);
 
   // Free the blob URL when the row unmounts / a new one replaces it.
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
@@ -127,6 +133,31 @@ function LeadRow({ lead, onStatusChange }) {
       setLoadingRec(false);
     }
   }, [audioUrl, loadingRec, lead.id]);
+
+  const transcribe = useCallback(async () => {
+    if (transcribing) return;
+    setTranscribing(true);
+    try {
+      // Our own transcription (CallRail's plan doesn't expose transcripts) —
+      // the worker fetches the audio, sends it to Deepgram, and stores the text.
+      const res = await fetch('/api/transcribe-call', {
+        method: 'POST',
+        headers: { ...(await getAuthHeader()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.transcription) {
+        throw new Error(data?.errors?.[0]?.error || data?.error || `unexpected response (${res.status})`);
+      }
+      setTranscription(data.transcription);
+      setShowTranscript(true);
+    } catch (e) {
+      console.error('[transcribe-call]', e?.message || e);
+      err('Could not transcribe this call — details in the console');
+    } finally {
+      setTranscribing(false);
+    }
+  }, [transcribing, lead.id]);
 
   return (
     <div className="crm-call-row">
@@ -156,7 +187,7 @@ function LeadRow({ lead, onStatusChange }) {
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
       </div>
-      {(lead.recording_url || lead.transcription) && (
+      {(lead.recording_url || transcription) && (
         <div className="crm-call-row-detail">
           {lead.recording_url && (
             audioUrl
@@ -165,13 +196,19 @@ function LeadRow({ lead, onStatusChange }) {
                   {loadingRec ? 'Loading…' : '▶ Play recording'}
                 </button>
           )}
-          {lead.transcription && (
+          {transcription ? (
             <>
               <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
                 {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
               </button>
-              {showTranscript && <p className="crm-call-row-transcript">{lead.transcription}</p>}
+              {showTranscript && <p className="crm-call-row-transcript">{transcription}</p>}
             </>
+          ) : (
+            lead.recording_url && (
+              <button className="crm-call-row-play" onClick={transcribe} disabled={transcribing}>
+                {transcribing ? 'Transcribing…' : '✎ Transcribe'}
+              </button>
+            )
           )}
         </div>
       )}
