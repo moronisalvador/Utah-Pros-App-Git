@@ -67,7 +67,7 @@ src/App.jsx        route wrappers: AdminRoute, FeatureRoute, DevRoute, AccessRou
 src/index.css      ALL styles — tokens/patterns documented in UPR-Design-System.md
 src/contexts/AuthContext.jsx
 src/lib/supabase.js  REST client (Rule 3)     src/lib/realtime.js  auth + realtime
-src/pages/           Admin*, Settings, DevTools (7 tabs), Help/Legal/Login/SetPassword/SignPage,
+src/pages/           Admin*, Settings, DevTools (9 tabs), Help/Legal/Login/SetPassword/SignPage,
                      ClaimsList/ClaimPage/ClaimCollectionPage, Jobs/JobPage/Production,
                      Schedule/ScheduleTemplates, Customers/CustomerPage/Leads/Marketing/Conversations,
                      Estimates/EstimateEditor/InvoiceEditor/Collections/PaymentSettings/TimeTracking/
