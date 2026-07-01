@@ -51,6 +51,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
+import { resolveCallRailAccountId } from '../lib/callrail-api.js';
 
 const MAX_PAGES = 50; // hard cap — guards against a runaway pagination loop
 
@@ -100,9 +101,15 @@ export async function onRequestPost(context) {
 
   const [cred] = await db.select('integration_credentials', `provider=eq.callrail&select=access_token`);
   const apiKey = cred?.access_token;
-  const accountId = env.CALLRAIL_ACCOUNT_ID;
-  if (!apiKey || !accountId) {
-    return jsonResponse({ error: 'CallRail not connected (missing API key or CALLRAIL_ACCOUNT_ID)' }, 400, request, env);
+  if (!apiKey) {
+    return jsonResponse({ error: 'CallRail not connected (no API key saved)' }, 400, request, env);
+  }
+
+  // The account id isn't captured at connect time — resolve it from saved
+  // config / env / the CallRail API (see functions/lib/callrail-api.js).
+  const accountId = await resolveCallRailAccountId(db, apiKey, env);
+  if (!accountId) {
+    return jsonResponse({ error: 'Could not determine the CallRail account id (the API key may be invalid or lack account access)' }, 400, request, env);
   }
 
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
