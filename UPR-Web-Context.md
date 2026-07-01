@@ -2284,7 +2284,27 @@ set_lead_caller_name(p_lead_id, p_name) — stores a transcript-detected caller 
   currently blank. **Never creates a contact** (raw-call spam must not pollute contacts — same
   stance as ingestion). `SECURITY DEFINER`, granted `anon, authenticated`, logs
   `crm_lead_caller_named`. (migration `20260701_crm_caller_name.sql`.)
+set_lead_details(p_lead_id, p_notes, p_value, p_updated_by) — sets a lead's `notes` (text) + `value`
+  (numeric) DIRECTLY (form is source of truth; null clears). Powers the Call Log "Notes & value"
+  editor. Logs `crm_lead_details_updated`. (migration `20260701_crm_lead_details.sql`; the columns
+  already existed.)
+get_tracking_numbers() → (tracking_number, label, call_count) — every DISTINCT tracking number seen
+  in inbound_leads LEFT JOINed to its campaign label + call count, most-active first. Reader for the
+  Call Log's campaign chips.
+set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign label for a tracking
+  number (on the org's row). Both `SECURITY DEFINER`, granted `anon, authenticated`.
+  (migration `20260701_crm_tracking_numbers.sql`.)
 ```
+
+**New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
+`UNIQUE(org_id, tracking_number)`, RLS-enabled at creation) — maps a CallRail tracking number to a
+**campaign label**. CallRail leaves `campaign`/`source` empty on direct dials, so the tracking
+number IS the ad-source identity; staff label each number ("Google Ads", "Yard signs") inline on
+the Call Log and the label shows on every call from it. `org_id` supplied by the RPC (Postgres
+forbids a subquery column DEFAULT); the table is only written through `set_tracking_number_label`.
+
+**`src/lib/phone.js`** gained `formatPhone(e164)` → `"(801) 447-1917"` (US 10-digit; echoes
+anything else unchanged) for displaying tracking/caller numbers.
 
 **`inbound_leads.caller_name text`** (migration `20260701_crm_caller_name.sql`, additive) — a
 name detected from the call transcript by the Claude naming pass (see transcribe-call.js). The Call

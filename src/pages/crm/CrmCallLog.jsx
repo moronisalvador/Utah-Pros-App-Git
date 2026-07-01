@@ -20,8 +20,11 @@
  *              (getAuthHeader for the recording proxy fetch)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
  *                       incl. transcript_analysis for the conversation view);
+ *                       crm_tracking_numbers labels via get_tracking_numbers RPC;
  *                       call recordings via GET /api/callrail-recording
- *              writes → inbound_leads.lead_status (via update_lead_status RPC);
+ *              writes → inbound_leads.lead_status (update_lead_status RPC);
+ *                       inbound_leads.notes + value (set_lead_details RPC);
+ *                       crm_tracking_numbers.label (set_tracking_number_label RPC);
  *                       inbound_leads.transcription + transcript_analysis via POST
  *                       /api/transcribe-call (the "Transcribe" button — Deepgram,
  *                       since CallRail's plan doesn't expose transcripts)
@@ -39,8 +42,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { IconCallLog } from '@/lib/crmIcons';
+import { formatPhone } from '@/lib/phone';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+
+// Format a numeric lead value as "$1,500" (whole dollars); '' when unset.
+function formatValue(v) {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '';
+}
 
 const STATUS_OPTIONS = ['new', 'contacted', 'qualified', 'booked', 'not_interested', 'spam'];
 
@@ -167,7 +179,8 @@ function TranscriptView({ analysis, text }) {
   );
 }
 
-function LeadRow({ lead, onStatusChange }) {
+function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
+  const { db } = useAuth();
   // caller_name (detected from the transcript) can arrive after load, so track it.
   const [callerName, setCallerName] = useState(lead.caller_name);
   const contactLabel = lead.contact?.name || callerName || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
@@ -178,6 +191,39 @@ function LeadRow({ lead, onStatusChange }) {
   const [transcription, setTranscription] = useState(lead.transcription);
   const [analysis, setAnalysis] = useState(lead.transcript_analysis);
   const [transcribing, setTranscribing] = useState(false);
+
+  // Campaign label for this call's tracking number (inline-editable).
+  const campaignLabel = labelMap.get(lead.tracking_number);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
+  const [savingLabel, setSavingLabel] = useState(false);
+
+  // Notes + value (qualify the lead).
+  const [notes, setNotes] = useState(lead.notes || '');
+  const [value, setValue] = useState(lead.value ?? '');
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  const saveLabel = async () => {
+    setSavingLabel(true);
+    try {
+      await db.rpc('set_tracking_number_label', { p_tracking_number: lead.tracking_number, p_label: labelDraft });
+      setEditingLabel(false);
+      onLabelSaved();  // refresh the shared map so every row with this number updates
+    } catch { err('Could not save the campaign label'); }
+    finally { setSavingLabel(false); }
+  };
+
+  const saveDetails = async () => {
+    setSavingDetails(true);
+    try {
+      const numVal = value === '' || value == null ? null : Number(value);
+      await db.rpc('set_lead_details', { p_lead_id: lead.id, p_notes: notes || null, p_value: numVal });
+      ok('Saved');
+      setEditingDetails(false);
+    } catch { err('Could not save notes/value'); }
+    finally { setSavingDetails(false); }
+  };
 
   // Free the blob URL when the row unmounts / a new one replaces it.
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
@@ -247,7 +293,30 @@ function LeadRow({ lead, onStatusChange }) {
         </div>
         <div className="crm-call-row-meta">
           {lead.source_type === 'call' && <span>{formatDuration(lead.duration_sec)}</span>}
+          {/* Campaign = the tracking number they dialed, labeled. Click ✎ to name it. */}
+          {lead.tracking_number && (
+            editingLabel ? (
+              <span className="crm-call-campaign-edit" onClick={(e) => e.stopPropagation()}>
+                <input
+                  className="crm-integration-input crm-call-campaign-input" autoFocus
+                  value={labelDraft} onChange={(e) => setLabelDraft(e.target.value)}
+                  placeholder={formatPhone(lead.tracking_number)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditingLabel(false); }}
+                />
+                <button className="crm-call-row-play" onClick={saveLabel} disabled={savingLabel}>{savingLabel ? '…' : 'Save'}</button>
+                <button className="crm-call-row-play" onClick={() => setEditingLabel(false)}>✕</button>
+              </span>
+            ) : (
+              <button
+                className="crm-call-campaign" title="Label this number as a campaign"
+                onClick={() => { setLabelDraft(campaignLabel || ''); setEditingLabel(true); }}
+              >
+                {campaignLabel || formatPhone(lead.tracking_number)} <span className="crm-call-campaign-edit-icon">✎</span>
+              </button>
+            )
+          )}
           {lead.source && <span className="crm-call-row-source">{lead.source}{lead.campaign ? ` · ${lead.campaign}` : ''}</span>}
+          {formatValue(value) && <span className="crm-badge crm-badge-value">{formatValue(value)}</span>}
           {lead.spam_flag && <span className="crm-badge crm-badge-spam">Spam</span>}
         </div>
         <div className="crm-call-row-time">
@@ -261,31 +330,52 @@ function LeadRow({ lead, onStatusChange }) {
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
       </div>
-      {(lead.recording_url || transcription) && (
-        <div className="crm-call-row-detail">
-          {lead.recording_url && (
-            audioUrl
-              ? <RecordingPlayer src={audioUrl} />
-              : <button className="crm-call-row-play" onClick={playRecording} disabled={loadingRec}>
-                  {loadingRec ? 'Loading…' : '▶ Play recording'}
-                </button>
-          )}
-          {transcription ? (
-            <>
-              <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
-                {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
+      <div className="crm-call-row-detail">
+        {lead.recording_url && (
+          audioUrl
+            ? <RecordingPlayer src={audioUrl} />
+            : <button className="crm-call-row-play" onClick={playRecording} disabled={loadingRec}>
+                {loadingRec ? 'Loading…' : '▶ Play recording'}
               </button>
-              {showTranscript && <TranscriptView analysis={analysis} text={transcription} />}
-            </>
-          ) : (
-            lead.recording_url && (
-              <button className="crm-call-row-play" onClick={transcribe} disabled={transcribing}>
-                {transcribing ? 'Transcribing…' : '✎ Transcribe'}
+        )}
+        {transcription ? (
+          <>
+            <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
+              {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
+            </button>
+            {showTranscript && <TranscriptView analysis={analysis} text={transcription} />}
+          </>
+        ) : (
+          lead.recording_url && (
+            <button className="crm-call-row-play" onClick={transcribe} disabled={transcribing}>
+              {transcribing ? 'Transcribing…' : '✎ Transcribe'}
+            </button>
+          )
+        )}
+        {/* Notes & value — available on every lead, recording or not. */}
+        <button className="crm-call-row-play" onClick={() => setEditingDetails(v => !v)}>
+          {editingDetails ? '▴ Notes & value' : `✎ Notes & value${notes ? ' ·' : ''}`}
+        </button>
+        {editingDetails && (
+          <div className="crm-call-details-edit">
+            <label className="crm-integration-label">Value ($)</label>
+            <input
+              className="crm-integration-input crm-call-value-input" type="number" min="0" step="1"
+              value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. 1500"
+            />
+            <label className="crm-integration-label">Notes</label>
+            <textarea
+              className="crm-integration-input crm-call-notes-input" rows={3}
+              value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything worth remembering about this lead…"
+            />
+            <div className="crm-call-details-actions">
+              <button className="crm-btn crm-btn-primary" onClick={saveDetails} disabled={savingDetails}>
+                {savingDetails ? 'Saving…' : 'Save'}
               </button>
-            )
-          )}
-        </div>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -294,6 +384,16 @@ export default function CrmCallLog() {
   const { db } = useAuth();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  // tracking_number → campaign label, shared across rows (so labeling one number
+  // updates every call from it). Refreshed after a label save.
+  const [labelMap, setLabelMap] = useState(new Map());
+
+  const loadLabels = useCallback(async () => {
+    try {
+      const rows = await db.rpc('get_tracking_numbers', {});
+      setLabelMap(new Map((rows || []).map((r) => [r.tracking_number, r.label])));
+    } catch { /* non-fatal — rows just fall back to the formatted number */ }
+  }, [db]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -310,7 +410,7 @@ export default function CrmCallLog() {
     }
   }, [db]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadLabels(); }, [load, loadLabels]);
 
   const handleStatusChange = async (leadId, status) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lead_status: status } : l));
@@ -339,7 +439,10 @@ export default function CrmCallLog() {
       ) : (
         <div className="crm-call-list">
           {leads.map(lead => (
-            <LeadRow key={lead.id} lead={lead} onStatusChange={handleStatusChange} />
+            <LeadRow
+              key={lead.id} lead={lead} labelMap={labelMap}
+              onLabelSaved={loadLabels} onStatusChange={handleStatusChange}
+            />
           ))}
         </div>
       )}
