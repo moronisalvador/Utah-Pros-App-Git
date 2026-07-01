@@ -100,6 +100,7 @@ export default function CrmAttribution() {
             <h2 className="crm-section-title">By channel</h2>
             <ChannelTable rows={rows} />
             <p className="crm-note">Referral, Organic and Insurance carry no ad spend, so their cost-per-lead, cost-per-job and ROAS show “—”, not “0”.</p>
+            <p className="crm-note">Leads are credited to the source of the call/form itself; revenue is credited to the contact’s most recent (last-touch) source. For a contact with more than one touch these can differ — see docs/crm-phase3-attribution-model.md.</p>
           </div>
 
           <div className="crm-card">

@@ -2293,9 +2293,10 @@ Only two sidebar pages have real data this phase (`src/pages/crm/`):
   service-role only, same as QBO); status reads go through the read-only `get_integration_status`
   RPC for all three providers.
 
-The other six sidebar pages (`CrmOverview.jsx`, `CrmLeads.jsx`, `CrmTasks.jsx`,
-`CrmAttribution.jsx`, `CrmReports.jsx`, `CrmSettings.jsx`) render a shared `CrmStubPage.jsx`
-("Coming in Phase N") until their own phase ships (3 or 4a).
+The remaining sidebar pages render a shared `CrmStubPage.jsx` ("Coming in Phase N") until their
+own phase ships: `CrmLeads.jsx` + `CrmTasks.jsx` (Phase 4a) and `CrmSettings.jsx`. **Phase 3
+replaced the `CrmOverview.jsx` / `CrmAttribution.jsx` / `CrmReports.jsx` stubs with real screens**
+— see the "Phase 3 — Attribution + funnel dashboard" section below.
 
 **Test-first**:
 - `functions/lib/callrail.test.js` — vitest unit test for `shouldCreateContact({spam_flag,
@@ -2445,6 +2446,105 @@ both review agents passed, this doc update, `crm_build_phases('2')` set to `ship
 The GAQL/Insights live-account verification called out above is an operational follow-up for
 Moroni post-merge, not a build-completion blocker (same treatment Phase 1 gave its
 CallRail-account-dependent items).
+
+### Phase 3 — Attribution + funnel dashboard
+
+**Design record**: `docs/crm-phase3-attribution-model.md` (Opus-High pass, written before any metric
+code per the roadmap's model note). Locks in: **last-touch, single-touch** attribution for v1 (every
+touch stored so first-touch/weighted is a future re-aggregation, not a schema change); **UPR's
+won-job + QBO `jobs.invoiced_value` is the single source of truth for conversions + revenue**;
+CallRail's "converted" flag and `ad_spend.platform_conversions` are informational-only, never in the
+ROAS/cost math; zero-spend channels render `—`, not `0`.
+
+**New table** `lead_attribution` (`supabase/migrations/20260701_crm_phase3_attribution.sql`, applied
+live to the shared dev/main Supabase) — `id, org_id (FK crm_orgs), lead_id (FK inbound_leads, ON
+DELETE CASCADE), contact_id (FK contacts, ON DELETE CASCADE), channel (CHECK IN
+google_ads|meta_ads|organic|referral|insurance|other), source, campaign, referral_source_id (FK
+referral_sources), occurred_at, created_by, created_at, updated_at`. One row per attribution TOUCH;
+last-touch is computed at query time by `MAX(occurred_at)` so position never goes stale. RLS enabled
++ explicit `FOR ALL` policy at creation; writes via the `upsert_lead_attribution` RPC. Additive-only
+— no existing table altered.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `crm_channel_for_source(p_source text) → text` — normalizes a raw source string to a canonical
+  channel. Data-driven: keyword rules (ordered so organic-Google — My Business/SEO — is matched
+  before paid-Google — Ads/LSA), then a `referral_sources.category` fallback (insurance→insurance,
+  personal/trade/program/real_estate/emergency→referral, digital→organic, traditional/other→other).
+  Verified live against 23 sample strings incl. the paid-vs-organic Google split.
+- `get_attribution_rollup(p_start_date, p_end_date, p_org_id) → TABLE(channel, spend, leads,
+  estimates, won_jobs, revenue)` — the per-channel funnel aggregate; always returns all six channels
+  (VALUES list) so zero-spend rows never disappear. Raw counts/sums ONLY — the derived money math
+  lives in the unit-tested `src/lib/attribution.js`, never in SQL. Leads counted per lead (CallRail =
+  truth); estimates (`status <> 'draft'`), won jobs (`phase <> 'lead' AND status <> 'deleted'`) and
+  revenue (`SUM(jobs.invoiced_value)`) counted per contact's last-touch channel with `COUNT(DISTINCT
+  job.id)` guarding the contact→jobs fan-out; anything unresolvable folds into `other`. **Verified
+  live**: the job/revenue aggregation matched an independent hand-recompute exactly (other 95 jobs /
+  $300,975, insurance 2 / $1,250, google_ads 2 / $0, organic 2 / $0, referral 1 / $0 — 102 jobs /
+  $302,225 total), and the spend/ROAS/cost-per-job path was verified with disposable TEST-org
+  `ad_spend` rows (google $1000 / meta $500) then cleaned up (`ad_spend` back to 0 rows).
+- `get_attribution_by_campaign(p_start_date, p_end_date, p_org_id) → TABLE(channel, platform,
+  campaign_id, campaign_name, spend, leads)` — paid-campaign detail (Google Ads split by agency,
+  encoded in `campaign_name`), leads matched by `inbound_leads.campaign = ad_spend.campaign_name`.
+- `get_crm_revenue_by_division(p_start_date, p_end_date) → TABLE(division, won_jobs, revenue)` —
+  Reports' won-revenue-by-division. **Namespaced `get_crm_*`** to avoid colliding with the
+  pre-existing `get_revenue_by_division(date,date) → jsonb` (a different, unrelated function — the
+  first migration attempt failed on this and was corrected).
+- `upsert_lead_attribution(p_channel, p_source, p_campaign, p_lead_id, p_contact_id,
+  p_referral_source_id, p_occurred_at, p_created_by, p_org_id) → lead_attribution` — the RPC write
+  path (manual entry / enrichment); validates channel, requires a lead_id or contact_id, logs a
+  `system_events` `crm_lead_attributed` row. Not wired to UI this phase (dashboards are read-only).
+
+**Money math** — `src/lib/attribution.js` (pure, importable, unit-tested): `costPerLead(spend,leads)`
+(null if spend≤0 or leads≤0), `roas(revenue,spend)` (null ONLY if spend≤0 — a real $0 revenue on
+real spend is a legitimate 0.0×), `costPerJob(spend,jobs)`, `conversionRate(num,denom)` (null only on
+zero denom — a 0 numerator over a positive denom is a real 0%), `deriveChannelMetrics(row)`,
+`rollupTotals(rows)` (blended efficiency computed on PAID channels only so ads aren't credited with
+organic revenue), `funnelStages(counts)`, and `fmtMoney/fmtRatio/fmtPct` (null → `—`, real 0 →
+`$0`/`0.0×`/`0%`). **Test-first**: `src/lib/attribution.test.js` (40 units, every expected value
+hand-computed) committed failing before the module existed, then green.
+
+**Frontend** (fill the three CRM-shell stub pages, `.crm-*` design system):
+- **CrmOverview.jsx** (`/crm/overview`) — KPI cards (spend/leads/estimates/won/revenue/ROAS) + the
+  Leads→Estimates→Won funnel (bars scale to the largest stage so they stay readable before CallRail
+  leads accumulate).
+- **CrmAttribution.jsx** (`/crm/attribution`) — per-channel table (Spend, Leads, Cost/lead,
+  Estimates, Won, Cost/job, Revenue, ROAS; zero-spend rows show `—`) + Google Ads by campaign/agency.
+- **CrmReports.jsx** (`/crm/reports`) — Source ROI, Won revenue by division, funnel conversion.
+- **attributionParts.jsx** (components) + **attributionData.js** (helpers: `CHANNEL_LABELS`, `RANGES`,
+  `rangeToDates`, `toNumberRow`, `deriveRows`) — split into two files so the `react-refresh` lint rule
+  stays clean. New `--crm-*` scoped CSS block (metric cards, funnel, range picker, table,
+  `--crm-channel-insurance` token). No `App.jsx` change — routes already existed from Phase 1.
+
+**`npm run test` (80 pass / 9 skip) + `npm run build` + `npx eslint` (changed files)**: all green.
+
+**Independent review**: `upr-pattern-checker` found one raw hex (`#d97706`) where a `--crm-*` token
+should exist — fixed (`--crm-channel-insurance` token) — plus a cosmetic `get_funnel_overview`
+comment/doc drift (the RPC shipped as `get_attribution_rollup`) — fixed. `crm-phase-reviewer` (Opus,
+weighted on the attribution math) graded the pure money-math module (`attribution.js`) clean —
+test-first ordering independently reproduced, every null/zero/div-by-zero boundary and the paid-only
+blended ROAS hand-checked — and returned three actionable items, all resolved:
+1. **Estimate filter** — flagged `e.status <> 'draft'` as dropping NULL-status rows via SQL
+   three-valued logic. **Verified live the premise doesn't hold** (`estimates.status` is NOT NULL;
+   0 nulls, 0 drafts; rollup estimates = 34 = all), so there was no undercount — but hardened to the
+   null-safe `e.status IS DISTINCT FROM 'draft'` (codebase convention) anyway; totals unchanged.
+2. **Google paid/organic keywords** — "Google Business Profile" (GMB's rename) and spelled-out
+   "Local Services Ads" weren't covered. Added `%business profile%` → organic and `%local service%`
+   → google_ads; re-verified live (both now classify correctly, existing 23 samples unchanged). The
+   actual `referral_sources`/`contacts.referral_source` values in the DB already classified correctly.
+3. **Doc update** — this section + the stub-description fix above.
+The reviewer also noted the by-design last-touch asymmetry (leads counted by the lead's own source,
+downstream conversions by the contact's last-touch channel) — disclosed on the Attribution page and
+in the design doc, not a blocker for last-touch v1.
+
+**Owner-gated verification**: `page:crm` is `enabled=false` with a `dev_only_user_id` gate, so
+`/crm/*` is invisible to any non-Moroni session — the branch preview **builds** green (same Vite
+build as local), but the behind-auth screenshot of the Attribution/Overview/Reports screens vs the
+handoff requires Moroni's own session (same owner-gated treatment Phase 1/2 used for
+account-dependent checks). `ad_spend` is still empty pending the Google Ads token, so paid-channel
+cost/ROAS cells legitimately render `—` until the first sync runs.
+
+**Dogfooding**: phase-3 `crm_build_stages` reconciled honestly and `crm_build_phases('3')` set to
+`shipped` via the status RPCs (see the close-out reconciliation in this session).
 
 ## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
 

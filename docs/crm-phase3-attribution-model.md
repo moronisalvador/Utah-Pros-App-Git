@@ -106,10 +106,20 @@ accumulate — no backfill required to ship.
 
 ## Decision 4 — Metric definitions (grain + revenue field)
 
-Attribution grain: **counts of leads at the lead grain** (every call/form is a touch);
-**estimates, won jobs, and revenue at the contact grain**, credited to that contact's
-last-touch channel. `COUNT(DISTINCT job.id)` guards the 1-contact-→-many-jobs fan-out so
-revenue is never double-counted.
+Attribution grain: **counts of leads at the lead grain** (every call/form is a touch,
+credited to *its own* source); **estimates, won jobs, and revenue at the contact grain**,
+credited to that contact's *last-touch* channel. `COUNT(DISTINCT job.id)` guards the
+1-contact-→-many-jobs fan-out so revenue is never double-counted.
+
+**Known asymmetry (accepted for v1):** because leads are credited to their own source but
+revenue is credited to the contact's last touch, a contact with more than one touch on
+different channels can have its leads and its revenue land in *different* channel rows —
+e.g. a lead shows under Organic while that contact's booked revenue shows under Google Ads
+(the last touch). Totals always reconcile; only the per-channel split shifts. This is the
+honest consequence of last-touch single-touch attribution (the common restoration journey
+is single-touch, where the two coincide), and it is disclosed on the Attribution page. A
+future first-touch/weighted model — a re-aggregation over the stored touches, not a schema
+change — would resolve it if multi-touch journeys ever become common.
 
 - **spend** = `SUM(ad_spend.spend)` for the channel (and campaign) in range; 0 for
   zero-spend channels.

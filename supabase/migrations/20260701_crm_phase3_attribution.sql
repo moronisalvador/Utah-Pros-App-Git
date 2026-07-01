@@ -81,12 +81,12 @@ BEGIN
      OR v = 'meta' OR v = 'fb' OR v = 'ig' THEN
     RETURN 'meta_ads';
   END IF;
-  IF v LIKE '%my business%' OR v LIKE '%gmb%' OR v LIKE '%seo%' OR v LIKE '%organic%'
-     OR v LIKE '%website%' OR v LIKE '%nextdoor%' THEN
+  IF v LIKE '%my business%' OR v LIKE '%business profile%' OR v LIKE '%gmb%'
+     OR v LIKE '%seo%' OR v LIKE '%organic%' OR v LIKE '%website%' OR v LIKE '%nextdoor%' THEN
     RETURN 'organic';
   END IF;
-  IF v LIKE '%google%' OR v LIKE '%adwords%' OR v LIKE '%lsa%' OR v LIKE '%ppc%'
-     OR v LIKE '%paid search%' OR v LIKE '%sem%' THEN
+  IF v LIKE '%google%' OR v LIKE '%adwords%' OR v LIKE '%lsa%' OR v LIKE '%local service%'
+     OR v LIKE '%ppc%' OR v LIKE '%paid search%' OR v LIKE '%sem%' THEN
     RETURN 'google_ads';
   END IF;
   IF v LIKE '%insurance%' OR v LIKE '%adjuster%' OR v LIKE '%tpa%' OR v LIKE '%carrier%' THEN
@@ -200,7 +200,9 @@ BEGIN
     SELECT COALESCE(cc.channel, 'other') AS channel, COUNT(DISTINCT e.id) AS estimates
     FROM estimates e
     LEFT JOIN contact_channel cc ON cc.contact_id = e.contact_id
-    WHERE e.status <> 'draft'  -- "estimate sent" = anything past draft
+    WHERE e.status IS DISTINCT FROM 'draft'  -- "estimate sent" = anything past draft; IS DISTINCT
+                                             -- FROM is null-safe (status is NOT NULL today, but a
+                                             -- plain <> would silently drop any future NULL row)
       AND (p_start_date IS NULL OR e.created_at >= p_start_date::timestamptz)
       AND (p_end_date   IS NULL OR e.created_at <  (p_end_date + 1)::timestamptz)
     GROUP BY 1
