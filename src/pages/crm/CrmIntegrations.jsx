@@ -206,7 +206,7 @@ function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, 
         {connected ? (
           <>
             <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="crm-integration-actions-row">
               <button className="crm-btn crm-btn-ghost" onClick={() => onConnect(connectPath)} disabled={connecting}>
                 {connecting ? 'Opening…' : 'Reconnect'}
               </button>
