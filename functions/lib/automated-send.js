@@ -27,12 +27,16 @@
  *     'email' (live) or 'sms' (Phase 4b TODO, throws for now). Looks up the
  *     contact, optionally renders a message_templates row by title, then
  *     calls sendGatedEmail — see below.
- *   sendGatedEmail(env, { contact, subject, html, campaignId })
+ *   sendGatedEmail(env, { contact, subject, html, recipientId })
  *     — the actual gated send. Both sendAutomatedMessage('email', ...) and
  *     the bulk campaign worker (functions/api/send-email-campaign.js) call
  *     THIS, so the suppression/consent check can't be bypassed by either
  *     path — there is no second way to reach sendEmail() for a marketing
- *     message.
+ *     message. `recipientId` (an email_campaign_recipients.id), when the
+ *     caller has one, makes the unsubscribe link resolve back to the exact
+ *     campaign send so email_unsubscribe() can mark that row suppressed too
+ *     — omit it for a non-campaign automated send (Phase 4d), which falls
+ *     back to a plain ?email= unsubscribe link.
  *   renderTemplate(body, variables) — {{token}} substitution, exported for
  *     the campaign builder UI to preview a template before sending.
  *
@@ -65,24 +69,27 @@ export function renderTemplate(body, variables = {}) {
   });
 }
 
+// Case-insensitive on purpose — suppressions are stored/matched via
+// lower(email) everywhere else (the unique index, preview_email_audience);
+// `ilike` with no wildcard characters is PostgREST's case-insensitive
+// exact-match operator, so a differently-cased repeat send still gets caught.
 async function isEmailSuppressed(db, email) {
   if (!email) return false;
   const rows = await db.select(
     'email_suppressions',
-    `email=eq.${encodeURIComponent(email)}&limit=1`
+    `email=ilike.${encodeURIComponent(email)}&limit=1`
   );
   return rows.length > 0;
 }
 
-function buildUnsubscribeUrl(env, email, campaignId) {
+function buildUnsubscribeUrl(env, email, recipientId) {
   const base = env.PAGES_URL || 'https://utahpros.app';
-  const params = new URLSearchParams({ email });
-  if (campaignId) params.set('campaign', campaignId);
+  const params = recipientId ? new URLSearchParams({ rid: recipientId }) : new URLSearchParams({ email });
   return `${base.replace(/\/$/, '')}/api/email-unsubscribe?${params.toString()}`;
 }
 
 // ─── SECTION: sendGatedEmail — the one path to sendEmail() for marketing mail ──
-export async function sendGatedEmail(env, { contact, subject, html, campaignId } = {}) {
+export async function sendGatedEmail(env, { contact, subject, html, recipientId } = {}) {
   const db = supabase(env);
   const email = contact?.email || null;
   const suppressed = await isEmailSuppressed(db, email);
@@ -96,7 +103,7 @@ export async function sendGatedEmail(env, { contact, subject, html, campaignId }
     };
   }
 
-  const unsubscribeUrl = buildUnsubscribeUrl(env, email, campaignId);
+  const unsubscribeUrl = buildUnsubscribeUrl(env, email, recipientId);
   const bodyWithFooter = `${html || ''}
 <p style="font-size:12px;color:#888;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
   <a href="${unsubscribeUrl}">Unsubscribe</a> from Utah Pros Restoration marketing emails.
@@ -143,6 +150,5 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
     contact,
     subject: extra.subject || '',
     html: renderTemplate(body, variables),
-    campaignId: extra.campaignId,
   });
 }

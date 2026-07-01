@@ -100,11 +100,17 @@ export async function onRequestPost(context) {
     for (const recipient of recipients) {
       let result;
       try {
+        // Re-fetch the live contact row rather than trusting the queue-time
+        // snapshot — a name for {{name}} substitution, and a fresh `dnd`
+        // check in case it changed between queueing and this send (a large
+        // campaign can take a while; preview_email_audience only guaranteed
+        // NOT dnd at snapshot time).
+        const [contact] = await db.select('contacts', `id=eq.${recipient.contact_id}&select=id,name,email,dnd`);
         result = await sendGatedEmail(env, {
-          contact: { id: recipient.contact_id, email: recipient.email },
+          contact: contact || { id: recipient.contact_id, email: recipient.email },
           subject: campaign.subject,
-          html: renderTemplate(campaign.body_html, { name: recipient.email }),
-          campaignId,
+          html: renderTemplate(campaign.body_html, { name: contact?.name || recipient.email }),
+          recipientId: recipient.id,
         });
       } catch (e) {
         result = { ok: false, skipped: false, error: String(e.message || e) };
