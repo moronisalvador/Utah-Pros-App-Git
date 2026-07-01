@@ -27,6 +27,13 @@
  *     tracker (Asana/Trello). Every phase updates its own status/stage rows
  *     via set_crm_phase_status / set_crm_stage_status at close-out, and this
  *     page just reflects that.
+ *   - Dark mode is local to this page only (a `.crm-roadmap-page.dark`
+ *     wrapper re-points the same `--bg-*`/`--text-*`/`--border-*` custom
+ *     properties `.page`/`.card`/`.status-badge` already read — same scoped-
+ *     token-override trick as `.tech-layout`/`.crm-shell`) — it defaults on
+ *     and is plain component state (no `localStorage`), so it resets on
+ *     reload rather than persisting, per the app's no-localStorage-for-state
+ *     rule.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
@@ -76,6 +83,7 @@ export default function CrmRoadmap() {
   const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [dark, setDark] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,14 +100,18 @@ export default function CrmRoadmap() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
+  const pageClass = `crm-roadmap-page${dark ? ' dark' : ''}`;
+
+  if (loading) return <div className={pageClass}><div className="loading-page"><div className="spinner" /></div></div>;
 
   if (error || !progress) {
     return (
-      <div className="page">
-        <div className="empty-state">
-          <p className="empty-state-title">Couldn't load build progress</p>
-          <p className="empty-state-text">Try refreshing the page.</p>
+      <div className={pageClass}>
+        <div className="page">
+          <div className="empty-state">
+            <p className="empty-state-title">Couldn't load build progress</p>
+            <p className="empty-state-text">Try refreshing the page.</p>
+          </div>
         </div>
       </div>
     );
@@ -110,27 +122,37 @@ export default function CrmRoadmap() {
     : 0;
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">CRM Build Roadmap</h1>
-          <p className="page-subtitle">Where the CRM build stands — the single source of truth, not an external tracker.</p>
+    <div className={pageClass}>
+      <div className="page">
+        <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+          <div>
+            <h1 className="page-title">CRM Build Roadmap</h1>
+            <p className="page-subtitle">Where the CRM build stands — the single source of truth, not an external tracker.</p>
+          </div>
+          <button
+            type="button"
+            className="crm-roadmap-theme-toggle"
+            onClick={() => setDark(d => !d)}
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {dark ? 'Light mode' : 'Dark mode'}
+          </button>
         </div>
-      </div>
 
-      <div className="card crm-roadmap-overall">
-        <div className="card-body">
-          <div className="crm-roadmap-progress-row">
-            <div className="crm-roadmap-progress-track">
-              <div className="crm-roadmap-progress-fill" style={{ width: `${overallPct}%` }} />
+        <div className="card crm-roadmap-overall">
+          <div className="card-body">
+            <div className="crm-roadmap-progress-row">
+              <div className="crm-roadmap-progress-track">
+                <div className="crm-roadmap-progress-fill" style={{ width: `${overallPct}%` }} />
+              </div>
+              <span className="crm-roadmap-progress-count">{progress.overall_done}/{progress.overall_total} overall</span>
             </div>
-            <span className="crm-roadmap-progress-count">{progress.overall_done}/{progress.overall_total} overall</span>
           </div>
         </div>
-      </div>
 
-      <div className="crm-roadmap-phase-list">
-        {progress.phases.map(phase => <PhaseCard key={phase.phase_key} phase={phase} />)}
+        <div className="crm-roadmap-phase-list">
+          {progress.phases.map(phase => <PhaseCard key={phase.phase_key} phase={phase} />)}
+        </div>
       </div>
     </div>
   );

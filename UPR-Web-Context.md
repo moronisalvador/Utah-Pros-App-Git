@@ -2263,6 +2263,19 @@ Reports, Integrations, Settings — icons in the new `src/lib/crmIcons.jsx` (kep
 unrelated existing icons there). `/crm/roadmap` (Phase 0) is intentionally NOT one of these sidebar
 items — it stays in the main app's visual style as a separate build/ops page, linked from the CRM
 sidebar's footer instead of taking a nav slot; `/crm` now redirects to `overview` (was `roadmap`).
+`/crm/roadmap` also gained a page-local dark mode (defaults on, toggle button in the page header) —
+a `.crm-roadmap-page.dark` wrapper re-points the same `--bg-*`/`--text-*`/`--border-*`/
+`--accent-light` custom properties `.page`/`.card`/`.status-badge` already read, same scoped-
+token-override trick as `.tech-layout`/`.crm-shell`. Plain component state, not `localStorage` (per
+the app's no-localStorage-for-state rule) — resets to dark on reload rather than persisting.
+
+**Top-nav placement**: the `crm` nav entry moved from `OVERFLOW_ITEMS` (the "..." drawer) to
+`PRIMARY_ITEMS` in `src/lib/navItems.jsx` — it now renders directly in the always-visible desktop
+top bar, not buried behind the menu. Visibility is unchanged: still gated by `isItemVisible()`'s
+`featureFlag: 'page:crm'` check, so it only appears for whoever the flag's `dev_only_user_id`
+resolves to (Moroni) — every other employee's top bar still shows exactly the original 7 items.
+The legacy `NAV_ITEMS` sidebar entry's path was also updated to `/crm/overview` (was `/crm/roadmap`)
+to match the new default landing page.
 
 Only two sidebar pages have real data this phase (`src/pages/crm/`):
 - **CrmCallLog.jsx** (`/crm/call-log`) — lists `inbound_leads` (embeds `contacts` via the
