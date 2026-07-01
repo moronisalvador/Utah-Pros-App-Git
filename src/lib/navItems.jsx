@@ -81,7 +81,7 @@ export const NAV_ITEMS = [
   { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
 
   { section: 'CRM' },
-  { key: 'crm',                label: 'CRM',                path: '/crm/roadmap',        icon: IconCrm,          featureFlag: 'page:crm' },
+  { key: 'crm',                label: 'CRM',                path: '/crm/overview',       icon: IconCrm,          featureFlag: 'page:crm' },
 
   { section: 'Tools' },
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing' },
@@ -104,6 +104,9 @@ export const PRIMARY_ITEMS = [
   { key: 'customers',     label: 'Customers', path: '/customers',     icon: IconCustomers },
   { key: 'collections',   label: 'My Money',  path: '/collections',   icon: IconCollections,   featureFlag: 'page:collections' },
   { key: 'time_tracking', label: 'Time',      path: '/time-tracking', icon: IconTimeTracking,  featureFlag: 'page:time_tracking' },
+  // Behind page:crm (dev_only_user_id = Moroni) — invisible in the always-on
+  // top bar for every other employee; see CLAUDE.md "CRM Phase Workflow".
+  { key: 'crm',           label: 'CRM',       path: '/crm/overview',  icon: IconCrm,           featureFlag: 'page:crm' },
 ];
 
 // OVERFLOW: secondary items behind the collapsible "menu" drawer.
@@ -116,7 +119,6 @@ export const OVERFLOW_ITEMS = [
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,       featureFlag: 'page:leads' },
   { key: 'marketing',          label: 'Marketing',          path: '/marketing',          icon: IconMarketing,  featureFlag: 'page:marketing' },
   { key: 'homebuilding',       label: 'Homebuilding',       path: '/homebuilding',       icon: IconHomebuilding, moroniOnly: true },
-  { key: 'crm',                label: 'CRM',                path: '/crm/roadmap',        icon: IconCrm,        featureFlag: 'page:crm' },
 ];
 
 // SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy
