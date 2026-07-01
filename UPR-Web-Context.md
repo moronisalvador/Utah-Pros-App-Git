@@ -2293,10 +2293,10 @@ Only two sidebar pages have real data this phase (`src/pages/crm/`):
   service-role only, same as QBO); status reads go through the read-only `get_integration_status`
   RPC for all three providers.
 
-The remaining sidebar pages render a shared `CrmStubPage.jsx` ("Coming in Phase N") until their
-own phase ships: `CrmLeads.jsx` + `CrmTasks.jsx` (Phase 4a) and `CrmSettings.jsx`. **Phase 3
-replaced the `CrmOverview.jsx` / `CrmAttribution.jsx` / `CrmReports.jsx` stubs with real screens**
-— see the "Phase 3 — Attribution + funnel dashboard" section below.
+Only `CrmTasks.jsx` still renders the shared `CrmStubPage.jsx` ("Coming in Phase 4d") until its
+phase ships. `CrmLeads.jsx` and `CrmSettings.jsx` shipped real screens in **Phase 4a**;
+`CrmOverview.jsx`, `CrmAttribution.jsx`, and `CrmReports.jsx` shipped in **Phase 3** — see those
+sections below.
 
 **Test-first**:
 - `functions/lib/callrail.test.js` — vitest unit test for `shouldCreateContact({spam_flag,
@@ -2545,6 +2545,103 @@ cost/ROAS cells legitimately render `—` until the first sync runs.
 
 **Dogfooding**: phase-3 `crm_build_stages` reconciled honestly and `crm_build_phases('3')` set to
 `shipped` via the status RPCs (see the close-out reconciliation in this session).
+
+### Phase 4a — Lead pipeline
+
+Built directly off the Phase 1 shell (its only hard dependency, per the roadmap's own escape
+hatch) rather than waiting on Phase 3, which was being built in a separate, parallel session at
+the same time — no file overlap: this phase owns the Leads board, the contact activity timeline,
+and pipeline-stage Settings CRUD; Phase 3 owns Attribution/Overview/Reports.
+
+**New tables** (`supabase/migrations/20260701_crm_phase4a_lead_pipeline.sql`, applied to the live
+shared dev/main Supabase project):
+- **`pipeline_stages`** — `id, org_id (FK crm_orgs), name, sort_order, color, is_won, is_lost,
+  created_at, updated_at`. Replaces the hardcoded New/Contacted/Qualified/Estimate Sent/Won/Lost
+  enum that used to live only as `inbound_leads.lead_status` text + `CrmCallLog.jsx`'s
+  `STATUS_OPTIONS` array — now a real, admin-editable table. Seeded with that same six-stage
+  default set for both the real org and the disposable "Utah Pros — TEST" org. RLS enabled +
+  explicit `FOR ALL` policy at creation.
+- **`lead_pipeline_stage`** — `id, lead_id (FK inbound_leads, UNIQUE), org_id (FK crm_orgs),
+  stage_id (FK pipeline_stages), moved_by (FK employees), created_at, updated_at`. Tracks each
+  lead's current stage as its own table rather than a column added to `inbound_leads` — keeps this
+  phase's migration to brand-new tables only, with zero touch to a table a prior phase introduced.
+  A lead with no row here reads as sitting in the first stage (lowest `sort_order`) — both the
+  frontend (`src/lib/crmPipeline.js`'s `groupLeadsByStage()`) and nothing server-side enforce this;
+  it's a read-time fallback, not a DB default. RLS enabled + explicit policy at creation.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
+- `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
+  (`p_id` NULL) or rename/recolor/reorder/toggle-won-lost (`p_id` set) a stage; no code change
+  needed for any of that, per the roadmap's "not a hardcoded enum" requirement.
+- `delete_pipeline_stage(p_stage_id)` — refuses (raises, surfaced as a toast) if any lead is still
+  on that stage, so a delete can never silently orphan a `lead_pipeline_stage` row.
+- `move_lead_to_stage(p_lead_id, p_stage_id, p_moved_by)` — true upsert on `lead_id`; logs a
+  `crm_lead_stage_changed` `system_events` row.
+- `get_contact_activity(p_contact_id)` — the unified activity timeline: `UNION ALL` across
+  `inbound_leads` (calls/forms, Phase 1), `messages` joined through `conversation_participants`
+  (SMS — `messages.channel` exists on the table but is never written by any current worker, so the
+  SMS branch reads `messages.type`, e.g. `sms_outbound`/`sms_inbound`, which
+  `functions/api/send-message.js` / `twilio-webhook.js` actually populate), `job_notes` joined
+  through `contact_jobs` (notes are job-scoped, not contact-scoped, hence the join), and `estimates`
+  (`contact_id` is direct). Ordered newest-first across all four sources.
+
+**Frontend** (`src/pages/crm/`), replacing their Phase 1 `CrmStubPage.jsx` placeholders:
+- **CrmLeads.jsx** (`/crm/leads`) — a real Kanban board, reusing `Production.jsx`'s drag-and-drop
+  pattern (desktop-only `draggable`, gated by the same `isTouchDevice()` check) rather than building
+  one from scratch. Columns come from `get_pipeline_stages`, sorted via `sortStages()`; cards are
+  every non-spam `inbound_leads` row (contact embedded), bucketed via `groupLeadsByStage()`. Header
+  subtitle shows a **weighted pipeline value** (`weightedPipelineValue()` — `is_won` stages weight
+  1, `is_lost` weight 0, open stages weight by position among the open stages, `(index+1)/(open+1)`
+  — a deliberately simple stage-position heuristic, not a configurable probability field, since
+  `pipeline_stages` has no such column). Clicking a card opens a slide-out detail panel: a stage
+  `<select>` (the touch-device path for moving a lead, since drag is disabled there), lead
+  metadata, and the `get_contact_activity`-backed timeline, badge-colored per activity type.
+- **CrmSettings.jsx** (`/crm/settings`) — pipeline-stage CRUD: add, inline rename/recolor/
+  won-lost-toggle, reorder via left/right buttons that swap `sort_order` with the neighboring stage
+  (simpler and more reliable than drag-and-drop for an admin settings screen), delete via the
+  inline two-click confirm pattern (`onBlur` cancels — no modal, per CLAUDE.md Rule 2), surfacing
+  the server-side in-use guard as a toast if a stage still has leads on it.
+
+**New pure-function module**: `src/lib/crmPipeline.js` — `sortStages`, `groupLeadsByStage`,
+`stageWeight`, `weightedPipelineValue`. No DB access; used by both `CrmLeads.jsx` (board rendering)
+and `CrmSettings.jsx` (stage ordering).
+
+**New CSS**: `.crm-board-*` / `.crm-panel-*` / `.crm-timeline-*` / `.crm-stage-*` in `src/index.css`,
+all under the existing `--crm-*` token scope (no new global tokens).
+
+**Test-first**: `src/lib/crmPipeline.test.js` committed at `2afde90`, before `src/lib/crmPipeline.js`
+existed (`bb34502`) — confirmed genuinely failing at the test-only commit (import error). Covers
+stage-ordering-respects-`sort_order` (including a no-mutation check) and the weighted-pipeline-value
+math against a hand calculation across open/won/lost stages, plus the null-value-contributes-zero
+edge case.
+
+**`npm run test` + `npm run build` + `npx eslint`**: all green on every changed file.
+
+**Independent review**: `upr-pattern-checker` found zero violations. `crm-phase-reviewer` (Opus)'s
+first pass raised one claimed blocker — that `get_contact_activity` referenced a non-existent
+`messages.channel` column. That premise was actually wrong: `messages.channel` is a real column
+(confirmed live via `information_schema.columns` and by running the RPC against a real contact),
+so the RPC never threw. It's simply never populated by any current worker, so the fix applied was
+a data-quality improvement rather than a crash fix — the SMS branch now reads the actually-populated
+`messages.type` instead. A second reviewer pass, done skeptically (independently re-verifying
+`messages.type`'s provenance via `send-message.js`/`twilio-webhook.js` rather than taking the fix on
+faith), confirmed the fix and passed every acceptance criterion except this doc update itself
+(now resolved by this section) — recommendation **SHIP into `dev`**.
+
+**Dogfooding**: 3 of `phase-4a`'s 5 `crm_build_stages` rows flipped to `done` via
+`set_crm_stage_status` — test-first, the Kanban+timeline+Settings-CRUD acceptance criteria, and
+test/build/eslint+both review agents; `crm_build_phases('4a')` set to `shipped` (per CLAUDE.md's
+"set status → update this doc — before opening the PR" order, same as Phase 2). Two stages stay
+`todo`, honestly: the visual-check-vs-Stitch-handoff stage — it needs a logged-in Moroni session on
+the branch's Cloudflare preview, which this sandbox doesn't have, same disclosed owner-gated
+treatment Phase 1 gave its CallRail-account-dependent items, not a forgotten step — and the final
+"set shipped/docs updated/pushed/PR opened" stage, which bundles the push+PR sub-step that hasn't
+happened yet as of this doc edit (docs and the phase-shipped flip are done; push+PR is not) — same
+split Phase 2 used, flipped once the PR is actually opened. No test rows needed cleanup this phase:
+all verification queries against real (non-test-org) rows were read-only or exercised against
+disposable TEST-org rows that were deleted immediately after (see the migration's own commit
+message).
 
 ## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
 
