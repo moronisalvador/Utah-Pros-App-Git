@@ -139,7 +139,9 @@ export async function onRequestPost(context) {
           `&select=id,recording_url&order=occurred_at.desc&limit=${MAX_BACKFILL}`
       );
     } else if (body.lead_id) {
-      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url`);
+      // Select `transcription` too so we can short-circuit an already-transcribed
+      // lead server-side (idempotency guard — see the loop below).
+      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url,transcription`);
     } else {
       return jsonResponse({ error: 'Provide lead_id or backfill:true' }, 400, request, env);
     }
@@ -149,10 +151,20 @@ export async function onRequestPost(context) {
 
   leads = leads || [];
   let processed = 0;
+  let skipped = 0;
   const errors = [];
   let single = null;
 
   for (const lead of leads) {
+    // Idempotency / don't-double-charge guard: never re-transcribe a lead that
+    // already has a transcript unless the caller explicitly forces it. (The
+    // backfill branch already filters transcription=is.null, so this only bites
+    // a re-POST of the single-lead path — a paid Deepgram call avoided.)
+    if (lead.transcription && !body.force) {
+      skipped++;
+      single = { id: lead.id, chars: lead.transcription.length, transcription: lead.transcription };
+      continue;
+    }
     try {
       const r = await transcribeLead(db, lead, callrailKey, deepgramKey);
       processed++;
@@ -173,11 +185,13 @@ export async function onRequestPost(context) {
 
   return jsonResponse(
     {
-      ok: processed > 0 || leads.length === 0,
+      ok: processed > 0 || skipped > 0 || leads.length === 0,
       processed,
+      skipped,
       errored: errors.length,
       errors: errors.slice(0, 10),
-      // On a single-lead request, hand the transcript back so the UI updates inline.
+      // On a single-lead request, hand the transcript back (freshly made OR the
+      // existing one when skipped) so the UI updates inline either way.
       transcription: leads.length === 1 && single ? single.transcription : undefined,
     },
     200,
