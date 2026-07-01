@@ -8,7 +8,7 @@ import './index.css';
 // broken response (text/html instead of application/javascript) for an
 // immutable /assets/*.js URL. Any time you suspect edge poisoning again,
 // changing this literal is the cheapest way to invalidate.
-const BUILD_ID = '2026-06-29-newjob-unblank';
+const BUILD_ID = '2026-07-01-crm-chunk-loop-fix';
 void BUILD_ID;
 
 // Notify Capgo that the app booted successfully so a bad OTA bundle isn't
