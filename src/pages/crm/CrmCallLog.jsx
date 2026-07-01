@@ -398,10 +398,12 @@ export default function CrmCallLog() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await db.select(
-        'inbound_leads',
-        'select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=100'
-      );
+      // Read via RPC (a POST) rather than a GET select: a GET is cacheable, so
+      // returning to the Call Log after a soft navigation could show a STALE
+      // cached list and miss a call that had already landed. A POST is never
+      // cached, so every visit reflects the current data. The RPC embeds the
+      // linked contact exactly like the old select=*,contact:contacts(...).
+      const rows = await db.rpc('get_inbound_leads', { p_limit: 100 });
       setLeads(rows || []);
     } catch {
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load call log', type: 'error' } }));
