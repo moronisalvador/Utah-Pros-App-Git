@@ -2309,6 +2309,14 @@ get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest
   select:** a GET is cacheable, so returning to the Call Log after a soft navigation showed a STALE
   cached list (a just-landed live call was missing until a hard refresh); an RPC is a POST, which
   browsers never cache. `CrmCallLog.jsx` `load()` calls this. (migration `20260701_crm_get_inbound_leads.sql`.)
+  **Auto-refresh:** `CrmCallLog.jsx` polls this every 15s while the tab is visible + refetches on tab
+  focus, and has a manual **Refresh** button — so a newly-landed call appears without a hard reload
+  (CallRail's post-call webhook can lag ~1 min after the call). Silent background refreshes don't
+  blank the list or toast; open inline editors keep their local state. NOTE: to make calls appear at
+  *ring* time (near-instant), add a CallRail **"Call Started"** webhook pointing at the same
+  `/api/callrail-webhook?secret=…` endpoint — ingestion already handles it (the mapper tolerates the
+  missing duration/recording and `upsert_lead_from_callrail` is idempotent on `callrail_id`, so the
+  post-call event enriches the same row). An in-progress lead renders with duration `—`.
 ```
 
 **New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
@@ -2407,11 +2415,18 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          CallRail API key from integration_credentials, fetches with the
                          `Authorization: Token token="…"` header, and streams the audio back. SSRF
                          guard (`isAllowedRecordingUrl`, functions/lib/callrail.js): proxies only a
-                         CallRail-hosted URL stored on that lead — the `api.callrail.com` REST form
-                         (backfill) OR the `app.callrail.com/calls/{id}/recording/redirect?access_key=…`
-                         signed redirect the LIVE webhook delivers (the latter was previously rejected
-                         with 400 "Unsupported recording URL", breaking playback of live calls). The
-                         key never reaches the client. Robust to CallRail's response shape: streams
+                         CallRail-hosted URL stored on that lead. **app→api rewrite (critical):** the
+                         LIVE webhook delivers `app.callrail.com/calls/{id}/recording/redirect?access_key=…`,
+                         which THROWS when fetched server-side → the Worker crashed and Cloudflare
+                         returned a raw **502 (text/html)**, so live-call recordings would not play or
+                         transcribe. The proxy now rewrites that app URL to the working
+                         `api.callrail.com/v3/a/{acct}/calls/{id}/recording.json` form (via
+                         `extractCallId` + `callrailApiRecordingUrl` + `resolveCallRailAccountId`)
+                         before fetching — the same form the backfill stores and that streams cleanly.
+                         `callrail-webhook.js` also normalizes recording_url to the api form AT INGEST,
+                         so all consumers (this proxy + `transcribe-call`) get a working URL.
+                         `resolveCallRecording` now try/catches the fetch so a throw returns a clean
+                         error shape instead of 502-ing the Worker. The key never reaches the client. Robust to CallRail's response shape: streams
                          audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
                          streams that, else returns a 502 with the upstream status + body snippet so
                          a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
