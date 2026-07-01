@@ -60,7 +60,7 @@ function WebhookUrlBlock({ secret }) {
   );
 }
 
-function CallRailCard({ status, onConnected, onDisconnected }) {
+function CallRailCard({ status, onConnected, onDisconnected, readOnly }) {
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
@@ -76,7 +76,7 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
     } catch { /* non-fatal — webhook URL block just stays hidden */ }
   }, []);
 
-  useEffect(() => { if (connected) loadSecret(); }, [connected, loadSecret]);
+  useEffect(() => { if (connected && !readOnly) loadSecret(); }, [connected, readOnly, loadSecret]);
 
   const connect = async () => {
     if (!apiKey.trim()) return;
@@ -133,15 +133,21 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
       {connected ? (
         <div className="crm-integration-card-body">
           <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
-          <WebhookUrlBlock secret={secret} />
-          <button
-            className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
-            onClick={disconnect}
-            onBlur={() => setConfirmingDisconnect(false)}
-            disabled={saving}
-          >
-            {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
-          </button>
+          {!readOnly && <WebhookUrlBlock secret={secret} />}
+          {!readOnly && (
+            <button
+              className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
+              onClick={disconnect}
+              onBlur={() => setConfirmingDisconnect(false)}
+              disabled={saving}
+            >
+              {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
+            </button>
+          )}
+        </div>
+      ) : readOnly ? (
+        <div className="crm-integration-card-body">
+          <p className="crm-integration-meta">Not connected</p>
         </div>
       ) : (
         <div className="crm-integration-card-body">
@@ -168,7 +174,7 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
 // Google Ads and Meta Ads both connect via a redirect to that service's own
 // OAuth screen, then land back here — a lighter card than CallRail's (no
 // paste-a-key form, no webhook URL block), shared by both providers.
-function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, connecting, onConnect, onDisconnected }) {
+function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, connecting, onConnect, onDisconnected, readOnly }) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const connected = !!status?.connected;
@@ -206,20 +212,24 @@ function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, 
         {connected ? (
           <>
             <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
-            <div className="crm-integration-actions-row">
-              <button className="crm-btn crm-btn-ghost" onClick={() => onConnect(connectPath)} disabled={connecting}>
-                {connecting ? 'Opening…' : 'Reconnect'}
-              </button>
-              <button
-                className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
-                onClick={disconnect}
-                onBlur={() => setConfirmingDisconnect(false)}
-                disabled={disconnecting}
-              >
-                {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="crm-integration-actions-row">
+                <button className="crm-btn crm-btn-ghost" onClick={() => onConnect(connectPath)} disabled={connecting}>
+                  {connecting ? 'Opening…' : 'Reconnect'}
+                </button>
+                <button
+                  className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
+                  onClick={disconnect}
+                  onBlur={() => setConfirmingDisconnect(false)}
+                  disabled={disconnecting}
+                >
+                  {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
+                </button>
+              </div>
+            )}
           </>
+        ) : readOnly ? (
+          <p className="crm-integration-meta">Not connected</p>
         ) : (
           <button className="crm-btn crm-btn-primary" onClick={() => onConnect(connectPath)} disabled={connecting}>
             {connecting ? 'Opening…' : `Connect ${label}`}
@@ -231,7 +241,10 @@ function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, 
 }
 
 export default function CrmIntegrations() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
+  // Shared platform OAuth credentials, not per-user data — a CRM partner sees
+  // connection status only, never the connect/disconnect/webhook-secret controls.
+  const readOnly = employee?.role === 'crm_partner';
   const [callrailStatus, setCallrailStatus] = useState(null);
   const [googleAdsStatus, setGoogleAdsStatus] = useState(null);
   const [metaAdsStatus, setMetaAdsStatus] = useState(null);
@@ -302,16 +315,16 @@ export default function CrmIntegrations() {
       </div>
 
       <div className="crm-integration-grid">
-        <CallRailCard status={callrailStatus} onConnected={load} onDisconnected={load} />
+        <CallRailCard status={callrailStatus} onConnected={load} onDisconnected={load} readOnly={readOnly} />
         <OAuthProviderCard
           label="Google Ads" badgeClass="crm-integration-badge-google" badgeText="G"
           connectPath="/api/google-ads-connect" status={googleAdsStatus}
-          connecting={connecting} onConnect={startConnect} onDisconnected={load}
+          connecting={connecting} onConnect={startConnect} onDisconnected={load} readOnly={readOnly}
         />
         <OAuthProviderCard
           label="Meta Ads" badgeClass="crm-integration-badge-meta" badgeText="M"
           connectPath="/api/meta-ads-connect" status={metaAdsStatus}
-          connecting={connecting} onConnect={startConnect} onDisconnected={load}
+          connecting={connecting} onConnect={startConnect} onDisconnected={load} readOnly={readOnly}
         />
       </div>
     </div>
