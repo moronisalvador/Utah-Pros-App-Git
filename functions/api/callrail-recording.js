@@ -38,8 +38,8 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
-import { resolveCallRecording } from '../lib/callrail-api.js';
-import { isAllowedRecordingUrl } from '../lib/callrail.js';
+import { resolveCallRecording, resolveCallRailAccountId } from '../lib/callrail-api.js';
+import { isAllowedRecordingUrl, extractCallId, callrailApiRecordingUrl } from '../lib/callrail.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -69,11 +69,23 @@ export async function onRequestGet(context) {
   const apiKey = cred?.access_token;
   if (!apiKey) return jsonResponse({ error: 'CallRail not connected' }, 400, request, env);
 
+  // The LIVE webhook stores an app.callrail.com signed "recording/redirect" URL
+  // that THROWS when fetched server-side (→ 502). The api.callrail.com REST form
+  // (what the backfill stores) streams cleanly. So for the app form, rewrite to
+  // the api form by call id + account id before proxying — see functions/lib/callrail.js.
+  let fetchUrl = recUrl;
+  if (/^https:\/\/app\.callrail\.com\//.test(recUrl)) {
+    const callId = extractCallId(recUrl);
+    const accountId = await resolveCallRailAccountId(db, apiKey, env);
+    const apiUrl = callrailApiRecordingUrl(accountId, callId);
+    if (apiUrl) fetchUrl = apiUrl;
+  }
+
   const audioHeaders = (ct) => ({ 'Content-Type': ct || 'audio/mpeg', 'Cache-Control': 'private, max-age=300' });
 
   // resolveCallRecording handles both shapes CallRail returns (direct audio
   // stream vs. JSON → signed URL) — see functions/lib/callrail-api.js.
-  const rec = await resolveCallRecording(apiKey, recUrl);
+  const rec = await resolveCallRecording(apiKey, fetchUrl);
 
   // Case 1 — CallRail streamed the audio directly: pass it straight through.
   if (rec.kind === 'stream') {
