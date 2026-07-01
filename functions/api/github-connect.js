@@ -11,12 +11,12 @@
  *   The token is stored server-side and never sent back to the browser.
  *
  * ENDPOINT:
- *   GET    /api/github-connect   (authenticated — Supabase Bearer)
+ *   GET    /api/github-connect   (admin only — Supabase Bearer)
  *          → { connected: boolean, default_repo: string|null }
- *   POST   /api/github-connect   (authenticated — Supabase Bearer)
+ *   POST   /api/github-connect   (admin only — Supabase Bearer)
  *          body: { api_key: string, default_repo?: "owner/repo" }
  *          → { connected: true, login: string|null }
- *   DELETE /api/github-connect   (authenticated — Supabase Bearer)
+ *   DELETE /api/github-connect   (admin only — Supabase Bearer)
  *          → { disconnected: true }
  *
  * DEPENDS ON:
@@ -35,6 +35,9 @@
  *   - POST validates the token against GitHub's /user endpoint: a 401 is rejected
  *     with a clear message; a transient/non-401 failure is tolerated (best-effort,
  *     like callrail-connect's account resolve) so a GitHub blip can't block a save.
+ *   - All methods require the caller's employees.role = 'admin' (requireAdmin),
+ *     enforced here — not only on the admin-only UI route — since a direct API
+ *     call would bypass the route guard, and this token can merge/push.
  * ════════════════════════════════════════════════
  */
 
@@ -44,6 +47,18 @@ import { getActorEmployee } from '../lib/google-drive.js';
 
 const REPO_RE = /^[^/]+\/[^/]+$/;
 
+// Resolve the caller and require the 'admin' role. This endpoint manages a
+// merge/push-capable token, so the gate is enforced HERE — not only on the
+// admin-only UI route, which a direct API call would bypass. Returns either
+// { employee } or { response } (a ready 401/403 to return).
+async function requireAdmin(request, env, db) {
+  const employee = await getActorEmployee(request, env, db);
+  if (!employee) return { response: jsonResponse({ error: 'Unauthorized' }, 401, request, env) };
+  const [row] = await db.select('employees', `id=eq.${employee.id}&select=role`);
+  if (row?.role !== 'admin') return { response: jsonResponse({ error: 'Forbidden — admin only' }, 403, request, env) };
+  return { employee };
+}
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -52,8 +67,8 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const { response } = await requireAdmin(request, env, db);
+  if (response) return response;
 
   const [cred] = await db.select('integration_credentials', `provider=eq.github&select=access_token`);
   const [cfg] = await db.select('integration_config', `key=eq.github_default_repo&select=value`);
@@ -64,8 +79,8 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const { employee, response } = await requireAdmin(request, env, db);
+  if (response) return response;
 
   const body = await request.json().catch(() => ({}));
   const apiKey = (body.api_key || '').trim();
@@ -77,7 +92,7 @@ export async function onRequestPost(context) {
 
   // api_key is optional ONLY when a token is already saved (so the connected card
   // can change just the default repo without re-pasting the token).
-  const [existing] = await db.select('integration_credentials', `provider=eq.github&select=access_token`);
+  const [existing] = await db.select('integration_credentials', `provider=eq.github&select=access_token,connected_at`);
   if (!apiKey && !existing?.access_token) {
     return jsonResponse({ error: 'api_key is required' }, 400, request, env);
   }
@@ -107,7 +122,8 @@ export async function onRequestPost(context) {
       access_token: apiKey,
       environment: 'production',
       connected_by: employee.id,
-      connected_at: new Date().toISOString(),
+      // Preserve the original connect date when replacing an existing token.
+      connected_at: existing?.connected_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
   }
@@ -123,8 +139,8 @@ export async function onRequestDelete(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const { response } = await requireAdmin(request, env, db);
+  if (response) return response;
 
   await db.delete('integration_credentials', `provider=eq.github`);
   return jsonResponse({ disconnected: true }, 200, request, env);
