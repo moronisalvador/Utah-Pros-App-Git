@@ -1,5 +1,5 @@
 # UPR Platform — Claude Code Project Context
-**Last updated:** March 28, 2026
+**Last updated:** July 1, 2026
 **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador
 **Repo:** moronisalvador/Utah-Pros-App-Git
@@ -114,6 +114,10 @@ const {
 
 ## File Structure (key files)
 
+Not exhaustive — `src/pages/` has 41 files and `src/pages/tech/` has 22; this lists the ones worth
+knowing by name plus every distinct feature area so nothing gets silently re-built. When in doubt,
+`Glob src/pages/**/*.jsx` before assuming a page doesn't exist.
+
 ```
 src/
   App.jsx                   — Routes: AdminRoute, FeatureRoute, DevRoute wrappers
@@ -127,23 +131,40 @@ src/
     DevTools.jsx            — Dev tools (Moroni-only, 7 tabs)
     Settings.jsx            — Good pattern reference for tabbed pages
     Admin.jsx               — Good pattern reference for tables + forms
+    AdminFeedback.jsx, AdminDemoSheetBuilder.jsx — admin sub-pages
+    Help.jsx, Legal.jsx, Login.jsx, SetPassword.jsx, SignPage.jsx — misc/auth
+    ClaimsList.jsx, ClaimPage.jsx, ClaimCollectionPage.jsx — claims
+    Jobs.jsx, JobPage.jsx, Production.jsx — jobs / production board
+    Schedule.jsx, ScheduleTemplates.jsx — office scheduling
+    Customers.jsx, CustomerPage.jsx, Leads.jsx, Marketing.jsx, Conversations.jsx — CRM / messaging
+    Estimates.jsx, EstimateEditor.jsx, InvoiceEditor.jsx, Collections.jsx,
+    PaymentSettings.jsx, TimeTracking.jsx, OOPPricing.jsx — billing/QBO surface, see BILLING-CONTEXT.md
+    HomebuildingAnalysis.jsx, NewBuildSimulator.jsx — homebuilding AI (Moroni-only)
+    EncircleImport.jsx — manual Encircle claim import UI
   pages/tech/
     TechDash.jsx            — Field tech dashboard: sticky greeting, active cards (client name + progress bar + Photo/Notes/Clock In), timeline future rows, upcoming 7-day preview when empty, snap-first photo flow
     TechSchedule.jsx        — Field tech 14-day schedule: division-colored left borders, time+duration columns, accent today header, jump-to-today FAB
     TechTasks.jsx           — Field tech tasks: SVG completion ring, swipe-to-complete with "Done" text, collapsible job groups with mini progress bars
     TechClaims.jsx          — Field tech claims: Encircle-style rows, 48px search bar, accent-colored addresses, division pills
     TechAppointment.jsx     — Appointment detail: division gradient hero, 4-button action bar (Navigate/Call/Message/Photo), 2-col photo grid, pinch-to-zoom lightbox, snap-first photo with optional caption
+    TechEditAppointment.jsx, TechNewAppointment.jsx, TechNewJob.jsx, TechNewCustomer.jsx, TechNewEvent.jsx — field create/edit sheets
+    TechJobDetail.jsx, TechJobAlbum.jsx, TechJobDocuments.jsx — job detail + photo album + doc list
+    TechClaimDetail.jsx, TechClaimAlbum.jsx, TechRoomDetail.jsx — claim detail + photo album + per-room detail
+    TechDemoSheet.jsx, TechOOPPricing.jsx — field tools (scope sheet builder, out-of-pocket pricing)
+    TechMore.jsx, TechHelp.jsx, techHelpContent.jsx, TechFeedback.jsx — more menu, in-app help, feedback
   components/
     Layout.jsx              — App shell — owns toasts, sidebar, bottom bar
     TechLayout.jsx          — Field tech app shell — bottom nav, no sidebar
     Sidebar.jsx             — Nav — feature-flag aware, Moroni-only Dev Tools link
     ErrorBoundary.jsx       — Wraps every route
+    collections/, tech/, overview/ — feature-scoped component subfolders (billing/AR, field-tech UI, dashboard widgets)
 
 functions/
-  api/                      — Cloudflare Pages Functions (workers)
+  api/                      — Cloudflare Pages Functions (workers) — see Workers section below
   lib/
     supabase.js             — Worker-side Supabase client (different from frontend)
     cors.js                 — jsonResponse(data, status, request, env)
+    email.js                — sendEmail() via Resend — used by every transactional email worker
 ```
 
 ---
@@ -452,7 +473,7 @@ const handleDelete = async (item) => {
 
 **Branches → environments**
 - **Feature branch** — develop here. Cloudflare Pages builds a preview deploy per branch/PR.
-- **`main`** — production (utahpros.app). Cloudflare deploys `main` to the live site, and the Capacitor iOS app loads `/tech/*` from that same build (see `CAPACITOR-TASK.md`).
+- **`main`** — production (utahpros.app). Cloudflare deploys `main` to the live site, and the Capacitor iOS app (`ios/`) loads `/tech/*` from that same build (see `UPR-Web-Context.md` for the iOS build details).
 - **`dev`** — staging (dev.utahpros.app). Cloudflare auto-deploys `dev` on every push, so push feature work here (or merge a feature branch into it) to test on a real deploy with the staging **Preview** env vars before it reaches production. `dev` is an **independent** branch — it is no longer force-synced from `main`.
 
 **Shipping to production (the only sanctioned path)**
@@ -500,17 +521,17 @@ Located in `functions/api/`. Each worker exports a `onRequest` handler.
 Worker-side Supabase client: `import { createClient } from '../lib/supabase.js'`
 CORS: `import { jsonResponse, corsHeaders } from '../lib/cors.js'`
 
-**Active workers (10):**
-- `send-message.js` — outbound SMS
-- `twilio-webhook.js` — inbound SMS
-- `twilio-status.js` — delivery receipts
-- `process-scheduled.js` — cron, processes scheduled_messages
-- `sync-encircle.js` — pulls Encircle claims → jobs + contacts
-- `admin-users.js` — employee invite / auth management
-- `send-esign.js` — create sign request + send email via Resend (`functions/lib/email.js`)
-- `submit-esign.js` — process signature, generate PDF, upload to storage
-- `resend-esign.js` — resend esign email for existing pending request
-- `track-open.js` — email open tracking pixel
+**Active workers (58 files in `functions/api/`, grouped):**
+- **SMS/messaging:** `send-message.js` (outbound), `twilio-webhook.js` (inbound), `twilio-status.js` (delivery receipts), `process-scheduled.js` (cron, processes `scheduled_messages`)
+- **Encircle:** `sync-encircle.js` (pulls claims → jobs + contacts), `sync-claim-to-encircle.js`, `encircle-import.js`, `encircle-search.js`, `encircle-upload.js`, `encircle-rooms.js`, `encircle-backfill.js`
+- **E-sign:** `send-esign.js` (create + email via Resend), `submit-esign.js` (process signature, generate PDF, upload to storage), `resend-esign.js`, `track-open.js` (open tracking pixel)
+- **QuickBooks Online (see `BILLING-CONTEXT.md`):** `quickbooks-connect.js`, `quickbooks-callback.js`, `qbo-query.js`, `qbo-invoice.js`, `qbo-estimate.js`, `qbo-payment.js`, `qbo-charge.js`, `qbo-sync-customer.js`, `qbo-webhook.js`, `qbo-payments-sync.js`
+- **Stripe:** `stripe-pay-link.js`, `stripe-webhook.js`, `stripe-accounts.js`, `stripe-payout.js`
+- **Google Drive:** `google-drive-connect.js`, `google-drive-callback.js`, `google-drive-token.js`, `google-drive-disconnect.js`, `google-drive-import.js` (see `GOOGLE-INTEGRATIONS-HANDOFF.md`)
+- **Google Calendar:** `google-calendar-sync.js`, `google-calendar-resync.js`
+- **Homebuilding AI:** `homebuilding-chat.js`, `homebuilding-estimate.js`, `homebuilding-plan-tune.js`, `homebuilding-build-plan-pdf.js`
+- **Documents/reports:** `demo-sheet-pdf.js`, `send-demo-sheet.js`, `generate-water-loss-report.js`, `analyze-xactimate.js`
+- **Admin/misc:** `admin-users.js` (employee invite/auth), `billing-2fa.js`, `send-push.js`, `collections-chat.js`
 
 **All transactional email** (esign send/resend/confirmation, scope-sheet, water-loss report, billing 2FA) routes through **Resend** via the shared `functions/lib/email.js` `sendEmail()` helper — no other email provider. For sender identity, SPF/DKIM/DMARC, and inbox-deliverability guidance see **`EMAIL-DELIVERABILITY.md`**. (Invoice emails are sent by **QuickBooks**, not Resend; auth emails — password reset/invite — are sent by **Supabase**, now via its Resend SMTP integration.)
 
