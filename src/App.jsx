@@ -77,6 +77,8 @@ const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
 const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
+const CrmLayout = lazyRetry(() => import('@/components/CrmLayout'));
+const CrmRoadmap = lazyRetry(() => import('@/pages/crm/CrmRoadmap'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -316,6 +318,17 @@ function WebRoutes() {
         <Route path="import/encircle" element={
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
         } />
+
+        {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each
+            phase is ready for wider rollout (page:crm dev_only_user_id flag). */}
+        <Route path="crm" element={
+          <FeatureRoute flag="page:crm">
+            <ErrorBoundary section="CRM"><CrmLayout /></ErrorBoundary>
+          </FeatureRoute>
+        }>
+          <Route index element={<Navigate to="roadmap" replace />} />
+          <Route path="roadmap" element={<CrmRoadmap />} />
+        </Route>
 
         {/* Tools */}
         <Route path="tools/oop-pricing" element={
