@@ -288,6 +288,27 @@ export async function createCustomer(env, payload) {
   return data.Customer;
 }
 
+// On-demand: ensure a billable contact exists as a QuickBooks customer, at the
+// moment it's actually invoiced/estimated rather than when it was first added.
+// Reuses the qbo-sync-customer worker (the same create/dedup/write-back logic
+// the contact-insert trigger has always used) via the deployment's own origin,
+// authenticated with the shared webhook secret. Best-effort — the caller
+// re-reads qbo_customer_id and raises its own clear error if it's still missing.
+export async function ensureQboCustomer(request, env, contactId) {
+  if (!contactId) return false;
+  try {
+    const url = new URL('/api/qbo-sync-customer', request.url);
+    const res = await fetch(url.toString(), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': env.QBO_WEBHOOK_SECRET || '' },
+      body:    JSON.stringify({ contact_id: contactId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ── Invoices (Phase 2) ───────────────────────────────────────────────────────
 // UPR division → QBO line mapping (Item Id + Class name). Item Ids are stable in
 // QBO; Class Id is resolved at runtime by name. Class only for mit/recon for now.
