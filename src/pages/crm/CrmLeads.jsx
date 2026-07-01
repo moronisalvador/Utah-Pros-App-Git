@@ -25,7 +25,9 @@
  *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC),
  *                       inbound_leads (embeds contacts), lead_pipeline_stage,
  *                       get_contact_activity RPC (opened lead's timeline)
- *              writes → lead_pipeline_stage (via move_lead_to_stage RPC)
+ *              writes → lead_pipeline_stage (via move_lead_to_stage RPC),
+ *                       inbound_leads + contacts (via create_manual_lead RPC —
+ *                       the "+ New lead" manual-entry button)
  *
  * NOTES / GOTCHAS:
  *   - A lead with no lead_pipeline_stage row yet reads as sitting in the
@@ -42,6 +44,7 @@ import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
 
 const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
@@ -61,6 +64,7 @@ export default function CrmLeads() {
   const [stagePositions, setStagePositions] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [showNew, setShowNew] = useState(false);
 
   const [dragLead, setDragLead] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
@@ -120,17 +124,23 @@ export default function CrmLeads() {
   return (
     <div className="crm-page crm-page-wide">
       <div className="crm-page-header">
-        <h1 className="crm-page-title">Leads</h1>
-        <p className="crm-page-subtitle">
-          {leads.length} lead{leads.length === 1 ? '' : 's'} in pipeline
-          {pipelineValue.total > 0 ? ` · ${formatMoney(pipelineValue.total)} weighted` : ''}
-        </p>
+        <div className="crm-page-header-row">
+          <div>
+            <h1 className="crm-page-title">Leads</h1>
+            <p className="crm-page-subtitle">
+              {leads.length} lead{leads.length === 1 ? '' : 's'} in pipeline
+              {pipelineValue.total > 0 ? ` · ${formatMoney(pipelineValue.total)} weighted` : ''}
+            </p>
+          </div>
+          <button className="crm-btn crm-btn-primary" onClick={() => setShowNew(true)}>+ New lead</button>
+        </div>
       </div>
 
       {leads.length === 0 ? (
         <div className="crm-empty-state">
           <IconLeads className="crm-empty-icon" />
-          <p>No leads yet. New calls and web-form leads from Call Log will show up here.</p>
+          <p>No leads yet. Calls and web-form leads from Call Log land here automatically — or add one by hand with <strong>+ New lead</strong>.</p>
+          <button className="crm-btn crm-btn-primary" onClick={() => setShowNew(true)}>+ New lead</button>
         </div>
       ) : (
         <div className="crm-board">
@@ -190,6 +200,77 @@ export default function CrmLeads() {
           db={db}
         />
       )}
+
+      {showNew && (
+        <NewLeadPanel
+          db={db}
+          createdBy={employee?.id || null}
+          onClose={() => setShowNew(false)}
+          onCreated={() => { setShowNew(false); ok('Lead added'); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   NewLeadPanel — add a lead by hand (walk-in, referral, a handed-over number)
+   ═══════════════════════════════════════════════════ */
+function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [source, setSource] = useState('');
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const save = useCallback(async () => {
+    if (!phone.trim()) { err('A phone number is required'); return; }
+    setSaving(true);
+    try {
+      await db.rpc('create_manual_lead', {
+        p_phone: phone.trim(),
+        p_name: name.trim() || null,
+        p_source: source.trim() || 'Manual entry',
+        p_value: value.trim() ? Number(value) : null,
+        p_created_by: createdBy,
+      });
+      onCreated();
+    } catch {
+      err('Failed to add the lead');
+      setSaving(false);
+    }
+  }, [db, phone, name, source, value, createdBy, onCreated]);
+
+  return (
+    <div className="crm-panel-overlay" onClick={onClose}>
+      <div className="crm-panel" onClick={e => e.stopPropagation()}>
+        <div className="crm-panel-header">
+          <div className="crm-panel-title">New lead</div>
+          <button className="crm-btn crm-btn-ghost crm-panel-close" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="crm-panel-section">
+          <label className="crm-panel-label" htmlFor="new-lead-name">Name</label>
+          <input id="new-lead-name" className="crm-input" value={name} onChange={e => setName(e.target.value)} placeholder="Jane Homeowner" autoFocus />
+        </div>
+        <div className="crm-panel-section">
+          <label className="crm-panel-label" htmlFor="new-lead-phone">Phone <span className="crm-required">*</span></label>
+          <input id="new-lead-phone" className="crm-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(801) 555-0100" inputMode="tel" />
+        </div>
+        <div className="crm-panel-section">
+          <label className="crm-panel-label" htmlFor="new-lead-source">Source</label>
+          <input id="new-lead-source" className="crm-input" value={source} onChange={e => setSource(e.target.value)} placeholder="Referral, Walk-in, Website…" />
+        </div>
+        <div className="crm-panel-section">
+          <label className="crm-panel-label" htmlFor="new-lead-value">Value</label>
+          <input id="new-lead-value" className="crm-input" value={value} onChange={e => setValue(e.target.value)} placeholder="0" inputMode="decimal" />
+        </div>
+
+        <div className="crm-panel-actions">
+          <button className="crm-btn crm-btn-primary" onClick={save} disabled={saving}>{saving ? 'Adding…' : 'Add lead'}</button>
+          <button className="crm-btn crm-btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
