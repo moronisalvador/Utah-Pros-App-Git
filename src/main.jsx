@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { buildResetUrl } from './lib/staleChunkReload.js';
 import './index.css';
 
 // Bumped to force a new bundle hash when the Cloudflare edge cached a
@@ -41,14 +42,31 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // When we re-enable caching, register BELOW a navigator.serviceWorker check
 // AND verify the installed SW version before trusting it.
 if ('serviceWorker' in navigator) {
-  // Proactively unregister any SW clinging on from an older deploy, and
-  // wipe their caches so iOS Safari isn't served stale index.html-as-JS.
+  // Proactively unregister any SW clinging on from an older deploy, and wipe its
+  // caches so the browser isn't served stale index.html-as-JS. If a registration
+  // ACTUALLY existed, bounce ONCE through /reset (Clear-Site-Data: "cache") so this
+  // client also drops its poisoned HTTP-cached assets and lands fully fresh — no
+  // user action. Guarded by a once-per-session flag so it can't loop.
+  const resetOnce = () => {
+    if (sessionStorage.getItem('swReset')) return;
+    sessionStorage.setItem('swReset', '1');
+    window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
+  };
   navigator.serviceWorker.getRegistrations()
-    .then((regs) => Promise.all(regs.map((r) => r.unregister().catch(() => {}))))
+    .then((regs) => {
+      const had = regs.length > 0;
+      return Promise.all(regs.map((r) => r.unregister().catch(() => {}))).then(() => had);
+    })
+    .then((had) => { if (had) resetOnce(); })
     .catch(() => {});
   if (typeof caches !== 'undefined' && caches.keys) {
     caches.keys()
       .then((keys) => Promise.all(keys.map((k) => caches.delete(k).catch(() => {}))))
       .catch(() => {});
   }
+  // Second path: the kill-switch SW postMessages after cleanup, in case navigate()
+  // is a no-op in some browsers. Same once-guard.
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e && e.data && e.data.type === 'upr-reset') resetOnce();
+  });
 }
