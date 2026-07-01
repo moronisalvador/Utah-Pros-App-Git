@@ -14,7 +14,7 @@ import {
   enablePrivacyScreen,
 } from '@/lib/nativeBiometric';
 import { realtimeClient } from '@/lib/realtime';
-import { shouldReloadForStaleChunk } from '@/lib/staleChunkReload';
+import { shouldReloadForStaleChunk, buildResetUrl } from '@/lib/staleChunkReload';
 
 // Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
 // small (esp. the native tech app, which never loads admin/desktop pages).
@@ -31,7 +31,12 @@ import TechLayout from '@/components/TechLayout';
 // flag-based guard cleared itself on every successful chunk load, so a sibling chunk loading
 // fine re-armed the reload — and a persistently-missing chunk (e.g. an edge-poisoned /crm
 // chunk) looped the page forever. A timestamp can't be cleared by unrelated successes: we
-// reload at most once per window, then surface the error to the ErrorBoundary.
+// recover at most once per window, then surface the error to the ErrorBoundary.
+//
+// Recovery goes through /reset (not a plain reload): /reset is served with
+// `Clear-Site-Data: "cache"` (public/_headers), which evicts the browser's HTTP cache of a
+// poisoned `immutable` /assets/*.js — the one thing a plain reload (or even DevTools "Clear
+// site data") can miss — then returns to the original path. Zero user action, no logout.
 const CHUNK_RELOAD_KEY = 'chunkReloadAt';
 function lazyRetry(factory) {
   return lazy(async () => {
@@ -41,10 +46,10 @@ function lazyRetry(factory) {
       const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
       if (shouldReloadForStaleChunk(Date.now(), last)) {
         sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
-        window.location.reload();
-        return new Promise(() => {}); // hold render until the reload takes over
+        window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
+        return new Promise(() => {}); // hold render until the redirect takes over
       }
-      throw err; // reloaded recently and still failing → surface to the ErrorBoundary
+      throw err; // recovered recently and still failing → surface to the ErrorBoundary
     }
   });
 }
