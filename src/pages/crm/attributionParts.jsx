@@ -58,14 +58,17 @@ export function MetricCard({ label, value, sub }) {
 }
 
 /**
- * The Leads → Estimates → Won funnel. Bar width is each stage's share of the
- * top stage; the caption shows step-over-previous conversion.
+ * The Leads → Estimates → Won funnel. Bar width is each stage's count relative
+ * to the largest stage (so bars stay meaningful even before CallRail leads
+ * accumulate, when the top stage can be 0); the caption shows step-over-previous
+ * conversion from the tested funnelStages math.
  */
 export function Funnel({ stages }) {
+  const max = Math.max(1, ...stages.map((s) => s.count));
   return (
     <div className="crm-funnel">
       {stages.map((s) => {
-        const width = s.rate_from_top == null ? 0 : Math.max(4, s.rate_from_top * 100);
+        const width = s.count > 0 ? Math.max(4, (s.count / max) * 100) : 0;
         return (
           <div key={s.key} className="crm-funnel-stage">
             <div className="crm-funnel-head">
