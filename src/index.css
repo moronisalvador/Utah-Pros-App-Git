@@ -5942,7 +5942,15 @@ tr:hover td { background: var(--bg-secondary); }
   background: none; border: none; padding: 0; margin-right: 16px; cursor: pointer;
 }
 .crm-call-row-play:disabled { color: var(--crm-text-tertiary); cursor: default; }
-.crm-call-row-audio { display: block; width: 100%; max-width: 340px; height: 36px; margin-top: 4px; }
+.crm-audio { display: flex; align-items: center; gap: var(--space-3); margin-top: 6px; max-width: 360px; }
+.crm-audio-btn {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 9999px; border: none; cursor: pointer;
+  background: var(--crm-accent); color: var(--crm-text-on-accent); font-size: 10px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.crm-audio-seek { flex: 1; min-width: 0; height: 4px; cursor: pointer; accent-color: var(--crm-accent); }
+.crm-audio-time { flex-shrink: 0; font-size: 12px; color: var(--crm-text-secondary); font-variant-numeric: tabular-nums; }
+.crm-audio-engine { display: none; }
 .crm-call-row-transcript { margin: 6px 0 0; color: var(--crm-text-secondary); font-style: italic; }
 
 .crm-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 9999px; }

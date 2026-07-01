@@ -31,7 +31,7 @@
  *     inline <audio>, since an <audio src> can't carry the Supabase auth header.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { IconCallLog } from '@/lib/crmIcons';
@@ -45,6 +45,54 @@ function formatDuration(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function fmtTime(sec) {
+  if (!sec || Number.isNaN(sec) || !Number.isFinite(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// A compact, CRM-styled audio player — a hidden <audio> engine driving our own
+// play/pause button, seek bar, and time, so it matches the CRM look instead of
+// the browser's default control chrome.
+function RecordingPlayer({ src }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) a.play(); else a.pause();
+  };
+  const onSeek = (e) => {
+    const a = audioRef.current;
+    if (a && dur) a.currentTime = (Number(e.target.value) / 100) * dur;
+  };
+
+  return (
+    <div className="crm-audio">
+      <button className="crm-audio-btn" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
+        {playing ? '❚❚' : '▶'}
+      </button>
+      <input
+        className="crm-audio-seek" type="range" min="0" max="100" step="0.1"
+        value={dur ? (cur / dur) * 100 : 0} onChange={onSeek} aria-label="Seek recording"
+      />
+      <span className="crm-audio-time">{fmtTime(cur)} / {fmtTime(dur)}</span>
+      <audio
+        ref={audioRef} src={src} autoPlay className="crm-audio-engine"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+        onEnded={() => setPlaying(false)}
+      />
+    </div>
+  );
 }
 
 function LeadRow({ lead, onStatusChange }) {
@@ -112,7 +160,7 @@ function LeadRow({ lead, onStatusChange }) {
         <div className="crm-call-row-detail">
           {lead.recording_url && (
             audioUrl
-              ? <audio className="crm-call-row-audio" controls autoPlay src={audioUrl} />
+              ? <RecordingPlayer src={audioUrl} />
               : <button className="crm-call-row-play" onClick={playRecording} disabled={loadingRec}>
                   {loadingRec ? 'Loading…' : '▶ Play recording'}
                 </button>
