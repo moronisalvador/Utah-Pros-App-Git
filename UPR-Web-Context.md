@@ -2266,6 +2266,16 @@ callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). 
                          confirm before Phase 1 starts"). Does NOT affect live form leads — those
                          arrive the same way calls do, through callrail-webhook.js's
                          mapFormPayload(), once CallRail is connected.
+callrail-recording.js — GET, authenticated. Streams a call recording INLINE so staff never leave
+                         the Call Log. `inbound_leads.recording_url` is CallRail's authenticated API
+                         endpoint (opening it directly in a browser → "HTTP Token: Access denied"),
+                         so this proxy takes a `lead_id`, reads that lead's recording_url + the
+                         CallRail API key from integration_credentials, fetches with the
+                         `Authorization: Token token="…"` header, and streams the audio back. SSRF
+                         guard: only proxies an `api.callrail.com` URL stored on that lead; the key
+                         never reaches the client. `CrmCallLog.jsx` fetches it as a blob (an
+                         `<audio src>` can't carry the Supabase Bearer) and plays it in an inline
+                         `<audio>` element.
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare

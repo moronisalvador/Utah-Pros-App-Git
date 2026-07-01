@@ -16,19 +16,27 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (useAuth → db)
- *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK)
+ *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
+ *              (getAuthHeader for the recording proxy fetch)
+ *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK);
+ *                       call recordings via GET /api/callrail-recording
  *              writes → inbound_leads.lead_status (via update_lead_status RPC)
  *
  * NOTES / GOTCHAS:
- *   - A lead with no linked contact (spam/short call, or a form with no
- *     phone) shows the raw caller_number/"Web form" instead of a name — see
- *     upsert_lead_from_callrail's contact-creation filter.
+ *   - A lead with no linked contact shows the raw caller_number/"Web form"
+ *     instead of a name — ingestion never auto-creates a contact (raw calls
+ *     stay contact-free until qualified; see upsert_lead_from_callrail).
+ *   - "Play recording" streams through /api/callrail-recording (which adds
+ *     CallRail's API key server-side); we fetch it as a blob and play it in an
+ *     inline <audio>, since an <audio src> can't carry the Supabase auth header.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 import { IconCallLog } from '@/lib/crmIcons';
+
+const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
 
 const STATUS_OPTIONS = ['new', 'contacted', 'qualified', 'booked', 'not_interested', 'spam'];
 
@@ -41,6 +49,28 @@ function formatDuration(sec) {
 
 function LeadRow({ lead, onStatusChange }) {
   const contactLabel = lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [loadingRec, setLoadingRec] = useState(false);
+
+  // Free the blob URL when the row unmounts / a new one replaces it.
+  useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
+
+  const playRecording = useCallback(async () => {
+    if (audioUrl || loadingRec) return;
+    setLoadingRec(true);
+    try {
+      // The recording lives behind CallRail's API key — fetch it through our
+      // proxy worker (which attaches the key server-side) as a blob, then play
+      // it inline. An <audio src> can't send the auth header, so we fetch first.
+      const res = await fetch(`/api/callrail-recording?lead_id=${lead.id}`, { headers: await getAuthHeader() });
+      if (!res.ok) throw new Error('recording fetch failed');
+      setAudioUrl(URL.createObjectURL(await res.blob()));
+    } catch {
+      err('Could not load the recording');
+    } finally {
+      setLoadingRec(false);
+    }
+  }, [audioUrl, loadingRec, lead.id]);
 
   return (
     <div className="crm-call-row">
@@ -72,7 +102,13 @@ function LeadRow({ lead, onStatusChange }) {
       </div>
       {(lead.recording_url || lead.transcription) && (
         <div className="crm-call-row-detail">
-          {lead.recording_url && <a href={lead.recording_url} target="_blank" rel="noreferrer">Play recording</a>}
+          {lead.recording_url && (
+            audioUrl
+              ? <audio className="crm-call-row-audio" controls autoPlay src={audioUrl} />
+              : <button className="crm-call-row-play" onClick={playRecording} disabled={loadingRec}>
+                  {loadingRec ? 'Loading…' : '▶ Play recording'}
+                </button>
+          )}
           {lead.transcription && <p className="crm-call-row-transcript">{lead.transcription}</p>}
         </div>
       )}
