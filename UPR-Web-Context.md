@@ -1057,8 +1057,13 @@ Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging,
 ## CRM Partner role (external marketing-agency accounts, Jul 1 2026)
 
 A restricted `employees.role` value (`crm_partner`) for an outside marketing agency running
-leads/advertising — sees only `/crm/*`, nothing else. Reuses the existing employee/auth pipeline
-rather than a parallel user system; scoped via 6 migrations (`supabase/migrations/20260701_crm_partner_*.sql`):
+leads/advertising — sees the **whole CRM** (`/crm/*`) **except Integrations**, nothing outside
+`/crm` at all. Reuses the existing employee/auth pipeline rather than a parallel user system;
+scoped via migrations in `supabase/migrations/20260701_crm_partner_*.sql` (an initial rollout, then
+a `_widen_access` follow-up migration that opened Settings/pipeline-config/revenue back up and
+added the Integrations-specific block — the product call landed on "full CRM minus Integrations"
+rather than the initial narrower design; read `_widen_access` first if reasoning about current
+behavior, the earlier migrations' RLS narrowing on Settings/revenue is superseded by it):
 
 - **Role/marker:** `crm_partner` added to the `employee_role` enum; `employees.is_external boolean`
   (reporting/audit marker only, not an access mechanism).
@@ -1069,45 +1074,49 @@ rather than a parallel user system; scoped via 6 migrations (`supabase/migration
   `dev_only_user_id`-locked to Moroni during the build. `isFeatureEnabled()` in
   `AuthContext.jsx` has an explicit bypass: `key === 'page:crm' && employee.role === 'crm_partner'`
   always passes, independent of the internal rollout flag.
-- **Blocking everything else — the real enforcement layer:** most non-CRM routes in `App.jsx`
-  (`/jobs`, `/claims`, `/customers`, etc.) have **no per-route guard at all** — they only rely on
-  the sidebar not showing a link, which was fine when every authenticated session was trusted
-  staff. `Layout.jsx` now has a single choke-point `useEffect` (route-change based) that redirects
-  any `crm_partner` whose path isn't under `/crm` or `/help` back to `/crm/leads`. `HomeRedirect`
-  in `App.jsx` sends `/` there too (mirrors the existing `field_tech → /tech` pattern).
+- **Blocking everything outside `/crm` — the real enforcement layer:** most non-CRM routes in
+  `App.jsx` (`/jobs`, `/claims`, `/customers`, etc.) have **no per-route guard at all** — they only
+  rely on the sidebar not showing a link, which was fine when every authenticated session was
+  trusted staff. `Layout.jsx` has a single choke-point `useEffect` (route-change based) that
+  redirects any `crm_partner` whose path isn't under `/crm` or `/help` back to `/crm/leads`.
+  `HomeRedirect` in `App.jsx` sends `/` there too (mirrors the existing `field_tech → /tech`
+  pattern).
 - **RLS tightened on existing (not new) tables** — a `crm_partner` is a real authenticated Supabase
   session and can call PostgREST directly, so frontend hiding alone isn't enough. `NOT
-  is_crm_partner(auth.uid())` was added to the `authenticated`-role policies on: `jobs`, `claims`,
+  is_crm_partner(auth.uid())` is on the `authenticated`-role policies for: `jobs`, `claims`,
   `invoices`, `estimates`, `estimate_line_items`, `invoice_line_items`, `job_costs`, `payments`,
   `vendor_invoices`, `job_supplements`, `job_time_entries`, `job_documents`, `crm_build_phases`,
-  `crm_build_stages`. `contacts` is split: SELECT is scoped to lead-linked contacts only
+  `crm_build_stages` (the internal build-roadmap tracker stays blocked — engineering artifact, not
+  a CRM business feature). `contacts` is split: SELECT is scoped to lead-linked contacts only
   (`id IN (SELECT contact_id FROM inbound_leads ...)`), INSERT/UPDATE/DELETE fully blocked.
-  `pipeline_stages` keeps SELECT open (Leads Kanban needs it) but blocks writes. `anon`-role
-  policies were deliberately left untouched (pre-existing, separate permissiveness issue, out of
-  scope here). Regression-tested via a simulated authenticated RLS session (SQL, rolled back) —
-  `crm_partner` gets 0 rows from `jobs`/`claims`/`invoices`/etc., an `office` role is unaffected.
+  `pipeline_stages` is **fully open** (`USING (true)`) per the widened scope — a partner can
+  read/write pipeline stages like any internal role. `anon`-role policies were deliberately left
+  untouched (pre-existing, separate permissiveness issue, out of scope here). Regression-tested via
+  a simulated authenticated RLS session (SQL, rolled back) both before and after the widen — a
+  partner gets 0 rows from `jobs`/`claims`/`invoices`/etc. and full `pipeline_stages` access; an
+  `office` role is unaffected throughout.
 - **RPCs also guarded** (RLS on a table doesn't stop a `SECURITY DEFINER` RPC that reads/writes it):
-  `get_crm_revenue_by_division()` returns no rows for a partner caller; `get_attribution_rollup()`
-  zeroes its `revenue` column for a partner (used by both `CrmAttribution.jsx` and
-  `CrmReports.jsx` — both hide the now-zeroed Revenue/ROAS UI for that role rather than show a
-  confusing $0); `upsert_pipeline_stage()` / `delete_pipeline_stage()` raise an exception for a
-  partner caller.
-- **UI scoping:** `Sidebar.jsx` hides the "New Job"/"Customer" quick-create buttons for this role;
-  `CrmLayout.jsx` drops the Settings tab and "Build roadmap" footer link from its own nav for this
-  role; `CrmRoadmap.jsx`/`CrmSettings.jsx` add a redirect-on-render as defense-in-depth beneath the
-  layout-level hiding; `CrmIntegrations.jsx` takes a `readOnly` prop (status only, no
-  connect/disconnect/webhook-secret controls) for this role — the CallRail/Google Ads/Meta Ads
-  connect workers themselves are not yet role-gated server-side (frontend-only for now, flagged as
-  a follow-up since these are shared platform OAuth credentials).
+  `get_crm_revenue_by_division()` and `get_attribution_rollup()` show **real revenue/ROAS** to a
+  partner (the initial masking was reverted in `_widen_access`); `upsert_pipeline_stage()` /
+  `delete_pipeline_stage()` also had their partner-block reverted — a partner can fully manage
+  pipeline stages. The one RPC still guarded for this role: `get_integration_status()` returns zero
+  rows for a `crm_partner` caller (matches the Integrations page being fully off-limits).
+- **UI scoping:** `Sidebar.jsx` hides the "New Job"/"Customer" quick-create buttons for this role.
+  `CrmLayout.jsx` hides only the **Integrations** nav item and the "Build roadmap" footer link for
+  this role — Settings and everything else in the CRM sidebar is visible. `CrmIntegrations.jsx`
+  redirects a `crm_partner` straight to `/crm/leads` (full block, not read-only) — the
+  CallRail/Google Ads/Meta Ads connect workers themselves are not yet role-gated server-side
+  (frontend + RPC block only for now; the workers are a good follow-up hardening target since these
+  are shared platform OAuth credentials). `CrmRoadmap.jsx` keeps its own redirect-on-render guard as
+  defense-in-depth beneath the layout-level hiding (roadmap is the only other page still blocked).
 - **Account creation:** `Admin.jsx` → Employees tab — `crm_partner` added to the role dropdown, an
   `is_external` checkbox added to the create/edit form. `functions/api/admin-users.js` (POST/PATCH)
   forwards `is_external` through to the `employees` insert/update alongside the existing fields.
 - **Known gap / explicitly descoped:** `inbound_leads.caller_number` (raw customer phone) is not
   masked for a partner — both `CrmLeads.jsx` and `CrmCallLog.jsx` read `inbound_leads` via a raw
   `db.select`, not an RPC, so masking would need a view or RPC rewrite of an already-live read
-  path. Flagged for Moroni to confirm the masking approach before building it; `get_crm_build_progress()`
-  (used by `CrmRoadmap.jsx`) also isn't role-gated server-side — the roadmap page relies on the
-  frontend redirect only (low sensitivity: build-status text, not customer/financial data).
+  path. Flagged for Moroni to confirm the masking approach before building it — this remains
+  unmasked under the wider "whole CRM" scope too.
 
 ---
 
