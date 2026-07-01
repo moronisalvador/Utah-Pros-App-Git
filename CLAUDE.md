@@ -136,5 +136,14 @@ useEffect(() => { load(); }, [load]);
 
 A `*-TASK.md` in repo root = an active one-shot build task: read first, follow its build order, then on completion update `UPR-Web-Context.md` and `git rm` it. Does **not** apply to running punch lists that happen to match the naming (e.g. an ongoing reconciliation to-do) — those stay and update in place, never auto-deleted.
 
+## CRM Phase Workflow
+
+The new CRM side ships in sequential phases, each its own branch/PR:
+- **Branch per phase:** `crm/phase-N-short-desc`, cut from `dev` (not `main`).
+- **Never start phase N+1 until phase N's PR has merged into `dev`.** Phases build on each other — no parallel/out-of-order work.
+- **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR.
+
+⚠️ `crm_build_phases` does not exist yet as of this writing (checked live via MCP `upr_schema` — not in the table list). Create it with a migration (Rule 7) before phase 1 ends, or confirm the intended name/shape if it's meant to live elsewhere.
+
 ---
 *Full DB schema/RPCs/iOS build → `UPR-Web-Context.md` (not duplicated here — verify columns live via MCP schema tools or `information_schema.columns`, not memory). UI/design tokens → `UPR-Design-System.md`. Billing/QBO/Xactimate → `BILLING-CONTEXT.md`. Encircle API → `ENCIRCLE_API_REFERENCE.md`. Email deliverability → `EMAIL-DELIVERABILITY.md`. QBO sync internals → `UPR-QBO-SYNC-PROTOCOL.md`.*
