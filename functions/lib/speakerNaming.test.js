@@ -20,7 +20,10 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities } from './speakerNaming.js';
+import {
+  buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities,
+  needsResegment, buildResegmentPrompt, parseResegmentedTurns,
+} from './speakerNaming.js';
 
 describe('buildSpeakerPrompt', () => {
   it('formats turns as "<speaker>: <text>" lines', () => {
@@ -118,5 +121,65 @@ describe('applySpeakerIdentities', () => {
   it('returns the analysis unchanged when identities is null/invalid', () => {
     expect(applySpeakerIdentities(analysis, null)).toBe(analysis);
     expect(applySpeakerIdentities(null, identities)).toBeNull();
+  });
+});
+
+describe('needsResegment', () => {
+  it('is true when diarization collapsed everything into one speaker', () => {
+    const collapsed = { turns: [
+      { speaker: 'Speaker 1', text: 'Thank you for calling.' },
+      { speaker: 'Speaker 1', text: 'Hi, I have a flood.' },
+      { speaker: 'Speaker 1', text: 'Okay, where are you located?' },
+    ] };
+    expect(needsResegment(collapsed)).toBe(true);
+  });
+  it('is false when two or more distinct speakers are present', () => {
+    const ok = { turns: [
+      { speaker: 'Speaker 1', text: 'Thank you for calling.' },
+      { speaker: 'Speaker 2', text: 'Hi, I have a flood.' },
+    ] };
+    expect(needsResegment(ok)).toBe(false);
+  });
+  it('is false when there is nothing to split', () => {
+    expect(needsResegment({ turns: [] })).toBe(false);
+    expect(needsResegment(null)).toBe(false);
+  });
+});
+
+describe('buildResegmentPrompt', () => {
+  it('includes the transcript text', () => {
+    const p = buildResegmentPrompt('Speaker 1: Hi there. How can I help?');
+    expect(p).toContain('Speaker 1: Hi there. How can I help?');
+    expect(p.length).toBeGreaterThan(20);
+  });
+  it('returns "" for empty input', () => {
+    expect(buildResegmentPrompt('')).toBe('');
+    expect(buildResegmentPrompt(null)).toBe('');
+  });
+});
+
+describe('parseResegmentedTurns', () => {
+  it('parses a role-labelled turn list into {speaker, role, text} with names', () => {
+    const raw = '{"turns":[{"role":"agent","name":"Ben","text":"Thanks for calling."},{"role":"customer","name":"Colton","text":"I have a flood."}],"caller_name":"Colton"}';
+    const out = parseResegmentedTurns(raw);
+    expect(out.turns).toEqual([
+      { speaker: 'Ben', role: 'agent', text: 'Thanks for calling.' },
+      { speaker: 'Colton', role: 'customer', text: 'I have a flood.' },
+    ]);
+    expect(out.caller_name).toBe('Colton');
+  });
+  it('falls back to role labels when a turn has no name, and tolerates fences/prose', () => {
+    const raw = 'Here you go:\n```json\n{"turns":[{"role":"agent","name":null,"text":"Hello."},{"role":"customer","text":"Hi."}]}\n```';
+    const out = parseResegmentedTurns(raw);
+    expect(out.turns).toEqual([
+      { speaker: 'Agent', role: 'agent', text: 'Hello.' },
+      { speaker: 'Customer', role: 'customer', text: 'Hi.' },
+    ]);
+    expect(out.caller_name).toBeNull();
+  });
+  it('returns null on garbage or an empty turn list', () => {
+    expect(parseResegmentedTurns('not json')).toBeNull();
+    expect(parseResegmentedTurns('{"turns":[]}')).toBeNull();
+    expect(parseResegmentedTurns(null)).toBeNull();
   });
 });
