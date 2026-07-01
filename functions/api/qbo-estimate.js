@@ -14,7 +14,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createEstimate, updateEstimate, deleteEstimate, sendEstimate } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, findClassId, createEstimate, updateEstimate, deleteEstimate, sendEstimate, ensureQboCustomer } from '../lib/quickbooks.js';
 
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
@@ -108,9 +108,15 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const contact = contactId
+    let contact = contactId
       ? (await db.select('contacts', `id=eq.${contactId}&select=qbo_customer_id,name&limit=1`))?.[0]
       : null;
+    // On-demand: create the QBO customer now (when actually estimated) if it
+    // doesn't exist yet — the contact-insert auto-sync trigger is being retired.
+    if (contactId && !contact?.qbo_customer_id) {
+      await ensureQboCustomer(request, env, contactId);
+      contact = (await db.select('contacts', `id=eq.${contactId}&select=qbo_customer_id,name&limit=1`))?.[0];
+    }
     if (!contact?.qbo_customer_id) throw new Error('Estimate contact has no QuickBooks customer — sync the client first');
 
     // Division comes from the estimate's intended type (pre-sale); fall back to a linked
