@@ -2339,3 +2339,50 @@ logged-in Moroni session this sandbox doesn't have. Flip them via
 `set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
 Cloudflare preview and a real CallRail connection.
 
+## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
+
+A logged-out, public mirror of `/crm/roadmap` — no auth, no `page:crm` flag, no CRM shell. Built so
+anyone with the link (not just Moroni) can see build progress without an account. Deliberately the
+**only** public CRM surface; every other `/crm/*` route stays behind `<FeatureRoute flag="page:crm">`
+in `src/App.jsx`.
+
+**Route**: `src/pages/Status.jsx`, registered as a top-level public route in `WebRoutes()`
+(`src/App.jsx`, alongside `/login`/`/privacy`/`/terms`) — outside `ProtectedRoute`/`Layout` entirely,
+so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/Capacitor only ships
+`/login` + `/tech/*`, same as `/privacy`/`/terms`).
+
+**Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
+imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
+session (CLAUDE.md rule 3's documented carve-out for public/bootstrapping calls; same pattern
+`Login.jsx` already uses for its dev-mode employee picker). No new migration was needed:
+`get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
+`supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
+`information_schema.routine_privileges` before building, not assumed. The underlying
+`crm_build_phases`/`crm_build_stages` RLS policies are also `anon`-permissive, though moot since the
+RPC is `SECURITY DEFINER`. The RPC only ever returns phase/stage metadata (key, title, status,
+done/total counts) — no contact/lead/financial data — so nothing here needed extra redaction.
+
+**Shared rendering**: the phase/stage card markup was extracted from `CrmRoadmap.jsx` into
+`src/components/BuildProgressPhaseCard.jsx` (a plain presentational component, no data fetching) so
+`/status` and `/crm/roadmap` render identically from the same code, not two hand-synced copies. CSS
+is the same pre-existing `.crm-roadmap-*` block (plain app tokens, not `.crm-shell`'s `--crm-*`
+tokens — this card renders outside the CRM shell). New CSS for the page's own outer shell only:
+`.status-page`/`.status-page-inner` in `src/index.css`, styled after `.login-page` (dark surround,
+centered column) but scrollable-width instead of a fixed-width card, since it holds a full phase
+list; a `@media (max-width: 768px)` block adjusts padding only, per CLAUDE.md rule 5.
+
+**Test-first**: `supabase/tests/crm_status_public_access.test.js` — integration test (vitest, same
+`describe.skipIf(!hasCreds)` self-skip pattern as the Phase 0/1 suites) asserting
+`get_crm_build_progress()` succeeds for an anon-key-only caller and returns the expected
+`{ phases, overall_done, overall_total }` shape, plus a guard that the payload never contains
+email/token/password-shaped strings — the regression check for "the RPC is still granted to anon."
+Committed before `Status.jsx`.
+
+**Verification this session**: `npm test`/`build`/`eslint` (changed files) all pass. Browser-verified
+with Playwright — confirmed the route renders with no login redirect and the correct title/subtitle
+against the real dev server, and (route-mocked, since this sandbox's network policy blocks direct
+browser egress to Supabase — MCP tool calls use a different channel) confirmed the phase/stage cards
+render pixel-identical to `/crm/roadmap` at both desktop and mobile (390px) widths. The anon-grant
+data path itself was verified separately via direct SQL against the live `dev`/`main` shared Supabase
+project (`information_schema.routine_privileges`), not through the browser.
+

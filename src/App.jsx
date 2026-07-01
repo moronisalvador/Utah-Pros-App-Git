@@ -65,6 +65,7 @@ const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
+const Status = lazyRetry(() => import('@/pages/Status'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
@@ -252,6 +253,10 @@ function WebRoutes() {
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
+          visitor via the anon-granted get_crm_build_progress RPC. The ONLY
+          public CRM surface; every other /crm/* route stays behind page:crm. */}
+      <Route path="/status" element={<ErrorBoundary section="Status"><Status /></ErrorBoundary>} />
 
 
       {/* Tech layout — field_tech role, no sidebar */}
