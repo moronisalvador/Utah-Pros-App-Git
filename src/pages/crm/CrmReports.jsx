@@ -41,11 +41,7 @@ const DIVISION_LABELS = {
 };
 
 export default function CrmReports() {
-  const { db, employee } = useAuth();
-  // Revenue is real invoiced-dollar data — get_attribution_rollup /
-  // get_crm_revenue_by_division already return 0 for a crm_partner caller,
-  // but hide the revenue UI outright rather than show a confusing "$0".
-  const hideRevenue = employee?.role === 'crm_partner';
+  const { db } = useAuth();
   const [range, setRange] = useState('all');
   const [raw, setRaw] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -97,40 +93,38 @@ export default function CrmReports() {
         <>
           <div className="crm-card">
             <h2 className="crm-section-title">Source ROI</h2>
-            <ChannelTable rows={rows} hideRevenue={hideRevenue} />
+            <ChannelTable rows={rows} />
           </div>
 
-          {!hideRevenue && (
-            <div className="crm-card">
-              <h2 className="crm-section-title">Won revenue by division</h2>
-              {divs.length === 0 ? (
-                <p className="crm-note">No won jobs in this window.</p>
-              ) : (
-                <div className="crm-table-wrap">
-                  <table className="crm-table">
-                    <thead>
-                      <tr>
-                        <th>Division</th>
-                        <th className="num">Won jobs</th>
-                        <th className="num">Revenue</th>
-                        <th className="num">Share</th>
+          <div className="crm-card">
+            <h2 className="crm-section-title">Won revenue by division</h2>
+            {divs.length === 0 ? (
+              <p className="crm-note">No won jobs in this window.</p>
+            ) : (
+              <div className="crm-table-wrap">
+                <table className="crm-table">
+                  <thead>
+                    <tr>
+                      <th>Division</th>
+                      <th className="num">Won jobs</th>
+                      <th className="num">Revenue</th>
+                      <th className="num">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {divs.map((d) => (
+                      <tr key={d.division}>
+                        <td>{DIVISION_LABELS[d.division] || d.division}</td>
+                        <td className="num">{d.won_jobs.toLocaleString('en-US')}</td>
+                        <td className="num">{fmtMoney(d.revenue)}</td>
+                        <td className="num">{divTotal > 0 ? fmtPct(d.revenue / divTotal) : '—'}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {divs.map((d) => (
-                        <tr key={d.division}>
-                          <td>{DIVISION_LABELS[d.division] || d.division}</td>
-                          <td className="num">{d.won_jobs.toLocaleString('en-US')}</td>
-                          <td className="num">{fmtMoney(d.revenue)}</td>
-                          <td className="num">{divTotal > 0 ? fmtPct(d.revenue / divTotal) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           <div className="crm-card">
             <h2 className="crm-section-title">Funnel conversion</h2>
@@ -147,12 +141,10 @@ export default function CrmReports() {
                 <div className="crm-metric-label">Lead → won</div>
                 <div className="crm-metric-value">{fmtPct(totals.lead_to_won_rate)}</div>
               </div>
-              {!hideRevenue && (
-                <div className="crm-metric">
-                  <div className="crm-metric-label">Revenue / won job</div>
-                  <div className="crm-metric-value">{totals.won_jobs > 0 ? fmtMoney(totals.revenue / totals.won_jobs) : '—'}</div>
-                </div>
-              )}
+              <div className="crm-metric">
+                <div className="crm-metric-label">Revenue / won job</div>
+                <div className="crm-metric-value">{totals.won_jobs > 0 ? fmtMoney(totals.revenue / totals.won_jobs) : '—'}</div>
+              </div>
             </div>
           </div>
         </>
