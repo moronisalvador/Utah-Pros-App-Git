@@ -1,22 +1,14 @@
 // POST /api/stripe-payout — same-day deposit (Stripe Instant Payout) to the configured
 // debit card. Exposed as the "Pay out now" button in Payment Settings.
 //
-// Auth: Supabase Bearer (UI gates to admins/managers). Dormant-safe: 503 until keys exist.
+// Auth: Supabase Bearer, enforced server-side to admin/manager (BILLING_ROLES) —
+// the UI hides this button, but that is not a security boundary. Dormant-safe: 503 until keys exist.
 // Body (optional): { "amount": <dollars> } — defaults to the full instant-available balance.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireRole, BILLING_ROLES } from '../lib/auth.js';
 import { stripeConfigured, getInstantAvailable, createPayout } from '../lib/stripe.js';
-
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -25,7 +17,8 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!stripeConfigured(env)) return jsonResponse({ error: 'Stripe not configured' }, 503, request, env);
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await requireRole(request, env, BILLING_ROLES);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }

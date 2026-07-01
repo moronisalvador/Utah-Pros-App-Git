@@ -19,6 +19,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireEmployee } from '../lib/auth.js';
 import { qboFetch } from '../lib/quickbooks.js';
 
 // ─── SECTION: Config ──────────────
@@ -38,13 +39,8 @@ const fmtMoney = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('
 
 // ─── SECTION: Auth + logging ──────────────
 async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
+  const auth = await requireEmployee(request, env);
+  return auth.ok;
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {

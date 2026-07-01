@@ -12,6 +12,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireEmployee } from '../lib/auth.js';
 import {
   getConnection,
   mapContactToCustomer,
@@ -24,14 +25,8 @@ const QUALIFYING_ROLES = ['homeowner', 'property_manager', 'tenant'];
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
   if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
+  const auth = await requireEmployee(request, env);
+  return auth.ok;
 }
 
 function qualifies(c) {
