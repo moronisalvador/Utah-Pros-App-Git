@@ -51,7 +51,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
-import { resolveCallRailAccountId } from '../lib/callrail-api.js';
+import { resolveCallRailAccountId, transcriptText } from '../lib/callrail-api.js';
 
 const MAX_PAGES = 50; // hard cap — guards against a runaway pagination loop
 
@@ -78,7 +78,7 @@ function mapCall(c) {
     p_medium:          firstOf(c, ['medium']),
     p_campaign:        firstOf(c, ['campaign']),
     p_recording_url:   firstOf(c, ['recording']),
-    p_transcription:   firstOf(c, ['transcription']),
+    p_transcription:   transcriptText(firstOf(c, ['transcription'])),
     p_form_data:       null,
     p_lead_status:     firstOf(c, ['lead_status']) || 'new',
     p_value:           firstOf(c, ['value']),
@@ -121,7 +121,10 @@ export async function onRequestPost(context) {
   try {
     while (true) {
       const res = await fetch(
-        `https://api.callrail.com/v3/a/${accountId}/calls.json?start_date=${startDate}&per_page=100&page=${page}`,
+        // fields=transcription — CallRail omits the transcript from the default
+        // list response; opt into it (Conversation Intelligence). Unverified
+        // field name against the live account; harmless if ignored.
+        `https://api.callrail.com/v3/a/${accountId}/calls.json?start_date=${startDate}&per_page=100&page=${page}&fields=transcription`,
         { headers: { 'Authorization': `Token token="${apiKey}"` } }
       );
       if (!res.ok) {

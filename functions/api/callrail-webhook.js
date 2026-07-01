@@ -47,6 +47,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { transcriptText } from '../lib/callrail-api.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -81,7 +82,7 @@ function mapCallPayload(body) {
     p_medium:          firstOf(body, ['medium', 'utm_medium']),
     p_campaign:        firstOf(body, ['campaign', 'utm_campaign']),
     p_recording_url:   firstOf(body, ['recording', 'recording_url']),
-    p_transcription:   firstOf(body, ['transcription', 'transcript']),
+    p_transcription:   transcriptText(firstOf(body, ['transcription', 'transcript'])),
     p_form_data:       null,
     p_lead_status:     firstOf(body, ['lead_status']) || 'new',
     p_value:           firstOf(body, ['value']),

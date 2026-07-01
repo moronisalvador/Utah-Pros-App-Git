@@ -2254,7 +2254,12 @@ callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). 
                          (saved integration_config('callrail_account_id') → CALLRAIL_ACCOUNT_ID env
                          → auto-discovered via CallRail's /v3/a.json and persisted). callrail-connect
                          POST also resolves+stores it on connect (and thereby validates the key), so
-                         no Cloudflare env var is required — a pasted key is enough.
+                         no Cloudflare env var is required — a pasted key is enough. Requests
+                         `&fields=transcription` (CallRail omits the transcript from the default list
+                         response — opt-in Conversation Intelligence); both backfill + webhook run the
+                         value through `transcriptText()` (functions/lib/callrail-api.js) which coerces
+                         CallRail's string/object/array transcript shape to plain text. Field name +
+                         shape unverified against the live account — re-run the backfill to confirm.
                          Endpoint path/field names are unverified against a live account — same
                          open item as the webhook. Hard-capped at 50 pages to guard against a
                          runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for
@@ -2273,9 +2278,15 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          CallRail API key from integration_credentials, fetches with the
                          `Authorization: Token token="…"` header, and streams the audio back. SSRF
                          guard: only proxies an `api.callrail.com` URL stored on that lead; the key
-                         never reaches the client. `CrmCallLog.jsx` fetches it as a blob (an
-                         `<audio src>` can't carry the Supabase Bearer) and plays it in an inline
-                         `<audio>` element.
+                         never reaches the client. Robust to CallRail's response shape: streams
+                         audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
+                         streams that, else returns a 502 with the upstream status + body snippet so
+                         a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
+                         `<audio src>` can't carry the Supabase Bearer) and plays it in a compact
+                         **custom** player (`RecordingPlayer` — a hidden `<audio>` engine + CRM-styled
+                         play/pause, seek, and time), not the browser's default control chrome. Each
+                         call row also has a collapsible **"Show transcript"** toggle (only when a
+                         transcript exists).
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare

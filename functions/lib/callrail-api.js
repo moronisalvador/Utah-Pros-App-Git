@@ -59,3 +59,25 @@ export async function resolveCallRailAccountId(db, apiKey, env) {
   }
   return String(id);
 }
+
+/**
+ * Coerce CallRail's `transcription` field into plain text. CallRail may return
+ * it as a string, an object (`{ text }` / `{ transcript }`), or an array of
+ * segments (`[{ text }, …]`) depending on the Conversation Intelligence shape —
+ * so this normalizes to a single string (or null) for the `inbound_leads.transcription`
+ * text column. Best-effort; unverified against the live account.
+ */
+export function transcriptText(t) {
+  if (!t) return null;
+  if (typeof t === 'string') return t.trim() || null;
+  if (Array.isArray(t)) {
+    const joined = t
+      .map((seg) => (typeof seg === 'string' ? seg : seg?.text || seg?.sentence || seg?.transcript || ''))
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    return joined || null;
+  }
+  if (typeof t === 'object') return (t.text || t.transcript || '').trim() || null;
+  return null;
+}
