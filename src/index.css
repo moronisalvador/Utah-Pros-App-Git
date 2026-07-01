@@ -5794,6 +5794,33 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-roadmap-stage-check { flex: none; width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; color: #fff; }
 .crm-roadmap-stage-done .crm-roadmap-stage-check { background: var(--status-resolved); border-color: var(--status-resolved); }
 
+/* ── CRM Build Roadmap — page-local dark mode ──
+   Defaults on, toggle in the page header. Re-points the same bg/text/border/
+   accent-light custom properties .page, .card and .status-badge already
+   read (same scoped-token-override trick as .tech-layout/.crm-shell), so no
+   selector needs duplicating — just the dark palette. */
+.crm-roadmap-page.dark {
+  --bg-primary: #15171c;
+  --bg-secondary: #0f1115;
+  --bg-tertiary: #1c1f26;
+  --bg-elevated: #1a1d23;
+  --border-color: #2c303a;
+  --border-light: #23262e;
+  --text-primary: #f1f3f6;
+  --text-secondary: #a8afbb;
+  --text-tertiary: #767d8a;
+  --accent-light: #1c2438;
+  --status-resolved-bg: #0f2b22;
+  --status-waiting-bg: #2e2410;
+  background: var(--bg-secondary);
+}
+.crm-roadmap-theme-toggle {
+  flex-shrink: 0; font-family: inherit; font-size: var(--text-sm); font-weight: 600;
+  padding: 8px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-color);
+  background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer;
+}
+.crm-roadmap-theme-toggle:hover { background: var(--bg-elevated); color: var(--text-primary); }
+
 /* ── CRM shell (Phase 1, docs/crm-roadmap.md "Design & shell decisions") ──
    Deliberately its own visual identity (Public Sans, --crm-* tokens scoped
    under .crm-shell) instead of UPR's Inter-based look — mirrors how
