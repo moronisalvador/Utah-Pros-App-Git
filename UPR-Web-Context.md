@@ -2094,3 +2094,78 @@ excluded from conditioned sqft. The plan is stored in `plan.floorplan` (persists
 build-project RPC). **Sync to spec** writes sqft/bd/ba into the Spec and regenerates the budget +
 schedule from it (`buildPlanFromSpec`), so building a plan auto-costs it.
 
+## CRM Module — Phase 0 (Jul 1 2026 — progress tracking + shell skeleton)
+
+Roadmap of record: `docs/crm-roadmap.md`. Full CRM build workflow rules (branch-per-phase, additive-
+only migrations, shared-DB caveats, test-data isolation): `CLAUDE.md` → "CRM Phase Workflow". Phase 0
+is the first build phase — a minimal `/crm` route skeleton plus the always-current build-progress
+tracker every later phase reports into at close-out.
+
+**Feature flag:** `page:crm` — `dev_only_user_id` = Moroni's employee id
+(`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`), `enabled = false`. Invisible to every other employee on
+both `dev` and `main` until opened up. Gates the `/crm/*` route tree (`<FeatureRoute flag="page:crm">`
+in `src/App.jsx`) and the CRM nav entry (`src/lib/navItems.jsx` — `NAV_ITEMS` + `OVERFLOW_ITEMS`,
+key `crm`, `IconCrm`).
+
+**Tables** (migration: `supabase/migrations/20260701_crm_phase0_scaffold.sql` — additive, all RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+crm_orgs          — id, name, is_test bool default false, created_at. The org_id tenancy seam every
+                    later CRM table carries. Seeded with exactly two rows: "Utah Pros Restoration"
+                    (is_test=false, the real org) and "Utah Pros — TEST" (is_test=true, disposable —
+                    every CRM test row from later phases keys to this org).
+crm_build_phases  — phase_key TEXT PK, title, status ('planned'|'in_progress'|'shipped', default
+                    'planned'), shipped_at, sort_order. One row per roadmap phase: 0, 1, 2, 3, 4a,
+                    4b, 4c, 4d, 5.
+crm_build_stages  — id, phase_key FK→crm_build_phases (ON DELETE CASCADE), title, status
+                    ('todo'|'in_progress'|'done', default 'todo'), sort_order, UNIQUE(phase_key,
+                    title). The sub-steps/to-dos inside each phase — seeded from each phase's
+                    committed close-out checklist in docs/crm-roadmap.md.
+```
+
+**RPCs** (all SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+get_crm_build_progress()                  — Returns one jsonb object: { phases: [...], overall_done,
+                                             overall_total }. Each phase object carries phase_key,
+                                             title, status, shipped_at, sort_order, stages (array of
+                                             { id, title, status, sort_order }), done_count,
+                                             total_count. Powers /crm/roadmap end to end.
+set_crm_phase_status(p_phase_key, p_status) — Validates status is one of planned/in_progress/shipped;
+                                             stamps shipped_at = now() whenever p_status = 'shipped'
+                                             (re-stamps on every call, doesn't just set-once); raises
+                                             on an unknown phase_key. Returns the updated row.
+set_crm_stage_status(p_stage_id, p_status)  — Same shape for crm_build_stages (todo/in_progress/
+                                             done). Returns the updated row.
+```
+
+**Frontend**: `src/components/CrmLayout.jsx` — deliberately bare (just `<Outlet/>`); Phase 1 replaces
+it with the real designed shell (contextual left sidebar, `--crm-*` scoped tokens, SVG icon set —
+see docs/crm-roadmap.md's "Design & shell decisions" section). `src/pages/crm/CrmRoadmap.jsx` —
+`/crm/roadmap`, read-only, reads `get_crm_build_progress()` via `db.rpc()`; renders every phase as a
+card with a status badge, a `done/total` progress bar, and its stages as a checklist. This page is
+the single source of truth for CRM build progress — no external tracker. CSS lives in `src/index.css`
+under a `.crm-roadmap-*` block (plain app tokens — Phase 1 introduces the `.crm-shell`/`--crm-*`
+scoped token set, not used yet).
+
+**Test-first**: `supabase/tests/crm_phase0_build_progress.test.js` — an integration test (vitest,
+hits the live Supabase REST API directly via `src/lib/supabase.js`'s unauthenticated client) proving
+`set_crm_phase_status` stamps `shipped_at`, `set_crm_stage_status` marks a stage done, and
+`get_crm_build_progress` rolls up done/total counts correctly; committed before the migration (see
+git history). Self-skips via `describe.skipIf` when `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`
+aren't set — matches CI's `npm test` step, which doesn't currently receive those secrets (only the
+Build step does; see `.github/workflows/ci.yml`). **Known sandbox limitation**: this session's outbound
+network egress proxy does not allow-list the Supabase host, so the test could not be executed for real
+here — the identical assertions were instead verified directly against the live `dev`/`main` shared
+database via the Supabase MCP `execute_sql` tool (a `DO $$ ... ASSERT ...` block), which passed. The
+committed test will run for real on a machine with normal (non-sandboxed) egress and populated
+credentials.
+
+**Dogfooding**: Phase 0 marks its own `crm_build_phases`/`crm_build_stages` rows via these same RPCs
+at close-out (`set_crm_stage_status` per stage, then `set_crm_phase_status('0', 'shipped')`) — the
+first real exercise of the tracker. As of this session's close-out, 6 of 7 stages are marked `done`
+and phase 0 is `in_progress` (not yet `shipped`) — the one remaining stage is the live branch-preview
+visual check, which needs a logged-in Moroni session and could not be done from this sandbox (same
+network egress limitation as the integration test, above). Flip it to `done` and the phase to
+`shipped` via `set_crm_stage_status`/`set_crm_phase_status` once that's confirmed on the pushed
+branch's Cloudflare preview.
+

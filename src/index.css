@@ -5771,3 +5771,25 @@ tr:hover td { background: var(--bg-secondary); }
   .coll-chat-grab { display: block; width: 36px; height: 4px; border-radius: 9999px; background: #e2e5e9; margin: 8px auto 2px; flex: none; }
   .coll-chat-foot { padding-bottom: max(11px, env(safe-area-inset-bottom, 11px)); }
 }
+
+/* ── CRM Build Roadmap (Phase 0, docs/crm-roadmap.md) — bare shell, no --crm-* tokens yet ── */
+.crm-roadmap-overall { margin-bottom: var(--space-5); }
+.crm-roadmap-phase-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.crm-roadmap-phase-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.crm-roadmap-phase-title { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+.crm-roadmap-phase-shipped { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 2px; }
+.crm-roadmap-status-shipped { background: var(--status-resolved-bg); color: #059669; }
+.crm-roadmap-status-shipped::before { background: var(--status-resolved); }
+.crm-roadmap-status-in_progress { background: var(--status-waiting-bg); color: #b45309; }
+.crm-roadmap-status-in_progress::before { background: var(--status-waiting); }
+.crm-roadmap-status-planned { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.crm-roadmap-status-planned::before { background: var(--text-tertiary); }
+.crm-roadmap-progress-row { display: flex; align-items: center; gap: var(--space-3); }
+.crm-roadmap-progress-track { flex: 1; height: 8px; border-radius: 9999px; background: var(--bg-tertiary); overflow: hidden; }
+.crm-roadmap-progress-fill { height: 100%; border-radius: 9999px; background: var(--accent); transition: width var(--transition-fast); }
+.crm-roadmap-progress-count { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.crm-roadmap-stage-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.crm-roadmap-stage { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.crm-roadmap-stage-done { color: var(--text-tertiary); text-decoration: line-through; }
+.crm-roadmap-stage-check { flex: none; width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; color: #fff; }
+.crm-roadmap-stage-done .crm-roadmap-stage-check { background: var(--status-resolved); border-color: var(--status-resolved); }
