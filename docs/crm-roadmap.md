@@ -341,10 +341,14 @@ exactly as they are today; isolation comes from the feature flag, not from git. 
 generic rule lives in `CLAUDE.md` (CRM build workflow); the concrete branch strings live
 with each phase below.
 
-- **One branch per phase, `crm/phase-N-short-desc`, cut off `dev`** — e.g.
-  `crm/phase-0-scaffold`, `crm/phase-1-shell-callrail`, `crm/phase-4a-pipeline`. The
-  `crm/` prefix is the at-a-glance "CRM work" marker. (This build runs on Claude Code
-  web — a cloud sandbox — so isolation is branch-based, not local git worktrees.)
+- **One branch per phase, cut off `dev`.** Claude Code web sessions are handed a
+  harness-assigned `claude/…` branch — **use it as-is; don't fight it.** A
+  `crm/phase-N-short-desc` name (e.g. `crm/phase-1-shell-callrail`) is a nice at-a-glance
+  marker but **not required** — the branch name is cosmetic, since isolation comes from
+  the `page:crm` flag, not the branch. Treat the `crm/…` names and the
+  `crm-phase-N-*.pages.dev` preview URLs in the per-phase blocks below as illustrative;
+  use the branch and preview URL the session actually has. (This build runs on Claude
+  Code web — a cloud sandbox — so isolation is branch-based, not local git worktrees.)
 - **Sequential — never start a phase until the previous phase's PR has merged into
   `dev`.** Phases build on each other (Phase 2 fills into Phase 1's shell, etc.), so a
   branch cut early would be missing that work.

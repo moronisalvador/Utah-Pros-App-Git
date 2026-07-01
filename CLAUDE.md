@@ -139,7 +139,7 @@ A `*-TASK.md` in repo root = an active one-shot build task: read first, follow i
 ## CRM Phase Workflow
 
 The new CRM side ships in sequential phases, each its own branch/PR. **Per-phase specifics (exact branch, prerequisite, close-out checklist, acceptance criteria) live in `docs/crm-roadmap.md`** — a session builds one phase, reading that phase's block + this section, not the whole doc.
-- **Branch per phase:** `crm/phase-N-short-desc`, cut from `dev` (not `main`).
+- **Branch per phase:** cut from `dev` (not `main`), then PR into `dev`. **Use the session's assigned branch as-is** — Claude Code web sessions are handed a harness-assigned `claude/…` branch and should not fight it. A `crm/phase-N-short-desc` name is nice but **not required**: the branch name is cosmetic (isolation is the `page:crm` flag, not the branch), so the `crm/…` names and `crm-phase-N-*.pages.dev` preview URLs in `docs/crm-roadmap.md` are illustrative — use whatever branch/preview the session actually has.
 - **Never start phase N+1 until phase N's PR has merged into `dev`.** Phases build on each other — no parallel/out-of-order work.
 - **Migrations in a CRM phase are additive-only:** new tables/columns only, each RLS-enabled at creation (Rule 7). **No `ALTER`/`DROP`/rename of a live table inside a phase** — destructive changes to shared data need their own separate reviewed change. Apply + verify on `dev` before the `dev → main` PR (one shared Supabase — see Deployment).
 - **Isolation is the `page:crm` flag + `dev_only_user_id`** (not a branch) — `/crm/*` stays invisible to other employees on `dev` and `main` until the flag opens.
