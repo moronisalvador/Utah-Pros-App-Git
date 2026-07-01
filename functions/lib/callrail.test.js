@@ -28,6 +28,8 @@ import {
   mapCallPayload,
   isAllowedRecordingUrl,
   boolish,
+  extractCallId,
+  callrailApiRecordingUrl,
 } from './callrail.js';
 
 // The real, form-decoded payload for a live inbound call (subset of the ~110
@@ -135,5 +137,41 @@ describe('isAllowedRecordingUrl', () => {
     expect(isAllowedRecordingUrl('https://app.callrail.com/settings')).toBe(false);
     expect(isAllowedRecordingUrl(null)).toBe(false);
     expect(isAllowedRecordingUrl('')).toBe(false);
+  });
+});
+
+describe('extractCallId', () => {
+  it('pulls the CAL… id from the app.callrail.com redirect form (webhook)', () => {
+    expect(
+      extractCallId(
+        'https://app.callrail.com/calls/CAL019f1fd045e3797bb2a297bea5ae4315/recording/redirect?access_key=abc123'
+      )
+    ).toBe('CAL019f1fd045e3797bb2a297bea5ae4315');
+  });
+  it('pulls the CAL… id from the api.callrail.com form (backfill)', () => {
+    expect(
+      extractCallId(
+        'https://api.callrail.com/v3/a/ACCac74130ee99242f0a8c4bde6a74272dc/calls/CAL019e83c0ac867525a348f3ee7a687905/recording.json'
+      )
+    ).toBe('CAL019e83c0ac867525a348f3ee7a687905');
+  });
+  it('returns null when there is no call id / bad input', () => {
+    expect(extractCallId('https://app.callrail.com/settings')).toBeNull();
+    expect(extractCallId(null)).toBeNull();
+    expect(extractCallId('')).toBeNull();
+  });
+});
+
+describe('callrailApiRecordingUrl', () => {
+  it('builds the api.callrail.com recording URL that the backfill (proven working) form uses', () => {
+    expect(
+      callrailApiRecordingUrl('635117922', 'CAL019f1fd045e3797bb2a297bea5ae4315')
+    ).toBe(
+      'https://api.callrail.com/v3/a/635117922/calls/CAL019f1fd045e3797bb2a297bea5ae4315/recording.json'
+    );
+  });
+  it('returns null when account id or call id is missing', () => {
+    expect(callrailApiRecordingUrl(null, 'CAL1')).toBeNull();
+    expect(callrailApiRecordingUrl('635117922', null)).toBeNull();
   });
 });
