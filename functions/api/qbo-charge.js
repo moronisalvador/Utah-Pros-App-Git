@@ -15,18 +15,14 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireEmployee } from '../lib/auth.js';
 import { getConnection, createCharge, createPayment } from '../lib/quickbooks.js';
 
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
   if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
+  const auth = await requireEmployee(request, env);
+  return auth.ok;
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
@@ -69,6 +65,12 @@ export async function onRequestPost(context) {
     const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
     if (!inv) throw new Error('Invoice not found');
     if (!inv.qbo_invoice_id) throw new Error('Save the invoice to QuickBooks before charging a card.');
+    // Server-side ceiling: never charge more than the invoice's outstanding balance.
+    // The client-supplied amount is not trusted (prevents over-charge / tampering).
+    const balanceCents = Math.round((Number(inv.adjusted_total ?? inv.total ?? 0) - Number(inv.amount_paid || 0)) * 100);
+    if (Math.round(amount * 100) > balanceCents) {
+      throw new Error(`Amount $${amount.toFixed(2)} exceeds the invoice balance of $${(balanceCents / 100).toFixed(2)}.`);
+    }
     const contact = inv.contact_id
       ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id&limit=1`))?.[0]
       : null;
