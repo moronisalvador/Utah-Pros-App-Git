@@ -190,6 +190,7 @@ src/
     Legal.jsx                     — Public /terms + /privacy pages (required by Intuit's QBO production profile)
     AdminFeedback.jsx             — Tech feedback inbox (route /tech-feedback, admin-only)
     AdminDemoSheetBuilder.jsx     — Scope-sheet schema builder (route /admin/demo-sheet-builder)
+    admin/AdminIntegrations.jsx   — Admin "API Keys" page (route /admin/integrations, admin-only): paste the GitHub token (+ default repo) that the UPR MCP reads; extensible to more providers. Uses the github-connect worker.
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     PaymentSettings.jsx           — Stripe pay-link + payout settings (route /payments/settings)
   pages/tech/
@@ -1053,6 +1054,70 @@ on the next DevTools open.
 **Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 9 tabs (Moroni-only route) —
 Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.
 
+## CRM Partner role (external marketing-agency accounts, Jul 1 2026)
+
+A restricted `employees.role` value (`crm_partner`) for an outside marketing agency running
+leads/advertising — sees the **whole CRM** (`/crm/*`) **except Integrations**, nothing outside
+`/crm` at all. Reuses the existing employee/auth pipeline rather than a parallel user system;
+scoped via migrations in `supabase/migrations/20260701_crm_partner_*.sql` (an initial rollout, then
+a `_widen_access` follow-up migration that opened Settings/pipeline-config/revenue back up and
+added the Integrations-specific block — the product call landed on "full CRM minus Integrations"
+rather than the initial narrower design; read `_widen_access` first if reasoning about current
+behavior, the earlier migrations' RLS narrowing on Settings/revenue is superseded by it):
+
+- **Role/marker:** `crm_partner` added to the `employee_role` enum; `employees.is_external boolean`
+  (reporting/audit marker only, not an access mechanism).
+- **`is_crm_partner(auth_user_id uuid)`** — `SECURITY DEFINER` helper (looks up `employees` by
+  `auth_user_id`), used throughout RLS policies and RPC guards below.
+- **Access to `/crm/*` itself:** NOT via `nav_permissions` (the CRM nav item isn't in
+  `Sidebar.jsx`'s `NAV_ITEMS` yet) — `/crm` is gated by `<FeatureRoute flag="page:crm">`, which is
+  `dev_only_user_id`-locked to Moroni during the build. `isFeatureEnabled()` in
+  `AuthContext.jsx` has an explicit bypass: `key === 'page:crm' && employee.role === 'crm_partner'`
+  always passes, independent of the internal rollout flag.
+- **Blocking everything outside `/crm` — the real enforcement layer:** most non-CRM routes in
+  `App.jsx` (`/jobs`, `/claims`, `/customers`, etc.) have **no per-route guard at all** — they only
+  rely on the sidebar not showing a link, which was fine when every authenticated session was
+  trusted staff. `Layout.jsx` has a single choke-point `useEffect` (route-change based) that
+  redirects any `crm_partner` whose path isn't under `/crm` or `/help` back to `/crm/leads`.
+  `HomeRedirect` in `App.jsx` sends `/` there too (mirrors the existing `field_tech → /tech`
+  pattern).
+- **RLS tightened on existing (not new) tables** — a `crm_partner` is a real authenticated Supabase
+  session and can call PostgREST directly, so frontend hiding alone isn't enough. `NOT
+  is_crm_partner(auth.uid())` is on the `authenticated`-role policies for: `jobs`, `claims`,
+  `invoices`, `estimates`, `estimate_line_items`, `invoice_line_items`, `job_costs`, `payments`,
+  `vendor_invoices`, `job_supplements`, `job_time_entries`, `job_documents`, `crm_build_phases`,
+  `crm_build_stages` (the internal build-roadmap tracker stays blocked — engineering artifact, not
+  a CRM business feature). `contacts` is split: SELECT is scoped to lead-linked contacts only
+  (`id IN (SELECT contact_id FROM inbound_leads ...)`), INSERT/UPDATE/DELETE fully blocked.
+  `pipeline_stages` is **fully open** (`USING (true)`) per the widened scope — a partner can
+  read/write pipeline stages like any internal role. `anon`-role policies were deliberately left
+  untouched (pre-existing, separate permissiveness issue, out of scope here). Regression-tested via
+  a simulated authenticated RLS session (SQL, rolled back) both before and after the widen — a
+  partner gets 0 rows from `jobs`/`claims`/`invoices`/etc. and full `pipeline_stages` access; an
+  `office` role is unaffected throughout.
+- **RPCs also guarded** (RLS on a table doesn't stop a `SECURITY DEFINER` RPC that reads/writes it):
+  `get_crm_revenue_by_division()` and `get_attribution_rollup()` show **real revenue/ROAS** to a
+  partner (the initial masking was reverted in `_widen_access`); `upsert_pipeline_stage()` /
+  `delete_pipeline_stage()` also had their partner-block reverted — a partner can fully manage
+  pipeline stages. The one RPC still guarded for this role: `get_integration_status()` returns zero
+  rows for a `crm_partner` caller (matches the Integrations page being fully off-limits).
+- **UI scoping:** `Sidebar.jsx` hides the "New Job"/"Customer" quick-create buttons for this role.
+  `CrmLayout.jsx` hides only the **Integrations** nav item and the "Build roadmap" footer link for
+  this role — Settings and everything else in the CRM sidebar is visible. `CrmIntegrations.jsx`
+  redirects a `crm_partner` straight to `/crm/leads` (full block, not read-only) — the
+  CallRail/Google Ads/Meta Ads connect workers themselves are not yet role-gated server-side
+  (frontend + RPC block only for now; the workers are a good follow-up hardening target since these
+  are shared platform OAuth credentials). `CrmRoadmap.jsx` keeps its own redirect-on-render guard as
+  defense-in-depth beneath the layout-level hiding (roadmap is the only other page still blocked).
+- **Account creation:** `Admin.jsx` → Employees tab — `crm_partner` added to the role dropdown, an
+  `is_external` checkbox added to the create/edit form. `functions/api/admin-users.js` (POST/PATCH)
+  forwards `is_external` through to the `employees` insert/update alongside the existing fields.
+- **Known gap / explicitly descoped:** `inbound_leads.caller_number` (raw customer phone) is not
+  masked for a partner — both `CrmLeads.jsx` and `CrmCallLog.jsx` read `inbound_leads` via a raw
+  `db.select`, not an RPC, so masking would need a view or RPC rewrite of an already-live read
+  path. Flagged for Moroni to confirm the masking approach before building it — this remains
+  unmasked under the wider "whole CRM" scope too.
+
 ---
 
 ## Employees (15 total as of Jul 1 2026 — headcount changes with hiring, verify live before relying
@@ -1279,7 +1344,9 @@ setup is finished.
 - `quickbooks-callback.js` — GET. Intuit redirect target; exchanges code→tokens, stores connection + company name, redirects to `/dev-tools?qbo=connected`.
 - `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`. Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact becomes a QBO customer at invoice/estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+
+**On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
 
 **UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill.
 
@@ -1629,7 +1696,8 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 - QBO write: `qbo_create_invoice`, `qbo_update_invoice`, `qbo_delete_invoice` (refuses invoices with payments), `qbo_create_payment`, `qbo_relink_payment`, `qbo_delete_payment`, `qbo_create_customer`, `qbo_update_customer`, `qbo_create_item`, `qbo_create_entity` / `qbo_update_entity` / `qbo_delete_entity`, `qbo_send_invoice` (emails the customer), `qbo_create_estimate`.
 - UPR DB: `upr_select`, `upr_rpc` (any of the ~150 RPCs — **mutating fns gated**: names not starting get_/list_/search_/preview_/count_/fetch_ require `confirm`), `upr_schema` (tables + functions), `upr_describe` (a table's columns / an RPC's params), `upr_search` (cross-entity find: contacts/jobs/claims), `upr_insert`, `upr_update`, `upr_delete` (filter required).
 - **Encircle + Resend (undocumented until this audit — ~22 tools total, `upr-mcp/src/encircle.js` + `resend.js`):** mirrors the Encircle and Resend REST APIs (claims/rooms/notes/media/assignments for Encircle; domains/emails for Resend) the same way the QBO tools mirror QuickBooks — see those source files for the exact tool list rather than duplicating it here.
-- **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern; reads run immediately, writes preview unless `confirm:true`. Credential model splits two ways — **reuse a stored token** (CallRail=`callrail`, Deepgram=`deepgram`, Google Ads=`google_ads`, Meta Ads=`meta_ads` rows in `integration_credentials`; no worker secret for the token) vs. **static worker secret** (`STRIPE_SECRET_KEY`; `TWILIO_ACCOUNT_SID`+`TWILIO_AUTH_TOKEN`; `GITHUB_TOKEN`+`GITHUB_DEFAULT_REPO`; the ad apps also need their `*_CLIENT_ID/SECRET`/`*_APP_ID/SECRET` + account-id secrets). A tool returns a clear "not configured"/"not connected" error until its credential is present. See the source files for the exact tool list. Highlights: `callrail_list_calls`/`callrail_transcribe`, `stripe_get_balance`/`stripe_create_payout`, `twilio_send_sms`, `google_ads_campaign_spend`, `meta_ads_insights`, `github_list_prs`/`github_create_issue`.
+- **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern; reads run immediately, writes preview unless `confirm:true`. Credential model splits two ways — **reuse a stored token** (CallRail=`callrail`, Deepgram=`deepgram`, Google Ads=`google_ads`, Meta Ads=`meta_ads` rows in `integration_credentials`; no worker secret for the token) vs. **static worker secret** (`STRIPE_SECRET_KEY`; `TWILIO_ACCOUNT_SID`+`TWILIO_AUTH_TOKEN`; the ad apps also need their `*_CLIENT_ID/SECRET`/`*_APP_ID/SECRET` + account-id secrets). A tool returns a clear "not configured"/"not connected" error until its credential is present. See the source files for the exact tool list. Highlights: `callrail_list_calls`/`callrail_transcribe`, `stripe_get_balance`/`stripe_create_payout`, `twilio_send_sms`, `google_ads_campaign_spend`, `meta_ads_insights`.
+- **GitHub — DB-managed token + full write lifecycle (Jul 2026, `upr-mcp/src/github.js`):** the PAT is now read from `integration_credentials` (provider=`github`) first — set on the **admin API-keys page** (`/admin/integrations`) via the `github-connect` worker — with an env `GITHUB_TOKEN` fallback; default repo from `integration_config.github_default_repo` → `GITHUB_DEFAULT_REPO`. Tools cover the full PR/commit lifecycle: reads (`github_list_prs`, `github_get_pr`, `github_get_file`, `github_list_commits`, `github_get_commit`, `github_list_branches`, `github_search_code`) and guarded writes (`github_merge_pr`, `github_create_pr`, `github_update_pr`, `github_create_branch`, `github_commit_file`, `github_add_comment`, `github_create_issue`) + generic `github_get`/`github_request`. A Worker has no git binary, so "push/pull" = the Contents/Git-data API. PAT scopes: Contents R/W, Pull requests R/W, Issues R/W.
 
 **New table:** `upr_mcp_audit` (see Logging & Monitoring). **New RPC:** `get_upr_mcp_audit(p_limit)`.
 **Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, encircle.js, resend.js, callrail.js, stripe.js, twilio.js, googleads.js, metaads.js, github.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
@@ -2094,4 +2162,938 @@ resize (pointer events; window-level move/up driven by a ref). Room model in `bu
 excluded from conditioned sqft. The plan is stored in `plan.floorplan` (persists via the existing
 build-project RPC). **Sync to spec** writes sqft/bd/ba into the Spec and regenerates the budget +
 schedule from it (`buildPlanFromSpec`), so building a plan auto-costs it.
+
+## CRM Module — Phase 0 (Jul 1 2026 — progress tracking + shell skeleton)
+
+Roadmap of record: `docs/crm-roadmap.md`. Full CRM build workflow rules (branch-per-phase, additive-
+only migrations, shared-DB caveats, test-data isolation): `CLAUDE.md` → "CRM Phase Workflow". Phase 0
+is the first build phase — a minimal `/crm` route skeleton plus the always-current build-progress
+tracker every later phase reports into at close-out.
+
+**Feature flag:** `page:crm` — `dev_only_user_id` = Moroni's employee id
+(`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`), `enabled = false`. Invisible to every other employee on
+both `dev` and `main` until opened up. Gates the `/crm/*` route tree (`<FeatureRoute flag="page:crm">`
+in `src/App.jsx`) and the CRM nav entry (`src/lib/navItems.jsx` — `NAV_ITEMS` + `OVERFLOW_ITEMS`,
+key `crm`, `IconCrm`).
+
+**Tables** (migration: `supabase/migrations/20260701_crm_phase0_scaffold.sql` — additive, all RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+crm_orgs          — id, name, is_test bool default false, created_at. The org_id tenancy seam every
+                    later CRM table carries. Seeded with exactly two rows: "Utah Pros Restoration"
+                    (is_test=false, the real org) and "Utah Pros — TEST" (is_test=true, disposable —
+                    every CRM test row from later phases keys to this org).
+crm_build_phases  — phase_key TEXT PK, title, status ('planned'|'in_progress'|'shipped', default
+                    'planned'), shipped_at, sort_order. One row per roadmap phase: 0, 1, 2, 3, 4a,
+                    4b, 4c, 4d, 5.
+crm_build_stages  — id, phase_key FK→crm_build_phases (ON DELETE CASCADE), title, status
+                    ('todo'|'in_progress'|'done', default 'todo'), sort_order, UNIQUE(phase_key,
+                    title). The sub-steps/to-dos inside each phase — seeded from each phase's
+                    committed close-out checklist in docs/crm-roadmap.md.
+```
+
+**RPCs** (all SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+get_crm_build_progress()                  — Returns one jsonb object: { phases: [...], overall_done,
+                                             overall_total }. Each phase object carries phase_key,
+                                             title, status, shipped_at, sort_order, stages (array of
+                                             { id, title, status, sort_order }), done_count,
+                                             total_count. Powers /crm/roadmap end to end.
+set_crm_phase_status(p_phase_key, p_status) — Validates status is one of planned/in_progress/shipped;
+                                             stamps shipped_at = now() whenever p_status = 'shipped'
+                                             (re-stamps on every call, doesn't just set-once); raises
+                                             on an unknown phase_key. Returns the updated row.
+set_crm_stage_status(p_stage_id, p_status)  — Same shape for crm_build_stages (todo/in_progress/
+                                             done). Returns the updated row.
+```
+
+**Frontend**: `src/components/CrmLayout.jsx` — deliberately bare (just `<Outlet/>`); Phase 1 replaces
+it with the real designed shell (contextual left sidebar, `--crm-*` scoped tokens, SVG icon set —
+see docs/crm-roadmap.md's "Design & shell decisions" section). `src/pages/crm/CrmRoadmap.jsx` —
+`/crm/roadmap`, read-only, reads `get_crm_build_progress()` via `db.rpc()`; renders every phase as a
+card with a status badge, a `done/total` progress bar, and its stages as a checklist. This page is
+the single source of truth for CRM build progress — no external tracker. CSS lives in `src/index.css`
+under a `.crm-roadmap-*` block (plain app tokens — Phase 1 introduces the `.crm-shell`/`--crm-*`
+scoped token set, not used yet).
+
+**Test-first**: `supabase/tests/crm_phase0_build_progress.test.js` — an integration test (vitest,
+hits the live Supabase REST API directly via `src/lib/supabase.js`'s unauthenticated client) proving
+`set_crm_phase_status` stamps `shipped_at`, `set_crm_stage_status` marks a stage done, and
+`get_crm_build_progress` rolls up done/total counts correctly; committed before the migration (see
+git history). Self-skips via `describe.skipIf` when `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`
+aren't set — matches CI's `npm test` step, which doesn't currently receive those secrets (only the
+Build step does; see `.github/workflows/ci.yml`). **Known sandbox limitation**: this session's outbound
+network egress proxy does not allow-list the Supabase host, so the test could not be executed for real
+here — the identical assertions were instead verified directly against the live `dev`/`main` shared
+database via the Supabase MCP `execute_sql` tool (a `DO $$ ... ASSERT ...` block), which passed. The
+committed test will run for real on a machine with normal (non-sandboxed) egress and populated
+credentials.
+
+**Dogfooding**: Phase 0 marks its own `crm_build_phases`/`crm_build_stages` rows via these same RPCs
+at close-out (`set_crm_stage_status` per stage, then `set_crm_phase_status('0', 'shipped')`) — the
+first real exercise of the tracker. As of this session's close-out, 6 of 7 stages are marked `done`
+and phase 0 is `in_progress` (not yet `shipped`) — the one remaining stage is the live branch-preview
+visual check, which needs a logged-in Moroni session and could not be done from this sandbox (same
+network egress limitation as the integration test, above). Flip it to `done` and the phase to
+`shipped` via `set_crm_stage_status`/`set_crm_phase_status` once that's confirmed on the pushed
+branch's Cloudflare preview.
+
+## CRM Module — Phase 1 (Jul 1 2026 — CRM shell + CallRail lead ingestion)
+
+Builds on Phase 0 (above), which merged into `dev` first. Full spec: `docs/crm-roadmap.md` →
+"Phase 1 — CRM shell + CallRail lead ingestion".
+
+**Table** (migration: `supabase/migrations/20260701_crm_phase1_shell_callrail.sql` — additive, RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+inbound_leads — id, org_id (FK crm_orgs), contact_id (FK contacts, nullable — see the spam/duration
+                filter below), source_type ('call'|'form'), callrail_id UNIQUE, tracking_number,
+                caller_number, duration_sec, spam_flag bool default false, source, medium, campaign,
+                recording_url, transcription, form_data jsonb, lead_status default 'new', value,
+                direction, occurred_at, raw_payload jsonb, notes, created_at, updated_at. Indexed on
+                contact_id, org_id, occurred_at desc. Deliberately NOT named `leads` — see the
+                roadmap's terminology-fix note: `Leads.jsx` is unrelated (jobs in phase='lead'), and
+                this is a raw call/form touch that may never become anything.
+```
+
+**RPCs** (SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_caller_number,
+  p_duration_sec, p_spam_flag, p_source, p_medium, p_campaign, p_recording_url, p_transcription,
+  p_form_data, p_lead_status, p_value, p_direction, p_occurred_at, p_raw_payload, p_org_id)
+  — True upsert-and-merge keyed on callrail_id (CallRail redelivers webhooks for the same call as
+  the recording/transcript become available later): fields present in the new payload overwrite,
+  null fields preserve whatever was already saved. p_org_id defaults to the real Utah Pros org when
+  omitted; callers pass the "Utah Pros — TEST" org id explicitly for test rows. **NEVER auto-creates
+  a contact** (`20260701_crm_lead_no_autocreate_contact.sql`): it LINKS the lead to an existing
+  contact when one already matches `caller_number` (so a known customer's call lands on their
+  timeline), but an unknown number stays a contact-free lead — most inbound calls are
+  spam/wrong-numbers/price-shoppers, and auto-creating a contact per call floods the contacts table
+  (and, via `trg_qbo_customer_sync`, QuickBooks). A contact is created only when the lead is
+  qualified: it books (the app's find-or-create-by-phone flows) or staff run `promote_lead_to_contact`.
+  (This retired the old `shouldCreateContact` spam-gate predicate + `functions/lib/callrail.js`, now
+  moot since nothing is auto-created.) Every call writes a `system_events` row (`crm_lead_created`
+  or `crm_lead_updated`).
+promote_lead_to_contact(p_lead_id, p_name, p_email, p_created_by) — the CRM "Add as customer" action
+  (Leads board detail panel, shown for a contact-free lead): find-or-creates a contact by the lead's
+  `caller_number` (already E.164 from CallRail), backfills name/email where blank, links this lead
+  **and any other still-unlinked leads from the same number**, and logs a `crm_lead_promoted`
+  system_events row. `SECURITY DEFINER`, granted `anon, authenticated`.
+update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
+  logs a `crm_lead_status_updated` system_events row.
+set_lead_transcription(p_lead_id, p_transcription, p_source default 'deepgram', p_analysis jsonb
+  default null) — stores a call transcript we generated ourselves (see transcribe-call.js). Sets
+  `transcription`, `transcription_source`, `transcribed_at`, `transcript_analysis` (COALESCE — a
+  null analysis leaves the existing one), bumps `updated_at`, logs `crm_call_transcribed`
+  (payload notes `has_analysis`). `SECURITY DEFINER`, granted `anon, authenticated`. Modeled on
+  `update_lead_status`. **v2 (migration `20260701_crm_call_transcription_analysis.sql`)** dropped
+  the original 3-arg version and recreated it with `p_analysis`.
+set_lead_caller_name(p_lead_id, p_name) — stores a transcript-detected caller name on the lead
+  (`caller_name`, only-if-blank) and backfills a LINKED contact's name only when that name is
+  currently blank. **Never creates a contact** (raw-call spam must not pollute contacts — same
+  stance as ingestion). `SECURITY DEFINER`, granted `anon, authenticated`, logs
+  `crm_lead_caller_named`. (migration `20260701_crm_caller_name.sql`.)
+set_lead_details(p_lead_id, p_notes, p_value, p_updated_by) — sets a lead's `notes` (text) + `value`
+  (numeric) DIRECTLY (form is source of truth; null clears). Powers the Call Log "Notes & value"
+  editor. Logs `crm_lead_details_updated`. (migration `20260701_crm_lead_details.sql`; the columns
+  already existed.)
+get_tracking_numbers() → (tracking_number, label, call_count) — every DISTINCT tracking number seen
+  in inbound_leads LEFT JOINed to its campaign label + call count, most-active first. Reader for the
+  Call Log's campaign chips.
+set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign label for a tracking
+  number (on the org's row). Both `SECURITY DEFINER`, granted `anon, authenticated`.
+  (migration `20260701_crm_tracking_numbers.sql`.)
+get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest leads with the linked
+  `contact` ({name, phone}) embedded — mirrors the old `select=*,contact:contacts(name,phone)` shape
+  exactly. `SECURITY DEFINER`, `STABLE`, granted `anon, authenticated`. **Why an RPC and not a GET
+  select:** a GET is cacheable, so returning to the Call Log after a soft navigation showed a STALE
+  cached list (a just-landed live call was missing until a hard refresh); an RPC is a POST, which
+  browsers never cache. `CrmCallLog.jsx` `load()` calls this. (migration `20260701_crm_get_inbound_leads.sql`.)
+```
+
+**New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
+`UNIQUE(org_id, tracking_number)`, RLS-enabled at creation) — maps a CallRail tracking number to a
+**campaign label**. CallRail leaves `campaign`/`source` empty on direct dials, so the tracking
+number IS the ad-source identity; staff label each number ("Google Ads", "Yard signs") inline on
+the Call Log and the label shows on every call from it. `org_id` supplied by the RPC (Postgres
+forbids a subquery column DEFAULT); the table is only written through `set_tracking_number_label`.
+
+**`src/lib/phone.js`** gained `formatPhone(e164)` → `"(801) 447-1917"` (US 10-digit; echoes
+anything else unchanged) for displaying tracking/caller numbers.
+
+**`inbound_leads.caller_name text`** (migration `20260701_crm_caller_name.sql`, additive) — a
+name detected from the call transcript by the Claude naming pass (see transcribe-call.js). The Call
+Log prefers `contact.name` → `caller_name` → the raw phone number for the row label.
+
+**`inbound_leads` columns added** (two additive migrations):
+- `20260701_crm_call_transcription.sql`: `transcription_source text` + `transcribed_at timestamptz`
+  — WHERE a transcript came from (`'deepgram'`) and WHEN.
+- `20260701_crm_call_transcription_analysis.sql`: `transcript_analysis jsonb` — the structured
+  Deepgram result: `{ model, speakerMode: 'channel'|'diarize', turns:[{speaker,text}], summary,
+  sentiment:{label,score}, topics:[], entities:[{label,value}] }`. Mirrors the existing
+  `raw_payload`/`form_data` JSONB pattern. The flat `transcription` text column stays alongside it
+  (for search / a future LLM); `transcript_analysis` backs the Call Log conversation view.
+
+**Existing RPC widened**: `get_integration_status(p_provider)` (originally QBO-only) only checked
+`refresh_token IS NOT NULL` for "connected". CallRail has no OAuth — its API key lives in
+`integration_credentials.access_token` with `refresh_token` left NULL — so the check was widened to
+`refresh_token IS NOT NULL OR access_token IS NOT NULL`. Strict superset of the old behavior (QBO
+always has both set together once connected), verified live via the Supabase MCP (see Verification
+below) — not a behavior change for existing QBO callers.
+
+**Workers** (`functions/api/`):
+```
+callrail-webhook.js   — POST, receives CallRail's call/form events, maps payload → 
+                         upsert_lead_from_callrail, logs a worker_runs row per call. Auth is a
+                         `?secret=` query param checked against integration_config
+                         ('callrail_webhook_secret') — a documented placeholder (CallRail lets you
+                         fully customize the webhook target URL, so this avoids guessing at an
+                         unverified HMAC/signature-header scheme); confirm against CallRail's actual
+                         webhook docs/dashboard and adjust if it differs. **Payload shape CONFIRMED
+                         against a live delivery:** CallRail POSTs `application/x-www-form-urlencoded`
+                         (NOT JSON), so the worker parses text→JSON→URLSearchParams; every decoded
+                         value is a string, and the call id is under `resource_id` (no top-level
+                         `id`). The pure mappers now live in `functions/lib/callrail.js`
+                         (mapCallPayload/mapFormPayload/pickCallId/boolish/isAllowedRecordingUrl),
+                         unit-tested against the real payload in `functions/lib/callrail.test.js`.
+                         `boolish()` fixes a form-encoding trap where the string "false" was truthy
+                         and mis-flagged clean calls as spam. Always returns 200 except on a
+                         bad/missing secret (403), to avoid a CallRail retry storm.
+callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
+                         DELETE (disconnect), all authenticated. Writes integration_credentials
+                         (provider='callrail', key in access_token) and generates the webhook
+                         shared secret into integration_config on first connect only (never rotated
+                         on reconnect — it's already pasted into CallRail's dashboard by then). The
+                         GET exists because integration_config has no anon/authenticated RLS policy
+                         (service-role only) — the frontend can't select it directly, so
+                         CrmIntegrations.jsx calls this endpoint to display the webhook URL +
+                         secret for Moroni to paste into CallRail's dashboard. Reuses
+                         google-drive.js's generic getActorEmployee Bearer-auth helper (not
+                         Google-Drive-specific despite the file name).
+github-connect.js     — GET (connected? + default_repo) / POST (save GitHub PAT, validated
+                         against GitHub /user; also sets integration_config.github_default_repo;
+                         token-less POST updates just the repo) / DELETE (disconnect), all
+                         authenticated (getActorEmployee). Writes integration_credentials
+                         (provider='github', PAT in access_token). Backs AdminIntegrations.jsx;
+                         the UPR MCP's github.js reads this token (env GITHUB_TOKEN fallback).
+callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). Pulls historical
+                         CALLS ONLY via CallRail's v3 list-calls API and upserts through the same
+                         RPC. Needs the connected API key + the CallRail account id; the account id
+                         is resolved by functions/lib/callrail-api.js resolveCallRailAccountId()
+                         (saved integration_config('callrail_account_id') → CALLRAIL_ACCOUNT_ID env
+                         → auto-discovered via CallRail's /v3/a.json and persisted). callrail-connect
+                         POST also resolves+stores it on connect (and thereby validates the key), so
+                         no Cloudflare env var is required — a pasted key is enough. Requests
+                         `&fields=transcription` (CallRail omits the transcript from the default list
+                         response — opt-in Conversation Intelligence); both backfill + webhook run the
+                         value through `transcriptText()` (functions/lib/callrail-api.js) which coerces
+                         CallRail's string/object/array transcript shape to plain text. Field name +
+                         shape unverified against the live account — re-run the backfill to confirm.
+                         Endpoint path/field names are unverified against a live account — same
+                         open item as the webhook. Hard-capped at 50 pages to guard against a
+                         runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for
+                         "historical calls + form leads" — this worker deliberately backfills calls
+                         only; CallRail's historical form-submission list API is a second,
+                         differently-shaped endpoint this session couldn't verify without a live
+                         account (same open item as whether the site's form even routes through
+                         CallRail's Form Tracking product — see docs/crm-roadmap.md "Open items to
+                         confirm before Phase 1 starts"). Does NOT affect live form leads — those
+                         arrive the same way calls do, through callrail-webhook.js's
+                         mapFormPayload(), once CallRail is connected.
+callrail-recording.js — GET, authenticated. Streams a call recording INLINE so staff never leave
+                         the Call Log. `inbound_leads.recording_url` is CallRail's authenticated API
+                         endpoint (opening it directly in a browser → "HTTP Token: Access denied"),
+                         so this proxy takes a `lead_id`, reads that lead's recording_url + the
+                         CallRail API key from integration_credentials, fetches with the
+                         `Authorization: Token token="…"` header, and streams the audio back. SSRF
+                         guard (`isAllowedRecordingUrl`, functions/lib/callrail.js): proxies only a
+                         CallRail-hosted URL stored on that lead — the `api.callrail.com` REST form
+                         (backfill) OR the `app.callrail.com/calls/{id}/recording/redirect?access_key=…`
+                         signed redirect the LIVE webhook delivers (the latter was previously rejected
+                         with 400 "Unsupported recording URL", breaking playback of live calls). The
+                         key never reaches the client. Robust to CallRail's response shape: streams
+                         audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
+                         streams that, else returns a 502 with the upstream status + body snippet so
+                         a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
+                         `<audio src>` can't carry the Supabase Bearer) and plays it in a compact
+                         **custom** player (`RecordingPlayer` — a hidden `<audio>` engine + CRM-styled
+                         play/pause, seek, and time), not the browser's default control chrome. Each
+                         call row also has a collapsible **"Show transcript"** toggle (only when a
+                         transcript exists), and a **"Transcribe"** button when a recording exists
+                         but no transcript does (calls transcribe-call.js below). The
+                         recording-URL resolution (direct-audio-stream vs. JSON→signed-URL) now lives
+                         in the shared `resolveCallRecording()` (functions/lib/callrail-api.js),
+                         reused by transcribe-call.js.
+transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES because our CallRail
+                         plan doesn't expose transcripts via the API (that needs CallRail's Premium
+                         Conversation Intelligence add-on, ~$110/mo — confirmed live: `transcription`,
+                         `lead_score`, `lead_explanation` all come back null even on long answered
+                         calls). Body `{ lead_id }` (one call, from the Call Log Transcribe button) or
+                         `{ backfill: true, days?: 30 }` (every recent call with a recording but no
+                         transcript). Reads the Deepgram + CallRail keys from integration_credentials,
+                         resolves the recording via `resolveCallRecording()`, then hands Deepgram the
+                         signed URL so it fetches the audio itself (no Worker buffering; falls back to
+                         POSTing bytes when CallRail streams directly). **v2 request** (one call):
+                         `model=nova-3&smart_format&punctuate&utterances&multichannel&diarize` +
+                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`. CallRail
+                         records Agent/Customer on **separate stereo channels**, so `multichannel`
+                         gives exact speaker separation (Agent/Customer labels); `diarize` is the mono
+                         fallback ("Speaker N"). Stores BOTH the flat text (`formatDeepgramTranscript`)
+                         and the structured `transcript_analysis` (`buildTranscriptAnalysis` — pure,
+                         unit-tested: turns + summary + sentiment + topics + entities) via
+                         `set_lead_transcription`. **Idempotency:** the single-lead guard skips only
+                         when a row has BOTH transcript AND analysis (unless `force`); the backfill
+                         targets `or=(transcription.is.null,transcript_analysis.is.null)` so pre-v2
+                         rows get re-enriched once with nova-3 + intelligence, then are skipped.
+                         Backfill hard-capped at 200 (MAX_BACKFILL); logs one worker_runs row.
+                         **Deepgram key** lives in integration_credentials (provider='deepgram') —
+                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. First
+                         live run confirms the stereo download + exact Audio-Intelligence field paths
+                         (parser is defensive; unconfirmed shapes degrade to null/[], never throw).
+                         **Speaker naming (best-effort):** after Deepgram, a Claude Haiku pass
+                         (`functions/lib/speakerNaming.js` — pure buildSpeakerPrompt/
+                         parseSpeakerIdentities/applySpeakerIdentities, unit-tested) identifies which
+                         speaker is the Agent vs Customer and each person's name, relabeling the
+                         `transcript_analysis` turns (each turn gains a `role`). The caller's name is
+                         stored via `set_lead_caller_name`. Needs `ANTHROPIC_API_KEY` (Cloudflare env,
+                         already set for the chat workers); any failure leaves Speaker 1/2 untouched.
+                         Topics are capped to the 6 most-confident in `buildTranscriptAnalysis`
+                         (Deepgram over-tags). The Call Log renders turns as grouped speaker blocks
+                         (consecutive same-speaker turns merged; name bold-blue; tinted by role).
+```
+
+**Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
+`<Outlet/>`): a `.crm-shell` wrapper scoping its own `--crm-*` design tokens (dark sidebar, Public
+Sans font loaded in `index.html`) — deliberately its own visual identity, not UPR's Inter-based
+look, mirroring how `.tech-layout` scopes `--tech-*` tokens. A left sidebar (desktop ≥1024px; a
+horizontal scrollable strip below that) lists Overview, Leads, Call Log, Tasks, Attribution,
+Reports, Integrations, Settings — icons in the new `src/lib/crmIcons.jsx` (kept separate from
+`src/lib/navItems.jsx` because a couple of names, e.g. `IconLeads`, would otherwise collide with
+unrelated existing icons there). `/crm/roadmap` (Phase 0) is intentionally NOT one of these sidebar
+items — it stays in the main app's visual style as a separate build/ops page, linked from the CRM
+sidebar's footer instead of taking a nav slot; `/crm` now redirects to `overview` (was `roadmap`).
+`/crm/roadmap` also gained a page-local dark mode (defaults on, toggle button in the page header) —
+a `.crm-roadmap-page.dark` wrapper re-points the same `--bg-*`/`--text-*`/`--border-*`/
+`--accent-light` custom properties `.page`/`.card`/`.status-badge` already read, same scoped-
+token-override trick as `.tech-layout`/`.crm-shell`. Plain component state, not `localStorage` (per
+the app's no-localStorage-for-state rule) — resets to dark on reload rather than persisting.
+
+**Top-nav placement**: the `crm` nav entry moved from `OVERFLOW_ITEMS` (the "..." drawer) to
+`PRIMARY_ITEMS` in `src/lib/navItems.jsx` — it now renders directly in the always-visible desktop
+top bar, not buried behind the menu. Visibility is unchanged: still gated by `isItemVisible()`'s
+`featureFlag: 'page:crm'` check, so it only appears for whoever the flag's `dev_only_user_id`
+resolves to (Moroni) — every other employee's top bar still shows exactly the original 7 items.
+The legacy `NAV_ITEMS` sidebar entry's path was also updated to `/crm/overview` (was `/crm/roadmap`)
+to match the new default landing page.
+
+Only two sidebar pages have real data this phase (`src/pages/crm/`):
+- **CrmCallLog.jsx** (`/crm/call-log`) — lists `inbound_leads` (embeds `contacts` via the
+  `contact_id` FK), newest first; inline `<select>` to change `lead_status` (calls
+  `update_lead_status`); recording link + transcript shown when present.
+- **CrmIntegrations.jsx** (`/crm/integrations`) — a card per provider: CallRail (paste-API-key
+  form when disconnected, or a status + inline two-click "Disconnect" confirm when connected —
+  calls `/api/callrail-connect` POST/DELETE), plus **Google Ads and Meta Ads (Phase 2, shipped
+  this session)** — a shared `OAuthProviderCard` component: "Connect"/"Reconnect" redirects to
+  `/api/google-ads-connect` or `/api/meta-ads-connect` (GET → `{url}` → `window.location.href`,
+  same pattern DevTools' QuickBooks card uses), lands back on `/crm/integrations?google_ads=` /
+  `?meta_ads=connected|error|badstate` which the page toasts and clears from the URL. Two-click
+  "Disconnect" via the same connect workers' DELETE. None of the three cards ever writes
+  `integration_credentials` directly from the frontend (no anon/authenticated RLS policy —
+  service-role only, same as QBO); status reads go through the read-only `get_integration_status`
+  RPC for all three providers.
+
+Only `CrmTasks.jsx` still renders the shared `CrmStubPage.jsx` ("Coming in Phase 4d") until its
+phase ships. `CrmLeads.jsx` and `CrmSettings.jsx` shipped real screens in **Phase 4a**;
+`CrmOverview.jsx`, `CrmAttribution.jsx`, and `CrmReports.jsx` shipped in **Phase 3** — see those
+sections below.
+
+**Test-first**:
+- `functions/lib/callrail.test.js` — vitest unit test for `shouldCreateContact({spam_flag,
+  duration_sec})` (test target "c"), committed before `functions/lib/callrail.js` existed.
+- `supabase/tests/crm_phase1_callrail.test.js` — integration test (same pattern as Phase 0's) for
+  `upsert_lead_from_callrail` idempotency (test target "b"): a redelivered "recording ready" webhook
+  updates the same row instead of duplicating it, preserving fields the second payload didn't
+  include; plus an integration assertion that a spam/sub-15-second call never creates a contact.
+  Self-skips via `describe.skipIf` without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` (matches
+  CI). **Same known sandbox limitation as Phase 0**: this session's network egress doesn't allow-list
+  the Supabase host, so the committed test couldn't run live here either — the identical scenario
+  (create → redeliver with new fields → assert one row + merged fields; spam call → assert no
+  contact) was instead run for real against the live shared database via the Supabase MCP
+  `execute_sql` tool, passed, and the manually-inserted rows were deleted afterward.
+
+**Acceptance criteria status (docs/crm-roadmap.md "Phase 1 — verification & acceptance")**: the
+RPC-level criteria (idempotent upsert, spam filter, `system_events`/`worker_runs` logging, API key
+read from `integration_credentials` not a hardcoded secret) are verified live per above. **Not
+verified from this sandbox** — needs Moroni, post-merge: a real call/form through an actual CallRail
+account and dedicated dev tracking number (this session has no CallRail account access), the
+backfill's row count against CallRail's own dashboard, and the visual check of Call Log +
+Integrations against the original Stitch handoff mockup (not present in the repo — it was reviewed
+in an earlier session's chat, not committed as an asset) on the branch's Cloudflare preview. The
+CallRail webhook auth mechanism and payload field names are also placeholders pending confirmation
+against CallRail's real dashboard/docs (see the workers' NOTES above) — the two "open items to
+confirm before Phase 1 starts" from the roadmap were not resolvable in this session either, for the
+same reason.
+
+**Independent review**: `upr-pattern-checker` found 5 hardcoded-hex CSS violations outside the
+`.crm-shell` token block and one two-click-confirm missing its `onBlur` cancel — all fixed (see git
+history). `crm-phase-reviewer` (Opus) then graded the phase DO-NOT-SHIP-YET pending three fixable
+items, all addressed before this PR: (1) the Integrations page's file header claimed it showed the
+webhook URL/secret but didn't — `callrail-connect.js` gained a `GET` endpoint and the page now
+displays it; (2) the backfill worker's calls-only scope vs. the roadmap's "calls + form leads" spec
+was silently narrowed in this doc rather than disclosed — fixed above; (3) phase/stage status was
+undocumented — fixed by this paragraph and the dogfooding note below. The remaining open acceptance
+criteria (real call/form, backfill count, visual check, webhook auth confirmation) were confirmed by
+the reviewer as legitimately blocked by this session's no-CallRail-account/no-Supabase-egress
+limits, not silent gaps.
+
+**Dogfooding**: 4 of 8 `crm_build_stages` rows are marked `done` as of this session's close-out
+(test-first, `npm test`/`build`/`eslint`, `upr-pattern-checker`+`crm-phase-reviewer` sign-off,
+this doc update) via `set_crm_stage_status`; `crm_build_phases('1')` is `in_progress`, not yet
+`shipped` — same honest pattern as Phase 0. The remaining 4 stages (full acceptance criteria, the
+visual check, marking `shipped`, and the `dev → main` PR) need a real CallRail account and a
+logged-in Moroni session this sandbox doesn't have. Flip them via
+`set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
+Cloudflare preview and a real CallRail connection.
+
+### Phase 2 — Ad spend ingestion (Google Ads + Meta Ads)
+
+**New table** `ad_spend` (`supabase/migrations/20260701_crm_phase2_adspend.sql`, applied to the
+live shared dev/main Supabase project) — `id, org_id (FK crm_orgs), platform ('google'|'meta'),
+campaign_id, campaign_name, date, spend, impressions, clicks, platform_conversions, created_at,
+updated_at`, `UNIQUE(platform, campaign_id, date)`. `platform_conversions` is deliberately
+informational-only (Google/Meta's own conversion counts never reconcile with CallRail's) —
+**CallRail leads + won jobs in UPR remain the funnel's one source of truth**; ad platforms only
+ever supply spend dollars. RLS enabled + explicit `FOR ALL` policy at creation.
+
+**RPCs** (both `SECURITY DEFINER`, granted `anon, authenticated`):
+- `upsert_ad_spend(p_platform, p_campaign_id, p_campaign_name, p_date, p_spend, p_impressions,
+  p_clicks, p_platform_conversions, p_org_id)` — true upsert on `(platform, campaign_id, date)`;
+  `spend`/`impressions`/`clicks`/`platform_conversions` overwrite on conflict (not additive) so a
+  same-day re-pull corrects that day's revised numbers in place. Defaults `org_id` to the real
+  (non-test) org, same pattern as `upsert_lead_from_callrail`. **Idempotency verified live** via
+  Supabase MCP: two calls for the same platform/campaign/date left exactly one row with the
+  second call's values; the manually-inserted test row (`campaign_id='TESTCMP001'`) was deleted
+  afterward.
+- `get_ad_spend(p_platform, p_start_date, p_end_date)` — read helper for verification now and the
+  Phase 3 dashboard later.
+
+**Workers**:
+```
+functions/lib/date-mt.js      — mountainYesterday(nowUtc) / isStale(lastUtc, nowUtc, days), pure,
+                                 America/Denver (DST-aware via Intl) calendar-day math — the one
+                                 place the roadmap's "pick one timezone convention" rule lives.
+                                 Test-first: functions/lib/date-mt.test.js, 7 vitest unit tests
+                                 (MDT/MST DST boundaries + a UTC-midnight-that-isn't-an-MT-boundary
+                                 case), committed failing before the implementation existed.
+functions/lib/google-ads.js   — Google OAuth (buildAuthorizeUrl/exchangeCodeForTokens/
+                                 refreshTokens/saveTokens/getValidAccessToken, mirrors
+                                 quickbooks.js) + fetchCampaignSpend() via GAQL searchStream.
+                                 SEPARATE OAuth app from google-drive.js's per-user Drive/Calendar
+                                 app on purpose — its own env vars (GOOGLE_ADS_CLIENT_ID/SECRET/
+                                 REDIRECT_URI/DEVELOPER_TOKEN/CUSTOMER_ID, optional
+                                 GOOGLE_ADS_LOGIN_CUSTOMER_ID for MCC) — one company-wide
+                                 integration_credentials row, not per-employee.
+functions/lib/meta-ads.js     — Meta/Facebook OAuth (no classic refresh_token grant — a short-lived
+                                 code-exchange token is exchanged for a ~60-day long-lived token;
+                                 getValidAccessToken re-exchanges the current long-lived token when
+                                 within 5 days of expiry) + fetchCampaignSpend() via Graph API
+                                 Insights (paginated, MAX_PAGES=50 cap). Env vars: META_APP_ID/
+                                 APP_SECRET/REDIRECT_URI/AD_ACCOUNT_ID.
+google-ads-connect.js         — GET (authenticated, returns {url} for window.location.href) /
+google-ads-callback.js          DELETE (disconnect), mirrors quickbooks-connect.js/
+                                 quickbooks-callback.js exactly. Callback redirects to
+                                 /crm/integrations?google_ads=connected|error|badstate.
+meta-ads-connect.js /         — same shape as the Google Ads pair; callback exchanges the OAuth
+meta-ads-callback.js            code for a short-lived token then immediately for a long-lived one
+                                 before saving. Redirects to /crm/integrations?meta_ads=...
+sync-google-ads.js /          — GET/POST (authenticated, manual trigger) + `scheduled()` export for
+sync-meta-ads.js                Cloudflare's dashboard-configured daily Cron Trigger (no
+                                 wrangler.toml in this repo, per CLAUDE.md). Default run pulls ONE
+                                 day — mountainYesterday(now) — via fetchCampaignSpend(), upserts
+                                 each campaign/day through upsert_ad_spend. `{ backfill: true,
+                                 days }` (default 365, capped at 400 — MAX_BACKFILL_DAYS) pulls a
+                                 historical range. Per-row upsert failures don't abort the run
+                                 (mirrors callrail-backfill.js); every invocation logs a
+                                 worker_runs row (worker_name 'sync-google-ads'/'sync-meta-ads').
+```
+
+**Frontend**: `CrmIntegrations.jsx` gained real Google Ads / Meta Ads cards (`OAuthProviderCard`,
+shared by both providers) replacing Phase 1's "Coming in Phase 2" placeholders — see the Phase 1
+Integrations entry above for the full connect/disconnect flow. New `--crm-integration-google`
+(`#4285f4`) / `--crm-integration-meta` (`#0866ff`) tokens in the `.crm-shell` block.
+
+**DISCLOSED GAP, NOT AN OVERSIGHT — needs human verification before the first real cron run**:
+the exact Google Ads API (GAQL `searchStream`, pinned at `v18`) and Meta Graph API (Insights,
+pinned at `v19.0`) request/response field shapes are best-effort, written from public API docs,
+**not exercised against a live developer-token account in this session** — same disclosed-gap
+pattern Phase 1 used for CallRail's webhook payload shapes. This is downstream of the roadmap's
+own Phase 2 prerequisite ("Google Ads developer token approved") being an external, days-to-weeks
+Google approval process with no tool available in this environment to check or complete it.
+Nothing runs until a human connects real credentials via the Integrations page — confirm the API
+shapes against a live account at that point, per each file's NOTES section
+(`functions/lib/google-ads.js`, `functions/lib/meta-ads.js`).
+
+**Test-first**: `functions/lib/date-mt.test.js` (7 tests) committed at `597772e` before
+`functions/lib/date-mt.js` existed — confirmed genuinely failing at that commit (import error),
+then passing once the implementation landed at `fcc6b42`.
+
+**`npm run test` + `npm run build` + `npx eslint`**: all green on every changed file.
+
+**Independent review**: `upr-pattern-checker` found one hardcoded inline `style={{ gap: 8 }}` in
+`CrmIntegrations.jsx` where `--space-2` already existed as the matching token — fixed (now
+`.crm-integration-actions-row`). `crm-phase-reviewer` (Opus) graded every acceptance criterion
+PASS except this doc update (fixed by this paragraph) and two live-only unverifiable items (the
+`crm_build_phases`/test-row state, confirmed below; the backfill-vs-platform-dashboard tolerance
+check, which needs a live connected account) — recommendation **SHIP into `dev`** (not `main` —
+invisible behind `page:crm`/`dev_only_user_id` either way). Full verdict in this session's
+transcript.
+
+**Dogfooding**: all 8 `crm_build_stages` rows for phase-2 are marked `done` via
+`set_crm_stage_status` (test-first, acceptance criteria met in-session, test/build/eslint green,
+both review agents passed, this doc update, `crm_build_phases('2')` set to `shipped`, test
+`ad_spend` row deleted) — except the branch-push/PR stage, flipped once the PR is actually opened.
+The GAQL/Insights live-account verification called out above is an operational follow-up for
+Moroni post-merge, not a build-completion blocker (same treatment Phase 1 gave its
+CallRail-account-dependent items).
+
+### Phase 3 — Attribution + funnel dashboard
+
+**Design record**: `docs/crm-phase3-attribution-model.md` (Opus-High pass, written before any metric
+code per the roadmap's model note). Locks in: **last-touch, single-touch** attribution for v1 (every
+touch stored so first-touch/weighted is a future re-aggregation, not a schema change); **UPR's
+won-job + QBO `jobs.invoiced_value` is the single source of truth for conversions + revenue**;
+CallRail's "converted" flag and `ad_spend.platform_conversions` are informational-only, never in the
+ROAS/cost math; zero-spend channels render `—`, not `0`.
+
+**New table** `lead_attribution` (`supabase/migrations/20260701_crm_phase3_attribution.sql`, applied
+live to the shared dev/main Supabase) — `id, org_id (FK crm_orgs), lead_id (FK inbound_leads, ON
+DELETE CASCADE), contact_id (FK contacts, ON DELETE CASCADE), channel (CHECK IN
+google_ads|meta_ads|organic|referral|insurance|other), source, campaign, referral_source_id (FK
+referral_sources), occurred_at, created_by, created_at, updated_at`. One row per attribution TOUCH;
+last-touch is computed at query time by `MAX(occurred_at)` so position never goes stale. RLS enabled
++ explicit `FOR ALL` policy at creation; writes via the `upsert_lead_attribution` RPC. Additive-only
+— no existing table altered.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `crm_channel_for_source(p_source text) → text` — normalizes a raw source string to a canonical
+  channel. Data-driven: keyword rules (ordered so organic-Google — My Business/SEO — is matched
+  before paid-Google — Ads/LSA), then a `referral_sources.category` fallback (insurance→insurance,
+  personal/trade/program/real_estate/emergency→referral, digital→organic, traditional/other→other).
+  Verified live against 23 sample strings incl. the paid-vs-organic Google split.
+- `get_attribution_rollup(p_start_date, p_end_date, p_org_id) → TABLE(channel, spend, leads,
+  estimates, won_jobs, revenue)` — the per-channel funnel aggregate; always returns all six channels
+  (VALUES list) so zero-spend rows never disappear. Raw counts/sums ONLY — the derived money math
+  lives in the unit-tested `src/lib/attribution.js`, never in SQL. Leads counted per lead (CallRail =
+  truth); estimates (`status <> 'draft'`), won jobs (`phase <> 'lead' AND status <> 'deleted'`) and
+  revenue (`SUM(jobs.invoiced_value)`) counted per contact's last-touch channel with `COUNT(DISTINCT
+  job.id)` guarding the contact→jobs fan-out; anything unresolvable folds into `other`. **Verified
+  live**: the job/revenue aggregation matched an independent hand-recompute exactly (other 95 jobs /
+  $300,975, insurance 2 / $1,250, google_ads 2 / $0, organic 2 / $0, referral 1 / $0 — 102 jobs /
+  $302,225 total), and the spend/ROAS/cost-per-job path was verified with disposable TEST-org
+  `ad_spend` rows (google $1000 / meta $500) then cleaned up (`ad_spend` back to 0 rows).
+- `get_attribution_by_campaign(p_start_date, p_end_date, p_org_id) → TABLE(channel, platform,
+  campaign_id, campaign_name, spend, leads)` — paid-campaign detail (Google Ads split by agency,
+  encoded in `campaign_name`), leads matched by `inbound_leads.campaign = ad_spend.campaign_name`.
+- `get_crm_revenue_by_division(p_start_date, p_end_date) → TABLE(division, won_jobs, revenue)` —
+  Reports' won-revenue-by-division. **Namespaced `get_crm_*`** to avoid colliding with the
+  pre-existing `get_revenue_by_division(date,date) → jsonb` (a different, unrelated function — the
+  first migration attempt failed on this and was corrected).
+- `upsert_lead_attribution(p_channel, p_source, p_campaign, p_lead_id, p_contact_id,
+  p_referral_source_id, p_occurred_at, p_created_by, p_org_id) → lead_attribution` — the RPC write
+  path (manual entry / enrichment); validates channel, requires a lead_id or contact_id, logs a
+  `system_events` `crm_lead_attributed` row. Not wired to UI this phase (dashboards are read-only).
+
+**Money math** — `src/lib/attribution.js` (pure, importable, unit-tested): `costPerLead(spend,leads)`
+(null if spend≤0 or leads≤0), `roas(revenue,spend)` (null ONLY if spend≤0 — a real $0 revenue on
+real spend is a legitimate 0.0×), `costPerJob(spend,jobs)`, `conversionRate(num,denom)` (null only on
+zero denom — a 0 numerator over a positive denom is a real 0%), `deriveChannelMetrics(row)`,
+`rollupTotals(rows)` (blended efficiency computed on PAID channels only so ads aren't credited with
+organic revenue), `funnelStages(counts)`, and `fmtMoney/fmtRatio/fmtPct` (null → `—`, real 0 →
+`$0`/`0.0×`/`0%`). **Test-first**: `src/lib/attribution.test.js` (40 units, every expected value
+hand-computed) committed failing before the module existed, then green.
+
+**Frontend** (fill the three CRM-shell stub pages, `.crm-*` design system):
+- **CrmOverview.jsx** (`/crm/overview`) — KPI cards (spend/leads/estimates/won/revenue/ROAS) + the
+  Leads→Estimates→Won funnel (bars scale to the largest stage so they stay readable before CallRail
+  leads accumulate).
+- **CrmAttribution.jsx** (`/crm/attribution`) — per-channel table (Spend, Leads, Cost/lead,
+  Estimates, Won, Cost/job, Revenue, ROAS; zero-spend rows show `—`) + Google Ads by campaign/agency.
+- **CrmReports.jsx** (`/crm/reports`) — Source ROI, Won revenue by division, funnel conversion.
+- **attributionParts.jsx** (components) + **attributionData.js** (helpers: `CHANNEL_LABELS`, `RANGES`,
+  `rangeToDates`, `toNumberRow`, `deriveRows`) — split into two files so the `react-refresh` lint rule
+  stays clean. New `--crm-*` scoped CSS block (metric cards, funnel, range picker, table,
+  `--crm-channel-insurance` token). No `App.jsx` change — routes already existed from Phase 1.
+
+**`npm run test` (80 pass / 9 skip) + `npm run build` + `npx eslint` (changed files)**: all green.
+
+**Independent review**: `upr-pattern-checker` found one raw hex (`#d97706`) where a `--crm-*` token
+should exist — fixed (`--crm-channel-insurance` token) — plus a cosmetic `get_funnel_overview`
+comment/doc drift (the RPC shipped as `get_attribution_rollup`) — fixed. `crm-phase-reviewer` (Opus,
+weighted on the attribution math) graded the pure money-math module (`attribution.js`) clean —
+test-first ordering independently reproduced, every null/zero/div-by-zero boundary and the paid-only
+blended ROAS hand-checked — and returned three actionable items, all resolved:
+1. **Estimate filter** — flagged `e.status <> 'draft'` as dropping NULL-status rows via SQL
+   three-valued logic. **Verified live the premise doesn't hold** (`estimates.status` is NOT NULL;
+   0 nulls, 0 drafts; rollup estimates = 34 = all), so there was no undercount — but hardened to the
+   null-safe `e.status IS DISTINCT FROM 'draft'` (codebase convention) anyway; totals unchanged.
+2. **Google paid/organic keywords** — "Google Business Profile" (GMB's rename) and spelled-out
+   "Local Services Ads" weren't covered. Added `%business profile%` → organic and `%local service%`
+   → google_ads; re-verified live (both now classify correctly, existing 23 samples unchanged). The
+   actual `referral_sources`/`contacts.referral_source` values in the DB already classified correctly.
+3. **Doc update** — this section + the stub-description fix above.
+The reviewer also noted the by-design last-touch asymmetry (leads counted by the lead's own source,
+downstream conversions by the contact's last-touch channel) — disclosed on the Attribution page and
+in the design doc, not a blocker for last-touch v1.
+
+**Owner-gated verification**: `page:crm` is `enabled=false` with a `dev_only_user_id` gate, so
+`/crm/*` is invisible to any non-Moroni session — the branch preview **builds** green (same Vite
+build as local), but the behind-auth screenshot of the Attribution/Overview/Reports screens vs the
+handoff requires Moroni's own session (same owner-gated treatment Phase 1/2 used for
+account-dependent checks). `ad_spend` is still empty pending the Google Ads token, so paid-channel
+cost/ROAS cells legitimately render `—` until the first sync runs.
+
+**Dogfooding**: phase-3 `crm_build_stages` reconciled honestly and `crm_build_phases('3')` set to
+`shipped` via the status RPCs (see the close-out reconciliation in this session).
+
+### Phase 4a — Lead pipeline
+
+Built directly off the Phase 1 shell (its only hard dependency, per the roadmap's own escape
+hatch) rather than waiting on Phase 3, which was being built in a separate, parallel session at
+the same time — no file overlap: this phase owns the Leads board, the contact activity timeline,
+and pipeline-stage Settings CRUD; Phase 3 owns Attribution/Overview/Reports.
+
+**New tables** (`supabase/migrations/20260701_crm_phase4a_lead_pipeline.sql`, applied to the live
+shared dev/main Supabase project):
+- **`pipeline_stages`** — `id, org_id (FK crm_orgs), name, sort_order, color, is_won, is_lost,
+  created_at, updated_at`. Replaces the hardcoded New/Contacted/Qualified/Estimate Sent/Won/Lost
+  enum that used to live only as `inbound_leads.lead_status` text + `CrmCallLog.jsx`'s
+  `STATUS_OPTIONS` array — now a real, admin-editable table. Seeded with that same six-stage
+  default set for both the real org and the disposable "Utah Pros — TEST" org. RLS enabled +
+  explicit `FOR ALL` policy at creation.
+- **`lead_pipeline_stage`** — `id, lead_id (FK inbound_leads, UNIQUE), org_id (FK crm_orgs),
+  stage_id (FK pipeline_stages), moved_by (FK employees), created_at, updated_at`. Tracks each
+  lead's current stage as its own table rather than a column added to `inbound_leads` — keeps this
+  phase's migration to brand-new tables only, with zero touch to a table a prior phase introduced.
+  A lead with no row here reads as sitting in the first stage (lowest `sort_order`) — both the
+  frontend (`src/lib/crmPipeline.js`'s `groupLeadsByStage()`) and nothing server-side enforce this;
+  it's a read-time fallback, not a DB default. RLS enabled + explicit policy at creation.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
+- `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
+  (`p_id` NULL) or rename/recolor/reorder/toggle-won-lost (`p_id` set) a stage; no code change
+  needed for any of that, per the roadmap's "not a hardcoded enum" requirement.
+- `delete_pipeline_stage(p_stage_id)` — refuses (raises, surfaced as a toast) if any lead is still
+  on that stage, so a delete can never silently orphan a `lead_pipeline_stage` row.
+- `move_lead_to_stage(p_lead_id, p_stage_id, p_moved_by)` — true upsert on `lead_id`; logs a
+  `crm_lead_stage_changed` `system_events` row.
+- `get_contact_activity(p_contact_id)` — the unified activity timeline: `UNION ALL` across
+  `inbound_leads` (calls/forms, Phase 1), `messages` joined through `conversation_participants`
+  (SMS — `messages.channel` exists on the table but is never written by any current worker, so the
+  SMS branch reads `messages.type`, e.g. `sms_outbound`/`sms_inbound`, which
+  `functions/api/send-message.js` / `twilio-webhook.js` actually populate), `job_notes` joined
+  through `contact_jobs` (notes are job-scoped, not contact-scoped, hence the join), and `estimates`
+  (`contact_id` is direct). Ordered newest-first across all four sources.
+
+**Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
+the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
+the board was empty and untestable, and there was no way to add a walk-in/referral lead by hand.
+Added a **"+ New lead"** button on `CrmLeads.jsx` (and in its empty state) opening a create panel
+(name/phone/source/value), backed by a new `create_manual_lead(p_phone, p_name, p_source, p_value,
+p_org_id, p_created_by)` RPC (`SECURITY DEFINER`, granted `anon, authenticated`). It matches or
+creates a `contacts` row by phone (name backfilled only when blank), then inserts an `inbound_leads`
+row and logs a `crm_lead_created_manual` `system_events` row. **Additive-only — no schema change**:
+a manual lead has no CallRail id so the RPC synthesizes a unique `manual:<uuid>` `callrail_id` (that
+column is NOT NULL + UNIQUE), and uses `source_type='form'` because the `source_type` CHECK only
+allows `call`/`form` and an additive change must not alter that live constraint — the real origin
+lives in the `source` column (e.g. `Referral`, `Walk-in`). Verified live against the TEST org
+(create → assert one lead + one contact by phone → a second same-phone lead reuses the one contact →
+cleaned up); integration test at `supabase/tests/crm_manual_lead.test.js` (committed test-first,
+self-skips without live creds, same as the Phase 0/1 suites). **Phone is normalized to E.164 in
+`CrmLeads.jsx`'s create panel** via `normalizePhone()` (`src/lib/phone.js`) before the RPC call —
+the same canonical form CallRail ingestion and every other create-contact flow use — so a
+hand-typed `(801) 555-0100` matches (never duplicates) an existing contact on the unique `phone`
+column; an invalid number is rejected with a toast.
+
+**Frontend** (`src/pages/crm/`), replacing their Phase 1 `CrmStubPage.jsx` placeholders:
+- **CrmLeads.jsx** (`/crm/leads`) — a real Kanban board, reusing `Production.jsx`'s drag-and-drop
+  pattern (desktop-only `draggable`, gated by the same `isTouchDevice()` check) rather than building
+  one from scratch. Columns come from `get_pipeline_stages`, sorted via `sortStages()`; cards are
+  every non-spam `inbound_leads` row (contact embedded), bucketed via `groupLeadsByStage()`. Header
+  subtitle shows a **weighted pipeline value** (`weightedPipelineValue()` — `is_won` stages weight
+  1, `is_lost` weight 0, open stages weight by position among the open stages, `(index+1)/(open+1)`
+  — a deliberately simple stage-position heuristic, not a configurable probability field, since
+  `pipeline_stages` has no such column). Clicking a card opens a slide-out detail panel: a stage
+  `<select>` (the touch-device path for moving a lead, since drag is disabled there), lead
+  metadata, and the `get_contact_activity`-backed timeline, badge-colored per activity type.
+- **CrmSettings.jsx** (`/crm/settings`) — pipeline-stage CRUD: add, inline rename/recolor/
+  won-lost-toggle, reorder via left/right buttons that swap `sort_order` with the neighboring stage
+  (simpler and more reliable than drag-and-drop for an admin settings screen), delete via the
+  inline two-click confirm pattern (`onBlur` cancels — no modal, per CLAUDE.md Rule 2), surfacing
+  the server-side in-use guard as a toast if a stage still has leads on it.
+
+**New pure-function module**: `src/lib/crmPipeline.js` — `sortStages`, `groupLeadsByStage`,
+`stageWeight`, `weightedPipelineValue`. No DB access; used by both `CrmLeads.jsx` (board rendering)
+and `CrmSettings.jsx` (stage ordering).
+
+**New CSS**: `.crm-board-*` / `.crm-panel-*` / `.crm-timeline-*` / `.crm-stage-*` in `src/index.css`,
+all under the existing `--crm-*` token scope (no new global tokens).
+
+**Test-first**: `src/lib/crmPipeline.test.js` committed at `2afde90`, before `src/lib/crmPipeline.js`
+existed (`bb34502`) — confirmed genuinely failing at the test-only commit (import error). Covers
+stage-ordering-respects-`sort_order` (including a no-mutation check) and the weighted-pipeline-value
+math against a hand calculation across open/won/lost stages, plus the null-value-contributes-zero
+edge case.
+
+**`npm run test` + `npm run build` + `npx eslint`**: all green on every changed file.
+
+**Independent review**: `upr-pattern-checker` found zero violations. `crm-phase-reviewer` (Opus)'s
+first pass raised one claimed blocker — that `get_contact_activity` referenced a non-existent
+`messages.channel` column. That premise was actually wrong: `messages.channel` is a real column
+(confirmed live via `information_schema.columns` and by running the RPC against a real contact),
+so the RPC never threw. It's simply never populated by any current worker, so the fix applied was
+a data-quality improvement rather than a crash fix — the SMS branch now reads the actually-populated
+`messages.type` instead. A second reviewer pass, done skeptically (independently re-verifying
+`messages.type`'s provenance via `send-message.js`/`twilio-webhook.js` rather than taking the fix on
+faith), confirmed the fix and passed every acceptance criterion except this doc update itself
+(now resolved by this section) — recommendation **SHIP into `dev`**.
+
+**Dogfooding**: 3 of `phase-4a`'s 5 `crm_build_stages` rows flipped to `done` via
+`set_crm_stage_status` — test-first, the Kanban+timeline+Settings-CRUD acceptance criteria, and
+test/build/eslint+both review agents; `crm_build_phases('4a')` set to `shipped` (per CLAUDE.md's
+"set status → update this doc — before opening the PR" order, same as Phase 2). Two stages stay
+`todo`, honestly: the visual-check-vs-Stitch-handoff stage — it needs a logged-in Moroni session on
+the branch's Cloudflare preview, which this sandbox doesn't have, same disclosed owner-gated
+treatment Phase 1 gave its CallRail-account-dependent items, not a forgotten step — and the final
+"set shipped/docs updated/pushed/PR opened" stage, which bundles the push+PR sub-step that hasn't
+happened yet as of this doc edit (docs and the phase-shipped flip are done; push+PR is not) — same
+split Phase 2 used, flipped once the PR is actually opened. No test rows needed cleanup this phase:
+all verification queries against real (non-test-org) rows were read-only or exercised against
+disposable TEST-org rows that were deleted immediately after (see the migration's own commit
+message).
+
+### Phase 4c — Email campaigns
+
+Built **before Phase 4b** (text blasts) via an explicit, authorized reprioritization: 4b is
+blocked on Twilio A2P 10DLC carrier approval (external, days-to-weeks); email runs on Resend,
+already integrated, with no such dependency. The roadmap's own hard prerequisite — the CRM shell +
+Phases 3/4a merged into `dev` — was confirmed live before this build started (branch diffed 0/0
+against `origin/dev` at the tip carrying PR #195/#196). 4b's mention as 4c's prerequisite in
+`docs/crm-roadmap.md` is the linear-chain default, not a real code/data dependency — 4c introduces
+its own tables and touches nothing 4b would have added.
+
+**New tables** (`supabase/migrations/20260701_crm_phase4c_email_campaigns.sql`, applied to the live
+shared dev/main Supabase project) — deliberately NOT built on the pre-existing `campaigns`/
+`campaign_recipients` tables (already live, queried by `Marketing.jsx` before this phase): those are
+hard-wired for SMS — `campaigns.campaign_type` has a CHECK constraint with no `'email_blast'` value,
+and `campaign_recipients.phone` is `NOT NULL` with no email column. Adding either would mean
+ALTERing a live table, forbidden by this phase's additive-only rule — so email campaigns get fully
+separate tables and the legacy SMS tables are left untouched for Phase 4b:
+```
+email_suppressions          — id, org_id (FK crm_orgs), email, reason ('unsubscribed'|'bounced'|
+                               'complained'|'manual', default 'unsubscribed'), source,
+                               suppressed_at, created_at. UNIQUE on lower(email) — an address is
+                               suppressed regardless of casing on a later send. This is the
+                               compliance-critical list every send checks.
+email_campaigns              — id, org_id, name, subject, template_id (FK message_templates,
+                               nullable — best-effort only, see NOTES below), body_html,
+                               audience_filter jsonb, status ('draft'|'sending'|'sent'|'failed'),
+                               audience_count, total_sent, total_suppressed, total_failed,
+                               scheduled_at, sent_at, created_by (FK employees), created_at,
+                               updated_at.
+email_campaign_recipients     — id, campaign_id (FK email_campaigns, CASCADE), contact_id (FK
+                               contacts, CASCADE), email, status ('pending'|'sent'|'suppressed'|
+                               'failed'), resend_id, error_message, sent_at, created_at.
+                               UNIQUE(campaign_id, contact_id) — the snapshotted audience for one
+                               send.
+```
+All three RLS-enabled at creation (`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)`),
+writes via RPC only.
+
+**RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
+- `preview_email_audience(p_filter, p_org_id) → TABLE(contact_id, name, email)` — segmentation off
+  `contacts`/`referral_sources` per the roadmap: filters on `referral_source` (matches
+  `contacts.referral_source`), `role`, and a `tags` jsonb containment check. Always excludes no-email,
+  `dnd`, and any suppressed address regardless of filter — non-negotiable. Deliberately does **not**
+  filter on `contacts.opt_in_status` (that's the SMS/TCPA opt-in flag) — US marketing email is
+  governed by CAN-SPAM, which is opt-out based, not opt-in based.
+- `get_email_campaigns(p_org_id)` — read helper, defaults to the real org.
+- `upsert_email_campaign(p_id, p_name, p_subject, p_template_id, p_body_html, p_audience_filter,
+  p_org_id, p_created_by)` — create (`p_id` NULL) or edit a still-`draft` campaign; recomputes
+  `audience_count` via `preview_email_audience` on every save.
+- `delete_email_campaign(p_id)` — refuses (raises) unless the campaign is `draft`/`failed`.
+- `queue_email_campaign(p_campaign_id)` — snapshots the resolved audience into
+  `email_campaign_recipients` (idempotent — `ON CONFLICT DO NOTHING`), flips status to `sending`.
+- `record_email_campaign_send(p_recipient_id, p_status, p_resend_id, p_error_message)` — per-recipient
+  result + campaign counter rollup; auto-flips the campaign to `sent` once no `pending` recipients
+  remain, so the worker never needs a separate "finalize" call.
+- `email_unsubscribe(p_email, p_recipient_id, p_org_id)` — the public unsubscribe write path. Given a
+  recipient id, resolves its email/marks that `email_campaign_recipients` row `suppressed`; either
+  way upserts `email_suppressions` (`ON CONFLICT (lower(email)) DO UPDATE` — repeat clicks never
+  error/duplicate).
+
+**Shared send foundation** (`functions/lib/`, built now so Phase 4b can add its SMS branch
+additively rather than a rewrite):
+```
+email-consent.js    — emailAllows({ email, suppressed, dnd }) → boolean. Pure predicate, no I/O —
+                       refuses on no email, suppressed, or dnd; allows otherwise. Test-first:
+                       email-consent.test.js (5 vitest units) committed at 095ab01 before this file
+                       existed — confirmed genuinely failing (import error) at that commit, green
+                       once the implementation landed.
+automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, variables, env, extra)
+                       — the generic single-send entry point Phase 4d's fixed automations will call;
+                       'sms' throws (documented Phase 4b TODO), 'email' looks up the contact +
+                       optional message_templates row (matched by title — that table has no
+                       channel/key column, so this is a best-effort reuse of its variable-
+                       substitution *pattern*, not a real integration) then calls sendGatedEmail.
+                       sendGatedEmail(env, { contact, subject, html, recipientId }) is the ONE path
+                       to sendEmail() for any marketing message — both sendAutomatedMessage('email')
+                       and the campaign worker call it, so the suppression/consent check is
+                       structurally unbypassable. It checks email_suppressions (case-insensitive
+                       ilike lookup) + contact.dnd via emailAllows(), appends an unsubscribe footer
+                       link, and sets List-Unsubscribe/List-Unsubscribe-Post headers (RFC 8058
+                       one-click). The unsubscribe link carries `?rid=<recipient id>` when the caller
+                       has one (campaign sends) so a click flips that exact recipient row, or a plain
+                       `?email=` link otherwise (a future non-campaign automation send).
+email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
+                       `headers` object untouched) — the only change to this pre-existing
+                       transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
+                       water-loss-report) is unaffected since the param defaults to unset.
+```
+
+**Workers**:
+```
+send-email-campaign.js  — POST, authenticated (Supabase session bearer token, verified against
+                           /auth/v1/user with the anon key). Queues the campaign's audience, then
+                           loops recipients: re-fetches each contact's LIVE name + dnd (not the
+                           queue-time snapshot — a large campaign can take a while, and dnd could
+                           change mid-send) before calling sendGatedEmail, records each result via
+                           record_email_campaign_send, and logs one worker_runs row. Never calls
+                           sendEmail() directly — always through sendGatedEmail so the suppression
+                           gate can't be bypassed. Disclosed gap: the recipient loop runs
+                           synchronously in the request; a campaign large enough to risk the
+                           Cloudflare Pages Function execution-time limit would need a batched/queued
+                           redesign — not built this phase since no real campaign has been sent yet.
+email-unsubscribe.js    — public GET/POST (no auth by design — RFC 8058 one-click unsubscribe
+                           requires an unauthenticated POST to succeed), reached from the campaign
+                           email footer link and List-Unsubscribe-Post. Accepts `?rid=` (preferred,
+                           resolves the exact recipient + campaign) or `?email=` (fallback), calls
+                           email_unsubscribe, always returns a 200 HTML confirmation page except when
+                           neither param is present (400).
+```
+
+**Frontend**: `src/pages/Marketing.jsx` (pre-existing page, rewritten) — a simple Email/SMS tab
+switcher. SMS tab unchanged (still Phase 4b's "coming soon" stub reading the legacy `campaigns`
+table). Email tab (`EmailCampaignsTab`/`EmailCampaignForm`) — campaign list with status/audience/
+sent/suppressed/failed counts, a simple builder (name, subject, body with `{{name}}` substitution,
+referral-source + role segmentation dropdowns), a live "Preview audience" count
+(`preview_email_audience`), save-as-draft/edit/delete (two-click inline confirm, no modal), and
+"Send now" (calls `POST /api/send-email-campaign` via `getAuthHeader()`, same pattern
+`CrmIntegrations.jsx` uses for its worker calls). New `.marketing-*` CSS block in `src/index.css` —
+plain app tokens (`--space-*`/`--text-*`), not the CRM shell's `--crm-*` scope, since this page lives
+outside `/crm/*`.
+
+**`page:marketing` flag**: gained a `dev_only_user_id` (Moroni's employee id) this phase via a data
+`UPDATE` (not a schema change) so the new Email tab is previewable — `enabled` stays `false`, so
+every other employee still sees nothing, unchanged from before this phase.
+
+**Test-first**: `functions/lib/email-consent.test.js` (5 units) committed at `095ab01`, confirmed
+genuinely failing (import error) before `email-consent.js` existed at `4e63d64`.
+
+**`npm run test` (94 pass / 9 skip) + `npm run build` + `npx eslint`**: all green on every changed
+file.
+
+**Independent review**: `upr-pattern-checker` — clean, no violations (RLS + explicit policies on all
+three new tables at creation, no ALTER/DROP/rename of any pre-existing table, `useAuth()`-only `db`
+in `Marketing.jsx`, no `alert()`/`confirm()`, two-click inline delete confirm, no hardcoded hex in
+the new CSS). `crm-phase-reviewer` (Opus, weighted on the `emailAllows` gate + unsubscribe wiring)
+traced every `sendEmail()` caller and confirmed the campaign path only ever reaches it through
+`sendGatedEmail`; traced the full unsubscribe loop end-to-end (footer link → RPC → suppression table
+→ excluded from the next `preview_email_audience`/`sendGatedEmail` check) and confirmed it genuinely
+closes; confirmed test-first ordering by running the test at its own commit (failed, as expected).
+First pass returned **DO-NOT-SHIP-YET** on 3 items: (1) `{{name}}` was rendering the recipient's
+*email address* — `send-email-campaign.js` was substituting `recipient.email` instead of a real
+name; (2) the campaign worker's `dnd` re-check was dead (always passed `undefined`); (3) the
+suppression lookup was case-sensitive while every other suppression check in the system is
+case-insensitive. Fixed (`61dd57a`): the worker now re-fetches each contact's live `name`+`dnd` at
+send time instead of trusting the queue-time snapshot, and `isEmailSuppressed` uses a case-insensitive
+`ilike` lookup. Also fixed a related cosmetic gap the reviewer flagged (a dead `?campaign=` query
+param on the unsubscribe link that the endpoint never read) by switching to `?rid=<recipient id>`,
+which the `email_unsubscribe` RPC uses to actually flip that recipient's row to `suppressed`. A
+narrow confirmation pass re-verified all four fixes directly against the current file contents
+(not the commit message) before this doc was written. All fixes were additionally verified live via
+the Supabase MCP (`execute_sql`): queued a disposable TEST-org campaign/recipient, unsubscribed via
+the `rid` path, confirmed the recipient row flipped to `suppressed`, confirmed a case-insensitive
+suppression match — then cleaned up every test row.
+
+**Owner-gated, disclosed as such (not a forgotten step)**: "Send now" has never been exercised
+against a real Resend send + a real inbox click on the unsubscribe link — this sandbox has no
+outbound egress to Supabase/Resend from a browser session, and sending real email requires a
+connected Resend domain already live in production (see `EMAIL-DELIVERABILITY.md`), not something to
+trigger from this build session. The RPC-level behavior (audience resolution, queueing, per-recipient
+gating, unsubscribe) is verified live per above; the actual email delivery + inbox rendering + a real
+one-click unsubscribe round-trip needs a logged-in Moroni session against the branch preview. The
+recipient loop's synchronous-execution-time risk at real campaign scale (see workers section above)
+is also disclosed, not silently capped.
+**Sending-subdomain flag (per the task's explicit ask)**: this phase sends marketing volume from the
+same `restoration@utahpros.app` address `EMAIL-DELIVERABILITY.md` documents for transactional mail
+(esign, invoices, 2FA). That file's own §5 already recommends a dedicated sending subdomain
+(`send.utah-pros.com`) as "the highest-impact upgrade" specifically to protect a shared domain's
+reputation once volume increases — marketing sends are exactly that increase. No code change is
+needed to adopt it (`EMAIL_FROM`/`EMAIL_REPLY_TO` env vars, already read by `functions/lib/email.js`)
+but it wasn't set up in this session (a new Resend-verified subdomain + DNS records, which needs
+Moroni's access to `utah-pros.com` DNS) — flagged here rather than silently reusing the transactional
+sender at real volume.
+
+**Dogfooding**: `crm_build_stages` for `phase-4c` reconciled and `crm_build_phases('4c')` status set
+via the status RPCs — see the close-out reconciliation in this session for exactly which stages
+flipped to `done` vs. stayed `todo` (the owner-gated real-send/visual-check items stay open, with the
+reason stated above, not silently marked done).
+
+## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
+
+A logged-out, public mirror of `/crm/roadmap` — no auth, no `page:crm` flag, no CRM shell. Built so
+anyone with the link (not just Moroni) can see build progress without an account. Deliberately the
+**only** public CRM surface; every other `/crm/*` route stays behind `<FeatureRoute flag="page:crm">`
+in `src/App.jsx`.
+
+**Route**: `src/pages/Status.jsx`, registered as a top-level public route in `WebRoutes()`
+(`src/App.jsx`, alongside `/login`/`/privacy`/`/terms`) — outside `ProtectedRoute`/`Layout` entirely,
+so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/Capacitor only ships
+`/login` + `/tech/*`, same as `/privacy`/`/terms`).
+
+**Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
+imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
+session (CLAUDE.md rule 3's documented carve-out for public/bootstrapping calls; same pattern
+`Login.jsx` already uses for its dev-mode employee picker). No new migration was needed:
+`get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
+`supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
+`information_schema.routine_privileges` before building, not assumed. The underlying
+`crm_build_phases`/`crm_build_stages` RLS policies are also `anon`-permissive, though moot since the
+RPC is `SECURITY DEFINER`. The RPC only ever returns phase/stage metadata (key, title, status,
+done/total counts) — no contact/lead/financial data — so nothing here needed extra redaction.
+
+**Shared rendering**: the phase/stage card markup was extracted from `CrmRoadmap.jsx` into
+`src/components/BuildProgressPhaseCard.jsx` (a plain presentational component, no data fetching) so
+`/status` and `/crm/roadmap` render identically from the same code, not two hand-synced copies. CSS
+is the same pre-existing `.crm-roadmap-*` block (plain app tokens, not `.crm-shell`'s `--crm-*`
+tokens — this card renders outside the CRM shell). New CSS for the page's own outer shell only:
+`.status-page`/`.status-page-inner` in `src/index.css`, styled after `.login-page` (dark surround,
+centered column) but scrollable-width instead of a fixed-width card, since it holds a full phase
+list; a `@media (max-width: 768px)` block adjusts padding only, per CLAUDE.md rule 5.
+
+**Test-first**: `supabase/tests/crm_status_public_access.test.js` — integration test (vitest, same
+`describe.skipIf(!hasCreds)` self-skip pattern as the Phase 0/1 suites) asserting
+`get_crm_build_progress()` succeeds for an anon-key-only caller and returns the expected
+`{ phases, overall_done, overall_total }` shape, plus a guard that the payload never contains
+email/token/password-shaped strings — the regression check for "the RPC is still granted to anon."
+Committed before `Status.jsx`.
+
+**Verification this session**: `npm test`/`build`/`eslint` (changed files) all pass. Browser-verified
+with Playwright — confirmed the route renders with no login redirect and the correct title/subtitle
+against the real dev server, and (route-mocked, since this sandbox's network policy blocks direct
+browser egress to Supabase — MCP tool calls use a different channel) confirmed the phase/stage cards
+render pixel-identical to `/crm/roadmap` at both desktop and mobile (390px) widths. The anon-grant
+data path itself was verified separately via direct SQL against the live `dev`/`main` shared Supabase
+project (`information_schema.routine_privileges`), not through the browser.
 

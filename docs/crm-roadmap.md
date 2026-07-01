@@ -556,6 +556,31 @@ confirmation this is actually how the site's quote form is wired before build st
   Estimates module (see `UPR-Web-Context.md` conventions section). Store only the
   CallRail-hosted `recording_url` link rather than re-downloading audio into Supabase
   storage — avoids duplicating storage and compliance surface for a first pass.
+  > **Transcripts (resolved post-launch): sourced from Deepgram, NOT CallRail.**
+  > Our CallRail plan returns `transcription: null` on every call — CallRail's API only
+  > exposes transcripts with its **Premium Conversation Intelligence add-on (~$110/mo)**.
+  > Rather than pay that, we transcribe the recording ourselves with **Deepgram**
+  > (~a few $/mo at our volume) and write the result into this same `transcription`
+  > column via `set_lead_transcription`. See `functions/api/transcribe-call.js` +
+  > `functions/lib/deepgram.js`. Columns `transcription_source`, `transcribed_at`
+  > (`20260701_crm_call_transcription.sql`) + `transcript_analysis jsonb`
+  > (`20260701_crm_call_transcription_analysis.sql`) hold provenance + structure.
+  > **v2:** `model=nova-3` + `multichannel` (CallRail records Agent/Customer on
+  > separate stereo channels → exact speaker separation, diarize is the mono
+  > fallback) + Audio Intelligence (`summarize=v2`, `sentiment`, `topics`,
+  > `detect_entities`). The Call Log renders a conversation view (summary,
+  > sentiment badge, topic chips, Agent/Customer turns). Strategic upside: the
+  > transcripts + entities live in our DB, feeding future lead-name capture /
+  > scoring, instead of being locked in CallRail.
+  > **Speaker naming (shipped):** a Claude Haiku pass names the Agent vs Customer
+  > and each person (best-effort), and auto-captures the caller's name onto the
+  > lead (`caller_name`; backfills a blank linked contact, never creates one). The
+  > transcript renders as grouped speaker blocks; topics capped to the top 6.
+  > **Attribution + qualify (shipped):** each call shows a **campaign label** for the
+  > tracking number it was dialed from (CallRail leaves campaign/source empty on
+  > direct dials, so the number is the ad-source identity) — labels live in
+  > `crm_tracking_numbers`, editable inline on the Call Log. Each lead also has an
+  > inline **notes + dollar value** editor (`set_lead_details`).
 - **Ingestion RPC**: `upsert_lead_from_callrail(...)` (SECURITY DEFINER) —
   - Matches/creates a contact by **`caller_number`** (never `tracking_number`, which
     is UPR's own number) exactly like `twilio-webhook.js:78` does today

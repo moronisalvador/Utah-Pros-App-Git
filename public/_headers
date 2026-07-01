@@ -10,5 +10,16 @@
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 
+# Cache-recovery bounce page. Loading /reset evicts the browser's HTTP cache +
+# Cache API so a poisoned immutable /assets/*.js can't survive (the app redirects
+# here on a chunk-load failure — see src/App.jsx lazyRetry / buildResetUrl).
+# "cache" ONLY — never "storage"/"cookies" — so the user's login is preserved.
+/reset
+  Clear-Site-Data: "cache"
+  Cache-Control: no-store
+/reset.html
+  Clear-Site-Data: "cache"
+  Cache-Control: no-store
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

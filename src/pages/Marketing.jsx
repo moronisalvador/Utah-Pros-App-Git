@@ -30,7 +30,7 @@ export default function Marketing() {
           {campaigns.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No campaigns yet</p>
-              <p className="empty-state-text">Create SMS/MMS campaigns to reach your customer base. Bulk messaging coming in phase 11.</p>
+              <p className="empty-state-text">Create SMS/MMS campaigns to reach your customer base. Coming in Phase 4b (blocked on Twilio carrier approval). Looking for email campaigns? See CRM &rarr; Campaigns.</p>
             </div>
           ) : (
             <table>
