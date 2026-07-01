@@ -258,7 +258,7 @@ AS $$
     m.created_at,
     CASE WHEN m.sender_contact_id = p_contact_id THEN 'Received SMS' ELSE 'Sent SMS' END,
     m.body,
-    jsonb_build_object('channel', m.channel, 'status', m.status)
+    jsonb_build_object('type', m.type, 'status', m.status)
   FROM messages m
   WHERE m.conversation_id IN (
     SELECT cp.conversation_id FROM conversation_participants cp WHERE cp.contact_id = p_contact_id
