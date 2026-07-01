@@ -48,7 +48,8 @@
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { firstOf, mapCallPayload, mapFormPayload } from '../lib/callrail.js';
+import { firstOf, mapCallPayload, mapFormPayload, extractCallId, callrailApiRecordingUrl } from '../lib/callrail.js';
+import { resolveCallRailAccountId } from '../lib/callrail-api.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -103,6 +104,21 @@ export async function onRequestPost(context) {
     });
     // Still 200 — malformed payload isn't something CallRail should retry forever.
     return jsonResponse({ ok: false, error: 'Missing lead id in payload' }, 200, request, env);
+  }
+
+  // Normalize the recording URL at ingest: CallRail's webhook delivers an
+  // app.callrail.com signed "recording/redirect" link that THROWS when fetched
+  // server-side (502 on playback + transcription). Store the api.callrail.com
+  // REST form instead — the same shape the backfill stores and every consumer
+  // (recording proxy, transcribe-call) streams cleanly. Account id comes from
+  // integration_config (no API call needed); if it can't be resolved we keep the
+  // original URL (the recording proxy also rewrites app→api defensively).
+  if (params.p_recording_url && /^https:\/\/app\.callrail\.com\//.test(params.p_recording_url)) {
+    try {
+      const accountId = await resolveCallRailAccountId(db, null, env);
+      const apiUrl = callrailApiRecordingUrl(accountId, extractCallId(params.p_recording_url));
+      if (apiUrl) params.p_recording_url = apiUrl;
+    } catch { /* keep original URL — playback rewrite is the safety net */ }
   }
 
   try {

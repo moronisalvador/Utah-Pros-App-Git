@@ -122,3 +122,21 @@ export function isAllowedRecordingUrl(url) {
   if (/^https:\/\/app\.callrail\.com\/calls\/[^/?#]+\/recording\/redirect(\?|$)/.test(url)) return true;
   return false;
 }
+
+// Pull the CallRail call id (CAL…) out of either recording URL form:
+//   app.callrail.com/calls/{CAL…}/recording/redirect?…   (webhook)
+//   api.callrail.com/v3/a/{acct}/calls/{CAL…}/recording.json (backfill)
+export function extractCallId(url) {
+  if (typeof url !== 'string' || !url) return null;
+  const m = url.match(/\/calls\/(CAL[0-9a-z]+)/i);
+  return m ? m[1] : null;
+}
+
+// Build the api.callrail.com recording URL — the form the backfill stores and
+// that streams cleanly through our proxy. The LIVE webhook instead delivers an
+// app.callrail.com redirect URL that throws when fetched server-side (502), so
+// callrail-recording.js rewrites app→api via this before proxying.
+export function callrailApiRecordingUrl(accountId, callId) {
+  if (!accountId || !callId) return null;
+  return `https://api.callrail.com/v3/a/${accountId}/calls/${callId}/recording.json`;
+}
