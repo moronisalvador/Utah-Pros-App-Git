@@ -638,6 +638,17 @@ tr:hover td { background: var(--bg-secondary); }
 .login-forgot-link:hover { text-decoration: underline; }
 .login-reset-sent { text-align: center; padding: var(--space-4) 0; }
 
+/* ── Public build-status page (src/pages/Status.jsx, /status — no login) ──
+   Same tokens as .login-page's dark surround, but a scrollable content column
+   instead of a fixed-width card, since it holds a full phase/stage list. */
+.status-page { min-height: 100vh; min-height: 100dvh; background: var(--sidebar-bg); padding: var(--space-8) var(--space-4); }
+.status-page-inner { width: 100%; max-width: 720px; margin: 0 auto; }
+.status-page-inner .login-logo { margin-bottom: var(--space-6); }
+.status-page-inner .page-header { background: var(--bg-primary); border-radius: var(--radius-xl); padding: var(--space-6); box-shadow: var(--shadow-lg); margin-bottom: var(--space-5); }
+@media (max-width: 768px) {
+  .status-page { padding: var(--space-5) var(--space-3); }
+}
+
 /* ── Dashboard ── */
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
 .stat-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-5); }
