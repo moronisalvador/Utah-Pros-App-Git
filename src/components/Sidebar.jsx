@@ -26,17 +26,20 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {showBell && <div style={{ marginLeft: 'auto' }}><NotificationBell /></div>}
       </div>
 
-      {/* Quick create buttons */}
-      <div style={{ padding: '0 var(--space-3)', marginBottom: 'var(--space-2)', display: 'flex', gap: 'var(--space-2)' }}>
-        <button className="btn btn-primary btn-sm" onClick={() => handleAction('job')}
-          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
-          <IconPlus style={{ width: 13, height: 13 }} /> New Job
-        </button>
-        <button className="btn btn-secondary btn-sm" onClick={() => handleAction('customer')}
-          style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
-          <IconPlus style={{ width: 13, height: 13 }} /> Customer
-        </button>
-      </div>
+      {/* Quick create buttons — a CRM partner has no reason to create a
+          restoration job or customer record, so these are hidden for that role. */}
+      {employee?.role !== 'crm_partner' && (
+        <div style={{ padding: '0 var(--space-3)', marginBottom: 'var(--space-2)', display: 'flex', gap: 'var(--space-2)' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => handleAction('job')}
+            style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+            <IconPlus style={{ width: 13, height: 13 }} /> New Job
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={() => handleAction('customer')}
+            style={{ flex: 1, gap: 4, height: 34, fontSize: 12 }}>
+            <IconPlus style={{ width: 13, height: 13 }} /> Customer
+          </button>
+        </div>
+      )}
 
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item, i) => {

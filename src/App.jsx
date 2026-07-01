@@ -167,9 +167,11 @@ function AccessRoute({ navKey, children }) {
 }
 
 // Redirect field_tech users from / to /tech (web only — native always redirects)
+// and crm_partner users straight into the CRM (they have no access to Dashboard).
 function HomeRedirect() {
   const { employee } = useAuth();
   if (employee?.role === 'field_tech') return <Navigate to="/tech" replace />;
+  if (employee?.role === 'crm_partner') return <Navigate to="/crm/leads" replace />;
   return <ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>;
 }
 

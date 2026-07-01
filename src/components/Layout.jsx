@@ -48,7 +48,23 @@ export default function Layout() {
   );
   const location = useLocation();
   const navigate = useNavigate();
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
+
+  // crm_partner accounts (external marketing-agency logins) may only reach
+  // /crm/* (+ /help). Most other routes in this file have no per-route guard
+  // of their own — they've always relied on the sidebar simply not showing a
+  // link, which was fine when every authenticated user was trusted staff.
+  // This is the one choke point that actually blocks direct-URL access for
+  // that external role, instead of auditing/adding a guard to every route.
+  useEffect(() => {
+    if (
+      employee?.role === 'crm_partner' &&
+      !location.pathname.startsWith('/crm') &&
+      !location.pathname.startsWith('/help')
+    ) {
+      navigate('/crm/leads', { replace: true });
+    }
+  }, [employee, location.pathname, navigate]);
 
   // ── Offline detection ──
   useEffect(() => {
