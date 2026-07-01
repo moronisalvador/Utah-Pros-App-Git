@@ -14,6 +14,7 @@ import {
   enablePrivacyScreen,
 } from '@/lib/nativeBiometric';
 import { realtimeClient } from '@/lib/realtime';
+import { shouldReloadForStaleChunk } from '@/lib/staleChunkReload';
 
 // Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
 // small (esp. the native tech app, which never loads admin/desktop pages).
@@ -24,22 +25,26 @@ import TechLayout from '@/components/TechLayout';
 // Wrap React.lazy so a failed dynamic import — almost always a STALE CHUNK after a new
 // deploy (the hashed file this already-open tab references no longer exists on the server) —
 // triggers a single automatic page reload to fetch the current chunk map, instead of dropping
-// the user on the "ran into a problem" screen. A sessionStorage flag guards against reload
-// loops: if the import still fails after one reload (a genuine error, not a stale chunk),
-// we rethrow and let the ErrorBoundary show.
+// the user on the "ran into a problem" screen.
+//
+// The guard is a TIMESTAMP cooldown (shouldReloadForStaleChunk), NOT a boolean flag. The old
+// flag-based guard cleared itself on every successful chunk load, so a sibling chunk loading
+// fine re-armed the reload — and a persistently-missing chunk (e.g. an edge-poisoned /crm
+// chunk) looped the page forever. A timestamp can't be cleared by unrelated successes: we
+// reload at most once per window, then surface the error to the ErrorBoundary.
+const CHUNK_RELOAD_KEY = 'chunkReloadAt';
 function lazyRetry(factory) {
   return lazy(async () => {
     try {
-      const mod = await factory();
-      sessionStorage.removeItem('chunkReloaded'); // loaded fine → arm the guard for next time
-      return mod;
+      return await factory();
     } catch (err) {
-      if (!sessionStorage.getItem('chunkReloaded')) {
-        sessionStorage.setItem('chunkReloaded', '1');
+      const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+      if (shouldReloadForStaleChunk(Date.now(), last)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
         window.location.reload();
         return new Promise(() => {}); // hold render until the reload takes over
       }
-      throw err; // already retried once — surface it to the ErrorBoundary
+      throw err; // reloaded recently and still failing → surface to the ErrorBoundary
     }
   });
 }
