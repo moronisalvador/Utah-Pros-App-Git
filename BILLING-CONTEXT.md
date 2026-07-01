@@ -225,9 +225,19 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
   `qbo_payment_id`) removes the QBO payment.
 - **`qbo-query.js`** — `POST {query}`, **SELECT-only** passthrough; the frontend uses it to load the
   Item/Class catalog.
-- **`qbo-sync-customer.js`** — contact → QBO Customer (trigger-driven per contact, or `{backfill}`).
+- **`qbo-sync-customer.js`** — contact → QBO Customer (per-contact via `{contact_id}`, or `{backfill}`).
   Dedups by email then display name; auto-disambiguates duplicate-name (code 6240) with the phone's
   last 4. Writes `contacts.qbo_customer_id`.
+  - **On-demand creation (Phase A, shipped):** `qbo-invoice.js`/`qbo-estimate.js` now call
+    `ensureQboCustomer(request, env, contactId)` (in `functions/lib/quickbooks.js`) when a billable
+    contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret) so a QBO
+    customer is created **when the contact is actually invoiced/estimated**, then re-reads the id and
+    throws the usual "sync the client first" error only if it's still missing. **No-op until Phase B**,
+    since the contact-insert trigger currently pre-creates the customer.
+  - **Phase B (planned, NOT yet applied):** retire/gate the `trg_qbo_customer_sync` AFTER-INSERT
+    trigger so contacts are **not** auto-synced to QBO on creation — only when transacted with. Apply
+    the gating migration **only after Phase A is live on `main`** (one shared Supabase serves dev+main,
+    so gating before the self-heal reaches production would break production invoicing for new contacts).
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
