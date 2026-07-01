@@ -72,8 +72,14 @@ async function getValidAccessToken(env) {
     const row = {
       provider: PROVIDER,
       access_token: tokens.access_token,
+      // Google omits refresh_token on a refresh grant — keep the existing one so a
+      // conflict-miss INSERT (row recreated) can't null it out and break the
+      // connection permanently (mirrors saveTokens in functions/lib/google-ads.js).
+      refresh_token: tokens.refresh_token || conn.refresh_token,
       token_expires_at: new Date(Date.now() + ttlMs).toISOString(),
+      environment: conn.environment || 'production',
       updated_at: new Date().toISOString(),
+      ...(tokens.scope ? { granted_scopes: tokens.scope } : {}),
       connected_by: conn.connected_by,
       connected_at: conn.connected_at,
     };

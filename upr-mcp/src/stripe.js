@@ -82,6 +82,7 @@ export async function stripeFetch(env, path, { method = 'GET', params, idempoten
     const e = new Error(err ? `${err.message || err.type || 'Stripe error'}${reqId ? ` [${reqId}]` : ''}` : `Stripe ${path} ${res.status}`);
     e.stripeCode = (err && (err.code || err.type)) || null;
     e.status = res.status;
+    e.requestId = reqId;
     throw e;
   }
   return data;
@@ -126,8 +127,17 @@ export async function listExternalAccounts(env) {
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────────────
+// Money guard: Stripe amounts are positive integer cents. Catch a missing/NaN/
+// non-positive amount here rather than silently posting $0 or a Stripe 400.
+function assertAmountCents(amountCents) {
+  if (!Number.isFinite(amountCents) || amountCents <= 0 || !Number.isInteger(amountCents)) {
+    throw new Error(`amount_cents must be a positive integer number of cents (got ${JSON.stringify(amountCents)}).`);
+  }
+}
+
 // Payout to a chosen external account (default instant). Amount in cents.
 export function createPayout(env, { amountCents, destination, method = 'instant', idempotencyKey }) {
+  assertAmountCents(amountCents);
   const params = { amount: amountCents, currency: 'usd', method };
   if (destination) params.destination = destination;
   return stripeFetch(env, '/payouts', { method: 'POST', params, idempotencyKey });
@@ -135,6 +145,7 @@ export function createPayout(env, { amountCents, destination, method = 'instant'
 
 // Hosted Checkout pay-now link for an amount (cents). Returns the session (url).
 export function createPaymentLink(env, { amountCents, description, customerEmail, successUrl, cancelUrl }) {
+  assertAmountCents(amountCents);
   const params = {
     mode: 'payment',
     success_url: successUrl || 'https://utahpros.app/',

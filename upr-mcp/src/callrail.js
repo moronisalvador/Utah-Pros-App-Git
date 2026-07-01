@@ -164,26 +164,36 @@ export async function resolveRecording(env, recordingUrl) {
 }
 
 // ─── Deepgram transcription ──────────────────────────────────────────────────────
-// Send a recording URL to Deepgram and return diarized text. Prefers handing
-// Deepgram the signed URL (no worker buffering); falls back to posting bytes.
+// Send a recording to Deepgram and return diarized text. Fetches the CallRail
+// recording ONCE and branches on what it returns: a signed CDN URL → hand that to
+// Deepgram (no worker buffering); a direct authed audio stream → POST the bytes we
+// already have. (Never re-fetch — CallRail signed/stream URLs can be single-use.)
 export async function deepgramTranscribeUrl(env, recordingUrl) {
+  if (!/^https:\/\/api\.callrail\.com\//.test(String(recordingUrl || ''))) {
+    throw new Error('Unsupported recording URL — only api.callrail.com recording URLs are allowed (SSRF guard).');
+  }
   const dgKey = await deepgramKey(env);
-  const rec = await resolveRecording(env, recordingUrl);
+  const upstream = await fetch(recordingUrl, { headers: crAuth(await callrailKey(env)) });
+  if (!upstream.ok) throw new Error(`CallRail recording fetch failed (${upstream.status}).`);
+  const ct = (upstream.headers.get('Content-Type') || '').toLowerCase();
 
   let dgRes;
-  if (rec.url) {
+  if (ct.startsWith('audio/') || ct.includes('octet-stream')) {
+    // CallRail streamed the audio directly (authed) — POST the bytes we just read.
+    dgRes = await fetch(DG_URL, {
+      method: 'POST',
+      headers: { Authorization: `Token ${dgKey}`, 'Content-Type': ct || 'audio/mpeg' },
+      body: await upstream.arrayBuffer(),
+    });
+  } else {
+    // JSON pointing at a signed CDN URL — let Deepgram fetch it itself.
+    const data = await upstream.json().catch(() => null);
+    const mediaUrl = data && (data.url || data.recording || data.media_url || data.audio_url);
+    if (!mediaUrl) throw new Error('CallRail returned no playable audio (no stream, no signed URL).');
     dgRes = await fetch(DG_URL, {
       method: 'POST',
       headers: { Authorization: `Token ${dgKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: rec.url }),
-    });
-  } else {
-    // CallRail streamed the audio (authed) — re-fetch with the key and POST bytes.
-    const audio = await fetch(recordingUrl, { headers: crAuth(await callrailKey(env)) });
-    dgRes = await fetch(DG_URL, {
-      method: 'POST',
-      headers: { Authorization: `Token ${dgKey}`, 'Content-Type': rec.content_type || 'audio/mpeg' },
-      body: await audio.arrayBuffer(),
+      body: JSON.stringify({ url: mediaUrl }),
     });
   }
   if (!dgRes.ok) throw new Error(`Deepgram ${dgRes.status}: ${(await dgRes.text().catch(() => '')).slice(0, 300)}`);

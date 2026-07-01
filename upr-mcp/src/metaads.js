@@ -70,6 +70,7 @@ async function getValidAccessToken(env) {
       provider: PROVIDER,
       access_token: tokens.access_token,
       token_expires_at: new Date(Date.now() + ttlMs).toISOString(),
+      environment: conn.environment || 'production',
       updated_at: new Date().toISOString(),
       connected_by: conn.connected_by,
       connected_at: conn.connected_at,
