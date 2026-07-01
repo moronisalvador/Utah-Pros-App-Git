@@ -384,6 +384,7 @@ export default function CrmCallLog() {
   const { db } = useAuth();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   // tracking_number → campaign label, shared across rows (so labeling one number
   // updates every call from it). Refreshed after a label save.
   const [labelMap, setLabelMap] = useState(new Map());
@@ -395,8 +396,12 @@ export default function CrmCallLog() {
     } catch { /* non-fatal — rows just fall back to the formatted number */ }
   }, [db]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `silent` = a background/auto refresh: don't flip the full-page "Loading…"
+  // (which would blank the list every poll) and don't toast on a transient
+  // failure — just swap in fresh rows. Open inline editors keep their own local
+  // state (keyed by lead.id), so a background swap never clobbers them.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (silent) setRefreshing(true); else setLoading(true);
     try {
       // Read via RPC (a POST) rather than a GET select: a GET is cacheable, so
       // returning to the Call Log after a soft navigation could show a STALE
@@ -406,13 +411,29 @@ export default function CrmCallLog() {
       const rows = await db.rpc('get_inbound_leads', { p_limit: 100 });
       setLeads(rows || []);
     } catch {
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load call log', type: 'error' } }));
+      if (!silent) window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load call log', type: 'error' } }));
     } finally {
-      setLoading(false);
+      if (silent) setRefreshing(false); else setLoading(false);
     }
   }, [db]);
 
   useEffect(() => { load(); loadLabels(); }, [load, loadLabels]);
+
+  // Auto-refresh so a newly-landed call appears WITHOUT a manual reload: poll
+  // every 15s while the tab is visible, and refetch immediately when the tab
+  // regains focus. CallRail's post-call webhook can lag ~1 min after the call,
+  // so the page keeps itself current instead of forcing a hard refresh.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') load({ silent: true }); };
+    const id = setInterval(refresh, 15000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [load]);
 
   const handleStatusChange = async (leadId, status) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lead_status: status } : l));
@@ -429,8 +450,15 @@ export default function CrmCallLog() {
   return (
     <div className="crm-page">
       <div className="crm-page-header">
-        <h1 className="crm-page-title">Call Log</h1>
-        <p className="crm-page-subtitle">Every call and web-form lead from CallRail, newest first.</p>
+        <div className="crm-page-header-row">
+          <div>
+            <h1 className="crm-page-title">Call Log</h1>
+            <p className="crm-page-subtitle">Every call and web-form lead from CallRail, newest first. Updates automatically.</p>
+          </div>
+          <button className="crm-btn crm-btn-ghost" onClick={() => load({ silent: true })} disabled={refreshing}>
+            {refreshing ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {leads.length === 0 ? (
