@@ -43,12 +43,14 @@ export const EMAIL_VARIABLES = [
   { key: 'name', label: "Full name" },
   { key: 'first_name', label: 'First name' },
   { key: 'email', label: 'Email address' },
+  { key: 'phone', label: 'Phone number' },
 ];
 
 export const SAMPLE_VARIABLES = {
   name: 'Jane Smith',
   first_name: 'Jane',
   email: 'jane.smith@example.com',
+  phone: '(801) 555-0142',
 };
 
 export function renderVariables(html, vars = {}) {

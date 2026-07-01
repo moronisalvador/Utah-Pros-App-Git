@@ -105,7 +105,7 @@ export async function onRequestPost(context) {
         // check in case it changed between queueing and this send (a large
         // campaign can take a while; preview_email_audience only guaranteed
         // NOT dnd at snapshot time).
-        const [contact] = await db.select('contacts', `id=eq.${recipient.contact_id}&select=id,name,email,dnd`);
+        const [contact] = await db.select('contacts', `id=eq.${recipient.contact_id}&select=id,name,email,phone,dnd`);
         const displayName = contact?.name || recipient.email;
         result = await sendGatedEmail(env, {
           contact: contact || { id: recipient.contact_id, email: recipient.email },
@@ -114,6 +114,7 @@ export async function onRequestPost(context) {
             name: displayName,
             first_name: displayName.split(' ')[0],
             email: recipient.email,
+            phone: contact?.phone || '',
           }),
           recipientId: recipient.id,
         });

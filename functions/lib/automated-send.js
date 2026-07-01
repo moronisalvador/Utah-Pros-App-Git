@@ -137,7 +137,11 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   }
 
   const db = supabase(env);
-  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,dnd`);
+  // phone included for Phase 4d parity with the campaign send path
+  // (functions/api/send-email-campaign.js) — this function doesn't auto-merge
+  // contact fields into `variables` itself, so this alone is prep, not full
+  // wiring; a caller still has to pass phone through `extra`/`variables`.
+  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,phone,dnd`);
   if (!contact) return { ok: false, skipped: true, reason: 'contact_not_found' };
 
   let body = extra.html || extra.body || '';
