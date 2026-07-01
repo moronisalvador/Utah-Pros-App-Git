@@ -2281,11 +2281,17 @@ Only two sidebar pages have real data this phase (`src/pages/crm/`):
 - **CrmCallLog.jsx** (`/crm/call-log`) — lists `inbound_leads` (embeds `contacts` via the
   `contact_id` FK), newest first; inline `<select>` to change `lead_status` (calls
   `update_lead_status`); recording link + transcript shown when present.
-- **CrmIntegrations.jsx** (`/crm/integrations`) — a card per provider (CallRail real; Google
-  Ads/Meta Ads "Coming in Phase 2" placeholders). CallRail card: paste-API-key form when
-  disconnected, or a status + inline two-click "Disconnect" confirm when connected — calls
-  `/api/callrail-connect` (POST/DELETE), never writes `integration_credentials` directly from the
-  frontend (that table has no anon/authenticated RLS policy — service-role only, same as QBO).
+- **CrmIntegrations.jsx** (`/crm/integrations`) — a card per provider: CallRail (paste-API-key
+  form when disconnected, or a status + inline two-click "Disconnect" confirm when connected —
+  calls `/api/callrail-connect` POST/DELETE), plus **Google Ads and Meta Ads (Phase 2, shipped
+  this session)** — a shared `OAuthProviderCard` component: "Connect"/"Reconnect" redirects to
+  `/api/google-ads-connect` or `/api/meta-ads-connect` (GET → `{url}` → `window.location.href`,
+  same pattern DevTools' QuickBooks card uses), lands back on `/crm/integrations?google_ads=` /
+  `?meta_ads=connected|error|badstate` which the page toasts and clears from the URL. Two-click
+  "Disconnect" via the same connect workers' DELETE. None of the three cards ever writes
+  `integration_credentials` directly from the frontend (no anon/authenticated RLS policy —
+  service-role only, same as QBO); status reads go through the read-only `get_integration_status`
+  RPC for all three providers.
 
 The other six sidebar pages (`CrmOverview.jsx`, `CrmLeads.jsx`, `CrmTasks.jsx`,
 `CrmAttribution.jsx`, `CrmReports.jsx`, `CrmSettings.jsx`) render a shared `CrmStubPage.jsx`
@@ -2338,6 +2344,107 @@ visual check, marking `shipped`, and the `dev → main` PR) need a real CallRail
 logged-in Moroni session this sandbox doesn't have. Flip them via
 `set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
 Cloudflare preview and a real CallRail connection.
+
+### Phase 2 — Ad spend ingestion (Google Ads + Meta Ads)
+
+**New table** `ad_spend` (`supabase/migrations/20260701_crm_phase2_adspend.sql`, applied to the
+live shared dev/main Supabase project) — `id, org_id (FK crm_orgs), platform ('google'|'meta'),
+campaign_id, campaign_name, date, spend, impressions, clicks, platform_conversions, created_at,
+updated_at`, `UNIQUE(platform, campaign_id, date)`. `platform_conversions` is deliberately
+informational-only (Google/Meta's own conversion counts never reconcile with CallRail's) —
+**CallRail leads + won jobs in UPR remain the funnel's one source of truth**; ad platforms only
+ever supply spend dollars. RLS enabled + explicit `FOR ALL` policy at creation.
+
+**RPCs** (both `SECURITY DEFINER`, granted `anon, authenticated`):
+- `upsert_ad_spend(p_platform, p_campaign_id, p_campaign_name, p_date, p_spend, p_impressions,
+  p_clicks, p_platform_conversions, p_org_id)` — true upsert on `(platform, campaign_id, date)`;
+  `spend`/`impressions`/`clicks`/`platform_conversions` overwrite on conflict (not additive) so a
+  same-day re-pull corrects that day's revised numbers in place. Defaults `org_id` to the real
+  (non-test) org, same pattern as `upsert_lead_from_callrail`. **Idempotency verified live** via
+  Supabase MCP: two calls for the same platform/campaign/date left exactly one row with the
+  second call's values; the manually-inserted test row (`campaign_id='TESTCMP001'`) was deleted
+  afterward.
+- `get_ad_spend(p_platform, p_start_date, p_end_date)` — read helper for verification now and the
+  Phase 3 dashboard later.
+
+**Workers**:
+```
+functions/lib/date-mt.js      — mountainYesterday(nowUtc) / isStale(lastUtc, nowUtc, days), pure,
+                                 America/Denver (DST-aware via Intl) calendar-day math — the one
+                                 place the roadmap's "pick one timezone convention" rule lives.
+                                 Test-first: functions/lib/date-mt.test.js, 7 vitest unit tests
+                                 (MDT/MST DST boundaries + a UTC-midnight-that-isn't-an-MT-boundary
+                                 case), committed failing before the implementation existed.
+functions/lib/google-ads.js   — Google OAuth (buildAuthorizeUrl/exchangeCodeForTokens/
+                                 refreshTokens/saveTokens/getValidAccessToken, mirrors
+                                 quickbooks.js) + fetchCampaignSpend() via GAQL searchStream.
+                                 SEPARATE OAuth app from google-drive.js's per-user Drive/Calendar
+                                 app on purpose — its own env vars (GOOGLE_ADS_CLIENT_ID/SECRET/
+                                 REDIRECT_URI/DEVELOPER_TOKEN/CUSTOMER_ID, optional
+                                 GOOGLE_ADS_LOGIN_CUSTOMER_ID for MCC) — one company-wide
+                                 integration_credentials row, not per-employee.
+functions/lib/meta-ads.js     — Meta/Facebook OAuth (no classic refresh_token grant — a short-lived
+                                 code-exchange token is exchanged for a ~60-day long-lived token;
+                                 getValidAccessToken re-exchanges the current long-lived token when
+                                 within 5 days of expiry) + fetchCampaignSpend() via Graph API
+                                 Insights (paginated, MAX_PAGES=50 cap). Env vars: META_APP_ID/
+                                 APP_SECRET/REDIRECT_URI/AD_ACCOUNT_ID.
+google-ads-connect.js         — GET (authenticated, returns {url} for window.location.href) /
+google-ads-callback.js          DELETE (disconnect), mirrors quickbooks-connect.js/
+                                 quickbooks-callback.js exactly. Callback redirects to
+                                 /crm/integrations?google_ads=connected|error|badstate.
+meta-ads-connect.js /         — same shape as the Google Ads pair; callback exchanges the OAuth
+meta-ads-callback.js            code for a short-lived token then immediately for a long-lived one
+                                 before saving. Redirects to /crm/integrations?meta_ads=...
+sync-google-ads.js /          — GET/POST (authenticated, manual trigger) + `scheduled()` export for
+sync-meta-ads.js                Cloudflare's dashboard-configured daily Cron Trigger (no
+                                 wrangler.toml in this repo, per CLAUDE.md). Default run pulls ONE
+                                 day — mountainYesterday(now) — via fetchCampaignSpend(), upserts
+                                 each campaign/day through upsert_ad_spend. `{ backfill: true,
+                                 days }` (default 365, capped at 400 — MAX_BACKFILL_DAYS) pulls a
+                                 historical range. Per-row upsert failures don't abort the run
+                                 (mirrors callrail-backfill.js); every invocation logs a
+                                 worker_runs row (worker_name 'sync-google-ads'/'sync-meta-ads').
+```
+
+**Frontend**: `CrmIntegrations.jsx` gained real Google Ads / Meta Ads cards (`OAuthProviderCard`,
+shared by both providers) replacing Phase 1's "Coming in Phase 2" placeholders — see the Phase 1
+Integrations entry above for the full connect/disconnect flow. New `--crm-integration-google`
+(`#4285f4`) / `--crm-integration-meta` (`#0866ff`) tokens in the `.crm-shell` block.
+
+**DISCLOSED GAP, NOT AN OVERSIGHT — needs human verification before the first real cron run**:
+the exact Google Ads API (GAQL `searchStream`, pinned at `v18`) and Meta Graph API (Insights,
+pinned at `v19.0`) request/response field shapes are best-effort, written from public API docs,
+**not exercised against a live developer-token account in this session** — same disclosed-gap
+pattern Phase 1 used for CallRail's webhook payload shapes. This is downstream of the roadmap's
+own Phase 2 prerequisite ("Google Ads developer token approved") being an external, days-to-weeks
+Google approval process with no tool available in this environment to check or complete it.
+Nothing runs until a human connects real credentials via the Integrations page — confirm the API
+shapes against a live account at that point, per each file's NOTES section
+(`functions/lib/google-ads.js`, `functions/lib/meta-ads.js`).
+
+**Test-first**: `functions/lib/date-mt.test.js` (7 tests) committed at `597772e` before
+`functions/lib/date-mt.js` existed — confirmed genuinely failing at that commit (import error),
+then passing once the implementation landed at `fcc6b42`.
+
+**`npm run test` + `npm run build` + `npx eslint`**: all green on every changed file.
+
+**Independent review**: `upr-pattern-checker` found one hardcoded inline `style={{ gap: 8 }}` in
+`CrmIntegrations.jsx` where `--space-2` already existed as the matching token — fixed (now
+`.crm-integration-actions-row`). `crm-phase-reviewer` (Opus) graded every acceptance criterion
+PASS except this doc update (fixed by this paragraph) and two live-only unverifiable items (the
+`crm_build_phases`/test-row state, confirmed below; the backfill-vs-platform-dashboard tolerance
+check, which needs a live connected account) — recommendation **SHIP into `dev`** (not `main` —
+invisible behind `page:crm`/`dev_only_user_id` either way). Full verdict in this session's
+transcript.
+
+**Dogfooding**: all 8 `crm_build_stages` rows for phase-2 are marked `done` via
+`set_crm_stage_status` (test-first, acceptance criteria met in-session, test/build/eslint green,
+both review agents passed, this doc update, `crm_build_phases('2')` set to `shipped`, test
+`ad_spend` row deleted) — except the branch-push/PR stage, flipped once the PR is actually opened.
+The GAQL/Insights live-account verification called out above is an operational follow-up for
+Moroni post-merge, not a build-completion blocker (same treatment Phase 1 gave its
+CallRail-account-dependent items).
 
 ## Public build-status page — `/status` (Jul 1 2026, off Phase 0/1)
 
