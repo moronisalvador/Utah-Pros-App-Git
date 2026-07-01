@@ -31,6 +31,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { sortStages } from '@/lib/crmPipeline';
 
@@ -40,7 +41,7 @@ const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 const EMPTY_FORM = { name: '', color: '#6366f1', is_won: false, is_lost: false };
 
 export default function CrmSettings() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -62,6 +63,10 @@ export default function CrmSettings() {
   }, [db]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Pipeline config affects every internal role's Leads board — admin/staff-only,
+  // even within the CRM. Backed by the same guard inside the upsert/delete RPCs.
+  if (employee?.role === 'crm_partner') return <Navigate to="/crm/leads" replace />;
 
   const startAdd = () => { setEditingId('new'); setForm(EMPTY_FORM); setTimeout(() => nameRef.current?.focus(), 50); };
   const startEdit = (stage) => {
