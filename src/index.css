@@ -5859,6 +5859,8 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-danger-border: #fecaca;
   --crm-danger-text: #dc2626;
   --crm-integration-callrail: #f97316;
+  --crm-integration-google: #4285f4;
+  --crm-integration-meta: #0866ff;
   --crm-text-on-accent: #ffffff;
 }
 
@@ -5947,6 +5949,9 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-integration-card-title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: var(--crm-text-primary); }
 .crm-integration-badge { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: var(--crm-text-on-accent); }
 .crm-integration-badge-callrail { background: var(--crm-integration-callrail); }
+.crm-integration-badge-google { background: var(--crm-integration-google); }
+.crm-integration-badge-meta { background: var(--crm-integration-meta); }
+.crm-integration-actions-row { display: flex; gap: var(--space-2); }
 .crm-integration-status { font-size: 11px; font-weight: 700; color: var(--crm-text-tertiary); }
 .crm-integration-status.connected { color: var(--crm-success); }
 .crm-integration-meta { font-size: 12px; color: var(--crm-text-secondary); margin: 0 0 var(--space-3); }
