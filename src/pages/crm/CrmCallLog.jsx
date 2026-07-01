@@ -51,6 +51,7 @@ function LeadRow({ lead, onStatusChange }) {
   const contactLabel = lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form' : 'Unknown');
   const [audioUrl, setAudioUrl] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Free the blob URL when the row unmounts / a new one replaces it.
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
@@ -63,10 +64,17 @@ function LeadRow({ lead, onStatusChange }) {
       // proxy worker (which attaches the key server-side) as a blob, then play
       // it inline. An <audio src> can't send the auth header, so we fetch first.
       const res = await fetch(`/api/callrail-recording?lead_id=${lead.id}`, { headers: await getAuthHeader() });
-      if (!res.ok) throw new Error('recording fetch failed');
+      const ct = res.headers.get('Content-Type') || '';
+      // Guard against playing a non-audio body (e.g. a JSON error) — that's what
+      // produced the earlier dead 0:00 player. Surface the real reason instead.
+      if (!res.ok || !ct.startsWith('audio/')) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error || `unexpected response (${res.status}, ${ct || 'no type'})`);
+      }
       setAudioUrl(URL.createObjectURL(await res.blob()));
-    } catch {
-      err('Could not load the recording');
+    } catch (e) {
+      console.error('[callrail-recording]', e?.message || e);
+      err('Could not load the recording — details in the console');
     } finally {
       setLoadingRec(false);
     }
@@ -109,7 +117,14 @@ function LeadRow({ lead, onStatusChange }) {
                   {loadingRec ? 'Loading…' : '▶ Play recording'}
                 </button>
           )}
-          {lead.transcription && <p className="crm-call-row-transcript">{lead.transcription}</p>}
+          {lead.transcription && (
+            <>
+              <button className="crm-call-row-play" onClick={() => setShowTranscript(v => !v)}>
+                {showTranscript ? '▴ Hide transcript' : '▾ Show transcript'}
+              </button>
+              {showTranscript && <p className="crm-call-row-transcript">{lead.transcription}</p>}
+            </>
+          )}
         </div>
       )}
     </div>

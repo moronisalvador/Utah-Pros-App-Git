@@ -63,16 +63,37 @@ export async function onRequestGet(context) {
   const apiKey = cred?.access_token;
   if (!apiKey) return jsonResponse({ error: 'CallRail not connected' }, 400, request, env);
 
+  const audioHeaders = (ct) => ({ 'Content-Type': ct || 'audio/mpeg', 'Cache-Control': 'private, max-age=300' });
+
   const upstream = await fetch(recUrl, { headers: { Authorization: `Token token="${apiKey}"` } });
   if (!upstream.ok || !upstream.body) {
     return jsonResponse({ error: `CallRail recording fetch failed (${upstream.status})` }, 502, request, env);
   }
 
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      'Content-Type':  upstream.headers.get('Content-Type') || 'audio/mpeg',
-      'Cache-Control': 'private, max-age=300',
-    },
-  });
+  const ct = (upstream.headers.get('Content-Type') || '').toLowerCase();
+
+  // Case 1 — CallRail streamed the audio directly: pass it straight through.
+  if (ct.startsWith('audio/') || ct.includes('octet-stream')) {
+    return new Response(upstream.body, { status: 200, headers: audioHeaders(ct) });
+  }
+
+  // Case 2 — CallRail returned JSON describing WHERE the audio lives (a signed
+  // URL). Fetch that (no auth — it's pre-signed) and stream it.
+  if (ct.includes('application/json')) {
+    const data = await upstream.json().catch(() => null);
+    const mediaUrl = data && (data.url || data.recording || data.media_url || data.audio_url);
+    if (!mediaUrl) {
+      return jsonResponse({ error: 'CallRail returned JSON with no audio URL', detail: data }, 502, request, env);
+    }
+    const audio = await fetch(mediaUrl);
+    if (!audio.ok || !audio.body) {
+      return jsonResponse({ error: `Signed audio fetch failed (${audio.status})` }, 502, request, env);
+    }
+    return new Response(audio.body, { status: 200, headers: audioHeaders((audio.headers.get('Content-Type') || '').toLowerCase()) });
+  }
+
+  // Case 3 — something unexpected (HTML/redirect page/error). Surface exactly
+  // what CallRail sent so this is diagnosable instead of a silent dead player.
+  const snippet = (await upstream.text().catch(() => '')).slice(0, 300);
+  return jsonResponse({ error: `Unexpected recording response (${upstream.status}, ${ct || 'no content-type'})`, snippet }, 502, request, env);
 }
