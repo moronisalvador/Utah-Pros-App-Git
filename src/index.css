@@ -5861,6 +5861,7 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-integration-callrail: #f97316;
   --crm-integration-google: #4285f4;
   --crm-integration-meta: #0866ff;
+  --crm-channel-insurance: #d97706;
   --crm-text-on-accent: #ffffff;
 }
 
@@ -6026,5 +6027,5 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-channel-meta_ads { background: var(--crm-integration-meta); }
 .crm-channel-organic { background: var(--crm-success); }
 .crm-channel-referral { background: var(--crm-accent); }
-.crm-channel-insurance { background: #d97706; }
+.crm-channel-insurance { background: var(--crm-channel-insurance); }
 .crm-channel-other { background: var(--crm-text-tertiary); }

@@ -22,7 +22,7 @@
  *   Packages:  none
  *   Internal:  none
  *   Data:      none directly — operates on rows the get_attribution_rollup /
- *              get_funnel_overview RPCs return.
+ *              get_attribution_by_campaign RPCs return.
  *
  * NOTES / GOTCHAS:
  *   - The design record is docs/crm-phase3-attribution-model.md. Three zero

@@ -163,8 +163,11 @@ Concretely (the pure-JS, unit-tested contract in `src/lib/attribution.js`):
 
 ## Architecture — where each piece lives (and why)
 
-- **SQL RPCs do raw aggregation only** (`get_attribution_rollup`, `get_funnel_overview`):
-  counts + sums grouped by channel/campaign. No derived money math in SQL.
+- **SQL RPCs do raw aggregation only** (`get_attribution_rollup` per channel,
+  `get_attribution_by_campaign` for the paid-campaign split, `get_crm_revenue_by_division`
+  for Reports): counts + sums grouped by channel/campaign/division. No derived money math
+  in SQL. The Overview funnel is derived in JS (`rollupTotals` + `funnelStages`) from the
+  single `get_attribution_rollup` result — no separate funnel RPC.
 - **The money math is pure importable JS** (`src/lib/attribution.js`), so it is
   unit-testable per the Phase 3 test-first mandate (the roadmap notes there is no test
   harness for SQL RPCs, so "pure logic must be authored as importable JS to be
