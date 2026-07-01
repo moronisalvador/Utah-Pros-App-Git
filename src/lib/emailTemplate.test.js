@@ -1,3 +1,22 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: emailTemplate.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Makes sure the "what you see is what gets sent" promise of the CRM
+ *   Campaigns email builder actually holds — the preview panel's branded
+ *   email shell and the one the real send worker uses are two separate
+ *   files (one runs in the browser, one on the server) that have to stay
+ *   byte-for-byte identical by hand. This test fails the moment they drift.
+ *   Also covers the {{token}} variable substitution the preview and the
+ *   real send both rely on.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./emailTemplate.js, ../../functions/lib/email-template.js
+ * ════════════════════════════════════════════════
+ */
 import { describe, it, expect } from 'vitest';
 import { wrapEmailBody as clientWrap, renderVariables } from './emailTemplate.js';
 import { wrapEmailBody as serverWrap } from '../../functions/lib/email-template.js';

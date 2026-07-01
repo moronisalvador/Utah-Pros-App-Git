@@ -6225,7 +6225,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-editor-popover-wrap { position: relative; }
 .crm-editor-popover {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: var(--crm-bg-card);
-  border: 1px solid var(--crm-border); border-radius: var(--crm-radius); box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius); box-shadow: var(--shadow-md);
   padding: 8px; display: flex; gap: 6px; align-items: center; min-width: 220px;
 }
 .crm-editor-menu { flex-direction: column; align-items: stretch; min-width: 200px; }
