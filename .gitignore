@@ -28,4 +28,15 @@ dist-ssr
 # Claude Code worktrees
 .claude/worktrees/
 CLEANUP-TEST-DATA.sql
+
+# Secrets / env / keys — never commit (templates like .env.example are kept)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.keystore
+*.jks
