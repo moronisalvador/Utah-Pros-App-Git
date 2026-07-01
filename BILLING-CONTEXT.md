@@ -232,12 +232,19 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
     `ensureQboCustomer(request, env, contactId)` (in `functions/lib/quickbooks.js`) when a billable
     contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret) so a QBO
     customer is created **when the contact is actually invoiced/estimated**, then re-reads the id and
-    throws the usual "sync the client first" error only if it's still missing. **No-op until Phase B**,
-    since the contact-insert trigger currently pre-creates the customer.
-  - **Phase B (planned, NOT yet applied):** retire/gate the `trg_qbo_customer_sync` AFTER-INSERT
-    trigger so contacts are **not** auto-synced to QBO on creation — only when transacted with. Apply
-    the gating migration **only after Phase A is live on `main`** (one shared Supabase serves dev+main,
-    so gating before the self-heal reaches production would break production invoicing for new contacts).
+    throws the usual "sync the client first" error only if it's still missing. Was a no-op until
+    Phase B; now the ONLY path that creates a QBO customer.
+  - **Phase B (SHIPPED — `20260701_crm_qbo_phase_b_gate_contact_trigger.sql`):** `trg_qbo_customer_sync`
+    is now a **no-op** — `notify_qbo_customer_sync()` was replaced with a `RETURN NEW` body (the
+    trigger is kept attached, not dropped, so restoring the prior body re-enables auto-sync; the
+    original body is preserved in the migration's comment). Contacts are **no longer** auto-synced to
+    QBO on insert — a customer is created only when actually invoiced/estimated (Phase A self-heal).
+    Applied to the shared DB **after** Phase A reached production `main` (verified live: a qualifying
+    `homeowner`+named contact insert no longer syncs — `qbo_customer_id` stays null, no
+    `qbo_sync_error`). The `qbo-sync-customer` worker + its `{backfill}` mode remain for explicit/
+    manual syncs.
+    - **The "name added after insert" hole is now moot:** the trigger never fires at all, and the
+      invoice/estimate self-heal syncs at transaction time regardless of when the name was set.
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
