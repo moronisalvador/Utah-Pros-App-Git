@@ -2161,6 +2161,11 @@ committed test will run for real on a machine with normal (non-sandboxed) egress
 credentials.
 
 **Dogfooding**: Phase 0 marks its own `crm_build_phases`/`crm_build_stages` rows via these same RPCs
-at close-out (`set_crm_stage_status` on each of its 7 stages, then `set_crm_phase_status('0',
-'shipped')`) — the first real exercise of the tracker.
+at close-out (`set_crm_stage_status` per stage, then `set_crm_phase_status('0', 'shipped')`) — the
+first real exercise of the tracker. As of this session's close-out, 6 of 7 stages are marked `done`
+and phase 0 is `in_progress` (not yet `shipped`) — the one remaining stage is the live branch-preview
+visual check, which needs a logged-in Moroni session and could not be done from this sandbox (same
+network egress limitation as the integration test, above). Flip it to `done` and the phase to
+`shipped` via `set_crm_stage_status`/`set_crm_phase_status` once that's confirmed on the pushed
+branch's Cloudflare preview.
 
