@@ -6196,9 +6196,62 @@ tr:hover td { background: var(--bg-secondary); }
 /* ── Campaigns — Email campaigns (Phase 4c, docs/crm-roadmap.md) ───────── */
 .crm-badge-draft { background: var(--crm-bg-content); color: var(--crm-text-secondary); }
 .crm-badge-sending { background: var(--crm-bg-content); color: var(--crm-accent); }
-.crm-campaign-form { margin-bottom: var(--space-4); }
+.crm-btn-sm { padding: 6px 10px; font-size: 12px; }
+.crm-campaign-editor-layout { display: flex; gap: var(--space-4); align-items: flex-start; margin-bottom: var(--space-4); }
+.crm-campaign-form { flex: 1; min-width: 0; margin-bottom: 0; }
 .crm-campaign-form-row { display: flex; gap: var(--space-4); margin-bottom: var(--space-3); }
 .crm-campaign-field { flex: 1; display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-3); }
-.crm-campaign-textarea { width: 100%; font-family: inherit; resize: vertical; }
 .crm-campaign-form-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
 .crm-campaign-audience-count { font-size: 12px; color: var(--crm-text-tertiary); }
+
+@media (max-width: 1024px) {
+  .crm-campaign-editor-layout { flex-direction: column; }
+}
+
+/* Rich text editor toolbar + content area */
+.crm-rich-editor { border: 1px solid var(--crm-border); border-radius: var(--crm-radius); background: var(--crm-bg-content); overflow: visible; }
+.crm-editor-toolbar {
+  display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--crm-border);
+  background: var(--crm-bg-card); border-radius: var(--crm-radius) var(--crm-radius) 0 0; flex-wrap: wrap; position: relative;
+}
+.crm-editor-btn {
+  font-family: inherit; font-size: 13px; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--crm-text-secondary); cursor: pointer;
+}
+.crm-editor-btn:hover:not(:disabled) { background: var(--crm-bg-content); color: var(--crm-text-primary); }
+.crm-editor-btn.active { background: var(--crm-bg-content); border-color: var(--crm-border); color: var(--crm-accent); }
+.crm-editor-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.crm-editor-divider { width: 1px; height: 20px; background: var(--crm-border); margin: 0 4px; }
+.crm-editor-popover-wrap { position: relative; }
+.crm-editor-popover {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: var(--crm-bg-card);
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius); box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
+  padding: 8px; display: flex; gap: 6px; align-items: center; min-width: 220px;
+}
+.crm-editor-menu { flex-direction: column; align-items: stretch; min-width: 200px; }
+.crm-editor-menu-item {
+  display: flex; align-items: baseline; gap: 8px; text-align: left; background: transparent; border: none;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--crm-text-primary);
+}
+.crm-editor-menu-item:hover { background: var(--crm-bg-content); }
+.crm-editor-menu-item code { color: var(--crm-accent); font-size: 12px; }
+.crm-editor-menu-item span { color: var(--crm-text-secondary); font-size: 12px; }
+.crm-editor-emoji-grid { flex-wrap: wrap; max-width: 260px; }
+.crm-editor-emoji-item { background: transparent; border: none; font-size: 18px; padding: 4px; border-radius: 6px; cursor: pointer; line-height: 1; }
+.crm-editor-emoji-item:hover { background: var(--crm-bg-content); }
+.crm-editor-content {
+  min-height: 160px; max-height: 340px; overflow-y: auto; padding: var(--space-3) var(--space-4);
+  font-size: 14px; color: var(--crm-text-primary); line-height: 1.6; outline: none;
+  border-radius: 0 0 var(--crm-radius) var(--crm-radius);
+}
+.crm-editor-content:empty::before { content: attr(data-placeholder); color: var(--crm-text-tertiary); pointer-events: none; }
+.crm-editor-content ul, .crm-editor-content ol { margin: 0 0 8px; padding-left: 22px; }
+.crm-editor-content a { color: var(--crm-accent); }
+
+/* Live email preview panel */
+.crm-email-preview { flex: 1; min-width: 0; margin-bottom: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.crm-email-preview-chrome { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--crm-border); }
+.crm-email-preview-row { display: flex; gap: 8px; font-size: 12px; color: var(--crm-text-secondary); }
+.crm-email-preview-row + .crm-email-preview-row { margin-top: 2px; }
+.crm-email-preview-row span:first-child { font-weight: 700; width: 48px; flex-shrink: 0; color: var(--crm-text-tertiary); }
+.crm-email-preview-frame { width: 100%; height: 480px; border: none; background: var(--crm-bg-content); }
