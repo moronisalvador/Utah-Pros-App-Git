@@ -6166,13 +6166,12 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-channel-insurance { background: var(--crm-channel-insurance); }
 .crm-channel-other { background: var(--crm-text-tertiary); }
 
-/* ── Marketing — Email campaigns (Phase 4c, docs/crm-roadmap.md) ──────── */
-/* Plain app tokens (not --crm-*) — Marketing.jsx is not inside the CRM shell. */
-.marketing-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
-.marketing-section-header { display: flex; justify-content: flex-end; margin-bottom: var(--space-3); }
-.marketing-campaign-form { margin-bottom: var(--space-4); }
-.marketing-form-row { display: flex; gap: var(--space-4); margin-bottom: var(--space-3); }
-.marketing-form-field { flex: 1; display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-3); }
-.marketing-form-label { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); }
-.marketing-form-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
-.marketing-audience-count { font-size: var(--text-xs); color: var(--text-tertiary); }
+/* ── Campaigns — Email campaigns (Phase 4c, docs/crm-roadmap.md) ───────── */
+.crm-badge-draft { background: var(--crm-bg-content); color: var(--crm-text-secondary); }
+.crm-badge-sending { background: var(--crm-bg-content); color: var(--crm-accent); }
+.crm-campaign-form { margin-bottom: var(--space-4); }
+.crm-campaign-form-row { display: flex; gap: var(--space-4); margin-bottom: var(--space-3); }
+.crm-campaign-field { flex: 1; display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-3); }
+.crm-campaign-textarea { width: 100%; font-family: inherit; resize: vertical; }
+.crm-campaign-form-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.crm-campaign-audience-count { font-size: 12px; color: var(--crm-text-tertiary); }

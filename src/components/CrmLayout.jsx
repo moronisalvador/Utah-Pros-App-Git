@@ -34,12 +34,16 @@
  *   - Only Call Log and Integrations have real data behind them this phase
  *     (docs/crm-roadmap.md Phase 1) — the rest render a "coming in Phase N"
  *     placeholder until their own phase ships.
+ *   - Campaigns (Phase 4c) was originally built into the pre-existing
+ *     Marketing.jsx page (outside this shell) — moved into the CRM sidebar
+ *     afterward per owner feedback (it was hard to discover there), so it
+ *     lives at /crm/campaigns like every other CRM screen now.
  * ════════════════════════════════════════════════
  */
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   IconOverview, IconLeads, IconCallLog, IconTasks,
-  IconAttribution, IconReports, IconIntegrations, IconCrmSettings,
+  IconAttribution, IconReports, IconCampaigns, IconIntegrations, IconCrmSettings,
 } from '@/lib/crmIcons';
 
 const SIDEBAR_ITEMS = [
@@ -49,6 +53,7 @@ const SIDEBAR_ITEMS = [
   { key: 'tasks',        label: 'Tasks',        path: '/crm/tasks',        icon: IconTasks },
   { key: 'attribution',  label: 'Attribution',  path: '/crm/attribution',  icon: IconAttribution },
   { key: 'reports',      label: 'Reports',      path: '/crm/reports',      icon: IconReports },
+  { key: 'campaigns',    label: 'Campaigns',    path: '/crm/campaigns',    icon: IconCampaigns },
   { key: 'integrations', label: 'Integrations', path: '/crm/integrations', icon: IconIntegrations },
   { key: 'settings',     label: 'Settings',     path: '/crm/settings',     icon: IconCrmSettings },
 ];

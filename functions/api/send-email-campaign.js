@@ -13,7 +13,7 @@
  *
  * WHERE IT LIVES:
  *   Route:        POST /api/send-email-campaign
- *   Rendered by:  src/pages/Marketing.jsx ("Send now" on a draft campaign)
+ *   Rendered by:  src/pages/crm/CrmCampaigns.jsx ("Send now" on a draft campaign)
  *
  * DEPENDS ON:
  *   Packages:  none

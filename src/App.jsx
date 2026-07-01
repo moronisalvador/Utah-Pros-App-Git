@@ -91,6 +91,7 @@ const CrmCallLog = lazyRetry(() => import('@/pages/crm/CrmCallLog'));
 const CrmTasks = lazyRetry(() => import('@/pages/crm/CrmTasks'));
 const CrmAttribution = lazyRetry(() => import('@/pages/crm/CrmAttribution'));
 const CrmReports = lazyRetry(() => import('@/pages/crm/CrmReports'));
+const CrmCampaigns = lazyRetry(() => import('@/pages/crm/CrmCampaigns'));
 const CrmIntegrations = lazyRetry(() => import('@/pages/crm/CrmIntegrations'));
 const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
 
@@ -352,6 +353,7 @@ function WebRoutes() {
           <Route path="tasks" element={<CrmTasks />} />
           <Route path="attribution" element={<CrmAttribution />} />
           <Route path="reports" element={<CrmReports />} />
+          <Route path="campaigns" element={<CrmCampaigns />} />
           <Route path="integrations" element={<CrmIntegrations />} />
           <Route path="settings" element={<CrmSettings />} />
         </Route>
