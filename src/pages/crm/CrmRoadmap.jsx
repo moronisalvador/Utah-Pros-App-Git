@@ -17,7 +17,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (useAuth → db)
+ *   Internal:  @/contexts/AuthContext (useAuth → db),
+ *              @/components/BuildProgressPhaseCard (shared with src/pages/Status.jsx —
+ *              the public /status page renders this same progress via the anon client)
  *   Data:      reads  → crm_build_phases, crm_build_stages (via the
  *                       get_crm_build_progress RPC)
  *              writes → none
@@ -31,45 +33,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-
-const STATUS_LABEL = { planned: 'Planned', in_progress: 'In Progress', shipped: 'Shipped' };
-
-function PhaseCard({ phase }) {
-  const pct = phase.total_count > 0 ? Math.round((phase.done_count / phase.total_count) * 100) : 0;
-  return (
-    <div className="card crm-roadmap-phase">
-      <div className="card-body">
-        <div className="crm-roadmap-phase-head">
-          <div>
-            <div className="crm-roadmap-phase-title">Phase {phase.phase_key} — {phase.title}</div>
-            {phase.shipped_at && (
-              <div className="crm-roadmap-phase-shipped">Shipped {new Date(phase.shipped_at).toLocaleDateString()}</div>
-            )}
-          </div>
-          <span className={`status-badge crm-roadmap-status-${phase.status}`}>{STATUS_LABEL[phase.status] || phase.status}</span>
-        </div>
-
-        <div className="crm-roadmap-progress-row">
-          <div className="crm-roadmap-progress-track">
-            <div className="crm-roadmap-progress-fill" style={{ width: `${pct}%` }} />
-          </div>
-          <span className="crm-roadmap-progress-count">{phase.done_count}/{phase.total_count}</span>
-        </div>
-
-        {phase.stages.length > 0 && (
-          <ul className="crm-roadmap-stage-list">
-            {phase.stages.map(stage => (
-              <li key={stage.id} className={`crm-roadmap-stage crm-roadmap-stage-${stage.status}`}>
-                <span className="crm-roadmap-stage-check" aria-hidden="true">{stage.status === 'done' ? '✓' : ''}</span>
-                {stage.title}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
+import PhaseCard from '@/components/BuildProgressPhaseCard';
 
 export default function CrmRoadmap() {
   const { db } = useAuth();
