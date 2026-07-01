@@ -2169,3 +2169,160 @@ network egress limitation as the integration test, above). Flip it to `done` and
 `shipped` via `set_crm_stage_status`/`set_crm_phase_status` once that's confirmed on the pushed
 branch's Cloudflare preview.
 
+## CRM Module — Phase 1 (Jul 1 2026 — CRM shell + CallRail lead ingestion)
+
+Builds on Phase 0 (above), which merged into `dev` first. Full spec: `docs/crm-roadmap.md` →
+"Phase 1 — CRM shell + CallRail lead ingestion".
+
+**Table** (migration: `supabase/migrations/20260701_crm_phase1_shell_callrail.sql` — additive, RLS
+`FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)` at creation):
+```
+inbound_leads — id, org_id (FK crm_orgs), contact_id (FK contacts, nullable — see the spam/duration
+                filter below), source_type ('call'|'form'), callrail_id UNIQUE, tracking_number,
+                caller_number, duration_sec, spam_flag bool default false, source, medium, campaign,
+                recording_url, transcription, form_data jsonb, lead_status default 'new', value,
+                direction, occurred_at, raw_payload jsonb, notes, created_at, updated_at. Indexed on
+                contact_id, org_id, occurred_at desc. Deliberately NOT named `leads` — see the
+                roadmap's terminology-fix note: `Leads.jsx` is unrelated (jobs in phase='lead'), and
+                this is a raw call/form touch that may never become anything.
+```
+
+**RPCs** (SECURITY DEFINER, GRANT EXECUTE TO anon, authenticated):
+```
+upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_caller_number,
+  p_duration_sec, p_spam_flag, p_source, p_medium, p_campaign, p_recording_url, p_transcription,
+  p_form_data, p_lead_status, p_value, p_direction, p_occurred_at, p_raw_payload, p_org_id)
+  — True upsert-and-merge keyed on callrail_id (CallRail redelivers webhooks for the same call as
+  the recording/transcript become available later): fields present in the new payload overwrite,
+  null fields preserve whatever was already saved. p_org_id defaults to the real Utah Pros org when
+  omitted; callers pass the "Utah Pros — TEST" org id explicitly for test rows. Contact
+  match/create is by caller_number ONLY, and only when
+  `NOT spam_flag AND (duration_sec IS NULL OR duration_sec >= 15)` — this is the spam/robocall/
+  wrong-number filter, mirrored as a pure JS predicate `shouldCreateContact({spam_flag,
+  duration_sec})` in `functions/lib/callrail.js` (vitest-covered) for anywhere that needs the same
+  rule client-side; the SQL RPC is the actual server-side enforcement. Every call writes a
+  `system_events` row (`crm_lead_created` or `crm_lead_updated`).
+update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
+  logs a `crm_lead_status_updated` system_events row.
+```
+
+**Existing RPC widened**: `get_integration_status(p_provider)` (originally QBO-only) only checked
+`refresh_token IS NOT NULL` for "connected". CallRail has no OAuth — its API key lives in
+`integration_credentials.access_token` with `refresh_token` left NULL — so the check was widened to
+`refresh_token IS NOT NULL OR access_token IS NOT NULL`. Strict superset of the old behavior (QBO
+always has both set together once connected), verified live via the Supabase MCP (see Verification
+below) — not a behavior change for existing QBO callers.
+
+**Workers** (`functions/api/`):
+```
+callrail-webhook.js   — POST, receives CallRail's call/form events, maps payload → 
+                         upsert_lead_from_callrail, logs a worker_runs row per call. Auth is a
+                         `?secret=` query param checked against integration_config
+                         ('callrail_webhook_secret') — a documented placeholder (CallRail lets you
+                         fully customize the webhook target URL, so this avoids guessing at an
+                         unverified HMAC/signature-header scheme); confirm against CallRail's actual
+                         webhook docs/dashboard and adjust if it differs. Payload field names
+                         (mapCallPayload/mapFormPayload) are also best-effort with defensive
+                         multi-key fallbacks — same open item, unverified against a live CallRail
+                         payload in this session. Always returns 200 except on a bad/missing secret
+                         (403), to avoid a CallRail retry storm.
+callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
+                         DELETE (disconnect), all authenticated. Writes integration_credentials
+                         (provider='callrail', key in access_token) and generates the webhook
+                         shared secret into integration_config on first connect only (never rotated
+                         on reconnect — it's already pasted into CallRail's dashboard by then). The
+                         GET exists because integration_config has no anon/authenticated RLS policy
+                         (service-role only) — the frontend can't select it directly, so
+                         CrmIntegrations.jsx calls this endpoint to display the webhook URL +
+                         secret for Moroni to paste into CallRail's dashboard. Reuses
+                         google-drive.js's generic getActorEmployee Bearer-auth helper (not
+                         Google-Drive-specific despite the file name).
+callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). Pulls historical
+                         CALLS ONLY via CallRail's v3 list-calls API and upserts through the same
+                         RPC. CALLRAIL_ACCOUNT_ID env var + the connected API key are both required.
+                         Endpoint path/field names are unverified against a live account — same
+                         open item as the webhook. Hard-capped at 50 pages to guard against a
+                         runaway pagination loop. **Disclosed scope gap**: the roadmap spec asks for
+                         "historical calls + form leads" — this worker deliberately backfills calls
+                         only; CallRail's historical form-submission list API is a second,
+                         differently-shaped endpoint this session couldn't verify without a live
+                         account (same open item as whether the site's form even routes through
+                         CallRail's Form Tracking product — see docs/crm-roadmap.md "Open items to
+                         confirm before Phase 1 starts"). Does NOT affect live form leads — those
+                         arrive the same way calls do, through callrail-webhook.js's
+                         mapFormPayload(), once CallRail is connected.
+```
+
+**Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
+`<Outlet/>`): a `.crm-shell` wrapper scoping its own `--crm-*` design tokens (dark sidebar, Public
+Sans font loaded in `index.html`) — deliberately its own visual identity, not UPR's Inter-based
+look, mirroring how `.tech-layout` scopes `--tech-*` tokens. A left sidebar (desktop ≥1024px; a
+horizontal scrollable strip below that) lists Overview, Leads, Call Log, Tasks, Attribution,
+Reports, Integrations, Settings — icons in the new `src/lib/crmIcons.jsx` (kept separate from
+`src/lib/navItems.jsx` because a couple of names, e.g. `IconLeads`, would otherwise collide with
+unrelated existing icons there). `/crm/roadmap` (Phase 0) is intentionally NOT one of these sidebar
+items — it stays in the main app's visual style as a separate build/ops page, linked from the CRM
+sidebar's footer instead of taking a nav slot; `/crm` now redirects to `overview` (was `roadmap`).
+
+Only two sidebar pages have real data this phase (`src/pages/crm/`):
+- **CrmCallLog.jsx** (`/crm/call-log`) — lists `inbound_leads` (embeds `contacts` via the
+  `contact_id` FK), newest first; inline `<select>` to change `lead_status` (calls
+  `update_lead_status`); recording link + transcript shown when present.
+- **CrmIntegrations.jsx** (`/crm/integrations`) — a card per provider (CallRail real; Google
+  Ads/Meta Ads "Coming in Phase 2" placeholders). CallRail card: paste-API-key form when
+  disconnected, or a status + inline two-click "Disconnect" confirm when connected — calls
+  `/api/callrail-connect` (POST/DELETE), never writes `integration_credentials` directly from the
+  frontend (that table has no anon/authenticated RLS policy — service-role only, same as QBO).
+
+The other six sidebar pages (`CrmOverview.jsx`, `CrmLeads.jsx`, `CrmTasks.jsx`,
+`CrmAttribution.jsx`, `CrmReports.jsx`, `CrmSettings.jsx`) render a shared `CrmStubPage.jsx`
+("Coming in Phase N") until their own phase ships (3 or 4a).
+
+**Test-first**:
+- `functions/lib/callrail.test.js` — vitest unit test for `shouldCreateContact({spam_flag,
+  duration_sec})` (test target "c"), committed before `functions/lib/callrail.js` existed.
+- `supabase/tests/crm_phase1_callrail.test.js` — integration test (same pattern as Phase 0's) for
+  `upsert_lead_from_callrail` idempotency (test target "b"): a redelivered "recording ready" webhook
+  updates the same row instead of duplicating it, preserving fields the second payload didn't
+  include; plus an integration assertion that a spam/sub-15-second call never creates a contact.
+  Self-skips via `describe.skipIf` without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` (matches
+  CI). **Same known sandbox limitation as Phase 0**: this session's network egress doesn't allow-list
+  the Supabase host, so the committed test couldn't run live here either — the identical scenario
+  (create → redeliver with new fields → assert one row + merged fields; spam call → assert no
+  contact) was instead run for real against the live shared database via the Supabase MCP
+  `execute_sql` tool, passed, and the manually-inserted rows were deleted afterward.
+
+**Acceptance criteria status (docs/crm-roadmap.md "Phase 1 — verification & acceptance")**: the
+RPC-level criteria (idempotent upsert, spam filter, `system_events`/`worker_runs` logging, API key
+read from `integration_credentials` not a hardcoded secret) are verified live per above. **Not
+verified from this sandbox** — needs Moroni, post-merge: a real call/form through an actual CallRail
+account and dedicated dev tracking number (this session has no CallRail account access), the
+backfill's row count against CallRail's own dashboard, and the visual check of Call Log +
+Integrations against the original Stitch handoff mockup (not present in the repo — it was reviewed
+in an earlier session's chat, not committed as an asset) on the branch's Cloudflare preview. The
+CallRail webhook auth mechanism and payload field names are also placeholders pending confirmation
+against CallRail's real dashboard/docs (see the workers' NOTES above) — the two "open items to
+confirm before Phase 1 starts" from the roadmap were not resolvable in this session either, for the
+same reason.
+
+**Independent review**: `upr-pattern-checker` found 5 hardcoded-hex CSS violations outside the
+`.crm-shell` token block and one two-click-confirm missing its `onBlur` cancel — all fixed (see git
+history). `crm-phase-reviewer` (Opus) then graded the phase DO-NOT-SHIP-YET pending three fixable
+items, all addressed before this PR: (1) the Integrations page's file header claimed it showed the
+webhook URL/secret but didn't — `callrail-connect.js` gained a `GET` endpoint and the page now
+displays it; (2) the backfill worker's calls-only scope vs. the roadmap's "calls + form leads" spec
+was silently narrowed in this doc rather than disclosed — fixed above; (3) phase/stage status was
+undocumented — fixed by this paragraph and the dogfooding note below. The remaining open acceptance
+criteria (real call/form, backfill count, visual check, webhook auth confirmation) were confirmed by
+the reviewer as legitimately blocked by this session's no-CallRail-account/no-Supabase-egress
+limits, not silent gaps.
+
+**Dogfooding**: 4 of 8 `crm_build_stages` rows are marked `done` as of this session's close-out
+(test-first, `npm test`/`build`/`eslint`, `upr-pattern-checker`+`crm-phase-reviewer` sign-off,
+this doc update) via `set_crm_stage_status`; `crm_build_phases('1')` is `in_progress`, not yet
+`shipped` — same honest pattern as Phase 0. The remaining 4 stages (full acceptance criteria, the
+visual check, marking `shipped`, and the `dev → main` PR) need a real CallRail account and a
+logged-in Moroni session this sandbox doesn't have. Flip them via
+`set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
+Cloudflare preview and a real CallRail connection.
+
