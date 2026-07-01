@@ -38,12 +38,22 @@
  *     'email_blast' value, and a NOT NULL `phone` column).
  *   - Segmentation is intentionally simple (referral source + role) per the
  *     roadmap's "simple template UI" scope — not a full query builder.
+ *   - The message field is a real rich-text editor (RichEmailEditor —
+ *     bold/italic/lists/links, insert-variable, emoji), not a raw-HTML
+ *     textarea, with a live preview panel next to it rendered from the SAME
+ *     branded wrapper (src/lib/emailTemplate.js) the actual send uses
+ *     (functions/lib/email-template.js) — so what's shown while composing is
+ *     what a recipient actually receives, not an approximation. An "AI
+ *     design" button in the editor toolbar is a disabled placeholder for a
+ *     planned follow-up, not built yet.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { IconCampaigns } from '@/lib/crmIcons';
+import RichEmailEditor from '@/components/RichEmailEditor';
+import { wrapEmailBody, renderVariables, SAMPLE_VARIABLES } from '@/lib/emailTemplate';
 
 const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
@@ -201,7 +211,7 @@ export default function CrmCampaigns() {
           form={form} setForm={setForm} referralSources={referralSources}
           onSave={handleSave} onCancel={cancelEdit} saving={saving}
           onPreview={previewAudience} previewing={previewing} previewCount={previewCount}
-          nameRef={nameRef}
+          nameRef={nameRef} editorResetKey="new"
         />
       )}
 
@@ -222,7 +232,7 @@ export default function CrmCampaigns() {
                       form={form} setForm={setForm} referralSources={referralSources}
                       onSave={handleSave} onCancel={cancelEdit} saving={saving}
                       onPreview={previewAudience} previewing={previewing} previewCount={previewCount}
-                      nameRef={nameRef}
+                      nameRef={nameRef} editorResetKey={c.id}
                     />
                   </td></tr>
                 ) : (
@@ -264,49 +274,74 @@ export default function CrmCampaigns() {
   );
 }
 
-function CampaignForm({ form, setForm, referralSources, onSave, onCancel, saving, onPreview, previewing, previewCount, nameRef }) {
+function CampaignForm({ form, setForm, referralSources, onSave, onCancel, saving, onPreview, previewing, previewCount, nameRef, editorResetKey }) {
+  const previewHtml = useMemo(() => wrapEmailBody({
+    bodyHtml: renderVariables(form.body_html, SAMPLE_VARIABLES),
+    unsubscribeUrl: '#',
+  }), [form.body_html]);
+
   return (
-    <div className="crm-card crm-campaign-form">
-      <div className="crm-campaign-form-row">
-        <div className="crm-campaign-field">
-          <label className="crm-integration-label">Campaign name</label>
-          <input ref={nameRef} className="crm-integration-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Spring reactivation" />
+    <div className="crm-campaign-editor-layout">
+      <div className="crm-card crm-campaign-form">
+        <div className="crm-campaign-form-row">
+          <div className="crm-campaign-field">
+            <label className="crm-integration-label">Campaign name</label>
+            <input ref={nameRef} className="crm-integration-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Spring reactivation" />
+          </div>
+          <div className="crm-campaign-field">
+            <label className="crm-integration-label">Subject line</label>
+            <input className="crm-integration-input" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject the recipient sees" />
+          </div>
         </div>
+
+        <div className="crm-campaign-form-row">
+          <div className="crm-campaign-field">
+            <label className="crm-integration-label">Referral source</label>
+            <select className="crm-integration-input" value={form.referral_source} onChange={e => setForm(f => ({ ...f, referral_source: e.target.value }))}>
+              <option value="">Any referral source</option>
+              {referralSources.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
+          <div className="crm-campaign-field">
+            <label className="crm-integration-label">Contact role</label>
+            <select className="crm-integration-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+        </div>
+
         <div className="crm-campaign-field">
-          <label className="crm-integration-label">Subject line</label>
-          <input className="crm-integration-input" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject the recipient sees" />
+          <label className="crm-integration-label">Message</label>
+          <RichEmailEditor
+            value={form.body_html}
+            onChange={(html) => setForm(f => ({ ...f, body_html: html }))}
+            placeholder="Hi {{name}}, ..."
+            resetKey={editorResetKey}
+          />
+        </div>
+
+        <div className="crm-campaign-form-actions">
+          <button className="crm-btn crm-btn-ghost" onClick={onPreview} disabled={previewing}>
+            {previewing ? 'Checking…' : 'Preview audience'}
+          </button>
+          {previewCount !== null && <span className="crm-campaign-audience-count">{previewCount} contact{previewCount === 1 ? '' : 's'} will receive this</span>}
+          <div style={{ flex: 1 }} />
+          <button className="crm-btn crm-btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="crm-btn crm-btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</button>
         </div>
       </div>
 
-      <div className="crm-campaign-form-row">
-        <div className="crm-campaign-field">
-          <label className="crm-integration-label">Referral source</label>
-          <select className="crm-integration-input" value={form.referral_source} onChange={e => setForm(f => ({ ...f, referral_source: e.target.value }))}>
-            <option value="">Any referral source</option>
-            {referralSources.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-          </select>
+      <div className="crm-card crm-email-preview">
+        <div className="crm-email-preview-chrome">
+          <div className="crm-email-preview-row"><span>To</span><span>Jane Smith &lt;jane.smith@example.com&gt;</span></div>
+          <div className="crm-email-preview-row"><span>Subject</span><span>{form.subject || <em>(no subject yet)</em>}</span></div>
         </div>
-        <div className="crm-campaign-field">
-          <label className="crm-integration-label">Contact role</label>
-          <select className="crm-integration-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-            {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div className="crm-campaign-field">
-        <label className="crm-integration-label">Message ({'{{name}}'} inserts the recipient's name)</label>
-        <textarea className="crm-integration-input crm-campaign-textarea" rows={6} value={form.body_html} onChange={e => setForm(f => ({ ...f, body_html: e.target.value }))} placeholder="<p>Hi {{name}}, ...</p>" />
-      </div>
-
-      <div className="crm-campaign-form-actions">
-        <button className="crm-btn crm-btn-ghost" onClick={onPreview} disabled={previewing}>
-          {previewing ? 'Checking…' : 'Preview audience'}
-        </button>
-        {previewCount !== null && <span className="crm-campaign-audience-count">{previewCount} contact{previewCount === 1 ? '' : 's'} will receive this</span>}
-        <div style={{ flex: 1 }} />
-        <button className="crm-btn crm-btn-ghost" onClick={onCancel}>Cancel</button>
-        <button className="crm-btn crm-btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</button>
+        <iframe
+          className="crm-email-preview-frame"
+          title="Email preview"
+          srcDoc={previewHtml}
+          sandbox=""
+        />
       </div>
     </div>
   );
