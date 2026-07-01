@@ -36,3 +36,14 @@ export async function onRequestGet(context) {
 
   return jsonResponse({ url: buildAuthorizeUrl(env, state) }, 200, request, env);
 }
+
+export async function onRequestDelete(context) {
+  const { request, env } = context;
+  const db = supabase(env);
+
+  const employee = await getActorEmployee(request, env, db);
+  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+
+  await db.delete('integration_credentials', `provider=eq.google_ads`);
+  return jsonResponse({ disconnected: true }, 200, request, env);
+}

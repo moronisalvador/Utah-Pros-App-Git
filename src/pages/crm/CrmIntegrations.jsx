@@ -4,11 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Where CallRail gets connected to the app — paste in the API key from
- *   CallRail's dashboard, see whether it's currently connected, and
- *   disconnect it if needed. Also shows the webhook URL + secret to paste
- *   into CallRail's own webhook settings so it knows where to send call/form
- *   data. Google Ads and Meta Ads cards are placeholders until Phase 2.
+ *   Where the CRM's outside data sources get connected — CallRail (paste an
+ *   API key) plus Google Ads and Meta Ads (both "Connect" buttons that send
+ *   you to that service's own sign-in screen, then bring you back here).
+ *   Shows whether each is currently connected and lets you disconnect.
+ *   CallRail also shows the webhook URL + secret to paste into CallRail's
+ *   own webhook settings so it knows where to send call/form data.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/integrations
@@ -20,13 +21,15 @@
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
  *              (getAuthHeader, for the authenticated worker calls)
  *   Data:      reads  → integration_credentials (via get_integration_status
- *                       RPC — read-only, never exposes the key itself),
- *                       integration_config's webhook secret (via the
- *                       callrail-connect worker's GET, service-role — the
- *                       frontend never selects that table directly, since
- *                       it's RLS-enabled with no anon/authenticated policy)
+ *                       RPC — read-only, never exposes tokens themselves),
+ *                       integration_config's CallRail webhook secret (via
+ *                       the callrail-connect worker's GET, service-role —
+ *                       the frontend never selects that table directly,
+ *                       since it's RLS-enabled with no anon/authenticated
+ *                       policy)
  *              writes → integration_credentials, integration_config (via
- *                       the callrail-connect worker, service-role — never
+ *                       the callrail-connect / google-ads-connect /
+ *                       meta-ads-connect workers, service-role — never
  *                       directly from the frontend)
  * ════════════════════════════════════════════════
  */
@@ -162,12 +165,66 @@ function CallRailCard({ status, onConnected, onDisconnected }) {
   );
 }
 
-function ComingSoonCard({ label, phase }) {
+// Google Ads and Meta Ads both connect via a redirect to that service's own
+// OAuth screen, then land back here — a lighter card than CallRail's (no
+// paste-a-key form, no webhook URL block), shared by both providers.
+function OAuthProviderCard({ label, badgeClass, badgeText, connectPath, status, connecting, onConnect, onDisconnected }) {
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const connected = !!status?.connected;
+
+  const disconnect = async () => {
+    if (!confirmingDisconnect) { setConfirmingDisconnect(true); return; }
+    setDisconnecting(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch(connectPath, { method: 'DELETE', headers: auth });
+      if (!res.ok) throw new Error(res.statusText);
+      ok(`${label} disconnected`);
+      setConfirmingDisconnect(false);
+      onDisconnected();
+    } catch (e) {
+      err(`Could not disconnect ${label}: ` + e.message);
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   return (
-    <div className="crm-integration-card crm-integration-card-disabled">
+    <div className="crm-integration-card">
       <div className="crm-integration-card-head">
-        <div className="crm-integration-card-title">{label}</div>
-        <span className="crm-integration-status">Coming in Phase {phase}</span>
+        <div className="crm-integration-card-title">
+          <span className={`crm-integration-badge ${badgeClass}`}>{badgeText}</span>
+          {label}
+        </div>
+        <span className={`crm-integration-status${connected ? ' connected' : ''}`}>
+          {connected ? 'Connected' : 'Not connected'}
+        </span>
+      </div>
+
+      <div className="crm-integration-card-body">
+        {connected ? (
+          <>
+            <p className="crm-integration-meta">Connected {status.connected_at ? new Date(status.connected_at).toLocaleDateString() : ''}</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="crm-btn crm-btn-ghost" onClick={() => onConnect(connectPath)} disabled={connecting}>
+                {connecting ? 'Opening…' : 'Reconnect'}
+              </button>
+              <button
+                className={`crm-btn${confirmingDisconnect ? ' crm-btn-danger' : ' crm-btn-ghost'}`}
+                onClick={disconnect}
+                onBlur={() => setConfirmingDisconnect(false)}
+                disabled={disconnecting}
+              >
+                {confirmingDisconnect ? 'Confirm disconnect?' : 'Disconnect'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <button className="crm-btn crm-btn-primary" onClick={() => onConnect(connectPath)} disabled={connecting}>
+            {connecting ? 'Opening…' : `Connect ${label}`}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -175,14 +232,23 @@ function ComingSoonCard({ label, phase }) {
 
 export default function CrmIntegrations() {
   const { db } = useAuth();
-  const [status, setStatus] = useState(null);
+  const [callrailStatus, setCallrailStatus] = useState(null);
+  const [googleAdsStatus, setGoogleAdsStatus] = useState(null);
+  const [metaAdsStatus, setMetaAdsStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await db.rpc('get_integration_status', { p_provider: 'callrail' });
-      setStatus(Array.isArray(rows) ? rows[0] : rows);
+      const [cr, ga, ma] = await Promise.all([
+        db.rpc('get_integration_status', { p_provider: 'callrail' }),
+        db.rpc('get_integration_status', { p_provider: 'google_ads' }),
+        db.rpc('get_integration_status', { p_provider: 'meta_ads' }),
+      ]);
+      setCallrailStatus(Array.isArray(cr) ? cr[0] : cr);
+      setGoogleAdsStatus(Array.isArray(ga) ? ga[0] : ga);
+      setMetaAdsStatus(Array.isArray(ma) ? ma[0] : ma);
     } catch {
       err('Failed to load integration status');
     } finally {
@@ -191,6 +257,40 @@ export default function CrmIntegrations() {
   }, [db]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Surface the OAuth redirect result (?google_ads=connected|error|badstate
+  // or ?meta_ads=...) then clean the URL, same pattern as DevTools' QBO card.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+    for (const [provider, label] of [['google_ads', 'Google Ads'], ['meta_ads', 'Meta Ads']]) {
+      const result = params.get(provider);
+      if (!result) continue;
+      changed = true;
+      if (result === 'connected')      ok(`${label} connected`);
+      else if (result === 'badstate')  err(`${label} connect failed: state mismatch — try again`);
+      else                             err(`${label} connect failed` + (params.get('msg') ? `: ${params.get('msg')}` : ''));
+      params.delete(provider);
+    }
+    if (!changed) return;
+    params.delete('msg');
+    window.history.replaceState({}, '', window.location.pathname + (params.toString() ? `?${params}` : ''));
+    load();
+  }, [load]);
+
+  const startConnect = async (connectPath) => {
+    setConnecting(true);
+    try {
+      const auth = await getAuthHeader();
+      const res = await fetch(connectPath, { method: 'GET', headers: auth });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || res.statusText);
+      window.location.href = data.url;
+    } catch (e) {
+      err('Could not start connect: ' + e.message);
+      setConnecting(false);
+    }
+  };
 
   if (loading) return <div className="crm-page"><div className="crm-loading">Loading…</div></div>;
 
@@ -202,9 +302,17 @@ export default function CrmIntegrations() {
       </div>
 
       <div className="crm-integration-grid">
-        <CallRailCard status={status} onConnected={load} onDisconnected={load} />
-        <ComingSoonCard label="Google Ads" phase="2" />
-        <ComingSoonCard label="Meta Ads" phase="2" />
+        <CallRailCard status={callrailStatus} onConnected={load} onDisconnected={load} />
+        <OAuthProviderCard
+          label="Google Ads" badgeClass="crm-integration-badge-google" badgeText="G"
+          connectPath="/api/google-ads-connect" status={googleAdsStatus}
+          connecting={connecting} onConnect={startConnect} onDisconnected={load}
+        />
+        <OAuthProviderCard
+          label="Meta Ads" badgeClass="crm-integration-badge-meta" badgeText="M"
+          connectPath="/api/meta-ads-connect" status={metaAdsStatus}
+          connecting={connecting} onConnect={startConnect} onDisconnected={load}
+        />
       </div>
     </div>
   );
