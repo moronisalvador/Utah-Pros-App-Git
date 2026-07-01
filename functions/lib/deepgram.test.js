@@ -190,4 +190,16 @@ describe('buildTranscriptAnalysis', () => {
     expect(buildTranscriptAnalysis('nope')).toBeNull();
     expect(buildTranscriptAnalysis({ results: { channels: [] } })).toBeNull();
   });
+
+  // Regression: buildTranscriptAnalysis must be non-null WHENEVER
+  // formatDeepgramTranscript is, or a row gets text-but-no-analysis and is
+  // re-transcribed (re-billed) on every backfill run. This shape has a joined
+  // paragraphs.transcript but an empty flat transcript and no structured paragraphs.
+  it('is non-null when only paragraphs.transcript carries the text (recharge-trap guard)', () => {
+    const paraTextOnly = {
+      results: { channels: [{ alternatives: [{ transcript: '   ', paragraphs: { transcript: 'Speaker 0: Hello.' } }] }] },
+    };
+    expect(formatDeepgramTranscript(paraTextOnly)).toBe('Speaker 0: Hello.');
+    expect(buildTranscriptAnalysis(paraTextOnly)).not.toBeNull();
+  });
 });

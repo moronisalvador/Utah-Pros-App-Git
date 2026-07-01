@@ -106,7 +106,13 @@ async function transcribeLead(db, lead, callrailKey, deepgramKey) {
   const json = await dgRes.json();
   const text = formatDeepgramTranscript(json);
   if (!text) throw new Error('Deepgram returned an empty transcript');
-  const analysis = buildTranscriptAnalysis(json);
+  // NEVER store text with a null analysis: the backfill re-selects rows where
+  // transcript_analysis IS NULL, so a null here would re-transcribe (re-bill) the
+  // row on every run. buildTranscriptAnalysis is aligned to be non-null whenever
+  // `text` is, but keep a sentinel as a hard backstop against Deepgram shape drift.
+  const analysis =
+    buildTranscriptAnalysis(json) ||
+    { model: 'nova-3', speakerMode: 'text', turns: [], summary: null, sentiment: null, topics: [], entities: [] };
 
   await db.rpc('set_lead_transcription', {
     p_lead_id: lead.id,

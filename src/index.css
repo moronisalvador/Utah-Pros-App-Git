@@ -5863,6 +5863,7 @@ tr:hover td { background: var(--bg-secondary); }
   --crm-integration-meta: #0866ff;
   --crm-channel-insurance: #d97706;
   --crm-text-on-accent: #ffffff;
+  --crm-success-bg: #ecfdf5;
 }
 
 .crm-sidebar {
@@ -5970,8 +5971,9 @@ tr:hover td { background: var(--bg-secondary); }
 
 .crm-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 9999px; }
 .crm-badge-spam { background: var(--crm-danger-bg); color: var(--crm-danger-text); }
-/* Sentiment pills — same shape as .crm-badge-won/-lost (mirrors their literal green bg). */
-.crm-badge-sentiment-positive { background: #ecfdf5; color: var(--crm-success); }
+/* Sentiment pills — same shape as .crm-badge-won/-lost (whose literal green bg is now
+   the --crm-success-bg token; a follow-up can migrate those pre-existing rules too). */
+.crm-badge-sentiment-positive { background: var(--crm-success-bg); color: var(--crm-success); }
 .crm-badge-sentiment-neutral { background: var(--crm-bg-content); color: var(--crm-text-secondary); }
 .crm-badge-sentiment-negative { background: var(--crm-danger-bg); color: var(--crm-danger-text); }
 

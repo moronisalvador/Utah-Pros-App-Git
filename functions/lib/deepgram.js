@@ -138,8 +138,14 @@ export function buildTranscriptAnalysis(deepgramJson) {
     speakerMode = 'diarize';
   }
 
-  // Nothing usable at all → null (mirrors formatDeepgramTranscript).
-  const hasFlatText = typeof alt?.transcript === 'string' && alt.transcript.trim();
+  // Nothing usable at all → null. This MUST mirror formatDeepgramTranscript's full
+  // fallback ladder (paragraphs.paragraphs → paragraphs.transcript → transcript),
+  // otherwise a row could get flat text but null analysis and be re-transcribed
+  // (re-billed) on every backfill run. `turns` covers the first tier; check the
+  // other two here.
+  const hasFlatText =
+    (typeof alt?.transcript === 'string' && alt.transcript.trim()) ||
+    (typeof alt?.paragraphs?.transcript === 'string' && alt.paragraphs.transcript.trim());
   if (!turns.length && !hasFlatText) return null;
 
   // ── Audio Intelligence (all optional) ──
