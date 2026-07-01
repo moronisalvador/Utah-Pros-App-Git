@@ -36,6 +36,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
+import { resolveCallRecording } from '../lib/callrail-api.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -65,35 +66,30 @@ export async function onRequestGet(context) {
 
   const audioHeaders = (ct) => ({ 'Content-Type': ct || 'audio/mpeg', 'Cache-Control': 'private, max-age=300' });
 
-  const upstream = await fetch(recUrl, { headers: { Authorization: `Token token="${apiKey}"` } });
-  if (!upstream.ok || !upstream.body) {
-    return jsonResponse({ error: `CallRail recording fetch failed (${upstream.status})` }, 502, request, env);
-  }
-
-  const ct = (upstream.headers.get('Content-Type') || '').toLowerCase();
+  // resolveCallRecording handles both shapes CallRail returns (direct audio
+  // stream vs. JSON → signed URL) — see functions/lib/callrail-api.js.
+  const rec = await resolveCallRecording(apiKey, recUrl);
 
   // Case 1 — CallRail streamed the audio directly: pass it straight through.
-  if (ct.startsWith('audio/') || ct.includes('octet-stream')) {
-    return new Response(upstream.body, { status: 200, headers: audioHeaders(ct) });
+  if (rec.kind === 'stream') {
+    return new Response(rec.response.body, { status: 200, headers: audioHeaders(rec.contentType) });
   }
 
-  // Case 2 — CallRail returned JSON describing WHERE the audio lives (a signed
-  // URL). Fetch that (no auth — it's pre-signed) and stream it.
-  if (ct.includes('application/json')) {
-    const data = await upstream.json().catch(() => null);
-    const mediaUrl = data && (data.url || data.recording || data.media_url || data.audio_url);
-    if (!mediaUrl) {
-      return jsonResponse({ error: 'CallRail returned JSON with no audio URL', detail: data }, 502, request, env);
-    }
-    const audio = await fetch(mediaUrl);
+  // Case 2 — a signed CDN URL. Fetch it (no auth — it's pre-signed) and stream.
+  if (rec.kind === 'url') {
+    const audio = await fetch(rec.url);
     if (!audio.ok || !audio.body) {
       return jsonResponse({ error: `Signed audio fetch failed (${audio.status})` }, 502, request, env);
     }
     return new Response(audio.body, { status: 200, headers: audioHeaders((audio.headers.get('Content-Type') || '').toLowerCase()) });
   }
 
-  // Case 3 — something unexpected (HTML/redirect page/error). Surface exactly
-  // what CallRail sent so this is diagnosable instead of a silent dead player.
-  const snippet = (await upstream.text().catch(() => '')).slice(0, 300);
-  return jsonResponse({ error: `Unexpected recording response (${upstream.status}, ${ct || 'no content-type'})`, snippet }, 502, request, env);
+  // Case 3 — surface exactly what went wrong instead of a silent dead player.
+  if (rec.reason === 'fetch-failed') {
+    return jsonResponse({ error: `CallRail recording fetch failed (${rec.status})` }, 502, request, env);
+  }
+  if (rec.reason === 'json-no-url') {
+    return jsonResponse({ error: 'CallRail returned JSON with no audio URL', detail: rec.detail }, 502, request, env);
+  }
+  return jsonResponse({ error: `Unexpected recording response (${rec.status}, ${rec.contentType || 'no content-type'})`, snippet: rec.snippet }, 502, request, env);
 }
