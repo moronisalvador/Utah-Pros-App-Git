@@ -2214,16 +2214,23 @@ promote_lead_to_contact(p_lead_id, p_name, p_email, p_created_by) — the CRM "A
   system_events row. `SECURITY DEFINER`, granted `anon, authenticated`.
 update_lead_status(p_lead_id, p_status, p_notes, p_updated_by) — staff follow-up (Call Log page);
   logs a `crm_lead_status_updated` system_events row.
-set_lead_transcription(p_lead_id, p_transcription, p_source default 'deepgram') — stores a call
-  transcript we generated ourselves (see transcribe-call.js). Sets `transcription`,
-  `transcription_source`, `transcribed_at`, bumps `updated_at`, logs `crm_call_transcribed`.
-  `SECURITY DEFINER`, granted `anon, authenticated`. Modeled on `update_lead_status`.
+set_lead_transcription(p_lead_id, p_transcription, p_source default 'deepgram', p_analysis jsonb
+  default null) — stores a call transcript we generated ourselves (see transcribe-call.js). Sets
+  `transcription`, `transcription_source`, `transcribed_at`, `transcript_analysis` (COALESCE — a
+  null analysis leaves the existing one), bumps `updated_at`, logs `crm_call_transcribed`
+  (payload notes `has_analysis`). `SECURITY DEFINER`, granted `anon, authenticated`. Modeled on
+  `update_lead_status`. **v2 (migration `20260701_crm_call_transcription_analysis.sql`)** dropped
+  the original 3-arg version and recreated it with `p_analysis`.
 ```
 
-**`inbound_leads` columns added** (migration `20260701_crm_call_transcription.sql`, additive):
-`transcription_source text` + `transcribed_at timestamptz` — record WHERE a transcript came from
-(`'deepgram'` today) and WHEN, so a future source (or CallRail's CI, if ever enabled) is
-distinguishable. The `transcription` text column itself already existed.
+**`inbound_leads` columns added** (two additive migrations):
+- `20260701_crm_call_transcription.sql`: `transcription_source text` + `transcribed_at timestamptz`
+  — WHERE a transcript came from (`'deepgram'`) and WHEN.
+- `20260701_crm_call_transcription_analysis.sql`: `transcript_analysis jsonb` — the structured
+  Deepgram result: `{ model, speakerMode: 'channel'|'diarize', turns:[{speaker,text}], summary,
+  sentiment:{label,score}, topics:[], entities:[{label,value}] }`. Mirrors the existing
+  `raw_payload`/`form_data` JSONB pattern. The flat `transcription` text column stays alongside it
+  (for search / a future LLM); `transcript_analysis` backs the Call Log conversation view.
 
 **Existing RPC widened**: `get_integration_status(p_provider)` (originally QBO-only) only checked
 `refresh_token IS NOT NULL` for "connected". CallRail has no OAuth — its API key lives in
@@ -2308,15 +2315,24 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          `{ backfill: true, days?: 30 }` (every recent call with a recording but no
                          transcript). Reads the Deepgram + CallRail keys from integration_credentials,
                          resolves the recording via `resolveCallRecording()`, then hands Deepgram the
-                         signed URL (`model=nova-2&diarize=true&punctuate=true&smart_format=true`) so it
-                         fetches the audio itself (no Worker buffering; falls back to POSTing bytes when
-                         CallRail streams directly), formats the result via `formatDeepgramTranscript()`
-                         (functions/lib/deepgram.js — pure, unit-tested; speaker-labeled "Speaker N:"
-                         turns), and stores it via `set_lead_transcription`. Backfill hard-capped at 200
-                         leads (MAX_BACKFILL) to guard against a runaway paid-API fan-out. Logs one
-                         worker_runs row per invocation. **Deepgram key** lives in
-                         integration_credentials (provider='deepgram') — a pasted key, not a Cloudflare
-                         env var, same pattern as CallRail's.
+                         signed URL so it fetches the audio itself (no Worker buffering; falls back to
+                         POSTing bytes when CallRail streams directly). **v2 request** (one call):
+                         `model=nova-3&smart_format&punctuate&utterances&multichannel&diarize` +
+                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`. CallRail
+                         records Agent/Customer on **separate stereo channels**, so `multichannel`
+                         gives exact speaker separation (Agent/Customer labels); `diarize` is the mono
+                         fallback ("Speaker N"). Stores BOTH the flat text (`formatDeepgramTranscript`)
+                         and the structured `transcript_analysis` (`buildTranscriptAnalysis` — pure,
+                         unit-tested: turns + summary + sentiment + topics + entities) via
+                         `set_lead_transcription`. **Idempotency:** the single-lead guard skips only
+                         when a row has BOTH transcript AND analysis (unless `force`); the backfill
+                         targets `or=(transcription.is.null,transcript_analysis.is.null)` so pre-v2
+                         rows get re-enriched once with nova-3 + intelligence, then are skipped.
+                         Backfill hard-capped at 200 (MAX_BACKFILL); logs one worker_runs row.
+                         **Deepgram key** lives in integration_credentials (provider='deepgram') —
+                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. First
+                         live run confirms the stereo download + exact Audio-Intelligence field paths
+                         (parser is defensive; unconfirmed shapes degrade to null/[], never throw).
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
