@@ -161,7 +161,7 @@ export async function onRequestOptions(context) {
 
 // ═══════════════════════════════════════════════════
 // POST — Create new user
-// Body: { email, password, full_name, display_name, role, phone, hourly_rate, overtime_rate }
+// Body: { email, password, full_name, display_name, role, phone, hourly_rate, overtime_rate, is_external }
 // ═══════════════════════════════════════════════════
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -174,7 +174,7 @@ export async function onRequestPost(context) {
   try {
     const {
       email, password, full_name, display_name,
-      role, phone, hourly_rate, overtime_rate,
+      role, phone, hourly_rate, overtime_rate, is_external,
     } = await request.json();
 
     // Validate required fields
@@ -206,6 +206,7 @@ export async function onRequestPost(context) {
       hourly_rate: hourly_rate ? parseFloat(hourly_rate) : null,
       overtime_rate: overtime_rate ? parseFloat(overtime_rate) : null,
       is_active: true,
+      is_external: !!is_external,
     };
 
     const [employee] = await db.insert('employees', employeeData);
@@ -220,7 +221,7 @@ export async function onRequestPost(context) {
 
 // ═══════════════════════════════════════════════════
 // PATCH — Update existing user
-// Body: { employee_id, email?, password?, full_name?, display_name?, role?, phone?, hourly_rate?, overtime_rate? }
+// Body: { employee_id, email?, password?, full_name?, display_name?, role?, phone?, hourly_rate?, overtime_rate?, is_external? }
 // If employee has no auth_user_id and password is provided, creates auth account and links it.
 // ═══════════════════════════════════════════════════
 export async function onRequestPatch(context) {
@@ -259,6 +260,7 @@ export async function onRequestPatch(context) {
       if (updates.phone !== undefined) employeeUpdate.phone = updates.phone?.trim() || null;
       if (updates.hourly_rate !== undefined) employeeUpdate.hourly_rate = updates.hourly_rate ? parseFloat(updates.hourly_rate) : null;
       if (updates.overtime_rate !== undefined) employeeUpdate.overtime_rate = updates.overtime_rate ? parseFloat(updates.overtime_rate) : null;
+      if (updates.is_external !== undefined) employeeUpdate.is_external = !!updates.is_external;
 
       const [updated] = await db.update('employees', `id=eq.${employee_id}`, employeeUpdate);
       return jsonResponse({ success: true, employee: updated, auth_created: true }, 200, request, env);
@@ -288,6 +290,7 @@ export async function onRequestPatch(context) {
     if (updates.phone !== undefined) employeeUpdate.phone = updates.phone?.trim() || null;
     if (updates.hourly_rate !== undefined) employeeUpdate.hourly_rate = updates.hourly_rate ? parseFloat(updates.hourly_rate) : null;
     if (updates.overtime_rate !== undefined) employeeUpdate.overtime_rate = updates.overtime_rate ? parseFloat(updates.overtime_rate) : null;
+    if (updates.is_external !== undefined) employeeUpdate.is_external = !!updates.is_external;
 
     if (Object.keys(employeeUpdate).length > 0) {
       const [updated] = await db.update('employees', `id=eq.${employee_id}`, employeeUpdate);

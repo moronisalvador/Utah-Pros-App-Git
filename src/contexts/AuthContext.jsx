@@ -253,6 +253,11 @@ export function AuthProvider({ children }) {
   // flag.enabled = globally on for everyone
   // flag.dev_only_user_id === employee.id = visible only to that specific user
   const isFeatureEnabled = useCallback((key) => {
+    // A crm_partner account exists solely to use the CRM — it always passes the
+    // page:crm gate regardless of the dev_only_user_id rollout flag that keeps
+    // CRM hidden from internal staff mid-build (that flag governs internal
+    // rollout timing, not whether an already-provisioned partner can log in).
+    if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
     const flag = featureFlags[key];
     if (!flag) return true;                                          // No row = unrestricted
     if (flag.enabled) return true;                                   // Globally on

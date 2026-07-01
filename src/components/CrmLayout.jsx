@@ -41,6 +41,7 @@
  * ════════════════════════════════════════════════
  */
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   IconOverview, IconLeads, IconCallLog, IconTasks,
   IconAttribution, IconReports, IconCampaigns, IconIntegrations, IconCrmSettings,
@@ -59,12 +60,20 @@ const SIDEBAR_ITEMS = [
 ];
 
 export default function CrmLayout() {
+  const { employee } = useAuth();
+  const isPartner = employee?.role === 'crm_partner';
+  // Settings (pipeline config) and the internal build-roadmap tracker stay
+  // internal-only even though the rest of the CRM is open to a partner.
+  const visibleItems = isPartner
+    ? SIDEBAR_ITEMS.filter(item => item.key !== 'settings')
+    : SIDEBAR_ITEMS;
+
   return (
     <div className="crm-shell">
       <nav className="crm-sidebar">
         <div className="crm-sidebar-brand">CRM</div>
         <div className="crm-sidebar-links">
-          {SIDEBAR_ITEMS.map(item => (
+          {visibleItems.map(item => (
             <NavLink
               key={item.key}
               to={item.path}
@@ -75,9 +84,11 @@ export default function CrmLayout() {
             </NavLink>
           ))}
         </div>
-        <NavLink to="/crm/roadmap" className="crm-sidebar-footer-link">
-          Build roadmap
-        </NavLink>
+        {!isPartner && (
+          <NavLink to="/crm/roadmap" className="crm-sidebar-footer-link">
+            Build roadmap
+          </NavLink>
+        )}
       </nav>
       <div className="crm-content">
         <Outlet />

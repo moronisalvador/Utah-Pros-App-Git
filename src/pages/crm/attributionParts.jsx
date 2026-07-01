@@ -92,7 +92,7 @@ export function Funnel({ stages }) {
  * The per-channel attribution table. Zero-spend channels render "—" for the
  * cost/return columns (via the fmt* null handling) — never "0".
  */
-export function ChannelTable({ rows }) {
+export function ChannelTable({ rows, hideRevenue = false }) {
   return (
     <div className="crm-table-wrap">
       <table className="crm-table">
@@ -105,8 +105,8 @@ export function ChannelTable({ rows }) {
             <th className="num">Estimates</th>
             <th className="num">Won jobs</th>
             <th className="num">Cost / job</th>
-            <th className="num">Revenue</th>
-            <th className="num">ROAS</th>
+            {!hideRevenue && <th className="num">Revenue</th>}
+            {!hideRevenue && <th className="num">ROAS</th>}
           </tr>
         </thead>
         <tbody>
@@ -122,8 +122,8 @@ export function ChannelTable({ rows }) {
               <td className="num">{r.estimates.toLocaleString('en-US')}</td>
               <td className="num">{r.won_jobs.toLocaleString('en-US')}</td>
               <td className="num">{fmtMoney(r.cost_per_job)}</td>
-              <td className="num">{fmtMoney(r.revenue)}</td>
-              <td className="num">{fmtRatio(r.roas)}</td>
+              {!hideRevenue && <td className="num">{fmtMoney(r.revenue)}</td>}
+              {!hideRevenue && <td className="num">{fmtRatio(r.roas)}</td>}
             </tr>
           ))}
         </tbody>

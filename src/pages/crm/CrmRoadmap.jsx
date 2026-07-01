@@ -39,11 +39,12 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import PhaseCard from '@/components/BuildProgressPhaseCard';
 
 export default function CrmRoadmap() {
-  const { db } = useAuth();
+  const { db, employee } = useAuth();
   const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -63,6 +64,11 @@ export default function CrmRoadmap() {
   }, [db]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Internal build-status page — not for the marketing-agency CRM partner
+  // role. CrmLayout already hides the sidebar link; this is the direct-URL
+  // backstop, matching the layout-level redirect in Layout.jsx.
+  if (employee?.role === 'crm_partner') return <Navigate to="/crm/leads" replace />;
 
   const pageClass = `crm-roadmap-page${dark ? ' dark' : ''}`;
 
