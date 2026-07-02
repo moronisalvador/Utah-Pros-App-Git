@@ -3847,6 +3847,96 @@ review time, not from this headless session. No test task rows remain (the live 
 the integration suite self-cleans; `crm_tasks` verified empty of `smoke/v/phase7-` rows).
 `crm_build_phases('7')` set `shipped`.
 
+## CRM Phase 10 — CRM Forms: embeddable lead capture (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Ships a first-party embeddable lead-capture form builder — the
+public-endpoint + consent + XSS-weighted phase. **Zero schema migrations** — the
+`form_definitions` / `form_definition_versions` / `form_submissions` tables (public_id UNIQUE,
+submission_token UNIQUE, immutable published version snapshots) are all Foundation-owned; this phase
+only filled three frozen RPC stub bodies and added a shared lib + worker + hosted page + embed
+snippet + builder UI.
+
+**Shared lib — `functions/lib/forms.js`** (new; pure, browser+worker-safe, unit-tested in
+`forms.test.js`): `sanitizeLinkMarkup` (HTML-escapes everything, then converts ONLY `[text](url)`
+with an http(s)/mailto url into an `<a rel="noopener noreferrer nofollow">` — javascript:/data:/
+relative urls stay inert text; this is the sole link path, used by both the builder preview and the
+hosted page), `validateSubmission(schema,data)` (required + per-type checks), `checkSpam` (honeypot +
+min-fill-time), `consentValue`. This is the load-bearing XSS defense.
+
+**RPCs — `supabase/migrations/20260702_crm_phase10_form_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs, all SECURITY DEFINER +
+GRANT anon/authenticated):
+- `upsert_form(p_id, p_name, p_schema, p_theme, p_status, p_publish, p_turnstile_enabled, p_org_id,
+  p_created_by) → form_definitions` — create/edit a form; generates a unique `public_id`; editing
+  always writes a working DRAFT version and **publishing never mutates an already-published version
+  row** (the next edit opens a fresh draft one version above it → every published snapshot stays
+  immutable/revertable). Treats empty `{}` theme / read-only calls as no-ops so metadata isn't wiped.
+- `get_forms(p_org_id) → SETOF json` — one json per non-archived form with published + draft schema,
+  `submission_count`, and the most recent (≤200) submissions inline, so the builder's submissions
+  view needs no extra RPC.
+- `upsert_lead_from_form(p_form_id, p_submission_token, p_data, p_utm, p_consent, p_ip, p_user_agent,
+  p_org_id) → inbound_leads` — **idempotent on `callrail_id = 'form:' || submission_token`** (the
+  `create_manual_lead` `'manual:'` precedent); requires a published form; finds/creates the contact by
+  SQL-normalized phone (mirrors `src/lib/phone.js`); logs `inbound_leads` (`source_type='form'`,
+  source/medium/campaign from UTM); attributes via `upsert_lead_attribution` + `crm_channel_for_source`;
+  writes `form_submissions`; **on consent → an `sms_consent_log` `opt_in` row (IP + form public_id +
+  consent-text version) and sets `contacts.opt_in_status/opt_in_source='web_form'/opt_in_at`** (no
+  opt-in written when consent is false); fires `system_events` `crm_lead_created` (so speed-to-lead
+  triggers on form leads) + `crm_form_submitted`. Verified live on `dev` end-to-end (create → publish →
+  edit-immutable → get_forms → submit → idempotent redelivery → consent / no-consent asserts), then
+  all test rows deleted.
+
+**Worker — `functions/api/form-submit.js`** (new; public `POST /api/form-submit`): permissive CORS
+`*` on purpose (embeddable, credential-free, RPC-gated); spam gate = honeypot + min-fill-time +
+per-IP rate limit (`form_submissions` in a 10-min window) + optional **per-form** Cloudflare Turnstile
+(`form.turnstile_enabled`; if enabled but no `TURNSTILE_SECRET_KEY` yet, the check is skipped so forms
+work before the site key exists); server-side `validateSubmission` against the PUBLISHED version;
+computes consent server-side from the submitted data; calls `upsert_lead_from_form`; logs a
+`worker_runs` row. Spam-dropped submissions return `200 {ok:true}` (a bot can't tell it was filtered).
+
+**Hosted page — `functions/f/[public_id].js`** (new; `GET /f/:public_id`): standalone HTML (not the
+SPA) rendered from the published schema; every field label/option/value escaped, labels/description/
+thank-you via `sanitizeLinkMarkup`; sets `Content-Security-Policy: frame-ancestors *` and never
+`X-Frame-Options`, so it embeds on any customer site; posts JSON to `/api/form-submit`; reads the
+UTM/gclid/fbclid/referrer/landing that `embed.js` forwarded onto its URL into hidden attribution;
+`postMessage` auto-resize; Turnstile widget only when enabled AND `TURNSTILE_SITE_KEY` is set.
+
+**Embed — `public/embed.js`** (new static asset, served at `/embed.js`):
+`<script src="…/embed.js" data-upr-form="PUBLIC_ID" async></script>` injects an `<iframe>` to
+`/f/<public_id>` and forwards the **parent page's** UTM/gclid/fbclid + `document.referrer` +
+landing URL into the iframe URL; origin derived from the script's own `src` (works dev+prod);
+height messages trusted only from the form origin AND the exact iframe window (`event.source`).
+
+**UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
+types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
+editor, theme colors, restricted `[text](url)` markup in labels/description/thank-you, a **live
+preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
+confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
+live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's
+own inline theme colors are intentional (standalone non-SPA). `page:crm`-gated like the rest of the shell.
+
+**Optional Webflow adapter:** not built — the first-party form + embed covers WordPress/any site and
+captures gclid/fbclid + writes `sms_consent_log`, which the Webflow-webhook path can't. Left as the
+roadmap's documented optional stage.
+
+**Ownership:** touched only Phase-10-assigned files (`CrmForms.jsx`, `functions/f/[public_id].js`,
+`functions/api/form-submit.js`, `public/embed.js`) + the new shared `functions/lib/forms.js`
+(Phase-10-owned, imports nothing frozen) + the three own frozen RPC stubs + the Phase 10 index.css
+marker. No frozen file edited; no schema added.
+
+**Tests / gauntlet:** `forms.test.js` (sanitizer XSS, validation, spam) + `crm_phase10_forms.test.js`
+(publish immutability, get_forms, idempotency + consent-write) committed failing first. Full vitest
+314 passed / 57 skipped; `npm run build` + `npx eslint` (changed files) clean. Integration suite
+self-skips in CI (no creds, like every CRM suite) — the RPCs were instead verified live via SQL
+assertions on `dev`. migration-safety-checker PASS; upr/consent/phase reviewers — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** 7 stages. Flipped **done**: test-first suite;
+acceptance (builder + hosted form + embed + submissions→inbound_leads + attribution + events);
+test/build/eslint + zero-schema; the auditor gauntlet; UPR-Web-Context update; and the mechanical
+close-out. Left **todo** and disclosed: **"Visual: builder + live embedded form on a test page"** is
+owner-gated — it needs the Cloudflare branch preview (a headless session can't render the iframe on an
+external test page); the code is complete and unit/flow-verified. `crm_build_phases('10')` set `shipped`.
+
 ## CRM post-wave follow-ups (Jul 2 2026)
 
 Small fixes committed straight to `dev` after the wave landed, from the #247–250 merge-readiness
