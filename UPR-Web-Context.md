@@ -3018,6 +3018,21 @@ email-unsubscribe.js    — public GET/POST (no auth by design — RFC 8058 one-
                            resolves the exact recipient + campaign) or `?email=` (fallback), calls
                            email_unsubscribe, always returns a 200 HTML confirmation page except when
                            neither param is present (400).
+crm-campaign-ai-design.js — POST, authenticated (same requireAuth as send-email-campaign.js — any
+                           valid logged-in session, NOT the Moroni-only gate the Homebuilding AI
+                           workers use, since CRM Campaigns is a shared team feature behind
+                           `page:crm`, not a personal tool). Powers the CRM Campaigns builder's
+                           "✨ Design with AI" button (`RichEmailEditor.jsx`): takes a plain-English
+                           instruction + the current subject/body_html, asks Claude Sonnet 5 to
+                           rewrite the email's INNER content HTML only (never the outer branded shell)
+                           as a polished, brand-styled design — styled headings, accent-tinted
+                           callout blocks, button-style CTAs, matching the hardcoded brand colors in
+                           email-template.js's wrapEmailBody. Forced tool_choice structured output
+                           (`{ body_html }`) — requires explicitly setting `thinking: { type:
+                           'disabled' }`, since Sonnet 5 (unlike the 4.6 the Homebuilding workers use)
+                           defaults extended thinking ON when the param is omitted, and forced tool
+                           calls are incompatible with thinking enabled. No new table — logs a
+                           worker_runs row like every other worker.
 ```
 
 **Frontend**: `src/pages/Marketing.jsx` (pre-existing page, rewritten) — a simple Email/SMS tab
