@@ -11,7 +11,7 @@
 --    parameter, so the 3-arg version is dropped and replaced by a 4-arg one
 --    whose extra params default — the shipped Phase-4a caller
 --    db.rpc('move_lead_to_stage',{p_lead_id,p_stage_id,p_moved_by}) still
---    resolves and succeeds (proved by crm_move_lead_to_stage_compat.test.js).
+--    resolves and succeeds (proved by crm_shared_rpc_compat.test.js).
 --
 -- 2) get_contact_activity — gains email / jobs / tasks arms. Same 1-arg
 --    signature and same output columns (activity_type, occurred_at, title,

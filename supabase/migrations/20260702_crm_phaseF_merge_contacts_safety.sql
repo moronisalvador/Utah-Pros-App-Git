@@ -171,4 +171,8 @@ BEGIN
 END;
 $function$;
 
+-- The live function was hand-created (schema drift) and never codified its
+-- grants; codify them here so a fresh migration replay leaves it callable.
+GRANT EXECUTE ON FUNCTION public.merge_contacts(uuid, uuid) TO anon, authenticated;
+
 NOTIFY pgrst, 'reload schema';
