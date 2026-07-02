@@ -37,7 +37,7 @@
   function scriptOrigin(scriptEl) {
     try {
       return new URL(scriptEl.src).origin;
-    } catch (e) {
+    } catch {
       return '';
     }
   }
@@ -53,7 +53,7 @@
       });
       if (document.referrer) params.set('referrer', document.referrer);
       params.set('landing', window.location.href);
-    } catch (e) { /* best-effort */ }
+    } catch { /* best-effort */ }
     return params.toString();
   }
 

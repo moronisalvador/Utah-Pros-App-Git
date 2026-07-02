@@ -6798,6 +6798,85 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── CRM WAVE RESERVED — Phase 10 (CRM forms · Session I) ───
    Owner: Phase 10. */
+.crm-forms-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.crm-forms-empty { padding: var(--space-6); text-align: center; color: var(--crm-text-secondary); font-size: 14px; background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); }
+.crm-label, .crm-forms-label { display: block; font-size: 12px; font-weight: 600; color: var(--crm-text-secondary); margin-bottom: 6px; }
+
+/* List of forms */
+.crm-forms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-3); }
+.crm-forms-card { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); display: flex; flex-direction: column; gap: 8px; }
+.crm-forms-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+.crm-forms-card-name { font-weight: 600; color: var(--crm-text-primary); }
+.crm-forms-card-meta { font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-forms-card-actions { display: flex; gap: 6px; margin-top: 4px; }
+.crm-forms-status { text-transform: capitalize; }
+.crm-forms-status-draft { background: #f3f4f6; color: var(--crm-text-secondary); }
+.crm-forms-status-published { background: var(--crm-success-bg); color: var(--crm-success); }
+.crm-forms-status-archived { background: #f3f4f6; color: var(--crm-text-tertiary); }
+
+/* Editor header */
+.crm-forms-titlewrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.crm-forms-name-input { font-weight: 600; min-width: 220px; }
+.crm-forms-save-actions { display: flex; gap: 8px; }
+
+/* Tabs */
+.crm-forms-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--crm-border); margin: var(--space-3) 0; }
+.crm-forms-tab { background: none; border: 0; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--crm-text-secondary); cursor: pointer; border-bottom: 2px solid transparent; }
+.crm-forms-tab.active { color: var(--crm-accent); border-bottom-color: var(--crm-accent); }
+
+/* Build layout */
+.crm-forms-build { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--space-4); align-items: start; }
+.crm-forms-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-forms-field { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); display: flex; flex-direction: column; gap: 8px; }
+.crm-forms-field-head { display: flex; align-items: center; justify-content: space-between; }
+.crm-forms-field-type { background: #eef2ff; color: var(--crm-accent); }
+.crm-forms-field-move { display: flex; gap: 4px; }
+.crm-forms-field-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.crm-forms-placeholder { flex: 1; min-width: 160px; }
+.crm-forms-required { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--crm-text-secondary); white-space: nowrap; }
+.crm-forms-options { font-family: inherit; resize: vertical; }
+.crm-forms-addbar { display: flex; gap: 8px; align-items: center; }
+.crm-forms-addbar select { max-width: 220px; }
+
+/* Settings column */
+.crm-forms-settings { display: flex; flex-direction: column; gap: var(--space-3); background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); }
+.crm-forms-setting-group { display: flex; flex-direction: column; }
+.crm-forms-theme { display: flex; gap: 16px; }
+.crm-forms-color { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--crm-text-tertiary); }
+.crm-forms-color input { width: 40px; height: 32px; padding: 0; border: 1px solid var(--crm-border); border-radius: 6px; background: none; cursor: pointer; }
+.crm-forms-toggle-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--crm-text-secondary); cursor: pointer; }
+
+/* Preview */
+.crm-forms-preview-wrap { display: flex; justify-content: center; padding: var(--space-4); background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); }
+.crm-forms-preview { width: 100%; max-width: 480px; background: var(--upr-bg, #fff); color: var(--upr-text, #111827); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.crm-forms-preview-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.crm-forms-preview-desc { font-size: 13px; color: #4b5563; margin-bottom: 12px; }
+.crm-forms-preview-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.crm-forms-preview-label { font-size: 13px; font-weight: 600; }
+.crm-forms-preview-row input, .crm-forms-preview-row select, .crm-forms-preview-row textarea { padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; background: #fff; }
+.crm-forms-preview-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #4b5563; }
+.crm-forms-preview-radios { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.crm-forms-preview-submit { margin-top: 6px; width: 100%; padding: 11px; border: 0; border-radius: 8px; background: var(--upr-primary, var(--crm-accent)); color: #fff; font-weight: 700; }
+
+/* Embed */
+.crm-forms-embed { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-4); display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.crm-forms-embed-note { font-size: 13px; color: var(--crm-text-secondary); margin: 0; }
+.crm-forms-embed-code { width: 100%; background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+
+/* Submissions */
+.crm-forms-subs { display: flex; flex-direction: column; gap: var(--space-2); }
+.crm-forms-sub { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); }
+.crm-forms-sub-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.crm-forms-sub-date { font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-forms-sub-body { display: flex; flex-direction: column; gap: 4px; }
+.crm-forms-sub-field { display: flex; gap: 10px; font-size: 13px; }
+.crm-forms-sub-key { min-width: 130px; color: var(--crm-text-secondary); font-weight: 600; }
+.crm-forms-sub-val { color: var(--crm-text-primary); word-break: break-word; }
+
+@media (max-width: 768px) {
+  .crm-forms-build { grid-template-columns: 1fr; }
+  .crm-forms-header { flex-direction: column; }
+}
 
 /* ─── CRM WAVE RESERVED — Phase 4b (text-blast campaigns · Session J) ───
    Owner: Phase 4b. */
