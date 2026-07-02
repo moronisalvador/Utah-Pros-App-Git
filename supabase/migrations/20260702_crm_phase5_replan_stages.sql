@@ -1,32 +1,30 @@
-/**
- * ════════════════════════════════════════════════
- * FILE: 20260702_crm_phase5_replan_stages.sql
- * ════════════════════════════════════════════════
- *
- * WHAT THIS DOES (plain language):
- *   Updates the CRM build tracker for the Phase 5 re-plan (2026-07-02). Phase 5
- *   ("Visual automation builder") had been parked as future/unscheduled with a single
- *   placeholder stage; the owner scheduled it today as a linear automation-recipes
- *   build. This refreshes the phase's title, swaps the placeholder stage for the real
- *   stage list, and leaves every other row untouched.
- *
- * DEPENDS ON:
- *   Data: writes → crm_build_phases (title/sort refresh — status NOT touched),
- *                  crm_build_stages (delete 1 placeholder, insert 7 real stages)
- *
- * NOTES / GOTCHAS:
- *   - Idempotent: the phase upsert uses ON CONFLICT (phase_key) DO UPDATE on title +
- *     sort_order only (status is never touched, so a re-run can't un-ship anything);
- *     stage inserts use ON CONFLICT (phase_key, title) DO NOTHING; the placeholder
- *     DELETE matches its exact title, so a re-run deletes nothing.
- *   - The placeholder deletion is DISCLOSED in docs/crm-roadmap.md ("Phase 5 re-plan"
- *     → status reconciliation): the stage said "defined when this phase is actually
- *     scheduled" — it now IS scheduled, so keeping it would surface a permanently
- *     false open todo on /crm/roadmap and the public /status page.
- *   - Status changes only ever flow through set_crm_phase_status /
- *     set_crm_stage_status (the Session K build flips them at close-out).
- * ════════════════════════════════════════════════
- */
+-- ════════════════════════════════════════════════
+-- FILE: 20260702_crm_phase5_replan_stages.sql
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   Updates the CRM build tracker for the Phase 5 re-plan (2026-07-02). Phase 5
+--   ("Visual automation builder") had been parked as future/unscheduled with a single
+--   placeholder stage; the owner scheduled it today as a linear automation-recipes
+--   build. This refreshes the phase's title, swaps the placeholder stage for the real
+--   stage list, and leaves every other row untouched.
+--
+-- DEPENDS ON:
+--   Data: writes → crm_build_phases (title/sort refresh — status NOT touched),
+--                  crm_build_stages (delete 1 placeholder, insert 7 real stages)
+--
+-- NOTES / GOTCHAS:
+--   - Idempotent: the phase upsert uses ON CONFLICT (phase_key) DO UPDATE on title +
+--     sort_order only (status is never touched, so a re-run can't un-ship anything);
+--     stage inserts use ON CONFLICT (phase_key, title) DO NOTHING; the placeholder
+--     DELETE matches its exact title, so a re-run deletes nothing.
+--   - The placeholder deletion is DISCLOSED in docs/crm-roadmap.md ("Phase 5 re-plan"
+--     → status reconciliation): the stage said "defined when this phase is actually
+--     scheduled" — it now IS scheduled, so keeping it would surface a permanently
+--     false open todo on /crm/roadmap and the public /status page.
+--   - Status changes only ever flow through set_crm_phase_status /
+--     set_crm_stage_status (the Session K build flips them at close-out).
+-- ════════════════════════════════════════════════
 
 -- Refresh the Phase 5 row (status stays 'planned' — flips to shipped only via
 -- set_crm_phase_status at the build session's close-out).
