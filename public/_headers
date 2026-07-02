@@ -1,3 +1,16 @@
+# Cloudflare Pages headers. Security headers apply to every path via /*.
+# NOTE: the Content-Security-Policy is Report-Only for now so it cannot break the
+# live app (or the Capacitor iOS WebView, which loads this same build). Watch the
+# browser console / a reporting endpoint, tune the allowlist, then promote it to an
+# enforcing `Content-Security-Policy` header. See SECURITY-AUDIT.md.
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: interest-cohort=()
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://apis.google.com https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://api.stripe.com; frame-src https://js.stripe.com https://docs.google.com https://*.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'
+
 /
   Cache-Control: no-cache, no-store, must-revalidate
 

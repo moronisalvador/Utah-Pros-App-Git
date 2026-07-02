@@ -60,6 +60,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -116,7 +117,8 @@ function EncircleSearchModal({ onSelect, onClose }) {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ [searchType]: q });
-      const res = await fetch(`/api/encircle-search?${params}`);
+      const authHeader = await getAuthHeader();
+      const res = await fetch(`/api/encircle-search?${params}`, { headers: authHeader });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       setResults(data.list || []);
@@ -1004,7 +1006,9 @@ export default function TechDemoSheet() {
     setShowEncircle(false);
     setEncircleRoomsLoading(true);
     try {
-      const res = await fetch(`/api/encircle-rooms?claim_id=${claim.id}`);
+      const res = await fetch(`/api/encircle-rooms?claim_id=${claim.id}`, {
+        headers: { 'Authorization': `Bearer ${db.apiKey}` },
+      });
       const data = await res.json();
       if (res.ok && data.rooms?.length) {
         setEncircleRooms(data.rooms.map(r => r.name));
@@ -1147,7 +1151,7 @@ export default function TechDemoSheet() {
         tasks.push(
           fetch('/api/encircle-upload', {
             method:'POST',
-            headers:{ 'Content-Type':'application/json' },
+            headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${db.apiKey}` },
             body: JSON.stringify({
               claim_id: encircleLinked.id,
               title: `Scope Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,

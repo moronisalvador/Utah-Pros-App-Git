@@ -3,6 +3,7 @@
 // Cloudflare Pages Function port of the legacy Netlify encircle-search function.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireEmployee } from '../lib/auth.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -10,6 +11,11 @@ export async function onRequestOptions(context) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
+  // Requires a valid staff session — this proxies the org's Encircle API key and
+  // returns policyholder PII, so it must never be reachable unauthenticated.
+  const auth = await requireEmployee(request, env);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const apiKey = env.ENCIRCLE_API_KEY;
   if (!apiKey) {
     return jsonResponse({ error: 'ENCIRCLE_API_KEY not configured' }, 500, request, env);

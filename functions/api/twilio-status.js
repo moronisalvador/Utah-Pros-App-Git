@@ -8,6 +8,7 @@
 // Updates messages.status so the frontend shows real delivery state.
 
 import { supabase } from '../lib/supabase.js';
+import { validateTwilioSignature } from '../lib/twilio.js';
 import { handleOptions } from '../lib/cors.js';
 
 export async function onRequestOptions(context) {
@@ -19,6 +20,16 @@ export async function onRequestPost(context) {
   const db = supabase(env);
 
   try {
+    // Verify the callback really came from Twilio (HMAC over the callback URL +
+    // params). Fail closed if the auth token isn't set, matching twilio-webhook.
+    if (!env.TWILIO_AUTH_TOKEN) {
+      console.warn('TWILIO_AUTH_TOKEN not configured — rejecting twilio-status (fail closed)');
+      return new Response('Twilio auth token not configured', { status: 500 });
+    }
+    if (!(await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, request.url))) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
     const formData = await request.formData();
     const messageSid = formData.get('MessageSid');
     const messageStatus = formData.get('MessageStatus'); // queued, sending, sent, delivered, failed, undelivered, read

@@ -20,6 +20,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireEmployee } from '../lib/auth.js';
 import { divisionToQbo, findClassId } from '../lib/quickbooks.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -27,13 +28,8 @@ const MODEL = 'claude-opus-4-8'; // swap to 'claude-sonnet-4-6' for a cheaper/fa
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
+  const auth = await requireEmployee(request, env);
+  return auth.ok;
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {

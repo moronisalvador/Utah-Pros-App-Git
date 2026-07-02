@@ -2,24 +2,15 @@
 // invoice's outstanding balance, so the client can pay by card/ACH. The link/session
 // is stored on the invoice; payment is captured by /api/stripe-webhook.
 //
-// Auth: Supabase Bearer (the UI gates this to admins/managers). Dormant-safe: returns
-// 503 until STRIPE_SECRET_KEY is set in Cloudflare.
+// Auth: Supabase Bearer, enforced server-side to admin/manager (BILLING_ROLES).
+// Dormant-safe: returns 503 until STRIPE_SECRET_KEY is set in Cloudflare.
 //
 // Body: { "invoice_id": "<uuid>" }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { requireRole, BILLING_ROLES } from '../lib/auth.js';
 import { stripeConfigured, createCheckoutSession } from '../lib/stripe.js';
-
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -28,7 +19,8 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   if (!stripeConfigured(env)) return jsonResponse({ error: 'Stripe not configured' }, 503, request, env);
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await requireRole(request, env, BILLING_ROLES);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }

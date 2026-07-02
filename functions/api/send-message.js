@@ -56,6 +56,13 @@ export async function onRequestPost(context) {
   try {
     const { conversation_id, body, sent_by, media_urls, is_internal_note, skip_compliance } = await request.json();
 
+    // skip_compliance bypasses the TCPA/DND opt-out gate (a legal control), so it is
+    // only honored for trusted server-to-server callers presenting the internal secret —
+    // never from a user session. No first-party UI sends this flag.
+    const internalSecret = request.headers.get('x-webhook-secret');
+    const allowSkipCompliance = skip_compliance === true && !!internalSecret &&
+      (internalSecret === env.INTERNAL_WEBHOOK_SECRET || internalSecret === env.QBO_WEBHOOK_SECRET);
+
     if (!conversation_id || !body?.trim()) {
       return jsonResponse({ error: 'conversation_id and body are required' }, 400, request, env);
     }
@@ -97,8 +104,8 @@ export async function onRequestPost(context) {
     }
 
     // ═══ COMPLIANCE CHECKS ═══
-    // These run for every outbound message unless skip_compliance is true (system automations only)
-    if (!skip_compliance) {
+    // These run for every outbound message unless a trusted internal caller opted out.
+    if (!allowSkipCompliance) {
       // Get the primary contact for compliance checks
       const primaryParticipant = participants[0];
       const [contact] = await db.select('contacts', `id=eq.${primaryParticipant.contact_id}`);

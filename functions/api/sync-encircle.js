@@ -258,6 +258,10 @@ async function doSync(request, env) {
 }
 
 export async function onRequestPost(context) {
+  // POST triggers service-role writes (jobs/contacts/addresses) and burns the paid
+  // Encircle quota — require a valid staff session, same as GET.
+  const auth = await requireAuth(context.request, context.env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     return await doSync(context.request, context.env);
   } catch (e) {
