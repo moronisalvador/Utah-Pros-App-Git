@@ -6066,6 +6066,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-board-card {
   background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
   padding: var(--space-3); cursor: pointer; transition: box-shadow var(--transition-fast), opacity 150ms ease;
+  touch-action: pan-y; /* let the browser handle native vertical column scroll; JS owns a horizontal cross-column drag — see CrmLeads.jsx's touch-drag handlers */
 }
 .crm-board-card:hover { box-shadow: var(--shadow-md); }
 .crm-board-card.dragging { opacity: 0.4; }
@@ -6074,6 +6075,14 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-board-card-value { font-size: 12px; font-weight: 700; color: var(--crm-success); margin-top: 4px; }
 .crm-board-empty { padding: 12px; text-align: center; color: var(--crm-text-tertiary); font-size: 12px; }
 .crm-board-drop-hint { padding: 16px; text-align: center; color: var(--crm-accent); font-size: 12px; font-weight: 600; border: 2px dashed var(--crm-accent); border-radius: var(--crm-radius); }
+.crm-board-ghost {
+  position: fixed; top: 0; left: 0; z-index: 200; pointer-events: none;
+  width: 220px; padding: var(--space-3);
+  background: var(--crm-bg-content); border: 1px solid var(--crm-accent); border-radius: var(--crm-radius);
+  box-shadow: var(--shadow-md); font-size: 13px; font-weight: 600; color: var(--crm-text-primary);
+  transform: translate3d(-9999px, -9999px, 0); /* offscreen fallback until the useLayoutEffect seeds the real position */
+  will-change: transform;
+}
 
 /* ── CRM lead detail panel (slide-out) ── */
 .crm-panel-overlay {
@@ -6286,3 +6295,40 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-email-preview-row + .crm-email-preview-row { margin-top: 2px; }
 .crm-email-preview-row span:first-child { font-weight: 700; width: 48px; flex-shrink: 0; color: var(--crm-text-tertiary); }
 .crm-email-preview-frame { width: 100%; height: 480px; border: none; background: var(--crm-bg-content); }
+
+/* ── Campaigns — mobile (< 768px). Desktop untouched — see CLAUDE.md rule 5.
+   The campaign-form, audience, editor, and email-preview classes below are
+   exclusive to this page's components, so they're targeted directly; card,
+   table, and page-header-row classes are shared across the CRM shell, so
+   those are scoped through .crm-campaigns-page to avoid touching other CRM
+   pages that haven't been asked about. ── */
+@media (max-width: 768px) {
+  .crm-campaigns-page .crm-card { padding: var(--space-3) var(--space-4); }
+  .crm-campaigns-page .crm-page-header-row { flex-direction: column; align-items: stretch; }
+  .crm-campaigns-page .crm-table th, .crm-campaigns-page .crm-table td { padding: 8px 6px; font-size: 12px; }
+
+  /* Multi-field rows (name/subject, audience filters) were squishing 2-3
+     flex:1 inputs into a 375px screen — stack them. */
+  .crm-campaign-form-row { flex-direction: column; gap: var(--space-2); }
+  .crm-campaign-field { margin-bottom: var(--space-2); }
+
+  .crm-audience-toolbar { gap: var(--space-2); }
+  .crm-audience-table-wrap { max-height: 260px; }
+
+  /* Toolbar buttons were 30px — well under a comfortable touch target. */
+  .crm-editor-toolbar { padding: 10px; gap: 6px; }
+  .crm-editor-btn { min-width: 42px; height: 42px; font-size: 15px; }
+  .crm-editor-divider { display: none; }
+  .crm-editor-menu-item { padding: 10px 8px; }
+  .crm-editor-emoji-item { font-size: 20px; padding: 8px; }
+
+  /* Popovers were anchored left:0/right:0 with a 220-300px min-width, which
+     overflows a narrow screen depending on which toolbar button opened them
+     — center them and cap width to the viewport instead. */
+  .crm-editor-popover, .crm-editor-ai-popover {
+    left: 50%; right: auto; transform: translateX(-50%);
+    width: min(300px, calc(100vw - 32px)); min-width: 0;
+  }
+
+  .crm-email-preview-frame { height: 380px; }
+}

@@ -62,6 +62,12 @@
  *     POST /api/crm-campaign-ai-design (handleAiDesign, in CampaignForm) —
  *     the same getAuthHeader + fetch convention as handleSend below — to
  *     rewrite body_html via Claude, styled to match the brand shell.
+ *   - Mobile CSS (`.crm-campaigns-page` + `.crm-campaign-*`/`.crm-audience-*`/
+ *     `.crm-editor-*`/`.crm-email-preview*` selectors) lives in a single
+ *     `@media (max-width: 768px)` block in src/index.css, per CLAUDE.md rule
+ *     5 — stacks the name/subject and audience-filter rows, enlarges the
+ *     rich-editor toolbar's touch targets, and re-centers its popovers so
+ *     they don't overflow a phone-width screen. Desktop layout is untouched.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -287,7 +293,7 @@ export default function CrmCampaigns() {
   };
 
   return (
-    <div className="crm-page">
+    <div className="crm-page crm-campaigns-page">
       <div className="crm-page-header crm-page-header-row">
         <div>
           <h1 className="crm-page-title">Campaigns</h1>
