@@ -45,8 +45,8 @@ describe('sanitizeLinkMarkup — XSS resistance', () => {
 
   it('escapes an <img onerror> injection', () => {
     const out = sanitizeLinkMarkup('<img src=x onerror=alert(1)>');
-    expect(out).not.toContain('<img');
-    expect(out.toLowerCase()).not.toContain('onerror=alert');
+    expect(out).not.toContain('<img');       // never a live tag
+    expect(out).toContain('&lt;img');        // neutralized to inert escaped text
   });
 
   it('converts a safe [text](https://…) link into a rel-protected anchor', () => {
