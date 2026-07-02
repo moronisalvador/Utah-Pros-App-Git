@@ -6474,6 +6474,80 @@ tr:hover td { background: var(--bg-secondary); }
 /* ─── CRM WAVE RESERVED — Phase 6b (ownership, import, roles · Session D) ───
    Owner: Phase 6b. */
 
+/* Import / Export panel */
+.crm-impexp { display: flex; flex-direction: column; gap: var(--space-4); }
+.crm-impexp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); }
+.crm-impexp-sub { font-size: 12px; color: var(--crm-text-tertiary); margin: 2px 0 0; }
+.crm-impexp-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
+  border: 1px dashed var(--crm-border); border-radius: var(--crm-radius);
+  padding: var(--space-6) var(--space-4); background: var(--crm-bg-content); text-align: center;
+}
+.crm-impexp-drop:hover { border-color: var(--crm-accent); }
+.crm-impexp-file { display: none; }
+.crm-impexp-drop-title { font-size: 14px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-impexp-drop-hint { font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-impexp-meta { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); font-size: 12px; color: var(--crm-text-secondary); flex-wrap: wrap; }
+.crm-impexp-map { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.crm-impexp-map-row { display: grid; grid-template-columns: 1fr 20px minmax(140px, 180px); align-items: center; gap: var(--space-2); }
+.crm-impexp-map-col { font-size: 13px; color: var(--crm-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-impexp-map-arrow { color: var(--crm-text-tertiary); text-align: center; }
+.crm-impexp-map-select { padding: 6px 8px; }
+.crm-impexp-defaults { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.crm-impexp-default { display: flex; flex-direction: column; gap: 4px; }
+.crm-impexp-actions { padding: 0; }
+.crm-impexp-result { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-impexp-result-title { font-size: 14px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-impexp-stats { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.crm-impexp-stat { font-size: 13px; color: var(--crm-text-secondary); background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: 6px 12px; }
+.crm-impexp-stat strong { color: var(--crm-text-primary); }
+.crm-impexp-errors { margin: 0; padding-left: var(--space-4); font-size: 12px; color: var(--crm-danger-text); }
+.crm-impexp-history { border-top: 1px solid var(--crm-border); padding-top: var(--space-3); }
+.crm-impexp-history-row { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 12px; padding: 4px 0; }
+.crm-impexp-history-name { color: var(--crm-text-primary); font-weight: 500; }
+.crm-impexp-history-counts { color: var(--crm-text-tertiary); }
+
+/* Data-quality tool (duplicates + owner/lifecycle) */
+.crm-mergetool { display: flex; flex-direction: column; gap: var(--space-4); }
+.crm-mergetool-tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--crm-border); }
+.crm-mergetool-tab {
+  padding: 8px 14px; background: none; border: none; cursor: pointer; font-size: 13px; font-weight: 600;
+  color: var(--crm-text-tertiary); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.crm-mergetool-tab.active { color: var(--crm-accent); border-bottom-color: var(--crm-accent); }
+
+.crm-dup-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-dup-group { border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.crm-dup-group-head { display: flex; justify-content: space-between; align-items: center; }
+.crm-dup-group-key { font-size: 13px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-dup-group-count { font-size: 11px; color: var(--crm-text-tertiary); }
+.crm-dup-options { display: flex; flex-direction: column; gap: 4px; }
+.crm-dup-option { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--crm-text-secondary); cursor: pointer; }
+.crm-dup-confirm { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: 12px; color: var(--crm-danger-text); }
+
+.crm-own { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-own-search { display: flex; gap: var(--space-2); }
+.crm-own-search .crm-input { flex: 1; }
+.crm-own-row {
+  display: grid; grid-template-columns: 1fr minmax(140px, 180px) minmax(120px, 160px); gap: var(--space-3);
+  align-items: end; border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3);
+}
+.crm-own-name { display: flex; flex-direction: column; min-width: 0; }
+.crm-own-name strong { font-size: 13px; color: var(--crm-text-primary); }
+.crm-own-sub { font-size: 11px; color: var(--crm-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-own-field { display: flex; flex-direction: column; gap: 4px; }
+
+/* Route-guard denial */
+.crm-access-denied { border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-6); text-align: center; background: var(--crm-bg-content); }
+.crm-access-denied-title { font-size: 15px; font-weight: 600; color: var(--crm-text-primary); margin-bottom: 6px; }
+.crm-access-denied-body { font-size: 13px; color: var(--crm-text-secondary); max-width: 420px; margin: 0 auto; }
+
+@media (max-width: 768px) {
+  .crm-impexp-defaults { grid-template-columns: 1fr; }
+  .crm-impexp-map-row { grid-template-columns: 1fr 16px 140px; }
+  .crm-own-row { grid-template-columns: 1fr; }
+}
+
 /* ─── CRM WAVE RESERVED — Phase 7 (tasks, timeline, comms · Session E) ───
    Owner: Phase 7. */
 
