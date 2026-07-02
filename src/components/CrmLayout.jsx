@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   The real shell every CRM screen lives inside — a left menu (Overview,
- *   Leads, Call Log, Tasks, Attribution, Reports, Integrations, Settings)
+ *   Leads, Contacts, Conversations, Call Log, Tasks, Sequences, Automations,
+ *   Forms, Attribution, Reports, Campaigns, Integrations, Settings)
  *   next to whichever CRM page is open, in the CRM's own look (a different
  *   font and color set than the rest of the app, on purpose — see NOTES).
  *
@@ -44,7 +45,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   IconOverview, IconLeads, IconContacts, IconConversations, IconCallLog, IconTasks,
-  IconSequences, IconForms, IconAttribution, IconReports, IconCampaigns,
+  IconSequences, IconAutomations, IconForms, IconAttribution, IconReports, IconCampaigns,
   IconIntegrations, IconCrmSettings,
 } from '@/lib/crmIcons';
 
@@ -56,6 +57,7 @@ const SIDEBAR_ITEMS = [
   { key: 'call-log',      label: 'Call Log',      path: '/crm/call-log',      icon: IconCallLog },
   { key: 'tasks',         label: 'Tasks',         path: '/crm/tasks',         icon: IconTasks },
   { key: 'sequences',     label: 'Sequences',     path: '/crm/sequences',     icon: IconSequences },
+  { key: 'automations',   label: 'Automations',   path: '/crm/automations',   icon: IconAutomations },
   { key: 'forms',         label: 'Forms',         path: '/crm/forms',         icon: IconForms },
   { key: 'attribution',   label: 'Attribution',   path: '/crm/attribution',   icon: IconAttribution },
   { key: 'reports',       label: 'Reports',       path: '/crm/reports',       icon: IconReports },
