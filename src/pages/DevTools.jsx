@@ -1192,7 +1192,10 @@ function DuplicateDetector() {
             <div key={i} style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', padding: 16, background: 'var(--bg-primary)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                  {formatPhone(g.phone_normalized)}
+                  {/* get_duplicate_contacts (6a) UNIONs email groups onto phone groups;
+                      the match-key column carries an email for those — show it as-is,
+                      only formatPhone a real phone number. */}
+                  {String(g.phone_normalized).includes('@') ? g.phone_normalized : formatPhone(g.phone_normalized)}
                 </span>
                 <span style={{
                   fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)',

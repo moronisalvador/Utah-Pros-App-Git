@@ -3406,6 +3406,102 @@ Reviewer gauntlet: migration-safety-checker **clean** (signatures frozen, zero D
 upr-pattern-checker **clean** (CSS token fixes applied). Isolation stays the `page:crm` flag —
 `/crm/contacts` invisible to staff until 6b opens it.
 
+## CRM Phase 6b — Ownership, CSV import, staff roles & audit hardening (Jul 2 2026 — shipped)
+
+Wave-1 phase (ran beside 6a). **Zero schema migrations** — one function-body-only migration
+`20260702_crm_phase6b_rpcs.sql` fills three frozen 6b stubs + backward-compat-replaces four live
+Phase 4c email-campaign RPCs (audit hardening). Edits confined to the owned files
+(`ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `featureFlags.js`,
+`CrmLayout.jsx` role-gating only) + the Phase 6b `index.css` reserved section — all per
+`.claude/rules/crm-wave-ownership.md`.
+
+**RPCs (bodies filled; signatures unchanged from Phase F stubs / Phase 4c):**
+- `import_contacts(p_rows jsonb, p_org_id, p_created_by, p_filename) → crm_import_batches` — CSV import
+  with **dedupe-on-import**. Each incoming row matches an existing contact on **normalized phone**
+  (last-10-digits, same convention as `get_duplicate_contacts`; a phone needs ≥10 digits to be a key)
+  OR **normalized email** (`lower(btrim(...))`). A match → **fill-blanks UPDATE** (`COALESCE(existing,
+  incoming)` — import never clobbers a curated value); no match → INSERT. The lookup re-queries
+  `contacts` per row so duplicates **within one file** collapse too. A row with neither phone nor email
+  is `skipped` (recorded in the batch `errors`); a row that throws is `errored` and the loop continues
+  (one bad row can't lose the file). Writes a `crm_import_batches` audit row (org-scoped —
+  `contacts` itself has no `org_id`) + a `crm_contacts_imported` system_event. Supported target fields:
+  name, email, phone, phone_secondary, company, role, referral_source, notes, billing_address/city/
+  state/zip, lifecycle_status, owner_id, tags. `contacts.phone` has a UNIQUE constraint — the
+  normalized match prevents insert collisions.
+- `set_contact_owner(p_contact_id, p_owner_id, p_actor_id) → contacts` — sets/clears `owner_id`
+  (NULL unassigns; a non-null owner must be a real `employees` row); emits `crm_contact_owner_set`
+  with `{owner_id, previous_owner_id}`.
+- `set_contact_lifecycle(p_contact_id, p_lifecycle_status, p_actor_id) → contacts` — sets/clears
+  `lifecycle_status`, gated to a fixed vocabulary **`lead | prospect | customer | past_customer |
+  archived`** (the column is free-text with no CHECK; this RPC is the gate). Emits
+  `crm_contact_lifecycle_set` with `{lifecycle_status, previous_status}`.
+- **Audit-hardening body-replaces** (signatures + behavior unchanged, add `system_events` only —
+  closes the "Audit trail PARTIAL" gap): `set_campaign_exclusions` → `crm_email_campaign_exclusions_set`
+  `{excluded_count, audience_count}`; `upsert_email_campaign` → `crm_email_campaign_created` /
+  `crm_email_campaign_updated`; `delete_email_campaign` → `crm_email_campaign_deleted` `{name, status}`
+  (name captured pre-delete). **`record_email_campaign_send`**: the `crm_email_campaign_sent` event now
+  fires **exactly once** — gated on `FOUND` from the `status='sending'→'sent'` UPDATE, so a
+  retried/duplicate send on an already-sent campaign no longer emits a second empty event — and carries
+  a `{sent, suppressed, failed, total}` counts payload (was empty `{}`). Shipped callers
+  (`src/pages/crm/CrmCampaigns.jsx`, `functions/api/send-email-campaign.js`) unchanged and still pass.
+
+**Components:**
+- `src/components/crm/ImportExportPanel.jsx` (Contacts "Import / Export" slot) — browser-side quote-aware
+  CSV parse → column-mapping UI (auto-guesses target from header names) → optional default owner +
+  default lifecycle stamped on all rows → `import_contacts` → created/updated/skipped/error summary +
+  a "Recent imports" audit list from `crm_import_batches`. Export streams all contacts to a CSV Blob.
+- `src/components/crm/MergeTool.jsx` (Contacts "Find duplicates" slot) — two tabs: **Duplicates**
+  (`get_duplicate_contacts` groups → pick keeper → sequential `merge_contacts` per loser, inline
+  two-click confirm) and **Owner & lifecycle** (contact search → `set_contact_owner` /
+  `set_contact_lifecycle`). **Placement note:** the owner/lifecycle setters live here, not in
+  `ContactDetail.jsx` — that file is Phase 6a's, frozen read-only for the wave, and the frozen
+  `CrmContacts.jsx` skeleton exposes no 6b detail-slot. MergeTool (a data-quality panel) is the
+  wave-compliant home; when 6a/6b later reconcile, these could move into the detail.
+- `src/components/CrmLayout.jsx` (role-gating only) — **per-screen staff gating**: a CRM screen is
+  visible when `isFeatureEnabled('feature:crm_<screen>')` (rollout sub-flag; absent/enabled = open) AND
+  `canAccess('crm_<screen>')` (per-employee override → admin → role `nav_permissions`). Enforced in both
+  the nav filter and an **Outlet route guard** (direct-URL nav can't bypass the hidden nav; shows a
+  "No access" panel). Overview is always reachable (CRM home); `crm_partner` accounts keep the whole CRM
+  except Integrations (unchanged). Nav keys normalize hyphens → underscores (`call-log` → `crm_call_log`).
+- `src/pages/Admin.jsx` — CRM per-screen keys (`crm_leads … crm_settings`) added to the role×nav_key
+  matrix (PermissionsTab) **and** the per-employee override list (PageAccessTab, new "CRM" section), so
+  roles are defined per screen **before** `page:crm` opens to staff.
+- `src/lib/featureFlags.js` — registers the twelve `feature:crm_*` per-screen sub-flags (default ON =
+  unrestricted) so they appear in DevTools for per-screen rollout/dev-only control.
+- `src/pages/DevTools.jsx` — the duplicate-scan view now shows an email match-key as-is instead of
+  running it through `formatPhone` (the cosmetic 6a follow-up).
+
+**Isolation / rollout:** still the `page:crm` flag (dev-only to Moroni). **Opening `page:crm` to staff
+gates on this phase** — the per-screen roles now exist; the flag flip itself is the owner's, post-merge.
+
+**Tests:** `crm_phase6b_import_ownership.test.js` + `crm_phase6b_audit_hardening.test.js` (test-first,
+committed failing before the bodies): import dedupe (existing-phone → update not create; within-file
+email collapse; unmatchable row skipped), owner/lifecycle setters + events + junk-lifecycle rejection;
+all four audit events fire; campaign-sent de-duplicated with counts. Integration suite (self-skips
+without CI creds) — behavior **verified live via Supabase MCP**: dedupe A=0/1/0 (1 contact for the
+phone), within-file B=1/1 (1 contact for the email), skip C recorded, owner+lifecycle set with events,
+junk lifecycle rejected, campaign create/update/exclusions/delete events present, sent event fires once
+with `{sent:1,total:1}` on a retried call, campaign flips to `sent`. All TEST rows + audit events
+cleaned. `npm test` 216 passed / 34 skipped, `npm run build` green, eslint clean on changed files
+(Admin.jsx's 12 errors are pre-existing — zero added).
+
+Reviewer gauntlet: migration-safety-checker **clean** (zero DDL, 7 signatures frozen, grants present),
+consent-path-auditor **PASS** (no send call sites added; `record_email_campaign_send` change is an
+audit-log fix downstream of the consent decision; send gate untouched), upr-pattern-checker **clean**
+(one two-click-confirm `onBlur` nit fixed), crm-phase-reviewer **SHIP** (all money/consent/audit code
+correct + backward-compatible). Note: `import_contacts` sets `owner_id` from CSV without an explicit
+employee-existence check like `set_contact_owner`, but `contacts.owner_id` carries an FK to
+`employees(id)` so a bad id errors that one row (caught → `error_count`), and the UI only supplies real
+employee ids — low risk, FK-backstopped.
+
+**`crm_build_stages` reconciliation (honest): 7 stages — 6 flipped `done`, 1 left `todo`.** Done:
+test-first, acceptance (slots/owner/lifecycle/roles), test+build+eslint/zero-schema, reviewer gauntlet,
+UPR-Web-Context updated, and set-shipped/TEST-rows-deleted/pushed/PR-opened. **Left `todo` (owner-gated,
+NOT forgotten):** *"Visual: import wizard + role-gated nav on preview"* — the CRM is invisible behind
+the dev-only `page:crm` flag, so on-preview visual confirmation is the owner's after the flag opens.
+Build-verified here (compiles + renders); there is no `blocked` status value yet, so it stays `todo`
+with this disclosure (same convention as sibling phases).
+
 ## CRM Phase 4d — Fixed automations (Jul 2 2026 — shipped)
 
 Wave-1 phase (cut from `dev`). Ships the four fixed automations as a cron worker + owner toggles.
@@ -3583,3 +3679,80 @@ see the PR. SMS stays dark behind the F kill-switch until Phase 4b (carrier appr
 There is no `blocked` status value yet, so [2] and [5] stay `todo` with the disclosure above — both are
 owner/deploy-gated (the `page:crm` flag keeps `/crm/*` invisible until Phase 6b opens it), not skipped
 work.
+## CRM Phase 7 — Daily driver: tasks, timeline, comms in shell (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). The daily-driver surface: a real Tasks page, an Overview overdue-tasks
+widget, win/loss capture + stage-age on Leads, click-to-call logging, and the existing Conversations
+inbox embedded in the CRM shell. **Zero schema migrations** — `crm_tasks`, `lead_stage_history`,
+`inbound_leads.lost_reason`, and `pipeline_stages.is_lost/is_won` are all Foundation-owned; this phase
+filled five frozen RPC stub bodies and edited only its four owned files + the Phase 7 `index.css`
+reserved section (per `.claude/rules/crm-wave-ownership.md`). App.jsx / CrmLayout.jsx / crmIcons.jsx
+untouched (routes/nav/icons were pre-wired by Foundation).
+
+**RPCs — `supabase/migrations/20260702_crm_phase7_task_rpcs.sql`** (function-body-only `CREATE OR
+REPLACE`, signatures byte-for-byte identical to Foundation's stubs; all SECURITY DEFINER + GRANT
+anon/authenticated). **Task status domain is `'open' | 'done'`** (the `crm_tasks_status_check`
+constraint — NOT `'completed'`; the whole phase uses `'done'`):
+- `get_crm_tasks(p_assignee, p_status, p_contact_id, p_lead_id, p_org_id) → SETOF json` — filtered
+  list; LEFT JOINs `employees` (assignee_name) + `contacts` (contact_name). Order: open before done,
+  then `due_at` asc NULLS LAST, then newest.
+- `upsert_crm_task(p_id, p_title, p_notes, p_due_at, p_remind_at, p_assignee_id, p_contact_id,
+  p_lead_id, p_org_id, p_created_by) → crm_tasks` — create (p_id NULL) or edit. Title required
+  (trim-checked). Org defaults to the first non-test `crm_orgs` row (same pattern as
+  `create_manual_lead`). **On edit it replaces every editable field with the passed value**, so the
+  editor always submits full form state; writes a `crm_task_created` `system_events` row on insert.
+- `set_task_status(p_task_id, p_status, p_actor_id) → crm_tasks` — validates `open|done`; sets
+  `completed_at=now()` on done / NULL on reopen; writes a `crm_task_status_changed` event.
+- `delete_crm_task(p_task_id) → void`.
+- `get_overdue_tasks(p_assignee, p_org_id, p_now timestamptz DEFAULT now()) → SETOF json` — open tasks
+  whose **Mountain-Time due DATE is a prior Denver day**: `(due_at AT TIME ZONE 'America/Denver')::date
+  < (p_now AT TIME ZONE 'America/Denver')::date`. This is the SQL mirror of `functions/lib/date-mt.js`
+  `isStale(due, now, 1)` — a task due earlier *today* in Denver is NOT overdue (UTC storage, MT day
+  boundary). Verified live: prior-MT-day task overdue=true, earlier-same-MT-day task overdue=false.
+
+**Components (owned files):**
+- `src/pages/crm/CrmTasks.jsx` — real Tasks page: Open/Done tabs + assignee filter (Everyone/Mine/per
+  employee); rows with a check toggle (complete/reopen), title/notes, due chip (red **Overdue** when
+  past its MT day via the shared `isTaskOverdue`), assignee + contact/lead chips, and inline two-click
+  delete. Editor panel: title (required), notes, due + reminder (`datetime-local` ↔ ISO), assignee
+  select, and a small typeahead (`EntitySearch`) to link a contact (contacts search) or a lead
+  (inbound_leads search). All CRUD via the RPCs above.
+- `src/components/crm/OverdueTasksWidget.jsx` — Overview card from `get_overdue_tasks`; **hidden when
+  nothing is overdue** (keeps the Overview clean, honoring Foundation's "renders nothing" slot
+  contract). Exports `isTaskOverdue(dueAt, now)` (the MT-day mirror; imported by CrmTasks + unit-tested).
+- `src/pages/crm/CrmLeads.jsx` — three additions: (1) **required win/loss reason** — dragging or
+  `<select>`-moving a lead into an `is_lost` stage opens `LostReasonPrompt`; the reason is required
+  client-side (`lostReasonError`, exported + unit-tested) and passed as `p_lost_reason` to
+  `move_lead_to_stage` (the RPC keeps it optional — Foundation's `crm_shared_rpc_compat` backward-compat
+  test stays green). (2) **stage-age badges** — "Nd in stage" from `lead_pipeline_stage.updated_at`
+  (now selected in the load), red `.stale` at ≥7 days. (3) **click-to-call** — the lead's number is a
+  `tel:` link that fire-and-forget inserts a `crm_click_to_call` `system_events` row (never blocks the
+  dial).
+- `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
+  inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
+  `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
+  `automated-send.js` untouched; `skip_compliance` never used.
+
+**Tests** (committed failing first): `src/components/crm/overdueTasks.test.js` (MT-day boundary via
+`isTaskOverdue` — prior day overdue, earlier-same-day not, UTC-midnight-not-MT-midnight not, null never);
+`src/pages/crm/crmLeads.lostReason.test.js` (`lostReasonError`: required on lost, accepted with reason,
+never on non-lost — both mock `@/contexts/AuthContext` so importing the component in the node test env
+doesn't pull in the realtime client); `supabase/tests/crm_phase7_tasks.test.js` (integration, self-skips
+without creds like sibling suites: title required, upsert→get shape, done/reopen `completed_at`, and the
+MT-day overdue predicate). Full vitest 225 passed / 29 skipped; `npm run build` green; `npx eslint` clean
+on changed files (the two non-component helper exports carry a targeted `react-refresh/only-export-
+components` disable — ownership forbids a new shared `src/lib` file, so the helpers live in their owned
+component files).
+
+**Reviewer gauntlet:** migration-safety-checker **PASS** (zero DDL, five signatures byte-for-byte frozen,
+grants + SECURITY DEFINER present); upr-pattern-checker / consent-path-auditor / crm-phase-reviewer — see
+the PR. Isolation stays the `page:crm` flag (opening to staff gates on Phase 6b).
+
+**`crm_build_stages` reconciliation (honest):** stages 0–3, 5, 6 flipped **done** — test-first suite,
+acceptance (Tasks/overdue widget/win-loss+stage-age/Conversations/click-to-call), test+build+eslint +
+zero-schema, the auditor gauntlet, this doc, and the mechanical close-out. **Stage 4 ("Visual: … on
+preview") stays `todo` on purpose** — a preview deploy only exists after the branch is pushed, so the
+Tasks/Conversations/Overview-widget/lost-reason visual pass happens on the Cloudflare preview URL at
+review time, not from this headless session. No test task rows remain (the live smoke was rolled back;
+the integration suite self-cleans; `crm_tasks` verified empty of `smoke/v/phase7-` rows).
+`crm_build_phases('7')` set `shipped`.
