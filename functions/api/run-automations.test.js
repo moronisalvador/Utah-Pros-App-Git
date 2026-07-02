@@ -34,6 +34,7 @@ import {
   runMissedCallTextback,
   runNoResponseFollowup,
   runReviewRequest,
+  runAutomations,
 } from './run-automations.js';
 
 const NOW = new Date('2026-07-02T12:00:00Z');
@@ -205,6 +206,53 @@ describe('consent gate', () => {
     expect(ev).toBeTruthy();
     expect(ev.data.payload.outcome).toBe('skipped');
     expect(ev.data.payload.reason).toBe('dnd');
+  });
+});
+
+// ─── Kill-switch: SMS automations are inert while sms_sending_enabled OFF ─────
+describe('runAutomations kill-switch gating', () => {
+  // A db that records which tables get queried, so we can prove the SMS
+  // automations never even look at leads while the global switch is OFF.
+  function gateDb(settings) {
+    const queried = new Set();
+    const inserts = [];
+    const db = {
+      async select(table) {
+        queried.add(table);
+        if (table === 'crm_orgs') return [{ id: 'org-1' }];
+        if (table === 'automation_settings') return [settings];
+        return [];
+      },
+      async insert(table, data) { inserts.push({ table, data }); return [data]; },
+    };
+    return { db, queried, inserts };
+  }
+
+  it('does not run the SMS automations when sms_sending_enabled is OFF', async () => {
+    const { db, queried, inserts } = gateDb({
+      sms_sending_enabled: false,
+      speed_to_lead_enabled: true, missed_call_textback_enabled: true,
+      no_response_followup_enabled: false, review_request_enabled: false,
+    });
+    const res = await runAutomations(db, {}, NOW);
+    expect(res.ok).toBe(true);
+    expect(res.smsLive).toBe(false);
+    expect(res.processed).toBe(0);
+    // No lead scan happened at all — truly inert, no burned idempotency rows.
+    expect(queried.has('inbound_leads')).toBe(false);
+    // A worker_runs row is still logged for the (empty) run.
+    expect(inserts.some((i) => i.table === 'worker_runs' && i.data.status === 'completed')).toBe(true);
+  });
+
+  it('does scan for SMS automations once sms_sending_enabled is ON', async () => {
+    const { db, queried } = gateDb({
+      sms_sending_enabled: true,
+      speed_to_lead_enabled: true, missed_call_textback_enabled: false,
+      no_response_followup_enabled: false, review_request_enabled: false,
+    });
+    const res = await runAutomations(db, {}, NOW);
+    expect(res.smsLive).toBe(true);
+    expect(queried.has('inbound_leads')).toBe(true);
   });
 });
 
