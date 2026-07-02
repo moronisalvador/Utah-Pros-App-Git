@@ -2298,11 +2298,13 @@ set_lead_details(p_lead_id, p_notes, p_value, p_updated_by) — sets a lead's `n
   editor. Logs `crm_lead_details_updated`. (migration `20260701_crm_lead_details.sql`; the columns
   already existed.)
 get_tracking_numbers() → (tracking_number, label, call_count) — every DISTINCT tracking number seen
-  in inbound_leads LEFT JOINed to its campaign label + call count, most-active first. Reader for the
-  Call Log's campaign chips.
-set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign label for a tracking
+  in inbound_leads LEFT JOINed to its campaign title + call count, most-active first. Powers the
+  **CRM Settings → Tracking Numbers** editor AND the Call Log's read-only title lookup (`labelMap`).
+set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign TITLE for a tracking
   number (on the org's row). Both `SECURITY DEFINER`, granted `anon, authenticated`.
-  (migration `20260701_crm_tracking_numbers.sql`.)
+  (migration `20260701_crm_tracking_numbers.sql`.) **Titles are set in CRM Settings**, not inline on
+  the Call Log — the Call Log chip is now read-only, showing the title (or the formatted number when
+  untitled). `CrmSettings.jsx` lists every number with its call count + an editable title field.
 get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest leads with the linked
   `contact` ({name, phone}) embedded — mirrors the old `select=*,contact:contacts(name,phone)` shape
   exactly. `SECURITY DEFINER`, `STABLE`, granted `anon, authenticated`. **Why an RPC and not a GET
@@ -2859,7 +2861,10 @@ column; an invalid number is rejected with a toast.
   `pipeline_stages` has no such column). Clicking a card opens a slide-out detail panel: a stage
   `<select>` (the touch-device path for moving a lead, since drag is disabled there), lead
   metadata, and the `get_contact_activity`-backed timeline, badge-colored per activity type.
-- **CrmSettings.jsx** (`/crm/settings`) — pipeline-stage CRUD: add, inline rename/recolor/
+- **CrmSettings.jsx** (`/crm/settings`) — TWO sections. **(1) Tracking numbers:** lists every
+  CallRail number from `get_tracking_numbers` with its call count + an editable **title** (the
+  campaign it belongs to) → `set_tracking_number_label`; the Call Log shows that title in place of the
+  raw number (read-only there). **(2) Pipeline-stage CRUD:** add, inline rename/recolor/
   won-lost-toggle, reorder via left/right buttons that swap `sort_order` with the neighboring stage
   (simpler and more reliable than drag-and-drop for an admin settings screen), delete via the
   inline two-click confirm pattern (`onBlur` cancels — no modal, per CLAUDE.md Rule 2), surfacing

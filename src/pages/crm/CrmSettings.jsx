@@ -4,10 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Where the Leads pipeline's columns get set up — add a stage, rename
- *   one, change its color, move it left/right, mark it as a "won" or
- *   "lost" stage, or delete it. Every change shows up on the Leads board
- *   immediately, with no code deploy needed.
+ *   The CRM control panel. Two things live here: (1) the Leads pipeline's
+ *   columns — add a stage, rename one, change its color, move it left/right,
+ *   mark it "won"/"lost", or delete it; and (2) a title for each CallRail
+ *   tracking number (which campaign it belongs to) — the Call Log shows that
+ *   title in place of the raw phone number. Every change shows up immediately,
+ *   no code deploy needed.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/settings
@@ -18,9 +20,11 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/crmPipeline
  *              (sortStages)
- *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC)
+ *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC),
+ *                       crm_tracking_numbers (get_tracking_numbers RPC)
  *              writes → pipeline_stages (upsert_pipeline_stage /
- *                       delete_pipeline_stage RPCs)
+ *                       delete_pipeline_stage RPCs), crm_tracking_numbers
+ *                       (set_tracking_number_label RPC)
  *
  * NOTES / GOTCHAS:
  *   - Reordering swaps sort_order between the moved stage and its neighbor
@@ -33,6 +37,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { sortStages } from '@/lib/crmPipeline';
+import { formatPhone } from '@/lib/phone';
 
 const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
@@ -49,6 +54,11 @@ export default function CrmSettings() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const nameRef = useRef(null);
 
+  // Tracking numbers (CallRail) + their campaign titles.
+  const [trackingNumbers, setTrackingNumbers] = useState([]);
+  const [titleDrafts, setTitleDrafts] = useState({}); // tracking_number → draft title
+  const [savingNumber, setSavingNumber] = useState(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -61,7 +71,30 @@ export default function CrmSettings() {
     }
   }, [db]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadTracking = useCallback(async () => {
+    try {
+      const rows = await db.rpc('get_tracking_numbers', {});
+      setTrackingNumbers(rows || []);
+      setTitleDrafts(Object.fromEntries((rows || []).map(r => [r.tracking_number, r.label || ''])));
+    } catch {
+      err('Failed to load tracking numbers');
+    }
+  }, [db]);
+
+  useEffect(() => { load(); loadTracking(); }, [load, loadTracking]);
+
+  const saveTitle = async (number) => {
+    setSavingNumber(number);
+    try {
+      await db.rpc('set_tracking_number_label', { p_tracking_number: number, p_label: (titleDrafts[number] || '').trim() });
+      ok('Tracking-number title saved');
+      loadTracking();
+    } catch (e) {
+      err(e.message || 'Failed to save title');
+    } finally {
+      setSavingNumber(null);
+    }
+  };
 
   const startAdd = () => { setEditingId('new'); setForm(EMPTY_FORM); setTimeout(() => nameRef.current?.focus(), 50); };
   const startEdit = (stage) => {
@@ -129,7 +162,7 @@ export default function CrmSettings() {
     <div className="crm-page">
       <div className="crm-page-header">
         <h1 className="crm-page-title">Settings</h1>
-        <p className="crm-page-subtitle">Add, rename, recolor, reorder, or retire Leads pipeline stages.</p>
+        <p className="crm-page-subtitle">Configure the Leads pipeline stages and the titles for your CallRail tracking numbers.</p>
       </div>
 
       <div className="crm-stage-list">
@@ -159,6 +192,41 @@ export default function CrmSettings() {
               ) : (
                 <button className="crm-btn crm-btn-ghost" onClick={() => setConfirmDeleteId(stage.id)}>Delete</button>
               )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── SECTION: Tracking numbers ────────────── */}
+      <div className="crm-stage-list crm-tracking-list">
+        <div className="crm-stage-list-header"><span>Tracking numbers</span></div>
+        <p className="crm-tracking-hint">
+          Give each CallRail tracking number a title — the campaign it belongs to. The title shows on
+          the Call Log in place of the raw number. Numbers appear here automatically after their first call.
+        </p>
+
+        {trackingNumbers.length === 0 ? (
+          <div className="crm-stage-row"><span className="crm-stage-row-name">No tracking numbers yet.</span></div>
+        ) : trackingNumbers.map((tn) => (
+          <div key={tn.tracking_number} className="crm-stage-row">
+            <span className="crm-tracking-number">{formatPhone(tn.tracking_number)}</span>
+            <span className="crm-tracking-count">{tn.call_count} call{tn.call_count === 1 ? '' : 's'}</span>
+            <input
+              className="crm-integration-input crm-tracking-title-input"
+              type="text"
+              placeholder="Campaign title (e.g. Google Ads — Landing 2)"
+              value={titleDrafts[tn.tracking_number] ?? ''}
+              onChange={(e) => setTitleDrafts(d => ({ ...d, [tn.tracking_number]: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(tn.tracking_number); }}
+            />
+            <div className="crm-stage-row-actions">
+              <button
+                className="crm-btn crm-btn-primary"
+                onClick={() => saveTitle(tn.tracking_number)}
+                disabled={savingNumber === tn.tracking_number || (titleDrafts[tn.tracking_number] ?? '') === (tn.label || '')}
+              >
+                {savingNumber === tn.tracking_number ? 'Saving…' : 'Save'}
+              </button>
             </div>
           </div>
         ))}
