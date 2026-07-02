@@ -6066,6 +6066,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-board-card {
   background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
   padding: var(--space-3); cursor: pointer; transition: box-shadow var(--transition-fast), opacity 150ms ease;
+  touch-action: pan-y; /* let the browser handle native vertical column scroll; JS owns a horizontal cross-column drag — see CrmLeads.jsx's touch-drag handlers */
 }
 .crm-board-card:hover { box-shadow: var(--shadow-md); }
 .crm-board-card.dragging { opacity: 0.4; }
@@ -6074,6 +6075,14 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-board-card-value { font-size: 12px; font-weight: 700; color: var(--crm-success); margin-top: 4px; }
 .crm-board-empty { padding: 12px; text-align: center; color: var(--crm-text-tertiary); font-size: 12px; }
 .crm-board-drop-hint { padding: 16px; text-align: center; color: var(--crm-accent); font-size: 12px; font-weight: 600; border: 2px dashed var(--crm-accent); border-radius: var(--crm-radius); }
+.crm-board-ghost {
+  position: fixed; top: 0; left: 0; z-index: 200; pointer-events: none;
+  width: 220px; padding: var(--space-3);
+  background: var(--crm-bg-content); border: 1px solid var(--crm-accent); border-radius: var(--crm-radius);
+  box-shadow: var(--shadow-md); font-size: 13px; font-weight: 600; color: var(--crm-text-primary);
+  transform: translate3d(-9999px, -9999px, 0); /* offscreen fallback until the useLayoutEffect seeds the real position */
+  will-change: transform;
+}
 
 /* ── CRM lead detail panel (slide-out) ── */
 .crm-panel-overlay {
