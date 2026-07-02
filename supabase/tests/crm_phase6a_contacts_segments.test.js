@@ -91,13 +91,13 @@ describe.skipIf(!hasCreds)('CRM Phase 6a — contacts consent, segments, dup det
       const email = `Zz6a.Sup.${runId}@Example.COM`;
       const c = await mkContact({ phone: `+1562${String(runId).slice(-7)}`, email });
       await db.insert('email_suppressions', {
-        org_id: orgId, email: ` zz6a.sup.${runId}@example.com `, reason: 'bounce', source: 'test',
+        org_id: orgId, email: ` zz6a.sup.${runId}@example.com `, reason: 'bounced', source: 'test',
       });
       suppressedEmails.push(` zz6a.sup.${runId}@example.com `);
       const consent = await db.rpc('get_contact_consent', { p_contact_id: c.id });
       expect(consent.do_not_contact).toBe(true);
       expect(consent.email.suppressed).toBe(true);
-      expect(consent.email.reason).toBe('bounce');
+      expect(consent.email.reason).toBe('bounced');
     });
 
     it('reports contactable when no stop-signal is present', async () => {
@@ -126,7 +126,7 @@ describe.skipIf(!hasCreds)('CRM Phase 6a — contacts consent, segments, dup det
     await mkContact({ phone: `+1574${String(runId).slice(-7)}`, email: `zz6a.seg.dnd.${runId}@example.com`, referral_source: marker, dnd: true });
     const supEmail = `zz6a.seg.sup.${runId}@example.com`;
     await mkContact({ phone: `+1575${String(runId).slice(-7)}`, email: supEmail, referral_source: marker, dnd: false });
-    await db.insert('email_suppressions', { org_id: orgId, email: supEmail, reason: 'test', source: 'test' });
+    await db.insert('email_suppressions', { org_id: orgId, email: supEmail, reason: 'manual', source: 'test' });
     suppressedEmails.push(supEmail);
 
     const filter = { referral_source: marker };
@@ -157,8 +157,9 @@ describe.skipIf(!hasCreds)('CRM Phase 6a — contacts consent, segments, dup det
   // ─── 3. Email-normalized duplicate detection ──────────────
   it('get_duplicate_contacts detects contacts sharing a normalized email', async () => {
     const email = `zz6a.dup.${runId}@example.com`;
-    const a = await mkContact({ email: `  ${email.toUpperCase()}  ` }); // caps + surrounding spaces
-    const b = await mkContact({ email });                               // canonical
+    // Distinct phones so ONLY the shared email forms a duplicate group.
+    const a = await mkContact({ phone: `+1580${String(runId).slice(-7)}`, email: `  ${email.toUpperCase()}  ` }); // caps + spaces
+    const b = await mkContact({ phone: `+1581${String(runId).slice(-7)}`, email });                                // canonical
     const groups = await db.rpc('get_duplicate_contacts');
     const grp = groups.find(g => g.phone_normalized === email && g.count >= 2);
     expect(grp).toBeTruthy();
