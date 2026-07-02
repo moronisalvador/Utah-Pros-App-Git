@@ -51,6 +51,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
 import { normalizePhone } from '@/lib/phone';
+import ActivityTimeline from '@/components/crm/ActivityTimeline';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
 const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
@@ -431,8 +432,6 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
 function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, onPromoted, db }) {
-  const [activity, setActivity] = useState([]);
-  const [loadingActivity, setLoadingActivity] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [promoteName, setPromoteName] = useState('');
   const [promoteEmail, setPromoteEmail] = useState('');
@@ -453,21 +452,6 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
       setSaving(false);
     }
   }, [db, lead.id, promoteName, promoteEmail, createdBy, onPromoted]);
-
-  const loadActivity = useCallback(async () => {
-    if (!lead.contact_id) return;
-    setLoadingActivity(true);
-    try {
-      const rows = await db.rpc('get_contact_activity', { p_contact_id: lead.contact_id });
-      setActivity(rows || []);
-    } catch {
-      err('Failed to load contact activity');
-    } finally {
-      setLoadingActivity(false);
-    }
-  }, [lead.contact_id, db]);
-
-  useEffect(() => { loadActivity(); }, [loadActivity]);
 
   return (
     <div className="crm-panel-overlay" onClick={onClose}>
@@ -525,23 +509,8 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
           <div className="crm-panel-section-title">Activity</div>
           {!lead.contact_id ? (
             <p className="crm-panel-empty">No linked contact yet — the activity timeline starts once this lead is matched to a contact.</p>
-          ) : loadingActivity ? (
-            <p className="crm-panel-empty">Loading…</p>
-          ) : activity.length === 0 ? (
-            <p className="crm-panel-empty">No activity recorded yet.</p>
           ) : (
-            <div className="crm-timeline">
-              {activity.map((item, i) => (
-                <div key={i} className="crm-timeline-item">
-                  <span className="crm-timeline-badge" data-type={item.activity_type}>{item.activity_type}</span>
-                  <div className="crm-timeline-body">
-                    <div className="crm-timeline-title">{item.title}</div>
-                    {item.body && <div className="crm-timeline-text">{item.body}</div>}
-                    <div className="crm-timeline-time">{item.occurred_at ? new Date(item.occurred_at).toLocaleString() : '—'}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ActivityTimeline contactId={lead.contact_id} />
           )}
         </div>
       </div>
