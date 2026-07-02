@@ -2185,7 +2185,8 @@ crm_orgs          — id, name, is_test bool default false, created_at. The org_
                     every CRM test row from later phases keys to this org).
 crm_build_phases  — phase_key TEXT PK, title, status ('planned'|'in_progress'|'shipped', default
                     'planned'), shipped_at, sort_order. One row per roadmap phase: 0, 1, 2, 3, 4a,
-                    4b, 4c, 4d, 5.
+                    4b, 4c, 4d, 5, and (since roadmap v3, 2026-07-02 — migration
+                    `20260702_crm_roadmap_v3_phases.sql`) F, 6a, 6b, 7, 8, 9, 10.
 crm_build_stages  — id, phase_key FK→crm_build_phases (ON DELETE CASCADE), title, status
                     ('todo'|'in_progress'|'done', default 'todo'), sort_order, UNIQUE(phase_key,
                     title). The sub-steps/to-dos inside each phase — seeded from each phase's
@@ -3150,3 +3151,71 @@ render pixel-identical to `/crm/roadmap` at both desktop and mobile (390px) widt
 data path itself was verified separately via direct SQL against the live `dev`/`main` shared Supabase
 project (`information_schema.routine_privileges`), not through the browser.
 
+
+---
+
+## Roadmap v3 — gap audit + parallel-wave dispatch model (session 2026-07-02, docs/seed only — no feature code)
+
+**What this session shipped** (branch `claude/new-session-vloxml` → PR into `dev`):
+- `docs/crm-roadmap.md` → new **"Roadmap v3"** section (the dispatch model of record): live-DB status
+  reconciliation, evidence-based gap-audit appendix (capability taxonomy A–J, verdicts only from
+  code/schema, adversarially re-verified by a 10-agent challenge pass), and seven new phase blocks —
+  **F (Foundation), 6a, 6b, 7, 8, 9, 10 (CRM Forms)**. The old strict-sequential rule is superseded:
+  Phase F ships ALL schema/interfaces/wiring first, then 4d/6a/6b/7/8/9/10 run as ONE parallel wave
+  (4b joins whenever A2P carrier approval lands). File-ownership matrix + frozen-file list will be
+  committed by Phase F as `.claude/rules/crm-wave-ownership.md`.
+- `supabase/migrations/20260702_crm_roadmap_v3_phases.sql` — **applied + verified live**: seeds
+  phases F/6a/6b/7/8/9/10 (sort 9–15, all `planned`) + their close-out stages into
+  `crm_build_phases`/`crm_build_stages` (idempotent ON CONFLICT DO NOTHING), plus one additive
+  Phase 1 stage: **form-capture verification** (the CallRail form path is wired but untested at every
+  layer — no `mapFormPayload` test, no form-ingestion test, payload shape guesswork).
+- `.claude/agents/migration-safety-checker.md` (sonnet, read-only — additive-only/RLS/org_id/
+  external-ID-upsert/backward-compatible-REPLACE/frozen-stub rules) and
+  `.claude/agents/consent-path-auditor.md` (sonnet, read-only — every send call site must route
+  through `sendAutomatedMessage()`/`sendGatedEmail()`; flags `skip_compliance`/direct sends in
+  automation context). Both run before every wave-phase PR.
+- `CLAUDE.md` → CRM Phase Workflow amended: foundation-then-parallel-wave model, zero-schema rule
+  for wave sessions (function-body-only replaces of own frozen stubs), backward-compatible-REPLACE
+  rule, dependency graph supersedes strict-sequential.
+
+**Key audit findings recorded in the roadmap appendix** (full evidence there):
+- **P0 (latent, exposure verified zero):** live `merge_contacts` reassigns only 14 legacy FKs before
+  deleting the loser — a merge today CASCADE-deletes the loser's `lead_attribution` +
+  `email_campaign_recipients` + `email_campaign_exclusions` rows and SET-NULLs their
+  `inbound_leads.contact_id`. Neither it nor `get_duplicate_contacts` exists in `supabase/migrations/`
+  (schema drift). **Fix ships first-thing in Phase F**; until then don't merge contacts with CRM
+  activity. Merge UI already exists (`MergeModal.jsx` ×5 pages + DevTools).
+- Weighted pipeline is a positional ramp (`stageWeight()` = (pos+1)/(open+1)), not probability —
+  Phase 9 adds `pipeline_stages.win_probability` (F schema) with positional fallback.
+- Email consent gate re-confirmed structurally unbypassable; `transcript_analysis` render confirmed.
+- `system_events` audit gaps (campaign exclusions/edits/deletes, per-recipient suppression;
+  duplicate empty-payload `crm_email_campaign_sent`) → Phase 6b audit hardening.
+- Phase 4b remains blocked on A2P 10DLC carrier approval (external); Phase F pre-builds the
+  `automated-send.js` sms branch + `consentAllows()` behind an `automation_settings.sms_sending_enabled`
+  kill-switch so 4b/4d/8 never edit that file.
+
+**Dispatch (see roadmap v3 section for the full model):** Wave 0 = Phase F (Opus·high) ∥ Phase 1
+close-out (Sonnet·medium). Wave 1 (after F merges) = 4d·6a·6b·7·8·9·10 in parallel, per-phase cold
+prompts generated after F commits its artifact names. Owner pre-decisions at dispatch: CallRail Form
+Tracking replacement intent (forks Phase 1's form-fixture stage) and Cloudflare Turnstile site key
+(Phase 10, or ships toggle-off).
+
+---
+
+## /masterplan skill — reusable planning recipe (session 2026-07-02, docs only)
+
+`.claude/skills/masterplan/SKILL.md` — codifies the roadmap-v3 planning standard as a
+one-line-invocable skill for ANY UPR initiative: `/masterplan <initiative>` in a fresh
+session (strongest model, high effort, plan mode, "ultracode" in the message). The skill
+walks the session through: live-verified state + finish-first list → evidence-only gap
+audit (HAVE/PARTIAL/MISSING, exposure-checked bug findings) → ROI-ordered phase design
+(options-on-record evaluations, decision forks, external hard gates) → Foundation-then-
+parallel-wave restructure (frozen signatures, ownership manifest, kill-switch pre-builds,
+what-resisted ledger) → mandatory adversarial challenge pass (refute-first verdicts,
+disjointness proofs, counter-ordering) → present-and-wait → on go, commit the roadmap
+section + idempotent tracker seeds (CRM tracker for CRM initiatives; doc checklists
+otherwise — no generic tracker exists) + `docs/<slug>-dispatch.md` cold-session blocks +
+any 3-plus-phase-recurring agents, ending with Wave-0 blocks. Built against a 2-agent
+extraction benchmark of the roadmap-v3 artifacts and adversarially critiqued
+(completeness + cold-usability, both SHIP_WITH_EDITS, findings folded in). Worked
+example it points sessions at: docs/crm-roadmap.md "Roadmap v3" + docs/crm-dispatch.md.

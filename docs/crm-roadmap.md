@@ -331,6 +331,13 @@ vetting, Twilio verification) that run in parallel but gate specific phases.
 **Phase 4d — Fixed automations**
 **Phase 5 — Visual automation builder** *(future, not scheduled)*
 
+**Roadmap v3 (2026-07-02) extends this list — see the "Roadmap v3" section at the end:**
+**Phase F — Foundation** *(schema + interfaces + wiring for the parallel wave)*, then in
+one parallel wave: **6a — Contacts & segments · 6b — Data quality, roles & audit ·
+7 — Daily driver (tasks/timeline/comms) · 8 — Drip sequences · 9 — Intelligence &
+reports · 10 — CRM Forms (embeddable lead capture)**, plus 4b joining whenever A2P
+carrier approval lands.
+
 `crm/foundation` (this PR) is not a numbered phase — it's the one-time branch carrying
 the roadmap + `.claude/` tooling, merged into `dev` before Phase 0 starts.
 
@@ -349,9 +356,13 @@ with each phase below.
   `crm-phase-N-*.pages.dev` preview URLs in the per-phase blocks below as illustrative;
   use the branch and preview URL the session actually has. (This build runs on Claude
   Code web — a cloud sandbox — so isolation is branch-based, not local git worktrees.)
-- **Sequential — never start a phase until the previous phase's PR has merged into
-  `dev`.** Phases build on each other (Phase 2 fills into Phase 1's shell, etc.), so a
-  branch cut early would be missing that work.
+- **~~Sequential — never start a phase until the previous phase's PR has merged into
+  `dev`.~~** **SUPERSEDED (roadmap v3, 2026-07-02):** phase ordering now follows the
+  **dependency graph + dispatch model in the "Roadmap v3" section at the end of this
+  doc** — a single Foundation phase (F) ships all schema/interfaces/wiring first, then
+  the remaining phases run as ONE parallel wave (disjoint tables + disjoint files,
+  ownership per `.claude/rules/crm-wave-ownership.md`). The original sequential rule
+  still applies to Phases 0–4 history and to any pair the graph marks serial.
 - **Ship path per phase:** phase branch → reviewed **PR into `dev`** (this is "the
   phase's PR merged into `dev`") → verify on `dev.utahpros.app` + the branch's own
   `<branch>.utah-pros-app-git.pages.dev` preview → then the normal **`dev → main`**
@@ -1072,3 +1083,237 @@ pushes); create it if it doesn't.**
    (+ Stop-hook build), **extending** the existing SessionStart hook and permissions.
 6. `.github/workflows/ci.yml` — optional `pull_request` → `dev` trigger so the test gate
    bites on the dev PR, not only the `dev → main` PR.
+
+---
+
+# Roadmap v3 — Gap-audit extension, Foundation phase & max-parallel dispatch (2026-07-02)
+
+This section was produced by the roadmap-v3 planning session (gap audit vs the full CRM
+capability taxonomy, adversarially reviewed by a 10-agent challenge pass) and is the
+**current dispatch model of record**. It supersedes the sequential rule above and the
+"one wave at a time" assumption. Statuses below were verified against the live
+`crm_build_phases`/`crm_build_stages` tables on 2026-07-02, not assumed from this doc.
+
+## Status reconciliation (live DB, 2026-07-02)
+
+| Phase | Live status | Notes |
+|---|---|---|
+| 0, 2, 3, 4a, 4c | `shipped` | See stale-todo disclosures below |
+| 1 | `in_progress` (4/8 stages) | Open: acceptance-criteria pass, visual check vs Stitch (owner-gated), set-shipped + test-row cleanup, push/verify/PR. **Plus a new stage added by v3: form-capture verification** — the CallRail form path is wired but untested at every layer (no `mapFormPayload` test, no `source_type='form'` ingestion test, payload shape guesswork per the backfill's own comment) |
+| 4b | `planned` | **Still blocked on A2P 10DLC carrier approval** (external, not confirmed anywhere in repo). Joins the parallel wave whenever approval lands — Phase F dissolves its code seams |
+| 4d, 5 | `planned` | 4d dispatches in the wave; 5 stays future/gated |
+
+**Stale-todo disclosures (honest checkbox reconciliation, not silently flipped):**
+Phase 2 "Pushed to dev… PR opened" is still `todo` despite the phase being `shipped`;
+Phase 3, 4a, 4c visual-check stages are `todo` (owner-gated Stitch comparisons); 4c's
+"Set shipped… PR opened" stage is `todo`. These are disclosed here as owner-gated /
+housekeeping items — the phases' code genuinely shipped.
+
+**P0 finding fixed in Phase F (interim guidance until it lands):** the live
+`merge_contacts` RPC (never committed as a migration — schema drift) reassigns only 14
+legacy FK tables before deleting the losing contact, so a merge today CASCADE-deletes
+that contact's `lead_attribution` + `email_campaign_recipients` +
+`email_campaign_exclusions` rows and SET-NULLs their `inbound_leads.contact_id`.
+Exposure verified zero (8 merges ever, all pre-CRM, last 2026-06-18). **Until Phase F
+merges: do not merge contacts that have CRM activity** (anyone who called or received a
+campaign email since 2026-07-01).
+
+## Gap-audit appendix (evidence-based; HAVE only from code/schema, never from docs)
+
+| # | Capability | Verdict | Evidence |
+|---|---|---|---|
+| A | Contact records (rich fields, addresses) | PARTIAL | `contacts` 40+ cols + `contact_addresses`/`contact_jobs`; no CRM contacts page |
+| A | Duplicate detection / merge | PARTIAL + P0 bug | `get_duplicate_contacts` (phone-only) + `merge_contacts` RPCs live but drifted (not in migrations); merge UI exists (`MergeModal.jsx` ×5 pages + DevTools); merge destroys CRM history (see P0 above) |
+| A | Tags / saved segments | PARTIAL / MISSING | `contacts.tags` + campaign tag filter; no tag mgmt UI, no segments table |
+| A | Unified do-not-contact | MISSING | Split across `contacts.dnd`, `opt_in_status` (SMS), `email_suppressions` (email) |
+| A | Ownership + lifecycle | MISSING | No owner/lifecycle columns |
+| A | CSV import/export | MISSING | — |
+| B | Capture: calls | HAVE | `callrail-webhook.js` → `upsert_lead_from_callrail` (unique `callrail_id`), tested |
+| B | Capture: forms | **wired, unverified** | Webhook isForm branch + `mapFormPayload` + null-safe UI exist; zero form tests; payload shape guesswork; backfill calls-only |
+| B | Lead scoring / assignment / speed-to-lead SLA / win-loss reasons | MISSING | — |
+| C | Kanban pipeline | HAVE | `pipeline_stages`-driven (`CrmLeads.jsx`, `get_pipeline_stages`), CRUD in Settings |
+| C | Weighted pipeline value | PARTIAL | `stageWeight()` = positional ramp `(pos+1)/(open+1)` off sort_order — NOT probability (`crmPipeline.js:47-56`); no probability column |
+| C | Stage-aging alerts / estimate cadence | MISSING | `lead_pipeline_stage` is current-stage-only (UNIQUE lead_id), no history |
+| D | Unified timeline | PARTIAL | `get_contact_activity` = leads ∪ SMS ∪ job_notes ∪ estimates; no email/jobs/tasks arms; renders only in Leads detail panel |
+| D | Tasks / overdue surfacing | MISSING | `CrmTasks.jsx` is the only stub page |
+| E | Two-way SMS in CRM shell / click-to-call | MISSING | `/conversations` exists outside shell; no `tel:` in crm pages |
+| E | Email send+reply logging | PARTIAL | Campaign sends logged (`email_campaign_recipients`); no 1:1 send or reply capture (manual-log scope only — no inbound parser, per scope) |
+| E | Templates w/ variables | PARTIAL | `message_templates` + `renderTemplate()` exist; no CRM UI |
+| F | One-shot email blasts | HAVE | Phase 4c: `CrmCampaigns.jsx` + `send-email-campaign.js` |
+| F | One-shot SMS blasts | MISSING | Phase 4b, carrier-blocked |
+| F | Drip sequences | MISSING | Biggest HighLevel parity gap → Phase 8 |
+| F | Review tracking | MISSING | — |
+| F | Unsubscribe on every send path | HAVE (email) | **Challenge-CONFIRMED:** `sendGatedEmail` is the only CRM path to `sendEmail()`; the campaign loop has no bypass branch; RFC 8058 headers + footer. Documented exemptions: transactional e-sign/2FA/calendar emails |
+| G | 4 fixed automations / automation_settings | MISSING | Only `isStale()` + the `sendAutomatedMessage()` seam exist (`'sms'` throws); `automation_settings` appears only as checklist text |
+| G | Run log | HAVE | `worker_runs` written by every CRM worker (`automation_runs` does not exist) |
+| H | Attribution dashboard | HAVE | Real RPC data (`get_attribution_rollup`/`by_campaign`); `attributionData.js` is pure helpers, zero mocks |
+| H | Fixed reports | PARTIAL | Live: source ROI, revenue-by-division, funnel conversion (+ROAS, by-campaign). Missing: trend, leaderboard, call volume, speed-to-lead, estimate aging, pipeline movement |
+| H | CPL/ROAS with real QBO joins | PARTIAL | Revenue = denormalized `jobs.invoiced_value`, not a live invoice/payment join; math tested in `src/lib/attribution.js` |
+| H | LTV / repeat-customer view | MISSING | — |
+| I | Per-screen staff roles | PARTIAL | Only the `crm_partner` carve-out; no staff role model behind `page:crm` |
+| I | Audit trail (system_events) | PARTIAL | 14 `crm_*` event types via SECURITY DEFINER RPCs. Uncovered: `set_campaign_exclusions`, `upsert_email_campaign` edits, `delete_email_campaign`, per-recipient send-time suppression; `crm_email_campaign_sent` fires with empty payload and can duplicate → Phase 6b audit hardening |
+| I | org_id / RLS everywhere | HAVE | 100% of CRM tables RLS+policy at creation; org_id on parents (children scoped via parent; build tracker global by design; `integration_credentials` no-policy = worker-only, intentional) |
+| I | Outbound webhooks/API | MISSING | Deferred — flagged future, no concrete need |
+| J | Call summaries/sentiment/topics | HAVE | **Challenge-CONFIRMED:** `CrmCallLog.jsx` TranscriptView renders `transcript_analysis` (Deepgram nova-3 + Haiku speaker naming); field names match producer |
+| J | Transcript lead-qual score / AI replies / weekly digest | MISSING | → Phase 9 |
+
+## Phase F — Foundation: schema, interfaces & wiring (Wave 0)
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-f-foundation`) — cut off `dev`.
+> **Prerequisite:** this roadmap-v3 PR merged into `dev`. Model: **Opus · high** (owns all schema + completes the consent gate).
+> **Read scope:** this block + `CLAUDE.md`.
+> **Close-out checklist (all true before the `dev → main` PR):**
+> - [ ] Test-first, now green: merge_contacts CRM-safety integration test (committed failing against the live version — loser's `lead_attribution`/`email_campaign_recipients`/`inbound_leads` rows must survive on the winner); backward-compat tests for both shared RPC REPLACEs; `consentAllows(row)` unit tests; `normalizePhone` unit tests.
+> - [ ] Acceptance: every wave table/column below exists with org_id + RLS + policy; all ~31 stub RPCs callable (raise 'not implemented'); sms branch of `automated-send.js` fully implemented behind `automation_settings.sms_sending_enabled` default OFF; slot skeletons render; all routes/nav/icons/css markers wired; `.claude/rules/crm-wave-ownership.md` committed.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass.
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off.
+> - [ ] Visual: stub routes render CrmStubPage on the branch preview; no live-page regressions (CrmLeads timeline extraction is behavior-identical).
+> - [ ] `UPR-Web-Context.md` updated (all new tables, stubs, kill-switch, ownership manifest).
+> - [ ] Set `F` to `shipped` via `set_crm_phase_status`; reconcile stages; pushed to `dev`, verified, `dev → main` PR opened.
+
+Scope (everything additive):
+- **All schema for the wave** (parallel sessions ship ZERO schema): ① merge_contacts superseding fix + capture both drifted RPC bodies as a real migration; ② `automation_settings`; ③ `crm_tasks`, `lead_stage_history`, `inbound_leads.lost_reason`; ④ `crm_segments`; ⑤ `crm_import_batches`, `contacts.owner_id`, `contacts.lifecycle_status`; ⑥ `crm_sequences`, `crm_sequence_steps`, `crm_sequence_enrollments`; ⑦ `pipeline_stages.win_probability`, `inbound_leads.lead_score` + `lead_score_factors`; ⑧ `form_definitions`, `form_definition_versions`, `form_submissions`.
+- **The only two live-RPC REPLACEs, done once here:** `move_lead_to_stage` (+`p_lost_reason DEFAULT NULL` + `lead_stage_history` write — shipped 4a caller keeps working, test proves it) and `get_contact_activity` (+email/jobs/tasks arms, additive shape).
+- **~31 signature-frozen stubs** (SECURITY DEFINER + GRANT; body `RAISE EXCEPTION 'not implemented (phase X)'`): tasks ×4+overdue, segments ×3, contacts ×5, import, get_contact_consent, forms ×3, sequences ×4, reports ×8, score_lead, automation settings ×2. **Signatures are contracts — changing one post-F is forbidden** (migration-safety-checker enforces).
+- **Consent gate completed:** `consentAllows(row)` pure predicate + tests (needs data, not carrier approval); `automated-send.js` sms branch fully implemented behind the `sms_sending_enabled` kill-switch (default OFF). Result: 4b/4d/8 never edit `automated-send.js` — the old 4b∥8 and 4b∥4d serial constraints dissolve; 4b's remaining scope = external registration + flag flip + `Marketing.jsx` UI.
+- **Shared code:** `normalizePhone` helper (src/lib + functions/lib) + tests; `ActivityTimeline` extracted from `CrmLeads.jsx` behavior-identical.
+- **Slotification:** `CrmOverview.jsx` renders `<OverdueTasksWidget/>` (Phase 7's file) + `<ForecastWidget/>` (Phase 9's file) stubs; `CrmContacts.jsx` skeleton renders `<ContactsDirectory/>` + `<ContactDetail/>` (6a's files) + `<ImportExportPanel/>` + `<MergeTool/>` (6b's files).
+- **Wiring:** App.jsx routes (conversations, contacts, forms, sequences — tasks exists) via CrmStubPage; CrmLayout nav; crmIcons.jsx icons; index.css reserved section markers ×8.
+- **Ownership manifest:** `.claude/rules/crm-wave-ownership.md` (matrix below) — every wave session's read scope is `CLAUDE.md` + its phase block + that manifest.
+
+## Phase 6a — Contacts read & segments
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-6a-contacts`).
+> **Prerequisite:** Phase F merged into `dev`. Model: **Opus · medium**.
+> **Read scope:** this block + `CLAUDE.md` + `.claude/rules/crm-wave-ownership.md`.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: `get_contact_consent` unified-DNC read (dnd ∪ opt_out ∪ email_suppressions); segment filter round-trip (save → preview count matches direct query); get_duplicate_contacts email-normalized detection.
+> - [ ] Acceptance: Contacts directory (search/page) + read detail (tags, unified DNC badge, ActivityTimeline) live inside the F-built skeleton; segments CRUD + reusable in campaign audience; merge safety verified landed (F's migration).
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; **zero schema migrations** (function-body replaces of own frozen stubs only).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` clean; `crm-phase-reviewer` sign-off.
+> - [ ] Visual: /crm/contacts on the branch preview.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `6a` shipped; reconcile stages; delete TEST-org rows; pushed, verified, PR opened.
+
+Scope: fills bodies of `get_crm_contacts`, `upsert/get/delete_segment`, `get_contact_consent`, `get_duplicate_contacts` (+email); owns `ContactsDirectory.jsx` + `ContactDetail.jsx` only.
+
+## Phase 6b — Ownership, CSV import, staff roles & audit hardening
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-6b-data-quality`).
+> **Prerequisite:** Phase F merged. (Runs beside 6a — see fallback note in the matrix.) Model: **Opus · medium**. **Opening `page:crm` to staff gates on this phase.**
+> **Read scope:** this block + `CLAUDE.md` + ownership manifest.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: `import_contacts` dedupe-on-import correctness (normalized phone/email; no duplicate contact created; batch audit row); audit-hardening events fire (exclusions/campaign-edit/delete); `crm_email_campaign_sent` no longer duplicates and carries counts payload.
+> - [ ] Acceptance: CSV import wizard + export + MergeTool surfaced in the skeleton slots; owner + lifecycle settable; per-screen staff access via `feature:crm_*` sub-flags + `employeePageAccess`/`canAccess()` enforced in CrmLayout + route guards, roles defined per screen BEFORE the flag opens.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; zero schema migrations (body replaces only — incl. backward-compatible audit-hardening REPLACEs of the email-campaign RPCs).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off weighted on the audit/consent surface.
+> - [ ] Visual: import wizard + role-gated nav on preview.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `6b` shipped; reconcile stages; delete TEST-org import rows; pushed, verified, PR opened.
+
+Scope: fills `import_contacts`, `set_contact_owner`, `set_contact_lifecycle` + audit-hardening replaces; owns `ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `src/lib/featureFlags.js`, and is the wave's sole editor of `CrmLayout.jsx` (role gating).
+
+## Phase 7 — Daily driver: tasks, timeline completeness, comms in shell
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-7-daily-driver`).
+> **Prerequisite:** Phase F merged. Model: **Opus · high** (SMS UI beside the `skip_compliance` bypass).
+> **Read scope:** this block + `CLAUDE.md` + ownership manifest.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: `get_overdue_tasks` predicate (UTC storage, Mountain-Time boundary via `functions/lib/date-mt.js`); lost-reason required-on-lost via the new UI path (RPC stays backward-compatible — F's test still green).
+> - [ ] Acceptance: CrmTasks real (due/assignee/reminder/contact+lead links); OverdueTasksWidget on Overview; CrmLeads win/loss prompt + stage-age badges; CrmConversations two-way staff SMS via existing `/api/send-message` (call-only, never `skip_compliance`); click-to-call `tel:` links logging a system_event.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; zero schema migrations (task-RPC body replaces only).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off.
+> - [ ] Visual: Tasks, Conversations, Overview widget, lost-reason flow on preview.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `7` shipped; reconcile stages; delete test task rows; pushed, verified, PR opened.
+
+Scope: fills tasks CRUD + `get_overdue_tasks` bodies; owns `CrmTasks.jsx`, `CrmLeads.jsx`, `OverdueTasksWidget.jsx`, `CrmConversations.jsx`. Send paths frozen (call-only).
+
+## Phase 8 — Drip / nurture sequences
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-8-sequences`).
+> **Prerequisite:** Phase F merged. Model: **Opus · high** (consent-critical).
+> **Read scope:** this block + `CLAUDE.md` + ownership manifest.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: enrollment idempotency (UNIQUE sequence+contact); step-advance math (delay_hours vs next_run_at, MT helpers); exit-on-reply/conversion predicates off system_events; every send routes through `sendAutomatedMessage()` and a suppressed/dnd contact is skipped durably.
+> - [ ] Acceptance: sequences CRUD (steps with delays, email now / sms held behind the F kill-switch until 4b), enroll a `crm_segments` segment, pause/stop, per-enrollment status; `process-sequences.js` cron with `worker_runs` row per run. **Verification-tail (disclosed):** the segment-UI→enroll E2E check runs after 6a merges — build/tests use directly-inserted TEST-org segment rows against F's frozen `get_segments` signature.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; zero schema migrations (sequence-RPC body replaces only); `automated-send.js` untouched (import-only).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the consent path.
+> - [ ] Visual: sequence builder + enrollment list on preview.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `8` shipped; reconcile stages; delete test sequences/enrollments; pushed, verified, PR opened.
+
+Scope: fills sequence RPC bodies; owns `CrmSequences.jsx` + `functions/api/process-sequences.js`. No visual canvas — Phase 5 stays gated on its own go-signal.
+
+## Phase 9 — Intelligence: scoring, forecasting, fixed reports, AI digest
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-9-intelligence`).
+> **Prerequisite:** Phase F merged. Model: **Opus · high** (displayed money math — Phase 3 precedent). Note: pipeline-movement/speed-to-lead reports accrue data only from F's `lead_stage_history` onward — render honestly ("since <date>") rather than implying history.
+> **Read scope:** this block + `CLAUDE.md` + ownership manifest.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: `score_lead` rule math (source, speed-to-first-touch, transcript sentiment/topics; deterministic fixtures); `stageWeight()` prefers `win_probability` with positional fallback (hand-calc updated); report RPC math — conversion trend, speed-to-lead, pipeline movement, LTV (div-by-zero + null-for-zero guards per `attribution.js` conventions).
+> - [ ] Acceptance: fixed report set live (trend, estimator leaderboard, call volume, speed-to-lead SLA, estimate aging, pipeline movement, LTV/repeat); weighted forecast on Leads/Overview via `ForecastWidget`; weekly AI digest cron (pipeline movement, stale leads, spend anomalies) sending via `sendGatedEmail` (import-only); AI reply drafts in Conversations are draft-only, human sends.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; zero schema migrations (report/score body replaces only).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (digest send) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the money math.
+> - [ ] Visual: Reports set + forecast widget on preview.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `9` shipped; reconcile stages; pushed, verified, PR opened.
+
+Scope: fills reports ×8 + `score_lead` bodies; owns `CrmReports.jsx`, `ForecastWidget.jsx`, `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+tests), `functions/api/weekly-crm-digest.js`.
+
+## Phase 10 — CRM Forms: embeddable lead capture
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-10-forms`).
+> **Prerequisite:** Phase F merged. Model: **Opus · high** (public unauthenticated endpoint + consent + XSS surface). Owner pre-decision at dispatch: Cloudflare Turnstile site key (or ship toggle-off).
+> **Read scope:** this block + `CLAUDE.md` + ownership manifest.
+> **Close-out checklist:**
+> - [ ] Test-first, now green: link-markup sanitizer rejects raw HTML/`js:` URLs (XSS); server-side schema validation rejects missing-required/bad-type; `upsert_lead_from_form` idempotency (same submission_token twice → one lead); consent-write correctness (opt_in row with IP + consent-text version; unchecked → no row); spam predicates (honeypot, minimum fill time).
+> - [ ] Acceptance: builder (structured editor — fields text/email/phone/select/radio/checkbox/textarea/date/**consent**, required toggles, theme colors, restricted `[text](url)` links in labels/descriptions/thank-you, live preview, draft→publish versioning that never mutates a published row, copy-embed-snippet); hosted form at `functions/f/[public_id].js` + `public/embed.js` iframe snippet forwarding parent-page UTM/gclid/fbclid/referrer/landing URL; submissions land in `inbound_leads` (`source_type='form'`, `callrail_id='form:'||token` per the `create_manual_lead` `'manual:'` precedent) with attribution via `upsert_lead_attribution` + system_events firing so speed-to-lead triggers on form leads.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; zero schema migrations (form-RPC body replaces only).
+> - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (form consent writes `sms_consent_log`) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the public endpoint + consent.
+> - [ ] Visual: builder + a live embedded form on a test page.
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `10` shipped; reconcile stages; delete test forms/submissions; pushed, verified, PR opened.
+
+Scope: fills `upsert_lead_from_form` + form CRUD bodies; owns `CrmForms.jsx`, `functions/f/[public_id].js`, `functions/api/form-submit.js`, `public/embed.js`. Optional stage: thin `webflow-form-webhook.js` adapter → same RPC (existing Webflow-native forms flow in from day one). Deliberately NOT a funnel/landing-page builder.
+
+**CallRail Form Tracking replacement evaluation:** what CallRail form tracking gives that first-party forms wouldn't — ① capture of forms we didn't build; ② form attribution inside CallRail's visitor/number-swap session model; ③ zero hosting surface. Against: our CallRail form payload mapping is unverified guesswork (Phase 1 finding), backfill never covered forms, and CallRail can't capture gclid/fbclid first-party or write `sms_consent_log`. If forms stop flowing through `callrail-webhook.js`: **calls are untouched**; the isForm branch goes dormant (left in place; removal = separate reviewed change); UI/RPCs unchanged; speed-to-lead fires either way. **Decision fork (owner, at Wave-0 dispatch):** if replacing, Phase 1's form-fixture stage closes as "superseded by Phase 10 CRM Forms" (disclosed); default if undecided = verify the CallRail form path anyway.
+
+**Honest comparison vs webhooking Webflow's native forms:** the webhook adapter is ~a day (no hosting/embed/builder/XSS surface) but loses WordPress coverage, still needs per-form hidden-field JS for UTM/gclid, scatters consent wording per-site, and has no draft/publish safety. **Recommendation: build Phase 10**, with the adapter folded in as the optional stage. Caveat on record: Webflow-only + no form-consent needs = the adapter alone would be the cheaper defensible call.
+
+## Dependency graph (v3)
+
+```
+roadmap-v3 PR merged ──> F ──> 6a, 6b, 7, 8, 9, 10 (one parallel wave)
+Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes nothing from F)
+4b ──> external A2P carrier approval only (code seams dissolved by F; joins the wave on approval)
+6b ──> page:crm opens to staff
+8  ──> soft: segment-UI→enroll E2E verification tail after 6a merges (build not blocked)
+5  ──> stays future, gated on its own go-signal
+```
+
+## Dispatch model: Wave 0 → Wave 1
+
+- **Wave 0** (after this PR merges): **Phase F** (Opus · high) ∥ **Phase 1 close-out** (Sonnet · medium) — safely concurrent, zero overlap. Owner pre-decision due here: CallRail Form Tracking replacement intent (forks Session A's form-fixture stage).
+- **Wave 1** (after F merges): **4d · 6a · 6b · 7 · 8 · 9 · 10 — all seven in parallel**, plus **4b** joining whenever carrier approval lands. Merge order is preference (suggested: 7, 6a first), not a gate; each PR independent. Throttle freely — all pairs are safe, so concurrent-session count is purely a review-bandwidth choice.
+- **Copy-paste launch blocks for every session live in `docs/crm-dispatch.md`** (settings header + complete cold-session prompt per session); each session's read scope = `CLAUDE.md` + its phase block above + `.claude/rules/crm-wave-ownership.md`. The prompts cite Foundation's artifact names as specified here — if F's implementation drifts, the manifest + phase blocks are authoritative.
+
+### File-ownership matrix (to be committed by Phase F as `.claude/rules/crm-wave-ownership.md`)
+
+| Session | Owns exclusively | Fills RPC bodies (own frozen stubs) |
+|---|---|---|
+| 1-closeout | callrail.test.js, crm_phase1_callrail.test.js (+fix-only: CrmCallLog, CrmIntegrations, callrail-webhook) | — |
+| 4d | functions/api/run-automations.js (new), CrmSettings.jsx | automation settings ×2 |
+| 6a | ContactsDirectory.jsx, ContactDetail.jsx (new) | segments ×3, contacts-read ×3, get_contact_consent, get_duplicate_contacts |
+| 6b | ImportExportPanel.jsx, MergeTool.jsx (new), Admin.jsx, DevTools.jsx, featureFlags.js, CrmLayout.jsx (sole in-wave editor) | import, owner/lifecycle ×2, audit-hardening replaces |
+| 7 | CrmTasks.jsx, CrmLeads.jsx, OverdueTasksWidget.jsx (new), CrmConversations.jsx (new) | tasks ×4, get_overdue_tasks |
+| 8 | CrmSequences.jsx (new), functions/api/process-sequences.js (new) | sequences ×4 |
+| 9 | CrmReports.jsx, ForecastWidget.jsx (new), crmPipeline.js + attribution.js (+tests), functions/api/weekly-crm-digest.js (new) | reports ×8, score_lead |
+| 10 | CrmForms.jsx (new), functions/f/[public_id].js, functions/api/form-submit.js, public/embed.js (new) | forms ×3 |
+| 4b | Marketing.jsx, send-text-campaign worker (new), sms_sending_enabled flag flip | — |
+
+**Frozen in-wave (nobody edits):** App.jsx, crmIcons.jsx, CrmOverview.jsx + CrmContacts.jsx (slot skeletons), automated-send.js, email-consent.js, send-message.js, twilio.js, email.js, functions/lib/supabase.js, cors.js, date-mt.js, normalizePhone. index.css: writes only inside your reserved section marker. Shared tables: DATA writes only (system_events / worker_runs / sms_consent_log are insert-only logs); **zero schema changes outside F**.
+
+**Migration rule (amended from "zero migrations in parallel sessions"):** F owns 100% of SCHEMA (tables/columns/constraints/policies/indexes) + both shared RPC REPLACEs + every signature. Wave sessions may ship **function-body-only** `CREATE OR REPLACE` migrations for their OWN frozen stubs — signature changes forbidden (migration-safety-checker enforces), collision-free because each function has exactly one owner. Rationale: literal-zero would force F to implement ~31 RPCs — most of the backend — serially and without per-phase test-first.
+
+**What resisted maximum parallelism (honest record):** ① the literal zero-migration rule (amended as above — the only rule bent); ② Phase 8's consumption of 6a's segments (softened to a disclosed post-6a verification tail); ③ 4b's carrier approval (external, irreducible — but code seams dissolved); ④ 6a∥6b is the most protocol-fragile pair (both inside the Contacts surface; safe only via F's slot components; fallback = serialize 6b after 6a); ⑤ 4d and 8 are two consent-critical builds running concurrently — accepted by owner directive, mitigated by the F-frozen gate (both call-only), SMS dark behind the kill-switch, and mandatory consent-path-auditor on both PRs; ⑥ F itself is the new critical path / single point of failure — priced in via the full reviewer gauntlet before the wave dispatches.
