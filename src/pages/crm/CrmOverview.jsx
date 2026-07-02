@@ -20,7 +20,9 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db),
  *              @/lib/attribution (rollupTotals, funnelStages, formatters),
- *              ./attributionParts (RangePicker, MetricCard, Funnel, deriveRows)
+ *              ./attributionParts (RangePicker, MetricCard, Funnel, deriveRows),
+ *              @/components/crm/OverdueTasksWidget (Phase 7 slot),
+ *              @/components/crm/ForecastWidget (Phase 9 slot)
  *   Data:      reads  → get_attribution_rollup RPC (joins ad_spend,
  *                       inbound_leads, estimates, jobs) · writes → none
  *
@@ -35,6 +37,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { rollupTotals, funnelStages, fmtMoney, fmtRatio } from '@/lib/attribution';
 import { RangePicker, MetricCard, Funnel } from './attributionParts';
 import { deriveRows, rangeToDates } from './attributionData';
+import OverdueTasksWidget from '@/components/crm/OverdueTasksWidget';
+import ForecastWidget from '@/components/crm/ForecastWidget';
 
 export default function CrmOverview() {
   const { db } = useAuth();
@@ -89,6 +93,11 @@ export default function CrmOverview() {
             <h2 className="crm-section-title">Sales funnel</h2>
             <Funnel stages={stages} />
           </div>
+
+          {/* Slot components filled by later wave phases (Phase F stubs render
+              nothing): overdue tasks (Phase 7) + weighted forecast (Phase 9). */}
+          <OverdueTasksWidget />
+          <ForecastWidget />
         </>
       )}
     </div>
