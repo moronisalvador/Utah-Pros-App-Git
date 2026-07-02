@@ -3477,3 +3477,85 @@ and reset to OFF (verified live), so there are no test rows to delete. **Live-se
 owner-gated:** the SMS paths cannot fire an end-to-end text until Phase 4b flips `sms_sending_enabled`
 (carrier approval), and the email paths only send against a real completed job / stale real lead — so
 no real message was dispatched from this session by design. `crm_build_phases('4d')` set `shipped`.
+
+## CRM Phase 9 — Intelligence: scoring, forecasting, reports, AI digest (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Adds rule-based lead scoring, a weighted pipeline forecast, a fixed
+report set, and a weekly AI digest. **Zero schema migrations** — every table/column it consumes
+(`pipeline_stages.win_probability`, `inbound_leads.lead_score`, `lead_score_factors`,
+`lead_stage_history`) is Foundation-owned; this phase only filled 8 frozen RPC stub bodies and added
+UI + one worker. All displayed money math lives in the pure, unit-tested JS layer — the RPCs return
+raw counts only (the Phase 3 convention).
+
+**Money/decision math — `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+ tests, test-first):**
+- `stageWeight(stage, sortedStages)` now **prefers `pipeline_stages.win_probability` (0..1)** and falls
+  back to the existing positional ramp when it is null/undefined/out-of-range; `is_won`→1 / `is_lost`→0
+  stay terminal. `get_pipeline_stages` already returns the column. The Leads board's
+  `weightedPipelineValue` inherits this automatically (same tested function).
+- `classifyLeadChannel` / `scoreLeadFactors` / `scoreLead` — deterministic, **no ML**. Five factors,
+  clamped 0..100: source (channel via crm_channel_for_source buckets), engagement (answered-call
+  duration / form / missed), speed-to-first-touch (minutes), transcript sentiment, transcript
+  urgency-topic keywords. Spam hard-zeros to a single factor. The SQL `score_lead` mirrors this exact
+  point table.
+- `attribution.js` gains `deriveConversionTrend`, `deriveLeaderboard`, `speedToLeadSummary`,
+  `ltvSummary` — all with the same div-by-zero-guard / "real 0 ≠ —" conventions as the Phase 3 helpers.
+
+**RPCs — `supabase/migrations/20260702_crm_phase9_intelligence_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs; SECURITY DEFINER +
+GRANT anon/authenticated; applied + verified live):
+- `score_lead(p_lead_id) → integer` — mirrors the JS rule table; persists a 5-row breakdown to
+  `lead_score_factors` + the clamped total to `inbound_leads.lead_score`; writes a `crm_lead_scored`
+  `system_events` row. Speed-to-first-touch: answered inbound call = 0 min, else earliest outbound
+  staff message after the lead (defensive, NULL on any lookup issue).
+- `get_conversion_trend` (monthly leads→estimates→won→revenue), `get_estimator_leaderboard`
+  (per `jobs.estimator`), `get_call_volume` (daily answered/missed), `get_speed_to_lead`
+  (creation→first-move buckets, `within_sla` flag on ≤5-min), `get_estimate_aging` (submitted-not-
+  converted by age), `get_pipeline_movement` (per-stage in/out/net), `get_contact_ltv` (top-25 or one
+  contact by won-job revenue). All return `SETOF json` raw counts. Live parity check: a real
+  answered-call lead scored **31**, matching the JS `scoreLead`.
+- **History-backed honesty:** `get_speed_to_lead` + `get_pipeline_movement` carry a `data_since`
+  (earliest `lead_stage_history.moved_at`) so the UI renders "Since <date>" — the log only accrues
+  from Foundation's `move_lead_to_stage` replace onward, never implying older history.
+
+**UI:**
+- `src/components/crm/ForecastWidget.jsx` — fills the Overview slot: weighted-pipeline-forecast
+  headline + per-open-stage breakdown (win % from `stageWeight`). Fails quiet (non-critical card).
+- `src/pages/crm/CrmReports.jsx` — the full report set (conversion trend, estimator leaderboard,
+  speed-to-lead SLA with since-caption, call volume, estimate aging, pipeline movement with
+  since-caption, top-customer LTV) alongside the existing Source ROI / division / funnel cards. CSS in
+  the `CRM WAVE RESERVED — Phase 9` marker (tokens only; one `@media (max-width:768px)` rule).
+
+**Worker — `functions/api/weekly-crm-digest.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a weekly Cloudflare Cron Trigger; one `worker_runs` row per run). Gathers 7-day
+pipeline movement (RPC), stale open leads, and week-over-week ad-spend anomalies (±40%, div-by-zero
+guarded); Claude (`claude-sonnet-5`) **summarizes only the numbers we computed** (deterministic
+fallback digest when `ANTHROPIC_API_KEY` is absent); sends via `sendGatedEmail` (**import-only** from
+the frozen `automated-send.js` — never `sendEmail`/twilio directly, no `skip_compliance`). Recipients
+= `env.CRM_DIGEST_RECIPIENTS` (comma) or `env.OWNER_EMAIL`; with neither set the worker still runs and
+sends nothing. Pure helpers (`parseRecipients`, `spendAnomalies`, `isStaleLead`, `buildFallbackDigest`)
+unit-tested. **New env var to configure in Cloudflare (Preview + Production):** `CRM_DIGEST_RECIPIENTS`
+(optional; falls back to `OWNER_EMAIL`). The weekly Cron Trigger for `weekly-crm-digest` must be added
+in the Cloudflare dashboard (no `wrangler.toml`).
+
+**AI reply suggestions — `src/components/crm/AiReplySuggestions.jsx`** (new): standalone, **draft-only**
+(no send path — a human sends). Contextual template drafts with an injectable async `generate` prop for
+a future AI endpoint. **NOT wired** — Phase 7 (`CrmConversations.jsx`) had not merged into `dev` at
+ship time, and the dispatch forbids editing an unmerged phase's file, so the one-line wiring
+(`<AiReplySuggestions context={…} onUseDraft={setComposerText} />`) is a documented **follow-up**.
+
+**Tests** (committed failing first): `crmPipeline.test.js` (win_probability preference + positional
+fallback, score_lead rule fixtures, spam/clamp), `attribution.test.js` (report helpers with guards),
+`weekly-crm-digest.test.js` (13 pure-helper tests), `supabase/tests/crm_phase9_intelligence.test.js`
+(self-skipping integration: SQL `score_lead` == JS `scoreLead` parity + report row shapes). Full vitest
+254 passed / 32 skipped; `npm run build` + `npx eslint` (all changed files) clean.
+
+**Reviewer gauntlet:** consent-path-auditor PASS (digest routes only through `sendGatedEmail`, no
+bypass; AiReplySuggestions has no send path). migration-safety-checker / upr-pattern-checker /
+crm-phase-reviewer — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** stages 0–3, 5, 6 flipped **done** (test-first suite;
+acceptance — report set + forecast widget + digest + draft-only AI replies; test/build/eslint; auditor
+gauntlet; doc update; mechanical close-out). The **Visual stage (4)** — "Reports set + forecast widget
+on preview" — stays **todo**: `/crm/*` is invisible behind the `page:crm` flag (owner-gated, Phase 6b),
+so a branch-preview screenshot can't be produced this session; the build/lint pass and live RPC
+verification stand in until the owner opens the flag. `crm_build_phases('9')` set `shipped`.
