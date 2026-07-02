@@ -136,13 +136,15 @@ export function planStepOutcome(enrollment, steps, sendResult, now, opts = {}) {
   }
 
   if (sendResult?.skipped) {
-    // The SMS kill-switch is OFF: hold the step (do not advance) and retry later,
-    // so it sends the moment Phase 4b flips the switch. Never bypassed.
-    if (sendResult.reason === 'sms_disabled') {
+    // Hold-and-retry (do NOT advance): the SMS kill-switch is OFF, or we're inside
+    // TCPA quiet-hours (8am–9pm recipient-local). Either way the text is still
+    // owed — retry later so it goes out once the switch flips / the window opens.
+    // Never bypassed, never dropped.
+    if (sendResult.reason === 'sms_disabled' || sendResult.reason === 'quiet_hours') {
       return {
         action: 'held',
         patch: { next_run_at: computeNextRunAt(now, holdRetryHours) },
-        event: { event_type: 'crm_sequence_step_held', reason: 'sms_disabled' },
+        event: { event_type: 'crm_sequence_step_held', reason: sendResult.reason },
       };
     }
     // A durable consent skip (dnd / suppressed / no address / no consent) — this
@@ -250,7 +252,7 @@ export async function processEnrollment(ctx, enrollment) {
   // The gate renders the body from `variables`; the subject it does not, so we
   // pre-render it here for token parity.
   const extra = step.channel === 'sms'
-    ? { orgId: seq.org_id, body: step.body || '' }
+    ? { orgId: seq.org_id, body: step.body || '', now }
     : { subject: renderTemplate(step.subject || '', variables), html: step.body || '' };
   const result = await send(step.channel, enrollment.contact_id, null, variables, extra);
 

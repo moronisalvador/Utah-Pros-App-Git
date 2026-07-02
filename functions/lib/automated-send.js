@@ -172,7 +172,39 @@ async function logSmsConsent(db, contact, eventType, details) {
   } catch { /* swallow — the return value already carries the outcome */ }
 }
 
-export async function sendGatedSms(env, { contact, body, orgId } = {}) {
+// TCPA quiet-hours (Gate 3). Automated/marketing SMS may only be sent between
+// 8am and 9pm in the RECIPIENT's local time. "Local" is best-effort: the
+// contact's own timezone when known, else a configurable business-market default
+// (Mountain — Utah Pros' service area). Refine to an area-code-derived zone
+// before serving many timezones at scale. Uses tz-aware Intl so DST (MST vs MDT)
+// is handled for free. Applies to SMS only — email (CAN-SPAM) has no time-of-day
+// restriction — and a hit DEFERS the send (skipped + retried), never drops it.
+export const QUIET_HOURS_START = 8;   // inclusive — first sendable hour is 08:00
+export const QUIET_HOURS_END = 21;    // exclusive — last sendable hour is 20:xx (before 9pm)
+export const DEFAULT_SMS_TIMEZONE = 'America/Denver';
+
+// Hour-of-day (0–23) at `date` in `timeZone`; falls back to the UTC hour if the
+// zone is unrecognized, so a bad config can never crash a send.
+export function hourInTimeZone(date, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone })
+      .formatToParts(date);
+    const raw = parts.find((p) => p.type === 'hour')?.value;
+    const n = raw != null ? parseInt(raw, 10) % 24 : NaN; // normalize a '24' midnight → 0
+    return Number.isFinite(n) ? n : date.getUTCHours();
+  } catch {
+    return date.getUTCHours();
+  }
+}
+
+// True when `date` is inside the TCPA quiet window (before 8am or at/after 9pm)
+// in `timeZone` — i.e. an automated SMS must NOT go out right now.
+export function isWithinQuietHours(date, timeZone = DEFAULT_SMS_TIMEZONE) {
+  const hour = hourInTimeZone(date, timeZone);
+  return hour < QUIET_HOURS_START || hour >= QUIET_HOURS_END;
+}
+
+export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
   const db = supabase(env);
   const phone = normalizePhone(contact?.phone);
   const org = orgId || await resolveRealOrgId(db);
@@ -191,6 +223,16 @@ export async function sendGatedSms(env, { contact, body, orgId } = {}) {
       : reason === 'no_consent' ? 'send_blocked_no_consent' : 'send_blocked_no_phone';
     await logSmsConsent(db, contact, eventType, `Automated SMS skipped: ${reason}`);
     return { ok: false, skipped: true, reason };
+  }
+
+  // Gate 3: TCPA quiet-hours (8am–9pm recipient-local). DEFERRED, not dropped —
+  // callers that retry (process-sequences holds a 'quiet_hours' skip and resends)
+  // deliver once the window opens, so a text due at 2am simply goes out at 8am.
+  const tz = contact?.timezone || env?.SMS_QUIET_HOURS_TZ || DEFAULT_SMS_TIMEZONE;
+  if (isWithinQuietHours(now ? new Date(now) : new Date(), tz)) {
+    await logSmsConsent(db, contact, 'send_deferred_quiet_hours',
+      `Automated SMS deferred: outside ${QUIET_HOURS_START}:00–${QUIET_HOURS_END}:00 ${tz}`);
+    return { ok: false, skipped: true, reason: 'quiet_hours' };
   }
 
   try {
@@ -226,7 +268,7 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   const rendered = renderTemplate(body, variables);
 
   if (channel === 'sms') {
-    return sendGatedSms(env, { contact, body: rendered, orgId: extra.orgId });
+    return sendGatedSms(env, { contact, body: rendered, orgId: extra.orgId, now: extra.now });
   }
 
   return sendGatedEmail(env, {

@@ -139,6 +139,16 @@ describe('planStepOutcome', () => {
     expect(plan.event.reason).toBe('sms_disabled');
   });
 
+  it('an SMS deferred by TCPA quiet-hours is HELD too — not dropped', () => {
+    const plan = planStepOutcome(enrollment, steps, { ok: false, skipped: true, reason: 'quiet_hours' }, NOW);
+    expect(plan.action).toBe('held');
+    // step unchanged — the text is still owed once the 8am–9pm window opens
+    expect(plan.patch.current_step).toBeUndefined();
+    expect(plan.patch.next_run_at).toBe(computeNextRunAt(NOW, HOLD_RETRY_HOURS));
+    expect(plan.event.event_type).toBe('crm_sequence_step_held');
+    expect(plan.event.reason).toBe('quiet_hours');
+  });
+
   it('a consent skip (dnd/suppressed) advances past the step with a durable record', () => {
     const plan = planStepOutcome(enrollment, steps, { ok: false, skipped: true, reason: 'dnd' }, NOW);
     expect(plan.action).toBe('skipped');
