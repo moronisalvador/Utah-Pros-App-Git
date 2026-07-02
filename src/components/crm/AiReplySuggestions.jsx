@@ -12,8 +12,8 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a — a slot component
- *   Rendered by:  (Phase 7's CrmConversations.jsx, once that phase merges — see
- *                 NOTES; currently exported + documented, not yet wired)
+ *   Rendered by:  src/pages/crm/CrmConversations.jsx (via the shared
+ *                 Conversations `replyAssist` render-prop slot)
  *
  * DEPENDS ON:
  *   Packages:  react
@@ -32,11 +32,10 @@
  *                 and its drafts are deterministic.
  *
  * NOTES / GOTCHAS:
- *   - Owned by Phase 9 (.claude/rules/crm-wave-ownership.md). Phase 7 owns
- *     CrmConversations.jsx; at the time this shipped Phase 7 had NOT merged into
- *     dev, so per the dispatch this component is standalone-only and the one-line
- *     wiring (`<AiReplySuggestions context={…} onUseDraft={setComposerText} />`)
- *     is a documented FOLLOW-UP — this phase must not edit an unmerged phase's file.
+ *   - Owned by Phase 9 (.claude/rules/crm-wave-ownership.md). Wired into
+ *     CrmConversations.jsx after Phases 7 & 9 merged, through an optional
+ *     `replyAssist(context, insertDraft)` render-prop on the shared Conversations
+ *     inbox — the main app passes no slot, so this stays CRM-only.
  *   - Draft-only by construction: there is deliberately no send path here. When a
  *     staff SMS is eventually sent from Conversations it goes through Phase 7's
  *     call-only send-message.js path (never skip_compliance) — not this file.

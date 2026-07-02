@@ -6791,6 +6791,11 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .crm-reply-suggest-refresh:disabled { color: var(--crm-text-tertiary); cursor: default; }
 
+/* The reply-assist slot inside the Conversations composer (CRM-only). Caps its
+   height so the suggestions never push the compose bar off a short screen. */
+.crm-reply-assist-slot { padding: var(--space-2) var(--space-3) 0; }
+.crm-reply-assist-slot .crm-reply-suggest { max-height: 40vh; overflow-y: auto; }
+
 /* ─── CRM WAVE RESERVED — Phase 10 (CRM forms · Session I) ───
    Owner: Phase 10. */
 

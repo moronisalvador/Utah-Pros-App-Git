@@ -107,7 +107,7 @@ const TEMPLATE_CATEGORIES = {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════
 
-export default function Conversations() {
+export default function Conversations({ replyAssist } = {}) {
   const { db, employee } = useAuth();
   const location = useLocation();
   const deepLinkHandled = useRef(false);
@@ -260,6 +260,19 @@ export default function Conversations() {
     const p = activeConv.conversation_participants.find(p => p.role === 'primary') || activeConv.conversation_participants[0];
     return p?.contacts || null;
   }, [activeConv]);
+
+  // Context for an optional reply-assist slot. The CRM injects AiReplySuggestions
+  // via the `replyAssist` render-prop; the main app passes nothing, so no slot
+  // renders and this is inert there.
+  const replyContext = useMemo(() => {
+    const lastInbound = [...messages].reverse().find(m => m.type === 'sms_inbound');
+    return {
+      lastMessage: lastInbound?.body || '',
+      contactName: activeContact?.name || activeConv?.title || '',
+      leadStatus: activeConv?.status || '',
+      channel: 'sms',
+    };
+  }, [messages, activeContact, activeConv]);
 
   const filtered = useMemo(() => {
     let list = conversations;
@@ -543,6 +556,15 @@ export default function Conversations() {
     composeRef.current?.focus();
   };
 
+  // Drop a chosen reply-assist draft into the composer — same DOM+state path as
+  // a template insert (the composer is contentEditable, so set both). Draft only:
+  // this fills the box for a human to review and send; it never sends.
+  const insertDraft = useCallback((text) => {
+    setCompose(text || '');
+    if (composeRef.current) composeRef.current.innerText = text || '';
+    composeRef.current?.focus();
+  }, []);
+
   // Close context menu on click anywhere
   useEffect(() => {
     if (!contextMenu) return;
@@ -758,6 +780,9 @@ export default function Conversations() {
               </div>
             )}
 
+            {replyAssist && activeConv && !isNote && (
+              <div className="crm-reply-assist-slot">{replyAssist(replyContext, insertDraft)}</div>
+            )}
             {/* ── Compose bar: [+] [input] [send] ── */}
             <div className={`conv-compose${isNote ? ' note-mode' : ''}${showSchedule && scheduleDate && scheduleTime ? ' schedule-mode' : ''}`}>
               <button className={`conv-plus-btn${showComposeActions ? ' active' : ''}${isNote ? ' note-active' : ''}`} onClick={() => setShowComposeActions(!showComposeActions)} aria-label="More actions">

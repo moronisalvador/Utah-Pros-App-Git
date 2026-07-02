@@ -3846,3 +3846,26 @@ Tasks/Conversations/Overview-widget/lost-reason visual pass happens on the Cloud
 review time, not from this headless session. No test task rows remain (the live smoke was rolled back;
 the integration suite self-cleans; `crm_tasks` verified empty of `smoke/v/phase7-` rows).
 `crm_build_phases('7')` set `shipped`.
+
+## CRM post-wave follow-ups (Jul 2 2026)
+
+Small fixes committed straight to `dev` after the wave landed, from the #247–250 merge-readiness
+review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none is staff-visible yet.
+
+- **ForecastWidget headline fix** (`src/components/crm/ForecastWidget.jsx`) — the "expected value of
+  open leads" headline now sums only OPEN stages. It previously used `weightedPipelineValue().total`,
+  which folds won-stage leads in at weight 1 (realized revenue) — inflating the number and making it
+  disagree with the per-stage rows. `crmPipeline.weightedPipelineValue` is unchanged (Phase 9 tests
+  stay green).
+- **TCPA quiet-hours (SMS Gate 3)** — `functions/lib/automated-send.js` `sendGatedSms` now blocks
+  automated SMS outside 8am–9pm in the recipient's local time via `isWithinQuietHours()` (tz-aware,
+  DST-safe, unit-tested), returning `{ skipped:true, reason:'quiet_hours' }`. `process-sequences.js`
+  HOLDS + retries that outcome (never drops it), same as the kill-switch hold. SMS-only (email/CAN-SPAM
+  exempt); still behind `sms_sending_enabled`, so zero live impact until Phase 4b. Recipient tz defaults
+  to `America/Denver` (`env.SMS_QUIET_HOURS_TZ` override) — per-recipient/area-code tz and
+  `run-automations.js` held-retry remain for 4b (tracked in `docs/crm-roadmap.md` Phase 4b).
+- **AiReplySuggestions wired into Conversations** — the shared `src/pages/Conversations.jsx` gained an
+  OPTIONAL `replyAssist(context, insertDraft)` render-prop (the main app passes nothing → inert there;
+  `src/pages/crm/CrmConversations.jsx` passes `AiReplySuggestions`). `insertDraft` fills the composer via
+  the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
+  deferred follow-up.
