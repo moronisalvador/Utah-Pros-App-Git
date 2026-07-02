@@ -6,11 +6,12 @@
  * WHAT THIS DOES (plain language):
  *   The Leads pipeline board — a Kanban like the one on the Production page,
  *   but for sales leads instead of jobs. Every non-spam call or web-form
- *   lead shows up as a card in a column (New, Contacted, Qualified, ...),
- *   drag a card to a new column on desktop to move it forward. Tap a card
- *   to open its details: who it is, how to reach them, a dropdown to change
- *   its stage (works on touch devices too), and a combined timeline of
- *   every call, text, note, and estimate tied to that contact.
+ *   lead shows up as a card in a column (New, Contacted, Qualified, ...) —
+ *   drag a card to a new column to move it forward, with a mouse on desktop
+ *   or a finger on iPad/iPhone. Tap a card (without dragging it) to open its
+ *   details: who it is, how to reach them, a dropdown to change its stage,
+ *   and a combined timeline of every call, text, note, and estimate tied to
+ *   that contact.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/leads
@@ -35,12 +36,17 @@
  *   - A lead with no lead_pipeline_stage row yet reads as sitting in the
  *     first stage (lowest sort_order) — see src/lib/crmPipeline.js's
  *     groupLeadsByStage(), which the DB-side RPCs mirror.
- *   - Drag-and-drop is desktop-only (same isTouchDevice() gate as
- *     Production.jsx's JobCard) — on touch devices, move a lead via the
- *     stage <select> in the detail panel instead.
+ *   - Drag-and-drop works on both desktop (native HTML5 DnD) and touch
+ *     (Pointer Events — a separate, parallel code path, gated by the same
+ *     isTouchDevice() check Production.jsx's JobCard uses to pick a
+ *     different interaction instead). Both paths funnel through the single
+ *     moveLead() function, and reuse the same .drag-over/.dragging CSS
+ *     classes for identical visual feedback. The stage <select> in the
+ *     detail panel still works as an always-available fallback on any
+ *     device — tapping a card without dragging it still opens that panel.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
@@ -71,6 +77,20 @@ export default function CrmLeads() {
 
   const [dragLead, setDragLead] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
+
+  // Touch drag-and-drop — a parallel path to the HTML5 DnD above, only ever
+  // wired up when isTouchDevice() (see NOTES). Position/ghost tracking uses
+  // refs + imperative style updates, not state, so a fast finger drag on a
+  // 200-lead board doesn't force a full re-render every pointermove.
+  const [touchDragLead, setTouchDragLead] = useState(null);
+  const [touchOverStage, setTouchOverStage] = useState(null);
+  const touchStartRef = useRef(null);          // { x, y, lead } from pointerdown
+  const touchMovedRef = useRef(false);         // crossed the drag threshold
+  const touchDragPerformedRef = useRef(false); // suppresses the post-drag synthetic click
+  const touchPosRef = useRef({ x: 0, y: 0 });  // latest pointer pos, read by the auto-scroll loop
+  const ghostElRef = useRef(null);
+  const boardRef = useRef(null);
+  const autoScrollFrameRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,6 +142,112 @@ export default function CrmLeads() {
     setDragLead(null);
   };
 
+  // ─── Touch drag-and-drop (Pointer Events) — see file NOTES ──────────────
+  const TOUCH_DRAG_THRESHOLD = 8; // px — jitter allowance before committing to a drag
+  const AUTO_SCROLL_EDGE = 40;    // px from the board's visible left/right edge
+  const AUTO_SCROLL_SPEED = 12;   // px per animation frame
+
+  const updateGhostPosition = (x, y) => {
+    touchPosRef.current = { x, y };
+    if (ghostElRef.current) {
+      ghostElRef.current.style.transform = `translate3d(${x + 12}px, ${y + 12}px, 0)`;
+    }
+  };
+
+  const updateDropTarget = (x, y) => {
+    const stageId = document.elementFromPoint(x, y)?.closest('.crm-board-column')?.dataset.stageId || null;
+    setTouchOverStage(stageId);
+  };
+
+  const stopAutoScroll = () => {
+    if (autoScrollFrameRef.current) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+  };
+
+  const updateAutoScroll = (x) => {
+    const board = boardRef.current;
+    if (!board || autoScrollFrameRef.current) return; // already running — the loop below re-evaluates every frame
+    const rect = board.getBoundingClientRect();
+    const direction = x < rect.left + AUTO_SCROLL_EDGE ? -1 : x > rect.right - AUTO_SCROLL_EDGE ? 1 : 0;
+    if (direction === 0) return;
+
+    const step = () => {
+      if (!boardRef.current || !touchMovedRef.current) { autoScrollFrameRef.current = null; return; }
+      const r = boardRef.current.getBoundingClientRect();
+      const px = touchPosRef.current.x;
+      const dir = px < r.left + AUTO_SCROLL_EDGE ? -1 : px > r.right - AUTO_SCROLL_EDGE ? 1 : 0;
+      if (dir === 0) { autoScrollFrameRef.current = null; return; }
+      boardRef.current.scrollLeft += dir * AUTO_SCROLL_SPEED;
+      autoScrollFrameRef.current = requestAnimationFrame(step);
+    };
+    autoScrollFrameRef.current = requestAnimationFrame(step);
+  };
+
+  const handleCardPointerDown = (e, lead) => {
+    if (touchMovedRef.current) return; // a drag is already in progress — ignore a second touch
+    touchDragPerformedRef.current = false;
+    touchStartRef.current = { x: e.clientX, y: e.clientY, lead };
+    touchPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleCardPointerMove = (e) => {
+    const start = touchStartRef.current;
+    if (!start) return;
+
+    if (!touchMovedRef.current) {
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (Math.hypot(dx, dy) < TOUCH_DRAG_THRESHOLD) { touchPosRef.current = { x: e.clientX, y: e.clientY }; return; }
+      touchMovedRef.current = true;
+      touchDragPerformedRef.current = true;
+      if (navigator.vibrate) navigator.vibrate(10);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      setTouchDragLead(start.lead);
+    }
+
+    e.preventDefault(); // defense-in-depth once a horizontal drag is confirmed — touch-action: pan-y handles the rest
+    updateGhostPosition(e.clientX, e.clientY);
+    updateDropTarget(e.clientX, e.clientY);
+    updateAutoScroll(e.clientX);
+  };
+
+  const handleCardPointerUp = (e) => {
+    const start = touchStartRef.current;
+    const wasDragging = touchMovedRef.current;
+    stopAutoScroll();
+    if (wasDragging) {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+      if (start && touchOverStage) moveLead(start.lead, touchOverStage);
+    }
+    touchStartRef.current = null;
+    touchMovedRef.current = false;
+    setTouchDragLead(null);
+    setTouchOverStage(null);
+  };
+
+  const handleCardPointerCancel = (e) => {
+    stopAutoScroll();
+    if (touchMovedRef.current && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    touchStartRef.current = null;
+    touchMovedRef.current = false;
+    setTouchDragLead(null);
+    setTouchOverStage(null); // pointercancel never calls moveLead — an aborted gesture must never commit a move
+  };
+
+  // Seed the ghost's position synchronously before first paint, so it doesn't flash at (0,0)
+  useLayoutEffect(() => {
+    if (touchDragLead && ghostElRef.current) {
+      ghostElRef.current.style.transform = `translate3d(${touchPosRef.current.x + 12}px, ${touchPosRef.current.y + 12}px, 0)`;
+    }
+  }, [touchDragLead]);
+
+  // Cleanup on unmount (e.g. navigation mid-drag)
+  useEffect(() => () => { if (autoScrollFrameRef.current) cancelAnimationFrame(autoScrollFrameRef.current); }, []);
+
   if (loading) return <div className="crm-page"><div className="crm-loading">Loading…</div></div>;
 
   return (
@@ -146,16 +272,18 @@ export default function CrmLeads() {
           <button className="crm-btn crm-btn-primary" onClick={() => setShowNew(true)}>+ New lead</button>
         </div>
       ) : (
-        <div className="crm-board">
+        <div className="crm-board" ref={boardRef}>
           {sortedStages.map(stage => {
             const stageLeads = grouped[stage.id] || [];
             const isDragTarget = dragOverStage === stage.id && dragLead && (stagePositions[dragLead.id]?.stage_id ?? sortedStages[0]?.id) !== stage.id;
+            const isTouchDragTarget = touchOverStage === stage.id && touchDragLead && (stagePositions[touchDragLead.id]?.stage_id ?? sortedStages[0]?.id) !== stage.id;
             const stageValue = stageLeads.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
 
             return (
               <div
                 key={stage.id}
-                className={`crm-board-column${isDragTarget ? ' drag-over' : ''}`}
+                data-stage-id={stage.id}
+                className={`crm-board-column${(isDragTarget || isTouchDragTarget) ? ' drag-over' : ''}`}
                 onDragOver={e => handleDragOver(e, stage.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={e => handleDrop(e, stage.id)}
@@ -170,11 +298,18 @@ export default function CrmLeads() {
                   {stageLeads.map(lead => (
                     <div
                       key={lead.id}
-                      className={`crm-board-card${dragLead?.id === lead.id ? ' dragging' : ''}`}
+                      className={`crm-board-card${(dragLead?.id === lead.id || touchDragLead?.id === lead.id) ? ' dragging' : ''}`}
                       draggable={!isTouchDevice()}
                       onDragStart={e => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => setSelectedLead(lead)}
+                      onPointerDown={isTouchDevice() ? (e => handleCardPointerDown(e, lead)) : undefined}
+                      onPointerMove={isTouchDevice() ? handleCardPointerMove : undefined}
+                      onPointerUp={isTouchDevice() ? handleCardPointerUp : undefined}
+                      onPointerCancel={isTouchDevice() ? handleCardPointerCancel : undefined}
+                      onClick={() => {
+                        if (touchDragPerformedRef.current) { touchDragPerformedRef.current = false; return; }
+                        setSelectedLead(lead);
+                      }}
                     >
                       <div className="crm-board-card-title">{leadLabel(lead)}</div>
                       <div className="crm-board-card-meta">
@@ -184,12 +319,18 @@ export default function CrmLeads() {
                       {lead.value != null && <div className="crm-board-card-value">{formatMoney(lead.value)}</div>}
                     </div>
                   ))}
-                  {stageLeads.length === 0 && !dragLead && <div className="crm-board-empty">No leads</div>}
-                  {dragLead && isDragTarget && stageLeads.length === 0 && <div className="crm-board-drop-hint">Drop here</div>}
+                  {stageLeads.length === 0 && !dragLead && !touchDragLead && <div className="crm-board-empty">No leads</div>}
+                  {((dragLead && isDragTarget) || (touchDragLead && isTouchDragTarget)) && stageLeads.length === 0 && <div className="crm-board-drop-hint">Drop here</div>}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {touchDragLead && (
+        <div ref={ghostElRef} className="crm-board-ghost" aria-hidden="true">
+          {leadLabel(touchDragLead)}
         </div>
       )}
 
