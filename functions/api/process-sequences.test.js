@@ -31,9 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   WORKER_NAME,
-  REPLY_EVENT_TYPES,
   CONVERSION_EVENT_TYPES,
-  classifyEvent,
   computeNextRunAt,
   firstRunAt,
   evaluateExit,
@@ -99,20 +97,7 @@ describe('advanceEnrollment', () => {
   });
 });
 
-// ─── classifyEvent / evaluateExit — the reply & conversion exit rules ─────────
-describe('classifyEvent', () => {
-  it('maps a contact reply to "reply"', () => {
-    for (const t of REPLY_EVENT_TYPES) expect(classifyEvent(t)).toBe('reply');
-  });
-  it('maps a conversion signal to "conversion"', () => {
-    for (const t of CONVERSION_EVENT_TYPES) expect(classifyEvent(t)).toBe('conversion');
-  });
-  it('ignores unrelated events', () => {
-    expect(classifyEvent('crm_lead_details_updated')).toBe(null);
-    expect(classifyEvent(null)).toBe(null);
-  });
-});
-
+// ─── evaluateExit — the reply & conversion exit rules ────────────────────────
 describe('evaluateExit', () => {
   const seq = { exit_on_reply: true, exit_on_conversion: true };
   it('exits on reply when the sequence opts in', () => {
@@ -175,8 +160,7 @@ describe('worker contracts', () => {
   it('names itself for the worker_runs audit row', () => {
     expect(WORKER_NAME).toBe('process-sequences');
   });
-  it('treats an inbound sms as the reply signal and a promoted lead as conversion', () => {
-    expect(REPLY_EVENT_TYPES).toContain('contact_replied');
+  it('treats a promoted lead as the conversion signal', () => {
     expect(CONVERSION_EVENT_TYPES).toContain('crm_lead_promoted');
   });
 });

@@ -49,15 +49,19 @@
  *     DST change — so date-mt.js (a day-boundary/MT-calendar helper) does NOT
  *     apply here, same reasoning run-automations.js documents for its windows.
  *   - Exit signals: a reply is an inbound SMS in `messages` since enrollment; a
- *     conversion is a crm_lead_promoted system_event for the contact since
- *     enrollment. Each is honored only when the sequence opts in (exit_on_reply /
- *     exit_on_conversion, both default true).
+ *     conversion is one of CONVERSION_EVENT_TYPES in `system_events` for the
+ *     contact since enrollment. Each is honored only when the sequence opts in
+ *     (exit_on_reply / exit_on_conversion, both default true).
+ *   - Personalization: {{name}} in a step body/subject is rendered by the frozen
+ *     gate's renderTemplate() from the `variables` we pass — the worker threads
+ *     the contact's name (embedded on the due-enrollment read) through so a
+ *     "Hi {{name}}" step isn't blank.
  * ════════════════════════════════════════════════
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { sendAutomatedMessage } from '../lib/automated-send.js';
+import { sendAutomatedMessage, renderTemplate } from '../lib/automated-send.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 
 export const WORKER_NAME = 'process-sequences';
@@ -66,10 +70,10 @@ export const WORKER_NAME = 'process-sequences';
 // hot-loop every cron tick while still resending promptly once the switch flips.
 export const HOLD_RETRY_HOURS = 6;
 
-// The system_events / synthesized event types that mean "the human engaged".
-// A reply is synthesized by the worker from an inbound `messages` row; a
-// conversion is a real crm_lead_promoted system_event carrying the contact_id.
-export const REPLY_EVENT_TYPES = ['contact_replied'];
+// The system_events types that mean "the human converted" (checked against the
+// contact_id in the event payload). A reply, by contrast, is read straight from
+// the `messages` table (an inbound SMS) — it has no system_events row — so there
+// is no reply-event constant to mirror this one.
 export const CONVERSION_EVENT_TYPES = ['crm_lead_promoted'];
 
 const CANDIDATE_LIMIT = 500;
@@ -108,12 +112,6 @@ export function advanceEnrollment(enrollment, steps, now) {
     next_run_at: computeNextRunAt(now, ordered[nextIndex].delay_hours),
     completed_at: null,
   };
-}
-
-export function classifyEvent(eventType) {
-  if (REPLY_EVENT_TYPES.includes(eventType)) return 'reply';
-  if (CONVERSION_EVENT_TYPES.includes(eventType)) return 'conversion';
-  return null;
 }
 
 // Which exit (if any) fires, honoring the sequence's opt-in toggles. Reply is
@@ -246,11 +244,15 @@ export async function processEnrollment(ctx, enrollment) {
   }
 
   // 3. Send through the one consent-gated door. SMS is held by the gate while the
-  //    kill-switch is OFF; email is live.
+  //    kill-switch is OFF; email is live. {{name}} tokens render from `variables`.
+  const name = enrollment.contacts?.name || '';
+  const variables = { name, first_name: name.split(' ')[0] || '' };
+  // The gate renders the body from `variables`; the subject it does not, so we
+  // pre-render it here for token parity.
   const extra = step.channel === 'sms'
     ? { orgId: seq.org_id, body: step.body || '' }
-    : { subject: step.subject || '', html: step.body || '' };
-  const result = await send(step.channel, enrollment.contact_id, null, {}, extra);
+    : { subject: renderTemplate(step.subject || '', variables), html: step.body || '' };
+  const result = await send(step.channel, enrollment.contact_id, null, variables, extra);
 
   // 4. Apply the outcome plan.
   const plan = planStepOutcome(enrollment, ordered, result, now, { holdRetryHours: HOLD_RETRY_HOURS });
@@ -298,7 +300,7 @@ export async function processSequences(db, env, now = new Date()) {
     const due = await db.select(
       'crm_sequence_enrollments',
       `status=eq.active&sequence_id=in.(${seqIds.join(',')})&next_run_at=lte.${startedAt}` +
-      `&select=*&order=next_run_at.asc&limit=${CANDIDATE_LIMIT}`
+      `&select=*,contacts(name)&order=next_run_at.asc&limit=${CANDIDATE_LIMIT}`
     );
 
     const ctx = { db, env, now, send, sequences, steps };
