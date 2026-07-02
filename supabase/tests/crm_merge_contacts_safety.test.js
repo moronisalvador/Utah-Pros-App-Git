@@ -118,4 +118,26 @@ describe.skipIf(!hasCreds)('CRM — merge_contacts preserves CRM history (integr
     const [lead] = await db.select('inbound_leads', `callrail_id=eq.${encodeURIComponent(callrailId)}&select=contact_id`);
     expect(lead.contact_id).toBe(keepId);
   });
+
+  it('reconciles consent flags to the more-restrictive record (a lost opt-out cannot resurrect contactability)', async () => {
+    // Keeper is opted-in and contactable; the loser explicitly opted out.
+    const kPhone = `+1522${String(runId).slice(-7)}`;
+    const lPhone = `+1511${String(runId).slice(-7)}`;
+    const [keep] = await db.insert('contacts', { phone: kPhone, name: 'FlagKeep', dnd: false, opt_in_status: true });
+    const [lose] = await db.insert('contacts', {
+      phone: lPhone, name: 'FlagLose', dnd: true, opt_in_status: false, opt_out_reason: 'texted STOP',
+    });
+
+    try {
+      const result = await db.rpc('merge_contacts', { p_keep_id: keep.id, p_merge_id: lose.id });
+      expect(result.ok).toBe(true);
+
+      const [survivor] = await db.select('contacts', `id=eq.${keep.id}&select=dnd,opt_in_status,opt_out_reason`);
+      expect(survivor.dnd).toBe(true);              // DND OR'd — loser's DND wins
+      expect(survivor.opt_in_status).toBe(false);   // explicit opt-out wins over the keeper's opt-in
+      expect(survivor.opt_out_reason).toBe('texted STOP');
+    } finally {
+      await db.delete('contacts', `id=eq.${keep.id}`); // loser is deleted by the merge
+    }
+  });
 });

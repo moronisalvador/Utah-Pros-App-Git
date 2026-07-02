@@ -15,6 +15,12 @@
 -- a delete-conflicts-then-update, matching the pattern the original already
 -- used for contact_tags / conversation_participants.
 --
+-- Also reconciles the CONSENT flags (dnd / opt_in_status / opt-out audit) to
+-- the MORE-RESTRICTIVE of the two records, so a merge can never silently
+-- resurrect contactability the loser had revoked — a lost opt-out/DND would
+-- otherwise let a later automated send reach someone who opted out (TCPA). The
+-- pre-fix body copied only the keeper's flags and dropped the loser's opt-out.
+--
 -- Signature unchanged: merge_contacts(uuid, uuid) RETURNS jsonb. This is a
 -- backward-compatible CREATE OR REPLACE — every existing caller (MergeModal.jsx
 -- ×5, DevTools) keeps working. Proof: supabase/tests/crm_merge_contacts_safety.test.js
@@ -74,6 +80,20 @@ BEGIN
       WHEN v_merge.relationship_notes IS NOT NULL THEN relationship_notes || E'\n---\n' || v_merge.relationship_notes
       ELSE relationship_notes
     END,
+    -- Consent flags reconcile to the MORE-RESTRICTIVE of the two records so a
+    -- merge can never silently resurrect contactability the loser had revoked
+    -- (TCPA: a lost opt-out/DND would let a later automated send reach someone
+    -- who opted out). DND is OR'd; opt_in_status stays false if EITHER record
+    -- explicitly opted out (an explicit false wins), but a NULL never downgrades
+    -- a real opt-in. The opt-out/DND audit timestamps are carried forward too.
+    dnd = COALESCE(dnd, false) OR COALESCE(v_merge.dnd, false),
+    dnd_at = COALESCE(dnd_at, v_merge.dnd_at),
+    opt_in_status = CASE
+      WHEN opt_in_status = false OR v_merge.opt_in_status = false THEN false
+      ELSE COALESCE(opt_in_status, v_merge.opt_in_status)
+    END,
+    opt_out_at = COALESCE(opt_out_at, v_merge.opt_out_at),
+    opt_out_reason = COALESCE(opt_out_reason, v_merge.opt_out_reason),
     updated_at = now()
   WHERE id = p_keep_id;
 

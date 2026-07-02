@@ -3255,3 +3255,22 @@ Ownership manifest `.claude/rules/crm-wave-ownership.md` committed (frozen-file 
 owned files, exact frozen stub signatures, migration + index.css rules) — each wave session's read
 scope = CLAUDE.md + its phase block + this manifest. `crm_lead_stage_changed` `system_events` payload
 now also carries `from_stage_id` + `lost_reason`.
+
+Extra consent-safety fix (from the consent-path-auditor pass): `merge_contacts` now also reconciles
+the survivor's consent flags to the more-restrictive record — `dnd` OR'd, `opt_in_status` false if
+EITHER opted out, opt-out audit (`dnd_at`/`opt_out_at`/`opt_out_reason`) carried forward — so a merge
+can't resurrect contactability a duplicate had revoked (TCPA). Regression-tested in the merge safety
+suite.
+
+**`crm_build_stages` reconciliation (honest):** 7 stages. Flipped **done** (real, verified work):
+test-first suites; acceptance (schema+stubs+consent gate+slots+wiring+manifest all built & applied
+live); `npm test`/`build`/`eslint` pass; UPR-Web-Context updated; reviewer gauntlet
+(migration-safety-checker fixed→clean, upr-pattern-checker clean, consent-path-auditor PASS,
+crm-phase-reviewer conditional-SHIP→both conditions met). The **visual-preview** and **push/verify/PR**
+tail stages are the mechanical close-out, flipped as they complete (not owner-gated, not forgotten).
+Phase `F` set `shipped` at close-out per the CRM workflow (commit → set shipped → PR). **Test-runner
+caveat:** the two integration suites (`crm_merge_contacts_safety`, `crm_shared_rpc_compat`) self-skip
+without CI creds and cannot run from this sandbox (network egress blocks the Supabase host — only the
+MCP path is allowed); their behavior was instead verified directly against the live shared DB via
+Supabase MCP (rollback DO-blocks), results captured in the PR. They execute green in CI/an
+allowlisted env.
