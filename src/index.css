@@ -6125,7 +6125,7 @@ tr:hover td { background: var(--bg-secondary); }
   padding: 2px 6px; border-radius: 9999px; background: var(--crm-bg-content); color: var(--crm-text-secondary);
 }
 .crm-timeline-badge[data-type="lead"] { background: #eef2ff; color: var(--crm-accent); }
-.crm-timeline-badge[data-type="sms"] { background: #ecfdf5; color: var(--crm-success); }
+.crm-timeline-badge[data-type="sms"] { background: var(--crm-success-bg); color: var(--crm-success); }
 .crm-timeline-badge[data-type="note"] { background: #fffbeb; color: #b45309; }
 .crm-timeline-badge[data-type="estimate"] { background: #f5f3ff; color: #7c3aed; }
 .crm-timeline-body { flex: 1; min-width: 0; }
@@ -6155,7 +6155,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-tracking-count { font-size: 12px; color: var(--crm-text-tertiary); flex-shrink: 0; }
 .crm-tracking-title-input { flex: 1 1 200px; min-width: 150px; }
 .crm-stage-checkbox { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--crm-text-secondary); flex-shrink: 0; }
-.crm-badge-won { background: #ecfdf5; color: var(--crm-success); }
+.crm-badge-won { background: var(--crm-success-bg); color: var(--crm-success); }
 .crm-badge-lost { background: var(--crm-danger-bg); color: var(--crm-danger-text); }
 
 @media (min-width: 1024px) {
