@@ -27,7 +27,16 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { sortStages, groupLeadsByStage, stageWeight, weightedPipelineValue } from './crmPipeline.js';
+import {
+  sortStages,
+  groupLeadsByStage,
+  stageWeight,
+  weightedPipelineValue,
+  classifyLeadChannel,
+  scoreLead,
+  scoreLeadFactors,
+  LEAD_SCORE_MAX,
+} from './crmPipeline.js';
 
 const STAGES_OUT_OF_ORDER = [
   { id: 'won', name: 'Won', sort_order: 4, is_won: true, is_lost: false },
@@ -126,5 +135,136 @@ describe('weightedPipelineValue', () => {
     const leads = [{ id: 'l1', value: null }];
     const { total } = weightedPipelineValue(leads, stages, {});
     expect(total).toBe(0);
+  });
+});
+
+// ─── Phase 9: stageWeight prefers pipeline_stages.win_probability ─────────────
+describe('stageWeight — win_probability preference (Phase 9)', () => {
+  const sorted = sortStages(STAGES_OUT_OF_ORDER);
+  const withProb = (id, p) => ({ ...sorted.find(s => s.id === id), win_probability: p });
+
+  it('uses an admin-set win_probability for an open stage instead of the positional ramp', () => {
+    // Positional weight for "qualified" (3rd of 4 open) is 3/5 = 0.6; the
+    // explicit 0.42 must win.
+    expect(stageWeight(withProb('qualified', 0.42), sorted)).toBe(0.42);
+  });
+
+  it('accepts the boundary probabilities 0 and 1 on an open stage', () => {
+    expect(stageWeight(withProb('new', 0), sorted)).toBe(0);
+    expect(stageWeight(withProb('estimate', 1), sorted)).toBe(1);
+  });
+
+  it('falls back to the positional ramp when win_probability is null/undefined', () => {
+    // Unchanged legacy behavior: contacted is 2nd of 4 open → 2/5 = 0.4.
+    expect(stageWeight(sorted.find(s => s.id === 'contacted'), sorted)).toBeCloseTo(0.4, 10);
+    expect(stageWeight(withProb('contacted', null), sorted)).toBeCloseTo(0.4, 10);
+  });
+
+  it('ignores an out-of-range win_probability and uses the positional fallback', () => {
+    expect(stageWeight(withProb('contacted', 1.5), sorted)).toBeCloseTo(0.4, 10);
+    expect(stageWeight(withProb('contacted', -0.2), sorted)).toBeCloseTo(0.4, 10);
+    expect(stageWeight(withProb('contacted', 'oops'), sorted)).toBeCloseTo(0.4, 10);
+  });
+
+  it('keeps won=1 / lost=0 terminal, even if a stray win_probability is set', () => {
+    expect(stageWeight(withProb('won', 0.5), sorted)).toBe(1);
+    expect(stageWeight(withProb('lost', 0.5), sorted)).toBe(0);
+  });
+});
+
+describe('weightedPipelineValue — honors win_probability when present', () => {
+  it('matches a hand calculation using explicit stage probabilities', () => {
+    const stages = [
+      { id: 'new', sort_order: 0, is_won: false, is_lost: false, win_probability: 0.1 },
+      { id: 'qualified', sort_order: 1, is_won: false, is_lost: false, win_probability: 0.5 },
+      { id: 'won', sort_order: 2, is_won: true, is_lost: false, win_probability: null },
+    ];
+    const leads = [
+      { id: 'l1', value: 1000 },                        // new: 1000 * 0.1 = 100
+      { id: 'l2', value: 2000, contact_id: 'c2' },      // qualified: 2000 * 0.5 = 1000
+      { id: 'l3', value: 5000, contact_id: 'c3' },      // won: 5000 * 1 = 5000
+    ];
+    const positions = { l2: { stage_id: 'qualified' }, l3: { stage_id: 'won' } };
+    const { total, byStage } = weightedPipelineValue(leads, stages, positions);
+    expect(byStage.new).toBeCloseTo(100, 5);
+    expect(byStage.qualified).toBeCloseTo(1000, 5);
+    expect(byStage.won).toBeCloseTo(5000, 5);
+    expect(total).toBeCloseTo(6100, 5);
+  });
+});
+
+// ─── Phase 9: rule-based lead scoring (deterministic, no ML) ──────────────────
+describe('classifyLeadChannel — mirrors crm_channel_for_source buckets', () => {
+  it('maps paid, organic, insurance and referral sources', () => {
+    expect(classifyLeadChannel('Google Ads')).toBe('google_ads');
+    expect(classifyLeadChannel('Facebook')).toBe('meta_ads');
+    expect(classifyLeadChannel('Google My Business')).toBe('organic'); // organic beats the google catch
+    expect(classifyLeadChannel('Insurance adjuster')).toBe('insurance');
+    expect(classifyLeadChannel('Referral - neighbor')).toBe('referral');
+  });
+  it('falls back to other for empty/unknown sources', () => {
+    expect(classifyLeadChannel('')).toBe('other');
+    expect(classifyLeadChannel(null)).toBe('other');
+    expect(classifyLeadChannel('billboard on I-15')).toBe('other');
+  });
+});
+
+describe('scoreLead — rule math on deterministic fixtures', () => {
+  it('scores a hot lead: answered Google-Ads call, instant touch, positive + urgent transcript', () => {
+    const lead = {
+      source: 'Google Ads', source_type: 'call', duration_sec: 150,
+      first_touch_minutes: 0,
+      transcript_analysis: { sentiment: { label: 'positive' }, topics: ['Water damage', 'Emergency'] },
+    };
+    // 15 (google) + 20 (call>=120s) + 15 (<=5min) + 15 (positive) + 15 (urgent topic) = 80
+    expect(scoreLead(lead)).toBe(80);
+  });
+
+  it('scores a lukewarm web form: organic source, 45-min touch, neutral non-urgent transcript', () => {
+    const lead = {
+      source: 'Nextdoor', source_type: 'form', first_touch_minutes: 45,
+      transcript_analysis: { sentiment: { label: 'neutral' }, topics: ['General inquiry'] },
+    };
+    // 10 (organic) + 10 (form) + 5 (<=120min) + 5 (neutral) + 0 (no urgent topic) = 30
+    expect(scoreLead(lead)).toBe(30);
+  });
+
+  it('scores a missed referral call with no follow-up yet', () => {
+    const lead = { source: 'Referral', source_type: 'call', duration_sec: 0, first_touch_minutes: null };
+    // 20 (referral) + 0 (missed call) + 0 (no touch) + 0 (no transcript) + 0 = 20
+    expect(scoreLead(lead)).toBe(20);
+  });
+
+  it('hard-zeros a spam lead regardless of other signals', () => {
+    const lead = {
+      spam_flag: true, source: 'Referral', source_type: 'call', duration_sec: 300,
+      first_touch_minutes: 1, transcript_analysis: { sentiment: { label: 'positive' }, topics: ['Fire damage'] },
+    };
+    expect(scoreLead(lead)).toBe(0);
+    expect(scoreLeadFactors(lead)).toEqual([{ factor: 'spam', points: 0, detail: { spam: true } }]);
+  });
+
+  it('treats a negative response time as no credit, never a bonus', () => {
+    const base = { source: 'Google Ads', source_type: 'form' };
+    expect(scoreLead({ ...base, first_touch_minutes: -30 }))
+      .toBe(scoreLead({ ...base, first_touch_minutes: null }));
+  });
+
+  it('never exceeds LEAD_SCORE_MAX or drops below 0', () => {
+    const maxed = {
+      source: 'Referral', source_type: 'call', duration_sec: 999, first_touch_minutes: 0,
+      transcript_analysis: { sentiment: { label: 'positive' }, topics: ['Sewage backup'] },
+    };
+    const s = scoreLead(maxed);
+    expect(s).toBeGreaterThanOrEqual(0);
+    expect(s).toBeLessThanOrEqual(LEAD_SCORE_MAX);
+  });
+
+  it('returns a labeled factor breakdown that sums to the score', () => {
+    const lead = { source: 'Google Ads', source_type: 'form', first_touch_minutes: 3, transcript_analysis: null };
+    const factors = scoreLeadFactors(lead);
+    expect(factors.map(f => f.factor)).toEqual(['source', 'engagement', 'speed_to_first_touch', 'sentiment', 'topics']);
+    const sum = factors.reduce((s, f) => s + f.points, 0);
+    expect(sum).toBe(scoreLead(lead));
   });
 });
