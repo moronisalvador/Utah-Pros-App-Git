@@ -6362,9 +6362,12 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── CRM WAVE RESERVED — Phase 6a (contacts read & segments · Session C) ───
    Owner: Phase 6a. */
-.crm-btn-xs { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+.crm-btn-xs { padding: 4px 10px; font-size: 12px; border-radius: var(--radius-lg); }
 
 /* Directory */
+/* --crm-accent-bg: the accent tint. Foundation's token block is frozen for the
+   wave, so this local scope holds the one literal instead of repeating it. */
+.crm-dir, .crm-detail { --crm-accent-bg: #eef2ff; }
 .crm-dir { display: flex; flex-direction: column; gap: var(--space-3); }
 .crm-dir-search { width: 100%; }
 .crm-dir-status { padding: var(--space-4) 0; text-align: center; }
@@ -6375,13 +6378,13 @@ tr:hover td { background: var(--bg-secondary); }
   background: transparent; cursor: pointer; transition: background var(--transition-fast, 0.12s);
 }
 .crm-dir-row:hover { background: var(--crm-bg-content); }
-.crm-dir-row.active { background: #eef2ff; border-color: var(--crm-accent); }
+.crm-dir-row.active { background: var(--crm-accent-bg); border-color: var(--crm-accent); }
 .crm-dir-row-main { display: flex; align-items: center; gap: var(--space-2); }
 .crm-dir-row-name { font-size: 14px; font-weight: 600; color: var(--crm-text-primary); }
 .crm-dir-row-lifecycle {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--crm-text-secondary); background: var(--crm-bg-content);
-  border: 1px solid var(--crm-border); border-radius: 9999px; padding: 1px 8px;
+  border: 1px solid var(--crm-border); border-radius: var(--radius-full); padding: 1px 8px;
 }
 .crm-dir-row-sub { font-size: 12px; color: var(--crm-text-tertiary); }
 .crm-dir-pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding-top: var(--space-2); }
@@ -6402,7 +6405,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-dir-seg-desc { font-size: 11px; color: var(--crm-text-tertiary); }
 .crm-dir-seg-count {
   flex-shrink: 0; min-width: 34px; text-align: center; font-size: 12px; font-weight: 700; color: var(--crm-accent);
-  background: #eef2ff; border-radius: 9999px; padding: 2px 8px;
+  background: var(--crm-accent-bg); border-radius: var(--radius-full); padding: 2px 8px;
 }
 .crm-dir-seg-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .crm-dir-seg-del { background: var(--crm-bg-content); border: 1px solid var(--crm-border); color: var(--crm-text-secondary); }
@@ -6417,10 +6420,10 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-5); }
 .crm-dnc-badge {
   flex-shrink: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-  border-radius: 9999px; padding: 3px 10px;
+  border-radius: var(--radius-full); padding: 3px 10px;
 }
 .crm-dnc-badge.is-dnc { background: var(--crm-danger-bg); color: var(--crm-danger-text); border: 1px solid var(--crm-danger-border); }
-.crm-dnc-badge.is-ok { background: var(--crm-success-bg, #ecfdf5); color: var(--crm-success); border: 1px solid #a7f3d0; }
+.crm-dnc-badge.is-ok { background: var(--crm-success-bg); color: var(--crm-success); border: 1px solid var(--status-working-border); }
 .crm-dnc-reasons {
   margin: 0 var(--space-5) var(--space-3); padding: var(--space-2) var(--space-3);
   background: var(--crm-danger-bg); color: var(--crm-danger-text); border-radius: 8px; font-size: 12px;
@@ -6428,7 +6431,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-detail-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .crm-detail-tag {
   font-size: 12px; color: var(--crm-text-secondary); background: var(--crm-bg-content);
-  border: 1px solid var(--crm-border); border-radius: 9999px; padding: 2px 10px;
+  border: 1px solid var(--crm-border); border-radius: var(--radius-full); padding: 2px 10px;
 }
 
 @media (max-width: 768px) {

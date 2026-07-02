@@ -3350,3 +3350,58 @@ without CI creds and cannot run from this sandbox (network egress blocks the Sup
 MCP path is allowed); their behavior was instead verified directly against the live shared DB via
 Supabase MCP (rollback DO-blocks), results captured in the PR. They execute green in CI/an
 allowlisted env.
+
+## CRM Phase 6a — Contacts read & segments (Jul 2 2026 — shipped)
+
+Wave-1 phase (ran beside 6b). **Zero schema migrations** — one function-body-only migration
+`20260702_crm_phase6a_contacts_segments.sql` fills five frozen 6a stubs + backward-compat-replaces
+one live RPC. Edits confined to the two owned slot files + the Phase 6a `index.css` reserved section
+(all per `.claude/rules/crm-wave-ownership.md`).
+
+**RPCs (bodies filled; signatures unchanged from Phase F stubs):**
+- `get_crm_contacts(p_search, p_limit, p_offset, p_org_id) → SETOF json` — searchable, paged
+  directory. Matches name/email/company (ILIKE) + phone (digits-only LIKE). Each row carries
+  `total_count` (`count(*) OVER ()` over the full pre-pagination match set) so the UI pages without a
+  second count query. `contacts` has no `org_id` (one global book) so `p_org_id` is accepted but does
+  not scope rows.
+- `get_contact_consent(p_contact_id) → json` — **unified do-not-contact read.** `do_not_contact` =
+  `dnd` OR `opt_out_at IS NOT NULL` OR email in `email_suppressions` (case/space-insensitive
+  `lower(btrim(...))` match). Returns `{ contact_id, do_not_contact, sms:{dnd,opted_out,opt_out_at,
+  opt_out_reason}, email:{address,suppressed,reason,suppressed_at} }`. **`opt_in_status` is
+  deliberately NOT used** — it defaults `false` for all 117 contacts (an un-opted-in state, not an
+  opt-out), so keying DNC off it would flag the whole book. This RPC is the single source of truth for
+  the badge — never re-derive from raw columns.
+- `upsert_segment(p_id, p_name, p_description, p_filter, p_org_id, p_created_by) → crm_segments`,
+  `get_segments(p_org_id) → SETOF crm_segments`, `delete_segment(p_segment_id) → void` — segments CRUD.
+  A segment's `filter` jsonb uses the **exact shape `preview_email_audience` consumes**
+  (`{ referral_source, role, tag, city, company, search }`), so a saved segment is a drop-in campaign
+  audience. Org defaults to the first non-test `crm_orgs` row (same pattern as `create_manual_lead`).
+- `get_duplicate_contacts()` — **backward-compatible body-replace** (same
+  `RETURNS TABLE(phone_normalized text, contact_ids uuid[], names text[], count bigint)`). Now
+  UNION-es email-normalized groups (`lower(btrim(email))`) onto the existing phone groups; for an email
+  group the `phone_normalized` column carries the normalized email (it's the group's match key, not
+  necessarily a phone). The one shipped caller (`DevTools.jsx` "Scan for Duplicates") reads the same
+  columns and keeps working. **Follow-up for 6b (owns `DevTools.jsx`):** that view's `formatPhone()`
+  will garble email match-keys on display (cosmetic; no error) — branch on group type there.
+
+**Components (owned slot files rendered by the frozen `CrmContacts.jsx` skeleton):**
+- `src/components/crm/ContactsDirectory.jsx` — debounced search + pagination (25/page) over
+  `get_crm_contacts`; collapsible Segments panel with CRUD, inline two-click delete, and a live preview
+  count per segment via `preview_email_audience(filter)`.
+- `src/components/crm/ContactDetail.jsx` — read-only: contact info + tags, the unified DNC badge (red
+  "Do not contact" + reason line, or green "Contactable") from `get_contact_consent`, and the shared
+  `ActivityTimeline`. Owner/lifecycle setters land in 6b.
+
+**Tests:** `supabase/tests/crm_phase6a_contacts_segments.test.js` (test-first, committed failing before
+the bodies existed): consent unified-DNC read across all three sources; segment filter round-trip (saved
+filter → `preview_email_audience` count matches a direct query); email-normalized dup detection.
+Integration suite (self-skips without CI creds, same as sibling CRM suites) — behavior verified live via
+Supabase MCP: dnd/opt-out/suppressed each read `do_not_contact=true`, clean reads `false`; directory
+`total_count` correct; a saved segment matched 2 contactable of 3 tagged (the dnd one excluded); email
+dup group detected. `npm test` 193 passed / 25 skipped, `npm run build` green, eslint clean on changed
+files. Foundation's `merge_contacts` safety fix confirmed present + its `crm_shared_rpc_compat` /
+`crm_merge_contacts_safety` suites green.
+
+Reviewer gauntlet: migration-safety-checker **clean** (signatures frozen, zero DDL, grants present);
+upr-pattern-checker **clean** (CSS token fixes applied). Isolation stays the `page:crm` flag —
+`/crm/contacts` invisible to staff until 6b opens it.
