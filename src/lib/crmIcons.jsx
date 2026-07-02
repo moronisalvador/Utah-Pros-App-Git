@@ -6,7 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   A small set of icons just for the CRM section's own left sidebar
  *   (Overview, Leads, Contacts, Conversations, Call Log, Tasks, Sequences,
- *   Forms, Attribution, Reports, Campaigns, Integrations, Settings). Kept in
+ *   Automations, Forms, Attribution, Reports, Campaigns, Integrations,
+ *   Settings). Kept in
  *   their own file, separate from the app-wide icon set
  *   in src/lib/navItems.jsx, because a couple of names (Leads, Settings)
  *   would otherwise collide with icons that already exist there for
@@ -160,6 +161,19 @@ export function IconForms(p) {
       <path d="M8 8h8" />
       <path d="M8 12h8" />
       <path d="M8 16h4" />
+    </svg>
+  );
+}
+
+export function IconAutomations(p) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M4 6h9" />
+      <circle cx="17" cy="6" r="2.5" />
+      <path d="M20 12H9" />
+      <circle cx="6" cy="12" r="2.5" />
+      <path d="M4 18h9" />
+      <circle cx="17" cy="18" r="2.5" />
     </svg>
   );
 }

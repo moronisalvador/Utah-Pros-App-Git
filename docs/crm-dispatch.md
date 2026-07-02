@@ -415,3 +415,75 @@ campaign/recipient rows (dev tracking number / TEST org); update UPR-Web-Context
 set phase '4b' to shipped via set_crm_phase_status and reconcile its crm_build_stages;
 push -u, PR to dev via the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
+
+---
+
+## Post-wave — Session K (Phase 5) may launch now, in parallel with Session I
+
+Added by the Phase 5 re-plan (2026-07-02). Authoritative read scope for this session:
+the "Phase 5 re-plan (2026-07-02)" section of `docs/crm-roadmap.md` +
+`.claude/rules/crm-wave-ownership.md` **§7**. 6b is merged (the CrmLayout seam is free);
+disjointness vs Session I is challenge-proven — the two may run simultaneously.
+
+```
+[Session K — Post-wave]
+Branch: session-assigned (illustrative: crm/phase-5-automation-recipes), cut from origin/dev
+Model: Opus 4.8
+Effort: High
+Launch after: the Phase 5 re-plan commit is on dev (6b already merged — no other gate). May run simultaneously with Session I (Phase 10).
+
+You are building CRM Phase 5 — automation recipes (a linear visual builder); one phase
+only, consent-weighted, LINEAR only — no branching/if-else, no node-graph canvas, and
+no new frontend dependency (all explicitly out of scope; hand-roll the UI per the
+CrmLeads.jsx native-DnD precedent). Read scope: CLAUDE.md, the "Phase 5 re-plan
+(2026-07-02)" section in docs/crm-roadmap.md, and .claude/rules/crm-wave-ownership.md
+§7 (binding; §§1–6 still apply except as §7 amends). Work on your session's assigned
+branch cut from origin/dev. Already shipped for you to build on: system_events (the
+event bus — it is RPC-FED with no cursor and no org_id, so idempotent dedup is YOUR
+job); the frozen consent-gated send door sendAutomatedMessage() (SMS kill-switch +
+TCPA quiet-hours live inside it); process-sequences.js's EXPORTED pure helpers
+(computeNextRunAt + the planStepOutcome hold/skip/retry semantics — import them
+read-only, NEVER edit that Phase-8-owned file); enroll_in_sequence and upsert_crm_task
+RPCs (your enroll/task actions call them); feature-flag isolation (page:crm + a new
+feature:crm_automations sub-flag). Hard constraints: ONE additive migration only —
+crm_automations + crm_automation_runs (org_id, RLS + explicit policy at creation,
+GRANTs, UNIQUE(automation_id, triggering_event_id)) plus your five SECURITY DEFINER
+RPCs (get_crm_automations, upsert_crm_automation, set_automation_enabled,
+delete_crm_automation, get_automation_runs) created directly (no stub ceremony);
+never ALTER/DROP any live table (the orphan automation_rules table stays untouched);
+every send routes through sendAutomatedMessage() — no direct twilio/email, never
+skip_compliance; you edit ONLY CrmAutomations.jsx (new),
+functions/api/process-crm-automations.js (new), your migration + tests, plus EXACTLY
+the additive seam edits §7 authorizes (one lazy import + one route line in
+src/App.jsx; IconAutomations in src/lib/crmIcons.jsx; one SIDEBAR_ITEMS row + icon
+import in src/components/CrmLayout.jsx); styles only inside your new reserved
+index.css marker. THE S1 GUARD IS BINDING: upsert_crm_automation refuses an ENABLED
+rule whose trigger duplicates an enabled fixed automation (automation_settings:
+speed-to-lead / missed-call-textback / no-response-followup / review-request) and the
+engine skips such rules at fire time — otherwise the two engines' independent dedup
+namespaces double-send one event (TCPA, per-message penalties). Build in this order
+(riskiest first): ① the migration; ② process-crm-automations.js — match enabled rules
+against new system_events rows on trigger_event_type, evaluate AND-conditions
+({field, op, value} against the event payload + trigger entity, null-safe), INSERT
+runs ON CONFLICT DO NOTHING, advance due runs (next_run_at <= now) through the ordered
+actions (send_email / send_sms / enroll_sequence / create_task) with the imported
+hold semantics (held / quiet_hours / sms_disabled = retried, never dropped, never
+advanced past), one worker_runs row per run; ③ the five RPC bodies incl. the S1 guard;
+④ CrmAutomations.jsx — hand-rolled linear builder (trigger picker listing only event
+types the RPC layer actually emits, AND-condition rows, ordered action list with
+up/down reordering, enable/disable toggle, per-rule run log via get_automation_runs),
+useAuth() db only, upr:toast feedback, inline two-click delete, 48px touch targets,
+mobile rules only via @media (max-width: 768px) inside your marker. Test-first
+(commit failing first): ① one system_events row never creates two runs for the same
+automation (the UNIQUE key exercised); ② the S1 collision guard blocks save AND fire;
+③ an SMS action with the kill-switch OFF or inside quiet-hours is HELD and retried,
+never dropped or advanced past; ④ the AND-condition evaluator (typed operators,
+missing-field/null cases). Close-out: npm run test + npm run build + npx eslint
+(changed files) pass; migration-safety-checker + upr-pattern-checker +
+consent-path-auditor clean; crm-phase-reviewer (Opus) sign-off weighted on the send
+path + the S1 guard; delete test rules/runs (TEST org); update UPR-Web-Context.md;
+set phase '5' to shipped via set_crm_phase_status and reconcile its crm_build_stages
+via set_crm_stage_status; push -u, PR to dev via the template, mark it ready to merge,
+then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or
+wait for a review on it.
+```
