@@ -22,7 +22,7 @@
  *   Packages:  none
  *   Internal:  functions/lib/supabase.js (service-role client),
  *              functions/lib/forms.js (validateSubmission, checkSpam,
- *              consentValue)
+ *              consentValue, sanitizeLinkMarkup)
  *   Data:      reads  → form_definitions, form_definition_versions,
  *                       form_submissions (per-IP rate check)
  *              writes → inbound_leads, contacts, form_submissions,
@@ -43,7 +43,7 @@
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { validateSubmission, checkSpam, consentValue } from '../lib/forms.js';
+import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup } from '../lib/forms.js';
 
 const RATE_LIMIT_MAX = 10;          // max submissions per IP per window
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -131,7 +131,7 @@ export async function onRequestPost(context) {
   const spam = checkSpam({ honeypot: body.hp, elapsedMs });
   if (spam.spam) {
     // Look successful so a bot cannot learn it was filtered.
-    return json({ ok: true, thankYou: schema.thankYou || '' });
+    return json({ ok: true, thankYou: sanitizeLinkMarkup(schema.thankYou || '') });
   }
 
   // ── spam gate 2: per-IP rate limit ──
@@ -187,7 +187,7 @@ export async function onRequestPost(context) {
       completed_at: new Date().toISOString(),
     }).catch(() => {});
 
-    return json({ ok: true, thankYou: schema.thankYou || '' });
+    return json({ ok: true, thankYou: sanitizeLinkMarkup(schema.thankYou || '') });
   } catch (e) {
     console.error('form-submit RPC error:', e);
     await db.insert('worker_runs', {
