@@ -58,8 +58,10 @@
  *     the SAME branded wrapper (src/lib/emailTemplate.js) the actual send
  *     uses (functions/lib/email-template.js) — so what's shown while
  *     composing is what a recipient actually receives, not an
- *     approximation. An "AI design" button in the editor toolbar is a
- *     disabled placeholder for a planned follow-up, not built yet.
+ *     approximation. The editor's "Design with AI" button calls
+ *     POST /api/crm-campaign-ai-design (handleAiDesign, in CampaignForm) —
+ *     the same getAuthHeader + fetch convention as handleSend below — to
+ *     rewrite body_html via Claude, styled to match the brand shell.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -363,6 +365,18 @@ function CampaignForm({
     unsubscribeUrl: '#',
   }), [form.body_html]);
 
+  const handleAiDesign = useCallback(async (instruction, currentHtml) => {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/crm-campaign-ai-design', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction, subject: form.subject, body_html: currentHtml }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data.body_html;
+  }, [form.subject]);
+
   return (
     <>
       <div className="crm-card crm-campaign-form">
@@ -394,6 +408,7 @@ function CampaignForm({
               onChange={(html) => setForm(f => ({ ...f, body_html: html }))}
               placeholder="Hi {{name}}, ..."
               resetKey={editorResetKey}
+              onAiDesign={handleAiDesign}
             />
           </div>
 
