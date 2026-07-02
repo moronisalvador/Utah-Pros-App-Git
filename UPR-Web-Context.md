@@ -3199,3 +3199,23 @@ close-out (Sonnet·medium). Wave 1 (after F merges) = 4d·6a·6b·7·8·9·10 in
 prompts generated after F commits its artifact names. Owner pre-decisions at dispatch: CallRail Form
 Tracking replacement intent (forks Phase 1's form-fixture stage) and Cloudflare Turnstile site key
 (Phase 10, or ships toggle-off).
+
+---
+
+## /masterplan skill — reusable planning recipe (session 2026-07-02, docs only)
+
+`.claude/skills/masterplan/SKILL.md` — codifies the roadmap-v3 planning standard as a
+one-line-invocable skill for ANY UPR initiative: `/masterplan <initiative>` in a fresh
+session (strongest model, high effort, plan mode, "ultracode" in the message). The skill
+walks the session through: live-verified state + finish-first list → evidence-only gap
+audit (HAVE/PARTIAL/MISSING, exposure-checked bug findings) → ROI-ordered phase design
+(options-on-record evaluations, decision forks, external hard gates) → Foundation-then-
+parallel-wave restructure (frozen signatures, ownership manifest, kill-switch pre-builds,
+what-resisted ledger) → mandatory adversarial challenge pass (refute-first verdicts,
+disjointness proofs, counter-ordering) → present-and-wait → on go, commit the roadmap
+section + idempotent tracker seeds (CRM tracker for CRM initiatives; doc checklists
+otherwise — no generic tracker exists) + `docs/<slug>-dispatch.md` cold-session blocks +
+any 3-plus-phase-recurring agents, ending with Wave-0 blocks. Built against a 2-agent
+extraction benchmark of the roadmap-v3 artifacts and adversarially critiqued
+(completeness + cold-usability, both SHIP_WITH_EDITS, findings folded in). Worked
+example it points sessions at: docs/crm-roadmap.md "Roadmap v3" + docs/crm-dispatch.md.
