@@ -6359,6 +6359,38 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── CRM WAVE RESERVED — Phase 4d (fixed automations · Session B) ───
    Owner: Phase 4d. Write only your CSS between this marker and the next. */
+.crm-automation-list { margin-bottom: var(--space-5); }
+.crm-automation-banner {
+  font-size: var(--text-xs);
+  color: var(--crm-text-secondary);
+  background: var(--crm-bg-content);
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  line-height: 1.5;
+}
+.crm-automation-row { justify-content: space-between; }
+.crm-automation-info { flex: 1; min-width: 0; }
+.crm-automation-title-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.crm-automation-title { font-size: var(--text-sm); font-weight: 600; color: var(--crm-text-primary); }
+.crm-automation-channel { border: 1px solid var(--crm-border); color: var(--crm-text-secondary); background: transparent; }
+.crm-automation-channel-sms { color: var(--crm-accent); border-color: var(--crm-accent); }
+.crm-automation-dark { font-size: var(--text-xs); color: var(--crm-text-tertiary); font-style: italic; }
+.crm-automation-desc { display: block; font-size: var(--text-xs); color: var(--crm-text-tertiary); margin-top: 2px; }
+.crm-automation-toggle {
+  width: 44px; height: 24px; border-radius: 12px; border: none; cursor: pointer;
+  background: var(--crm-border); position: relative; flex-shrink: 0; padding: 0;
+  transition: background var(--transition-fast);
+}
+.crm-automation-toggle.on { background: var(--crm-accent); }
+.crm-automation-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
+.crm-automation-knob {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--crm-bg-card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform var(--transition-fast);
+}
+.crm-automation-toggle.on .crm-automation-knob { transform: translateX(20px); }
 
 /* ─── CRM WAVE RESERVED — Phase 6a (contacts read & segments · Session C) ───
    Owner: Phase 6a. */
