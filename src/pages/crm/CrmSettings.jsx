@@ -4,12 +4,14 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The CRM control panel. Two things live here: (1) the Leads pipeline's
+ *   The CRM control panel. Three things live here: (1) the Leads pipeline's
  *   columns — add a stage, rename one, change its color, move it left/right,
- *   mark it "won"/"lost", or delete it; and (2) a title for each CallRail
- *   tracking number (which campaign it belongs to) — the Call Log shows that
- *   title in place of the raw phone number. Every change shows up immediately,
- *   no code deploy needed.
+ *   mark it "won"/"lost", or delete it; (2) on/off switches for the four
+ *   automatic follow-ups (text a new lead, text back a missed call, email a
+ *   lead that's gone quiet, email a review request when a job finishes); and
+ *   (3) a title for each CallRail tracking number (which campaign it belongs
+ *   to) — the Call Log shows that title in place of the raw phone number.
+ *   Every change shows up immediately, no code deploy needed.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/settings
@@ -21,9 +23,11 @@
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/crmPipeline
  *              (sortStages)
  *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC),
+ *                       automation_settings (get_automation_settings RPC),
  *                       crm_tracking_numbers (get_tracking_numbers RPC)
  *              writes → pipeline_stages (upsert_pipeline_stage /
- *                       delete_pipeline_stage RPCs), crm_tracking_numbers
+ *                       delete_pipeline_stage RPCs), automation_settings
+ *                       (set_automation_setting RPC), crm_tracking_numbers
  *                       (set_tracking_number_label RPC)
  *
  * NOTES / GOTCHAS:
@@ -32,6 +36,10 @@
  *     gloved/mobile input than drag-and-drop for an admin settings screen.
  *   - Deleting a stage with leads still on it is refused server-side
  *     (delete_pipeline_stage) — the error message is surfaced as a toast.
+ *   - The two SMS automations stay dark (no texts sent) until the global SMS
+ *     switch is turned on in Phase 4b, even when toggled on here — the banner
+ *     says so. The two email automations are live once toggled on. The actual
+ *     sending is done by the run-automations cron worker, not this page.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -44,10 +52,21 @@ const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 
 const EMPTY_FORM = { name: '', color: '#6366f1', is_won: false, is_lost: false };
 
+// The four fixed automations, in display order. `channel` drives the badge and
+// which ones are held dark by the SMS kill-switch.
+const AUTOMATIONS = [
+  { key: 'speed_to_lead_enabled',        channel: 'sms',   title: 'Speed-to-lead text',        desc: 'Text a new lead within seconds of an inbound call or form.' },
+  { key: 'missed_call_textback_enabled', channel: 'sms',   title: 'Missed-call text-back',     desc: 'Text back when a tracking-number call goes unanswered.' },
+  { key: 'no_response_followup_enabled', channel: 'email', title: 'No-response follow-up',      desc: 'Email a lead that has gone quiet for a few days.' },
+  { key: 'review_request_enabled',       channel: 'email', title: 'Job-complete review request', desc: 'Email a review request when a job is marked complete.' },
+];
+
 export default function CrmSettings() {
   const { db } = useAuth();
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [automations, setAutomations] = useState(null);
+  const [savingKey, setSavingKey] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -81,7 +100,35 @@ export default function CrmSettings() {
     }
   }, [db]);
 
-  useEffect(() => { load(); loadTracking(); }, [load, loadTracking]);
+  const loadAutomations = useCallback(async () => {
+    try {
+      const row = await db.rpc('get_automation_settings', {});
+      // The RPC returns a single automation_settings row (RETURNS the table type).
+      setAutomations(Array.isArray(row) ? row[0] : row);
+    } catch {
+      err('Failed to load automation settings');
+    }
+  }, [db]);
+
+  useEffect(() => { load(); loadTracking(); loadAutomations(); }, [load, loadTracking, loadAutomations]);
+
+  const toggleAutomation = async (key) => {
+    if (!automations) return;
+    const next = !automations[key];
+    setSavingKey(key);
+    // Optimistic — reverts on failure.
+    setAutomations(a => ({ ...a, [key]: next }));
+    try {
+      const row = await db.rpc('set_automation_setting', { p_key: key, p_value: next });
+      setAutomations(Array.isArray(row) ? row[0] : row);
+      ok(next ? 'Automation turned on' : 'Automation turned off');
+    } catch (e) {
+      setAutomations(a => ({ ...a, [key]: !next }));
+      err(e.message || 'Failed to update automation');
+    } finally {
+      setSavingKey(null);
+    }
+  };
 
   const saveTitle = async (number) => {
     setSavingNumber(number);
@@ -162,7 +209,50 @@ export default function CrmSettings() {
     <div className="crm-page">
       <div className="crm-page-header">
         <h1 className="crm-page-title">Settings</h1>
-        <p className="crm-page-subtitle">Configure the Leads pipeline stages and the titles for your CallRail tracking numbers.</p>
+        <p className="crm-page-subtitle">Configure the Leads pipeline stages, the automatic follow-ups, and the titles for your CallRail tracking numbers.</p>
+      </div>
+
+      {/* ─── SECTION: Automations ────────────── */}
+      <div className="crm-stage-list crm-automation-list">
+        <div className="crm-stage-list-header"><span>Automations</span></div>
+
+        {automations && automations.sms_sending_enabled === false && (
+          <div className="crm-automation-banner">
+            Text messaging is off globally, so the two SMS automations stay dark even when switched on
+            here. They go live once text sending is enabled (Phase&nbsp;4b, after carrier approval).
+            The two email automations work as soon as they're on.
+          </div>
+        )}
+
+        {!automations ? (
+          <div className="crm-stage-row"><span className="crm-stage-row-name">Loading automations…</span></div>
+        ) : AUTOMATIONS.map((a) => {
+          const on = !!automations[a.key];
+          const dark = a.channel === 'sms' && !automations.sms_sending_enabled;
+          return (
+            <div key={a.key} className="crm-stage-row crm-automation-row">
+              <div className="crm-automation-info">
+                <div className="crm-automation-title-row">
+                  <span className="crm-automation-title">{a.title}</span>
+                  <span className={`crm-badge crm-automation-channel crm-automation-channel-${a.channel}`}>{a.channel === 'sms' ? 'Text' : 'Email'}</span>
+                  {on && dark && <span className="crm-automation-dark">dark until SMS is on</span>}
+                </div>
+                <span className="crm-automation-desc">{a.desc}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={`${on ? 'Turn off' : 'Turn on'} ${a.title}`}
+                className={`crm-automation-toggle${on ? ' on' : ''}`}
+                disabled={savingKey === a.key}
+                onClick={() => toggleAutomation(a.key)}
+              >
+                <span className="crm-automation-knob" />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <div className="crm-stage-list">

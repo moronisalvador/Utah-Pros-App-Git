@@ -3405,3 +3405,75 @@ files. Foundation's `merge_contacts` safety fix confirmed present + its `crm_sha
 Reviewer gauntlet: migration-safety-checker **clean** (signatures frozen, zero DDL, grants present);
 upr-pattern-checker **clean** (CSS token fixes applied). Isolation stays the `page:crm` flag —
 `/crm/contacts` invisible to staff until 6b opens it.
+
+## CRM Phase 4d — Fixed automations (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Ships the four fixed automations as a cron worker + owner toggles.
+**Zero schema migrations** — the `automation_settings` table, its RLS/policy, the SMS kill-switch
+`sms_sending_enabled`, and the 4 per-automation toggle columns are all Foundation-owned; this phase
+only filled two frozen RPC stub bodies and added a worker + UI.
+
+**Worker — `functions/api/run-automations.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a Cloudflare Cron Trigger; one `worker_runs` row per run). Four automations, each
+individually gated by its `automation_settings` toggle:
+- **speed-to-lead** (SMS) — texts a brand-new answered call / form lead within a 60-min lookup window.
+- **missed-call text-back** (SMS) — texts back an unanswered inbound tracking-number call.
+- **no-response follow-up** (email, **live**) — emails an open (`lead_status='new'`) lead quiet for
+  3–30 days (`isStale`).
+- **job-complete review request** (email, **live**) — emails a Google-review ask when a
+  `job_phase_history` row lands on a `completed` phase; recipient = `jobs.primary_contact_id`.
+
+Every send routes through `sendAutomatedMessage()` (Foundation's frozen gate) — this worker never
+touches `twilio.js`/`email.js`/`send-message.js` and never passes `skip_compliance`. Each fired
+trigger writes a `system_events` row whose `event_type` is the substrate a future rule engine would
+subscribe to: `speed_to_lead→lead_created`, `missed_call_textback→call_missed`,
+`no_response_followup→lead_stale`, `review_request→job_completed` (payload `{automation, channel,
+outcome, reason}`). **Idempotency**: `alreadyFired(event_type, entity_id)` on `system_events` means a
+lead/job is contacted at most once per trigger; a terminal outcome (`sent` or consent-`skipped`)
+writes the row, a transient `failed` writes nothing so the next tick retries. **Consent skips are
+durable** — recorded in `system_events` for every channel, plus `sms_consent_log` for SMS (via the
+frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback otherwise; SMS
+bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
+`https://utahpros.app`).
+
+**SMS is dark, doubly.** The two SMS automations are skipped entirely at the worker level unless
+`sms_sending_enabled` is ON (`smsLive` guard — no queries, no burned idempotency rows while dark), and
+even if that guard were removed, `sendGatedSms` in the frozen `automated-send.js` independently
+refuses to text while the kill-switch is OFF. Phase 4b flips `sms_sending_enabled` ON after A2P 10DLC
+carrier approval — no code change needed here. Email automations run on their own toggles regardless.
+
+**RPCs — `supabase/migrations/20260702_crm_phase4d_automation_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs, both SECURITY DEFINER +
+GRANT anon/authenticated):
+- `get_automation_settings(p_org_id uuid DEFAULT NULL) → automation_settings` — resolves the org
+  (`COALESCE(p_org_id, first non-test org)`), lazily creates the row, returns it.
+- `set_automation_setting(p_key text, p_value boolean, p_org_id uuid DEFAULT NULL) → automation_settings`
+  — whitelists `p_key` against the 5 real boolean columns before a `format('… %I …')` UPDATE (no
+  arbitrary-column write), returns the updated row.
+Applied + verified live: get resolves the real org, toggles flip and persist, invalid key rejected,
+`sms_sending_enabled` stays OFF, the shipped `sendGatedSms` caller still succeeds.
+
+**UI — `src/pages/crm/CrmSettings.jsx`**: an "Automations" card (loads `get_automation_settings`,
+toggles via `set_automation_setting`) with 4 switches, per-automation Text/Email badge, and a banner
+explaining the two SMS automations stay dark until the global SMS switch is on. Styles live in the
+`CRM WAVE RESERVED — Phase 4d` marker in `src/index.css` (tokens only). Backend does the sending; this
+page only flips flags.
+
+**Tests** (`functions/api/run-automations.test.js`, committed failing first): `isStale` + the three
+other trigger predicates; each automation fires the correct `system_events` type via injected fake
+db + send; consent-block leaves a durable `skipped` record; a fired trigger never re-fires. Full
+vitest suite 214 passed / 19 skipped; `npm run build` + `npx eslint` (3 changed source files) clean.
+
+**Reviewer gauntlet:** migration-safety-checker PASS (no schema, signatures frozen, injection
+mitigated); consent-path-auditor PASS (double kill-switch, no bypass, durable skips, frozen gate
+untouched); upr-pattern-checker + crm-phase-reviewer — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** 5 stages, all flipped **done** — test-first suite,
+acceptance (4 automations route through the gate + fire system_events + toggleable), test/build/eslint
++ auditor gauntlet, the Settings toggle UI, and the mechanical close-out (phase set `shipped`, this
+doc updated, PR opened). No test automation rows were seeded against production data — the automation
+toggles were exercised only via the `set_automation_setting`/`get_automation_settings` RPC round-trip
+and reset to OFF (verified live), so there are no test rows to delete. **Live-send verification is
+owner-gated:** the SMS paths cannot fire an end-to-end text until Phase 4b flips `sms_sending_enabled`
+(carrier approval), and the email paths only send against a real completed job / stale real lead — so
+no real message was dispatched from this session by design. `crm_build_phases('4d')` set `shipped`.
