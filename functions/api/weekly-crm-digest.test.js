@@ -22,7 +22,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  parseRecipients, spendAnomalies, isStaleLead, buildFallbackDigest,
+  parseRecipients, resolveRecipients, spendAnomalies, isStaleLead, buildFallbackDigest,
 } from './weekly-crm-digest.js';
 
 describe('parseRecipients', () => {
@@ -35,6 +35,32 @@ describe('parseRecipients', () => {
   });
   it('returns an empty list when neither is set (worker still runs, sends nothing)', () => {
     expect(parseRecipients({})).toEqual([]);
+  });
+});
+
+describe('resolveRecipients — env first, then integration_config', () => {
+  const fakeDb = (value) => ({ select: async () => (value == null ? [] : [{ value }]) });
+
+  it('uses the env list and never touches the DB when env is set', async () => {
+    let queried = false;
+    const db = { select: async () => { queried = true; return []; } };
+    const out = await resolveRecipients(db, { CRM_DIGEST_RECIPIENTS: 'a@x.com, b@y.com' });
+    expect(out).toEqual(['a@x.com', 'b@y.com']);
+    expect(queried).toBe(false);
+  });
+
+  it('falls back to the crm_digest_recipients row when no env is set', async () => {
+    const out = await resolveRecipients(fakeDb('ops@x.com, boss@y.com'), {});
+    expect(out).toEqual(['ops@x.com', 'boss@y.com']);
+  });
+
+  it('returns empty (worker still runs, sends nothing) when neither is set', async () => {
+    expect(await resolveRecipients(fakeDb(null), {})).toEqual([]);
+  });
+
+  it('never throws if the DB read fails', async () => {
+    const db = { select: async () => { throw new Error('down'); } };
+    expect(await resolveRecipients(db, {})).toEqual([]);
   });
 });
 

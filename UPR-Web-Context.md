@@ -3531,11 +3531,20 @@ pipeline movement (RPC), stale open leads, and week-over-week ad-spend anomalies
 guarded); Claude (`claude-sonnet-5`) **summarizes only the numbers we computed** (deterministic
 fallback digest when `ANTHROPIC_API_KEY` is absent); sends via `sendGatedEmail` (**import-only** from
 the frozen `automated-send.js` — never `sendEmail`/twilio directly, no `skip_compliance`). Recipients
-= `env.CRM_DIGEST_RECIPIENTS` (comma) or `env.OWNER_EMAIL`; with neither set the worker still runs and
-sends nothing. Pure helpers (`parseRecipients`, `spendAnomalies`, `isStaleLead`, `buildFallbackDigest`)
-unit-tested. **New env var to configure in Cloudflare (Preview + Production):** `CRM_DIGEST_RECIPIENTS`
-(optional; falls back to `OWNER_EMAIL`). The weekly Cron Trigger for `weekly-crm-digest` must be added
-in the Cloudflare dashboard (no `wrangler.toml`).
+resolve `env.CRM_DIGEST_RECIPIENTS` → `env.OWNER_EMAIL` → the `crm_digest_recipients` row in
+`integration_config` (comma-separated); with none set the worker still runs and sends nothing. Pure
+helpers (`parseRecipients`, `spendAnomalies`, `isStaleLead`, `buildFallbackDigest`) unit-tested.
+
+**Scheduling — Supabase pg_cron + pg_net (live, no Cloudflare dashboard needed).** The worker's HTTP
+trigger authenticates EITHER a logged-in employee (manual UI) OR an `x-webhook-secret` header matching
+`integration_config.crm_digest_secret` — the CallRail/Encircle webhook-secret pattern (the `scheduled()`
+Cloudflare-cron export still works too, if ever configured). A weekly `pg_cron` job **`weekly-crm-digest`**
+(jobid 3, `7 14 * * 1` = Mon 14:07 UTC ≈ 8am Denver) `net.http_post`s `https://utahpros.app/api/weekly-crm-digest`
+with that secret header. Secret + recipient list live in `integration_config`
+(`crm_digest_secret`, `crm_digest_recipients` = `moroni.s@utah-pros.com` initially — widen by updating
+that row, no deploy). **Activates once this worker is deployed to production** (the endpoint 404s until
+then, harmless). To change: `UPDATE integration_config SET value=… WHERE key='crm_digest_recipients';`
+to add recipients; `SELECT cron.unschedule('weekly-crm-digest');` to stop it.
 
 **AI reply suggestions — `src/components/crm/AiReplySuggestions.jsx`** (new): standalone, **draft-only**
 (no send path — a human sends). Contextual template drafts with an injectable async `generate` prop for

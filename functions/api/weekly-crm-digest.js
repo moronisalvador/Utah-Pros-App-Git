@@ -34,9 +34,18 @@
  *     nothing else — it must not call sendEmail()/email.js directly (TCPA/CAN-SPAM
  *     consent gate + consent-path-auditor). Recipients that are suppressed get a
  *     {skipped:true} result, counted but not emailed.
- *   - Recipients come from env.CRM_DIGEST_RECIPIENTS (comma-separated) or, failing
- *     that, env.OWNER_EMAIL. With neither set the worker still runs and logs, it
- *     just sends nothing (recipients: 0).
+ *   - Recipients resolve in order: env.CRM_DIGEST_RECIPIENTS, else env.OWNER_EMAIL,
+ *     else the `crm_digest_recipients` row in integration_config (comma-separated).
+ *     The DB fallback lets the list be managed without a Cloudflare env var (same
+ *     place the other integration secrets live). With none set the worker still
+ *     runs and logs, it just sends nothing (recipients: 0).
+ *   - AUTH on the HTTP trigger: a logged-in employee (manual UI trigger) OR a
+ *     request carrying an `x-webhook-secret` header matching the `crm_digest_secret`
+ *     row in integration_config — the secret path is what a server-side scheduler
+ *     (Supabase pg_cron + pg_net) uses when there is no user session, same shape as
+ *     the CallRail/Encircle webhook secrets. The Cloudflare Cron Trigger path
+ *     (scheduled() below) needs no secret — Cloudflare invokes it off the public
+ *     request path.
  *   - The gather/format/anomaly logic is factored into pure exported helpers so
  *     the money-adjacent math (week-over-week spend change, div-by-zero guards)
  *     is unit-tested in weekly-crm-digest.test.js.
@@ -143,6 +152,33 @@ export function buildFallbackDigest(summary) {
   return { subject: `Weekly CRM digest${weekLabel ? ` — ${weekLabel}` : ''}`, html };
 }
 
+// ─── SECTION: Recipients + auth ──────────────
+// Env list first (parseRecipients — pure/tested), else the DB-managed list in
+// integration_config so scheduling needs no Cloudflare env var.
+export async function resolveRecipients(db, env) {
+  const fromEnv = parseRecipients(env);
+  if (fromEnv.length) return fromEnv;
+  try {
+    const [row] = await db.select('integration_config', 'key=eq.crm_digest_recipients&select=value&limit=1');
+    return parseRecipients({ CRM_DIGEST_RECIPIENTS: row?.value || '' });
+  } catch {
+    return [];
+  }
+}
+
+// A server-side scheduler (pg_cron/pg_net) authenticates with this header instead
+// of a user session — matches the CallRail/Encircle webhook-secret pattern.
+async function checkDigestSecret(request, db) {
+  const provided = request.headers.get('x-webhook-secret');
+  if (!provided) return false;
+  try {
+    const [row] = await db.select('integration_config', 'key=eq.crm_digest_secret&select=value&limit=1');
+    return !!row?.value && row.value === provided;
+  } catch {
+    return false;
+  }
+}
+
 // ─── SECTION: Data gathering ──────────────
 async function resolveOrgId(db) {
   const rows = await db.select('crm_orgs', 'is_test=eq.false&select=id&order=created_at.asc&limit=1');
@@ -241,7 +277,7 @@ export async function runWeeklyDigest(db, env, now = new Date()) {
   const startedAt = now.toISOString();
   let sent = 0;
   try {
-    const recipients = parseRecipients(env);
+    const recipients = await resolveRecipients(db, env);
     const summary = await gatherDigest(db, now);
     const { subject, html } = await summarizeWithClaude(env, summary);
 
@@ -289,8 +325,10 @@ export async function scheduled(event, env) {
 async function runAuthenticated(context) {
   const { request, env } = context;
   const db = supabase(env);
+  // Either a logged-in employee (manual UI trigger) or a valid scheduler secret.
   const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const authorized = employee || await checkDigestSecret(request, db);
+  if (!authorized) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
   const result = await runWeeklyDigest(db, env);
   return jsonResponse(result, result.ok ? 200 : 500, request, env);
 }
