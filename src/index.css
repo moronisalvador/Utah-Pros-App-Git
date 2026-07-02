@@ -6802,3 +6802,112 @@ tr:hover td { background: var(--bg-secondary); }
 /* ─── CRM WAVE RESERVED — Phase 4b (text-blast campaigns · Session J) ───
    Owner: Phase 4b. */
 
+/* ─── CRM WAVE RESERVED — Phase 5 (automation recipes · Session K) ───
+   Owner: Phase 5. Linear recipe builder — mirrors the Phase 8 sequence layout. */
+.crm-auto-layout { display: grid; grid-template-columns: 300px 1fr; gap: var(--space-4); align-items: start; }
+
+/* Rule list */
+.crm-auto-list { display: flex; flex-direction: column; gap: 4px; }
+.crm-auto-row {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  padding: var(--space-3); border: 1px solid transparent; border-radius: var(--crm-radius);
+  background: transparent; cursor: pointer; transition: background var(--transition-fast, 0.12s);
+}
+.crm-auto-row:hover { background: var(--crm-bg-content); }
+.crm-auto-row.active { background: var(--crm-accent-bg, #eef2ff); border-color: var(--crm-accent); }
+.crm-auto-row-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.crm-auto-row-name { font-size: 14px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-auto-row-sub { font-size: 12px; color: var(--crm-text-tertiary); }
+
+/* On/off badge */
+.crm-auto-badge {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: var(--radius-full); padding: 2px 9px; border: 1px solid var(--crm-border);
+  color: var(--crm-text-secondary); background: var(--crm-bg-content);
+}
+.crm-auto-badge.is-on { background: var(--crm-success-bg); color: var(--crm-success); border-color: var(--status-working-border); }
+
+/* Main panel */
+.crm-auto-main { min-width: 0; }
+.crm-auto-editor, .crm-auto-detail { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-auto-empty { padding: var(--space-5); }
+
+.crm-auto-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.crm-auto-detail-name { font-size: 18px; font-weight: 700; color: var(--crm-text-primary); margin: 0; }
+.crm-auto-detail-desc { font-size: 13px; color: var(--crm-text-tertiary); margin: 4px 0 0; }
+.crm-auto-actions-bar { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-bottom: var(--space-2); border-bottom: 1px solid var(--crm-border); }
+.crm-auto-del { background: var(--crm-bg-content); border: 1px solid var(--crm-border); color: var(--crm-text-secondary); }
+.crm-auto-del[data-confirm="true"] { background: var(--crm-danger-bg); border-color: var(--crm-danger-border); color: var(--crm-danger-text); font-weight: 700; }
+.crm-auto-warn { font-size: 12px; color: var(--crm-danger-text); background: var(--crm-danger-bg); border: 1px solid var(--crm-danger-border); border-radius: var(--crm-radius); padding: var(--space-2) var(--space-3); margin: 0; }
+
+.crm-auto-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-secondary); }
+.crm-auto-hint { font-size: 12px; color: var(--crm-text-tertiary); margin: 0; }
+
+/* Recipe read view */
+.crm-auto-recipe { display: flex; flex-direction: column; gap: var(--space-2); }
+.crm-auto-trigger-chip {
+  align-self: flex-start; font-size: 13px; font-weight: 600; color: var(--crm-accent);
+  background: var(--crm-accent-bg, #eef2ff); border: 1px solid var(--crm-accent);
+  border-radius: var(--radius-full); padding: 3px 12px;
+}
+.crm-auto-cond-view { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--crm-text-secondary); flex-wrap: wrap; }
+.crm-auto-cond-view code { font-size: 12px; background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: 4px; padding: 1px 6px; color: var(--crm-text-primary); }
+.crm-auto-op { font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-auto-action-view { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--crm-text-secondary); }
+.crm-auto-step-num {
+  flex-shrink: 0; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; border-radius: var(--radius-full);
+  background: var(--crm-bg-content); color: var(--crm-text-secondary); border: 1px solid var(--crm-border);
+}
+.crm-auto-action-type {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  border-radius: var(--radius-full); padding: 2px 8px; border: 1px solid var(--crm-border); color: var(--crm-text-secondary);
+}
+.crm-auto-action-when { flex-shrink: 0; font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-auto-action-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--crm-text-primary); }
+
+/* Run log */
+.crm-auto-runs { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+.crm-auto-run-list { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; }
+.crm-auto-run-row { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; }
+.crm-auto-run-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--crm-text-primary); font-weight: 500; }
+.crm-auto-run-step { flex-shrink: 0; font-size: 12px; color: var(--crm-text-tertiary); max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-auto-run-status {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: var(--radius-full); padding: 2px 8px; border: 1px solid var(--crm-border);
+  color: var(--crm-text-secondary); background: var(--crm-bg-content);
+}
+.crm-auto-run-status.is-active { background: var(--crm-success-bg); color: var(--crm-success); border-color: var(--status-working-border); }
+.crm-auto-run-status.is-held { background: var(--crm-danger-bg); color: var(--crm-danger-text); border-color: var(--crm-danger-border); }
+.crm-auto-run-status.is-completed { background: var(--crm-accent-bg, #eef2ff); color: var(--crm-accent); border-color: var(--crm-accent); }
+.crm-auto-run-status.is-failed { background: var(--crm-danger-bg); color: var(--crm-danger-text); border-color: var(--crm-danger-border); }
+
+/* Editor */
+.crm-auto-cond-edit { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.crm-auto-cond-field { flex: 1; min-width: 120px; }
+.crm-auto-cond-op { width: auto; }
+.crm-auto-cond-value { flex: 1; min-width: 100px; }
+.crm-auto-action-edit { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); background: var(--crm-bg-content); }
+.crm-auto-action-edit-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.crm-auto-action-sel { width: auto; }
+.crm-auto-delay { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
+.crm-auto-delay-input { width: 72px; }
+.crm-auto-delay-unit { font-size: 11px; color: var(--crm-text-tertiary); }
+.crm-auto-action-tools { display: flex; gap: 4px; margin-left: auto; }
+.crm-auto-body { resize: vertical; font-family: inherit; }
+.crm-auto-add { align-self: flex-start; }
+.crm-auto-enable { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; font-weight: 600; color: var(--crm-text-primary); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+.crm-auto-enable input { width: 18px; height: 18px; }
+.crm-auto-editor-actions { display: flex; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+
+@media (max-width: 768px) {
+  .crm-auto-layout { grid-template-columns: 1fr; }
+  .crm-auto-run-list { max-height: none; }
+  .crm-auto-delay { flex-basis: 100%; }
+  .crm-auto-action-tools { margin-left: 0; }
+  /* 48px touch targets for the field-tech's gloved hands */
+  .crm-auto-row { min-height: 48px; }
+  .crm-auto-actions-bar .crm-btn, .crm-auto-action-tools .crm-btn { min-height: 48px; min-width: 48px; }
+  .crm-auto-enable input { width: 24px; height: 24px; }
+}
+

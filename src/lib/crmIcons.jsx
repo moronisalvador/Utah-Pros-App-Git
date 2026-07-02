@@ -163,3 +163,16 @@ export function IconForms(p) {
     </svg>
   );
 }
+
+export function IconAutomations(p) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M4 6h9" />
+      <circle cx="17" cy="6" r="2.5" />
+      <path d="M20 12H9" />
+      <circle cx="6" cy="12" r="2.5" />
+      <path d="M4 18h9" />
+      <circle cx="17" cy="18" r="2.5" />
+    </svg>
+  );
+}
