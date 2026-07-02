@@ -727,9 +727,11 @@ PR, in order.
 
 > **Branch:** `crm/phase-4b-text-blasts` — cut off `dev`.
 > **Prerequisite:** Phase 4a merged into `dev`; **and Twilio SMS verification live AND the A2P 10DLC promotional/marketing campaign registered + carrier-approved** (see Pre-Phase-1 action items — this vetting takes days-to-weeks). Do **not** build/test the send path until both are confirmed.
+> **⛔ HARD BLOCKER before the SMS kill-switch (`automation_settings.sms_sending_enabled`) is flipped ON — TCPA quiet-hours.** Automated/marketing SMS must not send outside **8am–9pm in the recipient's local time**. As of Phase 8 (sequences) this windowing is enforced **nowhere** — not in `functions/lib/automated-send.js`, `sms-consent.js`, nor any wave phase (those files are frozen mid-wave, so no wave session could add it). It must be implemented in the shared send gate (`automated-send.js`) and unit-tested **before** 4b turns SMS on. TCPA penalties are **per message**. (Surfaced by the #247–250 wave review, 2026-07-02.)
 > **Read scope:** this block + `CLAUDE.md` (generic rules).
 > **Close-out checklist (all true before the `dev → main` PR):**
 > - [ ] Test-first, now green: **(a)** `consentAllows(row)` consent gate — refuses to send on absent/withdrawn consent (vitest unit). The gate ships here first and is reused by 4c/4d.
+> - [ ] **TCPA quiet-hours enforced (8am–9pm recipient-local) in the shared send gate `automated-send.js`, with a committed test that an out-of-window automated SMS is deferred, not sent** — unenforced through Phase 8; a hard blocker before the kill-switch flips (wave review 2026-07-02).
 > - [ ] Acceptance: recipients segmented off `contacts`/`referral_sources`; **every** send routes through `sendAutomatedMessage()` → the consent gate (`sms_consent_log` opt-outs), structurally un-bypassable; sends go via the existing `send-message.js` Twilio worker.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass; `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off — weight it on the consent gate.
 > - [ ] Visual: the campaign builder/list vs the handoff at `crm-phase-4b-text-blasts.utah-pros-app-git.pages.dev`.
