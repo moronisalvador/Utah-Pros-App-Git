@@ -7,6 +7,12 @@ header, then the complete prompt. Claude Code web hands each session a harness-a
 `claude/…` branch — use it as-is (CLAUDE.md); the Branch line below is the illustrative
 name for humans tracking PRs.
 
+**How work lands (per CLAUDE.md Rule 4):** routine changes commit directly to `dev`. These
+wave sessions are the exception — each cuts a branch, and its close-out opens a **PR into
+`dev` purely as a handoff, then stops**. The owner (or orchestrating session) merges each PR;
+sessions do **not** click-merge, subscribe to, babysit, or wait for a review on their PR (the
+bot reviewer is off). Branches exist only so the parallel sessions don't collide.
+
 **Preconditions:** Wave 0 launches after the roadmap-v3 PR (#240) is merged into `dev`.
 Wave 1 launches after Session F's PR is merged into `dev`. Owner decisions due at
 dispatch: ① CallRail Form Tracking replacement intent (forks Session A's form-fixture
@@ -58,7 +64,7 @@ npx eslint (changed files) pass; migration-safety-checker + upr-pattern-checker 
 consent-path-auditor clean; crm-phase-reviewer (Opus) sign-off; update
 UPR-Web-Context.md; set phase 'F' to shipped via set_crm_phase_status and reconcile its
 crm_build_stages rows honestly via set_crm_stage_status; push -u and open a PR to dev
-using the repo PR template, mark it ready for review.
+using the repo PR template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -91,7 +97,7 @@ crm-phase-reviewer sign-off; reconcile crm_build_stages honestly in both directi
 via set_crm_stage_status; delete test rows tagged with the dev tracking number; update
 UPR-Web-Context.md; set phase '1' to shipped via set_crm_phase_status only if all
 non-owner-gated criteria pass; push -u and open a PR to dev using the repo PR
-template, mark it ready for review.
+template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ---
@@ -130,7 +136,7 @@ migration-safety-checker + upr-pattern-checker + consent-path-auditor clean;
 crm-phase-reviewer (Opus) sign-off weighted on consent + trigger correctness; delete
 test automation rows; update UPR-Web-Context.md; set phase '4d' to shipped via
 set_crm_phase_status and reconcile its crm_build_stages; push -u, open a PR to dev via
-the template, mark it ready for review.
+the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -164,7 +170,7 @@ duplicate detection. Close-out: npm run test + npm run build + npx eslint pass;
 migration-safety-checker + upr-pattern-checker clean; crm-phase-reviewer sign-off;
 delete TEST-org rows; update UPR-Web-Context.md; set phase '6a' to shipped via
 set_crm_phase_status and reconcile its crm_build_stages; push -u, PR to dev via the
-template, mark it ready for review.
+template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -203,7 +209,7 @@ migration-safety-checker + upr-pattern-checker + consent-path-auditor clean;
 crm-phase-reviewer sign-off weighted on the audit/consent surface; delete TEST-org
 import rows; update UPR-Web-Context.md; set phase '6b' to shipped via
 set_crm_phase_status and reconcile its crm_build_stages; push -u, PR to dev via the
-template, mark it ready for review.
+template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -241,7 +247,7 @@ green. Close-out: npm run test + npm run build + npx eslint pass;
 migration-safety-checker + upr-pattern-checker + consent-path-auditor clean;
 crm-phase-reviewer sign-off; delete test task rows; update UPR-Web-Context.md; set
 phase '7' to shipped via set_crm_phase_status and reconcile its crm_build_stages;
-push -u, PR to dev via the template, mark it ready for review.
+push -u, PR to dev via the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -278,7 +284,7 @@ test + npm run build + npx eslint pass; migration-safety-checker + upr-pattern-c
 + consent-path-auditor clean; crm-phase-reviewer (Opus) sign-off weighted on the
 consent path; delete test sequences/enrollments; update UPR-Web-Context.md; set phase
 '8' to shipped via set_crm_phase_status and reconcile its crm_build_stages; push -u,
-PR to dev via the template, mark it ready for review.
+PR to dev via the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -321,7 +327,7 @@ conventions. Close-out: npm run test + npm run build + npx eslint pass;
 migration-safety-checker + upr-pattern-checker + consent-path-auditor (digest send)
 clean; crm-phase-reviewer (Opus) sign-off weighted on the money math; update
 UPR-Web-Context.md; set phase '9' to shipped via set_crm_phase_status and reconcile
-its crm_build_stages; push -u, PR to dev via the template, mark it ready for review.
+its crm_build_stages; push -u, PR to dev via the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -367,7 +373,7 @@ migration-safety-checker + upr-pattern-checker + consent-path-auditor clean;
 crm-phase-reviewer (Opus) sign-off weighted on the public endpoint + consent; delete
 test forms/submissions; update UPR-Web-Context.md; set phase '10' to shipped via
 set_crm_phase_status and reconcile its crm_build_stages; push -u, PR to dev via the
-template, mark it ready for review.
+template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
 ```
@@ -407,5 +413,5 @@ migration-safety-checker + upr-pattern-checker + consent-path-auditor clean;
 crm-phase-reviewer (Opus) sign-off weighted on the consent gate; delete test
 campaign/recipient rows (dev tracking number / TEST org); update UPR-Web-Context.md;
 set phase '4b' to shipped via set_crm_phase_status and reconcile its crm_build_stages;
-push -u, PR to dev via the template, mark it ready for review.
+push -u, PR to dev via the template, mark it ready to merge, then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
 ```

@@ -174,9 +174,12 @@ owner says go.** If plan mode is active, exit via the approval flow.
    "Foundation shipped" recap, hard constraints (zero schema, frozen files, reserved
    css section, call-only send paths where relevant), ordered build list (riskiest
    first — e.g. data-integrity migrations before UI), named test-first targets, and
-   the full close-out. No block may reference any conversation. Blocks that cite
-   Foundation's artifact names note the manifest + phase block are authoritative if
-   names drift. State per wave that its sessions may launch simultaneously.
+   the full close-out. Each wave session's close-out ends by opening a **PR into `dev`
+   as a handoff and stopping** — the owner/orchestrator merges it; sessions never
+   click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off).
+   No block may reference any conversation. Blocks that cite Foundation's artifact names
+   note the manifest + phase block are authoritative if names drift. State per wave that
+   its sessions may launch simultaneously.
 5. **Agents**: reuse `upr-pattern-checker`, `crm-phase-reviewer`,
    `migration-safety-checker`, `consent-path-auditor`. Create a new agent ONLY for a
    job recurring across 3+ phases (frontmatter name/description/tools/model;
@@ -189,9 +192,10 @@ owner says go.** If plan mode is active, exit via the approval flow.
 8. Verify: `npm run test` + `npm run build` green; eslint n/a if no JS changed (say
    so); apply + verify any seed migration live via MCP (re-query the rollup); run
    `upr-pattern-checker` on changed files.
-9. PR into `dev` via the repo template — every section filled honestly
-   ("Verification actually run" records reality; "Risk / not done" names what's
-   deferred) — opened draft, immediately marked ready. Never push `main`.
+9. Ship the plan-of-record the routine way (CLAUDE.md Rule 4): **commit the
+   doc/seed/agent artifacts directly to `dev`** (auto-deploys to staging) — no branch,
+   no PR. (The wave *build* sessions this plan dispatches are the exception — they use
+   branch + PR handoffs; see step 4.) Never push `main`.
 10. **Final message = the Wave 0 dispatch blocks verbatim** + the wave table, so the
     owner can launch immediately.
 
@@ -220,10 +224,11 @@ owner says go.** If plan mode is active, exit via the approval flow.
   close-out.
 - Isolation by feature flag (+ `dev_only_user_id`), not branch; staff rollout gated
   on a roles-defined phase; flag flips stay the owner's.
-- End-of-phase order: commit → set status shipped → update docs → THEN the PR;
-  two-direction checkbox reconciliation (no done-to-look-finished, no
-  finished-left-as-todo; owner-blocked stages stay open with the reason disclosed) —
-  the phase reviewer audits this.
+- End-of-phase order: commit → set status shipped → update docs → THEN open the PR
+  into `dev` as a handoff (owner/orchestrator merges; sessions don't click-merge,
+  subscribe, or babysit); two-direction checkbox reconciliation (no
+  done-to-look-finished, no finished-left-as-todo; owner-blocked stages stay open with
+  the reason disclosed) — the phase reviewer audits this.
 
 Companion skills for the sessions this skill DISPATCHES (this skill only plans):
 `/new-feature` is the per-session build loop for any surface; `/new-crm-module`

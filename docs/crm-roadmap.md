@@ -733,7 +733,7 @@ PR, in order.
 > - [ ] Acceptance: recipients segmented off `contacts`/`referral_sources`; **every** send routes through `sendAutomatedMessage()` → the consent gate (`sms_consent_log` opt-outs), structurally un-bypassable; sends go via the existing `send-message.js` Twilio worker.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass; `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off — weight it on the consent gate.
 > - [ ] Visual: the campaign builder/list vs the handoff at `crm-phase-4b-text-blasts.utah-pros-app-git.pages.dev`.
-> - [ ] Set the `phase-4b` row to `shipped` via `set_crm_phase_status`; delete test campaign/recipient rows (test `org_id`); `UPR-Web-Context.md` updated; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set the `phase-4b` row to `shipped` via `set_crm_phase_status`; delete test campaign/recipient rows (test `org_id`); `UPR-Web-Context.md` updated; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 - **Text blast campaigns**: finish out `Marketing.jsx` + the existing
   `campaigns`/`campaign_recipients` tables (already stubbed — "Bulk messaging coming
@@ -769,7 +769,7 @@ PR, in order.
 > - [ ] Acceptance: the 4 fixed automations (speed-to-lead, missed-call text-back, no-response follow-up, job-complete review) each route through `sendAutomatedMessage()` → consent gate, fire off `system_events`, and are individually on/off-toggleable via `automation_settings`.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass; `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off — weight it on the consent gate + trigger correctness.
 > - [ ] Visual: the `automation_settings` toggles in **Settings** at `crm-phase-4d-automations.utah-pros-app-git.pages.dev` (the automations themselves are backend).
-> - [ ] Set the `phase-4d` row to `shipped` via `set_crm_phase_status`; delete test automation rows; `UPR-Web-Context.md` updated; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set the `phase-4d` row to `shipped` via `set_crm_phase_status`; delete test automation rows; `UPR-Web-Context.md` updated; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 - **Four fixed automations** (deliberately not a visual workflow builder — see the
   completeness assessment above): 
@@ -1169,7 +1169,7 @@ campaign email since 2026-07-01).
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off.
 > - [ ] Visual: stub routes render CrmStubPage on the branch preview; no live-page regressions (CrmLeads timeline extraction is behavior-identical).
 > - [ ] `UPR-Web-Context.md` updated (all new tables, stubs, kill-switch, ownership manifest).
-> - [ ] Set `F` to `shipped` via `set_crm_phase_status`; reconcile stages; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set `F` to `shipped` via `set_crm_phase_status`; reconcile stages; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope (everything additive):
 - **All schema for the wave** (parallel sessions ship ZERO schema): ① merge_contacts superseding fix + capture both drifted RPC bodies as a real migration; ② `automation_settings`; ③ `crm_tasks`, `lead_stage_history`, `inbound_leads.lost_reason`; ④ `crm_segments`; ⑤ `crm_import_batches`, `contacts.owner_id`, `contacts.lifecycle_status`; ⑥ `crm_sequences`, `crm_sequence_steps`, `crm_sequence_enrollments`; ⑦ `pipeline_stages.win_probability`, `inbound_leads.lead_score` + `lead_score_factors`; ⑧ `form_definitions`, `form_definition_versions`, `form_submissions`.
@@ -1193,7 +1193,7 @@ Scope (everything additive):
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` clean; `crm-phase-reviewer` sign-off.
 > - [ ] Visual: /crm/contacts on the branch preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `6a` shipped; reconcile stages; delete TEST-org rows; pushed, verified, PR opened.
+> - [ ] Set `6a` shipped; reconcile stages; delete TEST-org rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills bodies of `get_crm_contacts`, `upsert/get/delete_segment`, `get_contact_consent`, `get_duplicate_contacts` (+email); owns `ContactsDirectory.jsx` + `ContactDetail.jsx` only.
 
@@ -1209,7 +1209,7 @@ Scope: fills bodies of `get_crm_contacts`, `upsert/get/delete_segment`, `get_con
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off weighted on the audit/consent surface.
 > - [ ] Visual: import wizard + role-gated nav on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `6b` shipped; reconcile stages; delete TEST-org import rows; pushed, verified, PR opened.
+> - [ ] Set `6b` shipped; reconcile stages; delete TEST-org import rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills `import_contacts`, `set_contact_owner`, `set_contact_lifecycle` + audit-hardening replaces; owns `ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `src/lib/featureFlags.js`, and is the wave's sole editor of `CrmLayout.jsx` (role gating).
 
@@ -1225,7 +1225,7 @@ Scope: fills `import_contacts`, `set_contact_owner`, `set_contact_lifecycle` + a
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off.
 > - [ ] Visual: Tasks, Conversations, Overview widget, lost-reason flow on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `7` shipped; reconcile stages; delete test task rows; pushed, verified, PR opened.
+> - [ ] Set `7` shipped; reconcile stages; delete test task rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills tasks CRUD + `get_overdue_tasks` bodies; owns `CrmTasks.jsx`, `CrmLeads.jsx`, `OverdueTasksWidget.jsx`, `CrmConversations.jsx`. Send paths frozen (call-only).
 
@@ -1241,7 +1241,7 @@ Scope: fills tasks CRUD + `get_overdue_tasks` bodies; owns `CrmTasks.jsx`, `CrmL
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the consent path.
 > - [ ] Visual: sequence builder + enrollment list on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `8` shipped; reconcile stages; delete test sequences/enrollments; pushed, verified, PR opened.
+> - [ ] Set `8` shipped; reconcile stages; delete test sequences/enrollments; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills sequence RPC bodies; owns `CrmSequences.jsx` + `functions/api/process-sequences.js`. No visual canvas — Phase 5 stays gated on its own go-signal.
 
@@ -1257,7 +1257,7 @@ Scope: fills sequence RPC bodies; owns `CrmSequences.jsx` + `functions/api/proce
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (digest send) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the money math.
 > - [ ] Visual: Reports set + forecast widget on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `9` shipped; reconcile stages; pushed, verified, PR opened.
+> - [ ] Set `9` shipped; reconcile stages; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills reports ×8 + `score_lead` bodies; owns `CrmReports.jsx`, `ForecastWidget.jsx`, `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+tests), `functions/api/weekly-crm-digest.js`.
 
@@ -1273,7 +1273,7 @@ Scope: fills reports ×8 + `score_lead` bodies; owns `CrmReports.jsx`, `Forecast
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (form consent writes `sms_consent_log`) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the public endpoint + consent.
 > - [ ] Visual: builder + a live embedded form on a test page.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `10` shipped; reconcile stages; delete test forms/submissions; pushed, verified, PR opened.
+> - [ ] Set `10` shipped; reconcile stages; delete test forms/submissions; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills `upsert_lead_from_form` + form CRUD bodies; owns `CrmForms.jsx`, `functions/f/[public_id].js`, `functions/api/form-submit.js`, `public/embed.js`. Optional stage: thin `webflow-form-webhook.js` adapter → same RPC (existing Webflow-native forms flow in from day one). Deliberately NOT a funnel/landing-page builder.
 
@@ -1297,6 +1297,7 @@ Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes not
 - **Wave 0** (after this PR merges): **Phase F** (Opus · high) ∥ **Phase 1 close-out** (Sonnet · medium) — safely concurrent, zero overlap. Owner pre-decision due here: CallRail Form Tracking replacement intent (forks Session A's form-fixture stage).
 - **Wave 1** (after F merges): **4d · 6a · 6b · 7 · 8 · 9 · 10 — all seven in parallel**, plus **4b** joining whenever carrier approval lands. Merge order is preference (suggested: 7, 6a first), not a gate; each PR independent. Throttle freely — all pairs are safe, so concurrent-session count is purely a review-bandwidth choice.
 - **Copy-paste launch blocks for every session live in `docs/crm-dispatch.md`** (settings header + complete cold-session prompt per session); each session's read scope = `CLAUDE.md` + its phase block above + `.claude/rules/crm-wave-ownership.md`. The prompts cite Foundation's artifact names as specified here — if F's implementation drifts, the manifest + phase blocks are authoritative.
+- **How work lands (per CLAUDE.md Rule 4):** each wave session opens a **PR into `dev` as a handoff and stops** — the owner/orchestrator merges it. Sessions never click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off). Branches exist only so the parallel sessions don't collide; `dev → main` is a separate, periodic production release, never per-phase.
 
 ### File-ownership matrix (to be committed by Phase F as `.claude/rules/crm-wave-ownership.md`)
 
