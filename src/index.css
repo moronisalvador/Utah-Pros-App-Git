@@ -6648,6 +6648,95 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── CRM WAVE RESERVED — Phase 8 (drip sequences · Session G) ───
    Owner: Phase 8. */
+.crm-seq-layout { display: grid; grid-template-columns: 300px 1fr; gap: var(--space-4); align-items: start; }
+
+/* Sequence list */
+.crm-seq-list { display: flex; flex-direction: column; gap: 4px; }
+.crm-seq-row {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  padding: var(--space-3); border: 1px solid transparent; border-radius: var(--crm-radius);
+  background: transparent; cursor: pointer; transition: background var(--transition-fast, 0.12s);
+}
+.crm-seq-row:hover { background: var(--crm-bg-content); }
+.crm-seq-row.active { background: var(--crm-accent-bg, #eef2ff); border-color: var(--crm-accent); }
+.crm-seq-row-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.crm-seq-row-name { font-size: 14px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-seq-row-sub { font-size: 12px; color: var(--crm-text-tertiary); }
+
+/* Status badge (sequence + enrollment) */
+.crm-seq-status, .crm-seq-enr-status {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: var(--radius-full); padding: 2px 9px; border: 1px solid var(--crm-border);
+  color: var(--crm-text-secondary); background: var(--crm-bg-content);
+}
+.crm-seq-status.is-active, .crm-seq-enr-status.is-active { background: var(--crm-success-bg); color: var(--crm-success); border-color: var(--status-working-border); }
+.crm-seq-status.is-paused { background: var(--crm-danger-bg); color: var(--crm-danger-text); border-color: var(--crm-danger-border); }
+.crm-seq-enr-status.is-completed { background: var(--crm-accent-bg, #eef2ff); color: var(--crm-accent); border-color: var(--crm-accent); }
+.crm-seq-enr-status.is-exited { background: var(--crm-danger-bg); color: var(--crm-danger-text); border-color: var(--crm-danger-border); }
+
+/* Main panel: editor + detail */
+.crm-seq-main { min-width: 0; }
+.crm-seq-editor, .crm-seq-detail { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-seq-empty { padding: var(--space-5); }
+
+.crm-seq-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.crm-seq-detail-name { font-size: 18px; font-weight: 700; color: var(--crm-text-primary); margin: 0; }
+.crm-seq-detail-desc { font-size: 13px; color: var(--crm-text-tertiary); margin: 4px 0 0; }
+.crm-seq-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-bottom: var(--space-2); border-bottom: 1px solid var(--crm-border); }
+.crm-seq-del { background: var(--crm-bg-content); border: 1px solid var(--crm-border); color: var(--crm-text-secondary); }
+.crm-seq-del[data-confirm="true"] { background: var(--crm-danger-bg); border-color: var(--crm-danger-border); color: var(--crm-danger-text); font-weight: 700; }
+
+.crm-seq-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-secondary); }
+
+/* Steps — read view */
+.crm-seq-steps-view { display: flex; flex-direction: column; gap: var(--space-2); }
+.crm-seq-step-view { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--crm-text-secondary); }
+.crm-seq-step-num {
+  flex-shrink: 0; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; border-radius: var(--radius-full);
+  background: var(--crm-bg-content); color: var(--crm-text-secondary); border: 1px solid var(--crm-border);
+}
+.crm-seq-chan {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  border-radius: var(--radius-full); padding: 2px 8px; border: 1px solid var(--crm-border); color: var(--crm-text-secondary);
+}
+.crm-seq-chan.is-sms { background: var(--crm-accent-bg, #eef2ff); color: var(--crm-accent); border-color: var(--crm-accent); }
+.crm-seq-step-when { flex-shrink: 0; font-size: 12px; color: var(--crm-text-tertiary); }
+.crm-seq-step-body { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--crm-text-primary); }
+
+/* Enroll */
+.crm-seq-enroll { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+.crm-seq-enroll-row { display: flex; gap: var(--space-2); }
+.crm-seq-enroll-row .crm-input { flex: 1; }
+.crm-seq-hint { font-size: 12px; color: var(--crm-text-tertiary); margin: 0; }
+
+/* Roster */
+.crm-seq-roster { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+.crm-seq-roster-list { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; }
+.crm-seq-roster-row { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; }
+.crm-seq-roster-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--crm-text-primary); font-weight: 500; }
+.crm-seq-roster-step { flex-shrink: 0; font-size: 12px; color: var(--crm-text-tertiary); }
+
+/* Editor */
+.crm-seq-field { display: flex; flex-direction: column; gap: 4px; }
+.crm-seq-field-label { font-size: 12px; font-weight: 600; color: var(--crm-text-secondary); }
+.crm-seq-step-edit { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); background: var(--crm-bg-content); }
+.crm-seq-step-edit-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.crm-seq-chan-sel { width: auto; }
+.crm-seq-delay { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
+.crm-seq-delay-input { width: 72px; }
+.crm-seq-delay-unit { font-size: 11px; color: var(--crm-text-tertiary); }
+.crm-seq-step-tools { display: flex; gap: 4px; margin-left: auto; }
+.crm-seq-body { resize: vertical; font-family: inherit; }
+.crm-seq-add { align-self: flex-start; }
+.crm-seq-editor-actions { display: flex; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--crm-border); }
+
+@media (max-width: 768px) {
+  .crm-seq-layout { grid-template-columns: 1fr; }
+  .crm-seq-roster-list { max-height: none; }
+  .crm-seq-delay { flex-basis: 100%; }
+  .crm-seq-step-tools { margin-left: 0; }
+}
 
 /* ─── CRM WAVE RESERVED — Phase 9 (intelligence, reports · Session H) ───
    Owner: Phase 9. */

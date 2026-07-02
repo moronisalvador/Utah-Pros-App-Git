@@ -3574,6 +3574,111 @@ owner-gated:** the SMS paths cannot fire an end-to-end text until Phase 4b flips
 (carrier approval), and the email paths only send against a real completed job / stale real lead — so
 no real message was dispatched from this session by design. `crm_build_phases('4d')` set `shipped`.
 
+## CRM Phase 8 — Drip / nurture sequences (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`, consent-critical). **Zero schema migrations** — one function-body-only
+migration `20260702_crm_phase8_sequences.sql` fills the four frozen Phase 8 stubs; the
+`crm_sequences` / `crm_sequence_steps` / `crm_sequence_enrollments` tables + their RLS/policies and the
+`UNIQUE(sequence_id, contact_id)` idempotency constraint are all Foundation-owned. Edits confined to the
+two owned files (`CrmSequences.jsx`, `functions/api/process-sequences.js`) + the Phase 8 `index.css`
+reserved section (per `.claude/rules/crm-wave-ownership.md`).
+
+**RPCs (bodies filled; signatures byte-for-byte identical to Phase F stubs; all SECURITY DEFINER + GRANT
+anon/authenticated):**
+- `upsert_sequence(p_id, p_name, p_description, p_status, p_steps jsonb, p_org_id, p_created_by) →
+  crm_sequences` — create or edit. **`p_steps` semantics:** a jsonb array (incl. `[]`) REPLACES the step
+  set; **`NULL` leaves steps untouched** (used by status-only edits — pause/activate/archive). Default is
+  `'[]'` (frozen), so a status-only caller must pass `p_steps => null` explicitly. Steps are renumbered
+  to a contiguous 0-based `step_order` (respecting any provided order, then array position) so
+  `UNIQUE(sequence_id, step_order)` can never be violated by caller input.
+- `get_sequences(p_org_id) → SETOF json` — one object per sequence with ordered `steps`, aggregate
+  `stats` (`active/paused/completed/exited/total`), and an `enrollments` roster (contact name/phone,
+  status, `current_step`, `next_run_at`, `exit_reason`) capped at 200 rows.
+- `delete_sequence(p_sequence_id) → void` — FK `ON DELETE CASCADE` takes steps + enrollments.
+- `enroll_in_sequence(p_sequence_id, p_contact_id, p_segment_id, p_org_id) → SETOF
+  crm_sequence_enrollments` — enroll a single contact OR a whole segment. **Idempotent** via
+  `ON CONFLICT (sequence_id, contact_id) DO NOTHING` — re-enrolling returns the existing row, never a
+  duplicate. `next_run_at` scheduled from the first step's `delay_hours` (`now() + make_interval`), NULL
+  when the sequence has no steps. Segment resolver mirrors `preview_email_audience`'s filter keys
+  (`referral_source`/`role`/`tag`) but **omits the email-only / consent constraints** — a sequence can
+  carry SMS steps, and consent is enforced per-step at send time, not at enroll (enrollment is not a
+  send).
+
+**Worker — `functions/api/process-sequences.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a Cloudflare Cron Trigger; one `worker_runs` row per run). Advances every active
+sequence's due enrollments (`status='active' AND next_run_at <= now`, sequence `status='active'`):
+1. **Exit check first** (before spending a send): `exit_on_reply` fires on an inbound `messages`
+   (`type='sms_inbound'`, `sender_contact_id`) since `enrolled_at`; `exit_on_conversion` fires on a
+   `crm_lead_promoted` `system_events` row (`payload->>contact_id`) since `enrolled_at`. On exit →
+   `status='exited'` + `exit_reason` + a `crm_sequence_exited` event.
+2. **Send** the current step through `sendAutomatedMessage()` (Foundation's frozen gate — email `subject`
+   /`html`, SMS `orgId`/`body`). Never touches `twilio.js`/`email.js`/`send-message.js`, never passes
+   `skip_compliance`.
+3. **Outcome plan** (`planStepOutcome`, pure/unit-tested): `sent` → advance to next step scheduled by
+   ITS `delay_hours`, or complete after the last step; **`held`** → an SMS returned
+   `{skipped, reason:'sms_disabled'}` because the kill-switch is OFF, so the step is **NOT advanced** —
+   `next_run_at` pushed `HOLD_RETRY_HOURS` (6h) forward so it sends the moment Phase 4b flips
+   `sms_sending_enabled` (never bypassed); `skipped` → a durable consent skip (dnd/suppressed/no address)
+   advances past the step (don't pester); `retry` → transient failure, untouched, retried next run. Each
+   terminal outcome writes a `crm_sequence_step_{sent,held,skipped}` `system_events` row
+   (`{step_order, channel, reason}`); SMS additionally logs `sms_consent_log` inside the frozen gate.
+
+**Timing:** `delay_hours → next_run_at` is a fixed-hour UTC epoch offset (`computeNextRunAt`) —
+timezone-invariant, so a "48h later" step lands 48h later across a DST change. `date-mt.js` (a
+day-boundary/MT-calendar helper) does **not** apply to fixed-hour delays; same reasoning
+`run-automations.js` documents for its lookback windows. The roadmap's "MT helpers" wording refers to
+the shared time-convention rule, not a literal day-math import here.
+
+**UI — `src/pages/crm/CrmSequences.jsx`** (fills the Phase F "Coming in Phase 8" stub): master/detail —
+sequence list (name, status badge, step/enrollment counts) + a builder (ordered steps: channel
+email/sms, `delay_hours`, subject [email]/body, move up/down, add/remove), status lifecycle
+(draft/active/paused/archived via the status-only edit that preserves steps), inline two-click delete,
+enroll a `crm_segments` segment (dropdown from `get_segments`), and a per-sequence enrollment roster +
+stats. SMS steps are labeled "held until the SMS switch is on (Phase 4b)" in the editor. `useAuth()` db;
+`upr:toast` feedback; CSS lives only in the `CRM WAVE RESERVED — Phase 8` `index.css` marker (tokens
+only; mobile stacks to one column).
+
+**Tests** (committed failing first): `functions/api/process-sequences.test.js` (20 pure unit tests —
+`computeNextRunAt`/`firstRunAt`/`advanceEnrollment` timing, `classifyEvent`/`evaluateExit` reply &
+conversion rules, and `planStepOutcome`'s sent/held/skipped/retry with the SMS-held-not-advanced
+assertion). `supabase/tests/crm_phase8_sequences.test.js` (integration; self-skips without CI creds like
+sibling CRM suites): sequence CRUD + ordered read-back, status-only edit preserves steps, enrollment
+idempotency, segment enroll (matching contacts only), cascade delete. Behavior **live-verified via
+Supabase MCP**: steps stored + renumbered `{0,1,2}` from input `{5,2,9}`, status-only edit kept 3 steps,
+idempotent enroll = 1, segment enrolled 2 of 3 (non-match excluded), `get_sequences` shape correct,
+delete cascaded to 0/0. `npm test` 236 passed / 30 skipped; `npm run build` green; `npx eslint` clean on
+changed files.
+
+**Reviewer gauntlet:** migration-safety-checker **PASS** (signatures frozen, zero DDL, grants present);
+upr-pattern-checker **PASS** (useAuth/toast/two-click/tokens, index.css inside marker); consent-path-
+auditor **PASS** (every send funnels through `sendAutomatedMessage`; SMS held+retried, never
+force-sent/bypassed; durable audit on both channels; enrollment is not a send); crm-phase-reviewer —
+see the PR. SMS stays dark behind the F kill-switch until Phase 4b (carrier approval).
+
+**`crm_build_stages` reconciliation (honest, mapped to the 8 seeded stages by sort order):**
+- **[0] Test-first** — `done` (suite committed failing first, now green).
+- **[1] Acceptance: CRUD + segment enrollment + pause/stop; `process-sequences` cron w/ `worker_runs`;
+  email live / SMS held** — `done` (live-verified via MCP; segment→enroll proven at the RPC layer with
+  6a's `upsert_segment`/`get_segments` feeding `enroll_in_sequence`).
+- **[2] Segment-UI→enroll E2E verification tail after 6a merges (disclosed)** — **`todo`
+  (deploy/flag-gated).** 6a has merged and the segment→enroll **data path is verified at the RPC
+  boundary**, but the literal **browser** click-through (make a segment in 6a's Contacts UI → enroll it
+  via the Sequences UI in a running app) needs a Cloudflare preview with `page:crm` opened, which isn't
+  runnable from this session — left open honestly, not forgotten.
+- **[3] test+build+eslint pass; zero schema migrations; `automated-send.js` import-only** — `done`.
+- **[4] migration-safety + upr-pattern + consent-path auditors clean; crm-phase-reviewer sign-off** —
+  `done` (three auditors PASS; crm-phase-reviewer result in the PR).
+- **[5] Visual: sequence builder + enrollment list on preview** — **`todo` (deploy-gated)** — same
+  Cloudflare-preview + `page:crm` requirement as [2]; the UI builds clean but a preview screenshot can't
+  be produced here.
+- **[6] `UPR-Web-Context.md` updated** — `done` (this entry).
+- **[7] Set phase 8 shipped; delete test sequences/enrollments; pushed, verified, PR opened** — `done`
+  (no test rows remain — SQL smoke tests self-cleaned or rolled back via `RAISE`, verified 0
+  `zz8%`/`smoke%` rows; `crm_build_phases('8')` set `shipped`; PR opened as the handoff).
+
+There is no `blocked` status value yet, so [2] and [5] stay `todo` with the disclosure above — both are
+owner/deploy-gated (the `page:crm` flag keeps `/crm/*` invisible until Phase 6b opens it), not skipped
+work.
 ## CRM Phase 7 — Daily driver: tasks, timeline, comms in shell (Jul 2 2026 — shipped)
 
 Wave-1 phase (cut from `dev`). The daily-driver surface: a real Tasks page, an Overview overdue-tasks
