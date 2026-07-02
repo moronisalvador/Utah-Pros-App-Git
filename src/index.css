@@ -6740,6 +6740,56 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── CRM WAVE RESERVED — Phase 9 (intelligence, reports · Session H) ───
    Owner: Phase 9. */
+.crm-forecast-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.crm-forecast-total { font-size: 24px; font-weight: 800; color: var(--crm-accent); letter-spacing: -0.02em; }
+.crm-forecast-stages { display: flex; flex-direction: column; gap: 6px; margin-top: var(--space-3); }
+.crm-forecast-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-3); align-items: center;
+  padding: 8px 10px; background: var(--crm-bg-content); border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius);
+}
+.crm-forecast-stage-name { font-size: 13px; font-weight: 600; color: var(--crm-text-primary); }
+.crm-forecast-weight { font-size: 11px; font-weight: 600; color: var(--crm-text-tertiary); }
+.crm-forecast-stage-value { font-size: 13px; font-weight: 700; color: var(--crm-text-primary); font-variant-numeric: tabular-nums; }
+
+/* Horizontal count bars shared by the speed-to-lead report. */
+.crm-report-bars { display: flex; flex-direction: column; gap: 6px; margin-top: var(--space-3); }
+.crm-report-bar-row { display: grid; grid-template-columns: 84px 1fr 44px; gap: var(--space-3); align-items: center; }
+.crm-report-bar-label { font-size: 12px; color: var(--crm-text-secondary); }
+.crm-report-bar-track { height: 10px; background: var(--crm-bg-content); border-radius: 9999px; overflow: hidden; }
+.crm-report-bar-fill { display: block; height: 100%; background: var(--crm-text-tertiary); border-radius: 9999px; min-width: 2px; }
+.crm-report-bar-row.is-sla .crm-report-bar-fill { background: var(--crm-success); }
+.crm-report-bar-val { font-size: 12px; font-weight: 700; text-align: right; color: var(--crm-text-primary); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 768px) {
+  .crm-report-bar-row { grid-template-columns: 72px 1fr 40px; }
+}
+
+/* AI reply suggestions — draft-only panel (wired into Conversations by Phase 7). */
+.crm-reply-suggest {
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
+  background: var(--crm-bg-content); padding: var(--space-3); display: flex;
+  flex-direction: column; gap: var(--space-2);
+}
+.crm-reply-suggest-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.crm-reply-suggest-title { font-size: 12px; font-weight: 700; color: var(--crm-text-primary); }
+.crm-reply-suggest-note { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-tertiary); }
+.crm-reply-suggest-list { display: flex; flex-direction: column; gap: 6px; }
+.crm-reply-suggest-item {
+  text-align: left; font-family: inherit; font-size: 13px; line-height: 1.4;
+  color: var(--crm-text-primary); background: var(--crm-bg-card);
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
+  padding: 8px 10px; cursor: pointer; min-height: 44px; transition: border-color 0.12s;
+}
+.crm-reply-suggest-item:hover { border-color: var(--crm-accent); }
+.crm-reply-suggest-refresh {
+  align-self: flex-start; font-family: inherit; font-size: 12px; font-weight: 600;
+  color: var(--crm-accent); background: none; border: none; cursor: pointer; padding: 2px 0;
+}
+.crm-reply-suggest-refresh:disabled { color: var(--crm-text-tertiary); cursor: default; }
 
 /* ─── CRM WAVE RESERVED — Phase 10 (CRM forms · Session I) ───
    Owner: Phase 10. */

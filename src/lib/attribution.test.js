@@ -33,6 +33,10 @@ import {
   fmtMoney,
   fmtRatio,
   fmtPct,
+  deriveConversionTrend,
+  deriveLeaderboard,
+  speedToLeadSummary,
+  ltvSummary,
 } from './attribution.js';
 
 describe('costPerLead — spend / leads', () => {
@@ -223,5 +227,99 @@ describe('display formatters distinguish "no data" (—) from a real zero', () =
     expect(fmtPct(null)).toBe('—');
     expect(fmtPct(0)).toBe('0%');
     expect(fmtPct(0.25)).toBe('25%');
+  });
+});
+
+// ─── Phase 9 report math — same "guard div-by-zero, real 0 is real" conventions ─
+describe('deriveConversionTrend — per-period funnel rates', () => {
+  it('attaches guarded rates to each period', () => {
+    const rows = [
+      { period: '2026-05', leads: 100, estimates: 40, won_jobs: 10, revenue: 50000 },
+      { period: '2026-06', leads: 0, estimates: 0, won_jobs: 0, revenue: 0 },
+    ];
+    const out = deriveConversionTrend(rows);
+    expect(out[0].lead_to_estimate_rate).toBe(0.4);
+    expect(out[0].estimate_to_won_rate).toBe(0.25);
+    expect(out[0].lead_to_won_rate).toBe(0.1);
+    expect(out[0].revenue_per_won).toBe(5000);
+    // An empty period divides by zero everywhere → null, never NaN.
+    expect(out[1].lead_to_estimate_rate).toBeNull();
+    expect(out[1].estimate_to_won_rate).toBeNull();
+    expect(out[1].revenue_per_won).toBeNull();
+  });
+  it('a real 0% conversion (leads but no estimates) is a number, not —', () => {
+    const [row] = deriveConversionTrend([{ period: 'p', leads: 20, estimates: 0, won_jobs: 0, revenue: 0 }]);
+    expect(row.lead_to_estimate_rate).toBe(0);
+    expect(row.estimate_to_won_rate).toBeNull(); // 0 estimates → div-by-zero guard
+  });
+  it('handles an empty input', () => {
+    expect(deriveConversionTrend([])).toEqual([]);
+    expect(deriveConversionTrend(null)).toEqual([]);
+  });
+});
+
+describe('deriveLeaderboard — estimator win rate + revenue/won', () => {
+  it('computes win rate and sorts by revenue desc', () => {
+    const rows = [
+      { estimator: 'Ana', total_jobs: 10, won_jobs: 4, revenue: 80000 },
+      { estimator: 'Ben', total_jobs: 5, won_jobs: 5, revenue: 200000 },
+    ];
+    const out = deriveLeaderboard(rows);
+    expect(out.map(r => r.estimator)).toEqual(['Ben', 'Ana']); // revenue desc
+    expect(out[1].win_rate).toBe(0.4);          // Ana 4/10
+    expect(out[0].win_rate).toBe(1);            // Ben 5/5
+    expect(out[0].revenue_per_won).toBe(40000); // 200000/5
+  });
+  it('guards an estimator with no assigned jobs (div-by-zero → null win rate)', () => {
+    const [row] = deriveLeaderboard([{ estimator: 'New', total_jobs: 0, won_jobs: 0, revenue: 0 }]);
+    expect(row.win_rate).toBeNull();
+    expect(row.revenue_per_won).toBeNull();
+  });
+});
+
+describe('speedToLeadSummary — SLA hit rate over response-time buckets', () => {
+  const rows = [
+    { bucket: '≤5 min', within_sla: true, count: 8 },
+    { bucket: '5–30 min', within_sla: false, count: 6 },
+    { bucket: '>24 hr', within_sla: false, count: 6 },
+  ];
+  it('sums totals and computes the within-SLA rate', () => {
+    const s = speedToLeadSummary(rows);
+    expect(s.total).toBe(20);
+    expect(s.within_sla).toBe(8);
+    expect(s.sla_rate).toBe(0.4);
+  });
+  it('guards an empty history window (no moves yet) without dividing by zero', () => {
+    const s = speedToLeadSummary([]);
+    expect(s.total).toBe(0);
+    expect(s.within_sla).toBe(0);
+    expect(s.sla_rate).toBeNull();
+  });
+  it('a real 0% SLA (responses, none fast) is 0, not —', () => {
+    const s = speedToLeadSummary([{ bucket: '>24 hr', within_sla: false, count: 5 }]);
+    expect(s.sla_rate).toBe(0);
+  });
+});
+
+describe('ltvSummary — contact lifetime value portfolio', () => {
+  const rows = [
+    { contact_id: 'a', revenue: 30000, jobs: 3 },
+    { contact_id: 'b', revenue: 10000, jobs: 1 },
+    { contact_id: 'c', revenue: 20000, jobs: 2 },
+  ];
+  it('totals revenue, averages LTV, and computes the repeat rate', () => {
+    const s = ltvSummary(rows);
+    expect(s.contact_count).toBe(3);
+    expect(s.total_revenue).toBe(60000);
+    expect(s.avg_ltv).toBe(20000);
+    expect(s.repeat_count).toBe(2);           // a (3 jobs) + c (2 jobs)
+    expect(s.repeat_rate).toBeCloseTo(2 / 3, 10);
+  });
+  it('guards an empty portfolio (avg + repeat rate null, not NaN)', () => {
+    const s = ltvSummary([]);
+    expect(s.contact_count).toBe(0);
+    expect(s.total_revenue).toBe(0);
+    expect(s.avg_ltv).toBeNull();
+    expect(s.repeat_rate).toBeNull();
   });
 });
