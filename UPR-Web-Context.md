@@ -3960,6 +3960,43 @@ review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none 
   the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
   deferred follow-up.
 
+---
+
+## Feedback Media — plan of record (session 2026-07-02, docs only — no feature code)
+
+**What this session shipped** (branch `claude/chat-session-og9agt` → PR into `dev`):
+- `docs/feedback-media-roadmap.md` — the dispatch model of record for upgrading the feedback
+  surface (photos + **video** attachments for everyone incl. a new desktop `/feedback` page,
+  client-side **image** compression, video caps, 90-day attachment purge, admin inbox rebuilt with
+  video player/lightbox, notify-on-submit). Live-verified gap audit (taxonomy A–G), 5 findings,
+  three phase blocks (**F → B ∥ C**, disjointness adversarially proven), dependency graph,
+  ownership matrix + frozen list (in-doc — no separate manifest file), options-on-record
+  (video compression: caps not transcode; bucket: keep `job-files`; notify: bell + gated push).
+- `docs/feedback-media-dispatch.md` — three complete cold-session copy-paste blocks (F, B, C).
+- Zero code/schema/seed changes — non-CRM initiative, progress tracks via the roadmap doc's
+  checklists (CRM tracker not used).
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **RPC-cutover landmine (averted at plan time):** adding DEFAULT params to `insert_tech_feedback`
+  via `CREATE OR REPLACE` would create an ambiguous overload and break every live submit instantly
+  (shared Supabase). Phase F must DROP the 5-arg function + CREATE the 7-arg one, with a committed
+  old-signature test; the new body mirrors screenshots↔attachments both ways so B/C deploy order
+  never matters.
+- **Two live bugs:** screenshot removal/abandon orphans storage objects (`TechFeedback.jsx:118-124`);
+  AdminFeedback's shared `noteText` state can save notes onto the wrong row. Both fixed in-plan.
+- **Push reaches nobody today:** `send-push` has zero callers, APNS env unset, `device_tokens` = 0
+  rows. Notify design = in-app bell via `create_notification` (works today; global feed) + per-admin
+  push fan-out (503-tolerant; goes live when the owner configures APNs). Email declined by owner.
+- `storage.*` owned by `supabase_storage_admin` → migrations cannot create buckets/policies; the
+  live `job-files` 50MB server cap is dashboard-configured (invisible to schema-as-code).
+- New nav items need `always: true` or `isItemVisible()`/`canAccess()` hides them from everyone.
+
+**Dispatch:** Wave 0 = Session F alone (Opus·high — schema cutover + `mediaCompress.js` +
+`FeedbackAttachments.jsx` composer + working desktop page + wiring). Wave 1 after F merges =
+Session B (Opus·medium — TechFeedback rebuild + `feedback-notify` worker) ∥ Session C (Opus·high —
+AdminFeedback rebuild + `purge-feedback-media` worker). Owner anytime-lane actions: APNS env +
+device tokens; point the external cron at the purge endpoint; optional dedicated bucket.
+
 ## CRM Phase 5 — Automation recipes (Jul 2 2026 — shipped)
 
 Configurable linear automation builder (Session K). One additive migration
