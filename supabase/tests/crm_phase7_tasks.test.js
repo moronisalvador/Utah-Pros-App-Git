@@ -77,10 +77,10 @@ describe.skipIf(!hasCreds)('CRM Phase 7 — task RPCs + MT-day overdue predicate
     }
   });
 
-  it('set_task_status completes then reopens, tracking completed_at', async () => {
+  it('set_task_status marks done then reopens, tracking completed_at', async () => {
     const t = await mkTask('status', '2026-07-10T18:00:00Z', 'open');
-    const done = await db.rpc('set_task_status', { p_task_id: t.id, p_status: 'completed' });
-    expect(done.status).toBe('completed');
+    const done = await db.rpc('set_task_status', { p_task_id: t.id, p_status: 'done' });
+    expect(done.status).toBe('done');
     expect(done.completed_at).toBeTruthy();
     const reopened = await db.rpc('set_task_status', { p_task_id: t.id, p_status: 'open' });
     expect(reopened.status).toBe('open');
@@ -93,7 +93,7 @@ describe.skipIf(!hasCreds)('CRM Phase 7 — task RPCs + MT-day overdue predicate
     const prior = await mkTask('overdue-prior-day', '2026-07-01T18:00:00Z', 'open'); // July 1 MDT — overdue
     const earlierToday = await mkTask('overdue-earlier-today', '2026-07-02T13:30:00Z', 'open'); // 07:30 MDT July 2 — NOT overdue
     const future = await mkTask('overdue-future', '2026-07-03T06:30:00Z', 'open'); // July 3 MDT — not overdue
-    const doneOld = await mkTask('overdue-done', '2026-06-01T18:00:00Z', 'completed'); // old but completed — excluded
+    const doneOld = await mkTask('overdue-done', '2026-06-01T18:00:00Z', 'done'); // old but done — excluded
 
     const overdue = await db.rpc('get_overdue_tasks', { p_org_id: orgId, p_now: now });
     const ids = overdue.map(r => r.id);
