@@ -179,3 +179,80 @@ export function fmtPct(n) {
   if (n == null) return '—';
   return `${Math.round(n * 100)}%`;
 }
+
+// ─── SECTION: Phase 9 report derivations ──────────────
+// The fixed-report money math, same conventions as above: a zero denominator is
+// a guard (→ null → "—"); a zero numerator over a positive denominator is a real
+// 0 (0%, $0). The report RPCs return raw counts only — the rates live here so
+// they are unit-tested once, never re-derived (and gotten wrong) per component.
+
+/** One conversion-trend period row → funnel rates + revenue/won attached. */
+export function deriveConversionTrendRow(row) {
+  const leads = num(row.leads);
+  const estimates = num(row.estimates);
+  const won = num(row.won_jobs);
+  const revenue = num(row.revenue);
+  return {
+    ...row,
+    leads, estimates, won_jobs: won, revenue,
+    lead_to_estimate_rate: conversionRate(estimates, leads),
+    estimate_to_won_rate: conversionRate(won, estimates),
+    lead_to_won_rate: conversionRate(won, leads),
+    revenue_per_won: won > 0 ? revenue / won : null,
+  };
+}
+
+/** Raw conversion-trend rows → derived rows (one per period). */
+export function deriveConversionTrend(rows) {
+  return (rows || []).map(deriveConversionTrendRow);
+}
+
+/** One estimator leaderboard row → win rate + revenue/won (guarded). */
+export function deriveEstimatorRow(row) {
+  const totalJobs = num(row.total_jobs);
+  const won = num(row.won_jobs);
+  const revenue = num(row.revenue);
+  return {
+    ...row,
+    total_jobs: totalJobs, won_jobs: won, revenue,
+    win_rate: conversionRate(won, totalJobs),
+    revenue_per_won: won > 0 ? revenue / won : null,
+  };
+}
+
+/** Raw leaderboard rows → derived + sorted by revenue desc. */
+export function deriveLeaderboard(rows) {
+  return (rows || []).map(deriveEstimatorRow).sort((a, b) => b.revenue - a.revenue);
+}
+
+/**
+ * Speed-to-lead response-time buckets → SLA summary. Each bucket row carries a
+ * `within_sla` flag from the RPC (true for the fastest bucket); the rate is
+ * within-SLA responses over all responses, div-by-zero guarded (empty history
+ * window → null, not 0/0).
+ */
+export function speedToLeadSummary(rows) {
+  const buckets = rows || [];
+  const total = buckets.reduce((s, b) => s + num(b.count), 0);
+  const withinSla = buckets.reduce((s, b) => s + (b.within_sla ? num(b.count) : 0), 0);
+  return { total, within_sla: withinSla, sla_rate: conversionRate(withinSla, total) };
+}
+
+/**
+ * Contact-LTV rows → portfolio summary: total revenue, average LTV per contact,
+ * and the repeat rate (contacts with more than one won job). Average + repeat
+ * rate guard an empty portfolio to null rather than NaN.
+ */
+export function ltvSummary(rows) {
+  const list = rows || [];
+  const contactCount = list.length;
+  const totalRevenue = list.reduce((s, r) => s + num(r.revenue), 0);
+  const repeatCount = list.filter(r => num(r.jobs) > 1).length;
+  return {
+    contact_count: contactCount,
+    total_revenue: totalRevenue,
+    avg_ltv: contactCount > 0 ? totalRevenue / contactCount : null,
+    repeat_count: repeatCount,
+    repeat_rate: conversionRate(repeatCount, contactCount),
+  };
+}
