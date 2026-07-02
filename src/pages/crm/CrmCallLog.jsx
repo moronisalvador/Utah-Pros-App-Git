@@ -20,11 +20,11 @@
  *              (getAuthHeader for the recording proxy fetch)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
  *                       incl. transcript_analysis for the conversation view);
- *                       crm_tracking_numbers labels via get_tracking_numbers RPC;
+ *                       crm_tracking_numbers titles via get_tracking_numbers RPC
+ *                       (READ-ONLY here — titles are edited in CrmSettings.jsx);
  *                       call recordings via GET /api/callrail-recording
  *              writes → inbound_leads.lead_status (update_lead_status RPC);
  *                       inbound_leads.notes + value (set_lead_details RPC);
- *                       crm_tracking_numbers.label (set_tracking_number_label RPC);
  *                       inbound_leads.transcription + transcript_analysis via POST
  *                       /api/transcribe-call (the "Transcribe" button — Deepgram,
  *                       since CallRail's plan doesn't expose transcripts)
@@ -61,6 +61,16 @@ function formatDuration(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// A call with no recording yet, seen in the last 10 minutes, is almost certainly
+// still being processed by CallRail (recordings land ~1–3 min after hang-up, then
+// we auto-transcribe). Show a "waiting" state so a fresh 0:00 row — which the page
+// auto-refreshes into the finished call — never looks broken.
+function isAwaitingRecording(lead) {
+  if (lead.source_type !== 'call' || lead.recording_url) return false;
+  const t = new Date(lead.occurred_at || lead.created_at || 0).getTime();
+  return t > 0 && (Date.now() - t) < 10 * 60 * 1000;
 }
 
 function fmtTime(sec) {
@@ -179,7 +189,7 @@ function TranscriptView({ analysis, text }) {
   );
 }
 
-function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
+function LeadRow({ lead, labelMap, onStatusChange }) {
   const { db } = useAuth();
   // caller_name (detected from the transcript) can arrive after load, so track it.
   const [callerName, setCallerName] = useState(lead.caller_name);
@@ -192,27 +202,16 @@ function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
   const [analysis, setAnalysis] = useState(lead.transcript_analysis);
   const [transcribing, setTranscribing] = useState(false);
 
-  // Campaign label for this call's tracking number (inline-editable).
+  // Campaign title for this call's tracking number — READ-ONLY here. Titles are
+  // set once per number in CRM Settings → Tracking Numbers (the number is a
+  // hard-coded reference, not something you edit per call).
   const campaignLabel = labelMap.get(lead.tracking_number);
-  const [editingLabel, setEditingLabel] = useState(false);
-  const [labelDraft, setLabelDraft] = useState('');
-  const [savingLabel, setSavingLabel] = useState(false);
 
   // Notes + value (qualify the lead).
   const [notes, setNotes] = useState(lead.notes || '');
   const [value, setValue] = useState(lead.value ?? '');
   const [editingDetails, setEditingDetails] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
-
-  const saveLabel = async () => {
-    setSavingLabel(true);
-    try {
-      await db.rpc('set_tracking_number_label', { p_tracking_number: lead.tracking_number, p_label: labelDraft });
-      setEditingLabel(false);
-      onLabelSaved();  // refresh the shared map so every row with this number updates
-    } catch { err('Could not save the campaign label'); }
-    finally { setSavingLabel(false); }
-  };
 
   const saveDetails = async () => {
     setSavingDetails(true);
@@ -293,27 +292,18 @@ function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
         </div>
         <div className="crm-call-row-meta">
           {lead.source_type === 'call' && <span>{formatDuration(lead.duration_sec)}</span>}
-          {/* Campaign = the tracking number they dialed, labeled. Click ✎ to name it. */}
+          {/* Campaign = the tracking number they dialed, shown by its title. The
+              title (which campaign the number belongs to) is set in CRM Settings →
+              Tracking Numbers; here it's a read-only chip. */}
           {lead.tracking_number && (
-            editingLabel ? (
-              <span className="crm-call-campaign-edit" onClick={(e) => e.stopPropagation()}>
-                <input
-                  className="crm-integration-input crm-call-campaign-input" autoFocus
-                  value={labelDraft} onChange={(e) => setLabelDraft(e.target.value)}
-                  placeholder={formatPhone(lead.tracking_number)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditingLabel(false); }}
-                />
-                <button className="crm-call-row-play" onClick={saveLabel} disabled={savingLabel}>{savingLabel ? '…' : 'Save'}</button>
-                <button className="crm-call-row-play" onClick={() => setEditingLabel(false)}>✕</button>
-              </span>
-            ) : (
-              <button
-                className="crm-call-campaign" title="Label this number as a campaign"
-                onClick={() => { setLabelDraft(campaignLabel || ''); setEditingLabel(true); }}
-              >
-                {campaignLabel || formatPhone(lead.tracking_number)} <span className="crm-call-campaign-edit-icon">✎</span>
-              </button>
-            )
+            <span
+              className="crm-call-campaign crm-call-campaign-static"
+              title={campaignLabel
+                ? `${formatPhone(lead.tracking_number)} — set titles in CRM Settings → Tracking Numbers`
+                : 'Untitled tracking number — set a title in CRM Settings → Tracking Numbers'}
+            >
+              {campaignLabel || formatPhone(lead.tracking_number)}
+            </span>
           )}
           {lead.source && <span className="crm-call-row-source">{lead.source}{lead.campaign ? ` · ${lead.campaign}` : ''}</span>}
           {formatValue(value) && <span className="crm-badge crm-badge-value">{formatValue(value)}</span>}
@@ -331,6 +321,12 @@ function LeadRow({ lead, labelMap, onLabelSaved, onStatusChange }) {
         </select>
       </div>
       <div className="crm-call-row-detail">
+        {isAwaitingRecording(lead) && (
+          <span className="crm-call-awaiting">
+            <span className="crm-awaiting-dot" aria-hidden="true" />
+            Waiting for recording &amp; transcript…
+          </span>
+        )}
         {lead.recording_url && (
           audioUrl
             ? <RecordingPlayer src={audioUrl} />
@@ -471,7 +467,7 @@ export default function CrmCallLog() {
           {leads.map(lead => (
             <LeadRow
               key={lead.id} lead={lead} labelMap={labelMap}
-              onLabelSaved={loadLabels} onStatusChange={handleStatusChange}
+              onStatusChange={handleStatusChange}
             />
           ))}
         </div>

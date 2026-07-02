@@ -17,7 +17,10 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  functions/lib/email.js (sendEmail), functions/lib/email-consent.js
- *              (emailAllows), functions/lib/supabase.js (service-role client)
+ *              (emailAllows), functions/lib/supabase.js (service-role client),
+ *              functions/lib/email-template.js (wrapEmailBody — the branded
+ *              shell every send is wrapped in, kept in sync with the CRM
+ *              Campaigns builder's live preview, src/lib/emailTemplate.js)
  *   Data:      reads  → contacts, message_templates, email_suppressions
  *              writes → none directly (callers log system_events/worker_runs)
  *
@@ -60,6 +63,7 @@
 import { sendEmail } from './email.js';
 import { emailAllows } from './email-consent.js';
 import { supabase } from './supabase.js';
+import { wrapEmailBody } from './email-template.js';
 
 // ─── SECTION: Helpers ──────────────
 export function renderTemplate(body, variables = {}) {
@@ -104,15 +108,14 @@ export async function sendGatedEmail(env, { contact, subject, html, recipientId 
   }
 
   const unsubscribeUrl = buildUnsubscribeUrl(env, email, recipientId);
-  const bodyWithFooter = `${html || ''}
-<p style="font-size:12px;color:#888;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
-  <a href="${unsubscribeUrl}">Unsubscribe</a> from Utah Pros Restoration marketing emails.
-</p>`;
+  // Same branded shell the CRM Campaigns builder's live preview renders
+  // (src/lib/emailTemplate.js) — keep both in sync, see that file's NOTES.
+  const wrappedHtml = wrapEmailBody({ bodyHtml: html, unsubscribeUrl });
 
   const result = await sendEmail(env, {
     to: { email, name: contact?.name },
     subject,
-    html: bodyWithFooter,
+    html: wrappedHtml,
     headers: {
       'List-Unsubscribe': `<${unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -134,7 +137,11 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   }
 
   const db = supabase(env);
-  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,dnd`);
+  // phone included for Phase 4d parity with the campaign send path
+  // (functions/api/send-email-campaign.js) — this function doesn't auto-merge
+  // contact fields into `variables` itself, so this alone is prep, not full
+  // wiring; a caller still has to pass phone through `extra`/`variables`.
+  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,phone,dnd`);
   if (!contact) return { ok: false, skipped: true, reason: 'contact_not_found' };
 
   let body = extra.html || extra.body || '';

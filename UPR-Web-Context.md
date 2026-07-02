@@ -2298,11 +2298,13 @@ set_lead_details(p_lead_id, p_notes, p_value, p_updated_by) — sets a lead's `n
   editor. Logs `crm_lead_details_updated`. (migration `20260701_crm_lead_details.sql`; the columns
   already existed.)
 get_tracking_numbers() → (tracking_number, label, call_count) — every DISTINCT tracking number seen
-  in inbound_leads LEFT JOINed to its campaign label + call count, most-active first. Reader for the
-  Call Log's campaign chips.
-set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign label for a tracking
+  in inbound_leads LEFT JOINed to its campaign title + call count, most-active first. Powers the
+  **CRM Settings → Tracking Numbers** editor AND the Call Log's read-only title lookup (`labelMap`).
+set_tracking_number_label(p_tracking_number, p_label) — upsert the campaign TITLE for a tracking
   number (on the org's row). Both `SECURITY DEFINER`, granted `anon, authenticated`.
-  (migration `20260701_crm_tracking_numbers.sql`.)
+  (migration `20260701_crm_tracking_numbers.sql`.) **Titles are set in CRM Settings**, not inline on
+  the Call Log — the Call Log chip is now read-only, showing the title (or the formatted number when
+  untitled). `CrmSettings.jsx` lists every number with its call count + an editable title field.
 get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest leads with the linked
   `contact` ({name, phone}) embedded — mirrors the old `select=*,contact:contacts(name,phone)` shape
   exactly. `SECURITY DEFINER`, `STABLE`, granted `anon, authenticated`. **Why an RPC and not a GET
@@ -2316,7 +2318,10 @@ get_inbound_leads(p_limit default 100, capped 500) → jsonb array of the newest
   *ring* time (near-instant), add a CallRail **"Call Started"** webhook pointing at the same
   `/api/callrail-webhook?secret=…` endpoint — ingestion already handles it (the mapper tolerates the
   missing duration/recording and `upsert_lead_from_callrail` is idempotent on `callrail_id`, so the
-  post-call event enriches the same row). An in-progress lead renders with duration `—`.
+  post-call event enriches the same row). An in-progress lead renders with duration `—` plus a
+  pulsing **"Waiting for recording & transcript…"** indicator (`isAwaitingRecording`: a call with no
+  recording seen in the last 10 min) so a fresh 0:00 row never looks broken — the page auto-refreshes
+  it into Play/transcript once CallRail delivers and the webhook auto-transcribes.
 ```
 
 **New table `crm_tracking_numbers`** (`id, org_id, tracking_number, label, created_at, updated_at`,
@@ -2365,7 +2370,14 @@ callrail-webhook.js   — POST, receives CallRail's call/form events, maps paylo
                          (mapCallPayload/mapFormPayload/pickCallId/boolish/isAllowedRecordingUrl),
                          unit-tested against the real payload in `functions/lib/callrail.test.js`.
                          `boolish()` fixes a form-encoding trap where the string "false" was truthy
-                         and mis-flagged clean calls as spam. Always returns 200 except on a
+                         and mis-flagged clean calls as spam. **Auto-transcribe:** after the upsert,
+                         if `shouldAutoTranscribe(lead)` (a call with an api-form recording and no
+                         transcript yet), it runs Deepgram in the background via `context.waitUntil`
+                         (imports `transcribeLead` from transcribe-call.js) — so the transcript +
+                         summary are ready within seconds of the recording landing, no manual click.
+                         Idempotent: only the recording-ready delivery passes, and a re-delivery after
+                         the transcript exists is skipped (never re-bills Deepgram); best-effort, so a
+                         failed auto-transcript never fails the webhook. Always returns 200 except on a
                          bad/missing secret (403), to avoid a CallRail retry storm.
 callrail-connect.js   — GET (read the webhook secret) / POST (save API key, returns the secret) /
                          DELETE (disconnect), all authenticated. Writes integration_credentials
@@ -2449,11 +2461,16 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          resolves the recording via `resolveCallRecording()`, then hands Deepgram the
                          signed URL so it fetches the audio itself (no Worker buffering; falls back to
                          POSTing bytes when CallRail streams directly). **v2 request** (one call):
-                         `model=nova-3&smart_format&punctuate&utterances&multichannel&diarize` +
-                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`. CallRail
-                         records Agent/Customer on **separate stereo channels**, so `multichannel`
-                         gives exact speaker separation (Agent/Customer labels); `diarize` is the mono
-                         fallback ("Speaker N"). Stores BOTH the flat text (`formatDeepgramTranscript`)
+                         `model=nova-3&smart_format&punctuate&utterances&diarize` +
+                         Audio Intelligence `summarize=v2&sentiment&topics&detect_entities`.
+                         **`multichannel` was DROPPED** — CallRail actually hands us a **MONO**
+                         recording, and multichannel on a 1-channel file makes Deepgram treat the whole
+                         call as one "channel 0" speaker, SUPPRESSING diarization (a two-person call
+                         collapsed into a single "Agent" block). `diarize` alone separates the voices;
+                         when mono still defeats it (≤1 speaker → `needsResegment`), a Claude pass
+                         (`resegmentSpeakers` + pure `buildResegmentPrompt`/`parseResegmentedTurns`)
+                         **rebuilds** the Agent/Customer turns from the raw transcript
+                         (`speakerMode='resegment'`). Stores BOTH the flat text (`formatDeepgramTranscript`)
                          and the structured `transcript_analysis` (`buildTranscriptAnalysis` — pure,
                          unit-tested: turns + summary + sentiment + topics + entities) via
                          `set_lead_transcription`. **Idempotency:** the single-lead guard skips only
@@ -2462,14 +2479,17 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          rows get re-enriched once with nova-3 + intelligence, then are skipped.
                          Backfill hard-capped at 200 (MAX_BACKFILL); logs one worker_runs row.
                          **Deepgram key** lives in integration_credentials (provider='deepgram') —
-                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. First
-                         live run confirms the stereo download + exact Audio-Intelligence field paths
-                         (parser is defensive; unconfirmed shapes degrade to null/[], never throw).
+                         a pasted key, not a Cloudflare env var, same pattern as CallRail's. Confirmed
+                         live: CallRail's download is MONO (hence the diarize + re-segment path above);
+                         the parser is defensive — unconfirmed Audio-Intelligence shapes degrade to
+                         null/[], never throw.
                          **Speaker naming (best-effort):** after Deepgram, a Claude Haiku pass
                          (`functions/lib/speakerNaming.js` — pure buildSpeakerPrompt/
                          parseSpeakerIdentities/applySpeakerIdentities, unit-tested) identifies which
                          speaker is the Agent vs Customer and each person's name, relabeling the
-                         `transcript_analysis` turns (each turn gains a `role`). The caller's name is
+                         `transcript_analysis` turns (each turn gains a `role`). **When diarization
+                         collapsed to one speaker** (mono), the worker instead runs `resegmentSpeakers`
+                         (above), which rebuilds AND names the turns in one pass. The caller's name is
                          stored via `set_lead_caller_name`. Needs `ANTHROPIC_API_KEY` (Cloudflare env,
                          already set for the chat workers); any failure leaves Speaker 1/2 untouched.
                          Topics are capped to the 6 most-confident in `buildTranscriptAnalysis`
@@ -2841,7 +2861,10 @@ column; an invalid number is rejected with a toast.
   `pipeline_stages` has no such column). Clicking a card opens a slide-out detail panel: a stage
   `<select>` (the touch-device path for moving a lead, since drag is disabled there), lead
   metadata, and the `get_contact_activity`-backed timeline, badge-colored per activity type.
-- **CrmSettings.jsx** (`/crm/settings`) — pipeline-stage CRUD: add, inline rename/recolor/
+- **CrmSettings.jsx** (`/crm/settings`) — TWO sections. **(1) Tracking numbers:** lists every
+  CallRail number from `get_tracking_numbers` with its call count + an editable **title** (the
+  campaign it belongs to) → `set_tracking_number_label`; the Call Log shows that title in place of the
+  raw number (read-only there). **(2) Pipeline-stage CRUD:** add, inline rename/recolor/
   won-lost-toggle, reorder via left/right buttons that swap `sort_order` with the neighboring stage
   (simpler and more reliable than drag-and-drop for an admin settings screen), delete via the
   inline two-click confirm pattern (`onBlur` cancels — no modal, per CLAUDE.md Rule 2), surfacing
