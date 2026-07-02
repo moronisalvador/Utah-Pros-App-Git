@@ -6,7 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   A small set of icons just for the CRM section's own left sidebar
  *   (Overview, Leads, Contacts, Conversations, Call Log, Tasks, Sequences,
- *   Forms, Attribution, Reports, Campaigns, Integrations, Settings). Kept in
+ *   Automations, Forms, Attribution, Reports, Campaigns, Integrations,
+ *   Settings). Kept in
  *   their own file, separate from the app-wide icon set
  *   in src/lib/navItems.jsx, because a couple of names (Leads, Settings)
  *   would otherwise collide with icons that already exist there for

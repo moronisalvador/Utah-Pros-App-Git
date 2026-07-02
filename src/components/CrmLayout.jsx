@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   The real shell every CRM screen lives inside — a left menu (Overview,
- *   Leads, Call Log, Tasks, Attribution, Reports, Integrations, Settings)
+ *   Leads, Contacts, Conversations, Call Log, Tasks, Sequences, Automations,
+ *   Forms, Attribution, Reports, Campaigns, Integrations, Settings)
  *   next to whichever CRM page is open, in the CRM's own look (a different
  *   font and color set than the rest of the app, on purpose — see NOTES).
  *
