@@ -3870,6 +3870,88 @@ review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none 
   the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
   deferred follow-up.
 
+## CRM Phase 5 — Automation recipes (Jul 2 2026 — shipped)
+
+Configurable linear automation builder (Session K). One additive migration
+`20260702_crm_phase5_automations.sql` (post-wave single session — manifest §7 amends the
+"zero schema" wave rule): two NEW tables + this phase's five API RPCs created directly (no stub
+ceremony — no cross-session consumer). Behind `page:crm` + the new dev-only
+`feature:crm_automations` sub-flag (seeded as a DB row — not in `featureFlags.js`, which is out
+of Phase 5's ownership; a missing row would default OPEN, so seeding it is what gates the screen).
+
+**Tables** (both `org_id` + RLS + explicit policy at creation):
+- `crm_automations` — `id, org_id, name, description, trigger_event_type` (a `system_events.event_type`),
+  `conditions jsonb` (`[{field, op, value}]` AND-filters), `actions jsonb` (ordered
+  `[{type: send_email|send_sms|enroll_sequence|create_task, config, delay_hours}]`), `enabled`,
+  `created_by, created_at, updated_at`.
+- `crm_automation_runs` — one row per (rule, triggering event): `automation_id` (FK CASCADE),
+  `org_id, triggering_event_id` (a `system_events.id` — no FK, the bus is append-only),
+  `contact_id, entity_type, entity_id, current_action` (cursor into `actions[]`), `status`
+  (`active|completed|failed|skipped|held`), `next_run_at, last_error`. **`UNIQUE(automation_id,
+  triggering_event_id)`** is the idempotency/S1 dedup key — `system_events` has no cursor, so
+  run-creation dedups on this, never on timestamps.
+
+**RPCs** (SECURITY DEFINER + GRANT anon, authenticated): `get_crm_automations(p_org_id)` (list +
+per-rule run stats), `upsert_crm_automation(...)` (create/edit — **S1 guard here**; `p_enabled`
+NULL = leave as-is), `set_automation_enabled(p_id, p_enabled)` (**re-checks S1 on enable**),
+`delete_crm_automation(p_automation_id)` (cascades runs), `get_automation_runs(p_automation_id,
+p_org_id, p_limit)`. Plus `crm_fixed_automation_conflict(p_org_id, p_trigger_event_type)` (the S1
+predicate, shared by both guarded RPCs) and `enqueue_automation_run(...)` (idempotent
+`INSERT … ON CONFLICT (automation_id, triggering_event_id) DO NOTHING` — the worker calls it
+because the REST client's `upsert` MERGES, which would overwrite a live run).
+
+**Finding S1 (double-send, binding)** — the fixed engine (`run-automations.js`) and this
+configurable engine keep dedup markers in namespaces that can't see each other, so a "missed
+call → text" rule + the fixed missed-call-textback = two SMS for one call (TCPA, per-message).
+Resolution: `crm_fixed_automation_conflict` refuses an ENABLED rule whose `trigger_event_type`
+duplicates an ENABLED fixed automation, checked in `upsert_crm_automation` AND
+`set_automation_enabled`; the engine also skips such rules at fire time (defense in depth). The
+trigger→fixed-automation map (`speed_to_lead`/`missed_call_textback` → `crm_lead_created`(+`_manual`);
+`review_request` → `job.phase_changed`/`job.status_changed`; `no_response_followup` is a time-scan
+with no discrete event → collides with nothing) is duplicated in the engine's
+`FIXED_AUTOMATION_TRIGGERS` and MUST stay in sync with the SQL predicate.
+
+**Worker — `functions/api/process-crm-automations.js`** (new; `onRequest*` authenticated manual
+trigger + `scheduled()` cron, deliberately named distinct from 4d's `run-automations.js`).
+Structural sibling of `process-sequences.js`. ① **MATCH** — scans recent `system_events`
+(`MATCH_LOOKBACK_MIN` 180) for enabled, non-S1-blocked triggers, evaluates AND-conditions against
+the event payload merged over the trigger entity (payload wins on key collision), and enqueues one
+idempotent run per match. ② **ADVANCE** — due runs (`status in (active,held) & next_run_at<=now`)
+execute `actions[current_action]`: sends go ONLY through `sendAutomatedMessage()` (the frozen
+consent gate — never twilio/email directly, never `skip_compliance`), enroll via
+`enroll_in_sequence`, task via `upsert_crm_task`; then the cursor advances via imported Phase-8
+`planStepOutcome`/`computeNextRunAt` semantics (read-only import; `process-sequences.js` never
+edited). A held SMS (kill-switch OFF / TCPA quiet-hours) becomes `status='held'`, cursor
+UNCHANGED, retried in `HOLD_RETRY_HOURS` — never dropped, never advanced past; a durable consent
+skip (dnd/suppressed/no contact) advances past. One `worker_runs` row per cron run. Single-tenant:
+`system_events` has no org_id, so runs scope to the one real org.
+
+**UI — `src/pages/crm/CrmAutomations.jsx`** (master/detail, hand-rolled — no new dependency):
+rule list → editor/detail. Editor = trigger picker (only event types the RPC layer actually
+emits) → optional AND-condition rows (typed operators, `is_empty`/`in`/… with a field datalist) →
+ordered action list with native up/down reorder + per-action wait + type-specific config; enable
+checkbox with a client-side S1 collision warning (RPC still enforces). Detail = recipe summary +
+per-rule run log (`get_automation_runs`). `useAuth()` `db` only, `upr:toast` feedback, inline
+two-click delete. CSS only in the `CRM WAVE RESERVED — Phase 5` `index.css` marker (tokens;
+mobile-only `@media (max-width:768px)` with 48px targets). Seams (authorized additive, manifest
+§7): `App.jsx` lazy import + `<Route path="automations">`, `crmIcons.jsx` `IconAutomations`,
+`CrmLayout.jsx` one `SIDEBAR_ITEMS` row + icon import.
+
+**Tests** (committed failing first): `functions/api/process-crm-automations.test.js` (25 pure
+unit tests — S1 `blockedTriggers`/`isTriggerBlocked`, null-safe typed AND-condition evaluator,
+`planRunOutcome` held/skip/retry translation, idempotent `matchAutomations`);
+`supabase/tests/crm_phase5_automations.test.js` (integration — CRUD, UNIQUE run idempotency, S1
+save+enable guard; self-skips without creds like the other CRM suites). The SQL behavior (CRUD,
+UNIQUE idempotency, S1 save+enable guard, conflict predicate) was verified live via Supabase MCP
+assertions. `npm test` (319 passed / 53 skipped) + `npm run build` + `npx eslint` (changed files)
+all green.
+
+**Deliberately NOT** (owner-chosen v1 scope): branching/if-else, any node-graph canvas or new
+frontend dep, editing `run-automations.js` (4d-owned) or `process-sequences.js` (Phase-8-owned —
+imported read-only), touching the orphan `automation_rules` (its removal is a separate reviewed
+cleanup). Recorded end-state (not v1): migrate the fixed four into `crm_automations` and retire
+`run-automations.js` — one engine, guard obsolete.
+
 ## CRM Phase 5 re-plan (Jul 2 2026) — plan of record committed (no feature code)
 
 Phase 5 ("Visual automation builder") scheduled by owner directive — its original go-signal gate
