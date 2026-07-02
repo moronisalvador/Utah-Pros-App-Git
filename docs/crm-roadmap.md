@@ -1296,7 +1296,7 @@ Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes not
 
 - **Wave 0** (after this PR merges): **Phase F** (Opus · high) ∥ **Phase 1 close-out** (Sonnet · medium) — safely concurrent, zero overlap. Owner pre-decision due here: CallRail Form Tracking replacement intent (forks Session A's form-fixture stage).
 - **Wave 1** (after F merges): **4d · 6a · 6b · 7 · 8 · 9 · 10 — all seven in parallel**, plus **4b** joining whenever carrier approval lands. Merge order is preference (suggested: 7, 6a first), not a gate; each PR independent. Throttle freely — all pairs are safe, so concurrent-session count is purely a review-bandwidth choice.
-- Wave-1 cold prompts are generated after F merges (they must cite F's committed names); each session's read scope = `CLAUDE.md` + its phase block above + `.claude/rules/crm-wave-ownership.md`.
+- **Copy-paste launch blocks for every session live in `docs/crm-dispatch.md`** (settings header + complete cold-session prompt per session); each session's read scope = `CLAUDE.md` + its phase block above + `.claude/rules/crm-wave-ownership.md`. The prompts cite Foundation's artifact names as specified here — if F's implementation drifts, the manifest + phase blocks are authoritative.
 
 ### File-ownership matrix (to be committed by Phase F as `.claude/rules/crm-wave-ownership.md`)
 
