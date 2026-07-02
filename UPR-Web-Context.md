@@ -3487,10 +3487,20 @@ cleaned. `npm test` 216 passed / 34 skipped, `npm run build` green, eslint clean
 
 Reviewer gauntlet: migration-safety-checker **clean** (zero DDL, 7 signatures frozen, grants present),
 consent-path-auditor **PASS** (no send call sites added; `record_email_campaign_send` change is an
-audit-log fix downstream of the consent decision; send gate untouched), upr-pattern-checker + 
-crm-phase-reviewer run at close-out. **Visual-on-preview (import wizard + role-gated nav)** is
-owner-gated behind the dev-only `page:crm` flag — build-verified here, on-preview visual confirmation is
-the owner's after the flag opens.
+audit-log fix downstream of the consent decision; send gate untouched), upr-pattern-checker **clean**
+(one two-click-confirm `onBlur` nit fixed), crm-phase-reviewer **SHIP** (all money/consent/audit code
+correct + backward-compatible). Note: `import_contacts` sets `owner_id` from CSV without an explicit
+employee-existence check like `set_contact_owner`, but `contacts.owner_id` carries an FK to
+`employees(id)` so a bad id errors that one row (caught → `error_count`), and the UI only supplies real
+employee ids — low risk, FK-backstopped.
+
+**`crm_build_stages` reconciliation (honest): 7 stages — 6 flipped `done`, 1 left `todo`.** Done:
+test-first, acceptance (slots/owner/lifecycle/roles), test+build+eslint/zero-schema, reviewer gauntlet,
+UPR-Web-Context updated, and set-shipped/TEST-rows-deleted/pushed/PR-opened. **Left `todo` (owner-gated,
+NOT forgotten):** *"Visual: import wizard + role-gated nav on preview"* — the CRM is invisible behind
+the dev-only `page:crm` flag, so on-preview visual confirmation is the owner's after the flag opens.
+Build-verified here (compiles + renders); there is no `blocked` status value yet, so it stays `todo`
+with this disclosure (same convention as sibling phases).
 
 ## CRM Phase 4d — Fixed automations (Jul 2 2026 — shipped)
 
