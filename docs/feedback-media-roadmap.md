@@ -161,7 +161,11 @@ Scope (everything additive):
     `CREATE OR REPLACE` would create an ambiguous **overload** and break every live submit the
     moment it applies (one shared Supabase = live in prod instantly). Body mirrors both directions:
     old caller (screenshots only) → derive `attachments`; new caller → mirror image paths into
-    `screenshots`, so the B/C deploy window never breaks rendering. Re-`GRANT EXECUTE` after CREATE.
+    `screenshots` **in the legacy `job-files/`-prefixed format (`'job-files/' || path`)** — legacy
+    `screenshots` values include the bucket (`TechFeedback.jsx:108`) and the pre-C `AdminFeedback`
+    renders them verbatim (`AdminFeedback.jsx:286,296`), so mirroring the bucket-less
+    `buildStoragePath` value unprefixed would render broken images during the B-before-C window —
+    so the B/C deploy window never breaks rendering. Re-`GRANT EXECUTE` after CREATE.
   - `update_tech_feedback` (same signature → plain OR REPLACE): `resolved_at = now()` on first
     transition into `resolved`/`dismissed`; unchanged on terminal↔terminal; **NULL on reopen**
     (purge can never fire on a reopened item). `attachments_purged_at` is never cleared.
@@ -179,7 +183,9 @@ Scope (everything additive):
   cap base ~80 chars, preserve extension), `buildStoragePath(employeeId, filename, ts)` →
   `feedback/{emp}/{ts}-{sanitized}` (bucket-less), `validateFile`, `validateSelection`,
   `checkVideoDuration(seconds, max=90)` (null/NaN duration → ok; size cap still protects),
-  `stripBucketPrefix`; browser section below a SECTION marker: `compressImage(file,{maxDim,quality:0.8})`
+  `stripBucketPrefix`, and the display formatters `formatBytes(n)` / `formatDuration(seconds)`
+  (Session C's admin view imports these — "formatting helpers" in its dispatch block means
+  exactly these two); browser section below a SECTION marker: `compressImage(file,{maxDim,quality:0.8})`
   (createImageBitmap → canvas → toBlob jpeg; HEIC/decode failure → original if ≤10MB else throw;
   if compressed ≥ original, return original) and `probeVideo(file)` (`<video preload="metadata">`,
   never rejects, 5s timeout → nulls). Attachment element shape produced:
