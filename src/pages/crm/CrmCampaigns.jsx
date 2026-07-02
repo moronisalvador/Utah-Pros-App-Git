@@ -4,9 +4,10 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Where email campaigns get built and sent — pick a group of customers,
- *   write a subject and message, see how many people it'll reach, and send
- *   it. Anyone who's unsubscribed or asked not to be contacted is
+ *   Where email campaigns get built and sent — pick a group of customers
+ *   (with filters, or by checking/unchecking people one at a time from the
+ *   actual list), write a subject and message, see exactly who it'll reach,
+ *   and send it. Anyone who's unsubscribed or asked not to be contacted is
  *   automatically skipped, never emailed.
  *
  * WHERE IT LIVES:
@@ -19,10 +20,15 @@
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
  *              (getAuthHeader, for the authenticated send-email-campaign call)
  *   Data:      reads  → email_campaigns (get_email_campaigns RPC),
- *                       referral_sources (get_referral_sources RPC)
+ *                       referral_sources (get_referral_sources RPC),
+ *                       contacts (preview_email_audience RPC — the actual
+ *                       audience list, not just a count),
+ *                       email_campaign_exclusions (get_campaign_exclusions RPC)
  *              writes → email_campaigns (upsert_email_campaign /
- *                       delete_email_campaign RPCs); POST /api/send-email-campaign
- *                       queues + sends (email_campaign_recipients, worker_runs)
+ *                       delete_email_campaign RPCs), email_campaign_exclusions
+ *                       (set_campaign_exclusions RPC); POST
+ *                       /api/send-email-campaign queues + sends
+ *                       (email_campaign_recipients, worker_runs)
  *
  * NOTES / GOTCHAS:
  *   - Originally built into the pre-existing Marketing.jsx page (Phase 4c) —
@@ -31,21 +37,29 @@
  *     pre-Phase-4c SMS-only stub; SMS/text-blast campaigns remain that page's
  *     job (Phase 4b) rather than living in this CRM shell.
  *   - Email campaigns use their OWN tables (email_campaigns/
- *     email_campaign_recipients), not the legacy `campaigns`/
- *     `campaign_recipients` tables Marketing.jsx's SMS tab reads — see
- *     supabase/migrations/20260701_crm_phase4c_email_campaigns.sql for why
- *     (those are hard-wired for SMS: a CHECK constraint with no
- *     'email_blast' value, and a NOT NULL `phone` column).
- *   - Segmentation is intentionally simple (referral source + role) per the
- *     roadmap's "simple template UI" scope — not a full query builder.
+ *     email_campaign_recipients/email_campaign_exclusions), not the legacy
+ *     `campaigns`/`campaign_recipients` tables Marketing.jsx's SMS tab reads
+ *     — see supabase/migrations/20260701_crm_phase4c_email_campaigns.sql for
+ *     why (those are hard-wired for SMS).
+ *   - The audience is never a frozen snapshot before send: it's always
+ *     `preview_email_audience(filter) MINUS email_campaign_exclusions`. The
+ *     `excludedIds` Set (of manually-unchecked contact_ids) is NOT reset when
+ *     the filter is re-run — an excluded contact stays excluded even if they
+ *     temporarily drop out of view under a narrower filter, and reappears
+ *     already unchecked if a later, broader filter brings them back into
+ *     view. Exclusions only persist to the database on Save (via
+ *     set_campaign_exclusions), and only if the audience was actually loaded
+ *     this session (`audienceRows !== null`) — a quick save without ever
+ *     reviewing the audience behaves exactly like before this feature (full
+ *     filter match, no exclusions).
  *   - The message field is a real rich-text editor (RichEmailEditor —
- *     bold/italic/lists/links, insert-variable, emoji), not a raw-HTML
- *     textarea, with a live preview panel next to it rendered from the SAME
- *     branded wrapper (src/lib/emailTemplate.js) the actual send uses
- *     (functions/lib/email-template.js) — so what's shown while composing is
- *     what a recipient actually receives, not an approximation. An "AI
- *     design" button in the editor toolbar is a disabled placeholder for a
- *     planned follow-up, not built yet.
+ *     bold/italic/lists/links, insert-variable incl. {{phone}}, emoji), not a
+ *     raw-HTML textarea, with a live preview panel next to it rendered from
+ *     the SAME branded wrapper (src/lib/emailTemplate.js) the actual send
+ *     uses (functions/lib/email-template.js) — so what's shown while
+ *     composing is what a recipient actually receives, not an
+ *     approximation. An "AI design" button in the editor toolbar is a
+ *     disabled placeholder for a planned follow-up, not built yet.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -65,12 +79,21 @@ const ROLE_OPTIONS = [
   { value: 'property_manager', label: 'Property manager' },
 ];
 
-const EMPTY_FORM = { name: '', subject: '', body_html: '', referral_source: '', role: '' };
+const AUDIENCE_LOAD_LIMIT = 500;
+
+const EMPTY_FORM = {
+  name: '', subject: '', body_html: '',
+  referral_source: '', role: '', tag: '', city: '', company: '', search: '',
+};
 
 function buildAudienceFilter(form) {
   const filter = {};
   if (form.referral_source) filter.referral_source = form.referral_source;
   if (form.role) filter.role = form.role;
+  if (form.tag) filter.tag = form.tag;
+  if (form.city) filter.city = form.city;
+  if (form.company) filter.company = form.company;
+  if (form.search) filter.search = form.search;
   return filter;
 }
 
@@ -89,10 +112,15 @@ export default function CrmCampaigns() {
   const [editing, setEditing] = useState(null); // null | 'new' | campaign id
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [previewCount, setPreviewCount] = useState(null);
-  const [previewing, setPreviewing] = useState(false);
   const [sendingId, setSendingId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  // Audience: null = never loaded this session; [] = loaded, zero matches.
+  const [audienceRows, setAudienceRows] = useState(null);
+  const [excludedIds, setExcludedIds] = useState(() => new Set());
+  const [audienceLoading, setAudienceLoading] = useState(false);
+  const [audienceFilterAtLoad, setAudienceFilterAtLoad] = useState(null);
+
   const nameRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -113,38 +141,85 @@ export default function CrmCampaigns() {
 
   useEffect(() => { load(); }, [load]);
 
+  const resetAudience = () => {
+    setAudienceRows(null);
+    setExcludedIds(new Set());
+    setAudienceFilterAtLoad(null);
+  };
+
   const startAdd = () => {
-    setEditing('new'); setForm(EMPTY_FORM); setPreviewCount(null);
+    setEditing('new'); setForm(EMPTY_FORM); resetAudience();
     setTimeout(() => nameRef.current?.focus(), 50);
   };
-  const startEdit = (c) => {
+
+  const startEdit = async (c) => {
     setEditing(c.id);
     setForm({
       name: c.name, subject: c.subject, body_html: c.body_html,
       referral_source: c.audience_filter?.referral_source || '',
       role: c.audience_filter?.role || '',
+      tag: c.audience_filter?.tag || '',
+      city: c.audience_filter?.city || '',
+      company: c.audience_filter?.company || '',
+      search: c.audience_filter?.search || '',
     });
-    setPreviewCount(c.audience_count);
-  };
-  const cancelEdit = () => { setEditing(null); setForm(EMPTY_FORM); setPreviewCount(null); };
-
-  const previewAudience = async () => {
-    setPreviewing(true);
+    setAudienceFilterAtLoad(c.audience_filter || {});
+    setAudienceLoading(true);
     try {
-      const rows = await db.rpc('preview_email_audience', { p_filter: buildAudienceFilter(form) });
-      setPreviewCount((rows || []).length);
+      const [rows, exclusions] = await Promise.all([
+        db.rpc('preview_email_audience', { p_filter: c.audience_filter || {}, p_limit: AUDIENCE_LOAD_LIMIT }),
+        db.rpc('get_campaign_exclusions', { p_campaign_id: c.id }).catch(() => []),
+      ]);
+      setAudienceRows(rows || []);
+      setExcludedIds(new Set((exclusions || []).map(e => e.contact_id)));
     } catch {
-      err('Failed to preview audience');
+      err('Failed to load this campaign\'s audience');
+      setAudienceRows([]);
     } finally {
-      setPreviewing(false);
+      setAudienceLoading(false);
     }
+  };
+
+  const cancelEdit = () => { setEditing(null); setForm(EMPTY_FORM); resetAudience(); };
+
+  const loadAudience = async () => {
+    setAudienceLoading(true);
+    try {
+      const filter = buildAudienceFilter(form);
+      const rows = await db.rpc('preview_email_audience', { p_filter: filter, p_limit: AUDIENCE_LOAD_LIMIT });
+      setAudienceRows(rows || []);
+      setAudienceFilterAtLoad(filter);
+      // excludedIds is deliberately NOT reset here — see file header NOTES.
+    } catch {
+      err('Failed to load audience');
+    } finally {
+      setAudienceLoading(false);
+    }
+  };
+
+  const toggleExcluded = (contactId) => setExcludedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(contactId)) next.delete(contactId); else next.add(contactId);
+    return next;
+  });
+
+  const toggleAllVisible = () => {
+    if (!audienceRows || audienceRows.length === 0) return;
+    const allIncluded = audienceRows.every(r => !excludedIds.has(r.contact_id));
+    setExcludedIds(prev => {
+      const next = new Set(prev);
+      for (const r of audienceRows) {
+        if (allIncluded) next.add(r.contact_id); else next.delete(r.contact_id);
+      }
+      return next;
+    });
   };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.subject.trim()) { err('Name and subject are required'); return; }
     setSaving(true);
     try {
-      await db.rpc('upsert_email_campaign', {
+      const saved = await db.rpc('upsert_email_campaign', {
         p_id: editing === 'new' ? null : editing,
         p_name: form.name.trim(),
         p_subject: form.subject.trim(),
@@ -152,6 +227,12 @@ export default function CrmCampaigns() {
         p_audience_filter: buildAudienceFilter(form),
         p_created_by: employee?.id || null,
       });
+      if (audienceRows !== null) {
+        await db.rpc('set_campaign_exclusions', {
+          p_campaign_id: saved.id,
+          p_contact_ids: Array.from(excludedIds),
+        });
+      }
       ok(editing === 'new' ? 'Campaign saved as draft' : 'Campaign updated');
       cancelEdit();
       load();
@@ -196,6 +277,13 @@ export default function CrmCampaigns() {
 
   if (loading) return <div className="crm-page"><div className="crm-loading">Loading…</div></div>;
 
+  const campaignFormProps = {
+    form, setForm, referralSources, onSave: handleSave, onCancel: cancelEdit, saving,
+    audienceRows, excludedIds, audienceLoading, audienceFilterAtLoad,
+    onLoadAudience: loadAudience, onToggleExcluded: toggleExcluded, onToggleAllVisible: toggleAllVisible,
+    nameRef,
+  };
+
   return (
     <div className="crm-page">
       <div className="crm-page-header crm-page-header-row">
@@ -207,12 +295,7 @@ export default function CrmCampaigns() {
       </div>
 
       {editing === 'new' && (
-        <CampaignForm
-          form={form} setForm={setForm} referralSources={referralSources}
-          onSave={handleSave} onCancel={cancelEdit} saving={saving}
-          onPreview={previewAudience} previewing={previewing} previewCount={previewCount}
-          nameRef={nameRef} editorResetKey="new"
-        />
+        <CampaignForm {...campaignFormProps} editorResetKey="new" />
       )}
 
       {campaigns.length === 0 && editing !== 'new' ? (
@@ -228,12 +311,7 @@ export default function CrmCampaigns() {
               <tbody>
                 {campaigns.map(c => editing === c.id ? (
                   <tr key={c.id}><td colSpan={8} style={{ padding: 0 }}>
-                    <CampaignForm
-                      form={form} setForm={setForm} referralSources={referralSources}
-                      onSave={handleSave} onCancel={cancelEdit} saving={saving}
-                      onPreview={previewAudience} previewing={previewing} previewCount={previewCount}
-                      nameRef={nameRef} editorResetKey={c.id}
-                    />
+                    <CampaignForm {...campaignFormProps} editorResetKey={c.id} />
                   </td></tr>
                 ) : (
                   <tr key={c.id}>
@@ -274,14 +352,19 @@ export default function CrmCampaigns() {
   );
 }
 
-function CampaignForm({ form, setForm, referralSources, onSave, onCancel, saving, onPreview, previewing, previewCount, nameRef, editorResetKey }) {
+function CampaignForm({
+  form, setForm, referralSources, onSave, onCancel, saving, editorResetKey,
+  audienceRows, excludedIds, audienceLoading, audienceFilterAtLoad,
+  onLoadAudience, onToggleExcluded, onToggleAllVisible,
+  nameRef,
+}) {
   const previewHtml = useMemo(() => wrapEmailBody({
     bodyHtml: renderVariables(form.body_html, SAMPLE_VARIABLES),
     unsubscribeUrl: '#',
   }), [form.body_html]);
 
   return (
-    <div className="crm-campaign-editor-layout">
+    <>
       <div className="crm-card crm-campaign-form">
         <div className="crm-campaign-form-row">
           <div className="crm-campaign-field">
@@ -293,56 +376,147 @@ function CampaignForm({ form, setForm, referralSources, onSave, onCancel, saving
             <input className="crm-integration-input" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject the recipient sees" />
           </div>
         </div>
+      </div>
 
-        <div className="crm-campaign-form-row">
+      <AudiencePanel
+        form={form} setForm={setForm} referralSources={referralSources}
+        rows={audienceRows} excludedIds={excludedIds} loading={audienceLoading}
+        filterAtLoad={audienceFilterAtLoad}
+        onLoad={onLoadAudience} onToggle={onToggleExcluded} onToggleAll={onToggleAllVisible}
+      />
+
+      <div className="crm-campaign-editor-layout">
+        <div className="crm-card crm-campaign-form">
           <div className="crm-campaign-field">
-            <label className="crm-integration-label">Referral source</label>
-            <select className="crm-integration-input" value={form.referral_source} onChange={e => setForm(f => ({ ...f, referral_source: e.target.value }))}>
-              <option value="">Any referral source</option>
-              {referralSources.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-            </select>
+            <label className="crm-integration-label">Message</label>
+            <RichEmailEditor
+              value={form.body_html}
+              onChange={(html) => setForm(f => ({ ...f, body_html: html }))}
+              placeholder="Hi {{name}}, ..."
+              resetKey={editorResetKey}
+            />
           </div>
-          <div className="crm-campaign-field">
-            <label className="crm-integration-label">Contact role</label>
-            <select className="crm-integration-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
+
+          <div className="crm-campaign-form-actions">
+            <div style={{ flex: 1 }} />
+            <button className="crm-btn crm-btn-ghost" onClick={onCancel}>Cancel</button>
+            <button className="crm-btn crm-btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</button>
           </div>
         </div>
 
-        <div className="crm-campaign-field">
-          <label className="crm-integration-label">Message</label>
-          <RichEmailEditor
-            value={form.body_html}
-            onChange={(html) => setForm(f => ({ ...f, body_html: html }))}
-            placeholder="Hi {{name}}, ..."
-            resetKey={editorResetKey}
+        <div className="crm-card crm-email-preview">
+          <div className="crm-email-preview-chrome">
+            <div className="crm-email-preview-row"><span>To</span><span>Jane Smith &lt;jane.smith@example.com&gt;</span></div>
+            <div className="crm-email-preview-row"><span>Subject</span><span>{form.subject || <em>(no subject yet)</em>}</span></div>
+          </div>
+          <iframe
+            className="crm-email-preview-frame"
+            title="Email preview"
+            srcDoc={previewHtml}
+            sandbox=""
           />
         </div>
+      </div>
+    </>
+  );
+}
 
-        <div className="crm-campaign-form-actions">
-          <button className="crm-btn crm-btn-ghost" onClick={onPreview} disabled={previewing}>
-            {previewing ? 'Checking…' : 'Preview audience'}
-          </button>
-          {previewCount !== null && <span className="crm-campaign-audience-count">{previewCount} contact{previewCount === 1 ? '' : 's'} will receive this</span>}
-          <div style={{ flex: 1 }} />
-          <button className="crm-btn crm-btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="crm-btn crm-btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</button>
+function AudiencePanel({ form, setForm, referralSources, rows, excludedIds, loading, filterAtLoad, onLoad, onToggle, onToggleAll }) {
+  const filterDirty = rows !== null && JSON.stringify(buildAudienceFilter(form)) !== JSON.stringify(filterAtLoad || {});
+  const includedCount = rows ? rows.filter(r => !excludedIds.has(r.contact_id)).length : 0;
+  const allIncluded = rows && rows.length > 0 && rows.every(r => !excludedIds.has(r.contact_id));
+
+  return (
+    <div className="crm-card crm-audience-panel">
+      <div className="crm-campaign-form-row">
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">Referral source</label>
+          <select className="crm-integration-input" value={form.referral_source} onChange={e => setForm(f => ({ ...f, referral_source: e.target.value }))}>
+            <option value="">Any referral source</option>
+            {referralSources.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+          </select>
+        </div>
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">Contact role</label>
+          <select className="crm-integration-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+            {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">Tag</label>
+          <input className="crm-integration-input" value={form.tag} onChange={e => setForm(f => ({ ...f, tag: e.target.value }))} placeholder="e.g. vip" />
+        </div>
+      </div>
+      <div className="crm-campaign-form-row">
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">City</label>
+          <input className="crm-integration-input" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="e.g. Salt Lake City" />
+        </div>
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">Company</label>
+          <input className="crm-integration-input" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} placeholder="e.g. Acme" />
+        </div>
+        <div className="crm-campaign-field">
+          <label className="crm-integration-label">Search (name, email, phone)</label>
+          <input
+            className="crm-integration-input"
+            value={form.search}
+            onChange={e => setForm(f => ({ ...f, search: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') onLoad(); }}
+            placeholder="Search…"
+          />
         </div>
       </div>
 
-      <div className="crm-card crm-email-preview">
-        <div className="crm-email-preview-chrome">
-          <div className="crm-email-preview-row"><span>To</span><span>Jane Smith &lt;jane.smith@example.com&gt;</span></div>
-          <div className="crm-email-preview-row"><span>Subject</span><span>{form.subject || <em>(no subject yet)</em>}</span></div>
-        </div>
-        <iframe
-          className="crm-email-preview-frame"
-          title="Email preview"
-          srcDoc={previewHtml}
-          sandbox=""
-        />
+      <div className="crm-audience-toolbar">
+        <button className="crm-btn crm-btn-primary" onClick={onLoad} disabled={loading}>
+          {loading ? 'Loading…' : rows === null ? 'Load audience' : 'Reload audience'}
+        </button>
+        {rows !== null && (
+          <span className="crm-audience-count">
+            Sending to {includedCount} of {rows.length} contact{rows.length === 1 ? '' : 's'}
+          </span>
+        )}
+        {filterDirty && <span className="crm-audience-dirty-hint">Filters changed — reload to see updated matches</span>}
       </div>
+
+      {rows !== null && (
+        rows.length === 0 ? (
+          <div className="crm-empty-state">No contacts match these filters.</div>
+        ) : (
+          <>
+            <div className="crm-table-wrap crm-audience-table-wrap">
+              <table className="crm-table">
+                <thead>
+                  <tr>
+                    <th className="crm-audience-checkbox-col">
+                      <input type="checkbox" checked={allIncluded} onChange={onToggleAll} />
+                    </th>
+                    <th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Referral source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.contact_id}>
+                      <td className="crm-audience-checkbox-col">
+                        <input type="checkbox" checked={!excludedIds.has(r.contact_id)} onChange={() => onToggle(r.contact_id)} />
+                      </td>
+                      <td>{r.name || '—'}</td>
+                      <td>{r.email}</td>
+                      <td>{r.phone || '—'}</td>
+                      <td>{r.role || '—'}</td>
+                      <td>{r.referral_source || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rows.length === AUDIENCE_LOAD_LIMIT && (
+              <p className="crm-audience-cap-note">Showing the first {AUDIENCE_LOAD_LIMIT} matches — narrow your filters to see more.</p>
+            )}
+          </>
+        )
+      )}
     </div>
   );
 }
