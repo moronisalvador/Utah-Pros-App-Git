@@ -3199,3 +3199,59 @@ close-out (Sonnet·medium). Wave 1 (after F merges) = 4d·6a·6b·7·8·9·10 in
 prompts generated after F commits its artifact names. Owner pre-decisions at dispatch: CallRail Form
 Tracking replacement intent (forks Phase 1's form-fixture stage) and Cloudflare Turnstile site key
 (Phase 10, or ships toggle-off).
+
+## CRM Phase F — Foundation (Jul 2 2026 — shipped)
+
+Owns 100% of the wave's schema + interfaces + wiring; downstream wave phases ship zero schema.
+Migrations (all applied + verified live, additive-only, RLS + explicit policy + org_id at creation):
+
+- `20260702_crm_phaseF_merge_contacts_safety.sql` — **P0 fix.** Captures the drifted live
+  `merge_contacts` body as a migration and supersedes it: now reassigns `lead_attribution`,
+  `email_campaign_recipients`, `email_campaign_exclusions` (dedupe on their `UNIQUE(campaign_id,
+  contact_id)`) and `inbound_leads.contact_id` onto the survivor **before** deleting the loser.
+  Signature unchanged. Proof: `supabase/tests/crm_merge_contacts_safety.test.js`. Merges are now
+  CRM-history-safe.
+- `20260702_crm_phaseF_wave_schema.sql` — new tables: `automation_settings` (per-org; SMS
+  kill-switch `sms_sending_enabled` **default OFF** + 4 per-automation toggles; one row per org
+  seeded), `crm_tasks`, `lead_stage_history` (append-only pipeline history), `crm_segments`,
+  `crm_import_batches`, `crm_sequences`/`crm_sequence_steps`/`crm_sequence_enrollments`
+  (`UNIQUE(sequence_id, contact_id)` → enroll idempotency), `lead_score_factors`,
+  `form_definitions`/`form_definition_versions`/`form_submissions` (`public_id` +
+  `submission_token` UNIQUE). New columns: `inbound_leads.lost_reason` + `.lead_score`,
+  `contacts.owner_id` + `.lifecycle_status`, `pipeline_stages.win_probability` (0..1, NULL →
+  positional fallback).
+- `20260702_crm_phaseF_shared_rpc_replaces.sql` — the **only two** live-RPC REPLACEs of the wave:
+  `move_lead_to_stage` gains `p_lost_reason DEFAULT NULL` + writes a `lead_stage_history` row per
+  move (dropped 3-arg + recreated 4-arg, no overload ambiguity; shipped 4a caller still works);
+  `get_contact_activity` gains email/jobs/tasks arms (same 1-arg signature + columns). Proof:
+  `supabase/tests/crm_shared_rpc_compat.test.js`. **Wave phases must NOT re-REPLACE these.**
+- `20260702_crm_phaseF_rpc_stubs.sql` — 30 signature-frozen stubs (SECURITY DEFINER, GRANT anon +
+  authenticated, body `RAISE EXCEPTION 'not implemented (phase X)'`), one owner phase each. Exact
+  signatures + ownership in `.claude/rules/crm-wave-ownership.md`. Covers 4d(2), 6a(5), 6b(3),
+  7(5), 8(4), 9(8: score_lead + 7 reports), 10(3).
+
+Consent gate (frozen after F): `functions/lib/sms-consent.js` `consentAllows({phone,opt_in_status,
+dnd})` (TCPA opt-in predicate, twin of `emailAllows`) + unit tests; `functions/lib/automated-send.js`
+sms branch fully built — `sendGatedSms()` gates on the `sms_sending_enabled` kill-switch (default OFF)
+then `consentAllows()`, sends via `twilio.js`, audits every outcome to `sms_consent_log`
+(`automated_send`/`send_blocked_disabled`/`send_blocked_dnd`/`send_blocked_no_consent`/
+`send_blocked_no_phone`/`send_failed`); `sendAutomatedMessage('sms', …)` routes through it. Unit test
+`functions/lib/automated-send.test.js` proves OFF→no send, ON+no-consent→no send, ON+consent→sends.
+Result: 4b/4d/8 never edit `automated-send.js`; 4b's remaining scope = external A2P registration +
+flag flip + `Marketing.jsx`.
+
+Shared code + frontend: `functions/lib/phone.js` (`normalizePhone` worker twin of `src/lib/phone.js`)
++ tests; `src/components/crm/ActivityTimeline.jsx` extracted from `CrmLeads.jsx` (behavior-identical,
+self-loading); `CrmOverview.jsx` renders `OverdueTasksWidget` (Phase 7) + `ForecastWidget` (Phase 9)
+slot stubs; `CrmContacts.jsx` skeleton renders `ContactsDirectory`/`ContactDetail` (6a) +
+`ImportExportPanel`/`MergeTool` (6b) slot stubs (all in `src/components/crm/`); `CrmConversations`/
+`CrmSequences`/`CrmForms` stub pages seeded (own CrmStubPage) so App.jsx stays frozen.
+
+Wiring (frozen in-wave): `App.jsx` routes (`/crm/contacts|conversations|sequences|forms`);
+`CrmLayout.jsx` nav (13 items) + `crmIcons.jsx` (IconContacts/Conversations/Sequences/Forms);
+`index.css` Contacts-skeleton CSS + 8 reserved per-phase section markers.
+
+Ownership manifest `.claude/rules/crm-wave-ownership.md` committed (frozen-file list, per-session
+owned files, exact frozen stub signatures, migration + index.css rules) — each wave session's read
+scope = CLAUDE.md + its phase block + this manifest. `crm_lead_stage_changed` `system_events` payload
+now also carries `from_stage_id` + `lost_reason`.
