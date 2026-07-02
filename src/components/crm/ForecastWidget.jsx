@@ -73,7 +73,7 @@ export default function ForecastWidget() {
 
   // ─── SECTION: Derived (tested) math ──────────────
   const sortedStages = useMemo(() => sortStages(stages), [stages]);
-  const { total, byStage } = useMemo(
+  const { byStage } = useMemo(
     () => weightedPipelineValue(leads, stages, positions),
     [leads, stages, positions],
   );
@@ -86,6 +86,18 @@ export default function ForecastWidget() {
     [sortedStages, byStage],
   );
 
+  // The headline is the OPEN pipeline only. weightedPipelineValue().total also
+  // folds in won-stage leads at weight 1 (realized revenue, not a forecast),
+  // which would inflate an "open leads" number and make it disagree with the
+  // per-stage rows below — so sum just the open stages here.
+  const openTotal = useMemo(
+    () => sortedStages.reduce(
+      (acc, s) => acc + (!s.is_won && !s.is_lost ? (byStage[s.id] || 0) : 0),
+      0,
+    ),
+    [sortedStages, byStage],
+  );
+
   // ─── SECTION: Render ──────────────
   if (loading) return null; // stay invisible until ready, like the Foundation stub
   if (!leads.length || !stages.length) return null;
@@ -94,7 +106,7 @@ export default function ForecastWidget() {
     <div className="crm-card crm-forecast">
       <div className="crm-forecast-head">
         <h2 className="crm-section-title">Weighted pipeline forecast</h2>
-        <div className="crm-forecast-total">{fmtMoney(total)}</div>
+        <div className="crm-forecast-total">{fmtMoney(openTotal)}</div>
       </div>
       <p className="crm-note">
         Expected value of open leads, each discounted by its stage&apos;s win probability.
