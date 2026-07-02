@@ -28,8 +28,8 @@
  *                 component never sends, and never touches twilio/email.
  *   generate    — OPTIONAL async (context) => string[]. Dependency-injection seam
  *                 for a future AI endpoint. When omitted, the built-in contextual
- *                 templates (buildDraftSuggestions) are used, so the component is
- *                 useful and fully testable with no network.
+ *                 templates are used, so the component is useful with no network
+ *                 and its drafts are deterministic.
  *
  * NOTES / GOTCHAS:
  *   - Owned by Phase 9 (.claude/rules/crm-wave-ownership.md). Phase 7 owns

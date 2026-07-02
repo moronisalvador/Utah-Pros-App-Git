@@ -107,8 +107,13 @@ const URGENT_TOPIC_RX = /\b(water|flood|fire|smoke|mold|sewage|storm|leak|burst|
 
 /**
  * Normalize a raw source string to one of the six attribution channels. Mirrors
- * the SQL crm_channel_for_source keyword rules, incl. the organic-before-paid
- * ordering (so "Google My Business" is organic, not ads).
+ * the KEYWORD rules of the SQL crm_channel_for_source (incl. the organic-before-
+ * paid ordering, so "Google My Business" is organic, not ads). It does NOT
+ * replicate that function's secondary lookup against referral_sources.category,
+ * so a keyword-less named source resolves to 'other' here but may resolve to a
+ * real channel in SQL. That is fine: this JS path feeds only the unit-tested
+ * scoreLead(); the score persisted + displayed is always the SQL score_lead's,
+ * which is the single source of truth.
  */
 export function classifyLeadChannel(source) {
   const v = String(source || '').trim().toLowerCase();

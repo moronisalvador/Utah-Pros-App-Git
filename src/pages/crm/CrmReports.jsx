@@ -322,18 +322,21 @@ export default function CrmReports() {
       </div>
 
       {/* ─── Contact lifetime value ─── */}
+      {/* The RPC returns the top-25 customers by revenue, so these summary
+          metrics describe that top set — not the entire customer book. Labelled
+          accordingly so the average isn't misread as a portfolio-wide figure. */}
       <div className="crm-card">
         <h2 className="crm-section-title">Top customers by lifetime value</h2>
         <div className="crm-metric-grid">
           <div className="crm-metric">
-            <div className="crm-metric-label">Avg. lifetime value</div>
+            <div className="crm-metric-label">Avg. value (top customers)</div>
             <div className="crm-metric-value">{fmtMoney(ltvStats.avg_ltv)}</div>
-            <div className="crm-metric-sub">{ltvStats.contact_count} customers</div>
+            <div className="crm-metric-sub">across {ltvStats.contact_count} shown</div>
           </div>
           <div className="crm-metric">
-            <div className="crm-metric-label">Repeat rate</div>
+            <div className="crm-metric-label">Repeat rate (top customers)</div>
             <div className="crm-metric-value">{fmtPct(ltvStats.repeat_rate)}</div>
-            <div className="crm-metric-sub">{ltvStats.repeat_count} repeat customers</div>
+            <div className="crm-metric-sub">{ltvStats.repeat_count} with repeat jobs</div>
           </div>
         </div>
         {(data?.ltv || []).length === 0 ? (
