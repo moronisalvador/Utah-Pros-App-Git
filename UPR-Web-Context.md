@@ -3477,3 +3477,81 @@ and reset to OFF (verified live), so there are no test rows to delete. **Live-se
 owner-gated:** the SMS paths cannot fire an end-to-end text until Phase 4b flips `sms_sending_enabled`
 (carrier approval), and the email paths only send against a real completed job / stale real lead — so
 no real message was dispatched from this session by design. `crm_build_phases('4d')` set `shipped`.
+
+## CRM Phase 7 — Daily driver: tasks, timeline, comms in shell (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). The daily-driver surface: a real Tasks page, an Overview overdue-tasks
+widget, win/loss capture + stage-age on Leads, click-to-call logging, and the existing Conversations
+inbox embedded in the CRM shell. **Zero schema migrations** — `crm_tasks`, `lead_stage_history`,
+`inbound_leads.lost_reason`, and `pipeline_stages.is_lost/is_won` are all Foundation-owned; this phase
+filled five frozen RPC stub bodies and edited only its four owned files + the Phase 7 `index.css`
+reserved section (per `.claude/rules/crm-wave-ownership.md`). App.jsx / CrmLayout.jsx / crmIcons.jsx
+untouched (routes/nav/icons were pre-wired by Foundation).
+
+**RPCs — `supabase/migrations/20260702_crm_phase7_task_rpcs.sql`** (function-body-only `CREATE OR
+REPLACE`, signatures byte-for-byte identical to Foundation's stubs; all SECURITY DEFINER + GRANT
+anon/authenticated). **Task status domain is `'open' | 'done'`** (the `crm_tasks_status_check`
+constraint — NOT `'completed'`; the whole phase uses `'done'`):
+- `get_crm_tasks(p_assignee, p_status, p_contact_id, p_lead_id, p_org_id) → SETOF json` — filtered
+  list; LEFT JOINs `employees` (assignee_name) + `contacts` (contact_name). Order: open before done,
+  then `due_at` asc NULLS LAST, then newest.
+- `upsert_crm_task(p_id, p_title, p_notes, p_due_at, p_remind_at, p_assignee_id, p_contact_id,
+  p_lead_id, p_org_id, p_created_by) → crm_tasks` — create (p_id NULL) or edit. Title required
+  (trim-checked). Org defaults to the first non-test `crm_orgs` row (same pattern as
+  `create_manual_lead`). **On edit it replaces every editable field with the passed value**, so the
+  editor always submits full form state; writes a `crm_task_created` `system_events` row on insert.
+- `set_task_status(p_task_id, p_status, p_actor_id) → crm_tasks` — validates `open|done`; sets
+  `completed_at=now()` on done / NULL on reopen; writes a `crm_task_status_changed` event.
+- `delete_crm_task(p_task_id) → void`.
+- `get_overdue_tasks(p_assignee, p_org_id, p_now timestamptz DEFAULT now()) → SETOF json` — open tasks
+  whose **Mountain-Time due DATE is a prior Denver day**: `(due_at AT TIME ZONE 'America/Denver')::date
+  < (p_now AT TIME ZONE 'America/Denver')::date`. This is the SQL mirror of `functions/lib/date-mt.js`
+  `isStale(due, now, 1)` — a task due earlier *today* in Denver is NOT overdue (UTC storage, MT day
+  boundary). Verified live: prior-MT-day task overdue=true, earlier-same-MT-day task overdue=false.
+
+**Components (owned files):**
+- `src/pages/crm/CrmTasks.jsx` — real Tasks page: Open/Done tabs + assignee filter (Everyone/Mine/per
+  employee); rows with a check toggle (complete/reopen), title/notes, due chip (red **Overdue** when
+  past its MT day via the shared `isTaskOverdue`), assignee + contact/lead chips, and inline two-click
+  delete. Editor panel: title (required), notes, due + reminder (`datetime-local` ↔ ISO), assignee
+  select, and a small typeahead (`EntitySearch`) to link a contact (contacts search) or a lead
+  (inbound_leads search). All CRUD via the RPCs above.
+- `src/components/crm/OverdueTasksWidget.jsx` — Overview card from `get_overdue_tasks`; **hidden when
+  nothing is overdue** (keeps the Overview clean, honoring Foundation's "renders nothing" slot
+  contract). Exports `isTaskOverdue(dueAt, now)` (the MT-day mirror; imported by CrmTasks + unit-tested).
+- `src/pages/crm/CrmLeads.jsx` — three additions: (1) **required win/loss reason** — dragging or
+  `<select>`-moving a lead into an `is_lost` stage opens `LostReasonPrompt`; the reason is required
+  client-side (`lostReasonError`, exported + unit-tested) and passed as `p_lost_reason` to
+  `move_lead_to_stage` (the RPC keeps it optional — Foundation's `crm_shared_rpc_compat` backward-compat
+  test stays green). (2) **stage-age badges** — "Nd in stage" from `lead_pipeline_stage.updated_at`
+  (now selected in the load), red `.stale` at ≥7 days. (3) **click-to-call** — the lead's number is a
+  `tel:` link that fire-and-forget inserts a `crm_click_to_call` `system_events` row (never blocks the
+  dial).
+- `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
+  inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
+  `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
+  `automated-send.js` untouched; `skip_compliance` never used.
+
+**Tests** (committed failing first): `src/components/crm/overdueTasks.test.js` (MT-day boundary via
+`isTaskOverdue` — prior day overdue, earlier-same-day not, UTC-midnight-not-MT-midnight not, null never);
+`src/pages/crm/crmLeads.lostReason.test.js` (`lostReasonError`: required on lost, accepted with reason,
+never on non-lost — both mock `@/contexts/AuthContext` so importing the component in the node test env
+doesn't pull in the realtime client); `supabase/tests/crm_phase7_tasks.test.js` (integration, self-skips
+without creds like sibling suites: title required, upsert→get shape, done/reopen `completed_at`, and the
+MT-day overdue predicate). Full vitest 225 passed / 29 skipped; `npm run build` green; `npx eslint` clean
+on changed files (the two non-component helper exports carry a targeted `react-refresh/only-export-
+components` disable — ownership forbids a new shared `src/lib` file, so the helpers live in their owned
+component files).
+
+**Reviewer gauntlet:** migration-safety-checker **PASS** (zero DDL, five signatures byte-for-byte frozen,
+grants + SECURITY DEFINER present); upr-pattern-checker / consent-path-auditor / crm-phase-reviewer — see
+the PR. Isolation stays the `page:crm` flag (opening to staff gates on Phase 6b).
+
+**`crm_build_stages` reconciliation (honest):** stages 0–3, 5, 6 flipped **done** — test-first suite,
+acceptance (Tasks/overdue widget/win-loss+stage-age/Conversations/click-to-call), test+build+eslint +
+zero-schema, the auditor gauntlet, this doc, and the mechanical close-out. **Stage 4 ("Visual: … on
+preview") stays `todo` on purpose** — a preview deploy only exists after the branch is pushed, so the
+Tasks/Conversations/Overview-widget/lost-reason visual pass happens on the Cloudflare preview URL at
+review time, not from this headless session. No test task rows remain (the live smoke was rolled back;
+the integration suite self-cleans; `crm_tasks` verified empty of `smoke/v/phase7-` rows).
+`crm_build_phases('7')` set `shipped`.
