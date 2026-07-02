@@ -17,8 +17,9 @@
 --
 -- One shared Supabase for dev + main — every REPLACE below is live in both the
 -- moment it applies. The four email-campaign replaces are backward-compatible
--- (new INSERTs into the append-only system_events log only), so Marketing.jsx
--- and functions/api/send-email-campaign.js keep working with no code change.
+-- (new INSERTs into the append-only system_events log only), so the shipped
+-- callers (src/pages/crm/CrmCampaigns.jsx and functions/api/send-email-campaign.js)
+-- keep working with no code change.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ═══ 1. import_contacts — CSV import with dedupe-on-import + batch audit row ═══

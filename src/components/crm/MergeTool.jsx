@@ -141,7 +141,13 @@ function DuplicatesTab({ db }) {
               ))}
             </div>
             {confirmKey === key ? (
-              <div className="crm-dup-confirm">
+              <div
+                className="crm-dup-confirm"
+                // Auto-cancel the two-click confirm when focus leaves the group
+                // (UPR-Design-System two-click pattern). relatedTarget stays
+                // inside while tabbing between Confirm/Cancel.
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget) && merging !== key) setConfirmKey(null); }}
+              >
                 <span>Merge {ids.length - 1} into the keeper?</span>
                 <button className="crm-btn crm-btn-danger crm-btn-sm" onClick={() => mergeGroup(g)} disabled={merging === key}>
                   {merging === key ? 'Merging…' : 'Confirm merge'}

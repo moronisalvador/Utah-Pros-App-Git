@@ -3406,6 +3406,92 @@ Reviewer gauntlet: migration-safety-checker **clean** (signatures frozen, zero D
 upr-pattern-checker **clean** (CSS token fixes applied). Isolation stays the `page:crm` flag —
 `/crm/contacts` invisible to staff until 6b opens it.
 
+## CRM Phase 6b — Ownership, CSV import, staff roles & audit hardening (Jul 2 2026 — shipped)
+
+Wave-1 phase (ran beside 6a). **Zero schema migrations** — one function-body-only migration
+`20260702_crm_phase6b_rpcs.sql` fills three frozen 6b stubs + backward-compat-replaces four live
+Phase 4c email-campaign RPCs (audit hardening). Edits confined to the owned files
+(`ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `featureFlags.js`,
+`CrmLayout.jsx` role-gating only) + the Phase 6b `index.css` reserved section — all per
+`.claude/rules/crm-wave-ownership.md`.
+
+**RPCs (bodies filled; signatures unchanged from Phase F stubs / Phase 4c):**
+- `import_contacts(p_rows jsonb, p_org_id, p_created_by, p_filename) → crm_import_batches` — CSV import
+  with **dedupe-on-import**. Each incoming row matches an existing contact on **normalized phone**
+  (last-10-digits, same convention as `get_duplicate_contacts`; a phone needs ≥10 digits to be a key)
+  OR **normalized email** (`lower(btrim(...))`). A match → **fill-blanks UPDATE** (`COALESCE(existing,
+  incoming)` — import never clobbers a curated value); no match → INSERT. The lookup re-queries
+  `contacts` per row so duplicates **within one file** collapse too. A row with neither phone nor email
+  is `skipped` (recorded in the batch `errors`); a row that throws is `errored` and the loop continues
+  (one bad row can't lose the file). Writes a `crm_import_batches` audit row (org-scoped —
+  `contacts` itself has no `org_id`) + a `crm_contacts_imported` system_event. Supported target fields:
+  name, email, phone, phone_secondary, company, role, referral_source, notes, billing_address/city/
+  state/zip, lifecycle_status, owner_id, tags. `contacts.phone` has a UNIQUE constraint — the
+  normalized match prevents insert collisions.
+- `set_contact_owner(p_contact_id, p_owner_id, p_actor_id) → contacts` — sets/clears `owner_id`
+  (NULL unassigns; a non-null owner must be a real `employees` row); emits `crm_contact_owner_set`
+  with `{owner_id, previous_owner_id}`.
+- `set_contact_lifecycle(p_contact_id, p_lifecycle_status, p_actor_id) → contacts` — sets/clears
+  `lifecycle_status`, gated to a fixed vocabulary **`lead | prospect | customer | past_customer |
+  archived`** (the column is free-text with no CHECK; this RPC is the gate). Emits
+  `crm_contact_lifecycle_set` with `{lifecycle_status, previous_status}`.
+- **Audit-hardening body-replaces** (signatures + behavior unchanged, add `system_events` only —
+  closes the "Audit trail PARTIAL" gap): `set_campaign_exclusions` → `crm_email_campaign_exclusions_set`
+  `{excluded_count, audience_count}`; `upsert_email_campaign` → `crm_email_campaign_created` /
+  `crm_email_campaign_updated`; `delete_email_campaign` → `crm_email_campaign_deleted` `{name, status}`
+  (name captured pre-delete). **`record_email_campaign_send`**: the `crm_email_campaign_sent` event now
+  fires **exactly once** — gated on `FOUND` from the `status='sending'→'sent'` UPDATE, so a
+  retried/duplicate send on an already-sent campaign no longer emits a second empty event — and carries
+  a `{sent, suppressed, failed, total}` counts payload (was empty `{}`). Shipped callers
+  (`src/pages/crm/CrmCampaigns.jsx`, `functions/api/send-email-campaign.js`) unchanged and still pass.
+
+**Components:**
+- `src/components/crm/ImportExportPanel.jsx` (Contacts "Import / Export" slot) — browser-side quote-aware
+  CSV parse → column-mapping UI (auto-guesses target from header names) → optional default owner +
+  default lifecycle stamped on all rows → `import_contacts` → created/updated/skipped/error summary +
+  a "Recent imports" audit list from `crm_import_batches`. Export streams all contacts to a CSV Blob.
+- `src/components/crm/MergeTool.jsx` (Contacts "Find duplicates" slot) — two tabs: **Duplicates**
+  (`get_duplicate_contacts` groups → pick keeper → sequential `merge_contacts` per loser, inline
+  two-click confirm) and **Owner & lifecycle** (contact search → `set_contact_owner` /
+  `set_contact_lifecycle`). **Placement note:** the owner/lifecycle setters live here, not in
+  `ContactDetail.jsx` — that file is Phase 6a's, frozen read-only for the wave, and the frozen
+  `CrmContacts.jsx` skeleton exposes no 6b detail-slot. MergeTool (a data-quality panel) is the
+  wave-compliant home; when 6a/6b later reconcile, these could move into the detail.
+- `src/components/CrmLayout.jsx` (role-gating only) — **per-screen staff gating**: a CRM screen is
+  visible when `isFeatureEnabled('feature:crm_<screen>')` (rollout sub-flag; absent/enabled = open) AND
+  `canAccess('crm_<screen>')` (per-employee override → admin → role `nav_permissions`). Enforced in both
+  the nav filter and an **Outlet route guard** (direct-URL nav can't bypass the hidden nav; shows a
+  "No access" panel). Overview is always reachable (CRM home); `crm_partner` accounts keep the whole CRM
+  except Integrations (unchanged). Nav keys normalize hyphens → underscores (`call-log` → `crm_call_log`).
+- `src/pages/Admin.jsx` — CRM per-screen keys (`crm_leads … crm_settings`) added to the role×nav_key
+  matrix (PermissionsTab) **and** the per-employee override list (PageAccessTab, new "CRM" section), so
+  roles are defined per screen **before** `page:crm` opens to staff.
+- `src/lib/featureFlags.js` — registers the twelve `feature:crm_*` per-screen sub-flags (default ON =
+  unrestricted) so they appear in DevTools for per-screen rollout/dev-only control.
+- `src/pages/DevTools.jsx` — the duplicate-scan view now shows an email match-key as-is instead of
+  running it through `formatPhone` (the cosmetic 6a follow-up).
+
+**Isolation / rollout:** still the `page:crm` flag (dev-only to Moroni). **Opening `page:crm` to staff
+gates on this phase** — the per-screen roles now exist; the flag flip itself is the owner's, post-merge.
+
+**Tests:** `crm_phase6b_import_ownership.test.js` + `crm_phase6b_audit_hardening.test.js` (test-first,
+committed failing before the bodies): import dedupe (existing-phone → update not create; within-file
+email collapse; unmatchable row skipped), owner/lifecycle setters + events + junk-lifecycle rejection;
+all four audit events fire; campaign-sent de-duplicated with counts. Integration suite (self-skips
+without CI creds) — behavior **verified live via Supabase MCP**: dedupe A=0/1/0 (1 contact for the
+phone), within-file B=1/1 (1 contact for the email), skip C recorded, owner+lifecycle set with events,
+junk lifecycle rejected, campaign create/update/exclusions/delete events present, sent event fires once
+with `{sent:1,total:1}` on a retried call, campaign flips to `sent`. All TEST rows + audit events
+cleaned. `npm test` 216 passed / 34 skipped, `npm run build` green, eslint clean on changed files
+(Admin.jsx's 12 errors are pre-existing — zero added).
+
+Reviewer gauntlet: migration-safety-checker **clean** (zero DDL, 7 signatures frozen, grants present),
+consent-path-auditor **PASS** (no send call sites added; `record_email_campaign_send` change is an
+audit-log fix downstream of the consent decision; send gate untouched), upr-pattern-checker + 
+crm-phase-reviewer run at close-out. **Visual-on-preview (import wizard + role-gated nav)** is
+owner-gated behind the dev-only `page:crm` flag — build-verified here, on-preview visual confirmation is
+the owner's after the flag opens.
+
 ## CRM Phase 4d — Fixed automations (Jul 2 2026 — shipped)
 
 Wave-1 phase (cut from `dev`). Ships the four fixed automations as a cron worker + owner toggles.
