@@ -19,7 +19,7 @@
  *   Data:      none
  *
  * EXPORTS:
- *   default RichEmailEditor({ value, onChange, placeholder })
+ *   default RichEmailEditor({ value, onChange, placeholder, resetKey, onAiDesign })
  *
  * NOTES / GOTCHAS:
  *   - Uses a contentEditable div + document.execCommand, the same technique
@@ -34,10 +34,12 @@
  *   - execCommand is deprecated but still broadly supported and is what
  *     every dependency-light rich-text box in the wild still uses for basic
  *     formatting; no new npm dependency needed for bold/italic/lists/links.
- *   - The "Design with AI" button is a disabled placeholder — the feature
- *     isn't built yet (planned to let a future AI worker rewrite body_html
- *     with brand styling), but the button communicates the toolbar has room
- *     for it without wiring anything up yet.
+ *   - "Design with AI" (`onAiDesign`, optional) calls out to
+ *     functions/api/crm-campaign-ai-design.js via the parent's handler, then
+ *     applies the result the same imperative way every other toolbar action
+ *     does: mutate editorRef.current.innerHTML directly, then emitChange().
+ *     If `onAiDesign` isn't passed, the button stays disabled — a defensive
+ *     fallback for any future caller that doesn't wire this up.
  * ════════════════════════════════════════════════
  */
 import { useRef, useState, useEffect, useCallback } from 'react';
@@ -66,17 +68,19 @@ function ToolbarButton({ label, title, onClick, active, disabled }) {
 }
 
 function usePopover() {
-  const [open, setOpen] = useState(null); // null | 'variable' | 'emoji' | 'link'
+  const [open, setOpen] = useState(null); // null | 'variable' | 'emoji' | 'link' | 'ai'
   const toggle = (name) => setOpen(o => (o === name ? null : name));
   const close = () => setOpen(null);
   return { open, toggle, close };
 }
 
-export default function RichEmailEditor({ value, onChange, placeholder, resetKey }) {
+export default function RichEmailEditor({ value, onChange, placeholder, resetKey, onAiDesign }) {
   const editorRef = useRef(null);
   const { open, toggle, close } = usePopover();
   const [linkUrl, setLinkUrl] = useState('');
   const [activeFormats, setActiveFormats] = useState({});
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Seed the editor's content once per resetKey change (e.g. switching from
   // "new campaign" to editing an existing one) — never on every keystroke.
@@ -127,6 +131,25 @@ export default function RichEmailEditor({ value, onChange, placeholder, resetKey
     emitChange();
     setLinkUrl('');
     close();
+  };
+
+  const runAiDesign = async () => {
+    if (!aiInstruction.trim() || !onAiDesign || aiLoading) return;
+    setAiLoading(true);
+    try {
+      const html = await onAiDesign(aiInstruction.trim(), editorRef.current?.innerHTML || '');
+      editorRef.current?.focus();
+      if (editorRef.current) editorRef.current.innerHTML = html;
+      emitChange();
+      setAiInstruction('');
+      close();
+    } catch (e) {
+      window.dispatchEvent(new CustomEvent('upr:toast', {
+        detail: { message: e.message || 'AI design failed', type: 'error' },
+      }));
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   return (
@@ -181,7 +204,37 @@ export default function RichEmailEditor({ value, onChange, placeholder, resetKey
           )}
         </div>
         <div style={{ flex: 1 }} />
-        <ToolbarButton label="✨ Design with AI" title="Coming soon" disabled />
+        <div className="crm-editor-popover-wrap">
+          <ToolbarButton
+            label="✨ Design with AI"
+            title={onAiDesign ? 'Redesign with AI' : 'Coming soon'}
+            onClick={() => toggle('ai')}
+            active={open === 'ai'}
+            disabled={!onAiDesign}
+          />
+          {open === 'ai' && (
+            <div className="crm-editor-popover crm-editor-ai-popover" onMouseDown={(e) => e.preventDefault()}>
+              <textarea
+                className="crm-integration-input"
+                rows={3}
+                placeholder="Describe the redesign — e.g. “make it festive for a spring sale” or “turn the offers into a bulleted list”"
+                value={aiInstruction}
+                onChange={e => setAiInstruction(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runAiDesign(); } }}
+                autoFocus
+                disabled={aiLoading}
+              />
+              <button
+                type="button"
+                className="crm-btn crm-btn-primary crm-btn-sm"
+                onClick={runAiDesign}
+                disabled={aiLoading || !aiInstruction.trim()}
+              >
+                {aiLoading ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Designing…</> : 'Generate'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div

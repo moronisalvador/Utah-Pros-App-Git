@@ -6268,6 +6268,8 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-editor-emoji-grid { flex-wrap: wrap; max-width: 260px; }
 .crm-editor-emoji-item { background: transparent; border: none; font-size: 18px; padding: 4px; border-radius: 6px; cursor: pointer; line-height: 1; }
 .crm-editor-emoji-item:hover { background: var(--crm-bg-content); }
+.crm-editor-ai-popover { flex-direction: column; align-items: stretch; min-width: 280px; gap: 8px; left: auto; right: 0; }
+.crm-editor-ai-popover textarea.crm-integration-input { min-height: 60px; resize: vertical; font-family: inherit; }
 .crm-editor-content {
   min-height: 160px; max-height: 340px; overflow-y: auto; padding: var(--space-3) var(--space-4);
   font-size: 14px; color: var(--crm-text-primary); line-height: 1.6; outline: none;
