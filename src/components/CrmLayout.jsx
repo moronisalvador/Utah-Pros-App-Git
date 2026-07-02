@@ -43,20 +43,25 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  IconOverview, IconLeads, IconCallLog, IconTasks,
-  IconAttribution, IconReports, IconCampaigns, IconIntegrations, IconCrmSettings,
+  IconOverview, IconLeads, IconContacts, IconConversations, IconCallLog, IconTasks,
+  IconSequences, IconForms, IconAttribution, IconReports, IconCampaigns,
+  IconIntegrations, IconCrmSettings,
 } from '@/lib/crmIcons';
 
 const SIDEBAR_ITEMS = [
-  { key: 'overview',     label: 'Overview',     path: '/crm/overview',     icon: IconOverview },
-  { key: 'leads',        label: 'Leads',        path: '/crm/leads',        icon: IconLeads },
-  { key: 'call-log',     label: 'Call Log',     path: '/crm/call-log',     icon: IconCallLog },
-  { key: 'tasks',        label: 'Tasks',        path: '/crm/tasks',        icon: IconTasks },
-  { key: 'attribution',  label: 'Attribution',  path: '/crm/attribution',  icon: IconAttribution },
-  { key: 'reports',      label: 'Reports',      path: '/crm/reports',      icon: IconReports },
-  { key: 'campaigns',    label: 'Campaigns',    path: '/crm/campaigns',    icon: IconCampaigns },
-  { key: 'integrations', label: 'Integrations', path: '/crm/integrations', icon: IconIntegrations },
-  { key: 'settings',     label: 'Settings',     path: '/crm/settings',     icon: IconCrmSettings },
+  { key: 'overview',      label: 'Overview',      path: '/crm/overview',      icon: IconOverview },
+  { key: 'leads',         label: 'Leads',         path: '/crm/leads',         icon: IconLeads },
+  { key: 'contacts',      label: 'Contacts',      path: '/crm/contacts',      icon: IconContacts },
+  { key: 'conversations', label: 'Conversations', path: '/crm/conversations', icon: IconConversations },
+  { key: 'call-log',      label: 'Call Log',      path: '/crm/call-log',      icon: IconCallLog },
+  { key: 'tasks',         label: 'Tasks',         path: '/crm/tasks',         icon: IconTasks },
+  { key: 'sequences',     label: 'Sequences',     path: '/crm/sequences',     icon: IconSequences },
+  { key: 'forms',         label: 'Forms',         path: '/crm/forms',         icon: IconForms },
+  { key: 'attribution',   label: 'Attribution',   path: '/crm/attribution',   icon: IconAttribution },
+  { key: 'reports',       label: 'Reports',       path: '/crm/reports',       icon: IconReports },
+  { key: 'campaigns',     label: 'Campaigns',     path: '/crm/campaigns',     icon: IconCampaigns },
+  { key: 'integrations',  label: 'Integrations',  path: '/crm/integrations',  icon: IconIntegrations },
+  { key: 'settings',      label: 'Settings',      path: '/crm/settings',      icon: IconCrmSettings },
 ];
 
 export default function CrmLayout() {

@@ -6332,3 +6332,52 @@ tr:hover td { background: var(--bg-secondary); }
 
   .crm-email-preview-frame { height: 380px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CRM WAVE — Phase F Foundation CSS + reserved per-phase sections
+   docs/crm-roadmap.md "Phase F". The blocks below belong to Foundation. Each
+   wave phase writes its CSS ONLY inside its own reserved marker further down —
+   never in Foundation's block and never in another phase's section
+   (.claude/rules/crm-wave-ownership.md, index.css rule).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Contacts skeleton (CrmContacts.jsx — frozen in-wave). 6a/6b style INSIDE
+   their slot components / reserved sections, not here. */
+.crm-page-header-actions { display: flex; gap: var(--space-2); align-items: center; }
+.crm-contacts-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.crm-contacts-directory { min-width: 0; }
+.crm-contacts-detail { min-width: 0; }
+
+@media (max-width: 768px) {
+  .crm-contacts-layout { grid-template-columns: 1fr; }
+}
+
+/* ─── CRM WAVE RESERVED — Phase 4d (fixed automations · Session B) ───
+   Owner: Phase 4d. Write only your CSS between this marker and the next. */
+
+/* ─── CRM WAVE RESERVED — Phase 6a (contacts read & segments · Session C) ───
+   Owner: Phase 6a. */
+
+/* ─── CRM WAVE RESERVED — Phase 6b (ownership, import, roles · Session D) ───
+   Owner: Phase 6b. */
+
+/* ─── CRM WAVE RESERVED — Phase 7 (tasks, timeline, comms · Session E) ───
+   Owner: Phase 7. */
+
+/* ─── CRM WAVE RESERVED — Phase 8 (drip sequences · Session G) ───
+   Owner: Phase 8. */
+
+/* ─── CRM WAVE RESERVED — Phase 9 (intelligence, reports · Session H) ───
+   Owner: Phase 9. */
+
+/* ─── CRM WAVE RESERVED — Phase 10 (CRM forms · Session I) ───
+   Owner: Phase 10. */
+
+/* ─── CRM WAVE RESERVED — Phase 4b (text-blast campaigns · Session J) ───
+   Owner: Phase 4b. */
+
