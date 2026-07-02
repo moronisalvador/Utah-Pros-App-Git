@@ -2591,6 +2591,60 @@ logged-in Moroni session this sandbox doesn't have. Flip them via
 `set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
 Cloudflare preview and a real CallRail connection.
 
+**Phase 1 close-out (Roadmap v3, Wave 0, Session A — 2026-07-02)**: Phase 1's core build (above)
+had already merged to `dev`/`main` in earlier sessions (PR #189 + follow-ups through #223) with a
+real, live CallRail connection — the "needs Moroni / no CallRail account" caveats in the two
+paragraphs above are now resolved: 59 real call rows are live in `inbound_leads`, correctly linking
+to existing contacts by `caller_number` and never auto-creating one (intake rule changed post-spec,
+see below), webhook auth + payload shape are confirmed against real deliveries (not placeholders —
+`functions/lib/callrail.test.js` pins an actual captured payload), the CallRail API key reads from
+`integration_credentials` not a hardcoded secret, and every lead/run writes `system_events`/
+`worker_runs`. The backfill (30-day default window) processed 57 records against CallRail's own
+54-in-window count — within tolerance. This close-out session:
+- Confirmed a **business-rule change since the original spec**: `upsert_lead_from_callrail` no
+  longer auto-creates a contact at all (migration `20260701_crm_lead_no_autocreate_contact.sql`,
+  commit `1494542`) — it only LINKS to an existing contact by phone; a contact is created only via
+  the new `promote_lead_to_contact` RPC ("+ Add as customer" on the Leads board) or normal booking
+  flows. This retires the original `shouldCreateContact({spam_flag, duration_sec})` predicate and
+  its vitest unit test (removed in the same commit) — moot, not skipped, since no call can ever
+  auto-create a contact now regardless of spam/duration. The roadmap's test-target "(c)" and the
+  Phase 1 branch checklist's item (b)+(c) title are stale references to this retired function; the
+  integration test in `supabase/tests/crm_phase1_callrail.test.js` was rewritten for the new
+  behavior and still covers the intent (unknown number → no contact).
+- **Form-capture stage stays open, disclosed, not closed as done or as superseded.** No owner
+  decision on the CallRail-Form-Tracking-vs-Phase-10 fork was recorded in `docs/crm-roadmap.md`'s
+  dispatch section, so the roadmap's default-if-undecided rule applies ("verify the CallRail form
+  path anyway"). Checked live via the CallRail MCP tools: `callrail_list_form_submissions` returns
+  **0 records** across the full ~2-year retention window, and `inbound_leads` has **0**
+  `source_type='form'` rows — a real fixture is genuinely unobtainable without the owner (either a
+  live test form submission, or an owner decision to supersede this stage per Phase 10). `mapFormPayload`
+  in `functions/lib/callrail.js` therefore remains **untested guesswork** (only `mapCallPayload` is
+  pinned to a real captured fixture) — a live form submission through the site today would run through
+  unverified field-name mapping. `crm_build_stages` sort_order 8 stays `todo` with this disclosure.
+- **Visual check vs. the Stitch handoff** also stays open/owner-gated — the mockup isn't a repo asset
+  and can't be verified from this sandbox.
+- Fixed 2 new hardcoded-hex CSS violations `upr-pattern-checker` found in the `.crm-shell` token
+  block (`.crm-timeline-badge[data-type="sms"]` and `.crm-badge-won`, both duplicating
+  `--crm-success-bg`'s `#ecfdf5` instead of referencing it) — now tokenized.
+- `crm-phase-reviewer` (Sonnet, this session) independently verified the above against the live
+  files/migrations (not just the summary) and recommended **SHIP** — call-side ingestion,
+  idempotency, logging, and credential handling all pass with real evidence; the two open items are
+  genuinely owner-gated. Flagged one non-blocking, latent issue: `20260701_crm_lead_no_autocreate_contact.sql`
+  sorts lexically *before* `20260701_crm_phase1_shell_callrail.sql` (`l` &lt; `p`), but functionally
+  depends on it (references the `inbound_leads` type the phase-1 migration creates). The live DB is
+  correct (migrations were applied via MCP in chronological order, not filename order), but a clean
+  rebuild via `supabase db push`/reset would resolve migrations by filename and could apply them out
+  of order. Not fixed in this session — renaming an already-applied migration file risks desyncing
+  Supabase's migration-history tracking against the shared `dev`/`main` project; left as a disclosed
+  follow-up rather than a live risky rename.
+- Reconciled `crm_build_stages` (phase_key='1'): flipped sort_order 6 ("set phase-1 shipped; delete
+  test rows") and 7 ("pushed to dev, verified, dev → main PR opened") from `todo` to `done` — both
+  had genuinely already happened (PR #189 merged; Phases 2/3/4a/4c already shipped on top of Phase 1)
+  but were never flipped, under-reporting progress. No test rows tagged with a dev tracking number
+  were found to delete (`inbound_leads` has zero `callrail_id LIKE 'test-%'` rows). Form-capture
+  (sort_order 8) and the visual check (sort_order 4) stay `todo`, disclosed above. `crm_build_phases('1')`
+  set to **`shipped`** — all non-owner-gated acceptance criteria pass.
+
 ### Phase 2 — Ad spend ingestion (Google Ads + Meta Ads)
 
 **New table** `ad_spend` (`supabase/migrations/20260701_crm_phase2_adspend.sql`, applied to the
