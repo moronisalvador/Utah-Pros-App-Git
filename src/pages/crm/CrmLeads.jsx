@@ -67,6 +67,24 @@ function leadLabel(lead) {
   return lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form lead' : 'Unknown caller');
 }
 
+// Client-side guard: a reason is required to move a lead into a "lost" stage,
+// so win/loss data stays honest. Returns an error string, or null when OK.
+// (The move_lead_to_stage RPC keeps p_lost_reason optional for backward
+// compatibility — this requirement lives in the new UI path only.)
+// eslint-disable-next-line react-refresh/only-export-components
+export function lostReasonError(stage, reason) {
+  if (stage?.is_lost && !reason?.trim()) return 'A reason is required when marking a lead lost.';
+  return null;
+}
+
+// Whole days a lead has sat in its current stage, from lead_pipeline_stage.updated_at.
+function daysInStage(updatedAt) {
+  if (!updatedAt) return null;
+  const ms = Date.now() - new Date(updatedAt).getTime();
+  if (Number.isNaN(ms) || ms < 0) return null;
+  return Math.floor(ms / 86400000);
+}
+
 export default function CrmLeads() {
   const { db, employee } = useAuth();
   const [stages, setStages] = useState([]);
@@ -78,6 +96,7 @@ export default function CrmLeads() {
 
   const [dragLead, setDragLead] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
+  const [lostPrompt, setLostPrompt] = useState(null); // { lead, stageId } awaiting a lost reason
 
   // Touch drag-and-drop — a parallel path to the HTML5 DnD above, only ever
   // wired up when isTouchDevice() (see NOTES). Position/ghost tracking uses
@@ -99,12 +118,12 @@ export default function CrmLeads() {
       const [stageRows, leadRows, positionRows] = await Promise.all([
         db.rpc('get_pipeline_stages', {}),
         db.select('inbound_leads', 'spam_flag=eq.false&select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=200'),
-        db.select('lead_pipeline_stage', 'select=lead_id,stage_id'),
+        db.select('lead_pipeline_stage', 'select=lead_id,stage_id,updated_at'),
       ]);
       setStages(stageRows || []);
       setLeads(leadRows || []);
       const positions = {};
-      for (const row of positionRows || []) positions[row.lead_id] = { stage_id: row.stage_id };
+      for (const row of positionRows || []) positions[row.lead_id] = { stage_id: row.stage_id, updated_at: row.updated_at };
       setStagePositions(positions);
     } catch {
       err('Failed to load the Leads pipeline');
@@ -119,18 +138,34 @@ export default function CrmLeads() {
   const grouped = useMemo(() => groupLeadsByStage(leads, stages, stagePositions), [leads, stages, stagePositions]);
   const pipelineValue = useMemo(() => weightedPipelineValue(leads, stages, stagePositions), [leads, stages, stagePositions]);
 
-  const moveLead = useCallback(async (lead, stageId) => {
+  // Commit a stage move (optionally with a lost reason). Optimistic; reverts on error.
+  const commitMove = useCallback(async (lead, stageId, reason) => {
     const prevStageId = stagePositions[lead.id]?.stage_id ?? sortedStages[0]?.id;
-    if (stageId === prevStageId) return;
+    const prevPosition = stagePositions[lead.id];
 
-    setStagePositions(prev => ({ ...prev, [lead.id]: { stage_id: stageId } }));
+    setStagePositions(prev => ({ ...prev, [lead.id]: { stage_id: stageId, updated_at: new Date().toISOString() } }));
     try {
-      await db.rpc('move_lead_to_stage', { p_lead_id: lead.id, p_stage_id: stageId, p_moved_by: employee?.id || null });
+      await db.rpc('move_lead_to_stage', {
+        p_lead_id: lead.id,
+        p_stage_id: stageId,
+        p_moved_by: employee?.id || null,
+        p_lost_reason: reason || null,
+      });
     } catch {
-      setStagePositions(prev => ({ ...prev, [lead.id]: { stage_id: prevStageId } }));
+      setStagePositions(prev => ({ ...prev, [lead.id]: prevPosition ?? { stage_id: prevStageId } }));
       err('Failed to move lead — reverted.');
     }
   }, [db, employee, stagePositions, sortedStages]);
+
+  // Entry point for drag/drop AND the detail-panel <select>. A move into a
+  // "lost" stage opens the reason prompt instead of committing immediately.
+  const moveLead = useCallback((lead, stageId) => {
+    const prevStageId = stagePositions[lead.id]?.stage_id ?? sortedStages[0]?.id;
+    if (stageId === prevStageId) return;
+    const targetStage = sortedStages.find(s => s.id === stageId);
+    if (targetStage?.is_lost) { setLostPrompt({ lead, stageId }); return; }
+    commitMove(lead, stageId, null);
+  }, [commitMove, stagePositions, sortedStages]);
 
   const handleDragStart = (e, lead) => { setDragLead(lead); e.dataTransfer.effectAllowed = 'move'; };
   const handleDragEnd = () => { setDragLead(null); setDragOverStage(null); };
@@ -317,7 +352,15 @@ export default function CrmLeads() {
                         {lead.source_type === 'call' ? 'Call' : 'Form'}
                         {lead.source ? ` · ${lead.source}` : ''}
                       </div>
-                      {lead.value != null && <div className="crm-board-card-value">{formatMoney(lead.value)}</div>}
+                      <div className="crm-board-card-footer">
+                        {lead.value != null && <span className="crm-board-card-value">{formatMoney(lead.value)}</span>}
+                        {(() => {
+                          const age = daysInStage(stagePositions[lead.id]?.updated_at);
+                          return age != null && age > 0
+                            ? <span className={`crm-stage-age${age >= 7 ? ' stale' : ''}`}>{age}d in stage</span>
+                            : null;
+                        })()}
+                      </div>
                     </div>
                   ))}
                   {stageLeads.length === 0 && !dragLead && !touchDragLead && <div className="crm-board-empty">No leads</div>}
@@ -343,8 +386,17 @@ export default function CrmLeads() {
           onClose={() => setSelectedLead(null)}
           onMoveStage={(stageId) => moveLead(selectedLead, stageId)}
           createdBy={employee?.id || null}
+          actorId={employee?.id || null}
           onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load(); }}
           db={db}
+        />
+      )}
+
+      {lostPrompt && (
+        <LostReasonPrompt
+          stage={sortedStages.find(s => s.id === lostPrompt.stageId)}
+          onCancel={() => setLostPrompt(null)}
+          onConfirm={(reason) => { commitMove(lostPrompt.lead, lostPrompt.stageId, reason); setLostPrompt(null); }}
         />
       )}
 
@@ -431,11 +483,23 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
 /* ═══════════════════════════════════════════════════
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
-function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, onPromoted, db }) {
+function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, db }) {
   const [promoting, setPromoting] = useState(false);
   const [promoteName, setPromoteName] = useState('');
   const [promoteEmail, setPromoteEmail] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Log a click-to-call as an activity event, then let the tel: link dial.
+  // Fire-and-forget — never block or fail the call on a logging error.
+  const logClickToCall = useCallback((number) => {
+    db.insert('system_events', {
+      event_type: 'crm_click_to_call',
+      entity_type: 'inbound_lead',
+      entity_id: lead.id,
+      actor_id: actorId,
+      payload: { phone: number, contact_id: lead.contact_id || null },
+    }).catch(() => {});
+  }, [db, lead.id, lead.contact_id, actorId]);
 
   const promote = useCallback(async () => {
     setSaving(true);
@@ -459,7 +523,15 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         <div className="crm-panel-header">
           <div>
             <div className="crm-panel-title">{leadLabel(lead)}</div>
-            {lead.caller_number && <div className="crm-panel-subtitle">{lead.caller_number}</div>}
+            {lead.caller_number && (
+              <a
+                href={`tel:${lead.caller_number}`}
+                className="crm-call-link crm-panel-subtitle"
+                onClick={() => logClickToCall(lead.caller_number)}
+              >
+                📞 {lead.caller_number}
+              </a>
+            )}
           </div>
           <button className="crm-btn crm-btn-ghost crm-panel-close" onClick={onClose}>Close</button>
         </div>
@@ -512,6 +584,49 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
           ) : (
             <ActivityTimeline contactId={lead.contact_id} />
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   LostReasonPrompt — required reason before a lead can move to a lost stage
+   ═══════════════════════════════════════════════════ */
+function LostReasonPrompt({ stage, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [attempted, setAttempted] = useState(false);
+  const error = lostReasonError(stage, reason);
+
+  const submit = () => {
+    setAttempted(true);
+    if (error) { err(error); return; }
+    onConfirm(reason.trim());
+  };
+
+  return (
+    <div className="crm-panel-overlay" onClick={onCancel}>
+      <div className="crm-panel crm-panel-narrow" onClick={e => e.stopPropagation()}>
+        <div className="crm-panel-header">
+          <div className="crm-panel-title">Mark lead lost</div>
+          <button className="crm-btn crm-btn-ghost crm-panel-close" onClick={onCancel}>Close</button>
+        </div>
+        <div className="crm-panel-section">
+          <label className="crm-panel-label" htmlFor="lost-reason">Reason <span className="crm-required">*</span></label>
+          <textarea
+            id="lost-reason"
+            className="crm-input crm-task-textarea"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Went with competitor, out of budget, no response…"
+            rows={3}
+            autoFocus
+          />
+          {attempted && error && <p className="crm-field-error">{error}</p>}
+        </div>
+        <div className="crm-panel-actions">
+          <button className="crm-btn crm-btn-primary" onClick={submit}>Mark lost</button>
+          <button className="crm-btn crm-btn-ghost" onClick={onCancel}>Cancel</button>
         </div>
       </div>
     </div>
