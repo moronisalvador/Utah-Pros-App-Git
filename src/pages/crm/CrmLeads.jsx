@@ -30,7 +30,8 @@
  *                       inbound_leads + contacts (via create_manual_lead RPC —
  *                       the "+ New lead" manual-entry button; and
  *                       promote_lead_to_contact — the "+ Add as customer" action
- *                       that turns a raw lead into a linked contact)
+ *                       that turns a raw lead into a linked contact),
+ *                       system_events (direct insert — click-to-call logging)
  *
  * NOTES / GOTCHAS:
  *   - A lead with no lead_pipeline_stage row yet reads as sitting in the

@@ -210,8 +210,11 @@ export default function CrmTasks() {
                 </button>
 
                 {confirmDelete === task.id ? (
-                  <span className="crm-task-confirm">
-                    <button className="crm-btn crm-btn-danger crm-btn-sm" onClick={() => removeTask(task)}>Delete</button>
+                  <span
+                    className="crm-task-confirm"
+                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setConfirmDelete(null); }}
+                  >
+                    <button className="crm-btn crm-btn-danger crm-btn-sm" onClick={() => removeTask(task)} autoFocus>Delete</button>
                     <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
                   </span>
                 ) : (
