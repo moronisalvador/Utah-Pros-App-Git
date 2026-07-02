@@ -138,3 +138,43 @@ New tables (all org_id + RLS + policy at creation): `automation_settings` (SMS k
 submission_token UNIQUE). New columns: `inbound_leads.lost_reason`, `inbound_leads.lead_score`,
 `contacts.owner_id`, `contacts.lifecycle_status`, `pipeline_stages.win_probability` (0..1,
 NULL → positional fallback).
+
+---
+
+## 7. Phase 5 addendum (2026-07-02) — Automation recipes (post-wave single session)
+
+Committed by the Phase 5 re-plan (`docs/crm-roadmap.md` → "Phase 5 re-plan (2026-07-02)" — the
+authoritative phase block). Phase 5 runs AFTER the wave (6b merged 2026-07-02) as **one**
+session, **in parallel with Phase 10** — disjointness challenge-proven. §§1–6 stay binding
+except as amended here.
+
+| Session | Phase | Owns exclusively (edit only these) | RPCs (created directly — see amendments) |
+|---|---|---|---|
+| K | 5 | `src/pages/crm/CrmAutomations.jsx` (new), `functions/api/process-crm-automations.js` (new), its one migration + tests, **plus exactly these authorized additive seam edits:** `src/App.jsx` (one lazy import + one `<Route path="automations">` line), `src/lib/crmIcons.jsx` (add `IconAutomations` only), `src/components/CrmLayout.jsx` (one `SIDEBAR_ITEMS` row + its icon import only) | `get_crm_automations`, `upsert_crm_automation`, `set_automation_enabled`, `delete_crm_automation`, `get_automation_runs` |
+
+**Amendments (rule-amendment transparency):**
+
+- **Schema.** §4's "a wave session ships zero schema" governed Wave-1 *parallel* sessions.
+  Phase 5 is post-wave and single-session: it ships its **own additive migration**
+  (CLAUDE.md Rule 7 discipline — `crm_automations` + `crm_automation_runs`, RLS + explicit
+  policy at creation, `org_id`, GRANTs, **`UNIQUE(automation_id, triggering_event_id)`**),
+  audited by `migration-safety-checker`. Still forbidden: `ALTER`/`DROP` of any live table —
+  including the orphan `automation_rules`, which stays untouched.
+- **No frozen stubs.** Stubs freeze contracts BETWEEN parallel sessions; Phase 5 has no
+  cross-session consumer, so it creates its five RPCs directly in its migration.
+- **Seams.** The three seam edits in the matrix row are additive-only and exclusive to
+  Session K (6b — CrmLayout's sole wave editor — merged 2026-07-02, freeing that seam).
+  Everything else in §1 stays frozen: `automated-send.js` import-only (every send via
+  `sendAutomatedMessage()`), `run-automations.js` is 4d-owned (read-only),
+  `process-sequences.js` is Phase-8-owned (**import its exported helpers; never edit it**),
+  send workers untouched, no `skip_compliance`.
+- **index.css.** Session K writes only inside a new
+  `/* ─── CRM WAVE RESERVED — Phase 5 (automation recipes · Session K) ─── */` marker
+  appended at the bottom (§5 applies unchanged).
+- **S1 guard (binding).** `upsert_crm_automation` must refuse an ENABLED rule whose trigger
+  duplicates an enabled fixed automation (`automation_settings`: speed-to-lead,
+  missed-call-textback, no-response follow-up, review request), and the engine must skip such
+  rules at fire time — both with committed tests. Rationale: the fixed engine
+  (`run-automations.js`) and the configurable engine keep dedup markers in namespaces that
+  cannot see each other; without the guard, one missed call can produce two texts (TCPA,
+  per-message penalties).

@@ -3869,3 +3869,33 @@ review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none 
   `src/pages/crm/CrmConversations.jsx` passes `AiReplySuggestions`). `insertDraft` fills the composer via
   the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
   deferred follow-up.
+
+## CRM Phase 5 re-plan (Jul 2 2026) — plan of record committed (no feature code)
+
+Phase 5 ("Visual automation builder") scheduled by owner directive — its original go-signal gate
+("4 fixed automations proven valuable + a real 5th need") is superseded, recorded transparently in
+`docs/crm-roadmap.md` → **"Phase 5 re-plan (2026-07-02) — Linear automation recipes"** (the
+authoritative section). v1 scope = **linear automation recipes**: trigger (a `system_events`
+event type) → AND-conditions → ordered actions (send email/SMS via the frozen gate, enroll in
+sequence, create task). One combined build session (**Session K**), runs **in parallel with
+Phase 10** — disjointness proven by an adversarial challenge pass before commit.
+
+Key design facts (adversarially verified): `system_events` is **RPC-fed, not trigger-fed** (one
+lone DB trigger), no cursor/org_id → run-creation dedups on
+**`UNIQUE(automation_id, triggering_event_id)`**; the legacy `automation_rules` table is a
+verified unwired orphan (no org_id, zero code references, stale TODO at
+`functions/api/twilio-webhook.js:229`) — Phase 5 uses fresh `crm_automations` /
+`crm_automation_runs` instead; **finding S1 (double-send)** is binding — the fixed engine
+(`run-automations.js`) and the new configurable engine keep dedup markers in namespaces that
+can't see each other, so `upsert_crm_automation` AND the engine must block rules duplicating an
+enabled fixed automation (TCPA). No new frontend dependency (hand-rolled linear builder per the
+CrmLeads DnD precedent).
+
+Artifacts committed (docs/seed only — zero feature code): the roadmap re-plan section (phase
+block, gap audit, options-on-record, resisted ledger, challenge report; old Phase 5 block +
+graph line superseded in place), `.claude/rules/crm-wave-ownership.md` **§7** (Session K row,
+authorized additive seam edits to App.jsx/crmIcons/CrmLayout, own-additive-schema + no-stub
+amendments, S1 guard), the **Session K dispatch block** in `docs/crm-dispatch.md`, and
+`supabase/migrations/20260702_crm_phase5_replan_stages.sql` (applied + verified live: phase
+title → "Automation recipes — linear visual builder", status still `planned`, placeholder stage
+replaced by 7 real stages).
