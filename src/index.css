@@ -6379,7 +6379,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-automation-dark { font-size: var(--text-xs); color: var(--crm-text-tertiary); font-style: italic; }
 .crm-automation-desc { display: block; font-size: var(--text-xs); color: var(--crm-text-tertiary); margin-top: 2px; }
 .crm-automation-toggle {
-  width: 44px; height: 24px; border-radius: 12px; border: none; cursor: pointer;
+  width: 44px; height: 24px; border-radius: var(--radius-xl); border: none; cursor: pointer;
   background: var(--crm-border); position: relative; flex-shrink: 0; padding: 0;
   transition: background var(--transition-fast);
 }
@@ -6387,7 +6387,7 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-automation-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
 .crm-automation-knob {
   position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--crm-bg-card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  background: var(--crm-bg-card); box-shadow: var(--shadow-sm);
   transition: transform var(--transition-fast);
 }
 .crm-automation-toggle.on .crm-automation-knob { transform: translateX(20px); }
