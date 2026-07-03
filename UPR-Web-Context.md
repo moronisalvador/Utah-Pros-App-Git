@@ -324,9 +324,9 @@ maps. This dashboard keeps its own scoped palette (above).
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
-  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
-  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New Jobs Closed). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New Jobs Closed
+  (`get_jobs_closed` — see the canonical sale rule below), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
   reads ~0 until jobs reach a terminal phase, then lights up automatically). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
@@ -364,6 +364,46 @@ maps. This dashboard keeps its own scoped palette (above).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
+  `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
+  The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now
+  counts **real (sold) jobs**, excluding estimate-only opportunities. Card reads `get_jobs_closed(p_floor)`
+  (hook `useJobsClosed.js`, replacing `useNewClaims.js`); grid layout key stays `newClaims` (internal id) so
+  saved per-user layouts aren't reset.
+
+  ### ⭐ What counts as a SALE / REAL JOB (THE canonical rule — all reporting must use this)
+  **Single source of truth = `jobs.is_real_job`** (migration `20260627_real_job_classification.sql`). A job is
+  auto-flagged real when a **work-auth/recon agreement is signed**, a **QBO invoice** is created, or its
+  **estimate is approved** (`real_job_source`/`real_job_marked_at` record which & when); the office can force
+  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
+  read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
+  `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+- **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
+  month, for everything sold the **previous month**), built on `is_real_job`.
+  - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
+    else the approved `estimates.created_by`. So the estimate-create flow now stamps `created_by`
+    (**`NewEstimateModal`** passes `p_created_by: employee?.id`; it was previously null — why older sales are
+    unattributed).
+  - **`employees.commission_percent` / `commission_flat`** (both nullable) — the per-employee rate. A rate set
+    ⇒ earns; both null ⇒ none (the rate **is** the "is a salesperson" flag). `commission_flat` (flat $/sale)
+    wins over `commission_percent` (% of the job's invoice total) when both set.
+  - **`get_commissions(p_month date)`** — SECURITY DEFINER RPC, **the one place commissions are ever computed**.
+    One row per real job; period = month of **`jobs.created_at`** (NOT `real_job_marked_at` — the backfill
+    stamped that to the migration date). Returns employee, job, division, base = `SUM(COALESCE(adjusted_total,
+    total))`, commission, `commission_period`, `is_attributed`. Unattributed sales (no derived person, or no
+    rate) are returned with `is_attributed = false` — **visible, not silently dropped**.
+  - **Commissions effectively start now:** most historical jobs have no recorded salesperson, so they're
+    unattributed; no backfill.
+  - **Admin UI — DONE (migration `20260630_employee_commission_rates.sql`):** **Settings → Payroll →
+    Commissions** (`CommissionsPanel` in `src/pages/Settings.jsx`) lists every employee with a Type
+    (None / Percent / Flat) + Rate, saved per row. Reads `get_employee_commissions()`, writes
+    `upsert_employee_commission(p_employee_id, p_percent, p_flat)` (percent XOR flat; both null clears it).
+  - **Help guide — DONE:** "Estimates, Jobs, Sales & Commissions" (`src/pages/Help.jsx`) explains the whole
+    flow in plain language for staff.
+  - **Deferred (Phase 2, when payroll runs in-app):** a monthly commissions **report** reading
+    `get_commissions`, and a `commission_payouts` lock table so paid amounts can't shift if an invoice is
+    later edited. **Cut from v1 deliberately:** per-employee basis options and an `is_salesperson` flag
+    (the rate is the flag).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
@@ -2591,6 +2631,60 @@ logged-in Moroni session this sandbox doesn't have. Flip them via
 `set_crm_stage_status`/`set_crm_phase_status('1', 'shipped')` once confirmed on the pushed branch's
 Cloudflare preview and a real CallRail connection.
 
+**Phase 1 close-out (Roadmap v3, Wave 0, Session A — 2026-07-02)**: Phase 1's core build (above)
+had already merged to `dev`/`main` in earlier sessions (PR #189 + follow-ups through #223) with a
+real, live CallRail connection — the "needs Moroni / no CallRail account" caveats in the two
+paragraphs above are now resolved: 59 real call rows are live in `inbound_leads`, correctly linking
+to existing contacts by `caller_number` and never auto-creating one (intake rule changed post-spec,
+see below), webhook auth + payload shape are confirmed against real deliveries (not placeholders —
+`functions/lib/callrail.test.js` pins an actual captured payload), the CallRail API key reads from
+`integration_credentials` not a hardcoded secret, and every lead/run writes `system_events`/
+`worker_runs`. The backfill (30-day default window) processed 57 records against CallRail's own
+54-in-window count — within tolerance. This close-out session:
+- Confirmed a **business-rule change since the original spec**: `upsert_lead_from_callrail` no
+  longer auto-creates a contact at all (migration `20260701_crm_lead_no_autocreate_contact.sql`,
+  commit `1494542`) — it only LINKS to an existing contact by phone; a contact is created only via
+  the new `promote_lead_to_contact` RPC ("+ Add as customer" on the Leads board) or normal booking
+  flows. This retires the original `shouldCreateContact({spam_flag, duration_sec})` predicate and
+  its vitest unit test (removed in the same commit) — moot, not skipped, since no call can ever
+  auto-create a contact now regardless of spam/duration. The roadmap's test-target "(c)" and the
+  Phase 1 branch checklist's item (b)+(c) title are stale references to this retired function; the
+  integration test in `supabase/tests/crm_phase1_callrail.test.js` was rewritten for the new
+  behavior and still covers the intent (unknown number → no contact).
+- **Form-capture stage stays open, disclosed, not closed as done or as superseded.** No owner
+  decision on the CallRail-Form-Tracking-vs-Phase-10 fork was recorded in `docs/crm-roadmap.md`'s
+  dispatch section, so the roadmap's default-if-undecided rule applies ("verify the CallRail form
+  path anyway"). Checked live via the CallRail MCP tools: `callrail_list_form_submissions` returns
+  **0 records** across the full ~2-year retention window, and `inbound_leads` has **0**
+  `source_type='form'` rows — a real fixture is genuinely unobtainable without the owner (either a
+  live test form submission, or an owner decision to supersede this stage per Phase 10). `mapFormPayload`
+  in `functions/lib/callrail.js` therefore remains **untested guesswork** (only `mapCallPayload` is
+  pinned to a real captured fixture) — a live form submission through the site today would run through
+  unverified field-name mapping. `crm_build_stages` sort_order 8 stays `todo` with this disclosure.
+- **Visual check vs. the Stitch handoff** also stays open/owner-gated — the mockup isn't a repo asset
+  and can't be verified from this sandbox.
+- Fixed 2 new hardcoded-hex CSS violations `upr-pattern-checker` found in the `.crm-shell` token
+  block (`.crm-timeline-badge[data-type="sms"]` and `.crm-badge-won`, both duplicating
+  `--crm-success-bg`'s `#ecfdf5` instead of referencing it) — now tokenized.
+- `crm-phase-reviewer` (Sonnet, this session) independently verified the above against the live
+  files/migrations (not just the summary) and recommended **SHIP** — call-side ingestion,
+  idempotency, logging, and credential handling all pass with real evidence; the two open items are
+  genuinely owner-gated. Flagged one non-blocking, latent issue: `20260701_crm_lead_no_autocreate_contact.sql`
+  sorts lexically *before* `20260701_crm_phase1_shell_callrail.sql` (`l` &lt; `p`), but functionally
+  depends on it (references the `inbound_leads` type the phase-1 migration creates). The live DB is
+  correct (migrations were applied via MCP in chronological order, not filename order), but a clean
+  rebuild via `supabase db push`/reset would resolve migrations by filename and could apply them out
+  of order. Not fixed in this session — renaming an already-applied migration file risks desyncing
+  Supabase's migration-history tracking against the shared `dev`/`main` project; left as a disclosed
+  follow-up rather than a live risky rename.
+- Reconciled `crm_build_stages` (phase_key='1'): flipped sort_order 6 ("set phase-1 shipped; delete
+  test rows") and 7 ("pushed to dev, verified, dev → main PR opened") from `todo` to `done` — both
+  had genuinely already happened (PR #189 merged; Phases 2/3/4a/4c already shipped on top of Phase 1)
+  but were never flipped, under-reporting progress. No test rows tagged with a dev tracking number
+  were found to delete (`inbound_leads` has zero `callrail_id LIKE 'test-%'` rows). Form-capture
+  (sort_order 8) and the visual check (sort_order 4) stay `todo`, disclosed above. `crm_build_phases('1')`
+  set to **`shipped`** — all non-owner-gated acceptance criteria pass.
+
 ### Phase 2 — Ad spend ingestion (Google Ads + Meta Ads)
 
 **New table** `ad_spend` (`supabase/migrations/20260701_crm_phase2_adspend.sql`, applied to the
@@ -3219,3 +3313,860 @@ any 3-plus-phase-recurring agents, ending with Wave-0 blocks. Built against a 2-
 extraction benchmark of the roadmap-v3 artifacts and adversarially critiqued
 (completeness + cold-usability, both SHIP_WITH_EDITS, findings folded in). Worked
 example it points sessions at: docs/crm-roadmap.md "Roadmap v3" + docs/crm-dispatch.md.
+
+---
+
+## CRM Phase F — Foundation (Jul 2 2026 — shipped)
+
+Owns 100% of the wave's schema + interfaces + wiring; downstream wave phases ship zero schema.
+Migrations (all applied + verified live, additive-only, RLS + explicit policy + org_id at creation):
+
+- `20260702_crm_phaseF_merge_contacts_safety.sql` — **P0 fix.** Captures the drifted live
+  `merge_contacts` body as a migration and supersedes it: now reassigns `lead_attribution`,
+  `email_campaign_recipients`, `email_campaign_exclusions` (dedupe on their `UNIQUE(campaign_id,
+  contact_id)`) and `inbound_leads.contact_id` onto the survivor **before** deleting the loser.
+  Signature unchanged. Proof: `supabase/tests/crm_merge_contacts_safety.test.js`. Merges are now
+  CRM-history-safe.
+- `20260702_crm_phaseF_wave_schema.sql` — new tables: `automation_settings` (per-org; SMS
+  kill-switch `sms_sending_enabled` **default OFF** + 4 per-automation toggles; one row per org
+  seeded), `crm_tasks`, `lead_stage_history` (append-only pipeline history), `crm_segments`,
+  `crm_import_batches`, `crm_sequences`/`crm_sequence_steps`/`crm_sequence_enrollments`
+  (`UNIQUE(sequence_id, contact_id)` → enroll idempotency), `lead_score_factors`,
+  `form_definitions`/`form_definition_versions`/`form_submissions` (`public_id` +
+  `submission_token` UNIQUE). New columns: `inbound_leads.lost_reason` + `.lead_score`,
+  `contacts.owner_id` + `.lifecycle_status`, `pipeline_stages.win_probability` (0..1, NULL →
+  positional fallback).
+- `20260702_crm_phaseF_shared_rpc_replaces.sql` — the **only two** live-RPC REPLACEs of the wave:
+  `move_lead_to_stage` gains `p_lost_reason DEFAULT NULL` + writes a `lead_stage_history` row per
+  move (dropped 3-arg + recreated 4-arg, no overload ambiguity; shipped 4a caller still works);
+  `get_contact_activity` gains email/jobs/tasks arms (same 1-arg signature + columns). Proof:
+  `supabase/tests/crm_shared_rpc_compat.test.js`. **Wave phases must NOT re-REPLACE these.**
+- `20260702_crm_phaseF_rpc_stubs.sql` — 30 signature-frozen stubs (SECURITY DEFINER, GRANT anon +
+  authenticated, body `RAISE EXCEPTION 'not implemented (phase X)'`), one owner phase each. Exact
+  signatures + ownership in `.claude/rules/crm-wave-ownership.md`. Covers 4d(2), 6a(5), 6b(3),
+  7(5), 8(4), 9(8: score_lead + 7 reports), 10(3).
+
+Consent gate (frozen after F): `functions/lib/sms-consent.js` `consentAllows({phone,opt_in_status,
+dnd})` (TCPA opt-in predicate, twin of `emailAllows`) + unit tests; `functions/lib/automated-send.js`
+sms branch fully built — `sendGatedSms()` gates on the `sms_sending_enabled` kill-switch (default OFF)
+then `consentAllows()`, sends via `twilio.js`, audits every outcome to `sms_consent_log`
+(`automated_send`/`send_blocked_disabled`/`send_blocked_dnd`/`send_blocked_no_consent`/
+`send_blocked_no_phone`/`send_failed`); `sendAutomatedMessage('sms', …)` routes through it. Unit test
+`functions/lib/automated-send.test.js` proves OFF→no send, ON+no-consent→no send, ON+consent→sends.
+Result: 4b/4d/8 never edit `automated-send.js`; 4b's remaining scope = external A2P registration +
+flag flip + `Marketing.jsx`.
+
+Shared code + frontend: `functions/lib/phone.js` (`normalizePhone` worker twin of `src/lib/phone.js`)
++ tests; `src/components/crm/ActivityTimeline.jsx` extracted from `CrmLeads.jsx` (behavior-identical,
+self-loading); `CrmOverview.jsx` renders `OverdueTasksWidget` (Phase 7) + `ForecastWidget` (Phase 9)
+slot stubs; `CrmContacts.jsx` skeleton renders `ContactsDirectory`/`ContactDetail` (6a) +
+`ImportExportPanel`/`MergeTool` (6b) slot stubs (all in `src/components/crm/`); `CrmConversations`/
+`CrmSequences`/`CrmForms` stub pages seeded (own CrmStubPage) so App.jsx stays frozen.
+
+Wiring (frozen in-wave): `App.jsx` routes (`/crm/contacts|conversations|sequences|forms`);
+`CrmLayout.jsx` nav (13 items) + `crmIcons.jsx` (IconContacts/Conversations/Sequences/Forms);
+`index.css` Contacts-skeleton CSS + 8 reserved per-phase section markers.
+
+Ownership manifest `.claude/rules/crm-wave-ownership.md` committed (frozen-file list, per-session
+owned files, exact frozen stub signatures, migration + index.css rules) — each wave session's read
+scope = CLAUDE.md + its phase block + this manifest. `crm_lead_stage_changed` `system_events` payload
+now also carries `from_stage_id` + `lost_reason`.
+
+Extra consent-safety fix (from the consent-path-auditor pass): `merge_contacts` now also reconciles
+the survivor's consent flags to the more-restrictive record — `dnd` OR'd, `opt_in_status` false if
+EITHER opted out, opt-out audit (`dnd_at`/`opt_out_at`/`opt_out_reason`) carried forward — so a merge
+can't resurrect contactability a duplicate had revoked (TCPA). Regression-tested in the merge safety
+suite.
+
+**`crm_build_stages` reconciliation (honest):** 7 stages. Flipped **done** (real, verified work):
+test-first suites; acceptance (schema+stubs+consent gate+slots+wiring+manifest all built & applied
+live); `npm test`/`build`/`eslint` pass; UPR-Web-Context updated; reviewer gauntlet
+(migration-safety-checker fixed→clean, upr-pattern-checker clean, consent-path-auditor PASS,
+crm-phase-reviewer conditional-SHIP→both conditions met). The **visual-preview** and **push/verify/PR**
+tail stages are the mechanical close-out, flipped as they complete (not owner-gated, not forgotten).
+Phase `F` set `shipped` at close-out per the CRM workflow (commit → set shipped → PR). **Test-runner
+caveat:** the two integration suites (`crm_merge_contacts_safety`, `crm_shared_rpc_compat`) self-skip
+without CI creds and cannot run from this sandbox (network egress blocks the Supabase host — only the
+MCP path is allowed); their behavior was instead verified directly against the live shared DB via
+Supabase MCP (rollback DO-blocks), results captured in the PR. They execute green in CI/an
+allowlisted env.
+
+## CRM Phase 6a — Contacts read & segments (Jul 2 2026 — shipped)
+
+Wave-1 phase (ran beside 6b). **Zero schema migrations** — one function-body-only migration
+`20260702_crm_phase6a_contacts_segments.sql` fills five frozen 6a stubs + backward-compat-replaces
+one live RPC. Edits confined to the two owned slot files + the Phase 6a `index.css` reserved section
+(all per `.claude/rules/crm-wave-ownership.md`).
+
+**RPCs (bodies filled; signatures unchanged from Phase F stubs):**
+- `get_crm_contacts(p_search, p_limit, p_offset, p_org_id) → SETOF json` — searchable, paged
+  directory. Matches name/email/company (ILIKE) + phone (digits-only LIKE). Each row carries
+  `total_count` (`count(*) OVER ()` over the full pre-pagination match set) so the UI pages without a
+  second count query. `contacts` has no `org_id` (one global book) so `p_org_id` is accepted but does
+  not scope rows.
+- `get_contact_consent(p_contact_id) → json` — **unified do-not-contact read.** `do_not_contact` =
+  `dnd` OR `opt_out_at IS NOT NULL` OR email in `email_suppressions` (case/space-insensitive
+  `lower(btrim(...))` match). Returns `{ contact_id, do_not_contact, sms:{dnd,opted_out,opt_out_at,
+  opt_out_reason}, email:{address,suppressed,reason,suppressed_at} }`. **`opt_in_status` is
+  deliberately NOT used** — it defaults `false` for all 117 contacts (an un-opted-in state, not an
+  opt-out), so keying DNC off it would flag the whole book. This RPC is the single source of truth for
+  the badge — never re-derive from raw columns.
+- `upsert_segment(p_id, p_name, p_description, p_filter, p_org_id, p_created_by) → crm_segments`,
+  `get_segments(p_org_id) → SETOF crm_segments`, `delete_segment(p_segment_id) → void` — segments CRUD.
+  A segment's `filter` jsonb uses the **exact shape `preview_email_audience` consumes**
+  (`{ referral_source, role, tag, city, company, search }`), so a saved segment is a drop-in campaign
+  audience. Org defaults to the first non-test `crm_orgs` row (same pattern as `create_manual_lead`).
+- `get_duplicate_contacts()` — **backward-compatible body-replace** (same
+  `RETURNS TABLE(phone_normalized text, contact_ids uuid[], names text[], count bigint)`). Now
+  UNION-es email-normalized groups (`lower(btrim(email))`) onto the existing phone groups; for an email
+  group the `phone_normalized` column carries the normalized email (it's the group's match key, not
+  necessarily a phone). The one shipped caller (`DevTools.jsx` "Scan for Duplicates") reads the same
+  columns and keeps working. **Follow-up for 6b (owns `DevTools.jsx`):** that view's `formatPhone()`
+  will garble email match-keys on display (cosmetic; no error) — branch on group type there.
+
+**Components (owned slot files rendered by the frozen `CrmContacts.jsx` skeleton):**
+- `src/components/crm/ContactsDirectory.jsx` — debounced search + pagination (25/page) over
+  `get_crm_contacts`; collapsible Segments panel with CRUD, inline two-click delete, and a live preview
+  count per segment via `preview_email_audience(filter)`.
+- `src/components/crm/ContactDetail.jsx` — read-only: contact info + tags, the unified DNC badge (red
+  "Do not contact" + reason line, or green "Contactable") from `get_contact_consent`, and the shared
+  `ActivityTimeline`. Owner/lifecycle setters land in 6b.
+
+**Tests:** `supabase/tests/crm_phase6a_contacts_segments.test.js` (test-first, committed failing before
+the bodies existed): consent unified-DNC read across all three sources; segment filter round-trip (saved
+filter → `preview_email_audience` count matches a direct query); email-normalized dup detection.
+Integration suite (self-skips without CI creds, same as sibling CRM suites) — behavior verified live via
+Supabase MCP: dnd/opt-out/suppressed each read `do_not_contact=true`, clean reads `false`; directory
+`total_count` correct; a saved segment matched 2 contactable of 3 tagged (the dnd one excluded); email
+dup group detected. `npm test` 193 passed / 25 skipped, `npm run build` green, eslint clean on changed
+files. Foundation's `merge_contacts` safety fix confirmed present + its `crm_shared_rpc_compat` /
+`crm_merge_contacts_safety` suites green.
+
+Reviewer gauntlet: migration-safety-checker **clean** (signatures frozen, zero DDL, grants present);
+upr-pattern-checker **clean** (CSS token fixes applied). Isolation stays the `page:crm` flag —
+`/crm/contacts` invisible to staff until 6b opens it.
+
+## CRM Phase 6b — Ownership, CSV import, staff roles & audit hardening (Jul 2 2026 — shipped)
+
+Wave-1 phase (ran beside 6a). **Zero schema migrations** — one function-body-only migration
+`20260702_crm_phase6b_rpcs.sql` fills three frozen 6b stubs + backward-compat-replaces four live
+Phase 4c email-campaign RPCs (audit hardening). Edits confined to the owned files
+(`ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `featureFlags.js`,
+`CrmLayout.jsx` role-gating only) + the Phase 6b `index.css` reserved section — all per
+`.claude/rules/crm-wave-ownership.md`.
+
+**RPCs (bodies filled; signatures unchanged from Phase F stubs / Phase 4c):**
+- `import_contacts(p_rows jsonb, p_org_id, p_created_by, p_filename) → crm_import_batches` — CSV import
+  with **dedupe-on-import**. Each incoming row matches an existing contact on **normalized phone**
+  (last-10-digits, same convention as `get_duplicate_contacts`; a phone needs ≥10 digits to be a key)
+  OR **normalized email** (`lower(btrim(...))`). A match → **fill-blanks UPDATE** (`COALESCE(existing,
+  incoming)` — import never clobbers a curated value); no match → INSERT. The lookup re-queries
+  `contacts` per row so duplicates **within one file** collapse too. A row with neither phone nor email
+  is `skipped` (recorded in the batch `errors`); a row that throws is `errored` and the loop continues
+  (one bad row can't lose the file). Writes a `crm_import_batches` audit row (org-scoped —
+  `contacts` itself has no `org_id`) + a `crm_contacts_imported` system_event. Supported target fields:
+  name, email, phone, phone_secondary, company, role, referral_source, notes, billing_address/city/
+  state/zip, lifecycle_status, owner_id, tags. `contacts.phone` has a UNIQUE constraint — the
+  normalized match prevents insert collisions.
+- `set_contact_owner(p_contact_id, p_owner_id, p_actor_id) → contacts` — sets/clears `owner_id`
+  (NULL unassigns; a non-null owner must be a real `employees` row); emits `crm_contact_owner_set`
+  with `{owner_id, previous_owner_id}`.
+- `set_contact_lifecycle(p_contact_id, p_lifecycle_status, p_actor_id) → contacts` — sets/clears
+  `lifecycle_status`, gated to a fixed vocabulary **`lead | prospect | customer | past_customer |
+  archived`** (the column is free-text with no CHECK; this RPC is the gate). Emits
+  `crm_contact_lifecycle_set` with `{lifecycle_status, previous_status}`.
+- **Audit-hardening body-replaces** (signatures + behavior unchanged, add `system_events` only —
+  closes the "Audit trail PARTIAL" gap): `set_campaign_exclusions` → `crm_email_campaign_exclusions_set`
+  `{excluded_count, audience_count}`; `upsert_email_campaign` → `crm_email_campaign_created` /
+  `crm_email_campaign_updated`; `delete_email_campaign` → `crm_email_campaign_deleted` `{name, status}`
+  (name captured pre-delete). **`record_email_campaign_send`**: the `crm_email_campaign_sent` event now
+  fires **exactly once** — gated on `FOUND` from the `status='sending'→'sent'` UPDATE, so a
+  retried/duplicate send on an already-sent campaign no longer emits a second empty event — and carries
+  a `{sent, suppressed, failed, total}` counts payload (was empty `{}`). Shipped callers
+  (`src/pages/crm/CrmCampaigns.jsx`, `functions/api/send-email-campaign.js`) unchanged and still pass.
+
+**Components:**
+- `src/components/crm/ImportExportPanel.jsx` (Contacts "Import / Export" slot) — browser-side quote-aware
+  CSV parse → column-mapping UI (auto-guesses target from header names) → optional default owner +
+  default lifecycle stamped on all rows → `import_contacts` → created/updated/skipped/error summary +
+  a "Recent imports" audit list from `crm_import_batches`. Export streams all contacts to a CSV Blob.
+- `src/components/crm/MergeTool.jsx` (Contacts "Find duplicates" slot) — two tabs: **Duplicates**
+  (`get_duplicate_contacts` groups → pick keeper → sequential `merge_contacts` per loser, inline
+  two-click confirm) and **Owner & lifecycle** (contact search → `set_contact_owner` /
+  `set_contact_lifecycle`). **Placement note:** the owner/lifecycle setters live here, not in
+  `ContactDetail.jsx` — that file is Phase 6a's, frozen read-only for the wave, and the frozen
+  `CrmContacts.jsx` skeleton exposes no 6b detail-slot. MergeTool (a data-quality panel) is the
+  wave-compliant home; when 6a/6b later reconcile, these could move into the detail.
+- `src/components/CrmLayout.jsx` (role-gating only) — **per-screen staff gating**: a CRM screen is
+  visible when `isFeatureEnabled('feature:crm_<screen>')` (rollout sub-flag; absent/enabled = open) AND
+  `canAccess('crm_<screen>')` (per-employee override → admin → role `nav_permissions`). Enforced in both
+  the nav filter and an **Outlet route guard** (direct-URL nav can't bypass the hidden nav; shows a
+  "No access" panel). Overview is always reachable (CRM home); `crm_partner` accounts keep the whole CRM
+  except Integrations (unchanged). Nav keys normalize hyphens → underscores (`call-log` → `crm_call_log`).
+- `src/pages/Admin.jsx` — CRM per-screen keys (`crm_leads … crm_settings`) added to the role×nav_key
+  matrix (PermissionsTab) **and** the per-employee override list (PageAccessTab, new "CRM" section), so
+  roles are defined per screen **before** `page:crm` opens to staff.
+- `src/lib/featureFlags.js` — registers the twelve `feature:crm_*` per-screen sub-flags (default ON =
+  unrestricted) so they appear in DevTools for per-screen rollout/dev-only control.
+- `src/pages/DevTools.jsx` — the duplicate-scan view now shows an email match-key as-is instead of
+  running it through `formatPhone` (the cosmetic 6a follow-up).
+
+**Isolation / rollout:** still the `page:crm` flag (dev-only to Moroni). **Opening `page:crm` to staff
+gates on this phase** — the per-screen roles now exist; the flag flip itself is the owner's, post-merge.
+
+**Tests:** `crm_phase6b_import_ownership.test.js` + `crm_phase6b_audit_hardening.test.js` (test-first,
+committed failing before the bodies): import dedupe (existing-phone → update not create; within-file
+email collapse; unmatchable row skipped), owner/lifecycle setters + events + junk-lifecycle rejection;
+all four audit events fire; campaign-sent de-duplicated with counts. Integration suite (self-skips
+without CI creds) — behavior **verified live via Supabase MCP**: dedupe A=0/1/0 (1 contact for the
+phone), within-file B=1/1 (1 contact for the email), skip C recorded, owner+lifecycle set with events,
+junk lifecycle rejected, campaign create/update/exclusions/delete events present, sent event fires once
+with `{sent:1,total:1}` on a retried call, campaign flips to `sent`. All TEST rows + audit events
+cleaned. `npm test` 216 passed / 34 skipped, `npm run build` green, eslint clean on changed files
+(Admin.jsx's 12 errors are pre-existing — zero added).
+
+Reviewer gauntlet: migration-safety-checker **clean** (zero DDL, 7 signatures frozen, grants present),
+consent-path-auditor **PASS** (no send call sites added; `record_email_campaign_send` change is an
+audit-log fix downstream of the consent decision; send gate untouched), upr-pattern-checker **clean**
+(one two-click-confirm `onBlur` nit fixed), crm-phase-reviewer **SHIP** (all money/consent/audit code
+correct + backward-compatible). Note: `import_contacts` sets `owner_id` from CSV without an explicit
+employee-existence check like `set_contact_owner`, but `contacts.owner_id` carries an FK to
+`employees(id)` so a bad id errors that one row (caught → `error_count`), and the UI only supplies real
+employee ids — low risk, FK-backstopped.
+
+**`crm_build_stages` reconciliation (honest): 7 stages — 6 flipped `done`, 1 left `todo`.** Done:
+test-first, acceptance (slots/owner/lifecycle/roles), test+build+eslint/zero-schema, reviewer gauntlet,
+UPR-Web-Context updated, and set-shipped/TEST-rows-deleted/pushed/PR-opened. **Left `todo` (owner-gated,
+NOT forgotten):** *"Visual: import wizard + role-gated nav on preview"* — the CRM is invisible behind
+the dev-only `page:crm` flag, so on-preview visual confirmation is the owner's after the flag opens.
+Build-verified here (compiles + renders); there is no `blocked` status value yet, so it stays `todo`
+with this disclosure (same convention as sibling phases).
+
+## CRM Phase 4d — Fixed automations (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Ships the four fixed automations as a cron worker + owner toggles.
+**Zero schema migrations** — the `automation_settings` table, its RLS/policy, the SMS kill-switch
+`sms_sending_enabled`, and the 4 per-automation toggle columns are all Foundation-owned; this phase
+only filled two frozen RPC stub bodies and added a worker + UI.
+
+**Worker — `functions/api/run-automations.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a Cloudflare Cron Trigger; one `worker_runs` row per run). Four automations, each
+individually gated by its `automation_settings` toggle:
+- **speed-to-lead** (SMS) — texts a brand-new answered call / form lead within a 60-min lookup window.
+- **missed-call text-back** (SMS) — texts back an unanswered inbound tracking-number call.
+- **no-response follow-up** (email, **live**) — emails an open (`lead_status='new'`) lead quiet for
+  3–30 days (`isStale`).
+- **job-complete review request** (email, **live**) — emails a Google-review ask when a
+  `job_phase_history` row lands on a `completed` phase; recipient = `jobs.primary_contact_id`.
+
+Every send routes through `sendAutomatedMessage()` (Foundation's frozen gate) — this worker never
+touches `twilio.js`/`email.js`/`send-message.js` and never passes `skip_compliance`. Each fired
+trigger writes a `system_events` row whose `event_type` is the substrate a future rule engine would
+subscribe to: `speed_to_lead→lead_created`, `missed_call_textback→call_missed`,
+`no_response_followup→lead_stale`, `review_request→job_completed` (payload `{automation, channel,
+outcome, reason}`). **Idempotency**: `alreadyFired(event_type, entity_id)` on `system_events` means a
+lead/job is contacted at most once per trigger; a terminal outcome (`sent` or consent-`skipped`)
+writes the row, a transient `failed` writes nothing so the next tick retries. **Consent skips are
+durable** — recorded in `system_events` for every channel, plus `sms_consent_log` for SMS (via the
+frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback otherwise; SMS
+bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
+`https://utahpros.app`).
+
+**SMS is dark, doubly.** The two SMS automations are skipped entirely at the worker level unless
+`sms_sending_enabled` is ON (`smsLive` guard — no queries, no burned idempotency rows while dark), and
+even if that guard were removed, `sendGatedSms` in the frozen `automated-send.js` independently
+refuses to text while the kill-switch is OFF. Phase 4b flips `sms_sending_enabled` ON after A2P 10DLC
+carrier approval — no code change needed here. Email automations run on their own toggles regardless.
+
+**RPCs — `supabase/migrations/20260702_crm_phase4d_automation_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs, both SECURITY DEFINER +
+GRANT anon/authenticated):
+- `get_automation_settings(p_org_id uuid DEFAULT NULL) → automation_settings` — resolves the org
+  (`COALESCE(p_org_id, first non-test org)`), lazily creates the row, returns it.
+- `set_automation_setting(p_key text, p_value boolean, p_org_id uuid DEFAULT NULL) → automation_settings`
+  — whitelists `p_key` against the 5 real boolean columns before a `format('… %I …')` UPDATE (no
+  arbitrary-column write), returns the updated row.
+Applied + verified live: get resolves the real org, toggles flip and persist, invalid key rejected,
+`sms_sending_enabled` stays OFF, the shipped `sendGatedSms` caller still succeeds.
+
+**UI — `src/pages/crm/CrmSettings.jsx`**: an "Automations" card (loads `get_automation_settings`,
+toggles via `set_automation_setting`) with 4 switches, per-automation Text/Email badge, and a banner
+explaining the two SMS automations stay dark until the global SMS switch is on. Styles live in the
+`CRM WAVE RESERVED — Phase 4d` marker in `src/index.css` (tokens only). Backend does the sending; this
+page only flips flags.
+
+**Tests** (`functions/api/run-automations.test.js`, committed failing first): `isStale` + the three
+other trigger predicates; each automation fires the correct `system_events` type via injected fake
+db + send; consent-block leaves a durable `skipped` record; a fired trigger never re-fires. Full
+vitest suite 214 passed / 19 skipped; `npm run build` + `npx eslint` (3 changed source files) clean.
+
+**Reviewer gauntlet:** migration-safety-checker PASS (no schema, signatures frozen, injection
+mitigated); consent-path-auditor PASS (double kill-switch, no bypass, durable skips, frozen gate
+untouched); upr-pattern-checker + crm-phase-reviewer — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** 5 stages, all flipped **done** — test-first suite,
+acceptance (4 automations route through the gate + fire system_events + toggleable), test/build/eslint
++ auditor gauntlet, the Settings toggle UI, and the mechanical close-out (phase set `shipped`, this
+doc updated, PR opened). No test automation rows were seeded against production data — the automation
+toggles were exercised only via the `set_automation_setting`/`get_automation_settings` RPC round-trip
+and reset to OFF (verified live), so there are no test rows to delete. **Live-send verification is
+owner-gated:** the SMS paths cannot fire an end-to-end text until Phase 4b flips `sms_sending_enabled`
+(carrier approval), and the email paths only send against a real completed job / stale real lead — so
+no real message was dispatched from this session by design. `crm_build_phases('4d')` set `shipped`.
+
+## CRM Phase 9 — Intelligence: scoring, forecasting, reports, AI digest (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Adds rule-based lead scoring, a weighted pipeline forecast, a fixed
+report set, and a weekly AI digest. **Zero schema migrations** — every table/column it consumes
+(`pipeline_stages.win_probability`, `inbound_leads.lead_score`, `lead_score_factors`,
+`lead_stage_history`) is Foundation-owned; this phase only filled 8 frozen RPC stub bodies and added
+UI + one worker. All displayed money math lives in the pure, unit-tested JS layer — the RPCs return
+raw counts only (the Phase 3 convention).
+
+**Money/decision math — `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+ tests, test-first):**
+- `stageWeight(stage, sortedStages)` now **prefers `pipeline_stages.win_probability` (0..1)** and falls
+  back to the existing positional ramp when it is null/undefined/out-of-range; `is_won`→1 / `is_lost`→0
+  stay terminal. `get_pipeline_stages` already returns the column. The Leads board's
+  `weightedPipelineValue` inherits this automatically (same tested function).
+- `classifyLeadChannel` / `scoreLeadFactors` / `scoreLead` — deterministic, **no ML**. Five factors,
+  clamped 0..100: source (channel via crm_channel_for_source buckets), engagement (answered-call
+  duration / form / missed), speed-to-first-touch (minutes), transcript sentiment, transcript
+  urgency-topic keywords. Spam hard-zeros to a single factor. The SQL `score_lead` mirrors this exact
+  point table.
+- `attribution.js` gains `deriveConversionTrend`, `deriveLeaderboard`, `speedToLeadSummary`,
+  `ltvSummary` — all with the same div-by-zero-guard / "real 0 ≠ —" conventions as the Phase 3 helpers.
+
+**RPCs — `supabase/migrations/20260702_crm_phase9_intelligence_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs; SECURITY DEFINER +
+GRANT anon/authenticated; applied + verified live):
+- `score_lead(p_lead_id) → integer` — mirrors the JS rule table; persists a 5-row breakdown to
+  `lead_score_factors` + the clamped total to `inbound_leads.lead_score`; writes a `crm_lead_scored`
+  `system_events` row. Speed-to-first-touch: answered inbound call = 0 min, else earliest outbound
+  staff message after the lead (defensive, NULL on any lookup issue).
+- `get_conversion_trend` (monthly leads→estimates→won→revenue), `get_estimator_leaderboard`
+  (per `jobs.estimator`), `get_call_volume` (daily answered/missed), `get_speed_to_lead`
+  (creation→first-move buckets, `within_sla` flag on ≤5-min), `get_estimate_aging` (submitted-not-
+  converted by age), `get_pipeline_movement` (per-stage in/out/net), `get_contact_ltv` (top-25 or one
+  contact by won-job revenue). All return `SETOF json` raw counts. Live parity check: a real
+  answered-call lead scored **31**, matching the JS `scoreLead`.
+- **History-backed honesty:** `get_speed_to_lead` + `get_pipeline_movement` carry a `data_since`
+  (earliest `lead_stage_history.moved_at`) so the UI renders "Since <date>" — the log only accrues
+  from Foundation's `move_lead_to_stage` replace onward, never implying older history.
+
+**UI:**
+- `src/components/crm/ForecastWidget.jsx` — fills the Overview slot: weighted-pipeline-forecast
+  headline + per-open-stage breakdown (win % from `stageWeight`). Fails quiet (non-critical card).
+- `src/pages/crm/CrmReports.jsx` — the full report set (conversion trend, estimator leaderboard,
+  speed-to-lead SLA with since-caption, call volume, estimate aging, pipeline movement with
+  since-caption, top-customer LTV) alongside the existing Source ROI / division / funnel cards. CSS in
+  the `CRM WAVE RESERVED — Phase 9` marker (tokens only; one `@media (max-width:768px)` rule).
+
+**Worker — `functions/api/weekly-crm-digest.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a weekly Cloudflare Cron Trigger; one `worker_runs` row per run). Gathers 7-day
+pipeline movement (RPC), stale open leads, and week-over-week ad-spend anomalies (±40%, div-by-zero
+guarded); Claude (`claude-sonnet-5`) **summarizes only the numbers we computed** (deterministic
+fallback digest when `ANTHROPIC_API_KEY` is absent); sends via `sendGatedEmail` (**import-only** from
+the frozen `automated-send.js` — never `sendEmail`/twilio directly, no `skip_compliance`). Recipients
+resolve `env.CRM_DIGEST_RECIPIENTS` → `env.OWNER_EMAIL` → the `crm_digest_recipients` row in
+`integration_config` (comma-separated); with none set the worker still runs and sends nothing. Pure
+helpers (`parseRecipients`, `spendAnomalies`, `isStaleLead`, `buildFallbackDigest`) unit-tested.
+
+**Scheduling — Supabase pg_cron + pg_net (live, no Cloudflare dashboard needed).** The worker's HTTP
+trigger authenticates EITHER a logged-in employee (manual UI) OR an `x-webhook-secret` header matching
+`integration_config.crm_digest_secret` — the CallRail/Encircle webhook-secret pattern (the `scheduled()`
+Cloudflare-cron export still works too, if ever configured). A weekly `pg_cron` job **`weekly-crm-digest`**
+(jobid 3, `7 14 * * 1` = Mon 14:07 UTC ≈ 8am Denver) `net.http_post`s `https://utahpros.app/api/weekly-crm-digest`
+with that secret header. Secret + recipient list live in `integration_config`
+(`crm_digest_secret`, `crm_digest_recipients` = `moroni.s@utah-pros.com` initially — widen by updating
+that row, no deploy). **Activates once this worker is deployed to production** (the endpoint 404s until
+then, harmless). To change: `UPDATE integration_config SET value=… WHERE key='crm_digest_recipients';`
+to add recipients; `SELECT cron.unschedule('weekly-crm-digest');` to stop it.
+
+**AI reply suggestions — `src/components/crm/AiReplySuggestions.jsx`** (new): standalone, **draft-only**
+(no send path — a human sends). Contextual template drafts with an injectable async `generate` prop for
+a future AI endpoint. **NOT wired** — Phase 7 (`CrmConversations.jsx`) had not merged into `dev` at
+ship time, and the dispatch forbids editing an unmerged phase's file, so the one-line wiring
+(`<AiReplySuggestions context={…} onUseDraft={setComposerText} />`) is a documented **follow-up**.
+
+**Tests** (committed failing first): `crmPipeline.test.js` (win_probability preference + positional
+fallback, score_lead rule fixtures, spam/clamp), `attribution.test.js` (report helpers with guards),
+`weekly-crm-digest.test.js` (13 pure-helper tests), `supabase/tests/crm_phase9_intelligence.test.js`
+(self-skipping integration: SQL `score_lead` == JS `scoreLead` parity + report row shapes). Full vitest
+254 passed / 32 skipped; `npm run build` + `npx eslint` (all changed files) clean.
+
+**Reviewer gauntlet:** consent-path-auditor PASS (digest routes only through `sendGatedEmail`, no
+bypass; AiReplySuggestions has no send path). migration-safety-checker / upr-pattern-checker /
+crm-phase-reviewer — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** stages 0–3, 5, 6 flipped **done** (test-first suite;
+acceptance — report set + forecast widget + digest + draft-only AI replies; test/build/eslint; auditor
+gauntlet; doc update; mechanical close-out). The **Visual stage (4)** — "Reports set + forecast widget
+on preview" — stays **todo**: `/crm/*` is invisible behind the `page:crm` flag (owner-gated, Phase 6b),
+so a branch-preview screenshot can't be produced this session; the build/lint pass and live RPC
+verification stand in until the owner opens the flag. `crm_build_phases('9')` set `shipped`.
+## CRM Phase 8 — Drip / nurture sequences (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`, consent-critical). **Zero schema migrations** — one function-body-only
+migration `20260702_crm_phase8_sequences.sql` fills the four frozen Phase 8 stubs; the
+`crm_sequences` / `crm_sequence_steps` / `crm_sequence_enrollments` tables + their RLS/policies and the
+`UNIQUE(sequence_id, contact_id)` idempotency constraint are all Foundation-owned. Edits confined to the
+two owned files (`CrmSequences.jsx`, `functions/api/process-sequences.js`) + the Phase 8 `index.css`
+reserved section (per `.claude/rules/crm-wave-ownership.md`).
+
+**RPCs (bodies filled; signatures byte-for-byte identical to Phase F stubs; all SECURITY DEFINER + GRANT
+anon/authenticated):**
+- `upsert_sequence(p_id, p_name, p_description, p_status, p_steps jsonb, p_org_id, p_created_by) →
+  crm_sequences` — create or edit. **`p_steps` semantics:** a jsonb array (incl. `[]`) REPLACES the step
+  set; **`NULL` leaves steps untouched** (used by status-only edits — pause/activate/archive). Default is
+  `'[]'` (frozen), so a status-only caller must pass `p_steps => null` explicitly. Steps are renumbered
+  to a contiguous 0-based `step_order` (respecting any provided order, then array position) so
+  `UNIQUE(sequence_id, step_order)` can never be violated by caller input.
+- `get_sequences(p_org_id) → SETOF json` — one object per sequence with ordered `steps`, aggregate
+  `stats` (`active/paused/completed/exited/total`), and an `enrollments` roster (contact name/phone,
+  status, `current_step`, `next_run_at`, `exit_reason`) capped at 200 rows.
+- `delete_sequence(p_sequence_id) → void` — FK `ON DELETE CASCADE` takes steps + enrollments.
+- `enroll_in_sequence(p_sequence_id, p_contact_id, p_segment_id, p_org_id) → SETOF
+  crm_sequence_enrollments` — enroll a single contact OR a whole segment. **Idempotent** via
+  `ON CONFLICT (sequence_id, contact_id) DO NOTHING` — re-enrolling returns the existing row, never a
+  duplicate. `next_run_at` scheduled from the first step's `delay_hours` (`now() + make_interval`), NULL
+  when the sequence has no steps. Segment resolver mirrors `preview_email_audience`'s filter keys
+  (`referral_source`/`role`/`tag`) but **omits the email-only / consent constraints** — a sequence can
+  carry SMS steps, and consent is enforced per-step at send time, not at enroll (enrollment is not a
+  send).
+
+**Worker — `functions/api/process-sequences.js`** (new; `onRequest*` authenticated manual trigger +
+`scheduled()` for a Cloudflare Cron Trigger; one `worker_runs` row per run). Advances every active
+sequence's due enrollments (`status='active' AND next_run_at <= now`, sequence `status='active'`):
+1. **Exit check first** (before spending a send): `exit_on_reply` fires on an inbound `messages`
+   (`type='sms_inbound'`, `sender_contact_id`) since `enrolled_at`; `exit_on_conversion` fires on a
+   `crm_lead_promoted` `system_events` row (`payload->>contact_id`) since `enrolled_at`. On exit →
+   `status='exited'` + `exit_reason` + a `crm_sequence_exited` event.
+2. **Send** the current step through `sendAutomatedMessage()` (Foundation's frozen gate — email `subject`
+   /`html`, SMS `orgId`/`body`). Never touches `twilio.js`/`email.js`/`send-message.js`, never passes
+   `skip_compliance`.
+3. **Outcome plan** (`planStepOutcome`, pure/unit-tested): `sent` → advance to next step scheduled by
+   ITS `delay_hours`, or complete after the last step; **`held`** → an SMS returned
+   `{skipped, reason:'sms_disabled'}` because the kill-switch is OFF, so the step is **NOT advanced** —
+   `next_run_at` pushed `HOLD_RETRY_HOURS` (6h) forward so it sends the moment Phase 4b flips
+   `sms_sending_enabled` (never bypassed); `skipped` → a durable consent skip (dnd/suppressed/no address)
+   advances past the step (don't pester); `retry` → transient failure, untouched, retried next run. Each
+   terminal outcome writes a `crm_sequence_step_{sent,held,skipped}` `system_events` row
+   (`{step_order, channel, reason}`); SMS additionally logs `sms_consent_log` inside the frozen gate.
+
+**Timing:** `delay_hours → next_run_at` is a fixed-hour UTC epoch offset (`computeNextRunAt`) —
+timezone-invariant, so a "48h later" step lands 48h later across a DST change. `date-mt.js` (a
+day-boundary/MT-calendar helper) does **not** apply to fixed-hour delays; same reasoning
+`run-automations.js` documents for its lookback windows. The roadmap's "MT helpers" wording refers to
+the shared time-convention rule, not a literal day-math import here.
+
+**UI — `src/pages/crm/CrmSequences.jsx`** (fills the Phase F "Coming in Phase 8" stub): master/detail —
+sequence list (name, status badge, step/enrollment counts) + a builder (ordered steps: channel
+email/sms, `delay_hours`, subject [email]/body, move up/down, add/remove), status lifecycle
+(draft/active/paused/archived via the status-only edit that preserves steps), inline two-click delete,
+enroll a `crm_segments` segment (dropdown from `get_segments`), and a per-sequence enrollment roster +
+stats. SMS steps are labeled "held until the SMS switch is on (Phase 4b)" in the editor. `useAuth()` db;
+`upr:toast` feedback; CSS lives only in the `CRM WAVE RESERVED — Phase 8` `index.css` marker (tokens
+only; mobile stacks to one column).
+
+**Tests** (committed failing first): `functions/api/process-sequences.test.js` (20 pure unit tests —
+`computeNextRunAt`/`firstRunAt`/`advanceEnrollment` timing, `classifyEvent`/`evaluateExit` reply &
+conversion rules, and `planStepOutcome`'s sent/held/skipped/retry with the SMS-held-not-advanced
+assertion). `supabase/tests/crm_phase8_sequences.test.js` (integration; self-skips without CI creds like
+sibling CRM suites): sequence CRUD + ordered read-back, status-only edit preserves steps, enrollment
+idempotency, segment enroll (matching contacts only), cascade delete. Behavior **live-verified via
+Supabase MCP**: steps stored + renumbered `{0,1,2}` from input `{5,2,9}`, status-only edit kept 3 steps,
+idempotent enroll = 1, segment enrolled 2 of 3 (non-match excluded), `get_sequences` shape correct,
+delete cascaded to 0/0. `npm test` 236 passed / 30 skipped; `npm run build` green; `npx eslint` clean on
+changed files.
+
+**Reviewer gauntlet:** migration-safety-checker **PASS** (signatures frozen, zero DDL, grants present);
+upr-pattern-checker **PASS** (useAuth/toast/two-click/tokens, index.css inside marker); consent-path-
+auditor **PASS** (every send funnels through `sendAutomatedMessage`; SMS held+retried, never
+force-sent/bypassed; durable audit on both channels; enrollment is not a send); crm-phase-reviewer —
+see the PR. SMS stays dark behind the F kill-switch until Phase 4b (carrier approval).
+
+**`crm_build_stages` reconciliation (honest, mapped to the 8 seeded stages by sort order):**
+- **[0] Test-first** — `done` (suite committed failing first, now green).
+- **[1] Acceptance: CRUD + segment enrollment + pause/stop; `process-sequences` cron w/ `worker_runs`;
+  email live / SMS held** — `done` (live-verified via MCP; segment→enroll proven at the RPC layer with
+  6a's `upsert_segment`/`get_segments` feeding `enroll_in_sequence`).
+- **[2] Segment-UI→enroll E2E verification tail after 6a merges (disclosed)** — **`todo`
+  (deploy/flag-gated).** 6a has merged and the segment→enroll **data path is verified at the RPC
+  boundary**, but the literal **browser** click-through (make a segment in 6a's Contacts UI → enroll it
+  via the Sequences UI in a running app) needs a Cloudflare preview with `page:crm` opened, which isn't
+  runnable from this session — left open honestly, not forgotten.
+- **[3] test+build+eslint pass; zero schema migrations; `automated-send.js` import-only** — `done`.
+- **[4] migration-safety + upr-pattern + consent-path auditors clean; crm-phase-reviewer sign-off** —
+  `done` (three auditors PASS; crm-phase-reviewer result in the PR).
+- **[5] Visual: sequence builder + enrollment list on preview** — **`todo` (deploy-gated)** — same
+  Cloudflare-preview + `page:crm` requirement as [2]; the UI builds clean but a preview screenshot can't
+  be produced here.
+- **[6] `UPR-Web-Context.md` updated** — `done` (this entry).
+- **[7] Set phase 8 shipped; delete test sequences/enrollments; pushed, verified, PR opened** — `done`
+  (no test rows remain — SQL smoke tests self-cleaned or rolled back via `RAISE`, verified 0
+  `zz8%`/`smoke%` rows; `crm_build_phases('8')` set `shipped`; PR opened as the handoff).
+
+There is no `blocked` status value yet, so [2] and [5] stay `todo` with the disclosure above — both are
+owner/deploy-gated (the `page:crm` flag keeps `/crm/*` invisible until Phase 6b opens it), not skipped
+work.
+## CRM Phase 7 — Daily driver: tasks, timeline, comms in shell (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). The daily-driver surface: a real Tasks page, an Overview overdue-tasks
+widget, win/loss capture + stage-age on Leads, click-to-call logging, and the existing Conversations
+inbox embedded in the CRM shell. **Zero schema migrations** — `crm_tasks`, `lead_stage_history`,
+`inbound_leads.lost_reason`, and `pipeline_stages.is_lost/is_won` are all Foundation-owned; this phase
+filled five frozen RPC stub bodies and edited only its four owned files + the Phase 7 `index.css`
+reserved section (per `.claude/rules/crm-wave-ownership.md`). App.jsx / CrmLayout.jsx / crmIcons.jsx
+untouched (routes/nav/icons were pre-wired by Foundation).
+
+**RPCs — `supabase/migrations/20260702_crm_phase7_task_rpcs.sql`** (function-body-only `CREATE OR
+REPLACE`, signatures byte-for-byte identical to Foundation's stubs; all SECURITY DEFINER + GRANT
+anon/authenticated). **Task status domain is `'open' | 'done'`** (the `crm_tasks_status_check`
+constraint — NOT `'completed'`; the whole phase uses `'done'`):
+- `get_crm_tasks(p_assignee, p_status, p_contact_id, p_lead_id, p_org_id) → SETOF json` — filtered
+  list; LEFT JOINs `employees` (assignee_name) + `contacts` (contact_name). Order: open before done,
+  then `due_at` asc NULLS LAST, then newest.
+- `upsert_crm_task(p_id, p_title, p_notes, p_due_at, p_remind_at, p_assignee_id, p_contact_id,
+  p_lead_id, p_org_id, p_created_by) → crm_tasks` — create (p_id NULL) or edit. Title required
+  (trim-checked). Org defaults to the first non-test `crm_orgs` row (same pattern as
+  `create_manual_lead`). **On edit it replaces every editable field with the passed value**, so the
+  editor always submits full form state; writes a `crm_task_created` `system_events` row on insert.
+- `set_task_status(p_task_id, p_status, p_actor_id) → crm_tasks` — validates `open|done`; sets
+  `completed_at=now()` on done / NULL on reopen; writes a `crm_task_status_changed` event.
+- `delete_crm_task(p_task_id) → void`.
+- `get_overdue_tasks(p_assignee, p_org_id, p_now timestamptz DEFAULT now()) → SETOF json` — open tasks
+  whose **Mountain-Time due DATE is a prior Denver day**: `(due_at AT TIME ZONE 'America/Denver')::date
+  < (p_now AT TIME ZONE 'America/Denver')::date`. This is the SQL mirror of `functions/lib/date-mt.js`
+  `isStale(due, now, 1)` — a task due earlier *today* in Denver is NOT overdue (UTC storage, MT day
+  boundary). Verified live: prior-MT-day task overdue=true, earlier-same-MT-day task overdue=false.
+
+**Components (owned files):**
+- `src/pages/crm/CrmTasks.jsx` — real Tasks page: Open/Done tabs + assignee filter (Everyone/Mine/per
+  employee); rows with a check toggle (complete/reopen), title/notes, due chip (red **Overdue** when
+  past its MT day via the shared `isTaskOverdue`), assignee + contact/lead chips, and inline two-click
+  delete. Editor panel: title (required), notes, due + reminder (`datetime-local` ↔ ISO), assignee
+  select, and a small typeahead (`EntitySearch`) to link a contact (contacts search) or a lead
+  (inbound_leads search). All CRUD via the RPCs above.
+- `src/components/crm/OverdueTasksWidget.jsx` — Overview card from `get_overdue_tasks`; **hidden when
+  nothing is overdue** (keeps the Overview clean, honoring Foundation's "renders nothing" slot
+  contract). Exports `isTaskOverdue(dueAt, now)` (the MT-day mirror; imported by CrmTasks + unit-tested).
+- `src/pages/crm/CrmLeads.jsx` — three additions: (1) **required win/loss reason** — dragging or
+  `<select>`-moving a lead into an `is_lost` stage opens `LostReasonPrompt`; the reason is required
+  client-side (`lostReasonError`, exported + unit-tested) and passed as `p_lost_reason` to
+  `move_lead_to_stage` (the RPC keeps it optional — Foundation's `crm_shared_rpc_compat` backward-compat
+  test stays green). (2) **stage-age badges** — "Nd in stage" from `lead_pipeline_stage.updated_at`
+  (now selected in the load), red `.stale` at ≥7 days. (3) **click-to-call** — the lead's number is a
+  `tel:` link that fire-and-forget inserts a `crm_click_to_call` `system_events` row (never blocks the
+  dial).
+- `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
+  inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
+  `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
+  `automated-send.js` untouched; `skip_compliance` never used.
+
+**Tests** (committed failing first): `src/components/crm/overdueTasks.test.js` (MT-day boundary via
+`isTaskOverdue` — prior day overdue, earlier-same-day not, UTC-midnight-not-MT-midnight not, null never);
+`src/pages/crm/crmLeads.lostReason.test.js` (`lostReasonError`: required on lost, accepted with reason,
+never on non-lost — both mock `@/contexts/AuthContext` so importing the component in the node test env
+doesn't pull in the realtime client); `supabase/tests/crm_phase7_tasks.test.js` (integration, self-skips
+without creds like sibling suites: title required, upsert→get shape, done/reopen `completed_at`, and the
+MT-day overdue predicate). Full vitest 225 passed / 29 skipped; `npm run build` green; `npx eslint` clean
+on changed files (the two non-component helper exports carry a targeted `react-refresh/only-export-
+components` disable — ownership forbids a new shared `src/lib` file, so the helpers live in their owned
+component files).
+
+**Reviewer gauntlet:** migration-safety-checker **PASS** (zero DDL, five signatures byte-for-byte frozen,
+grants + SECURITY DEFINER present); upr-pattern-checker / consent-path-auditor / crm-phase-reviewer — see
+the PR. Isolation stays the `page:crm` flag (opening to staff gates on Phase 6b).
+
+**`crm_build_stages` reconciliation (honest):** stages 0–3, 5, 6 flipped **done** — test-first suite,
+acceptance (Tasks/overdue widget/win-loss+stage-age/Conversations/click-to-call), test+build+eslint +
+zero-schema, the auditor gauntlet, this doc, and the mechanical close-out. **Stage 4 ("Visual: … on
+preview") stays `todo` on purpose** — a preview deploy only exists after the branch is pushed, so the
+Tasks/Conversations/Overview-widget/lost-reason visual pass happens on the Cloudflare preview URL at
+review time, not from this headless session. No test task rows remain (the live smoke was rolled back;
+the integration suite self-cleans; `crm_tasks` verified empty of `smoke/v/phase7-` rows).
+`crm_build_phases('7')` set `shipped`.
+
+## CRM Phase 10 — CRM Forms: embeddable lead capture (Jul 2 2026 — shipped)
+
+Wave-1 phase (cut from `dev`). Ships a first-party embeddable lead-capture form builder — the
+public-endpoint + consent + XSS-weighted phase. **Zero schema migrations** — the
+`form_definitions` / `form_definition_versions` / `form_submissions` tables (public_id UNIQUE,
+submission_token UNIQUE, immutable published version snapshots) are all Foundation-owned; this phase
+only filled three frozen RPC stub bodies and added a shared lib + worker + hosted page + embed
+snippet + builder UI.
+
+**Shared lib — `functions/lib/forms.js`** (new; pure, browser+worker-safe, unit-tested in
+`forms.test.js`): `sanitizeLinkMarkup` (HTML-escapes everything, then converts ONLY `[text](url)`
+with an http(s)/mailto url into an `<a rel="noopener noreferrer nofollow">` — javascript:/data:/
+relative urls stay inert text; this is the sole link path, used by both the builder preview and the
+hosted page), `validateSubmission(schema,data)` (required + per-type checks), `checkSpam` (honeypot +
+min-fill-time), `consentValue`. This is the load-bearing XSS defense.
+
+**RPCs — `supabase/migrations/20260702_crm_phase10_form_rpcs.sql`** (function-body-only
+`CREATE OR REPLACE`, signatures byte-for-byte identical to Foundation's stubs, all SECURITY DEFINER +
+GRANT anon/authenticated):
+- `upsert_form(p_id, p_name, p_schema, p_theme, p_status, p_publish, p_turnstile_enabled, p_org_id,
+  p_created_by) → form_definitions` — create/edit a form; generates a unique `public_id`; editing
+  always writes a working DRAFT version and **publishing never mutates an already-published version
+  row** (the next edit opens a fresh draft one version above it → every published snapshot stays
+  immutable/revertable). Treats empty `{}` theme / read-only calls as no-ops so metadata isn't wiped.
+- `get_forms(p_org_id) → SETOF json` — one json per non-archived form with published + draft schema,
+  `submission_count`, and the most recent (≤200) submissions inline, so the builder's submissions
+  view needs no extra RPC.
+- `upsert_lead_from_form(p_form_id, p_submission_token, p_data, p_utm, p_consent, p_ip, p_user_agent,
+  p_org_id) → inbound_leads` — **idempotent on `callrail_id = 'form:' || submission_token`** (the
+  `create_manual_lead` `'manual:'` precedent); requires a published form; finds/creates the contact by
+  SQL-normalized phone (mirrors `src/lib/phone.js`); logs `inbound_leads` (`source_type='form'`,
+  source/medium/campaign from UTM); attributes via `upsert_lead_attribution` + `crm_channel_for_source`;
+  writes `form_submissions`; **on consent → an `sms_consent_log` `opt_in` row (IP + form public_id +
+  consent-text version) and sets `contacts.opt_in_status/opt_in_source='web_form'/opt_in_at`** (no
+  opt-in written when consent is false); fires `system_events` `crm_lead_created` (so speed-to-lead
+  triggers on form leads) + `crm_form_submitted`. Verified live on `dev` end-to-end (create → publish →
+  edit-immutable → get_forms → submit → idempotent redelivery → consent / no-consent asserts), then
+  all test rows deleted.
+
+**Worker — `functions/api/form-submit.js`** (new; public `POST /api/form-submit`): permissive CORS
+`*` on purpose (embeddable, credential-free, RPC-gated); spam gate = honeypot + min-fill-time +
+per-IP rate limit (`form_submissions` in a 10-min window) + optional **per-form** Cloudflare Turnstile
+(`form.turnstile_enabled`; if enabled but no `TURNSTILE_SECRET_KEY` yet, the check is skipped so forms
+work before the site key exists); server-side `validateSubmission` against the PUBLISHED version;
+computes consent server-side from the submitted data; calls `upsert_lead_from_form`; logs a
+`worker_runs` row. Spam-dropped submissions return `200 {ok:true}` (a bot can't tell it was filtered).
+
+**Hosted page — `functions/f/[public_id].js`** (new; `GET /f/:public_id`): standalone HTML (not the
+SPA) rendered from the published schema; every field label/option/value escaped, labels/description/
+thank-you via `sanitizeLinkMarkup`; sets `Content-Security-Policy: frame-ancestors *` and never
+`X-Frame-Options`, so it embeds on any customer site; posts JSON to `/api/form-submit`; reads the
+UTM/gclid/fbclid/referrer/landing that `embed.js` forwarded onto its URL into hidden attribution;
+`postMessage` auto-resize; Turnstile widget only when enabled AND `TURNSTILE_SITE_KEY` is set.
+
+**Embed — `public/embed.js`** (new static asset, served at `/embed.js`):
+`<script src="…/embed.js" data-upr-form="PUBLIC_ID" async></script>` injects an `<iframe>` to
+`/f/<public_id>` and forwards the **parent page's** UTM/gclid/fbclid + `document.referrer` +
+landing URL into the iframe URL; origin derived from the script's own `src` (works dev+prod);
+height messages trusted only from the form origin AND the exact iframe window (`event.source`).
+
+**UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
+types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
+editor, theme colors, restricted `[text](url)` markup in labels/description/thank-you, a **live
+preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
+confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
+live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's
+own inline theme colors are intentional (standalone non-SPA). `page:crm`-gated like the rest of the shell.
+
+**Optional Webflow adapter:** not built — the first-party form + embed covers WordPress/any site and
+captures gclid/fbclid + writes `sms_consent_log`, which the Webflow-webhook path can't. Left as the
+roadmap's documented optional stage.
+
+**Ownership:** touched only Phase-10-assigned files (`CrmForms.jsx`, `functions/f/[public_id].js`,
+`functions/api/form-submit.js`, `public/embed.js`) + the new shared `functions/lib/forms.js`
+(Phase-10-owned, imports nothing frozen) + the three own frozen RPC stubs + the Phase 10 index.css
+marker. No frozen file edited; no schema added.
+
+**Tests / gauntlet:** `forms.test.js` (sanitizer XSS, validation, spam) + `crm_phase10_forms.test.js`
+(publish immutability, get_forms, idempotency + consent-write) committed failing first. Full vitest
+314 passed / 57 skipped; `npm run build` + `npx eslint` (changed files) clean. Integration suite
+self-skips in CI (no creds, like every CRM suite) — the RPCs were instead verified live via SQL
+assertions on `dev`. migration-safety-checker PASS; upr/consent/phase reviewers — see the PR.
+
+**`crm_build_stages` reconciliation (honest):** 7 stages. Flipped **done**: test-first suite;
+acceptance (builder + hosted form + embed + submissions→inbound_leads + attribution + events);
+test/build/eslint + zero-schema; the auditor gauntlet; UPR-Web-Context update; and the mechanical
+close-out. Left **todo** and disclosed: **"Visual: builder + live embedded form on a test page"** is
+owner-gated — it needs the Cloudflare branch preview (a headless session can't render the iframe on an
+external test page); the code is complete and unit/flow-verified. `crm_build_phases('10')` set `shipped`.
+
+## CRM post-wave follow-ups (Jul 2 2026)
+
+Small fixes committed straight to `dev` after the wave landed, from the #247–250 merge-readiness
+review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none is staff-visible yet.
+
+- **ForecastWidget headline fix** (`src/components/crm/ForecastWidget.jsx`) — the "expected value of
+  open leads" headline now sums only OPEN stages. It previously used `weightedPipelineValue().total`,
+  which folds won-stage leads in at weight 1 (realized revenue) — inflating the number and making it
+  disagree with the per-stage rows. `crmPipeline.weightedPipelineValue` is unchanged (Phase 9 tests
+  stay green).
+- **TCPA quiet-hours (SMS Gate 3)** — `functions/lib/automated-send.js` `sendGatedSms` now blocks
+  automated SMS outside 8am–9pm in the recipient's local time via `isWithinQuietHours()` (tz-aware,
+  DST-safe, unit-tested), returning `{ skipped:true, reason:'quiet_hours' }`. `process-sequences.js`
+  HOLDS + retries that outcome (never drops it), same as the kill-switch hold. SMS-only (email/CAN-SPAM
+  exempt); still behind `sms_sending_enabled`, so zero live impact until Phase 4b. Recipient tz defaults
+  to `America/Denver` (`env.SMS_QUIET_HOURS_TZ` override) — per-recipient/area-code tz and
+  `run-automations.js` held-retry remain for 4b (tracked in `docs/crm-roadmap.md` Phase 4b).
+- **AiReplySuggestions wired into Conversations** — the shared `src/pages/Conversations.jsx` gained an
+  OPTIONAL `replyAssist(context, insertDraft)` render-prop (the main app passes nothing → inert there;
+  `src/pages/crm/CrmConversations.jsx` passes `AiReplySuggestions`). `insertDraft` fills the composer via
+  the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
+  deferred follow-up.
+
+---
+
+## Feedback Media — plan of record (session 2026-07-02, docs only — no feature code)
+
+**What this session shipped** (branch `claude/chat-session-og9agt` → PR into `dev`):
+- `docs/feedback-media-roadmap.md` — the dispatch model of record for upgrading the feedback
+  surface (photos + **video** attachments for everyone incl. a new desktop `/feedback` page,
+  client-side **image** compression, video caps, 90-day attachment purge, admin inbox rebuilt with
+  video player/lightbox, notify-on-submit). Live-verified gap audit (taxonomy A–G), 5 findings,
+  three phase blocks (**F → B ∥ C**, disjointness adversarially proven), dependency graph,
+  ownership matrix + frozen list (in-doc — no separate manifest file), options-on-record
+  (video compression: caps not transcode; bucket: keep `job-files`; notify: bell + gated push).
+- `docs/feedback-media-dispatch.md` — three complete cold-session copy-paste blocks (F, B, C).
+- Zero code/schema/seed changes — non-CRM initiative, progress tracks via the roadmap doc's
+  checklists (CRM tracker not used).
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **RPC-cutover landmine (averted at plan time):** adding DEFAULT params to `insert_tech_feedback`
+  via `CREATE OR REPLACE` would create an ambiguous overload and break every live submit instantly
+  (shared Supabase). Phase F must DROP the 5-arg function + CREATE the 7-arg one, with a committed
+  old-signature test; the new body mirrors screenshots↔attachments both ways so B/C deploy order
+  never matters.
+- **Two live bugs:** screenshot removal/abandon orphans storage objects (`TechFeedback.jsx:118-124`);
+  AdminFeedback's shared `noteText` state can save notes onto the wrong row. Both fixed in-plan.
+- **Push reaches nobody today:** `send-push` has zero callers, APNS env unset, `device_tokens` = 0
+  rows. Notify design = in-app bell via `create_notification` (works today; global feed) + per-admin
+  push fan-out (503-tolerant; goes live when the owner configures APNs). Email declined by owner.
+- `storage.*` owned by `supabase_storage_admin` → migrations cannot create buckets/policies; the
+  live `job-files` 50MB server cap is dashboard-configured (invisible to schema-as-code).
+- New nav items need `always: true` or `isItemVisible()`/`canAccess()` hides them from everyone.
+
+**Dispatch:** Wave 0 = Session F alone (Opus·high — schema cutover + `mediaCompress.js` +
+`FeedbackAttachments.jsx` composer + working desktop page + wiring). Wave 1 after F merges =
+Session B (Opus·medium — TechFeedback rebuild + `feedback-notify` worker) ∥ Session C (Opus·high —
+AdminFeedback rebuild + `purge-feedback-media` worker). Owner anytime-lane actions: APNS env +
+device tokens; point the external cron at the purge endpoint; optional dedicated bucket.
+
+## CRM Phase 5 — Automation recipes (Jul 2 2026 — shipped)
+
+Configurable linear automation builder (Session K). One additive migration
+`20260702_crm_phase5_automations.sql` (post-wave single session — manifest §7 amends the
+"zero schema" wave rule): two NEW tables + this phase's five API RPCs created directly (no stub
+ceremony — no cross-session consumer). Behind `page:crm` + the new dev-only
+`feature:crm_automations` sub-flag (seeded as a DB row — not in `featureFlags.js`, which is out
+of Phase 5's ownership; a missing row would default OPEN, so seeding it is what gates the screen).
+
+**Tables** (both `org_id` + RLS + explicit policy at creation):
+- `crm_automations` — `id, org_id, name, description, trigger_event_type` (a `system_events.event_type`),
+  `conditions jsonb` (`[{field, op, value}]` AND-filters), `actions jsonb` (ordered
+  `[{type: send_email|send_sms|enroll_sequence|create_task, config, delay_hours}]`), `enabled`,
+  `created_by, created_at, updated_at`.
+- `crm_automation_runs` — one row per (rule, triggering event): `automation_id` (FK CASCADE),
+  `org_id, triggering_event_id` (a `system_events.id` — no FK, the bus is append-only),
+  `contact_id, entity_type, entity_id, current_action` (cursor into `actions[]`), `status`
+  (`active|completed|failed|skipped|held`), `next_run_at, last_error`. **`UNIQUE(automation_id,
+  triggering_event_id)`** is the idempotency/S1 dedup key — `system_events` has no cursor, so
+  run-creation dedups on this, never on timestamps.
+
+**RPCs** (SECURITY DEFINER + GRANT anon, authenticated): `get_crm_automations(p_org_id)` (list +
+per-rule run stats), `upsert_crm_automation(...)` (create/edit — **S1 guard here**; `p_enabled`
+NULL = leave as-is), `set_automation_enabled(p_id, p_enabled)` (**re-checks S1 on enable**),
+`delete_crm_automation(p_automation_id)` (cascades runs), `get_automation_runs(p_automation_id,
+p_org_id, p_limit)`. Plus `crm_fixed_automation_conflict(p_org_id, p_trigger_event_type)` (the S1
+predicate, shared by both guarded RPCs) and `enqueue_automation_run(...)` (idempotent
+`INSERT … ON CONFLICT (automation_id, triggering_event_id) DO NOTHING` — the worker calls it
+because the REST client's `upsert` MERGES, which would overwrite a live run).
+
+**Finding S1 (double-send, binding)** — the fixed engine (`run-automations.js`) and this
+configurable engine keep dedup markers in namespaces that can't see each other, so a "missed
+call → text" rule + the fixed missed-call-textback = two SMS for one call (TCPA, per-message).
+Resolution: `crm_fixed_automation_conflict` refuses an ENABLED rule whose `trigger_event_type`
+duplicates an ENABLED fixed automation, checked in `upsert_crm_automation` AND
+`set_automation_enabled`; the engine also skips such rules at fire time (defense in depth). The
+trigger→fixed-automation map (`speed_to_lead`/`missed_call_textback` → `crm_lead_created`(+`_manual`);
+`review_request` → `job.phase_changed`/`job.status_changed`; `no_response_followup` is a time-scan
+with no discrete event → collides with nothing) is duplicated in the engine's
+`FIXED_AUTOMATION_TRIGGERS` and MUST stay in sync with the SQL predicate.
+
+**Worker — `functions/api/process-crm-automations.js`** (new; `onRequest*` authenticated manual
+trigger + `scheduled()` cron, deliberately named distinct from 4d's `run-automations.js`).
+Structural sibling of `process-sequences.js`. ① **MATCH** — scans recent `system_events`
+(`MATCH_LOOKBACK_MIN` 180) for enabled, non-S1-blocked triggers, evaluates AND-conditions against
+the event payload merged over the trigger entity (payload wins on key collision), and enqueues one
+idempotent run per match. ② **ADVANCE** — due runs (`status in (active,held) & next_run_at<=now`)
+execute `actions[current_action]`: sends go ONLY through `sendAutomatedMessage()` (the frozen
+consent gate — never twilio/email directly, never `skip_compliance`), enroll via
+`enroll_in_sequence`, task via `upsert_crm_task`; then the cursor advances via imported Phase-8
+`planStepOutcome`/`computeNextRunAt` semantics (read-only import; `process-sequences.js` never
+edited). A held SMS (kill-switch OFF / TCPA quiet-hours) becomes `status='held'`, cursor
+UNCHANGED, retried in `HOLD_RETRY_HOURS` — never dropped, never advanced past; a durable consent
+skip (dnd/suppressed/no contact) advances past. One `worker_runs` row per cron run. Single-tenant:
+`system_events` has no org_id, so runs scope to the one real org.
+
+**UI — `src/pages/crm/CrmAutomations.jsx`** (master/detail, hand-rolled — no new dependency):
+rule list → editor/detail. Editor = trigger picker (only event types the RPC layer actually
+emits) → optional AND-condition rows (typed operators, `is_empty`/`in`/… with a field datalist) →
+ordered action list with native up/down reorder + per-action wait + type-specific config; enable
+checkbox with a client-side S1 collision warning (RPC still enforces). Detail = recipe summary +
+per-rule run log (`get_automation_runs`). `useAuth()` `db` only, `upr:toast` feedback, inline
+two-click delete. CSS only in the `CRM WAVE RESERVED — Phase 5` `index.css` marker (tokens;
+mobile-only `@media (max-width:768px)` with 48px targets). Seams (authorized additive, manifest
+§7): `App.jsx` lazy import + `<Route path="automations">`, `crmIcons.jsx` `IconAutomations`,
+`CrmLayout.jsx` one `SIDEBAR_ITEMS` row + icon import.
+
+**Tests** (committed failing first): `functions/api/process-crm-automations.test.js` (25 pure
+unit tests — S1 `blockedTriggers`/`isTriggerBlocked`, null-safe typed AND-condition evaluator,
+`planRunOutcome` held/skip/retry translation, idempotent `matchAutomations`);
+`supabase/tests/crm_phase5_automations.test.js` (integration — CRUD, UNIQUE run idempotency, S1
+save+enable guard; self-skips without creds like the other CRM suites). The SQL behavior (CRUD,
+UNIQUE idempotency, S1 save+enable guard, conflict predicate) was verified live via Supabase MCP
+assertions. `npm test` (319 passed / 53 skipped) + `npm run build` + `npx eslint` (changed files)
+all green.
+
+**Deliberately NOT** (owner-chosen v1 scope): branching/if-else, any node-graph canvas or new
+frontend dep, editing `run-automations.js` (4d-owned) or `process-sequences.js` (Phase-8-owned —
+imported read-only), touching the orphan `automation_rules` (its removal is a separate reviewed
+cleanup). Recorded end-state (not v1): migrate the fixed four into `crm_automations` and retire
+`run-automations.js` — one engine, guard obsolete.
+
+## CRM Phase 5 re-plan (Jul 2 2026) — plan of record committed (no feature code)
+
+Phase 5 ("Visual automation builder") scheduled by owner directive — its original go-signal gate
+("4 fixed automations proven valuable + a real 5th need") is superseded, recorded transparently in
+`docs/crm-roadmap.md` → **"Phase 5 re-plan (2026-07-02) — Linear automation recipes"** (the
+authoritative section). v1 scope = **linear automation recipes**: trigger (a `system_events`
+event type) → AND-conditions → ordered actions (send email/SMS via the frozen gate, enroll in
+sequence, create task). One combined build session (**Session K**), runs **in parallel with
+Phase 10** — disjointness proven by an adversarial challenge pass before commit.
+
+Key design facts (adversarially verified): `system_events` is **RPC-fed, not trigger-fed** (one
+lone DB trigger), no cursor/org_id → run-creation dedups on
+**`UNIQUE(automation_id, triggering_event_id)`**; the legacy `automation_rules` table is a
+verified unwired orphan (no org_id, zero code references, stale TODO at
+`functions/api/twilio-webhook.js:229`) — Phase 5 uses fresh `crm_automations` /
+`crm_automation_runs` instead; **finding S1 (double-send)** is binding — the fixed engine
+(`run-automations.js`) and the new configurable engine keep dedup markers in namespaces that
+can't see each other, so `upsert_crm_automation` AND the engine must block rules duplicating an
+enabled fixed automation (TCPA). No new frontend dependency (hand-rolled linear builder per the
+CrmLeads DnD precedent).
+
+Artifacts committed (docs/seed only — zero feature code): the roadmap re-plan section (phase
+block, gap audit, options-on-record, resisted ledger, challenge report; old Phase 5 block +
+graph line superseded in place), `.claude/rules/crm-wave-ownership.md` **§7** (Session K row,
+authorized additive seam edits to App.jsx/crmIcons/CrmLayout, own-additive-schema + no-stub
+amendments, S1 guard), the **Session K dispatch block** in `docs/crm-dispatch.md`, and
+`supabase/migrations/20260702_crm_phase5_replan_stages.sql` (applied + verified live: phase
+title → "Automation recipes — linear visual builder", status still `planned`, placeholder stage
+replaced by 7 real stages).
+
+## CRM Phase 5-Ops plan (Jul 3 2026) — plan of record committed (no feature code)
+
+Owner directive (full scope): extend the shipped automation engine with **ops actions**
+(notify_staff via `create_notification`, job_note via `job_notes`, set_job_phase via a NEW
+two-write-encapsulating RPC, create_draft_invoice via the idempotent `create_invoice_for_job` —
+draft-only, the QBO push door stays human), a **scheduled-scan trigger family** ("something
+DIDN'T happen": estimate aging, missing daily moisture reading [MT day boundary], invoice
+overdue, stuck phase, dispatch SLA (`scan.no_appointment_after_create`) — code-defined registry,
+thresholds-only config, deterministic uuidv5 dedup through the existing
+`UNIQUE(automation_id, triggering_event_id)`),
+and a **7-recipe starter pack seeded `enabled=false`**. Key finding recorded: the job/e-sign
+trigger events ARE emitted (live counts verified — DB-side trigger functions from Mar-era
+migrations; a repo-grep claim to the contrary was refuted), so no emit-path work is needed.
+Commissions are explicitly NOT an action (stay derived via `is_real_job` → `get_commissions`).
+Artifacts: roadmap "Phase 5-Ops plan (2026-07-03)" section, ownership manifest **§8** (Session L
+row — Session K's two code files transferred post-#253; additive-ALTER allowance; call-only
+plumbing list), Session L dispatch block in `docs/crm-dispatch.md`, and
+`supabase/migrations/20260703_crm_phase5ops_stages.sql` (applied + verified: phase `5-ops`
+seeded `planned` with 7 stages). Also this session: PR #169 (commissions foundation) reconciled
+onto `dev` and merged — commission tracking starts from now (historical jobs stay unattributed
+by owner decision).

@@ -5,12 +5,14 @@
  *
  * WHAT THIS DOES (plain language):
  *   The in-app "Help & Guides" centre, reached from the ? button in the top bar
- *   (and the sidebar). It opens on a menu of guides; pick one to read it. Two
+ *   (and the sidebar). It opens on a menu of guides; pick one to read it. Three
  *   guides live here today: "How UPR Works" (the big picture — how customers,
  *   claims, jobs and invoices fit together, how a job flows from first call to
- *   paid, and a tour of every main screen) and "Invoicing & Financials" (how we
- *   bill, save to QuickBooks, take payments and track collections). Every
- *   logged-in user can see it.
+ *   paid, and a tour of every main screen), "Invoicing & Financials" (how we
+ *   bill, save to QuickBooks, take payments and track collections), and
+ *   "Estimates, Jobs, Sales & Commissions" (when an estimate becomes a real sale,
+ *   why mitigation and reconstruction sell separately, who gets credit, and how
+ *   commissions are figured and paid). Every logged-in user can see it.
  *
  * WHERE IT LIVES:
  *   Route:        /help
@@ -127,6 +129,14 @@ const GUIDES = [
     icon: '🧾',
     accent: '#16a34a',
     blurb: 'Build invoices line by line, save them to QuickBooks, take payments (including card pay-links), and track what you’re owed in Collections.',
+  },
+  {
+    id: 'sales-commissions',
+    title: 'Estimates, Jobs, Sales & Commissions',
+    tag: 'Sales',
+    icon: '🏆',
+    accent: '#7c3aed',
+    blurb: 'When an estimate becomes a real sale, how mitigation and reconstruction are sold separately, who gets credit for a sale, and how commissions are tracked and paid.',
   },
 ];
 
@@ -805,6 +815,254 @@ function InvoicingGuide() {
   );
 }
 
+// ─── SECTION: "Estimates, Jobs, Sales & Commissions" guide ──────────────
+
+// The three signals that turn a job into a real sale.
+const SALE_TRIGGERS = [
+  ['✍️', 'A work authorization is signed', 'The customer signs the Work Authorization (mitigation) or the Reconstruction Agreement (recon). This is the main gate — a signed agreement means we’re hired.'],
+  ['🧾', 'A QuickBooks invoice is created', 'The job gets a real (QuickBooks-saved) invoice — we’ve billed it, so it’s clearly a sale.'],
+  ['✅', 'The estimate is approved', 'The job’s estimate is accepted / converted, which also turns it into the job’s invoice.'],
+];
+
+const SALES_TERMS = [
+  ['Estimate', 'A pre-sale quote. It needs only a customer and the kind of work — no job or claim yet. It might never sell.'],
+  ['Sold / Real job', 'A job we were actually hired to do. A job becomes “sold” the moment a work authorization is signed, a QuickBooks invoice is made, or its estimate is approved.'],
+  ['Estimate-only', 'A job (or quote) we went out to look at but never sold. These do NOT count as sales and earn no commission.'],
+  ['Salesperson', 'Who gets credit for a sale — worked out automatically from who created the estimate, or who sent the work authorization.'],
+  ['Commission', 'What the salesperson earns on a sale — either a percent of the job’s invoice, or a flat amount per sale, set per person.'],
+  ['New Jobs Closed', 'The Overview tile that counts sold jobs in a period (this month, last 30 days, …). Estimate-only jobs are left out.'],
+];
+
+function SaleTriggerCard({ icon, title, desc }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px',
+      background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+      borderLeft: '4px solid #7c3aed', borderRadius: 'var(--radius-md)',
+    }}>
+      <span style={{ fontSize: 20, flex: 'none', lineHeight: 1.3 }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginTop: 2 }}>{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function SalesCommissionsGuide() {
+  return (
+    <>
+      {/* Header */}
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--text-primary)' }}>
+          Estimates, Jobs, Sales &amp; Commissions
+        </h1>
+        <p style={{ margin: '4px 0 0', fontSize: 15, color: 'var(--text-secondary)' }}>
+          How a quote becomes a real sale, why mitigation and reconstruction are sold separately, who gets the credit, and how commissions are figured and paid.
+        </p>
+      </div>
+
+      {/* 1. The one-line idea */}
+      <Card id="big-idea">
+        <SectionTitle n="1">The Big Idea</SectionTitle>
+        <div style={{
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)', padding: '12px 14px', marginBottom: 14,
+          fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.8, overflowX: 'auto',
+        }}>
+          ESTIMATE&nbsp; → &nbsp;SOLD (real job)&nbsp; → &nbsp;COMMISSION<br />
+          <span style={{ color: 'var(--text-tertiary)' }}>(a quote)&nbsp;&nbsp;(signed / invoiced / approved)&nbsp;&nbsp;(paid to the salesperson)</span>
+        </div>
+        <Bullets items={[
+          '<b>An estimate is just a quote.</b> Going out to give one is not a sale — plenty of estimates never sell.',
+          '<b>A job becomes a “sale” the moment we’re actually hired</b> — the customer signs, we invoice it in QuickBooks, or the estimate is approved.',
+          '<b>Only sold jobs count.</b> The “New Jobs Closed” tile and commissions only ever look at sold jobs, never estimate-only ones.',
+          '<b>The salesperson earns a commission on each sale</b>, paid monthly.',
+        ]} />
+      </Card>
+
+      {/* 2. Estimate vs Job */}
+      <Card>
+        <SectionTitle n="2">Estimate vs. Job — What’s the Difference?</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#7c3aed', marginBottom: 8, fontSize: 14 }}>📝 Estimate (pre-sale)</div>
+            <Bullets color="#7c3aed" items={[
+              'A priced quote for work we <i>might</i> do.',
+              'Needs only a <b>customer</b> and the <b>kind of work</b> (its intended division) — no claim or job yet.',
+              'Lives in <b>My Money → Estimates</b>. Build it, send it, wait.',
+              'If it never sells, nothing else happens — no job, no commission.',
+            ]} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 8, fontSize: 14 }}>🔧 Job (the real work)</div>
+            <Bullets color="#16a34a" items={[
+              'A real piece of work we were hired to do — one <b>division</b> (water, recon, …).',
+              'Has its own crew, schedule, documents and <b>one invoice</b>.',
+              'A job is created when the estimate is <b>approved</b>, or directly when a claim comes in.',
+              'A sold job is what earns commission.',
+            ]} />
+          </div>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Callout tone="blue">
+            New to how customers, claims, jobs and invoices fit together? Read <b>“How UPR Works”</b> first — this guide builds on it.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 3. What makes a job a sale */}
+      <Card id="what-is-a-sale">
+        <SectionTitle n="3">What Makes a Job a “Sale”</SectionTitle>
+        <p style={{ margin: '0 0 14px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          A job flips from <b>estimate-only</b> to <b>sold</b> automatically the moment <b>any one</b> of these happens — whichever comes first:
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {SALE_TRIGGERS.map(([icon, title, desc]) => (
+            <SaleTriggerCard key={title} icon={icon} title={title} desc={desc} />
+          ))}
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Callout tone="amber">
+            <b>Just clocking in doesn’t count.</b> Techs clock in for estimate visits too, so time on a job never makes it a sale — only a signature, an invoice, or an approved estimate does.
+          </Callout>
+          <Callout tone="green">
+            <b>Need to override it?</b> The office can flip any job between <b>Real job</b> and <b>Estimate</b> by hand on the job page. A manual mark is always respected and won’t be undone by the automatic rules.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 4. Mitigation vs reconstruction — separate sales */}
+      <Card id="separate-sales">
+        <SectionTitle n="4">Mitigation &amp; Reconstruction Are Separate Sales</SectionTitle>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          This is the part people miss. Selling the mitigation does <b>not</b> mean we got the reconstruction — they’re sold one at a time.
+        </p>
+        <Bullets items={[
+          '<b>They’re two different jobs</b> under the same claim — each its own division, crew and number.',
+          '<b>Each needs its own signed document.</b> Mitigation has its own Work Authorization; reconstruction has its own Reconstruction Agreement.',
+          '<b>Each gets its own invoice</b> — insurance pays each category on a separate check.',
+          '<b>So each is its own sale</b> — sold on its own date, and possibly by a <b>different salesperson</b>, each earning its own commission.',
+        ]} />
+        <div style={{ marginTop: 12 }}>
+          <Callout tone="blue">
+            <b>Example:</b> Maria sells the water mitigation and signs that Work Authorization — that’s her sale. Two weeks later the homeowner approves the rebuild and Carlos signs the Reconstruction Agreement — that’s a <b>second, separate sale</b>, credited to Carlos. One claim, two sales, two commissions.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 5. Who gets credit */}
+      <Card id="who-gets-credit">
+        <SectionTitle n="5">Who Gets Credit for a Sale</SectionTitle>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          The salesperson is worked out automatically — there’s no “pick the salesperson” box. It’s taken from:
+        </p>
+        <Steps items={[
+          '<b>Whoever sent the signed work authorization</b> (Work Authorization / Reconstruction Agreement), if there is one; otherwise',
+          '<b>Whoever created the approved estimate.</b>',
+        ]} />
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Callout tone="amber">
+            <b>Because credit is automatic, this matters:</b> create the estimate (and send the work authorization) under <b>your own login</b>. If someone builds the estimate on a shared or someone else’s account, the commission follows that account, not you.
+          </Callout>
+          <Callout tone="green">
+            <b>“Unattributed” sales:</b> if a sold job has no salesperson on record (e.g. an older job, or one imported with no estimate), it still shows as a sale but earns <b>no commission</b> and is flagged <b>unattributed</b> so the office can spot it and fix it at the source.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 6. How commission is figured */}
+      <Card id="how-commission-works">
+        <SectionTitle n="6">How the Commission Is Figured</SectionTitle>
+        <Bullets items={[
+          '<b>Each salesperson has their own rate</b>, set by an admin. It’s either a <b>percent of the job’s invoice</b> (e.g. 8%) or a <b>flat amount per sale</b> (e.g. $250). If both are set, the <b>flat amount wins</b>.',
+          '<b>The amount is based on the job’s invoice total</b> — what we actually billed for that job.',
+          '<b>No rate set = no commission.</b> Only people with a rate on file are paid; everyone else simply isn’t a salesperson in the system.',
+          '<b>One sale, one commission</b> — and because mitigation and recon are separate sales, each pays out on its own.',
+        ]} />
+        <div style={{ marginTop: 12 }}>
+          <Callout tone="blue">
+            <b>Worked example:</b> a reconstruction job is sold and invoiced at <b>$7,800</b>. The salesperson’s rate is <b>8%</b> → commission is <b>$624</b>. If instead their rate were a flat <b>$300 per sale</b>, they’d earn <b>$300</b> regardless of the invoice size.
+          </Callout>
+        </div>
+      </Card>
+
+      {/* 7. When it gets paid */}
+      <Card id="when-paid">
+        <SectionTitle n="7">When Commissions Get Paid</SectionTitle>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-secondary)' }}>
+          Commissions run on a simple monthly rhythm:
+        </p>
+        <div style={{
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)', padding: '14px 16px', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)',
+        }}>
+          Everything <b>sold in a month</b> is paid out on the <b>first payroll of the next month</b>.
+          <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-secondary)' }}>
+            Example: a job sold any time in <b>June</b> is paid on the <b>first July payroll</b>.
+          </div>
+        </div>
+        <p style={{ margin: '12px 0 0', fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          A sale counts in the month its <b>job</b> was created (which, in the estimate-to-job flow, is the moment it sold).
+        </p>
+      </Card>
+
+      {/* 8. On the dashboard */}
+      <Card id="on-the-dashboard">
+        <SectionTitle n="8">Seeing It on the Dashboard</SectionTitle>
+        <Bullets items={[
+          '<b>“New Jobs Closed”</b> on the Overview counts sold jobs for the chosen period (This month, Last 30, …). Estimate-only jobs are deliberately left out, so it reflects real sales — not visits.',
+          '<b>“Open estimates”</b> shows the quotes still in play (not yet sold), so you can see the pipeline that hasn’t closed.',
+          'Because it counts jobs, a claim that sold both mitigation and reconstruction shows up as <b>two</b> closed jobs.',
+        ]} />
+      </Card>
+
+      {/* 9. Do / Don't */}
+      <Card>
+        <SectionTitle n="9">Getting Credit — Do &amp; Don’t</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 8, fontSize: 14 }}>✓ DO</div>
+            <Bullets color="#16a34a" items={[
+              'Build the estimate and send the work authorization under <b>your own login</b>.',
+              'Get the <b>signature</b> — a signed agreement is the cleanest way a job becomes your sale.',
+              'Sell mitigation and reconstruction as <b>separate</b> sales, each with its own signed document.',
+              'Tell the office if a sold job shows as <b>unattributed</b> so they can fix who gets credit.',
+            ]} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: 8, fontSize: 14 }}>✕ DON’T</div>
+            <Bullets color="#dc2626" items={[
+              'Don’t create the estimate on a shared or someone else’s account — the commission follows that account.',
+              'Don’t expect a commission for an <b>estimate that hasn’t sold</b> — quotes aren’t sales.',
+              'Don’t assume selling the mitigation got you the reconstruction — that’s a separate sale.',
+              'Don’t mark a job “Real job” by hand just to inflate sales — manual marks are visible and stick.',
+            ]} />
+          </div>
+        </div>
+      </Card>
+
+      {/* Glossary */}
+      <Card style={{ marginBottom: 0 }}>
+        <SectionTitle n="★">Words We Use</SectionTitle>
+        <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          {SALES_TERMS.map(([term, def], i) => (
+            <div key={term} style={{
+              display: 'grid', gridTemplateColumns: '150px 1fr', gap: 12,
+              padding: '9px 14px', fontSize: 13.5, alignItems: 'start',
+              background: i % 2 ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+              borderBottom: i < SALES_TERMS.length - 1 ? '1px solid var(--border-light)' : 'none',
+            }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{term}</div>
+              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>{def}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
 // ─── SECTION: Controller (menu ⇄ guide, synced to the URL hash) ──────────────
 const GUIDE_IDS = GUIDES.map(g => g.id);
 // Parse the hash as "guide[/section]" — backward compatible with a bare
@@ -857,7 +1115,9 @@ export default function Help() {
       >
         ← All guides
       </button>
-      {view === 'how-it-works' ? <HowItWorksGuide /> : <InvoicingGuide />}
+      {view === 'how-it-works' ? <HowItWorksGuide />
+        : view === 'invoicing' ? <InvoicingGuide />
+        : <SalesCommissionsGuide />}
     </div>
   );
 }

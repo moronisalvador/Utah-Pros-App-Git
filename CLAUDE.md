@@ -1,5 +1,5 @@
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 1, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** July 2, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
 
 ## ⚠️ NON-NEGOTIABLE RULES
@@ -7,7 +7,7 @@
 1. **Read files from disk before editing.** Never assume file contents from memory.
 2. **No `alert()`/`confirm()`.** Feedback via `window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }))`. Destructive actions use inline two-click confirm, never a modal. Pattern: `UPR-Design-System.md`.
 3. **`const { db } = useAuth()`** in components — never import `db` directly from `@/lib/supabase` (that also exports an unauthenticated singleton for bootstrapping only).
-4. **Ship via PR, never push `main` directly.** Feature branch → `dev` (staging) → reviewed `dev → main` PR → merge. See [Deployment](#deployment--release-workflow).
+4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exception:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)) — concurrent sessions genuinely need the isolation + reviewer gauntlet. See [Deployment](#deployment--release-workflow).
 5. **Mobile CSS: `@media (max-width: 768px)` only.** Never touch desktop layout/colors/spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 6. **Commit after every 2–3 files.** Small commits, clear messages.
 7. **New tables/columns → write a migration in `supabase/migrations/` first** (66+ tracked, real schema-as-code), apply via Supabase MCP `apply_migration`, then query via `db.rpc()` (PostgREST schema cache lags on new tables; `SECURITY DEFINER` RPCs don't). **Check real column names** via `information_schema.columns` first — tables routinely have 20-60+ columns, never assume from a short doc list.
@@ -21,7 +21,7 @@
 
 1. **Understand before acting.** Read the real file (Rule 1); reuse existing patterns ([Patterns](#patterns-to-follow)) over inventing.
 2. **Verify before shipping.** Run `npm run lint`, `npm run build`, `npm test` (vitest). CI blocks PRs to `main` on **build+test**; lint is non-blocking there (175 pre-existing errors) but don't add new ones. Report the real result — never claim "done" unverified.
-3. **Ship the sanctioned way.** Feature branch → `dev` → `dev → main` PR → merge commit (not squash) → fast-forward `dev`. Wait for the Cloudflare Pages check.
+3. **Ship the sanctioned way (Rule 4).** Routine work: commit direct to `dev`, it auto-deploys to staging — no branch, no PR. Production: reviewed `dev → main` PR → merge commit (not squash) → fast-forward `dev`. CRM wave: feature branch → PR into `dev`. Wait for the Cloudflare Pages check on any prod release.
 4. **Report honestly.** State outcomes and discrepancies out loud. Ask when a request is genuinely ambiguous.
 5. **Keep context lean.** Delegate broad searches to subagents. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components).
 
@@ -126,7 +126,7 @@ useEffect(() => { load(); }, [load]);
 
 ## Deployment & Release Workflow
 
-**Branches:** feature branch (Cloudflare preview) → `dev` (staging, dev.utahpros.app, auto-deploys on push, independent — not force-synced from `main`) → PR to `main` (production, utahpros.app; Capacitor iOS also loads `/tech/*` from this build).
+**Branches:** routine work commits **directly to `dev`** (staging, dev.utahpros.app, auto-deploys on push, independent — not force-synced from `main`); production is a reviewed **PR `dev → main`** (utahpros.app; Capacitor iOS also loads `/tech/*` from this build). Feature branches + PRs-into-`dev` are reserved for the CRM parallel wave (concurrent sessions). **Retired 2026-07-02:** per-change feature-branch+PR for routine work — it burned GitHub API quota (mostly the PR-activity *watch/babysit* polling + the per-PR Cloudflare/claude[bot] bots, not the merge itself) and added a manual click. Sessions should **not** subscribe to / babysit PRs unless explicitly asked, and should **not** open a PR for routine `dev` work.
 
 **Env vars:** Cloudflare keeps separate Production (`main`) / Preview (`dev`+branches) sets — new secrets need both + a redeploy.
 
@@ -149,7 +149,7 @@ The new CRM side ships in phases, each its own branch/PR. **Per-phase specifics 
 - **Phase ordering follows the roadmap's dependency graph** (v3 section). Pre-v3 history: "never start phase N+1 until phase N merged" — retained only for pairs the graph marks serial (e.g. anything vs its own foundation).
 - **Migrations in a CRM phase are additive-only:** new tables/columns only, each RLS-enabled at creation (Rule 7). **No `ALTER`/`DROP`/rename of a live table inside a phase** — destructive changes to shared data need their own separate reviewed change. Apply + verify on `dev` before the `dev → main` PR (one shared Supabase — see Deployment).
 - **Isolation is the `page:crm` flag + `dev_only_user_id`** (not a branch) — `/crm/*` stays invisible to other employees on `dev` and `main` until the flag opens.
-- **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR. **Open the `dev` PR as a draft (per the harness default), then immediately mark it ready for review** — every CRM phase's PR should end the session ready for review, not sitting as a draft.
+- **End of phase:** commit → set that phase's status to `'shipped'` in `crm_build_phases` → update `UPR-Web-Context.md` (Rule 9) — all before opening the PR. **Open the `dev` PR as a handoff and stop** — mark it ready to merge (not left as a draft); the owner/orchestrator merges it. Wave sessions do **not** click-merge, subscribe to, babysit, or wait for a review on their PR (per Rule 4 — the PR is only how a finished branch lands; branches exist so the parallel sessions don't collide).
 - **Reconcile the checkboxes before the PR — both directions.** The `/crm/roadmap` (and public `/status`) page reads `crm_build_stages`; a session must leave that state honest, not drift. Every stage you flip to `done` must reflect real, verified work (no marking-done-to-look-finished), and every stage that genuinely landed must actually be flipped (no leaving finished work as `todo` — that under-reports progress and reads as "skipped"). A stage that's genuinely blocked on the owner (a live account, a real test call, a credential) stays open, but the phase's PR/`UPR-Web-Context.md` must say *why* — so an owner-gated box is never mistaken for a forgotten one. (There is no `blocked` status value yet — planned enhancement; until then, disclose in prose.) The `crm-phase-reviewer` audits this as part of its sign-off.
 
 ℹ️ `crm_build_phases` / `crm_build_stages` now exist (Phase 0 shipped — `phase_key, title, status, shipped_at, sort_order` + per-phase sub-steps), backing the read-only `/crm/roadmap` progress page and the public `/status` mirror. Status is set via `set_crm_phase_status` / `set_crm_stage_status`; progress rolls up via `get_crm_build_progress()`.

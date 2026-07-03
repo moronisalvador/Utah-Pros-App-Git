@@ -727,13 +727,15 @@ PR, in order.
 
 > **Branch:** `crm/phase-4b-text-blasts` — cut off `dev`.
 > **Prerequisite:** Phase 4a merged into `dev`; **and Twilio SMS verification live AND the A2P 10DLC promotional/marketing campaign registered + carrier-approved** (see Pre-Phase-1 action items — this vetting takes days-to-weeks). Do **not** build/test the send path until both are confirmed.
+> **⚠️ TCPA quiet-hours (was a hard 4b blocker — IMPLEMENTED 2026-07-02).** Automated/marketing SMS must not send outside **8am–9pm in the recipient's local time** (TCPA penalties are **per message**). Now enforced as **Gate 3 in `functions/lib/automated-send.js` `sendGatedSms`** — `isWithinQuietHours()` (tz-aware, DST-safe, unit-tested); a hit DEFERS with `reason:'quiet_hours'` and `process-sequences.js` **holds + retries** it (never drops). SMS-only (email/CAN-SPAM is exempt); still sits behind the `sms_sending_enabled` kill-switch. **Remaining for 4b:** recipient timezone currently defaults to the business market (`America/Denver`, override `env.SMS_QUIET_HOURS_TZ`) — refine to a per-recipient (area-code-derived) zone before texting many timezones, and extend the same held-retry treatment to `run-automations.js` (it currently treats a `quiet_hours` skip like any other skip). (Surfaced by the #247–250 wave review, 2026-07-02.)
 > **Read scope:** this block + `CLAUDE.md` (generic rules).
 > **Close-out checklist (all true before the `dev → main` PR):**
 > - [ ] Test-first, now green: **(a)** `consentAllows(row)` consent gate — refuses to send on absent/withdrawn consent (vitest unit). The gate ships here first and is reused by 4c/4d.
+> - [x] **TCPA quiet-hours enforced (8am–9pm recipient-local) in `automated-send.js` Gate 3, deferring out-of-window automated SMS** — implemented + unit-tested 2026-07-02 (`isWithinQuietHours`; the sequence worker holds+retries a `quiet_hours` skip). Remaining for 4b: per-recipient (area-code) timezone instead of the `America/Denver` default, and held-retry in `run-automations.js`.
 > - [ ] Acceptance: recipients segmented off `contacts`/`referral_sources`; **every** send routes through `sendAutomatedMessage()` → the consent gate (`sms_consent_log` opt-outs), structurally un-bypassable; sends go via the existing `send-message.js` Twilio worker.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass; `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off — weight it on the consent gate.
 > - [ ] Visual: the campaign builder/list vs the handoff at `crm-phase-4b-text-blasts.utah-pros-app-git.pages.dev`.
-> - [ ] Set the `phase-4b` row to `shipped` via `set_crm_phase_status`; delete test campaign/recipient rows (test `org_id`); `UPR-Web-Context.md` updated; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set the `phase-4b` row to `shipped` via `set_crm_phase_status`; delete test campaign/recipient rows (test `org_id`); `UPR-Web-Context.md` updated; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 - **Text blast campaigns**: finish out `Marketing.jsx` + the existing
   `campaigns`/`campaign_recipients` tables (already stubbed — "Bulk messaging coming
@@ -769,7 +771,7 @@ PR, in order.
 > - [ ] Acceptance: the 4 fixed automations (speed-to-lead, missed-call text-back, no-response follow-up, job-complete review) each route through `sendAutomatedMessage()` → consent gate, fire off `system_events`, and are individually on/off-toggleable via `automation_settings`.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass; `upr-pattern-checker` clean; `crm-phase-reviewer` (Opus) sign-off — weight it on the consent gate + trigger correctness.
 > - [ ] Visual: the `automation_settings` toggles in **Settings** at `crm-phase-4d-automations.utah-pros-app-git.pages.dev` (the automations themselves are backend).
-> - [ ] Set the `phase-4d` row to `shipped` via `set_crm_phase_status`; delete test automation rows; `UPR-Web-Context.md` updated; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set the `phase-4d` row to `shipped` via `set_crm_phase_status`; delete test automation rows; `UPR-Web-Context.md` updated; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 - **Four fixed automations** (deliberately not a visual workflow builder — see the
   completeness assessment above): 
@@ -817,6 +819,14 @@ automations without a code change. That's real scope — worth its own roadmap, 
 smuggled into Phase 4.
 
 ### Phase 5 (future, not scheduled) — Visual automation builder
+
+> ⚠️ **SUPERSEDED 2026-07-02** — Phase 5 is now **scheduled**; see the
+> **"Phase 5 re-plan (2026-07-02) — Linear automation recipes"** section at the end of this
+> doc (authoritative). Two specifics below are superseded there: the "promote
+> `automation_settings` into `automation_rules`" sketch (fresh `crm_automations` /
+> `crm_automation_runs` tables instead — the legacy `automation_rules` table is a verified
+> unwired orphan) and the go-signal prerequisite (explicitly waived by owner directive to keep
+> development moving while 4b waits on carrier approval). This block is retained as history.
 
 > **Branch:** `crm/phase-5-automation-builder` — cut off `dev` (when scheduled).
 > **Prerequisite:** Phase 4d's 4 fixed automations shipped and proven valuable, **and** a real 5th/6th automation need that doesn't fit as fixed code (that need is the go-signal, not a date).
@@ -1169,7 +1179,7 @@ campaign email since 2026-07-01).
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off.
 > - [ ] Visual: stub routes render CrmStubPage on the branch preview; no live-page regressions (CrmLeads timeline extraction is behavior-identical).
 > - [ ] `UPR-Web-Context.md` updated (all new tables, stubs, kill-switch, ownership manifest).
-> - [ ] Set `F` to `shipped` via `set_crm_phase_status`; reconcile stages; pushed to `dev`, verified, `dev → main` PR opened.
+> - [ ] Set `F` to `shipped` via `set_crm_phase_status`; reconcile stages; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope (everything additive):
 - **All schema for the wave** (parallel sessions ship ZERO schema): ① merge_contacts superseding fix + capture both drifted RPC bodies as a real migration; ② `automation_settings`; ③ `crm_tasks`, `lead_stage_history`, `inbound_leads.lost_reason`; ④ `crm_segments`; ⑤ `crm_import_batches`, `contacts.owner_id`, `contacts.lifecycle_status`; ⑥ `crm_sequences`, `crm_sequence_steps`, `crm_sequence_enrollments`; ⑦ `pipeline_stages.win_probability`, `inbound_leads.lead_score` + `lead_score_factors`; ⑧ `form_definitions`, `form_definition_versions`, `form_submissions`.
@@ -1193,7 +1203,7 @@ Scope (everything additive):
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` clean; `crm-phase-reviewer` sign-off.
 > - [ ] Visual: /crm/contacts on the branch preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `6a` shipped; reconcile stages; delete TEST-org rows; pushed, verified, PR opened.
+> - [ ] Set `6a` shipped; reconcile stages; delete TEST-org rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills bodies of `get_crm_contacts`, `upsert/get/delete_segment`, `get_contact_consent`, `get_duplicate_contacts` (+email); owns `ContactsDirectory.jsx` + `ContactDetail.jsx` only.
 
@@ -1209,7 +1219,7 @@ Scope: fills bodies of `get_crm_contacts`, `upsert/get/delete_segment`, `get_con
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off weighted on the audit/consent surface.
 > - [ ] Visual: import wizard + role-gated nav on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `6b` shipped; reconcile stages; delete TEST-org import rows; pushed, verified, PR opened.
+> - [ ] Set `6b` shipped; reconcile stages; delete TEST-org import rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills `import_contacts`, `set_contact_owner`, `set_contact_lifecycle` + audit-hardening replaces; owns `ImportExportPanel.jsx`, `MergeTool.jsx`, `Admin.jsx`, `DevTools.jsx`, `src/lib/featureFlags.js`, and is the wave's sole editor of `CrmLayout.jsx` (role gating).
 
@@ -1225,7 +1235,7 @@ Scope: fills `import_contacts`, `set_contact_owner`, `set_contact_lifecycle` + a
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` sign-off.
 > - [ ] Visual: Tasks, Conversations, Overview widget, lost-reason flow on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `7` shipped; reconcile stages; delete test task rows; pushed, verified, PR opened.
+> - [ ] Set `7` shipped; reconcile stages; delete test task rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills tasks CRUD + `get_overdue_tasks` bodies; owns `CrmTasks.jsx`, `CrmLeads.jsx`, `OverdueTasksWidget.jsx`, `CrmConversations.jsx`. Send paths frozen (call-only).
 
@@ -1241,7 +1251,7 @@ Scope: fills tasks CRUD + `get_overdue_tasks` bodies; owns `CrmTasks.jsx`, `CrmL
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the consent path.
 > - [ ] Visual: sequence builder + enrollment list on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `8` shipped; reconcile stages; delete test sequences/enrollments; pushed, verified, PR opened.
+> - [ ] Set `8` shipped; reconcile stages; delete test sequences/enrollments; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills sequence RPC bodies; owns `CrmSequences.jsx` + `functions/api/process-sequences.js`. No visual canvas — Phase 5 stays gated on its own go-signal.
 
@@ -1257,7 +1267,7 @@ Scope: fills sequence RPC bodies; owns `CrmSequences.jsx` + `functions/api/proce
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (digest send) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the money math.
 > - [ ] Visual: Reports set + forecast widget on preview.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `9` shipped; reconcile stages; pushed, verified, PR opened.
+> - [ ] Set `9` shipped; reconcile stages; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills reports ×8 + `score_lead` bodies; owns `CrmReports.jsx`, `ForecastWidget.jsx`, `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+tests), `functions/api/weekly-crm-digest.js`.
 
@@ -1273,7 +1283,7 @@ Scope: fills reports ×8 + `score_lead` bodies; owns `CrmReports.jsx`, `Forecast
 > - [ ] `migration-safety-checker` + `upr-pattern-checker` + `consent-path-auditor` (form consent writes `sms_consent_log`) clean; `crm-phase-reviewer` (Opus) sign-off weighted on the public endpoint + consent.
 > - [ ] Visual: builder + a live embedded form on a test page.
 > - [ ] `UPR-Web-Context.md` updated.
-> - [ ] Set `10` shipped; reconcile stages; delete test forms/submissions; pushed, verified, PR opened.
+> - [ ] Set `10` shipped; reconcile stages; delete test forms/submissions; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: fills `upsert_lead_from_form` + form CRUD bodies; owns `CrmForms.jsx`, `functions/f/[public_id].js`, `functions/api/form-submit.js`, `public/embed.js`. Optional stage: thin `webflow-form-webhook.js` adapter → same RPC (existing Webflow-native forms flow in from day one). Deliberately NOT a funnel/landing-page builder.
 
@@ -1289,7 +1299,7 @@ Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes not
 4b ──> external A2P carrier approval only (code seams dissolved by F; joins the wave on approval)
 6b ──> page:crm opens to staff
 8  ──> soft: segment-UI→enroll E2E verification tail after 6a merges (build not blocked)
-5  ──> stays future, gated on its own go-signal
+5  ──> SUPERSEDED 2026-07-02: scheduled by owner directive — runs ∥ 10, after 6b (merged); see "Phase 5 re-plan" section
 ```
 
 ## Dispatch model: Wave 0 → Wave 1
@@ -1297,6 +1307,7 @@ Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes not
 - **Wave 0** (after this PR merges): **Phase F** (Opus · high) ∥ **Phase 1 close-out** (Sonnet · medium) — safely concurrent, zero overlap. Owner pre-decision due here: CallRail Form Tracking replacement intent (forks Session A's form-fixture stage).
 - **Wave 1** (after F merges): **4d · 6a · 6b · 7 · 8 · 9 · 10 — all seven in parallel**, plus **4b** joining whenever carrier approval lands. Merge order is preference (suggested: 7, 6a first), not a gate; each PR independent. Throttle freely — all pairs are safe, so concurrent-session count is purely a review-bandwidth choice.
 - **Copy-paste launch blocks for every session live in `docs/crm-dispatch.md`** (settings header + complete cold-session prompt per session); each session's read scope = `CLAUDE.md` + its phase block above + `.claude/rules/crm-wave-ownership.md`. The prompts cite Foundation's artifact names as specified here — if F's implementation drifts, the manifest + phase blocks are authoritative.
+- **How work lands (per CLAUDE.md Rule 4):** each wave session opens a **PR into `dev` as a handoff and stops** — the owner/orchestrator merges it. Sessions never click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off). Branches exist only so the parallel sessions don't collide; `dev → main` is a separate, periodic production release, never per-phase.
 
 ### File-ownership matrix (to be committed by Phase F as `.claude/rules/crm-wave-ownership.md`)
 
@@ -1317,3 +1328,241 @@ Phase 1 close-out ──> (independent; runs beside F in Wave 0 — consumes not
 **Migration rule (amended from "zero migrations in parallel sessions"):** F owns 100% of SCHEMA (tables/columns/constraints/policies/indexes) + both shared RPC REPLACEs + every signature. Wave sessions may ship **function-body-only** `CREATE OR REPLACE` migrations for their OWN frozen stubs — signature changes forbidden (migration-safety-checker enforces), collision-free because each function has exactly one owner. Rationale: literal-zero would force F to implement ~31 RPCs — most of the backend — serially and without per-phase test-first.
 
 **What resisted maximum parallelism (honest record):** ① the literal zero-migration rule (amended as above — the only rule bent); ② Phase 8's consumption of 6a's segments (softened to a disclosed post-6a verification tail); ③ 4b's carrier approval (external, irreducible — but code seams dissolved); ④ 6a∥6b is the most protocol-fragile pair (both inside the Contacts surface; safe only via F's slot components; fallback = serialize 6b after 6a); ⑤ 4d and 8 are two consent-critical builds running concurrently — accepted by owner directive, mitigated by the F-frozen gate (both call-only), SMS dark behind the kill-switch, and mandatory consent-path-auditor on both PRs; ⑥ F itself is the new critical path / single point of failure — priced in via the full reviewer gauntlet before the wave dispatches.
+
+---
+
+# Phase 5 re-plan (2026-07-02) — Linear automation recipes
+
+**Owner go (2026-07-02):** build Phase 5 now, in parallel with Phase 10, while Phase 4b waits
+(~1 week) on A2P 10DLC carrier approval. Scope chosen by the owner from an options-on-record
+evaluation: **A — linear recipe builder** (event trigger → AND-conditions → ordered actions),
+NOT a branching node-graph (that stays future — see the options table).
+
+*Supersede transparency:* the original Phase 5 block (~line 821) gated this phase on "the 4
+fixed automations proven valuable + a real 5th/6th need." That gate is **not evidenced as met**
+— it is superseded by explicit owner directive (recorded here, not silently flipped). The same
+block's "promote `automation_settings`/`automation_rules`" sketch is superseded by fresh tables
+(rationale in the options table).
+
+## Status reconciliation (live `crm_build_phases`, 2026-07-02)
+
+Shipped: 0 · 1 · 2 · 3 · 4a · 4c · 4d · F · 6a · 6b · 7 · 8 · 9 (13 phases). Planned: **4b**
+(externally gated, A2P), **5** (this re-plan — was "future, not scheduled"), **10** (startable;
+dispatch block exists). Stale-state disclosure: Phase 5's single placeholder stage ("Close-out
+checklist defined when this phase is actually scheduled…") is now false-by-design — the seed
+migration (`20260702_crm_phase5_replan_stages.sql`) replaces it with the real stage list, a
+disclosed placeholder swap, not history rewriting.
+
+## Severity finding S1 — double-send risk between two automation engines (design-time)
+
+**Mechanism:** `run-automations.js` (Phase 4d) dedups via `system_events (event_type,
+entity_id)` markers scoped to its own event types; a configurable Phase 5 engine keeps its own
+markers in `crm_automation_runs`. The two dedup namespaces cannot see each other — a staff-built
+"missed call → text" rule plus the enabled fixed missed-call-textback = **two SMS for one missed
+call**. TCPA-relevant (penalties are per message).
+**Exposure today:** zero live risk — no configurable engine exists yet, and both fixed SMS
+automations are dark behind `sms_sending_enabled = OFF`. Design-time finding; Phase 5 must close
+it at birth.
+**Resolution shipped with Phase 5 v1:** a **trigger-collision guard** — `upsert_crm_automation`
+refuses to save an ENABLED rule whose trigger duplicates an enabled fixed automation
+(speed-to-lead / missed-call-textback / no-response-followup / review-request), AND the engine
+skips such rules at fire time (defense in depth), each with a named committed test.
+**End-state (recorded, not v1):** migrate the 4 fixed automations into `crm_automations` and
+retire `run-automations.js` — one engine, guard obsolete. Becomes the right call the moment
+staff need to edit the fixed four; sized as its own follow-up phase.
+
+## Gap audit (verified live 2026-07-02; adversarial challenge run before commit)
+
+| Capability | Verdict | Evidence |
+|---|---|---|
+| Trigger substrate (event bus) | PARTIAL · Challenge-CONFIRMED | `system_events` live (843 rows; rich vocabulary: `crm_lead_created`, `job.status_changed`, `crm_lead_promoted`, `job.payment_received`, …) but **RPC-fed, not trigger-fed** (exactly one DB trigger, `trg_job_events`); no monotonic cursor, no org_id — the engine must dedup explicitly |
+| Conditions / branching | MISSING | no condition column anywhere; `advanceEnrollment` is +1 linear (`process-sequences.js:103-115`) |
+| Waits / scheduling | HAVE | `next_run_at` + `computeNextRunAt` + held/quiet-hours/kill-switch semantics (`planStepOutcome` — exported, reusable) |
+| Action: send email/SMS | HAVE | `sendAutomatedMessage` — the one frozen consent-gated door (kill-switch + TCPA quiet-hours Gate 3 inside) |
+| Action: enroll / create-task | PARTIAL | `enroll_in_sequence` + `upsert_crm_task` RPCs exist; not yet exposed as automation actions |
+| Configurable rules storage | MISSING · Challenge-CONFIRMED | legacy `automation_rules` is a verified unwired orphan: no `org_id`, zero function/worker references (sole repo hit = stale TODO comment `functions/api/twilio-webhook.js:229`), single-action shape. Do NOT wire it; its removal is a separate reviewed cleanup (never an in-phase DROP) |
+| Visual builder UI | MISSING · Challenge-CONFIRMED | no graph lib in `package.json`; house pattern = hand-rolled native DnD (`CrmLeads.jsx:171-341`); a linear builder needs NO new dependency |
+
+## Phase 5 — Automation recipes (linear visual builder)
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-5-automation-recipes`).
+> **Prerequisite:** 6b merged ✅ (frees the CrmLayout seam) + this re-plan committed to `dev`. Runs **∥ Phase 10** (disjointness challenge-proven). Model: **Opus · high** (consent-adjacent: the engine dispatches real sends through the gate and owns the S1 collision guard).
+> **Read scope:** this section + `CLAUDE.md` + `.claude/rules/crm-wave-ownership.md` §7.
+> **Close-out checklist:**
+> - [ ] Test-first, now green (committed failing first): ① idempotent run-creation — one `system_events` row never creates two runs for the same automation (`UNIQUE(automation_id, triggering_event_id)` exercised); ② S1 trigger-collision guard — an enabled fixed automation blocks saving AND firing a duplicate-trigger rule; ③ an SMS action with the kill-switch OFF or inside quiet-hours is HELD and retried (imported Phase-8 semantics), never dropped or advanced past; ④ AND-condition evaluator (typed operators, missing-field/null-safe).
+> - [ ] Acceptance: staff can create/edit/enable/disable a rule (trigger event picker → AND-condition rows → ordered action list: send email / send SMS / enroll in sequence / create task) at `/crm/automations` behind `feature:crm_automations`; the engine fires on real `system_events`, executes actions in order through the frozen gate only, records every firing in `crm_automation_runs` (+ one `worker_runs` row per cron run); a disabled rule never fires; the S1 guard is live in both RPC and engine.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass.
+> - [ ] `migration-safety-checker` (additive-only, RLS + policy at creation, org_id, UNIQUE dedup key, GRANTs) + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the send path + S1 guard.
+> - [ ] Visual: builder + run log on preview (owner-gated behind `page:crm` — disclose if not producible from the session).
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `5` shipped via `set_crm_phase_status`; reconcile stages via `set_crm_stage_status`; delete test rules/runs (TEST org); push; PR into `dev` as a handoff, then stop (no babysitting).
+
+Scope: ONE new additive migration — `crm_automations` + `crm_automation_runs` + five SECURITY
+DEFINER RPCs created directly (post-wave single-session phase: no stub ceremony, no cross-session
+contract to freeze — manifest §7); new worker `functions/api/process-crm-automations.js` (named
+deliberately distinct from 4d's `run-automations.js`); new page `src/pages/crm/CrmAutomations.jsx`;
+authorized additive seam edits (route / icon / nav row — manifest §7); a new Phase 5 reserved
+`index.css` marker. Deliberately NOT: branching/if-else, any node-graph canvas or new frontend
+dependency, editing `run-automations.js` (4d-owned) or `process-sequences.js` (Phase-8-owned —
+import its exported helpers read-only), or touching the orphan `automation_rules` table.
+
+### Data model (v1)
+
+- **`crm_automations`** — `id, org_id, name, description, trigger_event_type text`
+  (a `system_events.event_type`), `conditions jsonb DEFAULT '[]'` (array of `{field, op, value}`
+  AND-filters evaluated against the event payload + trigger entity), `actions jsonb DEFAULT '[]'`
+  (ordered array of `{type: send_email|send_sms|enroll_sequence|create_task, config,
+  delay_hours}`), `enabled boolean DEFAULT false`, `created_by, created_at, updated_at`.
+  RLS + explicit policy at creation.
+- **`crm_automation_runs`** — `id, automation_id FK, org_id, triggering_event_id uuid,
+  contact_id, entity_type, entity_id, current_action int DEFAULT 0, status
+  (active|completed|failed|skipped|held), next_run_at, last_error, created_at, updated_at`
+  + **`UNIQUE(automation_id, triggering_event_id)`** — the S1/idempotency key (`system_events`
+  has no cursor, so run-creation dedups on this, never on timestamps). RLS + policy at creation.
+- **RPCs** (SECURITY DEFINER + GRANT): `get_crm_automations`, `upsert_crm_automation` (S1 guard
+  lives here), `set_automation_enabled`, `delete_crm_automation`, `get_automation_runs`.
+
+### Engine — `process-crm-automations.js`
+
+Cron worker, structural sibling of `process-sequences.js`: ① **match** — join recent
+`system_events` rows against enabled `crm_automations` on `trigger_event_type`, evaluate
+AND-conditions, `INSERT … ON CONFLICT DO NOTHING` runs (idempotent); ② **advance** — due runs
+(`next_run_at <= now`) execute `actions[current_action]` (send via `sendAutomatedMessage`
+ONLY; enroll via `enroll_in_sequence`; task via `upsert_crm_task`), then cursor+1 or complete —
+**importing** `computeNextRunAt` / `planStepOutcome` semantics from `process-sequences.js`
+(read-only import; `held`/`quiet_hours`/`sms_disabled` = hold-and-retry, never dropped);
+③ one `worker_runs` row per run. Events exist only where the RPC layer logs them (the bus is
+RPC-fed) — the builder's trigger picker lists only event types actually emitted.
+
+## Options on record (owner decisions 2026-07-02)
+
+| Decision | Chosen | Rejected + the caveat under which it wins later |
+|---|---|---|
+| v1 scope | **A — linear recipes** | B — branching node-graph (flow_nodes/flow_edges, a non-additive cursor change, likely React Flow; ~3-4 sessions). Right when a concrete if/else need appears — a possible Phase 5-v2 |
+| S1 resolution | **collision guard** (RPC + engine) | migrate-and-retire `run-automations.js` — cleaner single engine; right once staff want to edit the fixed four; its own follow-up phase |
+| Rules storage | **fresh `crm_automations` / `_runs`** | growing legacy `automation_rules` — verified orphan, wrong single-action shape, no org_id; removal = separate reviewed cleanup |
+| Builder UI | **hand-rolled, zero new deps** | `@xyflow/react` — only justified by a real canvas/branching need (v2) |
+| Session structure | **one combined session** (engine-first behind flag OFF, then UI, one branch) | 5a→5b serial split — rejected by the counter-ordering pass: backend is small (imports proven helpers), UI is trivial, a split doubles the seam-edit ceremony |
+
+## What resisted maximum parallelism (this re-plan)
+
+① Phase 5 must edit three wave-frozen seams (`App.jsx`, `crmIcons.jsx`, `CrmLayout.jsx`) —
+resolved by manifest §7 authorizing exactly those additive edits (6b, CrmLayout's sole wave
+editor, merged 2026-07-02, so the seam is free); ② the go-signal gate — superseded by owner
+directive, recorded above; ③ no stub ceremony — rule-amendment transparency: frozen stubs exist
+to freeze contracts BETWEEN parallel sessions; a single-session phase has no consumer, so
+Phase 5 creates its RPCs directly (`migration-safety-checker` still audits the migration);
+④ S1 accepted as guard-not-merge for v1 (owner decision; tests enforce); ⑤ `system_events` has
+no org_id/cursor — the engine dedups via the UNIQUE key and resolves org from the trigger
+entity (single-tenant reality).
+
+## Challenge report (adversarial pass, run before this section was committed)
+
+C1 — orphan `automation_rules`: **CONFIRMED** (nuance folded in: roadmap text superseded above;
+stale TODO at `twilio-webhook.js:229` documented, file not owned by Phase 5). C2 — Phase 10
+touches no frozen seams: **CONFIRMED** (forms route/icon/nav pre-wired by F — `App.jsx:106,369`,
+`crmIcons.jsx:156`, `CrmLayout.jsx:59`). C3 — `system_events` as trigger substrate: **CONFIRMED,
+sub-claim REFUTED** ("DB-trigger-fed" was wrong — it is RPC-fed with one lone trigger; the
+engine design was hardened with the `UNIQUE(automation_id, triggering_event_id)` dedup key as a
+result). C4 — no new frontend lib: **CONFIRMED**. **Disjointness verdict: Phase 5 ∥ Phase 10 =
+DISJOINT** — tables, RPCs, workers, and pages all distinct; the only shared surfaces are
+insert-only logs (`system_events`, `worker_runs`), the import-only send gate, and seam edits
+only Phase 5 makes. Counter-ordering: the combined single session won over the 5a→5b split
+(adopted above).
+
+---
+
+# Phase 5-Ops plan (2026-07-03) — Ops actions, scan triggers & starter recipes
+
+**Owner go (2026-07-03, full scope):** extend the shipped Phase 5 engine so automations can act
+on the OPERATIONS side (mitigation/reconstruction/cash), not just CRM messaging. Three parts:
+① four ops **action types**; ② a **scheduled-scan trigger** family ("something DIDN'T happen");
+③ a **starter recipe pack** seeded DISABLED for the owner to review and toggle. Commissions are
+explicitly NOT an action — they stay derived (`is_real_job` → `get_commissions`, the one place
+commission math lives).
+
+## Evidence base (verified 2026-07-03; one prior claim refuted live)
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| Job/e-sign trigger events are emitted | **CONFIRMED (refuting a repo-grep claim)** | live counts: `job.created` 235 (latest Jul 2), `claim.created` 110, `job.payment_received` 63, `esign.signed` 6, `job.phase_changed` 8 — emitters are DB-side trigger functions (Mar-era migrations), invisible to repo grep. **No emit-path prerequisite.** |
+| Engine supports job-keyed, contact-less runs | CONFIRMED | `crm_automation_runs.contact_id` nullable; dedup key excludes it; `resolveContactId` backfills from `jobs.primary_contact_id`; send actions self-skip on `no_contact` |
+| Notify-staff plumbing | HAVE | `create_notification` RPC (`20260624_notifications.sql:36-50`); worker precedent `submit-esign.js:197-206`; the consent gate does NOT apply to internal staff notices. Feed is org-wide — per-person targeting deferred (see options) |
+| Job-note plumbing | HAVE | `db.insert('job_notes', {job_id, author_name:'Automation', body})` — precedent `submit-esign.js:208-211` |
+| Job-phase plumbing | PARTIAL | no RPC exists; the live pattern is a two-write (`jobs` update + `job_phase_history` insert, `JobDetailPanel.jsx:26-53`). BOTH writes required — the fixed review-request automation reads `job_phase_history`. This phase ships a `set_job_phase` SECURITY DEFINER RPC to encapsulate it |
+| Draft-invoice plumbing | HAVE, safe by construction | `create_invoice_for_job(p_job_id, p_created_by)` — inserts `status='draft'`, **idempotent one-invoice-per-job**, never touches QBO; the only QBO push door is the human Save → `/api/qbo-invoice` (BILLING-CONTEXT human-in-the-loop) |
+
+## Scan-trigger design (spec'd here so the session doesn't improvise)
+
+- **Schema (additive, Rule 7):** `ALTER TABLE crm_automations ADD COLUMN trigger_kind text NOT NULL
+  DEFAULT 'event' CHECK (trigger_kind IN ('event','scan'))` + `ADD COLUMN scan_config jsonb DEFAULT '{}'`
+  (thresholds only). Additive columns on a feature-flagged table with zero production rows.
+- **Scans are a CODE-DEFINED registry** in `process-crm-automations.js` — `scan_config` carries
+  thresholds (days/hours), NEVER queries. A scan rule's `trigger_event_type` holds the scan key.
+  v1 registry (5): `scan.estimate_aging` (estimate sent, no response in N days),
+  `scan.missing_moisture_reading` (job in a drying phase, no hydro reading today by cutoff —
+  MT day boundary via `date-mt.js`), `scan.invoice_overdue` (unpaid N days past issue;
+  reminder-only — never mutates amounts), `scan.stuck_phase` (job in a phase > N days),
+  `scan.no_appointment_after_create` (job created, no appointment within N hours).
+- **Idempotency without an event row:** a scan enqueues runs with a **deterministic
+  `triggering_event_id` = uuidv5(automation_id ‖ entity_id ‖ threshold-key)** so the existing
+  `UNIQUE(automation_id, triggering_event_id)` makes each (rule, entity) fire **once** per
+  threshold. Escalation ladders (15/30/45-day AR) = three rules, not re-fires.
+- **SMS in scan recipes** inherits the existing held-not-dropped semantics (kill-switch +
+  quiet-hours) untouched.
+
+## Phase 5-Ops — ops actions, scan triggers & recipe pack
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-5-ops-actions`).
+> **Prerequisite:** Phase 5 merged ✅ (#253) + this plan on `dev`. May run ∥ Feedback Media
+> (disjoint files/tables). Model: **Opus · high** (touches the send-adjacent engine + the
+> billing-adjacent draft-invoice action; BILLING-CONTEXT rules bind).
+> **Read scope:** this section + `CLAUDE.md` + `.claude/rules/crm-wave-ownership.md` §8.
+> **Close-out checklist:**
+> - [ ] Test-first, now green (committed failing first): ① scan idempotency — one (rule, entity, threshold) never creates two runs (deterministic-uuid dedup exercised); ② draft-invoice action never double-invoices (the RPC's one-per-job dedup asserted) and NEVER calls `/api/qbo-invoice`; ③ phase action writes BOTH `jobs` and `job_phase_history` (the review-request consumer keeps working); ④ moisture-reading scan honors the MT day boundary; ⑤ recipe-pack seeds are all `enabled=false` and idempotent.
+> - [ ] Acceptance: the 4 action types (notify_staff / job_note / set_job_phase / create_draft_invoice) selectable in the builder with config UIs + run-log labels; `trigger_kind='scan'` rules configurable (scan picker + thresholds) and fired by the engine's new SCAN pass; the 7 starter recipes visible in `/crm/automations` as disabled rules; the S1 guard untouched and still passing.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass.
+> - [ ] `migration-safety-checker` (additive-only: 2 ADD COLUMNs + `set_job_phase` RPC + seeds) + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the draft-invoice action + scan idempotency.
+> - [ ] Visual: builder with ops actions + a scan rule on preview (owner-gated — disclose if not producible).
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `5-ops` shipped via `set_crm_phase_status`; reconcile stages; delete test rules/runs/invoices (TEST org / test job); push; PR into `dev` as a handoff, then stop (no babysitting).
+
+Scope: edits ONLY `functions/api/process-crm-automations.js` + its test, `src/pages/crm/CrmAutomations.jsx`
+(both Session-K files, freed by #253's merge — §8 grants them to Session L), ONE additive migration
+(2 columns + `set_job_phase` RPC + recipe seeds), `supabase/tests/`, `UPR-Web-Context.md`, its
+reserved `index.css` marker. Call-only: `create_notification`, `create_invoice_for_job`,
+`sendAutomatedMessage`. Deliberately NOT: per-person staff targeting (org-wide feed for v1 —
+needs a `notifications` schema change + push infra, deferred), auto-push to QBO (forbidden),
+commissions-as-action (forbidden — derived), editing `run-automations.js`/`process-sequences.js`,
+branching canvas.
+
+### Starter recipe pack (all seeded `enabled=false`; owner toggles)
+
+1. **Work auth signed → draft invoice + notify billing + job note** (`esign.signed`)
+2. **Payment received → thank-you email + job note** (`job.payment_received`; consent-gated email)
+3. **Mitigation job completed → recon-consult task + email** (`job.phase_changed`, `to_phase=completed`; the mitigation→reconstruction cross-sell)
+4. **Emergency form lead → notify staff + urgent task** (`crm_form_submitted`)
+5. **Estimate aging 5 days → follow-up email + estimator task** (`scan.estimate_aging`)
+6. **Drying job missing today's reading → notify + task** (`scan.missing_moisture_reading`)
+7. **Invoice 30 days overdue → reminder email + collections task** (`scan.invoice_overdue`)
+
+## Options on record (owner decisions 2026-07-03)
+
+| Decision | Chosen | Rejected + caveat |
+|---|---|---|
+| Scope | **Full** (actions + scan trigger + recipe pack) | minimal 4-actions-only (the scan family carries the majority of the business value — dispatch SLA, drying compliance, AR ladder) |
+| Scan mechanism | code-defined registry + deterministic-uuid dedup through the EXISTING runs table | a second scheduler/engine (rejected — S1 taught us: more engines = more double-fire namespaces) |
+| Staff targeting | org-wide notifications feed (v1) | per-employee targeting — needs `notifications` schema + APNs/device_tokens infra; revisit when push lands |
+| Invoice action | draft-only via `create_invoice_for_job` | any QBO push (forbidden by BILLING-CONTEXT human-in-the-loop; the Save→QBO gate stays sacred) |
+
+**Interplay (intended, documented):** a rule that moves a job's phase to `completed` makes the
+fixed review-request automation eligible on its next run — correct behavior, not a collision
+(different dedup namespaces never double-SEND the same message type; the S1 guard covers the
+four fixed triggers).
+
+**Challenge transparency:** this rider was NOT given a fresh 3-agent challenge pass. Its evidence
+base is (a) the plumbing investigation (file:line-cited), (b) a live-DB refutation of that
+investigation's one wrong claim (the emit paths), (c) live verification of both reused RPCs, and
+(d) the Phase 5 re-plan's adjudicated architecture (engine, S1, dedup). The scan design above is
+deliberately deterministic so the build session invents nothing. Residual risk accepted by owner
+scope choice; the reviewer gauntlet + crm-phase-reviewer still gate the PR.

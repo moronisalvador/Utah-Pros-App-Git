@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   The real shell every CRM screen lives inside — a left menu (Overview,
- *   Leads, Call Log, Tasks, Attribution, Reports, Integrations, Settings)
+ *   Leads, Contacts, Conversations, Call Log, Tasks, Sequences, Automations,
+ *   Forms, Attribution, Reports, Campaigns, Integrations, Settings)
  *   next to whichever CRM page is open, in the CRM's own look (a different
  *   font and color set than the rest of the app, on purpose — see NOTES).
  *
@@ -40,34 +41,64 @@
  *     lives at /crm/campaigns like every other CRM screen now.
  * ════════════════════════════════════════════════
  */
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  IconOverview, IconLeads, IconCallLog, IconTasks,
-  IconAttribution, IconReports, IconCampaigns, IconIntegrations, IconCrmSettings,
+  IconOverview, IconLeads, IconContacts, IconConversations, IconCallLog, IconTasks,
+  IconSequences, IconAutomations, IconForms, IconAttribution, IconReports, IconCampaigns,
+  IconIntegrations, IconCrmSettings,
 } from '@/lib/crmIcons';
 
 const SIDEBAR_ITEMS = [
-  { key: 'overview',     label: 'Overview',     path: '/crm/overview',     icon: IconOverview },
-  { key: 'leads',        label: 'Leads',        path: '/crm/leads',        icon: IconLeads },
-  { key: 'call-log',     label: 'Call Log',     path: '/crm/call-log',     icon: IconCallLog },
-  { key: 'tasks',        label: 'Tasks',        path: '/crm/tasks',        icon: IconTasks },
-  { key: 'attribution',  label: 'Attribution',  path: '/crm/attribution',  icon: IconAttribution },
-  { key: 'reports',      label: 'Reports',      path: '/crm/reports',      icon: IconReports },
-  { key: 'campaigns',    label: 'Campaigns',    path: '/crm/campaigns',    icon: IconCampaigns },
-  { key: 'integrations', label: 'Integrations', path: '/crm/integrations', icon: IconIntegrations },
-  { key: 'settings',     label: 'Settings',     path: '/crm/settings',     icon: IconCrmSettings },
+  { key: 'overview',      label: 'Overview',      path: '/crm/overview',      icon: IconOverview },
+  { key: 'leads',         label: 'Leads',         path: '/crm/leads',         icon: IconLeads },
+  { key: 'contacts',      label: 'Contacts',      path: '/crm/contacts',      icon: IconContacts },
+  { key: 'conversations', label: 'Conversations', path: '/crm/conversations', icon: IconConversations },
+  { key: 'call-log',      label: 'Call Log',      path: '/crm/call-log',      icon: IconCallLog },
+  { key: 'tasks',         label: 'Tasks',         path: '/crm/tasks',         icon: IconTasks },
+  { key: 'sequences',     label: 'Sequences',     path: '/crm/sequences',     icon: IconSequences },
+  { key: 'automations',   label: 'Automations',   path: '/crm/automations',   icon: IconAutomations },
+  { key: 'forms',         label: 'Forms',         path: '/crm/forms',         icon: IconForms },
+  { key: 'attribution',   label: 'Attribution',   path: '/crm/attribution',   icon: IconAttribution },
+  { key: 'reports',       label: 'Reports',       path: '/crm/reports',       icon: IconReports },
+  { key: 'campaigns',     label: 'Campaigns',     path: '/crm/campaigns',     icon: IconCampaigns },
+  { key: 'integrations',  label: 'Integrations',  path: '/crm/integrations',  icon: IconIntegrations },
+  { key: 'settings',      label: 'Settings',      path: '/crm/settings',      icon: IconCrmSettings },
 ];
 
+// Per-screen access key: nav key with hyphens → underscores, so 'call-log'
+// gates on the `crm_call_log` nav-permission + `feature:crm_call_log` sub-flag.
+const accessKeyFor = (navKey) => `crm_${String(navKey).replace(/-/g, '_')}`;
+
 export default function CrmLayout() {
-  const { employee } = useAuth();
+  const { employee, canAccess, isFeatureEnabled } = useAuth();
+  const { pathname } = useLocation();
   const isPartner = employee?.role === 'crm_partner';
-  // A crm_partner sees the whole CRM — Settings included — except
-  // Integrations (shared platform OAuth credentials) and the internal
-  // build-roadmap tracker (an engineering artifact, not a CRM feature).
-  const visibleItems = isPartner
-    ? SIDEBAR_ITEMS.filter(item => item.key !== 'integrations')
-    : SIDEBAR_ITEMS;
+
+  // Per-screen staff gating (Phase 6b). A CRM screen is visible when BOTH the
+  // rollout sub-flag allows it (feature:crm_<screen> — absent/enabled = open) AND
+  // the employee has access (canAccess: per-employee override → admin → role
+  // nav_permissions). Roles are defined per screen here BEFORE page:crm opens to
+  // staff; until then only admins (who pass canAccess) and the dev-only preview
+  // user reach /crm at all. crm_partner accounts are external and provisioned
+  // deliberately — they keep the whole CRM except Integrations. Overview is the
+  // CRM home and always reachable so no one lands on a locked page.
+  const screenAccessible = (navKey) => {
+    if (navKey === 'overview') return true;
+    if (isPartner) return navKey !== 'integrations';
+    if (!isFeatureEnabled(`feature:${accessKeyFor(navKey)}`)) return false;
+    return canAccess(accessKeyFor(navKey));
+  };
+
+  const visibleItems = SIDEBAR_ITEMS.filter(item => screenAccessible(item.key));
+
+  // Route guard: the layout wraps every /crm/* route, so enforce access on the
+  // rendered screen too (direct-URL navigation can't bypass the hidden nav).
+  const current = SIDEBAR_ITEMS.find(
+    item => pathname === item.path || pathname.startsWith(`${item.path}/`)
+  );
+  const isRoadmap = pathname.startsWith('/crm/roadmap');
+  const outletAllowed = isRoadmap ? !isPartner : (!current || screenAccessible(current.key));
 
   return (
     <div className="crm-shell">
@@ -92,7 +123,19 @@ export default function CrmLayout() {
         )}
       </nav>
       <div className="crm-content">
-        <Outlet />
+        {outletAllowed ? (
+          <Outlet />
+        ) : (
+          <div className="crm-page">
+            <div className="crm-access-denied">
+              <div className="crm-access-denied-title">No access to this screen</div>
+              <p className="crm-access-denied-body">
+                Your account doesn’t have access to this part of the CRM. Ask an
+                administrator to grant it from Admin → Page Access.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

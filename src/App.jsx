@@ -100,6 +100,11 @@ const CrmReports = lazyRetry(() => import('@/pages/crm/CrmReports'));
 const CrmCampaigns = lazyRetry(() => import('@/pages/crm/CrmCampaigns'));
 const CrmIntegrations = lazyRetry(() => import('@/pages/crm/CrmIntegrations'));
 const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
+const CrmContacts = lazyRetry(() => import('@/pages/crm/CrmContacts'));
+const CrmConversations = lazyRetry(() => import('@/pages/crm/CrmConversations'));
+const CrmSequences = lazyRetry(() => import('@/pages/crm/CrmSequences'));
+const CrmAutomations = lazyRetry(() => import('@/pages/crm/CrmAutomations'));
+const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -357,8 +362,13 @@ function WebRoutes() {
           <Route path="roadmap" element={<CrmRoadmap />} />
           <Route path="overview" element={<CrmOverview />} />
           <Route path="leads" element={<CrmLeads />} />
+          <Route path="contacts" element={<CrmContacts />} />
+          <Route path="conversations" element={<CrmConversations />} />
           <Route path="call-log" element={<CrmCallLog />} />
           <Route path="tasks" element={<CrmTasks />} />
+          <Route path="sequences" element={<CrmSequences />} />
+          <Route path="automations" element={<CrmAutomations />} />
+          <Route path="forms" element={<CrmForms />} />
           <Route path="attribution" element={<CrmAttribution />} />
           <Route path="reports" element={<CrmReports />} />
           <Route path="campaigns" element={<CrmCampaigns />} />

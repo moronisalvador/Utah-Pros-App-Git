@@ -15,6 +15,21 @@ const NAV_KEYS = [
   { key: 'schedule', label: 'Schedule', section: 'Operations' },
   { key: 'time_tracking', label: 'Time Tracking', section: 'Operations' },
   { key: 'marketing', label: 'Marketing', section: 'Growth' },
+  // CRM per-screen roles (Phase 6b). Keys match CrmLayout's crm_<screen> access
+  // keys and the feature:crm_<screen> sub-flags — defined here BEFORE page:crm
+  // opens to staff so every screen has a role decision on day one.
+  { key: 'crm_leads', label: 'CRM · Leads', section: 'CRM' },
+  { key: 'crm_contacts', label: 'CRM · Contacts', section: 'CRM' },
+  { key: 'crm_conversations', label: 'CRM · Conversations', section: 'CRM' },
+  { key: 'crm_call_log', label: 'CRM · Call Log', section: 'CRM' },
+  { key: 'crm_tasks', label: 'CRM · Tasks', section: 'CRM' },
+  { key: 'crm_sequences', label: 'CRM · Sequences', section: 'CRM' },
+  { key: 'crm_forms', label: 'CRM · Forms', section: 'CRM' },
+  { key: 'crm_attribution', label: 'CRM · Attribution', section: 'CRM' },
+  { key: 'crm_reports', label: 'CRM · Reports', section: 'CRM' },
+  { key: 'crm_campaigns', label: 'CRM · Campaigns', section: 'CRM' },
+  { key: 'crm_integrations', label: 'CRM · Integrations', section: 'CRM' },
+  { key: 'crm_settings', label: 'CRM · Settings', section: 'CRM' },
   { key: 'admin_panel', label: 'Admin', section: 'System' },
   { key: 'settings', label: 'Settings', section: 'System' },
 ];
@@ -958,6 +973,20 @@ const PAGE_ACCESS_KEYS = [
   { key: 'collections',        label: 'Collections',        section: 'Operations' },
   { key: 'leads',              label: 'Leads',              section: 'Operations' },
   { key: 'marketing',          label: 'Marketing',          section: 'Growth' },
+  // CRM per-screen overrides (Phase 6b) — grant/revoke an individual employee
+  // access to a single CRM screen. Backs canAccess('crm_<screen>') in CrmLayout.
+  { key: 'crm_leads',          label: 'CRM · Leads',          section: 'CRM' },
+  { key: 'crm_contacts',       label: 'CRM · Contacts',       section: 'CRM' },
+  { key: 'crm_conversations',  label: 'CRM · Conversations',  section: 'CRM' },
+  { key: 'crm_call_log',       label: 'CRM · Call Log',       section: 'CRM' },
+  { key: 'crm_tasks',          label: 'CRM · Tasks',          section: 'CRM' },
+  { key: 'crm_sequences',      label: 'CRM · Sequences',      section: 'CRM' },
+  { key: 'crm_forms',          label: 'CRM · Forms',          section: 'CRM' },
+  { key: 'crm_attribution',    label: 'CRM · Attribution',    section: 'CRM' },
+  { key: 'crm_reports',        label: 'CRM · Reports',        section: 'CRM' },
+  { key: 'crm_campaigns',      label: 'CRM · Campaigns',      section: 'CRM' },
+  { key: 'crm_integrations',   label: 'CRM · Integrations',   section: 'CRM' },
+  { key: 'crm_settings',       label: 'CRM · Settings',       section: 'CRM' },
 ];
 
 function PageAccessTab() {
