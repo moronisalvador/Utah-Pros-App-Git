@@ -28,8 +28,11 @@
  *     key is fetched at RUNTIME from GET /api/vapid-public-key (which reads it
  *     from Cloudflare env OR Supabase) — no build-time env var needed, so the
  *     owner can configure VAPID entirely in the database.
- *   - The SW is registered by main.jsx (flag-gated). Here we wait for
- *     navigator.serviceWorker.ready rather than registering again.
+ *   - main.jsx registers the SW flag-gated at page-load, but the flag mirror is
+ *     written only AFTER login, so a first-time user's worker may not be up when
+ *     they click Enable. enablePush therefore registers /sw.js on-demand
+ *     (idempotent); reads use getRegistration() (never the hang-prone
+ *     serviceWorker.ready) so the panel never gets stuck on "Checking…".
  * ════════════════════════════════════════════════
  */
 
@@ -79,7 +82,10 @@ export function pushPermission() {
 export async function getExistingSubscription() {
   if (!isPushSupported()) return null;
   try {
-    const reg = await navigator.serviceWorker.ready;
+    // getRegistration() resolves IMMEDIATELY (null if none) — unlike
+    // serviceWorker.ready, which hangs forever when no worker is registered.
+    const reg = await navigator.serviceWorker.getRegistration('/');
+    if (!reg) return null;
     return await reg.pushManager.getSubscription();
   } catch {
     return null;
@@ -87,6 +93,19 @@ export async function getExistingSubscription() {
 }
 
 // ─── SECTION: helpers ───
+
+/**
+ * Ensure a push service worker is registered AND active, then return it.
+ * Registers /sw.js on-demand: main.jsx registers it flag-gated at page-load, but
+ * the flag mirror is written only AFTER login, so a first-time user's worker may
+ * not be up yet when they click Enable. register() is idempotent (returns the
+ * existing registration if any), and serviceWorker.ready then resolves because a
+ * registration now exists — avoiding the "Enabling…" hang on the first try.
+ */
+async function ensureRegistration() {
+  await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  return navigator.serviceWorker.ready;
+}
 
 // base64url VAPID public key → Uint8Array for applicationServerKey.
 function urlBase64ToUint8Array(base64) {
@@ -130,7 +149,7 @@ export async function enablePush(db) {
   if (permission !== 'granted') return { ok: false, reason: 'denied' };
 
   try {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await ensureRegistration();
     // Reuse an existing subscription if present, else create one.
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
