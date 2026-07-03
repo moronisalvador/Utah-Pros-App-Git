@@ -19,5 +19,25 @@
   "jobApptSub": "Vinculada a un trabajo, con tareas y equipo",
   "event": "Evento",
   "eventSub": "Reunión, PTO, capacitación — sin trabajo",
-  "toastLoadFailed": "Error al cargar la agenda"
+  "toastLoadFailed": "Error al cargar la agenda",
+  "empty": {
+    "noMatch": "No hay citas que coincidan",
+    "nothingScheduled": "Nada programado aquí",
+    "tryClearing": "Intenta borrar la búsqueda o los filtros.",
+    "swipeToBrowse": "Desliza la franja de la semana para explorar, o agrega algo.",
+    "newAppointment": "+ Nueva cita"
+  },
+  "allDay": "Todo el día",
+  "searchAria": "Buscar",
+  "filtersAria": "Filtros",
+  "viewAria": "Vista",
+  "tabAgenda": "Agenda",
+  "tabDay": "Día",
+  "clearSearchAria": "Limpiar búsqueda",
+  "milestoneAria": "Hito",
+  "nowAria": "Ahora {{time}}",
+  "nDay_one": "{{count}} día",
+  "nDay_other": "{{count}} días",
+  "nTasks_one": "{{done}}/{{total}} tarea",
+  "nTasks_other": "{{done}}/{{total}} tareas"
 }

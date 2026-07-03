@@ -30,7 +30,9 @@
  * ════════════════════════════════════════════════
  */
 import React, { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import ScheduleRow from './ScheduleRow.jsx';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
 const EDGE_PX = 600; // start loading more when this close to an end
 
@@ -48,14 +50,12 @@ function getScroller(el) {
   return document.scrollingElement || document.documentElement;
 }
 
-function headerLabel(dateStr, today, tomorrow) {
+function headerLabel(dateStr, today, tomorrow, t) {
   const d = new Date(dateStr + 'T12:00:00');
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
-  const month = d.toLocaleDateString('en-US', { month: 'short' });
-  const day = d.getDate();
-  if (dateStr === today) return `Today · ${weekday} ${month} ${day}`;
-  if (dateStr === tomorrow) return `Tomorrow · ${weekday} ${month} ${day}`;
-  return `${weekday} ${month} ${day}`;
+  const rest = d.toLocaleDateString(currentLocaleTag(), { weekday: 'short', month: 'short', day: 'numeric' });
+  if (dateStr === today) return `${t('tech:date.today')} · ${rest}`;
+  if (dateStr === tomorrow) return `${t('tech:date.tomorrow')} · ${rest}`;
+  return rest;
 }
 
 /**
@@ -70,6 +70,7 @@ export default function AgendaView({
   grouped, sortedDates, today, tomorrow, selectedDay, scrollSignal, active,
   onLoadPast, onLoadFuture, onVisibleDayChange, onAwayChange,
 }) {
+  const { t } = useTranslation(['schedule', 'tech']);
   const rootRef = useRef(null);
   const scrollerRef = useRef(null);
   const dayEls = useRef({}); // date → section element
@@ -222,7 +223,7 @@ export default function AgendaView({
             className="tv2-agenda__day"
           >
             <div className={`tv2-agenda__header${isToday ? ' is-today' : ''}`}>
-              {headerLabel(dateStr, today, tomorrow)}
+              {headerLabel(dateStr, today, tomorrow, t)}
               <span className="tv2-agenda__count">{grouped[dateStr].length}</span>
             </div>
             <div className="tv2-agenda__rows">

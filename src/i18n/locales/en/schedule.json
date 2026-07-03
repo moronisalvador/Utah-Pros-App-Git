@@ -19,5 +19,25 @@
   "jobApptSub": "Linked to a job, with tasks & crew",
   "event": "Event",
   "eventSub": "Meeting, PTO, training — no job needed",
-  "toastLoadFailed": "Failed to load schedule"
+  "toastLoadFailed": "Failed to load schedule",
+  "empty": {
+    "noMatch": "No appointments match",
+    "nothingScheduled": "Nothing scheduled here",
+    "tryClearing": "Try clearing search or filters.",
+    "swipeToBrowse": "Swipe the week strip to browse, or add something.",
+    "newAppointment": "+ New appointment"
+  },
+  "allDay": "All day",
+  "searchAria": "Search",
+  "filtersAria": "Filters",
+  "viewAria": "View",
+  "tabAgenda": "Agenda",
+  "tabDay": "Day",
+  "clearSearchAria": "Clear search",
+  "milestoneAria": "Milestone",
+  "nowAria": "Now {{time}}",
+  "nDay_one": "{{count}}-day",
+  "nDay_other": "{{count}}-day",
+  "nTasks_one": "{{done}}/{{total}} task",
+  "nTasks_other": "{{done}}/{{total}} tasks"
 }

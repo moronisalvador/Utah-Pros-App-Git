@@ -19,5 +19,25 @@
   "jobApptSub": "Vinculado a um trabalho, com tarefas e equipe",
   "event": "Evento",
   "eventSub": "Reunião, folga, treinamento — sem trabalho",
-  "toastLoadFailed": "Falha ao carregar a agenda"
+  "toastLoadFailed": "Falha ao carregar a agenda",
+  "empty": {
+    "noMatch": "Nenhum agendamento corresponde",
+    "nothingScheduled": "Nada agendado aqui",
+    "tryClearing": "Tente limpar a busca ou os filtros.",
+    "swipeToBrowse": "Deslize a faixa da semana para navegar, ou adicione algo.",
+    "newAppointment": "+ Novo agendamento"
+  },
+  "allDay": "Dia todo",
+  "searchAria": "Buscar",
+  "filtersAria": "Filtros",
+  "viewAria": "Visualização",
+  "tabAgenda": "Agenda",
+  "tabDay": "Dia",
+  "clearSearchAria": "Limpar busca",
+  "milestoneAria": "Marco",
+  "nowAria": "Agora {{time}}",
+  "nDay_one": "{{count}} dia",
+  "nDay_other": "{{count}} dias",
+  "nTasks_one": "{{done}}/{{total}} tarefa",
+  "nTasks_other": "{{done}}/{{total}} tarefas"
 }
