@@ -4038,8 +4038,8 @@ every employee), submits `p_source:'desktop'` + `p_attachments` as a REAL array 
 JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` +
 `hideForRoles: ['crm_partner']` (isItemVisible gained the generic `hideForRoles` check —
 crm_partner is locked to /crm/*+/help by Layout's choke point, so the link would dead-end
-for them; the legacy mobile Sidebar renders NAV_ITEMS with inline gating that ignores
-`always` — wiring it is an owner decision, tracked in the roadmap). CSS: `fbm-*` classes in
+for them). The legacy mobile Sidebar link is hardcoded after the NAV_ITEMS loop like Help
+(same crm_partner exclusion) — NAV_ITEMS itself stays identical. CSS: `fbm-*` classes in
 `index.css` Phase F block, with reserved Session B / Session C blocks appended after it.
 
 ### Session B (TechFeedback rebuild) — not started

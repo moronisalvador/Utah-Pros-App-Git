@@ -64,7 +64,7 @@ composer, the desktop surface, and the CSS/none-flag wiring.
 - [x] `src/pages/Feedback.jsx` — working form (Bug Report / Improvement), submits `p_source:'desktop'` + `p_attachments`
 - [x] Routed in `App.jsx` inside the authenticated Layout shell, NO admin gate
 - [x] `navItems.jsx` entries (OVERFLOW_ITEMS + SYSTEM_ITEMS) reusing `IconFeedback` with `always: true` + `hideForRoles: ['crm_partner']` (that role is locked to /crm/*+/help by Layout's choke point — the link would dead-end); `isItemVisible` gained the generic `hideForRoles` check
-- [ ] Legacy mobile `Sidebar.jsx` link — **deliberately not done**: `Sidebar.jsx` renders `NAV_ITEMS` with inline gating that ignores `always` (and its header freezes the legacy list), so a <1280px office user reaches /feedback by URL or the Settings rail only. Wiring the legacy sidebar is a follow-up decision for the owner, not silently-skipped work.
+- [x] Legacy mobile `Sidebar.jsx` link — hardcoded AFTER the NAV_ITEMS loop exactly like Help & Guides (the frozen legacy list is untouched; the loop's `canAccess` gating would hide an unknown key), gated `employee?.role !== 'crm_partner'` (Layout's choke point would dead-end that role). Initially deferred as an owner decision; done on the owner's blanket go-ahead (2026-07-03).
 - [x] `index.css`: Phase F block + reserved `Session B` / `Session C` markers appended at the bottom
 - [x] Documentation Standard headers on every new file
 
@@ -77,26 +77,50 @@ composer, the desktop surface, and the CSS/none-flag wiring.
 
 ---
 
-## Session B — TechFeedback rebuild (parallel wave) — ⬜ NOT STARTED
+## Session B — TechFeedback rebuild (parallel wave) — 🚀 DISPATCHED 2026-07-03
 
-Rebuild `src/pages/tech/TechFeedback.jsx` on `FeedbackAttachments` (photos + video for
-field techs), keeping the tech-mobile-ux rules (snap-first, one primary action, 48px
-targets). Calls the 7-arg `insert_tech_feedback` with real-array `p_attachments`
-(NOT `JSON.stringify` — see the migration header) and `p_source:'tech'`. Styles inside the
-`FEEDBACK MEDIA RESERVED — Session B` block in `index.css`. Zero migrations.
-May add the tech-side nav/entry points it needs within its own files.
+**Owns:** `src/pages/tech/TechFeedback.jsx` + the `FEEDBACK MEDIA RESERVED — Session B`
+block in `index.css`. **Nothing else** — no migrations, no edits to FeedbackAttachments /
+mediaCompress / App.jsx / navItems.jsx / AdminFeedback.jsx / functions/*.
 
-## Session C — AdminFeedback rebuild + gallery (parallel wave) — ⬜ NOT STARTED
+Scope: rebuild `TechFeedback.jsx` on the frozen `FeedbackAttachments` composer (photos +
+video for field techs), keeping every tech-mobile-ux rule (snap-first, one primary action
+per screen, ≥48px targets, no modals) and the page's existing header/back/type/title/
+description structure. Submit via the 7-arg `insert_tech_feedback` with `p_attachments` as
+a REAL array (never `JSON.stringify` — that double-encoding is the legacy bug the migration
+normalized away) and `p_source:'tech'`; stop sending `p_screenshots` (the RPC mirrors
+image attachments → screenshots for the live admin page). Composer contract: `value` seeds
+on mount only; reset by remounting with a new `key`; disable submit while `onBusyChange`
+is true. Acceptance: old behavior preserved (bug/feature selector, ≥3-char title gate,
+navigate back to /tech on success), video attach works, caps enforced by the composer,
+`npm test`/build/lint clean, Documentation Standard header updated, visual check at 390px
+and 768px, PR into dev marked ready.
 
-Rebuild `src/pages/AdminFeedback.jsx`: render `attachments` (images + video player,
-`source` badge, resolved/purged states) with a proper gallery/viewer — the viewer lives
-HERE, not in the shared composer. Reads the extended `get_tech_feedback`; status updates
-keep using `update_tech_feedback`. Styles below the `FEEDBACK MEDIA RESERVED — Session C`
-marker. Zero migrations.
+## Session C — AdminFeedback rebuild + gallery (parallel wave) — 🚀 DISPATCHED 2026-07-03
+
+**Owns:** `src/pages/AdminFeedback.jsx` + everything below the `FEEDBACK MEDIA RESERVED —
+Session C` marker in `index.css`. **Nothing else** — no migrations, no edits to
+FeedbackAttachments / mediaCompress / App.jsx / navItems.jsx / TechFeedback.jsx /
+functions/*. The gallery/viewer lives in AdminFeedback, NOT the shared composer.
+
+Scope: rebuild `AdminFeedback.jsx` to render the new columns from the extended
+`get_tech_feedback`: `attachments` records (bucket-LESS paths — public URL is
+`{db.baseUrl}/storage/v1/object/public/job-files/{path}`; use `stripBucketPrefix` from
+`@/lib/mediaCompress` for legacy safety), an image lightbox + `<video controls>` player
+with duration/size metadata, a `source` badge (tech/desktop), `resolved_at` display, and a
+"media purged" state when `attachments_purged_at` is set (render metadata, not broken
+thumbnails — note a reopened row can have `attachments_purged_at` set while `resolved_at`
+is NULL; purge stamps are never un-rung). Keep `update_tech_feedback` for status/notes
+(resolved_at stamping is server-side — reflect, don't compute). Keep filters/counts/
+expand-row behavior. No alert()/confirm(); destructive actions (none expected) would need
+inline two-click confirm. Acceptance: legacy string-path `screenshots` rows AND new
+attachment rows both render, video plays in the lightbox, purged rows degrade gracefully,
+`npm test`/build/lint clean, Documentation Standard header updated, visual check at
+desktop + 768px, PR into dev marked ready.
 
 ## Post-wave (owner-gated) — ⬜ NOT SCHEDULED
 
 - Purge worker (`functions/api/…`, cron convention) consuming
   `get_purgeable_feedback_media` / `mark_feedback_attachments_purged` — the ≥30-day clamp
   already lives inside the RPC so the unauthenticated endpoint can't shorten retention.
-- Legacy mobile `Sidebar.jsx` "Send Feedback" link (see Phase F open box).
+  Needs the Cloudflare dashboard cron config (owner console; no wrangler.toml in this repo).
