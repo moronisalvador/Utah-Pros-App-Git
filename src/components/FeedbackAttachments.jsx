@@ -59,7 +59,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import {
   MAX_FILES, MAX_VIDEOS, MAX_VIDEO_SECONDS,
-  isVideo, buildStoragePath, stripBucketPrefix,
+  isVideo, buildStoragePath, stripBucketPrefix, formatDuration,
   validateSelection, checkVideoDuration, compressImage, probeVideo,
 } from '@/lib/mediaCompress';
 
@@ -82,12 +82,6 @@ const publicUrl = (db, path) =>
 
 const doneRecords = (tiles) =>
   tiles.filter(t => t.status === 'done' && t.record).map(t => t.record);
-
-const formatDuration = (seconds) => {
-  if (seconds == null || !Number.isFinite(seconds)) return null;
-  const total = Math.round(seconds);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-};
 
 export default function FeedbackAttachments({ value = [], onChange, onBusyChange, disabled = false, caps = {} }) {
   const { db, employee } = useAuth();

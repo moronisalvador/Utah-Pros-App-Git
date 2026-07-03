@@ -1,11 +1,38 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: useNewClaims.js — "New claims booked" card data (period count + 30-day
- *   sparkline + 30-vs-30 delta). Counts only claims that have >= 1 REAL job (one
- *   that's authorized/billed — signed work-auth, QBO invoice, or approved estimate),
- *   via the get_real_claims_created RPC; estimate/lead-only claims are excluded and
- *   live in the Open-estimates tile. Floored to ~400 days so it never rescans the
- *   whole table. projected $ stays null until jobs.estimated_value lands.
+ * FILE: useJobsClosed.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Feeds the "New Jobs Closed" box on the Overview dashboard. It counts how many
+ *   jobs were actually SOLD in the chosen period (this month, last 30 days, etc.),
+ *   draws the little 30-day trend line, and works out whether sales are up or down
+ *   versus the previous 30 days. It does NOT count estimates that are still just
+ *   quotes — only real (sold) jobs.
+ *
+ * WHAT COUNTS AS A SOLD JOB (one canonical rule — see get_jobs_closed RPC):
+ *   A job is "real / sold" when a Work Authorization or Reconstruction Agreement is
+ *   signed, a QBO invoice is created, or its estimate is approved — captured by the
+ *   jobs.is_real_job flag (20260627_real_job_classification.sql, also used by billing).
+ *   The sale date is jobs.real_job_marked_at (when it became real). get_jobs_closed
+ *   returns one row per real job since a floor date; this file counts them per period.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (hook)
+ *   Rendered by:  src/pages/Dashboard.jsx → NewJobsClosed card
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/contexts/AuthContext (useAuth → db), ./usePolledRpc
+ *   Data:      reads  → get_jobs_closed() RPC (reads jobs.is_real_job / real_job_marked_at)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Floors the query to ~400 days so it never rescans all-time history.
+ *   - Counts JOBS, not claims — mitigation & reconstruction on one claim count
+ *     separately (each is its own sold job).
+ *   - projected $ stays null (no projected-value line for sold jobs); the card
+ *     hides that line when projected is falsy.
  * ════════════════════════════════════════════════
  */
 import { useCallback } from 'react';
@@ -50,16 +77,15 @@ function buildSparkline(times, now) {
   return { line, area: `${line} ${VB_W},58 0,58` };
 }
 
-export function useNewClaims(period = 'MTD') {
+export function useJobsClosed(period = 'MTD') {
   const { db } = useAuth();
   const load = useCallback(async () => {
     const now = Date.now();
     const floor = new Date(now - 400 * DAY).toISOString().slice(0, 10);
-    // Only count claims that have >= 1 REAL job (authorized/billed) — excludes estimate/lead-only
-    // claims. "Real" is set by signed work-auth / QBO invoice / approved estimate (see
-    // 20260627_real_job_classification.sql); estimates remain in the Open-estimates tile.
-    const rows = await db.rpc('get_real_claims_created', { p_floor: floor });
-    const times = (rows || []).map(r => r.created_at && new Date(r.created_at).getTime()).filter(Boolean);
+    // Count REAL (sold) jobs — jobs.is_real_job set by signed work-auth / QBO invoice /
+    // approved estimate (20260627_real_job_classification.sql). Dated by real_job_marked_at.
+    const rows = await db.rpc('get_jobs_closed', { p_floor: floor });
+    const times = (rows || []).map(r => r.sale_date && new Date(r.sale_date).getTime()).filter(Boolean);
 
     const { startTs, endTs } = periodRange(period, now);
     const count = times.filter(t => t >= startTs && t < endTs).length;

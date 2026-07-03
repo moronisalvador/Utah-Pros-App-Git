@@ -150,6 +150,31 @@ describe.skipIf(!hasCreds)('Feedback Media — Phase F schema + RPC cutover (int
     expect(Array.isArray(defaultRows)).toBe(true);
   });
 
+  it('purge boundary: 91-day-old resolved row IS purgeable at the default 90, an 89-day-old one is NOT (own ids only)', async () => {
+    const id = createdIds[0]; // currently resolved (from the resolved_at test above)
+    const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
+
+    // RLS on tech_feedback is wide-open by design, so the anon client may age
+    // the row directly — exactly what the purge worker's clock will see.
+    await db.update('tech_feedback', `id=eq.${id}`, { resolved_at: daysAgo(91) });
+    const old = await db.rpc('get_purgeable_feedback_media', { p_days: 90 });
+    expect(old.some(r => r.id === id)).toBe(true);
+
+    await db.update('tech_feedback', `id=eq.${id}`, { resolved_at: daysAgo(89) });
+    const fresh = await db.rpc('get_purgeable_feedback_media', { p_days: 90 });
+    expect(fresh.some(r => r.id === id)).toBe(false);
+  });
+
+  it('a purged row never reappears in the purgeable list, no matter how old', async () => {
+    const id = createdIds[0];
+    await db.update('tech_feedback', `id=eq.${id}`, {
+      resolved_at: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await db.rpc('mark_feedback_attachments_purged', { p_id: id });
+    const rows = await db.rpc('get_purgeable_feedback_media', { p_days: 90 });
+    expect(rows.some(r => r.id === id)).toBe(false);
+  });
+
   it('mark_feedback_attachments_purged stamps once, and status updates never clear it', async () => {
     const id = createdIds[0];
 

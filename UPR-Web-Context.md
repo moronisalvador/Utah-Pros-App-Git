@@ -230,7 +230,7 @@ src/
     CarrierSelect.jsx             — Searchable insurance carrier combobox with OOP sentinel
     CreateAppointmentModal.jsx    — Create appointment on schedule
     CreateCustomerModal.jsx       — Create customer modal
-    CreateJobModal.jsx            — Inline job creation modal
+    CreateJobModal.jsx            — Inline job creation modal. New claim / Existing claim toggle (2026-07, mirrors TechNewJob): existing mode lists the contact's claims via get_customer_detail, prefills loss/carrier/claim# and passes p_existing_claim_id to create_job_with_contact (reuses the claim, skips the Encircle re-push)
     CreateMenu.jsx                — FAB / quick create menu
     DatePicker.jsx                — Custom date picker
     DivisionIcons.jsx             — SVG division icons (water/mold/recon/fire/contents)
@@ -250,7 +250,7 @@ src/
     Sidebar.jsx                   — Sidebar navigation (mobile + iPad portrait ≤1023px; reads NAV_ITEMS from lib/navItems.jsx)
     TopNav.jsx                    — Top nav bar (≥1024px — desktop + iPad landscape): logo, primary links, GlobalSearch, NewMenu, NotificationBell, Help link (→/help), settings gear, UserMenu, overflow hamburger
     OverflowDrawer.jsx            — Desktop "More" slide-over (secondary pages: Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing)
-    NewMenu.jsx                   — Top-nav "New" dropdown → New Claim (job creator) / New Estimate (page:estimates) / New Customer / New Invoice (flows via Layout.handleCreateAction)
+    NewMenu.jsx                   — Top-nav "New" dropdown → New Job (job+claim creator; label renamed from "New Claim" 2026-07) / New Estimate (page:estimates) / New Customer / New Invoice (flows via Layout.handleCreateAction)
     UserMenu.jsx                  — Top-nav avatar dropdown (admin-only Tech View + Sign Out)
     GlobalSearch.jsx              — Top-nav global search: 300ms-debounced typeahead over the global_search RPC, grouped results routing to each record
     SettingsLayout.jsx            — Settings hub shell: left sub-rail (≥1024px) wrapping the system pages; display:contents passthrough below 1024px
@@ -324,9 +324,9 @@ maps. This dashboard keeps its own scoped palette (above).
 **Roadmap / status:**
 - **Phase 1 — DONE:** pixel-faithful visual shell + placeholder data.
 - **Phase 2 — DONE (live data):** one data hook per widget (`src/components/overview/hooks/`); the period
-  switch re-queries the period-scoped cards (Revenue, Avg ticket, New claims). **Live:** Employee status
-  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New claims
-  (`claims`), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
+  switch re-queries the period-scoped cards (Revenue, Avg ticket, New Jobs Closed). **Live:** Employee status
+  (`get_tech_status_board`, 30s poll; each row shows the tech's full name + client + job address), Collections + DSO (`get_ar_invoices` + ARDashboard bucketing), New Jobs Closed
+  (`get_jobs_closed` — see the canonical sale rule below), Revenue by division, Avg ticket + avg/claim, Production pipeline, Action required (pending
   `sign_requests`). **Wired but empty until those features are in use** (graceful empty states): Open estimates
   (`estimates` empty), Active drying (Hydro unused), Jobs completed (wired to `get_jobs_completed` in Part A —
   reads ~0 until jobs reach a terminal phase, then lights up automatically). **New RPCs** (migration `20260624_overview_dashboard_rpcs.sql`; all
@@ -364,6 +364,46 @@ maps. This dashboard keeps its own scoped palette (above).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
+  `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
+  The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now
+  counts **real (sold) jobs**, excluding estimate-only opportunities. Card reads `get_jobs_closed(p_floor)`
+  (hook `useJobsClosed.js`, replacing `useNewClaims.js`); grid layout key stays `newClaims` (internal id) so
+  saved per-user layouts aren't reset.
+
+  ### ⭐ What counts as a SALE / REAL JOB (THE canonical rule — all reporting must use this)
+  **Single source of truth = `jobs.is_real_job`** (migration `20260627_real_job_classification.sql`). A job is
+  auto-flagged real when a **work-auth/recon agreement is signed**, a **QBO invoice** is created, or its
+  **estimate is approved** (`real_job_source`/`real_job_marked_at` record which & when); the office can force
+  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
+  read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
+  `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+- **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
+  month, for everything sold the **previous month**), built on `is_real_job`.
+  - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
+    else the approved `estimates.created_by`. So the estimate-create flow now stamps `created_by`
+    (**`NewEstimateModal`** passes `p_created_by: employee?.id`; it was previously null — why older sales are
+    unattributed).
+  - **`employees.commission_percent` / `commission_flat`** (both nullable) — the per-employee rate. A rate set
+    ⇒ earns; both null ⇒ none (the rate **is** the "is a salesperson" flag). `commission_flat` (flat $/sale)
+    wins over `commission_percent` (% of the job's invoice total) when both set.
+  - **`get_commissions(p_month date)`** — SECURITY DEFINER RPC, **the one place commissions are ever computed**.
+    One row per real job; period = month of **`jobs.created_at`** (NOT `real_job_marked_at` — the backfill
+    stamped that to the migration date). Returns employee, job, division, base = `SUM(COALESCE(adjusted_total,
+    total))`, commission, `commission_period`, `is_attributed`. Unattributed sales (no derived person, or no
+    rate) are returned with `is_attributed = false` — **visible, not silently dropped**.
+  - **Commissions effectively start now:** most historical jobs have no recorded salesperson, so they're
+    unattributed; no backfill.
+  - **Admin UI — DONE (migration `20260630_employee_commission_rates.sql`):** **Settings → Payroll →
+    Commissions** (`CommissionsPanel` in `src/pages/Settings.jsx`) lists every employee with a Type
+    (None / Percent / Flat) + Rate, saved per row. Reads `get_employee_commissions()`, writes
+    `upsert_employee_commission(p_employee_id, p_percent, p_flat)` (percent XOR flat; both null clears it).
+  - **Help guide — DONE:** "Estimates, Jobs, Sales & Commissions" (`src/pages/Help.jsx`) explains the whole
+    flow in plain language for staff.
+  - **Deferred (Phase 2, when payroll runs in-app):** a monthly commissions **report** reading
+    `get_commissions`, and a `commission_payouts` lock table so paid amounts can't shift if an invoice is
+    later edited. **Cut from v1 deliberately:** per-employee basis options and an `is_salesperson` flag
+    (the rate is the flag).
 - **Part B — planned (light up the empty widgets):** upstream features that populate the three
   wired-but-empty cards. **Plan: `DASHBOARD-PARTB-PLAN.md`** (repo root). Confirmed order: **B1 Jobs-completed
   lifecycle + B4 cross-widget polish first → B3 Hydro/drying (its own session)**. **B2 Open estimates is
@@ -1712,7 +1752,7 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 - **Single source of truth:** `src/lib/navItems.jsx` — `NAV_ITEMS` (legacy sidebar list, unchanged) + `PRIMARY_ITEMS`/`OVERFLOW_ITEMS`/`SYSTEM_ITEMS` + `isItemVisible(item, {canAccess,isFeatureEnabled,employee,isMoroni})` (mirrors legacy gating: adminOnly → role; moroniOnly → email; `always` skips canAccess (Help); else canAccess(key); then featureFlag).
 - **Top bar (`TopNav.jsx`):** logo · primary links [Home `/`, Inbox `/conversations` (unread badge), Schedule, Claims, Customers, My Money `/collections` (`page:collections`), Time `/time-tracking` (`page:time_tracking`)] · `GlobalSearch` · `NewMenu` · `NotificationBell` · Help link (`/help`) · settings gear (`/settings`) · `UserMenu`. **Home/Inbox/My Money/Time are LABEL renames only** — routes + nav_keys unchanged.
 - **Overflow drawer (`OverflowDrawer.jsx`):** hamburger-opened left slide-over (dark) — Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing.
-- **New menu (`NewMenu.jsx`):** New Claim (→ existing job+claim creator `CreateJobModal`), New Estimate (global `NewEstimateModal`, gated on `page:estimates` — hidden until the flag is on, in lockstep with the Estimates nav links), New Customer (`AddContactModal`), New Invoice (global `NewInvoiceModal`) — all via `Layout.handleCreateAction`.
+- **New menu (`NewMenu.jsx`):** New Job (→ existing job+claim creator `CreateJobModal`; label renamed from "New Claim" 2026-07), New Estimate (global `NewEstimateModal`, gated on `page:estimates` — hidden until the flag is on, in lockstep with the Estimates nav links), New Customer (`AddContactModal`), New Invoice (global `NewInvoiceModal`) — all via `Layout.handleCreateAction`.
 - **User menu (`UserMenu.jsx`):** avatar dropdown — admin-only Tech View + Sign Out.
 - **Settings hub (`SettingsLayout.jsx`):** pathless route wrapping the SYSTEM pages (`/settings`, `/help`, `/admin`, `/admin/demo-sheet-builder`, `/tech-feedback`, `/dev-tools`). Desktop shows a left sub-rail (`SYSTEM_ITEMS`, gated via `isItemVisible`): Settings · Admin · Scope Sheet Builder · Tech Feedback · Dev Tools. **Help & Guides is reached from the top-bar Help icon (`/help`), not the rail** — the page still renders inside the hub layout. Below 1024px it's `display:contents` (passthrough — pages render exactly as before). Paths + AdminRoute/DevRoute guards unchanged. `Settings.jsx` keeps its own internal Carriers/Referrals/Templates sub-nav inside its content.
 - **Bell single-mount:** `Layout` gates the one `NotificationBell` by `matchMedia('(min-width:1024px)')` (TopNav on desktop/iPad-landscape, Sidebar header otherwise) so there are never two live notification subscriptions (no duplicate toasts). `NotificationBell` gained an optional `align` prop ('left'|'right').
@@ -1800,7 +1840,7 @@ connection management, documented in its own sections above — shipped after th
 - `sync-encircle` — automated 15-newest sync, hardcoded `division='reconstruction'`, jobs only. Scheduled worker. Legacy. Fixed Jun 9 2026: upsert now targets `on_conflict=encircle_claim_id,division` (was `encircle_claim_id` alone, which has no matching unique index → 42P10 → "Supabase upsert failed").
 - `encircle-import` — manual UI at `/import/encircle`, one claim at a time, full contact→claim→jobs chain + CLM writeback. Fixed Jun 9 2026: `loss_type` is now normalized via `normalizeLossType()` before the claims insert (Encircle sends free text / `type_of_loss_*` prefixed values which violated `claims_loss_type_check`; unmappable values fall back to `'other'`).
 - `encircle-backfill` — batch worker, date-range + cursor pagination, full chain + orphan repair + gated writeback (only when Encircle `contractor_identifier` is empty).
-- `sync-claim-to-encircle` (Apr 18 2026) — pushes UPR-native claims UP to Encircle. Fired automatically from CreateJobModal + TechNewJob after `create_job_with_contact` RPC succeeds. Idempotent via `claims.encircle_claim_id`. Failures stored on `claims.encircle_sync_error` and surfaced in DevTools → Backfill → Unsynced Claims panel with per-row retry **and a bulk "Sync Selected" button** (checkboxes default to all-selected; uncheck test rows before syncing; pushes sequentially with live `done/total` progress; dedup guard makes repeats safe). On success writes Encircle id back to `claims.encircle_claim_id` AND all child `jobs.encircle_claim_id`.
+- `sync-claim-to-encircle` (Apr 18 2026) — pushes UPR-native claims UP to Encircle. Fired automatically from CreateJobModal + TechNewJob after `create_job_with_contact` RPC succeeds — only when a NEW claim was minted; a job filed under an existing claim (`p_existing_claim_id`, both callers as of Jul 2026) skips the push since that claim is already synced. Idempotent via `claims.encircle_claim_id`. Failures stored on `claims.encircle_sync_error` and surfaced in DevTools → Backfill → Unsynced Claims panel with per-row retry **and a bulk "Sync Selected" button** (checkboxes default to all-selected; uncheck test rows before syncing; pushes sequentially with live `done/total` progress; dedup guard makes repeats safe). On success writes Encircle id back to `claims.encircle_claim_id` AND all child `jobs.encircle_claim_id`.
   - **Reliability fix (Jun 18 2026):** the client call in CreateJobModal + TechNewJob was *fire-and-forget* — when the page tore down (mobile app backgrounding, TechNewJob's immediate `navigate(-1)`, tab close) the request was abandoned, leaving the claim unsynced with **no `encircle_sync_error` recorded** (the tell: 17 unsynced claims, 0 errors, while every push that actually ran succeeded). Symptom users reported as "new claim under an existing client doesn't reach Encircle" — but it was not existing-client-specific (existing-client claims synced 9/12; the misdiagnosis led staff to duplicate clients as a workaround). Fix: both callers now **`await syncClaimToEncircle()` (8s AbortController timeout) before navigating/closing**, so the request completes while the page is alive (connectivity is guaranteed — the `create_job_with_contact` RPC just succeeded online). On timeout it proceeds without blocking (claim shows in the Unsynced panel).
   - **Duplicate guard (Jun 18 2026):** before creating, the worker searches Encircle by `contractor_identifier` (our CLM via `findExistingEncircleClaimByClm`); an exact CLM match links to the existing Encircle claim instead of creating a second one. Protects against retries, double-submits, failed write-backs, and any future overlap between the client push and a server-side sweep. Response carries `deduped: true` when it links rather than creates.
   - **Internal trigger auth (Jun 18 2026):** the worker's POST now accepts EITHER a logged-in user (UI) OR a valid `x-webhook-secret` header matching `integration_config.encircle_sweep_secret` (RLS-locked key/value table created by the QuickBooks migration; the worker reads it with its service-role key). This lets the database push claims server-side via `pg_net` without a user session and without any new Cloudflare env var — mirrors the QuickBooks `notify_qbo_customer_sync` trigger pattern (does NOT reuse the QBO secret). Used Jun 18 2026 to backfill the historical unsynced real claims (test/junk rows excluded). The existing user-auth path is unchanged. This same hook can later drive a recurring `pg_cron` sweep if desired.
@@ -3960,6 +4000,125 @@ review. All are behind `page:crm` (or dark behind the SMS kill-switch), so none 
   the same DOM+state path as a template insert — draft-only, no send path added. Closes the Phase 9
   deferred follow-up.
 
+---
+
+## Feedback Media — plan of record (session 2026-07-02, docs only — no feature code)
+
+**What this session shipped** (branch `claude/chat-session-og9agt` → PR into `dev`):
+- `docs/feedback-media-roadmap.md` — the dispatch model of record for upgrading the feedback
+  surface (photos + **video** attachments for everyone incl. a new desktop `/feedback` page,
+  client-side **image** compression, video caps, 90-day attachment purge, admin inbox rebuilt with
+  video player/lightbox, notify-on-submit). Live-verified gap audit (taxonomy A–G), 5 findings,
+  three phase blocks (**F → B ∥ C**, disjointness adversarially proven), dependency graph,
+  ownership matrix + frozen list (in-doc — no separate manifest file), options-on-record
+  (video compression: caps not transcode; bucket: keep `job-files`; notify: bell + gated push).
+- `docs/feedback-media-dispatch.md` — three complete cold-session copy-paste blocks (F, B, C).
+- Zero code/schema/seed changes — non-CRM initiative, progress tracks via the roadmap doc's
+  checklists (CRM tracker not used).
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **RPC-cutover landmine (averted at plan time):** adding DEFAULT params to `insert_tech_feedback`
+  via `CREATE OR REPLACE` would create an ambiguous overload and break every live submit instantly
+  (shared Supabase). Phase F must DROP the 5-arg function + CREATE the 7-arg one, with a committed
+  old-signature test; the new body mirrors screenshots↔attachments both ways so B/C deploy order
+  never matters.
+- **Two live bugs:** screenshot removal/abandon orphans storage objects (`TechFeedback.jsx:118-124`);
+  AdminFeedback's shared `noteText` state can save notes onto the wrong row. Both fixed in-plan.
+- **Push reaches nobody today:** `send-push` has zero callers, APNS env unset, `device_tokens` = 0
+  rows. Notify design = in-app bell via `create_notification` (works today; global feed) + per-admin
+  push fan-out (503-tolerant; goes live when the owner configures APNs). Email declined by owner.
+- `storage.*` owned by `supabase_storage_admin` → migrations cannot create buckets/policies; the
+  live `job-files` 50MB server cap is dashboard-configured (invisible to schema-as-code).
+- New nav items need `always: true` or `isItemVisible()`/`canAccess()` hides them from everyone.
+
+**Dispatch:** Wave 0 = Session F alone (Opus·high — schema cutover + `mediaCompress.js` +
+`FeedbackAttachments.jsx` composer + working desktop page + wiring). Wave 1 after F merges =
+Session B (Opus·medium — TechFeedback rebuild + `feedback-notify` worker) ∥ Session C (Opus·high —
+AdminFeedback rebuild + `purge-feedback-media` worker). Owner anytime-lane actions: APNS env +
+device tokens; point the external cron at the purge endpoint; optional dedicated bucket.
+
+## CRM Phase 5 — Automation recipes (Jul 2 2026 — shipped)
+
+Configurable linear automation builder (Session K). One additive migration
+`20260702_crm_phase5_automations.sql` (post-wave single session — manifest §7 amends the
+"zero schema" wave rule): two NEW tables + this phase's five API RPCs created directly (no stub
+ceremony — no cross-session consumer). Behind `page:crm` + the new dev-only
+`feature:crm_automations` sub-flag (seeded as a DB row — not in `featureFlags.js`, which is out
+of Phase 5's ownership; a missing row would default OPEN, so seeding it is what gates the screen).
+
+**Tables** (both `org_id` + RLS + explicit policy at creation):
+- `crm_automations` — `id, org_id, name, description, trigger_event_type` (a `system_events.event_type`),
+  `conditions jsonb` (`[{field, op, value}]` AND-filters), `actions jsonb` (ordered
+  `[{type: send_email|send_sms|enroll_sequence|create_task, config, delay_hours}]`), `enabled`,
+  `created_by, created_at, updated_at`.
+- `crm_automation_runs` — one row per (rule, triggering event): `automation_id` (FK CASCADE),
+  `org_id, triggering_event_id` (a `system_events.id` — no FK, the bus is append-only),
+  `contact_id, entity_type, entity_id, current_action` (cursor into `actions[]`), `status`
+  (`active|completed|failed|skipped|held`), `next_run_at, last_error`. **`UNIQUE(automation_id,
+  triggering_event_id)`** is the idempotency/S1 dedup key — `system_events` has no cursor, so
+  run-creation dedups on this, never on timestamps.
+
+**RPCs** (SECURITY DEFINER + GRANT anon, authenticated): `get_crm_automations(p_org_id)` (list +
+per-rule run stats), `upsert_crm_automation(...)` (create/edit — **S1 guard here**; `p_enabled`
+NULL = leave as-is), `set_automation_enabled(p_id, p_enabled)` (**re-checks S1 on enable**),
+`delete_crm_automation(p_automation_id)` (cascades runs), `get_automation_runs(p_automation_id,
+p_org_id, p_limit)`. Plus `crm_fixed_automation_conflict(p_org_id, p_trigger_event_type)` (the S1
+predicate, shared by both guarded RPCs) and `enqueue_automation_run(...)` (idempotent
+`INSERT … ON CONFLICT (automation_id, triggering_event_id) DO NOTHING` — the worker calls it
+because the REST client's `upsert` MERGES, which would overwrite a live run).
+
+**Finding S1 (double-send, binding)** — the fixed engine (`run-automations.js`) and this
+configurable engine keep dedup markers in namespaces that can't see each other, so a "missed
+call → text" rule + the fixed missed-call-textback = two SMS for one call (TCPA, per-message).
+Resolution: `crm_fixed_automation_conflict` refuses an ENABLED rule whose `trigger_event_type`
+duplicates an ENABLED fixed automation, checked in `upsert_crm_automation` AND
+`set_automation_enabled`; the engine also skips such rules at fire time (defense in depth). The
+trigger→fixed-automation map (`speed_to_lead`/`missed_call_textback` → `crm_lead_created`(+`_manual`);
+`review_request` → `job.phase_changed`/`job.status_changed`; `no_response_followup` is a time-scan
+with no discrete event → collides with nothing) is duplicated in the engine's
+`FIXED_AUTOMATION_TRIGGERS` and MUST stay in sync with the SQL predicate.
+
+**Worker — `functions/api/process-crm-automations.js`** (new; `onRequest*` authenticated manual
+trigger + `scheduled()` cron, deliberately named distinct from 4d's `run-automations.js`).
+Structural sibling of `process-sequences.js`. ① **MATCH** — scans recent `system_events`
+(`MATCH_LOOKBACK_MIN` 180) for enabled, non-S1-blocked triggers, evaluates AND-conditions against
+the event payload merged over the trigger entity (payload wins on key collision), and enqueues one
+idempotent run per match. ② **ADVANCE** — due runs (`status in (active,held) & next_run_at<=now`)
+execute `actions[current_action]`: sends go ONLY through `sendAutomatedMessage()` (the frozen
+consent gate — never twilio/email directly, never `skip_compliance`), enroll via
+`enroll_in_sequence`, task via `upsert_crm_task`; then the cursor advances via imported Phase-8
+`planStepOutcome`/`computeNextRunAt` semantics (read-only import; `process-sequences.js` never
+edited). A held SMS (kill-switch OFF / TCPA quiet-hours) becomes `status='held'`, cursor
+UNCHANGED, retried in `HOLD_RETRY_HOURS` — never dropped, never advanced past; a durable consent
+skip (dnd/suppressed/no contact) advances past. One `worker_runs` row per cron run. Single-tenant:
+`system_events` has no org_id, so runs scope to the one real org.
+
+**UI — `src/pages/crm/CrmAutomations.jsx`** (master/detail, hand-rolled — no new dependency):
+rule list → editor/detail. Editor = trigger picker (only event types the RPC layer actually
+emits) → optional AND-condition rows (typed operators, `is_empty`/`in`/… with a field datalist) →
+ordered action list with native up/down reorder + per-action wait + type-specific config; enable
+checkbox with a client-side S1 collision warning (RPC still enforces). Detail = recipe summary +
+per-rule run log (`get_automation_runs`). `useAuth()` `db` only, `upr:toast` feedback, inline
+two-click delete. CSS only in the `CRM WAVE RESERVED — Phase 5` `index.css` marker (tokens;
+mobile-only `@media (max-width:768px)` with 48px targets). Seams (authorized additive, manifest
+§7): `App.jsx` lazy import + `<Route path="automations">`, `crmIcons.jsx` `IconAutomations`,
+`CrmLayout.jsx` one `SIDEBAR_ITEMS` row + icon import.
+
+**Tests** (committed failing first): `functions/api/process-crm-automations.test.js` (25 pure
+unit tests — S1 `blockedTriggers`/`isTriggerBlocked`, null-safe typed AND-condition evaluator,
+`planRunOutcome` held/skip/retry translation, idempotent `matchAutomations`);
+`supabase/tests/crm_phase5_automations.test.js` (integration — CRUD, UNIQUE run idempotency, S1
+save+enable guard; self-skips without creds like the other CRM suites). The SQL behavior (CRUD,
+UNIQUE idempotency, S1 save+enable guard, conflict predicate) was verified live via Supabase MCP
+assertions. `npm test` (319 passed / 53 skipped) + `npm run build` + `npx eslint` (changed files)
+all green.
+
+**Deliberately NOT** (owner-chosen v1 scope): branching/if-else, any node-graph canvas or new
+frontend dep, editing `run-automations.js` (4d-owned) or `process-sequences.js` (Phase-8-owned —
+imported read-only), touching the orphan `automation_rules` (its removal is a separate reviewed
+cleanup). Recorded end-state (not v1): migrate the fixed four into `crm_automations` and retire
+`run-automations.js` — one engine, guard obsolete.
+
 ## CRM Phase 5 re-plan (Jul 2 2026) — plan of record committed (no feature code)
 
 Phase 5 ("Visual automation builder") scheduled by owner directive — its original go-signal gate
@@ -3989,6 +4148,28 @@ amendments, S1 guard), the **Session K dispatch block** in `docs/crm-dispatch.md
 `supabase/migrations/20260702_crm_phase5_replan_stages.sql` (applied + verified live: phase
 title → "Automation recipes — linear visual builder", status still `planned`, placeholder stage
 replaced by 7 real stages).
+
+## CRM Phase 5-Ops plan (Jul 3 2026) — plan of record committed (no feature code)
+
+Owner directive (full scope): extend the shipped automation engine with **ops actions**
+(notify_staff via `create_notification`, job_note via `job_notes`, set_job_phase via a NEW
+two-write-encapsulating RPC, create_draft_invoice via the idempotent `create_invoice_for_job` —
+draft-only, the QBO push door stays human), a **scheduled-scan trigger family** ("something
+DIDN'T happen": estimate aging, missing daily moisture reading [MT day boundary], invoice
+overdue, stuck phase, dispatch SLA (`scan.no_appointment_after_create`) — code-defined registry,
+thresholds-only config, deterministic uuidv5 dedup through the existing
+`UNIQUE(automation_id, triggering_event_id)`),
+and a **7-recipe starter pack seeded `enabled=false`**. Key finding recorded: the job/e-sign
+trigger events ARE emitted (live counts verified — DB-side trigger functions from Mar-era
+migrations; a repo-grep claim to the contrary was refuted), so no emit-path work is needed.
+Commissions are explicitly NOT an action (stay derived via `is_real_job` → `get_commissions`).
+Artifacts: roadmap "Phase 5-Ops plan (2026-07-03)" section, ownership manifest **§8** (Session L
+row — Session K's two code files transferred post-#253; additive-ALTER allowance; call-only
+plumbing list), Session L dispatch block in `docs/crm-dispatch.md`, and
+`supabase/migrations/20260703_crm_phase5ops_stages.sql` (applied + verified: phase `5-ops`
+seeded `planned` with 7 stages). Also this session: PR #169 (commissions foundation) reconciled
+onto `dev` and merged — commission tracking starts from now (historical jobs stay unattributed
+by owner decision).
 
 ## Feedback Media (Jul 3 2026) — Phase F foundation shipped
 

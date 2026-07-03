@@ -178,3 +178,38 @@ except as amended here.
   (`run-automations.js`) and the configurable engine keep dedup markers in namespaces that
   cannot see each other; without the guard, one missed call can produce two texts (TCPA,
   per-message penalties).
+
+---
+
+## 8. Phase 5-Ops addendum (2026-07-03) — Ops actions, scan triggers & recipe pack (Session L)
+
+Committed by the Phase 5-Ops plan (`docs/crm-roadmap.md` → "Phase 5-Ops plan (2026-07-03)" — the
+authoritative phase block). Runs post-Phase-5 (#253 merged) as **one** session; may run in
+parallel with the Feedback Media initiative (disjoint files/tables). §§1–7 stay binding except
+as amended here.
+
+| Session | Phase | Owns exclusively (edit only these) | RPCs / schema (created directly) |
+|---|---|---|---|
+| L | 5-ops | `functions/api/process-crm-automations.js` + `process-crm-automations.test.js`, `src/pages/crm/CrmAutomations.jsx` (the worker + page were Session K's — freed by #253's merge; the test file already exists from K's suite and L extends it — all three assigned to L), its one migration + `supabase/tests/`, its reserved `index.css` marker | `set_job_phase(p_job_id uuid, p_to_phase text, p_actor_id uuid DEFAULT NULL)` (new, SECURITY DEFINER — encapsulates the jobs + job_phase_history two-write); `ALTER TABLE crm_automations ADD COLUMN trigger_kind` + `ADD COLUMN scan_config` (additive, Rule 7); recipe-pack seeds (`enabled=false`, idempotent) |
+
+**Amendments / rules for Session L:**
+
+- **Ownership transfer.** Session K closed with #253; its two code files transfer to Session L
+  for this phase only. No other K artifact is touched (K's five RPCs keep their signatures —
+  additive params with DEFAULTs allowed if needed for scan rules, with a committed
+  old-signature test).
+- **Additive-ALTER allowance.** §7 forbade ALTER outright for Session K; Session L may
+  `ADD COLUMN` (only) on `crm_automations` — a feature-flagged table with zero production rows.
+  Still forbidden: ALTER/DROP on any OTHER live table, and any DROP anywhere.
+- **Call-only plumbing:** `create_notification`, `create_invoice_for_job`,
+  `sendAutomatedMessage()`. The draft-invoice action must NEVER call `/api/qbo-invoice`
+  (BILLING-CONTEXT: the human Save→QBO gate is sacred). Never write computed columns
+  (`line_total`, `amount_paid`).
+- **Frozen as ever:** `automated-send.js`, `run-automations.js` (4d), `process-sequences.js`
+  (8 — import helpers only), send workers, `JobDetailPanel.jsx` (the phase two-write precedent
+  is REPLICATED inside `set_job_phase`, not edited).
+- **Scan registry is code, not config:** `scan_config` carries thresholds only; a scan's query
+  lives in the worker's registry. Scan dedup = deterministic uuidv5 `triggering_event_id`
+  (see the roadmap spec).
+- **index.css:** only inside a new `/* ─── CRM WAVE RESERVED — Phase 5-Ops (Session L) ─── */`
+  marker at the bottom.

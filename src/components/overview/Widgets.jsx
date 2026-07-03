@@ -5,7 +5,7 @@
  *
  * WHAT THIS DOES (plain language):
  *   The ten boxes that make up the new owner Overview dashboard — revenue,
- *   average ticket, open estimates, new claims, jobs completed, active drying,
+ *   average ticket, open estimates, jobs closed, jobs completed, active drying,
  *   collections, action-required list, the live employee clock-in board, and
  *   the production pipeline. Each one draws its own little chart or list from
  *   live database numbers passed in by Dashboard.jsx. While a box's data is
@@ -222,16 +222,16 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates, loadin
   );
 }
 
-// ─── SECTION: Row B — claims booked + jobs completed ──────────────
+// ─── SECTION: Row B — jobs closed + jobs completed ──────────────
 
-export function NewClaimsBooked({ periodLabel, showHandle, data = PLACEHOLDER.newClaims, loading, error, onRetry }) {
+export function NewJobsClosed({ periodLabel, showHandle, data = PLACEHOLDER.jobsClosed, loading, error, onRetry }) {
   return (
-    <Card spanClass="ovw-span-6" title="New claims booked" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
+    <Card spanClass="ovw-span-6" title="New Jobs Closed" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
         <div style={{ flex: 'none' }}>
           <div style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>{data.count}</div>
           {data.projected && <div style={{ fontSize: 12.5, color: C.body, fontWeight: 600, marginTop: 7 }}>{data.projected}</div>}
-          <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>new claims this period</div>
+          <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>jobs sold this period</div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>

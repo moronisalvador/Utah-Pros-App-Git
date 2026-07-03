@@ -104,6 +104,7 @@ const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
 const CrmContacts = lazyRetry(() => import('@/pages/crm/CrmContacts'));
 const CrmConversations = lazyRetry(() => import('@/pages/crm/CrmConversations'));
 const CrmSequences = lazyRetry(() => import('@/pages/crm/CrmSequences'));
+const CrmAutomations = lazyRetry(() => import('@/pages/crm/CrmAutomations'));
 const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
 
 // Tech pages (field_tech role)
@@ -374,6 +375,7 @@ function WebRoutes() {
           <Route path="call-log" element={<CrmCallLog />} />
           <Route path="tasks" element={<CrmTasks />} />
           <Route path="sequences" element={<CrmSequences />} />
+          <Route path="automations" element={<CrmAutomations />} />
           <Route path="forms" element={<CrmForms />} />
           <Route path="attribution" element={<CrmAttribution />} />
           <Route path="reports" element={<CrmReports />} />

@@ -172,6 +172,21 @@ export function checkVideoDuration(duration, maxSeconds = MAX_VIDEO_SECONDS) {
   return { ok: true };
 }
 
+/** "10.4 MB", "812 KB", "302 B" — display formatter (admin view + tiles). */
+export function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '';
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** "1:32" from 92s — display formatter (video chips). Null-safe like probeVideo. */
+export function formatDuration(seconds) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return null;
+  const total = Math.round(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 // ─── SECTION: Browser-only (DOM/canvas APIs — NOT unit-tested, keep pure logic above) ───
 
 /**

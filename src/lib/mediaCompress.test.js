@@ -29,6 +29,7 @@ import {
   MAX_FILES, MAX_VIDEOS, MAX_VIDEO_SECONDS, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES,
   isImage, isVideo, fitWithin, sanitizeFilename, buildStoragePath,
   stripBucketPrefix, validateFile, validateSelection, checkVideoDuration,
+  formatBytes, formatDuration,
 } from './mediaCompress.js';
 
 const img = (name, size = 1000) => ({ name, type: 'image/jpeg', size });
@@ -225,5 +226,32 @@ describe('checkVideoDuration', () => {
   it('honors a custom max', () => {
     expect(checkVideoDuration(31, 30).ok).toBe(false);
     expect(checkVideoDuration(29, 30).ok).toBe(true);
+  });
+});
+
+describe('formatBytes', () => {
+  it('picks the right unit', () => {
+    expect(formatBytes(302)).toBe('302 B');
+    expect(formatBytes(812 * 1024)).toBe('812 KB');
+    expect(formatBytes(10.4 * 1024 * 1024)).toBe('10.4 MB');
+  });
+  it('tolerates junk', () => {
+    expect(formatBytes(null)).toBe('');
+    expect(formatBytes(-5)).toBe('');
+    expect(formatBytes(NaN)).toBe('');
+  });
+});
+
+describe('formatDuration', () => {
+  it('formats m:ss', () => {
+    expect(formatDuration(92)).toBe('1:32');
+    expect(formatDuration(5)).toBe('0:05');
+    expect(formatDuration(600)).toBe('10:00');
+  });
+  it('null-safe like probeVideo output', () => {
+    expect(formatDuration(null)).toBeNull();
+    expect(formatDuration(undefined)).toBeNull();
+    expect(formatDuration(Infinity)).toBeNull();
+    expect(formatDuration(-1)).toBeNull();
   });
 });

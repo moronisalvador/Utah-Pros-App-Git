@@ -1,3 +1,43 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: CreateJobModal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The "New Job" window on the desktop site. You find (or quick-add) the
+ *   customer, choose whether the job starts a brand-new claim or files under
+ *   one of the customer's existing claims, pick the division and loss details,
+ *   and hit Create. One trip through it creates the customer, the claim (when
+ *   new), and the job together, then pushes new claims up to Encircle.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (modal)
+ *   Rendered by:  src/components/Layout.jsx (via handleCreateAction('job') —
+ *                 the top-bar + New → New Job item), src/pages/CustomerPage.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  AddContactModal, AddressAutocomplete, DatePicker, CarrierSelect,
+ *              HelpLink, @/lib/realtime (getAuthHeader)
+ *   Data:      reads  → contacts (search_contacts_for_job, duplicate-phone
+ *                        lookup), insurance_carriers (get_insurance_carriers),
+ *                        claims + jobs (get_customer_detail — existing-claim picker)
+ *              writes → contacts (db.insert quick-add), insurance_carriers
+ *                        (upsert_insurance_carrier), claims + jobs + contact_jobs +
+ *                        contact_addresses + contacts (create_job_with_contact)
+ *
+ * NOTES / GOTCHAS:
+ *   - Claim choice mirrors the tech app's /tech/new-job (TechNewJob.jsx) so
+ *     desktop and mobile share ONE job model: filing under an existing claim
+ *     passes p_existing_claim_id to create_job_with_contact, which reuses the
+ *     claim instead of minting a new CLM-…, and the Encircle push is skipped
+ *     (the claim is already synced — re-pushing would risk a duplicate).
+ *   - Picking an existing claim prefills loss address / carrier / claim # /
+ *     date of loss from that claim; the fields stay editable.
+ *   - Inline quick-add: a duplicate phone (contacts_phone_key / 23505) is
+ *     caught and the existing contact is auto-selected instead of erroring.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AddContactModal from '@/components/AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
@@ -51,6 +91,9 @@ const DIVISIONS=[
 ];
 const LOSS_TYPES=['Pipe Burst','Sewer Backup','Storm / Wind','Appliance Failure','Roof Leak','Sprinkler','Flood','Toilet Overflow','Fire','Smoke','Mold','Vandalism','Other'];
 
+// division → emoji, for the existing-claim picker's mini job pills
+const DIV_EMOJI = DIVISIONS.reduce((m, d) => { m[d.value] = d.emoji; return m; }, {});
+
 export default function CreateJobModal({ db, onClose, onCreated, prefillContact }) {
   const [contact,        setContact]        = useState(prefillContact || null);
   const [search,         setSearch]         = useState('');
@@ -76,8 +119,24 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
 
+  /* ── Claim state (new claim vs. file under one of the customer's existing claims) ──
+     Mirrors TechNewJob.jsx so desktop + mobile share one job model. */
+  const [claimMode,       setClaimMode]       = useState('new'); // 'new' | 'existing'
+  const [contactClaims,   setContactClaims]   = useState([]);    // claims belonging to the selected contact
+  const [selectedClaimId, setSelectedClaimId] = useState(null);
+
+  /* Load the selected customer's claims (for the "existing claim" picker) */
+  const loadContactClaims = useCallback(async (contactId) => {
+    if (!contactId) { setContactClaims([]); return; }
+    try {
+      const data = await db.rpc('get_customer_detail', { p_contact_id: contactId });
+      setContactClaims(Array.isArray(data?.claims) ? data.claims : []);
+    } catch { setContactClaims([]); }
+  }, [db]);
+
   useEffect(() => {
     db.rpc('get_insurance_carriers').then(setCarriers).catch(() => {});
+    if (prefillContact?.id) loadContactClaims(prefillContact.id);
   }, []);
 
   // Add new carrier
@@ -105,15 +164,32 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
 
   const selectContact = c => {
     setContact(c); setSearch(''); setShowDrop(false);
+    // Reset the claim choice for the newly-selected customer, then load their claims.
+    setClaimMode('new'); setSelectedClaimId(null); setContactClaims([]);
     if (c.billing_address || c.billing_city) {
       setAddress(c.billing_address || ''); setCity(c.billing_city || '');
       setState(c.billing_state || 'UT'); setZip(c.billing_zip || '');
     }
+    loadContactClaims(c.id);
+  };
+
+  /* Pick one of the customer's existing claims — prefill loss/insurance fields from it */
+  const selectClaim = (cl) => {
+    setSelectedClaimId(cl.id);
+    setAddress(cl.loss_address || ''); setCity(cl.loss_city || '');
+    if (cl.loss_state) setState(cl.loss_state);
+    setZip(cl.loss_zip || '');
+    setInsuranceCompany(cl.insurance_carrier || '');
+    setClaimNumber(cl.insurance_claim_number || '');
+    if (cl.date_of_loss) setDateOfLoss(cl.date_of_loss);
   };
 
   const handleNewContact = async data => {
     const applyContact = (c) => {
       setContact(c); setShowAddContact(false);
+      // Duplicate-phone fallback can hand back an EXISTING contact — load their claims.
+      setClaimMode('new'); setSelectedClaimId(null); setContactClaims([]);
+      loadContactClaims(c.id);
       if (c.billing_address) setAddress(c.billing_address);
       if (c.billing_city)    setCity(c.billing_city);
       if (c.billing_state)   setState(c.billing_state);
@@ -142,7 +218,10 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
     }
   };
 
-  const clearContact = () => { setContact(null); setAddress(''); setCity(''); setState('UT'); setZip(''); };
+  const clearContact = () => {
+    setContact(null); setAddress(''); setCity(''); setState('UT'); setZip('');
+    setClaimMode('new'); setSelectedClaimId(null); setContactClaims([]);
+  };
 
   useEffect(() => {
     const h = e => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowDrop(false); };
@@ -159,6 +238,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
 
   const handleSubmit = async () => {
     if (!contact)          { setError('Select or create a client first.'); return; }
+    if (claimMode === 'existing' && !selectedClaimId) { setError('Pick one of the customer’s existing claims, or switch back to "New claim".'); return; }
     if (!insuranceCompany) { setError('Select an insurance carrier or "Out of pocket / No insurance".'); return; }
     setSaving(true); setError(null);
     try {
@@ -185,11 +265,15 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
         p_insurance_company: insCompany,
         p_claim_number:    claimNumber   || null,
         p_internal_notes:  internalNotes || null,
+        // When filing under an existing claim, reuse it instead of minting a new CLM.
+        p_existing_claim_id: claimMode === 'existing' ? selectedClaimId : null,
       });
       // Await the Encircle push (bounded by an internal timeout) BEFORE onCreated
       // closes/navigates away — a fire-and-forget call here was being abandoned
-      // mid-flight, leaving the claim unsynced with no error recorded.
-      if (result?.claim_id) await syncClaimToEncircle(result.claim_id);
+      // mid-flight, leaving the claim unsynced with no error recorded. Only push
+      // when we minted a NEW claim: a job filed under an existing claim is
+      // already synced, and re-pushing would risk a duplicate.
+      if (claimMode === 'new' && result?.claim_id) await syncClaimToEncircle(result.claim_id);
       onCreated?.(result);
     } catch (err) {
       console.error(err); setError('Failed: ' + err.message);
@@ -272,6 +356,68 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
               </div>
             )}
           </div>
+
+          {/* CLAIM — new claim vs. file under one of the customer's existing claims (mirrors /tech/new-job) */}
+          {contact && (
+            <div style={{ marginBottom: 'var(--space-3)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Claim</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button"
+                  onClick={() => { setClaimMode('new'); setSelectedClaimId(null); }}
+                  style={{ flex: 1, height: 36, borderRadius: 'var(--radius-md)',
+                    border: claimMode === 'new' ? '2px solid var(--brand-primary)' : '2px solid var(--border-light)',
+                    background: claimMode === 'new' ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                    fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                    color: claimMode === 'new' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer', transition: 'all 0.15s' }}>
+                  New claim
+                </button>
+                <button type="button"
+                  onClick={() => { if (contactClaims.length) setClaimMode('existing'); }}
+                  disabled={!contactClaims.length}
+                  style={{ flex: 1, height: 36, borderRadius: 'var(--radius-md)',
+                    border: claimMode === 'existing' ? '2px solid var(--brand-primary)' : '2px solid var(--border-light)',
+                    background: claimMode === 'existing' ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                    fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                    color: !contactClaims.length ? 'var(--text-tertiary)'
+                      : claimMode === 'existing' ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                    cursor: contactClaims.length ? 'pointer' : 'default',
+                    opacity: contactClaims.length ? 1 : 0.6, transition: 'all 0.15s' }}>
+                  Existing claim{contactClaims.length ? ` (${contactClaims.length})` : ''}
+                </button>
+              </div>
+
+              {/* Existing-claim picker — this customer's claims only */}
+              {claimMode === 'existing' && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                  {contactClaims.map(cl => {
+                    const sel = selectedClaimId === cl.id;
+                    const jobs = cl.jobs || [];
+                    const loc = [cl.loss_address, cl.loss_city].filter(Boolean).join(', ');
+                    return (
+                      <button key={cl.id} type="button" onClick={() => selectClaim(cl)}
+                        style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: 'var(--radius-md)',
+                          border: sel ? '2px solid var(--brand-primary)' : '1px solid var(--border-light)',
+                          background: sel ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                          cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{cl.claim_number}</span>
+                          {jobs.length > 0 && <span style={{ fontSize: 12 }}>{jobs.map(j => DIV_EMOJI[j.division] || '\u{1F4C1}').join(' ')}</span>}
+                          <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-tertiary)' }}>{jobs.length} job{jobs.length === 1 ? '' : 's'}</span>
+                        </div>
+                        {loc && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>{loc}</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {claimMode === 'existing' && selectedClaimId && (
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
+                  Loss address, carrier & claim # prefilled from this claim — edit below if anything changed.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* DIVISION */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
