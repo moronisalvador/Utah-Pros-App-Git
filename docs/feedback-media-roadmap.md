@@ -129,24 +129,44 @@ owner configures APNS env vars and devices register). Email: declined by owner, 
 > cutover on the shared Supabase — the riskiest work in the initiative).
 > **Read scope:** this block + the ownership matrix below + `CLAUDE.md` + `.claude/rules/tech-mobile-ux.md` + `.claude/rules/documentation-standard.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `supabase/tests/feedback_media_schema.test.js` — old **5-arg**
+> - [x] Test-first, now green: `supabase/tests/feedback_media_schema.test.js` — old **5-arg**
 >       `insert_tech_feedback` via PostgREST still succeeds (proves no overload ambiguity +
 >       cache bust); 7-arg round-trip incl. both-direction mirror; `resolved_at` state table
 >       (set on first terminal, kept terminal↔terminal, NULL on reopen); purge boundary 89d/91d
 >       (assert own ids only); purged-row exclusion; afterAll cleanup. `src/lib/mediaCompress.test.js`
 >       — `fitWithin` never upscales, `sanitizeFilename` edge cases, `validateFile`/`validateSelection`/
 >       `checkVideoDuration` caps, `buildStoragePath`/`stripBucketPrefix` shapes.
-> - [ ] Acceptance: migration applied + verified live via MCP, `bust_postgrest_cache()` run, live
+>       *(Suite self-skips without `VITE_SUPABASE_*` creds — the build container's egress policy
+>       blocks supabase.co, so every assertion was additionally executed live: RPC calls through
+>       PostgREST via MCP, purge-boundary semantics via a live SQL DO-block.)*
+> - [x] Acceptance: migration applied + verified live via MCP, `bust_postgrest_cache()` run, live
 >       TechFeedback submit re-verified working (old code, new RPC); desktop `/feedback` page
 >       **working end-to-end** (type/title/description/attachments, `source:'desktop'`) and visible
 >       in nav to all employees; composer compresses a large image and enforces all caps.
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass.
-> - [ ] `migration-safety-checker` + `upr-pattern-checker` clean.
-> - [ ] Visual: `/feedback` on the branch preview (desktop + 768px mobile widths).
-> - [ ] `UPR-Web-Context.md` updated (seed the "Feedback Media" section WITH pre-labeled
+> - [x] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass.
+> - [x] `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [x] Visual: `/feedback` via Playwright at 1366px + 768px (Supabase stubbed — same egress
+>       policy; Cloudflare branch preview built green for the human spot-check).
+> - [x] `UPR-Web-Context.md` updated (seed the "Feedback Media" section WITH pre-labeled
 >       Session B / Session C sub-headers).
-> - [ ] Reconcile this doc's checkboxes; delete test rows; pushed; PR into `dev` opened as a
->       handoff the owner merges (no babysitting).
+> - [x] Reconcile this doc's checkboxes; delete test rows; pushed; PR #256 into `dev`.
+>
+> **Delivered 2026-07-03 (PR #256) — deltas vs this block, all additive, none breaking:**
+> - Found live: legacy `screenshots` values were **double-encoded jsonb string scalars**
+>   (`JSON.stringify` → PostgREST) that AdminFeedback's `Array.isArray` silently drops —
+>   the migration normalizes existing rows and the new insert body decodes string input.
+> - `get_purgeable_feedback_media` also returns `resolved_at` (extra column, additive).
+> - Adversarial review (3 lenses × 2 refute-skeptics) confirmed 5 bugs in F's own new code;
+>   all fixed pre-PR. Binding consequence for **Session B/C**: the composer's **reset
+>   contract** — `value` seeds tiles ON MOUNT ONLY; to clear it, remount with a new `key`
+>   (a value-watching effect raced parallel uploads and was removed). Also: Retry
+>   re-validates caps; remove runs behind a busy `removing` state (blocks submit).
+> - Nav entries carry `hideForRoles: ['crm_partner']` (new generic `isItemVisible` check) —
+>   that role is locked to /crm/*+/help by Layout's choke point, the link would dead-end.
+> - The legacy mobile Sidebar got the link hardcoded after the NAV_ITEMS loop (Help
+>   precedent, same crm_partner exclusion) on the owner's blanket go-ahead.
+> - `formatBytes` / `formatDuration` exported from `mediaCompress.js` per this doc (Session
+>   C imports them; the composer's duration chip already uses `formatDuration`).
 
 Scope (everything additive):
 - **Migration `20260702_feedback_media.sql`** (one transaction; apply via MCP `apply_migration`):

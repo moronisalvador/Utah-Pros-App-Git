@@ -4170,3 +4170,65 @@ plumbing list), Session L dispatch block in `docs/crm-dispatch.md`, and
 seeded `planned` with 7 stages). Also this session: PR #169 (commissions foundation) reconciled
 onto `dev` and merged — commission tracking starts from now (historical jobs stay unattributed
 by owner decision).
+
+## Feedback Media (Jul 3 2026) — Phase F foundation shipped
+
+Photos + video on employee feedback, desktop submissions, retention plumbing. Roadmap +
+BINDING ownership matrix: `docs/feedback-media-roadmap.md` (Foundation-then-parallel-wave;
+Phase F owned 100% of the schema — Sessions B/C ship zero migrations).
+
+**`tech_feedback` new columns** (`20260702_feedback_media.sql`, additive): `attachments jsonb
+NOT NULL DEFAULT '[]'` (records `{path,name,mime,size,original_size,width?,height?,duration?}`,
+path bucket-LESS), `source text NOT NULL DEFAULT 'tech'` CHECK tech|desktop, `resolved_at
+timestamptz`, `attachments_purged_at timestamptz`. ⚠️ Legacy `screenshots` values were
+double-encoded jsonb STRING scalars (JSON.stringify through PostgREST) — backfilled to real
+arrays; the insert RPC now decodes string-scalar input too.
+
+**RPCs** (all SECURITY DEFINER, anon+authenticated):
+- `insert_tech_feedback(p_employee_id, p_type, p_title, p_description, p_screenshots, p_attachments, p_source)` —
+  **7-arg via DROP+CREATE** (the old 5-arg signature was dropped in the same transaction; a
+  plain OR REPLACE would have created an ambiguous overload and broken every live submit).
+  Body mirrors both directions: screenshots→attachments (`{path}`-only, bucket prefix
+  stripped) for old callers; image attachments→screenshots (`job-files/` prefix added,
+  videos excluded) for new callers. Old 5-arg call verified live through PostgREST.
+- `update_tech_feedback(p_id, p_status, p_admin_notes)` — unchanged signature; stamps
+  `resolved_at` on first transition into resolved/dismissed, keeps it terminal↔terminal,
+  NULLs it on reopen, never touches `attachments_purged_at`.
+- `get_tech_feedback()` — RETURNS TABLE gained `attachments, source, resolved_at,
+  attachments_purged_at` (appended; existing caller ignores extra keys).
+- `get_purgeable_feedback_media(p_days int DEFAULT 90)` — terminal + unpurged + non-empty
+  attachments older than `GREATEST(p_days, 30)` days; the ≥30-day clamp lives INSIDE the RPC
+  because the future purge endpoint is unauthenticated by cron convention.
+- `mark_feedback_attachments_purged(p_id)` — idempotent, first stamp wins.
+
+**Shared code (FROZEN for the wave):** `src/lib/mediaCompress.js` (caps: 5 files / 1 video /
+90s / img in ≤25MB / video ≤50MB; compressImage → 1920px 0.8 JPEG, never larger than the
+original, HEIC fallback ≤10MB; probeVideo never rejects, 5s→nulls; 33 unit tests) and
+`src/components/FeedbackAttachments.jsx` (snap-first immediate upload to
+`job-files/feedback/{employeeId}/{ts}-{sanitized}`, per-tile state machine with Retry —
+retry re-validates the caps, best-effort storage DELETE on remove behind a busy `removing`
+state — fixes the old orphaned-upload bug without opening a submit race, duration chip,
+≥48px targets; contract `value/onChange/onBusyChange/disabled/caps`, calls useAuth()
+itself). ⚠️ Composer reset contract: `value` seeds tiles ON MOUNT ONLY — to clear it
+(e.g. after submit) remount with a new `key`; it deliberately has no value-watching effect
+(a prop-sync effect raced parallel upload completions and dropped fresh tiles — caught by
+adversarial review, fixed pre-merge).
+
+**Desktop surface:** `src/pages/Feedback.jsx` at `/feedback` (Layout shell, ungated —
+every employee), submits `p_source:'desktop'` + `p_attachments` as a REAL array (never
+JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` +
+`hideForRoles: ['crm_partner']` (isItemVisible gained the generic `hideForRoles` check —
+crm_partner is locked to /crm/*+/help by Layout's choke point, so the link would dead-end
+for them). The legacy mobile Sidebar link is hardcoded after the NAV_ITEMS loop like Help
+(same crm_partner exclusion) — NAV_ITEMS itself stays identical. CSS: `fbm-*` classes in
+`index.css` Phase F block, with reserved Session B / Session C blocks appended after it.
+
+### Session B (TechFeedback rebuild) — not started
+*Reserved. Session B documents its TechFeedback.jsx rebuild here: FeedbackAttachments on
+the tech form, p_source:'tech', real-array p_attachments, styles only inside its reserved
+index.css block.*
+
+### Session C (AdminFeedback rebuild + gallery) — not started
+*Reserved. Session C documents its AdminFeedback.jsx rebuild here: attachments gallery /
+video viewer (lives in AdminFeedback, not the shared composer), source badge,
+resolved/purged states, styles only below its reserved index.css marker.*

@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
 import { IconLogout } from './Icons';
-import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools, IconHomebuilding } from '@/lib/navItems';
+import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools, IconHomebuilding, IconFeedback } from '@/lib/navItems';
 
 export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
@@ -88,6 +88,21 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
           <IconHelp className="nav-icon" />
           Help &amp; Guides
         </NavLink>
+
+        {/* Send Feedback — every logged-in user, hardcoded after the list like
+            Help (NAV_ITEMS stays identical; the loop's canAccess gating would
+            hide an unknown key). crm_partner excluded: Layout's choke point
+            locks that role to /crm/* + /help, so the link would dead-end. */}
+        {employee?.role !== 'crm_partner' && (
+          <NavLink
+            to="/feedback"
+            className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+            onClick={onNavClick}
+          >
+            <IconFeedback className="nav-icon" />
+            Send Feedback
+          </NavLink>
+        )}
 
         {/* Homebuilding Analysis — only visible to Moroni (private planning page) */}
         {isMoroni && (
