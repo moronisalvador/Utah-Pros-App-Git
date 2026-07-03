@@ -135,7 +135,7 @@ function MoreRow({ item, isLast }) {
     alignItems: 'center',
     gap: 14,
     padding: '14px 16px',
-    minHeight: 56,
+    minHeight: 'var(--tech-row-height)',
     borderBottom: isLast ? 'none' : '1px solid var(--border-light)',
     textDecoration: 'none',
     color: 'var(--text-primary)',
@@ -177,7 +177,7 @@ function MoreRow({ item, isLast }) {
         <span style={{
           minWidth: 22, height: 22, padding: '0 7px',
           borderRadius: 'var(--radius-full)',
-          background: '#ef4444', color: '#fff',
+          background: 'var(--status-needs-response)', color: 'var(--accent-text)',
           fontSize: 12, fontWeight: 700,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
