@@ -4244,7 +4244,7 @@ tr:hover td { background: var(--bg-secondary); }
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--bg-primary);
   padding-top: env(safe-area-inset-top, 0px);
 
   /* Tech design tokens */
@@ -4261,6 +4261,7 @@ tr:hover td { background: var(--bg-secondary); }
   --tech-row-height: 56px;
   --tech-nav-height: 64px;
   --tech-accent: #cbd5e1; /* neutral accent bar when an appointment has no color */
+  --tech-nav-bg: rgba(255, 255, 255, 0.92); /* translucent nav — dark theme overrides */
 
   /* Status palette */
   --status-scheduled-bg: #eff6ff;
@@ -4291,7 +4292,7 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-nav {
   display: flex;
   align-items: stretch;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--tech-nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05);
@@ -4299,6 +4300,84 @@ tr:hover td { background: var(--bg-secondary); }
   padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
   flex-shrink: 0;
   height: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)));
+}
+
+/* ─── TECH DARK THEME ───────────────────────────────────────────────
+   Scoped to the tech shell so ONLY /tech/* goes dark (desktop unaffected).
+   Same scoped-token-override trick as .crm-roadmap-page.dark — re-point the
+   core tokens the tech rules already read via var(). data-theme is set on
+   <html> by ThemeContext. Detail-screen inline hexes are a later polish pass. */
+[data-theme="dark"] .tech-layout {
+  --bg-primary: #15171c;
+  --bg-secondary: #0f1115;
+  --bg-tertiary: #1c1f26;
+  --bg-elevated: #1a1d23;
+  --border-color: #2c303a;
+  --border-light: #23262e;
+  --text-primary: #f1f3f6;
+  --text-secondary: #a8afbb;
+  --text-tertiary: #767d8a;
+  --accent-light: #1c2438;
+  --tech-nav-bg: rgba(21, 23, 28, 0.92);
+  /* Status pill tints re-toned for dark (color/border keep their hue) */
+  --status-scheduled-bg: #14233d;
+  --status-enroute-bg: #2e2410;
+  --status-working-bg: #0f2b22;
+  --status-paused-bg: #2c1618;
+  --status-completed-bg: #1c1f26;
+}
+
+/* ─── TECH SETTINGS (/tech/settings hub) ─── */
+.tech-settings-stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.tech-settings-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--tech-radius-card);
+  padding: var(--space-4);
+}
+.tech-settings-card-head { margin-bottom: var(--space-3); }
+.tech-settings-card-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.tech-settings-card-sub { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tech-settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  min-height: var(--tech-min-tap); flex-wrap: wrap;
+}
+.tech-settings-row-main { flex: 1; min-width: 0; }
+.tech-settings-row-label { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.tech-settings-row-value { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tech-settings-btn {
+  min-height: var(--tech-min-tap); padding: 0 16px; border-radius: var(--tech-radius-button);
+  font-size: 14px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border-light); touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.tech-settings-btn:disabled { opacity: 0.5; cursor: default; }
+.tech-settings-btn--primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tech-settings-btn[data-confirm="true"] { background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border); }
+.tech-settings-seg {
+  display: flex; gap: 8px; padding: 4px; border-radius: var(--tech-radius-button);
+  background: var(--bg-secondary); border: 1px solid var(--border-light);
+}
+.tech-settings-seg-btn {
+  flex: 1; min-height: var(--tech-min-tap); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid transparent; border-radius: calc(var(--tech-radius-button) - 4px);
+  background: transparent; color: var(--text-secondary);
+  font-size: 14px; font-weight: 600; font-family: var(--font-sans); cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tech-settings-seg-btn[data-active="true"] {
+  background: var(--bg-primary); color: var(--accent);
+  border-color: var(--accent); box-shadow: var(--tech-shadow-card-active);
+}
+.tech-settings-seg-label { line-height: 1.1; }
+.tech-settings-seg-sub { font-size: 10px; font-weight: 500; color: var(--text-tertiary); }
+.tech-settings-hint { margin-top: 12px; font-size: 12.5px; color: var(--text-tertiary); }
+.tech-settings-note {
+  margin-top: 12px; padding: 12px 14px; font-size: 12.5px; line-height: 1.6;
+  color: var(--text-secondary); background: var(--bg-secondary);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
 }
 
 .tech-nav-tab {

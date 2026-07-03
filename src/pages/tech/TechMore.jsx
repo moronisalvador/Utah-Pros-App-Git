@@ -110,6 +110,15 @@ function IconCalculator(props) {
   );
 }
 
+function IconSettings(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 function IconChevronRight(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -126,7 +135,7 @@ function MoreRow({ item, isLast }) {
     alignItems: 'center',
     gap: 14,
     padding: '14px 16px',
-    minHeight: 56,
+    minHeight: 'var(--tech-row-height)',
     borderBottom: isLast ? 'none' : '1px solid var(--border-light)',
     textDecoration: 'none',
     color: 'var(--text-primary)',
@@ -168,7 +177,7 @@ function MoreRow({ item, isLast }) {
         <span style={{
           minWidth: 22, height: 22, padding: '0 7px',
           borderRadius: 'var(--radius-full)',
-          background: '#ef4444', color: '#fff',
+          background: 'var(--status-needs-response)', color: 'var(--accent-text)',
           fontSize: 12, fontWeight: 700,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
@@ -239,6 +248,12 @@ export default function TechMore() {
         { key: 'help', label: 'Help & Guides', Icon: IconBook, path: '/tech/help' },
         { key: 'checklists', label: 'Checklists', Icon: IconClipboard, comingSoon: true },
         { key: 'demosheet', label: 'Scope Sheet Tool', Icon: IconDocument, comingSoon: true },
+      ],
+    },
+    {
+      title: 'Preferences',
+      items: [
+        { key: 'settings', label: 'Settings', Icon: IconSettings, path: '/tech/settings' },
       ],
     },
   ];
