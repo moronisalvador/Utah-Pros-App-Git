@@ -275,28 +275,52 @@ hash/label only). *(`upsert_push_subscription`/`delete_push_subscription` ship r
 > **Branch:** harness-assigned, cut from `origin/dev`. **Prerequisite:** F2 merged. Model:
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: hook tests per event (injected fakes): emit fires with correct
+> - [x] Test-first, now green: hook tests per event (injected fakes): emit fires with correct
 >       type/payload; **payment-webhook hooks are fire-and-forget (a notify failure never
 >       throws into the payment path)**; callrail idempotency (re-delivery/upsert does not
 >       re-fire); backfill never fires; google-calendar dedupe (prefs-off employee gets no
->       legacy email; no double email when both paths on).
-> - [ ] Acceptance: hooks live in twilio-webhook (`message.inbound`),
+>       legacy email; no double email when both paths on). Files: `twilio-webhook.test.js`,
+>       `lead-notify.test.js`, `qbo-payment-sync.test.js`, `submit-esign.test.js`,
+>       `google-calendar.test.js`.
+> - [x] Acceptance: hooks live in twilio-webhook (`message.inbound`),
 >       `functions/lib/qbo-payment-sync.js` + stripe-webhook + qbo-charge (`payment.received`),
->       callrail-webhook + form-submit (`lead.new`), submit-esign rewired; appointment trigger
->       verified E2E and its types enabled; each shipped type flipped enabled with its seed.
-> - [ ] Decision forks resolved AND recorded here: payments worker-hooks vs INSERT-trigger
->       (trigger needs a retroactive-import guard; a trigger choice is flagged back as a
->       separate reviewed migration — B ships zero schema); estimate code-site hooks vs
->       status-trigger (same rule); `create_manual_lead` in/out of `lead.new`; noisy channels
->       default-silent until C/D land.
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema**; frozen files untouched;
->       `upr-pattern-checker` clean.
-> - [ ] `UPR-Web-Context.md` — **Session B** sub-header only. Reconcile checkboxes; delete
->       test rows; push; PR into `dev` as a handoff.
+>       callrail-webhook + form-submit (`lead.new`), submit-esign rewired; **the four code-hook
+>       types flipped `enabled=true` with their F2 seeds** (`message.inbound`, `payment.received`,
+>       `lead.new`, `esign.signed` — via MCP; effective-prefs resolution confirmed live for an admin).
+> - [~] **appointment.assigned/updated/canceled: NOT enabled here — deferred to the `dev → main`
+>       release.** Their triggers (created live by F2) POST to
+>       `notify_worker_url = https://utahpros.app/api/notify` (**prod**), where `notify.js` is not
+>       yet deployed (it's on `dev`, not `main`) — enabling now would fire prod triggers into a 404
+>       and can't be E2E-verified without a live preview, which a headless pre-merge session cannot
+>       do. **Activation runbook** (owner, at the prod release, after confirming `/api/notify` is
+>       live on prod + a real crew-add lands a notification on the branch preview): run
+>       `UPDATE public.notification_types SET enabled=true WHERE type_key IN ('appointment.assigned','appointment.updated','appointment.canceled');`
+> - [x] Decision forks resolved AND recorded (full write-up in `UPR-Web-Context.md` → Session B):
+>       **payments = worker-hooks** (chosen; a payments-INSERT trigger would also cover frontend/MCP
+>       inserts but needs a retroactive-import guard and IS schema — flagged as a possible future
+>       reviewed migration, not shipped; coverage gap = manual frontend / MCP-import payments don't
+>       notify, accepted); **estimate.accepted = not wired by B** (its origins are outside B's 8-file
+>       ownership and a trigger is schema; direction = code-site hooks as a follow-up; type stays
+>       disabled); **`create_manual_lead` = OUT** of `lead.new`; **noisy channels default-silent** —
+>       kept F2's seeds (push opt-in; email only on curated `payment.received`).
+> - [x] `npm run test` (527 passed / 85 skipped; the 1 pre-existing `techQuery.test.js` failure —
+>       missing `@tanstack/react-query` in this env — is on the base, unrelated) + `build` + eslint
+>       (zero new errors) pass; **zero schema migrations**; frozen files untouched;
+>       `upr-pattern-checker` clean (PASS — advisory-only: doc-header guideline on 4 pre-existing
+>       files; sync-await vs waitUntil, safe since every helper swallows its own errors).
+> - [x] `UPR-Web-Context.md` — **Session B** sub-header filled. Checkboxes reconciled. No test rows
+>       created (the 4 type-enable flips are the persistent deliverable, not test data; appointment.*
+>       left disabled). Pushed; PR into `dev` as a handoff.
 
 Scope: owns `functions/api/{twilio-webhook,stripe-webhook,qbo-charge,callrail-webhook,form-submit,submit-esign}.js`,
 `functions/lib/{qbo-payment-sync,google-calendar}.js` (additive hooks + the `emailKind`
 dedupe seam only), hook tests. No schema, no UI, no CSS.
+
+**Type-enable state after Session B** (shared prod DB — one Supabase for dev+main):
+`feedback.submitted` (F1/F2), `message.inbound`, `payment.received`, `lead.new`, `esign.signed`
+= **enabled**; `appointment.assigned|updated|canceled` = **disabled** (activation runbook above);
+`estimate.accepted`, `timesheet.change_requested|change_reviewed`, `clock.abandoned` = **disabled**
+(no B hook — later phases / follow-ups).
 
 ## Session C — My-prefs UI (desktop + tech)
 
