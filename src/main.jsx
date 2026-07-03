@@ -1,8 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import App from './App.jsx';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { buildResetUrl } from './lib/staleChunkReload.js';
+import { techQueryClient } from './lib/techQuery.js';
+import { techQueryPersister } from './lib/techQueryPersister.js';
 import './index.css';
 
 // Bumped to force a new bundle hash when the Cloudflare edge cached a
@@ -10,7 +13,6 @@ import './index.css';
 // immutable /assets/*.js URL. Any time you suspect edge poisoning again,
 // changing this literal is the cheapest way to invalidate.
 const BUILD_ID = '2026-07-01-crm-chunk-loop-fix';
-void BUILD_ID;
 
 // Notify Capgo that the app booted successfully so a bad OTA bundle isn't
 // auto-rolled-back. Defensive try/catch: a top-level module throw here would
@@ -28,9 +30,22 @@ try {
   console.warn('CapacitorUpdater.notifyAppReady threw:', err?.message || err);
 }
 
+// PersistQueryClientProvider sits ABOVE the router/auth (both live inside <App/>)
+// so the whole tech tree shares one QueryClient and its on-device cache. The
+// persister restores asynchronously; react-query gates dependent renders until
+// restore resolves. buster = BUILD_ID → a new bundle drops a stale cache shape.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <PersistQueryClientProvider
+      client={techQueryClient}
+      persistOptions={{
+        persister: techQueryPersister,
+        maxAge: 24 * 60 * 60 * 1000,
+        buster: BUILD_ID,
+      }}
+    >
+      <App />
+    </PersistQueryClientProvider>
   </React.StrictMode>,
 );
 
