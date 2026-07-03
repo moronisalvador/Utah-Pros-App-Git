@@ -8,12 +8,12 @@
  *   (mobile app, schedule, CRM, settings, security, and so on), each with its
  *   own progress bar and checklist. It is purely for display: it takes the
  *   list of initiatives handed to it and paints them. The same component is
- *   used by both the logged-in page and the public no-login page so the two
- *   always look identical.
+ *   used by the public no-login /roadmap page (and stays a standalone
+ *   presentational piece so any future roadmap surface can reuse it).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (shared component)
- *   Rendered by:  src/pages/Roadmap.jsx, src/pages/PublicRoadmap.jsx
+ *   Rendered by:  src/pages/PublicRoadmap.jsx
  *
  * DEPENDS ON:
  *   Packages:  react
