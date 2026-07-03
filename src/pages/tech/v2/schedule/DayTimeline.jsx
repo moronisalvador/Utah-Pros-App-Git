@@ -34,6 +34,8 @@ import { minutesOfDay, fmtTime, fmtTimeRange, statusVar, isEvent, divisionMeta }
 
 const HOUR_PX = 80; // taller rows so a 30-min block fits its slot without spilling
 const MIN_BLOCK_PX = 34;
+const NOW_ABOVE_MIN = 150; // on open, show ~2.5h above the now-line so it sits lower
+                           // on screen and in-progress appointments stay visible
 
 function nowMinutes() {
   const d = new Date();
@@ -156,7 +158,9 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
     const headerH = header ? header.offsetHeight : 0;
     const scRect = scroller.getBoundingClientRect();
     const gridDocTop = scroller.scrollTop + (grid.getBoundingClientRect().top - scRect.top);
-    const anchorMin = isToday ? nowMinutes() : (placed.length ? placed[0].start : rangeStart);
+    const anchorMin = isToday
+      ? Math.max(rangeStart, nowMinutes() - NOW_ABOVE_MIN)
+      : (placed.length ? placed[0].start : rangeStart);
     const px = ((anchorMin - rangeStart) / 60) * HOUR_PX;
     scroller.scrollTop = Math.max(0, gridDocTop + Math.max(0, px) - headerH - 12);
     // eslint-disable-next-line react-hooks/exhaustive-deps

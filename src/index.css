@@ -5430,7 +5430,7 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-sched-row__chevron { display: flex; align-items: center; color: var(--text-tertiary); flex-shrink: 0; padding-right: 4px; }
 
 /* ── Day timeline ── */
-.tv2-timeline { --tv2-tl-gutter: 56px; padding: 4px 12px 24px; }
+.tv2-timeline { --tv2-tl-gutter: 48px; padding: 4px 12px 24px 8px; }
 .tv2-timeline__allday {
   display: flex;
   gap: 8px;
@@ -5508,14 +5508,15 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-timeline__now { position: absolute; left: 0; right: 0; height: 0; z-index: 3; pointer-events: none; }
 .tv2-timeline__now-label {
   position: absolute;
-  left: 0;
+  left: -6px;
   top: -7px;
-  width: calc(var(--tv2-tl-gutter) - 8px);
+  width: calc(var(--tv2-tl-gutter) + 2px);
   text-align: right;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   color: var(--status-needs-response);
   background: var(--bg-secondary);
+  white-space: nowrap;
 }
 .tv2-timeline__now-dot {
   position: absolute;
