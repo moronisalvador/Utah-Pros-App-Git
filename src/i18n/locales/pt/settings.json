@@ -1,0 +1,48 @@
+{
+  "title": "Configurações",
+  "subtitle": "Preferências deste dispositivo",
+  "appearance": {
+    "title": "Aparência",
+    "current": "Mostrando a aparência {{look}} no momento.",
+    "lookLight": "clara",
+    "lookDark": "escura",
+    "optSystem": "Sistema",
+    "optSystemSub": "Seguir o telefone",
+    "optLight": "Claro",
+    "optDark": "Escuro"
+  },
+  "language": {
+    "title": "Idioma",
+    "sub": "Escolha o idioma deste app neste dispositivo."
+  },
+  "notifications": {
+    "title": "Notificações",
+    "sub": "Receba alertas neste telefone — mesmo com o app fechado.",
+    "rowLabel": "Notificações neste dispositivo",
+    "statusOn": "Ativado — este telefone receberá alertas.",
+    "statusOff": "Ainda não ativado neste telefone.",
+    "turnOff": "Desativar",
+    "tapAgain": "Toque de novo para desativar",
+    "turnOn": "Ativar",
+    "turningOn": "Ativando…",
+    "toastEnabled": "Notificações ativadas neste dispositivo",
+    "toastBlocked": "As notificações estão bloqueadas. Ative-as nas configurações do telefone e tente de novo.",
+    "toastUnconfigured": "As notificações ainda não estão configuradas no servidor.",
+    "toastUnsupported": "Este dispositivo não pode receber notificações push.",
+    "toastGenericOn": "Não foi possível ativar as notificações — tente de novo.",
+    "toastTurnedOff": "Notificações desativadas neste dispositivo",
+    "toastGenericOff": "Não foi possível desativar totalmente — tente de novo.",
+    "hintRollout": "As notificações ainda estão sendo liberadas e não estão ativas na sua conta.",
+    "iosGuide": "Para receber notificações no iPhone, adicione este app à Tela de Início primeiro: toque em <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b>, depois abra pela Tela de Início e ative as notificações aqui.",
+    "cantReceive": "Este dispositivo não pode receber notificações push.",
+    "serverNotSet": "As notificações ainda não estão configuradas no servidor — volte em breve.",
+    "blockedHint": "As notificações estão bloqueadas para este app. Reative-as nas configurações do telefone e reabra o app.",
+    "prefsTitle": "Avise-me sobre…",
+    "prefsSub": "Escolha como quer saber de cada coisa.",
+    "chBell": "Sino",
+    "chPush": "Push",
+    "chEmail": "E-mail",
+    "prefsEmpty": "Ainda não há notificações ativadas para a sua função.",
+    "prefsLocked": "Bloqueado pelo seu administrador"
+  }
+}

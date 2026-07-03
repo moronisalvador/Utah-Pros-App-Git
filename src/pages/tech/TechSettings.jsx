@@ -15,9 +15,9 @@
  *   Rendered by:  src/App.jsx (inside the TechLayout shell)
  *
  * DEPENDS ON:
- *   Packages:  react
- *   Internal:  ./../../components/tech/settings/AppearanceSection,
- *              ./../../components/tech/settings/NotificationsSection
+ *   Packages:  react-i18next
+ *   Internal:  @/components/tech/settings/AppearanceSection, LanguageSection,
+ *              NotificationsSection
  *   Data:      none directly (each section owns its own data/prefs)
  *
  * NOTES / GOTCHAS:
@@ -26,22 +26,26 @@
  *     slot rather than editing this shell.
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import AppearanceSection from '@/components/tech/settings/AppearanceSection';
+import LanguageSection from '@/components/tech/settings/LanguageSection';
 import NotificationsSection from '@/components/tech/settings/NotificationsSection';
 
 export default function TechSettings() {
+  const { t } = useTranslation('settings');
+
   return (
     <div className="tech-page" style={{ padding: 0 }}>
       <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6)' }}>
         <div className="tech-page-header" style={{ marginBottom: 'var(--space-5)' }}>
-          <div className="tech-page-title">Settings</div>
-          <div className="tech-page-subtitle">Preferences for this device</div>
+          <div className="tech-page-title">{t('title')}</div>
+          <div className="tech-page-subtitle">{t('subtitle')}</div>
         </div>
 
         <div className="tech-settings-stack">
           <AppearanceSection />
+          <LanguageSection />
           <NotificationsSection />
-          {/* Language section slot — added in a later phase. */}
         </div>
       </div>
     </div>

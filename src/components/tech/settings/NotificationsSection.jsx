@@ -15,32 +15,41 @@
  *   Rendered by:  src/pages/tech/TechSettings.jsx
  *
  * DEPENDS ON:
- *   Packages:  react
+ *   Packages:  react, react-i18next
  *   Internal:  @/contexts/AuthContext (db, isFeatureEnabled), @/lib/webPushClient
  *              (enablePush/disablePush/isPushSupported/…), @/lib/toast
  *   Data:      via webPushClient → upsert_push_subscription / delete_push_subscription
  *              RPCs and GET /api/vapid-public-key (no direct DB access here)
  *
  * NOTES / GOTCHAS:
- *   - This is the device-push on/off only. The full per-type notification
- *     preferences matrix is a later phase (notify Session C) that fills the
- *     <NotificationsSection> slot with more rows.
+ *   - Two cards: the device-push on/off, then the per-type × channel preferences
+ *     matrix (notify Session C). The matrix reads LIVE types only via the resolver
+ *     and is filtered to tech-visible categories (appointments, messaging) until
+ *     Session D seeds per-role defaults.
  *   - iOS only exposes web push inside an installed (Home-Screen) PWA — the
  *     guidance box shows the Add-to-Home-Screen steps when that's the blocker.
  *   - Two-click confirm on "Turn off" (no confirm() dialog — house rule).
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import {
   isPushSupported, getExistingSubscription, getVapidPublicKey,
   pushPermission, enablePush, disablePush,
 } from '@/lib/webPushClient';
+import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatrix';
+
+// Field techs are an audience only for these catalog categories. Until Session D
+// seeds per-role defaults (which will gate this precisely), we filter client-side
+// so a tech never sees admin-only types (billing, sales, admin).
+const TECH_CATEGORIES = ['appointments', 'messaging'];
 
 export default function NotificationsSection() {
   // ─── State & hooks ──────────────
-  const { db, isFeatureEnabled } = useAuth();
+  const { t } = useTranslation(['settings', 'common']);
+  const { db, employee, isFeatureEnabled } = useAuth();
   const flagOn = isFeatureEnabled('feature:web_push');
   const supported = isPushSupported();
 
@@ -72,11 +81,11 @@ export default function NotificationsSection() {
     setBusy(true);
     try {
       const res = await enablePush(db);
-      if (res.ok) { toast('Push enabled on this device', 'success'); await refresh(); }
-      else if (res.reason === 'denied') toast('Notifications are blocked. Turn them on in your phone settings, then try again.', 'error');
-      else if (res.reason === 'unconfigured') toast('Push isn’t set up on the server yet.', 'error');
-      else if (res.reason === 'unsupported') toast('This device can’t receive push notifications.', 'error');
-      else toast('Could not turn on push — please try again.', 'error');
+      if (res.ok) { toast(t('notifications.toastEnabled'), 'success'); await refresh(); }
+      else if (res.reason === 'denied') toast(t('notifications.toastBlocked'), 'error');
+      else if (res.reason === 'unconfigured') toast(t('notifications.toastUnconfigured'), 'error');
+      else if (res.reason === 'unsupported') toast(t('notifications.toastUnsupported'), 'error');
+      else toast(t('notifications.toastGenericOn'), 'error');
     } finally { setBusy(false); }
   };
 
@@ -86,29 +95,30 @@ export default function NotificationsSection() {
     setBusy(true);
     try {
       const res = await disablePush(db);
-      if (res.ok) { toast('Push turned off on this device', 'success'); await refresh(); }
-      else toast('Could not fully turn off push — please try again.', 'error');
+      if (res.ok) { toast(t('notifications.toastTurnedOff'), 'success'); await refresh(); }
+      else toast(t('notifications.toastGenericOff'), 'error');
     } finally { setBusy(false); }
   };
 
   // ─── Render ──────────────
   return (
+    <>
     <div className="tech-settings-card">
       <div className="tech-settings-card-head">
-        <div className="tech-settings-card-title">Notifications</div>
+        <div className="tech-settings-card-title">{t('notifications.title')}</div>
         <div className="tech-settings-card-sub">
-          Get alerts on this phone — even when the app is closed.
+          {t('notifications.sub')}
         </div>
       </div>
 
       {/* Enable/disable push row */}
       <div className="tech-settings-row">
         <div className="tech-settings-row-main">
-          <div className="tech-settings-row-label">Push on this device</div>
+          <div className="tech-settings-row-label">{t('notifications.rowLabel')}</div>
           <div className="tech-settings-row-value">
-            {loading ? 'Checking…'
-              : subscribed ? 'On — this phone will get push alerts.'
-              : 'Not on yet for this phone.'}
+            {loading ? t('common:checking')
+              : subscribed ? t('notifications.statusOn')
+              : t('notifications.statusOff')}
           </div>
         </div>
         {!loading && subscribed && (
@@ -120,7 +130,7 @@ export default function NotificationsSection() {
             onBlur={() => setConfirmOff(false)}
             disabled={busy}
           >
-            {confirmOff ? 'Tap again to turn off' : busy ? 'Working…' : 'Turn off'}
+            {confirmOff ? t('notifications.tapAgain') : busy ? t('common:working') : t('notifications.turnOff')}
           </button>
         )}
         {!loading && !subscribed && (
@@ -130,7 +140,7 @@ export default function NotificationsSection() {
             onClick={enable}
             disabled={busy || !flagOn || !supported || !configured || permission === 'denied'}
           >
-            {busy ? 'Turning on…' : 'Turn on'}
+            {busy ? t('notifications.turningOn') : t('notifications.turnOn')}
           </button>
         )}
       </div>
@@ -138,28 +148,47 @@ export default function NotificationsSection() {
       {/* Contextual guidance */}
       {!flagOn && (
         <div className="tech-settings-hint">
-          Push is still rolling out and isn’t on for your account yet.
+          {t('notifications.hintRollout')}
         </div>
       )}
       {flagOn && !supported && isIOS && !isStandalone && (
         <div className="tech-settings-note">
-          To get push on your iPhone, add this app to your Home Screen first:
-          tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the Home
-          Screen and turn push on here.
+          <Trans t={t} i18nKey="notifications.iosGuide" components={{ b: <b /> }} />
         </div>
       )}
       {flagOn && !supported && !isIOS && (
-        <div className="tech-settings-hint">This device can’t receive push notifications.</div>
+        <div className="tech-settings-hint">{t('notifications.cantReceive')}</div>
       )}
       {flagOn && supported && !configured && (
-        <div className="tech-settings-hint">Push isn’t set up on the server yet — check back soon.</div>
+        <div className="tech-settings-hint">{t('notifications.serverNotSet')}</div>
       )}
       {flagOn && supported && configured && permission === 'denied' && (
         <div className="tech-settings-hint">
-          Notifications are blocked for this app. Turn them back on in your phone
-          settings, then reopen the app.
+          {t('notifications.blockedHint')}
         </div>
       )}
     </div>
+
+    {/* Per-type × channel preferences (tech-visible types only, ≥48px targets). */}
+    <div className="tech-settings-card">
+      <div className="tech-settings-card-head">
+        <div className="tech-settings-card-title">{t('notifications.prefsTitle')}</div>
+        <div className="tech-settings-card-sub">{t('notifications.prefsSub')}</div>
+      </div>
+      <NotificationPrefsMatrix
+        db={db}
+        employeeId={employee?.id}
+        variant="tech"
+        categoryFilter={TECH_CATEGORIES}
+        labels={{
+          channelBell:  t('notifications.chBell'),
+          channelPush:  t('notifications.chPush'),
+          channelEmail: t('notifications.chEmail'),
+          empty:        t('notifications.prefsEmpty'),
+          locked:       t('notifications.prefsLocked'),
+        }}
+      />
+    </div>
+    </>
   );
 }

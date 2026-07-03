@@ -5,12 +5,13 @@
  *
  * WHAT THIS DOES (plain language):
  *   When someone files a bug report or improvement idea, this quietly tells the
- *   admins. It does three things: drops a notice in the in-app notification bell
- *   (which everyone already sees); for each admin who is NOT the submitter, asks
- *   the phone-push worker (APNs) to buzz their phone; and web-pushes each admin's
- *   subscribed browsers/PWAs (the installed iPhone home screen + desktop). It is
- *   called "fire and forget" right after a feedback row is saved, so a hiccup
- *   here never breaks someone's submit.
+ *   admins. It looks up the just-filed feedback, works out a friendly title/body,
+ *   and hands the whole thing to the shared notification dispatcher
+ *   (functions/api/notify.js) as a "feedback.submitted" event — the dispatcher
+ *   then picks the admins (never the submitter), checks each one's on/off
+ *   preferences, and delivers the in-app bell + phone/desktop push accordingly.
+ *   It is called "fire and forget" right after a feedback row is saved, so a
+ *   hiccup here never breaks someone's submit.
  *
  * WHERE IT LIVES:
  *   Route:        POST /api/feedback-notify  (Cloudflare Pages Function)
@@ -19,39 +20,32 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
- *              ../lib/webPush.js (sendWebPush), /api/send-push (same-origin APNs)
- *   Data:      reads  → tech_feedback (the just-filed row), employees (admins +
- *                        the submitter's name), feature_flags (feature:web_push
- *                        gate), push_subscriptions (admins' web-push devices),
- *                        integration_credentials/integration_config (VAPID keys)
- *              writes → notifications (via create_notification RPC — the bell);
- *                        prunes dead push_subscriptions (404/410)
+ *              ./notify.js (dispatchEvent — the shared prefs-driven dispatcher)
+ *   Data:      reads  → tech_feedback (the just-filed row), employees (submitter
+ *                        name). Audience + all channel delivery now happen inside
+ *                        the dispatcher (see notify.js for the tables it touches).
  *
  * NOTES / GOTCHAS:
- *   - Push delivery reaches NOBODY until the owner configures APNS_* env vars
- *     AND iOS devices register device_tokens rows (0 rows exist today). The
- *     send-push worker returns 503 when APNs is unconfigured; we report that
- *     per-admin and STILL return 200 — the request must never fail on it.
- *   - The bell channel (create_notification) works today, but the feed is
- *     GLOBAL (no recipient column) — every employee sees every feedback notice.
- *     Accepted + disclosed (see docs/feedback-media-roadmap.md notify section).
+ *   - F2 rewired this: the old hardcoded bell + APNs + Web Push block was replaced
+ *     by a single dispatchEvent('feedback.submitted', …) call, so delivery now
+ *     honors each admin's notification preferences and per-recipient bell.
+ *   - Still fire-and-forget: a dispatcher failure is swallowed and the request
+ *     returns 200 — a feedback submit must never fail on the notify path.
  *   - requireAuth mirrors send-push.js: a valid Bearer token is required. The
  *     apikey used to validate it is the anon key (a valid project key for
  *     /auth/v1/user — service-role is unnecessary here).
- *   - Callers must forward the user's Bearer token; each per-admin send-push
- *     POST re-forwards that same header (send-push requires it too).
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
+import { dispatchEvent } from './notify.js';
 
 // ─── SECTION: Pure helpers (node-testable — see feedback-notify.test.js) ───
 
 /**
  * From a list of employee rows, the ids of the admins to notify — every
- * `role === 'admin'` row EXCEPT the submitter (who filed it and needn't be
- * told). Tolerates null/garbage rows and a null list.
+ * `role === 'admin'` row EXCEPT the submitter. Retained for direct unit tests;
+ * the live audience resolution now lives in the dispatcher (notify.js).
  */
 export function selectAdminIds(employees, submitterId) {
   return (employees || [])
@@ -60,9 +54,9 @@ export function selectAdminIds(employees, submitterId) {
 }
 
 /**
- * The push notification content for a feedback row. Title reflects the type
- * (bug vs improvement), body is "{submitter}: {title}", data carries the id +
- * the in-app route so a tap deep-links to the triage inbox.
+ * The notification content for a feedback row. Title reflects the type (bug vs
+ * improvement), body is "{submitter}: {title}", data carries the id + the in-app
+ * route so a tap deep-links to the triage inbox.
  */
 export function buildPushPayload(feedback, submitterName) {
   const isBug = feedback?.type === 'bug';
@@ -72,75 +66,6 @@ export function buildPushPayload(feedback, submitterName) {
     body: `${who}: ${feedback?.title || ''}`.trim(),
     data: { feedback_id: feedback?.id, route: '/tech-feedback' },
   };
-}
-
-// ─── SECTION: Web Push fan-out (additive — Notification Center Phase F1) ───
-
-/**
- * Fire-and-forget Web Push to admins' subscribed devices (the installed iPhone
- * PWA + desktop). Additive to the existing bell + APNs channels; a hardcoded
- * `feedback.submitted` push proving the F1 delivery spike end-to-end. F2 replaces
- * this with the real prefs-driven dispatcher.
- *
- * Gated by feature:web_push (read from the shared feature_flags row): sends only
- * to a recipient for whom the flag is globally enabled OR who is the flag's
- * dev_only_user_id (the owner-gate window). 503-skips silently when VAPID env is
- * unset (the APNs precedent), and prunes 404/410 (dead) subscriptions. Never
- * throws into the caller — a push hiccup must never fail a feedback submit.
- *
- * @param sendImpl  injectable send (defaults to webPush.sendWebPush) for tests.
- */
-export async function sendWebPushToAdmins({ db, env, adminIds, payload, fetchImpl, sendImpl = sendWebPush }) {
-  // Structural gate: only push when web_push is on for the recipient.
-  let flag = null;
-  try {
-    const rows = await db.select(
-      'feature_flags',
-      'key=eq.feature:web_push&select=enabled,dev_only_user_id,force_disabled',
-    );
-    flag = rows?.[0] || null;
-  } catch { flag = null; }
-  if (!flag || flag.force_disabled) return { sent: 0, attempted: 0, pruned: 0, skipped: true };
-
-  const allowed = (adminIds || []).filter(
-    (id) => flag.enabled === true || flag.dev_only_user_id === id,
-  );
-  if (allowed.length === 0) return { sent: 0, attempted: 0, pruned: 0 };
-
-  const pushBody = JSON.stringify({
-    title: payload.title,
-    body: payload.body,
-    url: '/tech-feedback',
-    data: payload.data,
-  });
-
-  // Resolve VAPID once (env → Supabase integration_credentials/config) and pass
-  // it down so we don't re-read the DB per subscription.
-  let vapid;
-  try { vapid = await loadVapidConfig(env, db); } catch { vapid = undefined; }
-
-  let sent = 0, attempted = 0, pruned = 0, vapidMissing = false;
-  for (const id of allowed) {
-    let subs = [];
-    try {
-      subs = await db.select('push_subscriptions', `employee_id=eq.${id}&select=id,endpoint,p256dh,auth`);
-    } catch { subs = []; }
-    for (const s of subs || []) {
-      attempted++;
-      try {
-        const res = await sendImpl(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          pushBody, env, { fetchImpl, vapid },
-        );
-        if (res.skipped) { vapidMissing = true; continue; }
-        if (res.ok) { sent++; continue; }
-        if (res.status === 404 || res.status === 410) {
-          try { await db.delete('push_subscriptions', `id=eq.${s.id}`); pruned++; } catch { /* prune best-effort */ }
-        }
-      } catch { /* one bad subscription never breaks the fan-out */ }
-    }
-  }
-  return { sent, attempted, pruned, ...(vapidMissing ? { vapidMissing: true } : {}) };
 }
 
 // ─── SECTION: Auth (same shape as send-push.js) ───
@@ -161,11 +86,11 @@ async function requireAuth(request, env, fetchImpl) {
 // ─── SECTION: Core handler (injectable deps — no direct globals) ───
 
 /**
- * The whole notify flow with { request, env, db, fetchImpl } injected so it
- * runs under vitest with fakes. Returns { status, data } — the Pages entry
- * point below wraps it in a CORS jsonResponse.
+ * The whole notify flow with { request, env, db, fetchImpl, dispatchImpl }
+ * injected so it runs under vitest with fakes. Returns { status, data } — the
+ * Pages entry point below wraps it in a CORS jsonResponse.
  */
-export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch }) {
+export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch, dispatchImpl = dispatchEvent }) {
   const auth = await requireAuth(request, env, fetchImpl);
   if (auth.error) return { status: auth.status, data: { error: auth.error } };
 
@@ -191,61 +116,30 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
     if (emp?.[0]?.full_name) submitterName = emp[0].full_name;
   } catch { /* name is cosmetic */ }
 
-  const admins = await db.select('employees', `role=eq.admin&select=id,role`);
-  const adminIds = selectAdminIds(admins, feedback.employee_id);
   const payload = buildPushPayload(feedback, submitterName);
 
-  // Channel 1 — in-app bell (global feed; works today). Independent of push:
-  // a failure here is recorded but never fails the request.
-  let bell = false;
+  // Hand off to the shared dispatcher: it resolves the admin audience (minus the
+  // submitter), applies each admin's prefs, and delivers bell + push per channel.
+  // Fire-and-forget — a dispatch failure never fails a feedback submit.
+  let summary = null;
   try {
-    await db.rpc('create_notification', {
-      p_type: 'feedback',
-      p_title: payload.title,
-      p_body: payload.body,
-      p_link: '/tech-feedback',
-      p_entity_type: 'tech_feedback',
-      p_entity_id: feedbackId,
-      p_payload: { feedback_type: feedback.type, source: feedback.source ?? null },
+    summary = await dispatchImpl({
+      db, env, fetchImpl,
+      typeKey: 'feedback.submitted',
+      body: {
+        title: payload.title,
+        body: payload.body,
+        link: '/tech-feedback',
+        entity_type: 'tech_feedback',
+        entity_id: feedbackId,
+        payload: { feedback_type: feedback.type, source: feedback.source ?? null },
+        exclude_employee_id: feedback.employee_id,
+        data: payload.data,
+      },
     });
-    bell = true;
-  } catch { /* bell is best-effort — push is a separate channel */ }
+  } catch { /* fire-and-forget: notify never fails a feedback submit */ }
 
-  // Channel 2 — per-admin APNs push via the send-push worker (same-origin),
-  // forwarding the caller's Bearer token. 503 (APNs unconfigured) is expected
-  // today and reported, never thrown.
-  const origin = new URL(request.url).origin;
-  const results = await Promise.all(adminIds.map(async (id) => {
-    try {
-      const res = await fetchImpl(`${origin}/api/send-push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': auth.authHeader },
-        body: JSON.stringify({
-          employee_id: id,
-          title: payload.title,
-          body: payload.body,
-          data: payload.data,
-        }),
-      });
-      return { employee_id: id, status: res.status, ok: !!res.ok };
-    } catch (err) {
-      return { employee_id: id, status: 0, ok: false, error: err.message };
-    }
-  }));
-
-  const notified = results.filter(r => r.ok).length;
-
-  // Channel 3 — Web Push to admins' subscribed devices (additive, fire-and-forget,
-  // behind feature:web_push). Never fails the request (the APNs precedent).
-  let web = { sent: 0, attempted: 0, pruned: 0 };
-  try {
-    web = await sendWebPushToAdmins({ db, env, adminIds, payload, fetchImpl });
-  } catch { /* fire-and-forget: web push never fails a feedback submit */ }
-
-  return {
-    status: 200,
-    data: { notified, attempted: results.length, bell, results, web },
-  };
+  return { status: 200, data: { ok: true, dispatch: summary } };
 }
 
 // ─── SECTION: Pages Function entry points ───

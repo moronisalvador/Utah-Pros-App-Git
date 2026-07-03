@@ -28,6 +28,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { impact } from '@/lib/nativeHaptics';
+import NotificationBell from '@/components/NotificationBell';
 
 /**
  * @param {{ employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
@@ -58,6 +59,12 @@ export default function DashHeader({ employee, count, isAdmin, onLogout }) {
 
   return (
     <div className="tv2-dash-header">
+      {/* Notification bell — one slot left of Help, matching the icon buttons.
+          Its badge + dropdown + realtime toast come from the shared component. */}
+      <div style={{ position: 'absolute', top: '10px', right: 'calc(16px + 2 * (var(--tech-min-tap) + 8px))' }}>
+        <NotificationBell align="right" triggerClassName="tv2-dash-header__icon-btn" />
+      </div>
+
       <button type="button" className="tv2-dash-header__icon-btn" aria-label="Help and guides" onClick={() => navigate('/tech/help')}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />

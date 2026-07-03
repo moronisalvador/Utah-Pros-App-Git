@@ -16,6 +16,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, createCharge, createPayment } from '../lib/quickbooks.js';
+import { notifyPaymentReceived } from '../lib/qbo-payment-sync.js';
 
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
@@ -89,6 +90,14 @@ export async function onRequestPost(context) {
       reference_number: `Card charge #${charge.id}`,
     });
     const payRow = Array.isArray(inserted) ? inserted[0] : inserted;
+
+    // Notify admins of the recorded card payment (fire-and-forget; never throws
+    // into the charge path). The webhook dedup below means the later QBO
+    // payment webhook lands on 'already-synced' and won't re-notify.
+    await notifyPaymentReceived({
+      db, env, amount, invoiceId: inv.id, jobId: inv.job_id || null,
+      source: 'Card', reference: `Charge #${charge.id}`,
+    });
 
     // 3. Mirror to a QBO Payment applied to the invoice; stamp the id so the webhook dedups.
     let qboPaymentId = null, syncError = null;

@@ -15,7 +15,7 @@
  *   Rendered by:  src/App.jsx (inside the TechLayout shell)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → appointment_crew, appointments, contacts, job_tasks,
@@ -32,6 +32,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ─── SECTION: Helpers ──────────────
@@ -130,6 +131,7 @@ function IconChevronRight(props) {
 /* ── Row component ── */
 
 function MoreRow({ item, isLast }) {
+  const { t } = useTranslation('common');
   const rowStyle = {
     display: 'flex',
     alignItems: 'center',
@@ -170,7 +172,7 @@ function MoreRow({ item, isLast }) {
       border: '1px solid var(--border-light)',
       textTransform: 'uppercase', letterSpacing: '0.04em',
       flexShrink: 0,
-    }}>Soon</span>
+    }}>{t('soon')}</span>
   ) : (
     <>
       {item.badge != null && item.badge > 0 && (
@@ -209,6 +211,7 @@ function MoreRow({ item, isLast }) {
 /* ── TechMore page ── */
 
 export default function TechMore() {
+  const { t } = useTranslation('more');
   const { db, employee, isFeatureEnabled } = useAuth();
 
   // ─── SECTION: State & hooks ──────────────
@@ -232,28 +235,31 @@ export default function TechMore() {
 
   const sections = [
     {
-      title: 'Work',
+      key: 'work',
+      title: t('sectionWork'),
       items: [
-        { key: 'tasks', label: 'Tasks', Icon: IconChecklist, path: '/tech/tasks', badge: taskCount },
+        { key: 'tasks', label: t('rowTasks'), Icon: IconChecklist, path: '/tech/tasks', badge: taskCount },
         ...(isFeatureEnabled('tool:oop_pricing')
-          ? [{ key: 'oop_pricing', label: 'OOP Pricing', Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
+          ? [{ key: 'oop_pricing', label: t('rowOopPricing'), Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
           : []),
-        { key: 'collections', label: 'Collections', Icon: IconDollar, comingSoon: true },
-        { key: 'time', label: 'Time Tracking', Icon: IconClock, comingSoon: true },
+        { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },
+        { key: 'time', label: t('rowTimeTracking'), Icon: IconClock, comingSoon: true },
       ],
     },
     {
-      title: 'Resources',
+      key: 'resources',
+      title: t('sectionResources'),
       items: [
-        { key: 'help', label: 'Help & Guides', Icon: IconBook, path: '/tech/help' },
-        { key: 'checklists', label: 'Checklists', Icon: IconClipboard, comingSoon: true },
-        { key: 'demosheet', label: 'Scope Sheet Tool', Icon: IconDocument, comingSoon: true },
+        { key: 'help', label: t('rowHelp'), Icon: IconBook, path: '/tech/help' },
+        { key: 'checklists', label: t('rowChecklists'), Icon: IconClipboard, comingSoon: true },
+        { key: 'demosheet', label: t('rowScopeSheet'), Icon: IconDocument, comingSoon: true },
       ],
     },
     {
-      title: 'Preferences',
+      key: 'preferences',
+      title: t('sectionPreferences'),
       items: [
-        { key: 'settings', label: 'Settings', Icon: IconSettings, path: '/tech/settings' },
+        { key: 'settings', label: t('rowSettings'), Icon: IconSettings, path: '/tech/settings' },
       ],
     },
   ];
@@ -263,12 +269,12 @@ export default function TechMore() {
     <div className="tech-page" style={{ padding: 0 }}>
       <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6)' }}>
         <div className="tech-page-header" style={{ marginBottom: 'var(--space-5)' }}>
-          <div className="tech-page-title">More</div>
-          <div className="tech-page-subtitle">Additional tools</div>
+          <div className="tech-page-title">{t('title')}</div>
+          <div className="tech-page-subtitle">{t('subtitle')}</div>
         </div>
 
         {sections.map(section => (
-          <div key={section.title} style={{ marginBottom: 'var(--space-5)' }}>
+          <div key={section.key} style={{ marginBottom: 'var(--space-5)' }}>
             <div style={{
               fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)',
               textTransform: 'uppercase', letterSpacing: '0.06em',

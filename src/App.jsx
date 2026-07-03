@@ -2,6 +2,8 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { LanguageProvider } from '@/contexts/LanguageContext';
+import '@/i18n'; // initialize the translation engine once, at app entry
 import Layout from '@/components/Layout';
 import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -523,13 +525,15 @@ export default function App() {
   }, []);
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <BiometricGate>
-          <AuthProvider>
-            {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
-          </AuthProvider>
-        </BiometricGate>
-      </BrowserRouter>
+      <LanguageProvider>
+        <BrowserRouter>
+          <BiometricGate>
+            <AuthProvider>
+              {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
+            </AuthProvider>
+          </BiometricGate>
+        </BrowserRouter>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

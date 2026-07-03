@@ -8200,3 +8200,350 @@ tr:hover td { background: var(--bg-secondary); }
 @media (max-width: 768px) {
   .fb-media-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
+
+/* ─── NOTIFY CENTER RESERVED — Session C (my-prefs matrix) ───────────────────
+   Owner: Session C (notify My-prefs UI). Session C's styles go between this
+   marker and the Session D marker — nobody else writes here. The tech
+   NotificationsSection lives in /tech/settings (styled with tech tokens); this
+   section is for the desktop Settings NotificationsPanel matrix + any shared
+   type×channel toggle-grid classes. Mobile-only rules use @media (max-width: 768px). */
+
+/* Preferences section wrapper (desktop Settings panel) */
+.notif-prefs-section { margin-top: var(--space-6); }
+.notif-prefs-section-head { margin-bottom: var(--space-4); }
+.notif-prefs-section-title { font-size: var(--text-base); font-weight: 600; margin: 0; }
+.notif-prefs-section-sub {
+  font-size: var(--text-sm); color: var(--text-secondary); margin: 4px 0 0; line-height: 1.5;
+}
+
+/* Type × channel matrix — shared by office (default) and tech (--tech) */
+.notif-matrix {
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden;
+}
+.notif-matrix-head,
+.notif-matrix-row {
+  display: grid; grid-template-columns: 1fr 72px 72px 72px; align-items: center;
+}
+.notif-matrix-head {
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+}
+.notif-matrix-row + .notif-matrix-row,
+.notif-matrix-row { border-top: 1px solid var(--border-light); }
+.notif-matrix-row:first-of-type { border-top: 0; }
+.notif-matrix-ch-h {
+  text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-tertiary); padding: 10px 4px;
+}
+.notif-matrix-type-h { padding: 10px 14px; }
+.notif-matrix-type {
+  padding: 12px 14px; font-size: var(--text-sm); color: var(--text-primary); min-width: 0;
+}
+.notif-matrix-cell { display: flex; justify-content: center; align-items: center; padding: 8px 4px; }
+
+.notif-check {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 32px; min-height: 32px; cursor: pointer;
+}
+.notif-check input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent, #2563eb); }
+.notif-check--locked { cursor: not-allowed; }
+.notif-check--locked input { cursor: not-allowed; }
+.notif-lock { font-size: 11px; line-height: 1; opacity: 0.7; }
+
+.notif-matrix-empty,
+.notif-matrix-loading,
+.notif-devices-loading {
+  padding: 16px 14px; font-size: var(--text-sm); color: var(--text-tertiary);
+}
+
+/* Registered devices list (office panel) */
+.notif-devices { margin-top: var(--space-5); }
+.notif-devices-title {
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;
+}
+.notif-device-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: 10px 0; border-top: 1px solid var(--border-light);
+}
+.notif-device-row:first-of-type { border-top: 0; }
+.notif-device-main { min-width: 0; }
+.notif-device-name {
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+}
+.notif-device-badge {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--accent, #2563eb); background: var(--bg-tertiary);
+  border-radius: var(--radius-sm); padding: 2px 6px;
+}
+.notif-device-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.notif-device-remove {
+  background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border-light);
+}
+.notif-device-remove[data-confirm="true"] {
+  background: var(--status-paused-bg); color: var(--status-paused-color);
+  border-color: var(--status-paused-border);
+}
+
+/* Tech variant — bigger tap targets (48px rows/boxes) per tech-mobile-ux */
+.notif-matrix--tech {
+  border-color: var(--border-color); border-radius: 12px;
+}
+.notif-matrix--tech .notif-matrix-head,
+.notif-matrix--tech .notif-matrix-row { grid-template-columns: 1fr 64px 64px 64px; }
+.notif-matrix--tech .notif-matrix-type {
+  padding: 14px 14px; font-size: 15px; min-height: 48px; display: flex; align-items: center;
+}
+.notif-matrix--tech .notif-matrix-cell { min-height: 48px; padding: 8px 4px; }
+.notif-matrix--tech .notif-check { min-width: 48px; min-height: 48px; }
+.notif-matrix--tech .notif-check input { width: 24px; height: 24px; }
+.notif-matrix--tech .notif-matrix-ch-h { padding: 12px 4px; font-size: 11px; }
+
+
+/* ─── NOTIFY CENTER RESERVED — Session D (admin defaults matrix) ─────────────
+   Owner: Session D (Admin → Notifications tab). Session D's styles go below this
+   marker — nobody else writes here. Role×type×channel matrix + per-employee
+   tri-state override grid. Mobile-only rules use @media (max-width: 768px). */
+
+.notify-def { padding: var(--space-4); }
+
+.notify-def-intro { margin-bottom: var(--space-4); }
+.notify-def-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.notify-def-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+.notify-def-viewnav {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.notify-def-viewbtn {
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-fast);
+}
+.notify-def-viewbtn.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.notify-def-roletabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.notify-def-roletab {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-fast);
+}
+.notify-def-roletab.active {
+  background: var(--accent-subtle, var(--bg-tertiary));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.notify-def-loading,
+.notify-def-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.notify-def-tablewrap {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  overflow-x: auto;
+}
+.notify-def-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.notify-def-table thead th {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.notify-def-th-type { text-align: left; }
+.notify-def-th-ch,
+.notify-def-th-lock { text-align: center; width: 64px; }
+
+.notify-def-table tbody tr { border-bottom: 1px solid var(--border-light); }
+.notify-def-table tbody tr:last-child { border-bottom: none; }
+.notify-def-row-inert { opacity: 0.55; }
+
+.notify-def-td-type { padding: 10px 12px; }
+.notify-def-typelabel {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.notify-def-inert-badge {
+  margin-left: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.notify-def-td-ch,
+.notify-def-td-lock { text-align: center; padding: 8px 12px; }
+
+.notify-def-lockbtn {
+  width: 32px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+.notify-def-lockbtn.locked {
+  background: var(--status-waiting-bg);
+  border-color: var(--status-waiting);
+}
+.notify-def-lockbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.notify-def-note {
+  margin-top: var(--space-4);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  max-width: 680px;
+}
+
+/* Employee overrides */
+.notify-def-empbar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.notify-def-empselect {
+  flex: 1;
+  max-width: 360px;
+  height: 36px;
+  font-size: 13px;
+}
+.notify-def-clearall {
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-fast);
+}
+.notify-def-clearall.confirm {
+  background: var(--status-paused-bg);
+  color: var(--status-paused-color);
+  border-color: var(--status-paused-border);
+}
+.notify-def-clearall:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Tri-state override toggle: inherit (dashed) / on / off */
+.notify-def-tri {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.notify-def-tri-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+.notify-def-tri-toggle.inherit {
+  background: var(--bg-tertiary);
+  border: 2px dashed var(--border-color);
+}
+.notify-def-tri-toggle.on {
+  background: var(--status-working-color);
+  border: none;
+}
+.notify-def-tri-toggle.off {
+  background: var(--status-paused-color);
+  border: none;
+}
+.notify-def-tri-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+.notify-def-tri-dot {
+  position: absolute;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+  transition: left var(--transition-fast);
+  display: block;
+}
+.notify-def-tri-toggle.inherit .notify-def-tri-dot {
+  left: 11px;
+  background: var(--border-color);
+  box-shadow: none;
+}
+.notify-def-tri-toggle.off .notify-def-tri-dot { left: 3px; }
+.notify-def-tri-toggle.on .notify-def-tri-dot { left: 21px; }
+
+.notify-def-clearone {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+.notify-def-clearone:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .notify-def { padding: var(--space-3); }
+  .notify-def-empbar { flex-wrap: wrap; }
+  .notify-def-empselect { max-width: none; }
+  .notify-def-th-ch,
+  .notify-def-th-lock { width: 52px; }
+}
