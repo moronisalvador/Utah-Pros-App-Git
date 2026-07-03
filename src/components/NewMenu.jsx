@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   The black "New" button at the top-right of the desktop bar. Clicking it
- *   drops down a little menu to start something new — a Claim (which opens the
- *   job creator), an Estimate, a Customer, or an Invoice. It doesn't do the work
+ *   drops down a little menu to start something new — a Job (which also starts
+ *   its claim), an Estimate, a Customer, or an Invoice. It doesn't do the work
  *   itself; it just tells the app shell which "create" pop-up to open.
  *
  * WHERE IT LIVES:
@@ -19,7 +19,7 @@
  *   Data:      reads → feature flags (gates New Estimate) · writes → none (delegates via onAction)
  *
  * NOTES / GOTCHAS:
- *   - "New Claim" → onAction('job'): a claim is created as part of the job
+ *   - "New Job" → onAction('job'): a claim is created as part of the job
  *     creator (CreateJobModal). New Customer → 'customer', New Invoice →
  *     'invoice'. Layout.handleCreateAction maps these to the right modal.
  *   - "New Estimate" → onAction('estimate'): opens NewEstimateModal via
@@ -33,7 +33,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconPlus } from '@/lib/navItems';
 
 const OPTIONS = [
-  { key: 'job',      label: 'New Claim',    desc: 'Start a claim & job', emoji: '\u{1F4C4}' },
+  { key: 'job',      label: 'New Job',      desc: 'Start a claim & job', emoji: '\u{1F4C4}' },
   { key: 'estimate', label: 'New Estimate', desc: 'Build an estimate',   emoji: '\u{1F4D0}', flag: 'page:estimates' },
   { key: 'customer', label: 'New Customer', desc: 'Add a contact',       emoji: '\u{1F464}' },
   { key: 'invoice',  label: 'New Invoice',  desc: 'Create an invoice',   emoji: '\u{1F9FE}' },
