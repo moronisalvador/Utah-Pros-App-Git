@@ -443,7 +443,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
     if (!placementMode || !onPlacementClick) return;
     const mins = ghostPos?.dayKey === dayKey ? ghostPos.minutes : hour * 60;
     const startMins = clampMinutes(mins);
-    const endMins = clampMinutes(startMins + (placementMode.duration || 120));
+    const endMins = clampMinutes(startMins + (placementMode.duration || 60));
     onPlacementClick(dayKey, minutesToTime(startMins), minutesToTime(endMins));
   }, [placementMode, onPlacementClick, ghostPos]);
 
@@ -469,7 +469,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
               Click on the calendar to place: {placementMode.jobName}
             </span>
             <span style={{ fontSize: 12, color: '#3b82f6' }}>
-              · {placementMode.taskCount} tasks · {Math.round((placementMode.duration || 120) / 60)}h
+              · {placementMode.taskCount} tasks · {Math.round((placementMode.duration || 60) / 60)}h
             </span>
           </div>
           <button onClick={onCancelPlacement}
@@ -499,7 +499,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
           const dropTopPx = isDropTarget ? ((dragOver.minutes - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT : null;
           const showGhost = placementMode && ghostPos?.dayKey === day.key;
           const ghostTopPx = showGhost ? ((ghostPos.minutes - CAL_START_HOUR * 60) / 60) * CAL_HOUR_HEIGHT : null;
-          const ghostHeight = showGhost ? ((placementMode.duration || 120) / 60) * CAL_HOUR_HEIGHT : 0;
+          const ghostHeight = showGhost ? ((placementMode.duration || 60) / 60) * CAL_HOUR_HEIGHT : 0;
 
           return (
             <div key={day.key} style={CV.dayCol}>
@@ -559,7 +559,7 @@ function CalendarView({ days, boardData, events = [], onApptClick, onCellClick, 
                       {placementMode.jobName}
                     </div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
-                      {fmtTime(minutesToTime(ghostPos.minutes))} – {fmtTime(minutesToTime(ghostPos.minutes + (placementMode.duration || 120)))}
+                      {fmtTime(minutesToTime(ghostPos.minutes))} – {fmtTime(minutesToTime(ghostPos.minutes + (placementMode.duration || 60)))}
                     </div>
                     <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 1 }}>
                       {placementMode.taskCount} tasks
