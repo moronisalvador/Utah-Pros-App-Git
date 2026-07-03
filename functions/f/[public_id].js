@@ -31,12 +31,14 @@
  *     public page, so that is the whole XSS story.
  *   - Sets `Content-Security-Policy: frame-ancestors *` and never sets
  *     X-Frame-Options, so the form can be iframed on any customer site.
- *   - Turnstile widget renders only when the form has it enabled AND a
- *     TURNSTILE_SITE_KEY is configured — forms work before the key exists.
+ *   - Turnstile widget renders only when the form has it enabled AND a site key
+ *     is configured. The site key lives in integration_config (key
+ *     'turnstile_site_key'), with env.TURNSTILE_SITE_KEY as a fallback — forms
+ *     work before the key exists.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { escapeHtml, sanitizeLinkMarkup } from '../lib/forms.js';
+import { escapeHtml, sanitizeLinkMarkup, pickConfiguredKey } from '../lib/forms.js';
 
 function page(bodyHtml, status = 200) {
   return new Response(`<!doctype html>${bodyHtml}`, {
@@ -122,7 +124,7 @@ function renderField(field) {
   }
 }
 
-function renderForm(form, schema, env) {
+function renderForm(form, schema, turnstileSiteKey) {
   const fields = Array.isArray(schema.fields) ? schema.fields : [];
   const theme = form.theme || {};
   const primary = /^#[0-9a-fA-F]{3,8}$/.test(theme.primary || '') ? theme.primary : '#6366f1';
@@ -134,7 +136,6 @@ function renderForm(form, schema, env) {
   const submitText = escapeHtml(schema.submitText || 'Submit');
   const thankYou = sanitizeLinkMarkup(schema.thankYou || 'Thank you — we\'ll be in touch shortly.');
 
-  const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
   const useTurnstile = !!form.turnstile_enabled && !!turnstileSiteKey;
   const turnstileScript = useTurnstile
     ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'
@@ -306,7 +307,23 @@ export async function onRequestGet(context) {
       `id=eq.${form.published_version_id}&select=schema`,
     );
     const schema = (vers[0] && vers[0].schema) || { fields: [] };
-    return page(renderForm(form, schema, env));
+
+    // Turnstile site key: integration_config (managed in Supabase) is the source
+    // of truth; env is a fallback. Only look it up when the form actually uses
+    // Turnstile, so a normal form load stays a single round-trip.
+    let siteKey = '';
+    if (form.turnstile_enabled) {
+      let configValue = '';
+      try {
+        const cfg = await db.select('integration_config', 'key=eq.turnstile_site_key&select=value');
+        configValue = (cfg[0] && cfg[0].value) || '';
+      } catch (e) {
+        console.error('turnstile site key lookup failed (falling back to env):', e);
+      }
+      siteKey = pickConfiguredKey(configValue, env.TURNSTILE_SITE_KEY);
+    }
+
+    return page(renderForm(form, schema, siteKey));
   } catch (e) {
     console.error('hosted form error:', e);
     return notFound();

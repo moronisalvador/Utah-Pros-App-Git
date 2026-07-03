@@ -22,7 +22,7 @@
  *   Internal:  imported by functions/api/form-submit.js,
  *              functions/f/[public_id].js, and src/pages/crm/CrmForms.jsx.
  *   Exports:   escapeHtml, sanitizeLinkMarkup, FIELD_TYPES, validateSubmission,
- *              checkSpam, consentValue, isTruthy, MIN_FILL_MS
+ *              checkSpam, consentValue, isTruthy, MIN_FILL_MS, pickConfiguredKey
  *
  * NOTES / GOTCHAS:
  *   - Owned by Phase 10 (.claude/rules/crm-wave-ownership.md). Created new; it
@@ -36,6 +36,20 @@
 
 // The two spam thresholds. A real person cannot complete a form in under 3s.
 export const MIN_FILL_MS = 3000;
+
+/**
+ * Choose the effective value for a Turnstile key that may live in either the
+ * integration_config table (source of truth, managed in Supabase) or a
+ * Cloudflare env var (fallback, so a key set the old way keeps working). The
+ * database value wins; both are trimmed. Returns '' when neither is set, which
+ * every caller treats as "not configured → the Turnstile check stays dormant
+ * and the form keeps working."
+ */
+export function pickConfiguredKey(configValue, envValue) {
+  const fromConfig = typeof configValue === 'string' ? configValue.trim() : '';
+  if (fromConfig) return fromConfig;
+  return typeof envValue === 'string' ? envValue.trim() : '';
+}
 
 // Every field type the builder can produce. Kept in sync with CrmForms.jsx.
 export const FIELD_TYPES = ['text', 'email', 'phone', 'select', 'radio', 'checkbox', 'textarea', 'date', 'consent'];
