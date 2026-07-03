@@ -4311,10 +4311,39 @@ the iOS token path never runs. The **in-app bell is the channel that works now**
 fan-out is wired degrade-gracefully and becomes real the day the owner configures APNs + devices
 register. Zero schema migrations shipped (Session B constraint).
 
-### Session C (AdminFeedback rebuild + gallery) — not started
-*Reserved. Session C documents its AdminFeedback.jsx rebuild here: attachments gallery /
-video viewer (lives in AdminFeedback, not the shared composer), source badge,
-resolved/purged states, styles only below its reserved index.css marker.*
+### Session C (AdminFeedback rebuild + gallery) — shipped (Jul 3 2026)
+
+Owner's media view + retention purge. Files: `src/pages/AdminFeedback.jsx` (rebuilt),
+`functions/api/purge-feedback-media.js` (+ `.test.js`, new), one line in
+`src/pages/DevTools.jsx` (`WORKER_NAMES` gains `'purge-feedback-media'`), and the reserved
+Session C `index.css` block. Zero schema migrations (consumes Phase F's).
+
+- **AdminFeedback rebuild.** Media gallery reads the `attachments` jsonb (falls back to legacy
+  `screenshots` when `attachments` is empty), normalizing both via `stripBucketPrefix` before
+  building the `…/storage/v1/object/public/job-files/{path}` URL. Images open in an **own**
+  lightbox (not the tech-scoped `src/components/tech/Lightbox.jsx`); videos play inline via
+  `<video controls preload="metadata">`. Per-file name + size, and a "10.4 MB → 0.8 MB" note
+  when `original_size` is present. Source badge (`via Tech app` / `via Desktop`). Type `feature`
+  renders as **"Improvement"** (UI-only; DB keeps `feature`). Purged rows show
+  "attachments purged" (persists even after reopen — `attachments_purged_at` is never cleared).
+  **Per-row draft notes** (`drafts[id]`) — kills the old shared-`noteText` cross-save bug; adds a
+  standalone "Save note" action alongside the status buttons.
+- **Manual purge (day-1 trigger).** Two-click inline confirm, per-item and a header
+  "purge all eligible" sweep (eligible = terminal + has attachments + not yet purged). Uses the
+  anon-key per-object storage DELETE pattern (mirrors `JobPage.jsx`) then
+  `db.rpc('mark_feedback_attachments_purged', { p_id })`.
+- **`purge-feedback-media` worker.** `GET /api/purge-feedback-media?days=90&dry_run=1` — no auth
+  (cron convention; the `get_purgeable_feedback_media` `GREATEST(p_days,30)` clamp is the
+  guardrail, live-verified: `days=0/1/90` all return 0 purgeable). Per purgeable row: bulk-delete
+  `DELETE /storage/v1/object/job-files {prefixes:[…]}`, then mark **only** on success or
+  not-found (a transport error leaves the row un-marked so it retries next run — never mark what
+  wasn't cleaned). Orphan sweep deletes `feedback/`-prefix objects unreferenced by any
+  `tech_feedback` row and older than 7 days (Finding 1). Always writes a `worker_runs` row.
+  Returns `{ok, checked, purged, files_deleted, orphans, errors, dry_run}`. Injectable
+  `runPurge(db, storageDelete, opts)` + `collectPaths`/`stripBucketPrefix` unit-tested (12 tests).
+- **Owner-gated (disclosed):** auto-scheduling is an owner action — point the external cron that
+  drives `process-scheduled` at `/api/purge-feedback-media`. The manual button works from merge,
+  day 1.
 
 ## Tech Mobile v2 — plan of record (session 2026-07-03, docs + reviewer agent only — no feature code)
 
