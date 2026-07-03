@@ -353,7 +353,9 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
     return g;
   }, [filtered]);
 
-  const totalHours   = filtered.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalOnSite  = filtered.reduce((s,e) => s + Number(e.hours||0), 0);
+  const totalTravel  = filtered.reduce((s,e) => s + Number(e.travel_minutes||0)/60, 0);
+  const totalHours   = totalOnSite + totalTravel; // fully-loaded (travel + on-site) — matches Cost
   const totalCost    = filtered.reduce((s,e) => s + Number(e.total_cost||0), 0);
   const pendingCount = filtered.filter(e => !e.approved).length;
   const openCount    = filtered.filter(e => e.is_open).length;
@@ -474,15 +476,15 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
 
   const activeFilterCount = (filterEmployee ? 1 : 0) + (filterDivision ? 1 : 0);
   const cols = isAdmin
-    ? '30px 1.3fr 1fr 1.7fr 0.85fr 0.95fr 0.75fr 0.95fr 1.05fr 128px'
-    : '1.3fr 1fr 1.7fr 0.85fr 0.95fr 0.75fr 0.95fr 1.05fr 110px';
+    ? '30px 1.2fr 0.9fr 1.55fr 0.8fr 0.9fr 0.66fr 0.66fr 0.7fr 0.9fr 1fr 118px'
+    : '1.2fr 0.9fr 1.55fr 0.8fr 0.9fr 0.66fr 0.66fr 0.7fr 0.9fr 1fr 104px';
   const headStyle = { display:'grid', gridTemplateColumns:cols, gap:12, alignItems:'center' };
 
   // ─── SECTION: Render ──────────────
   return (
     <>
       <KpiGrid cols={4}>
-        <Kpi label="Total hours" value={fmtHours(totalHours)} />
+        <Kpi label="Total hours" value={fmtHours(totalHours)}>travel + on-site</Kpi>
         <Kpi label="Total labor" value={money(totalCost)} valueColor={STATUS.success.text} />
         <Kpi label="Open clocks" value={openCount} valueColor={openCount ? STATUS.warning.text : C.ink}
           active={filterStatus === 'open'} onClick={() => setFilterStatus(filterStatus === 'open' ? '' : 'open')}>
@@ -571,21 +573,27 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
               <span>Job</span>
               <span>Clock in</span>
               <span>Clock out</span>
-              <span style={{ textAlign:'right' }}>Hours</span>
+              <span style={{ textAlign:'right' }}>Travel</span>
+              <span style={{ textAlign:'right' }}>On site</span>
+              <span style={{ textAlign:'right' }}>Total</span>
               <span style={{ textAlign:'right' }}>Cost</span>
               <span>Status</span>
               <span />
             </div>
 
             {Object.values(grouped).map(group => {
-              const gHours = group.entries.reduce((s,e) => s+Number(e.hours||0), 0);
-              const gCost  = group.entries.reduce((s,e) => s+Number(e.total_cost||0), 0);
+              const gOnSite = group.entries.reduce((s,e) => s+Number(e.hours||0), 0);
+              const gTravel = group.entries.reduce((s,e) => s+Number(e.travel_minutes||0)/60, 0);
+              const gTotal  = gOnSite + gTravel;
+              const gCost   = group.entries.reduce((s,e) => s+Number(e.total_cost||0), 0);
               return (
                 <div key={group.name}>
                   <div className="tt-group-bar">
                     <span style={{ fontWeight:700, fontSize:13, color:C.title }}>{group.name}</span>
-                    <span style={{ display:'flex', gap:16, ...tnum }}>
-                      <span style={{ fontSize:12, color:C.muted }}>{fmtHours(gHours)}</span>
+                    <span style={{ display:'flex', gap:14, alignItems:'baseline', ...tnum }}>
+                      <span style={{ fontSize:11.5, color:C.muted }}>{fmtHours(gTravel)} travel</span>
+                      <span style={{ fontSize:11.5, color:C.muted }}>{fmtHours(gOnSite)} on-site</span>
+                      <span style={{ fontSize:12, fontWeight:700, color:C.ink }}>{fmtHours(gTotal)} total</span>
                       <span style={{ fontSize:12, fontWeight:700, color:STATUS.success.text }}>{money(gCost)}</span>
                     </span>
                   </div>
@@ -593,6 +601,8 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
                   {group.entries.map(entry => {
                     const editing = (f) => editCell?.id === entry.id && editCell.field === f;
                     const editable = isAdmin && !entry.approved;
+                    const travelHrs = Number(entry.travel_minutes || 0) / 60;
+                    const totalHrs  = Number(entry.hours || 0) + travelHrs;
                     return (
                       <div key={entry.id} className="coll-row coll-static"
                         style={{ ...headStyle, ...(entry.approved ? { background:'#fcfdfe' } : null) }}>
@@ -624,6 +634,11 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
                             ? <Pill color={STATUS.warning.text} bg={STATUS.warning.tint} border={STATUS.warning.border}>OPEN</Pill>
                             : <span style={{ color:C.body }}>{fmtTime(entry.clock_out)}</span>}
                         </span>
+                        {/* Travel (edit via the entry modal's Travel Minutes) */}
+                        <span style={{ textAlign:'right', ...tnum, color: travelHrs > 0 ? C.muted : C.faint }}>
+                          {travelHrs > 0 ? fmtHours(travelHrs) : '—'}
+                        </span>
+                        {/* On-site hours — inline editable (this is the billing/Xactimate number) */}
                         <span style={{ textAlign:'right', fontWeight:600, ...tnum, cursor:editable?'pointer':'default',
                           color: entry.is_overlong ? STATUS.danger.text : C.ink }}
                           onClick={() => editable && startEdit(entry, 'hours')}>
@@ -634,6 +649,9 @@ function TimesheetView({ db, startDate, endDate, currentUser, employees, isAdmin
                                 style={{ textAlign:'right' }} />
                             : fmtHours(entry.hours)}
                         </span>
+                        {/* Total = travel + on-site (the fully-loaded cost driver) */}
+                        <span style={{ textAlign:'right', fontWeight:700, ...tnum,
+                          color: entry.is_overlong ? STATUS.danger.text : C.ink }}>{fmtHours(totalHrs)}</span>
                         <span style={{ textAlign:'right', fontWeight:600, ...tnum }}>{costCell(entry.total_cost)}</span>
                         <span><RowBadges entry={entry} isAdmin={isAdmin} /></span>
 
