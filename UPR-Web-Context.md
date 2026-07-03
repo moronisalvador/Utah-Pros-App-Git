@@ -1334,6 +1334,66 @@ S/D wave fills in.
   window); `TechDash` no longer re-skeletons when data already exists.
 - **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
 
+### Session D — Dashboard v2 (Jul 3 2026)
+
+Fills the `TechDashV2` stub — "mission control for today" behind `page:tech_dash_v2`. **Zero
+schema/RPCs.** Owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` + the
+`TECH-V2: DASH` css marker (new `tv2-dash-*` / `tv2-fab-*` classes only).
+
+- **One query:** `useQuery(techKeys.dash(employee.id) → get_tech_dashboard)`. Clock/photo taps
+  refresh via `invalidateTech(qc, 'clock'|'photo')` (techQuery's map) — no full refetch.
+  Pull-to-refresh and window-focus revalidate in place; the cold skeleton shows only on the
+  first load with no cached data (never re-skeletons after).
+- **Sections:** Now/Next hero (composes the frozen `TimeTracker` as the single primary action
+  when a visit is today/live; countdown when scheduled; next-day preview otherwise; empty state
+  → schedule) · attention strip (`StalledWidget` + away-from-jobsite geo, gated on the `active`
+  pane prop + 20s debounce, + 5PM "still clocked in" reading `open_entry` from the payload) ·
+  today mini-timeline (horizontal, status-color chips) · My numbers (hours today/week as
+  labeled travel + on-site + total, tasks done/total, photos today) · completed rows WITH a
+  per-visit travel/on-site/total breakdown (a small read-only `job_time_entries` fetch per
+  completed row — the payload carries only the open entry) · Coming Up (7 days, me-scoped) ·
+  greeting header (sticky, two-click Sign Out — no `confirm()`) · Create FAB.
+- **dash helpers** (`src/pages/tech/v2/dash/dashHelpers.js`, unit-tested): `fmtHours`,
+  `hoursBreakdown`, `toPickShape` (adapts the payload appt to the frozen `pickNowNext` shape),
+  `selectHero`, `splitToday` (cancelled → no bucket, Finding-6 belt-and-suspenders).
+- **Nav** through `apptHref()/jobHref()` only. Snap-first photo flow (`PhotoCaptureButton`)
+  ported verbatim from v1 (offline-queue + inline paths, `PhotoNoteSheet`, room tagging).
+- **Tests:** `src/pages/tech/v2/dash/dashHelpers.test.js` (16, no creds) — pickNowNext edge
+  cases (all completed / none today / paused), hours formatting, cancelled-exclusion.
+
+### Session S — Schedule v2 (Jul 3 2026 — shipped)
+
+Fills the `TechScheduleV2` stub behind `page:tech_sched_v2` (owner-only). Legacy
+`TechSchedule.jsx` untouched. Owns `src/pages/tech/v2/TechScheduleV2.jsx` +
+`src/pages/tech/v2/schedule/**` + CSS in the `TECH-V2: SCHED` marker. Zero schema/RPCs.
+
+- **Views:** **Agenda** (default) — continuous bidirectional list, sticky per-day
+  headers, today anchored on first paint via a ref + rect math on the pane scroll
+  container (found with `ref.closest('.tv2-pane-scroll')`, re-asserted in a microtask
+  to beat the pane host's scroll-restore; no `setTimeout`, no
+  `querySelector('.tech-content')`). Prepending past days compensates `scrollTop` so the
+  viewport never jumps; scrolling drives the strip highlight + floating Today pill.
+  **Day timeline** — hour grid, status-tinted positioned blocks with overlap lanes, an
+  all-day strip, and a red now-line that ticks each minute and pauses when the pane is
+  inactive (`active` prop). **Month view is deferred** (rides with Phase C) — not built.
+- **Week strip:** infinite scroll-snap pager (one week per page), haptic tick via
+  `lib/nativeHaptics` on week change, grows at whichever edge you swipe toward with
+  `scrollLeft` compensation. Day taps are pure client state — never a fetch.
+- **Data:** `useScheduleData` runs one `get_appointments_range` query per calendar month
+  via the FROZEN `techKeys.schedMonth`, ±1 month prefetch, a GROWING loaded-month set
+  (never shrinks → stable agenda scroll), dedupe by id. PTR + focus revalidate through
+  `invalidateTech(qc,'appointment')`; skeletons only on true cold start.
+- **Rendering:** `color/kind/duration_days/is_milestone` all surfaced — STATUS owns the
+  color channel (chip + timeline block tint), division demoted to a small pill, events
+  (`kind='event'`/no job) styled distinctly. Nav strictly via `apptHref()/jobHref()`.
+- **Filters/search/create:** carried over with legacy parity — me/all/multi-crew +
+  division (`MITIGATION_DIVS = water/mold/contents`, matching legacy), persisted under the
+  SAME `tech_schedule_filters_{empId}` localStorage key; create picker → existing
+  `/tech/new-appointment` & `/tech/new-event`.
+- **Pure logic** in `schedule/scheduleSelectors.js` (month-key math, grouping/sorting,
+  filter predicates) with 24 committed vitest cases (`scheduleSelectors.test.js`, TEST
+  fixtures only — never live rows). `npm test`/`build`/`eslint` green.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
@@ -4518,6 +4578,18 @@ great for iPad") alongside Week (daily driver, "pretty much perfect as is") and 
 (occasional overview + future HCP-style Gantt foundation). This supersedes the "kill … 3-Day
 span" item above; `docs/schedule-roadmap.md` carries the same dated amendment. Session B of the
 Schedule initiative must scope its viewMode-axis collapse to Jobs/Crew grids only.
+
+**⚠️ Second amendment round (2026-07-03, owner conversation — this session):** ① Session C
+rescoped from "Month parity, visuals identical" to **"Month upgraded to Week's design SYSTEM at
+month DENSITY"** — miniature single-line eventCardStyle chips (soft-tint + left accent, replacing
+the solid divColor blocks), Week's event/completed/status semantics, Week's hover popover; Week's
+full card geometry explicitly NOT transplanted (month cells ~90px — density is the acceptance
+bar). Owner delegated the design specifics to planner judgment ("do what's really best for the
+monthly view"); the trade-off is in the roadmap's options-on-record. ② Week view: zero changes in
+any phase, byte-identical. ③ **Mobile declared an explicit non-goal** for the desktop schedule
+page (roadmap decision ⑨) — the tech app owns mobile scheduling and is untouched. ④ The stale
+in-place "3-Day gone" text in the roadmap/dispatch Session B blocks was fixed to match the first
+amendment. `docs/schedule-roadmap.md` + `docs/schedule-dispatch.md` are authoritative.
 
 ## Notification Center — plan of record (session 2026-07-03, docs only — no feature code)
 

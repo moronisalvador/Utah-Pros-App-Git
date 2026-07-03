@@ -14,11 +14,23 @@ Live data quantifies the leak: **56 of 105 non-lead jobs (53%) have never had an
 Target: one continuous flow from the calendar — click a day/slot or "+ New" → HCP-style booking
 modal → search-or-create customer, claim choice, job essentials, date/time/crew → **one save creates
 contact + claim + job + appointment**, visible on the calendar immediately, no navigation, under
-~60 seconds. Then retire the dead weight and bring Month view to Week-view parity.
+~60 seconds. Then retire the dead weight and bring Month view up to Week's design language +
+feature parity.
 
 **Owner decisions on record (interview 2026-07-03, two rounds + HCP reference screenshot):**
 ① **Week view is the beloved standard** (the original brief said Month — owner corrected); Week +
-Month both matter, full upgrade for both, neither view's visuals may regress. ② Kill list
+Month both matter, ~~full upgrade for both, neither view's visuals may regress~~. **⚠️ REFINED
+2026-07-03 round 2 (owner):** Week is the untouchable daily driver — "spot on … completely
+amazing", ZERO changes to it in any phase (its may-not-regress stands absolute); Month is
+**improved following Week's design language and system** — Month's visuals are *meant* to change
+(supersedes "neither view's visuals may regress" as applied to Month). The owner then delegated
+the specifics to planner judgment ("do what's really best for the monthly view, not what I
+think"). **Design call on record (planner, adopted): Week's design SYSTEM at month DENSITY** —
+unify the color semantics (eventCardStyle tints/accents/status/event styling) and the interaction
+language (hover popover, drag, create), but do NOT transplant Week's card geometry: a month cell
+is ~90px tall and Week's cards are 40-70px, so full cards would collapse density to ~1
+appointment/day and destroy the at-a-glance overview that is Month's job. Spec in the Session C
+block; trade-off in options-on-record. ② Kill list
 confirmed: Jobs grid view, Crew grid view, ~~3-Day span~~, entire Templates/Wizard subsystem.
 **⚠️ AMENDED later the same day (2026-07-03, owner, relayed via the notify planning session):
 the 3-Day span is KEPT** — "the three-day view will work great for iPad"; Week stays the daily
@@ -33,8 +45,12 @@ selecting an existing client → **"New claim" (default, every time)** vs "Exist
 existing-claim picker rows show **address · date of loss · claim number**. ⑤ Notify customer:
 visible toggle, **default ON**. ⑥ **Single-day appointment rows stay** ("(continued)" clone pattern
 for spillover); multi-day spanning + recurrence explicitly deferred. ⑦ The doc-referenced
-"appointments→scheduled-jobs refactor" is **stale — this plan supersedes it**. ⑧ Desktop web only;
-mobile later (see `docs/tech-v2-roadmap.md` for the tech-side initiative).
+"appointments→scheduled-jobs refactor" is **stale — this plan supersedes it**. ⑧ Desktop web only.
+**⑨ (2026-07-03 round 2): mobile is an explicit NON-GOAL for the desktop schedule page** — the
+tech mobile app already has its own mobile-friendly schedule (`/tech/schedule`, rebuilt by tech-v2
+Session S) and owns mobile scheduling; it is untouched by this initiative. No session invests in
+mobile-specific work here beyond the standing design-system responsive patterns (the
+bottom-sheet-at-768px modal rule stays because it's the house pattern, not mobile investment).
 
 ## Status reconciliation (live, 2026-07-03)
 
@@ -42,7 +58,7 @@ mobile later (see `docs/tech-v2-roadmap.md` for the tech-side initiative).
 |---|---|---|
 | Dispatch calendar usage | **Real** | 230 appointments since 2026-04-14, ~75/mo, 92% crewed, 100% timed, all single-day (live SQL) |
 | Templates/Wizard subsystem | **Dead** | 0/230 appointments reference `job_schedule_id`/`template_phase_id`; 0 `appointment_dependencies` rows; `schedule_templates` untouched since 2026-03-20; wizard last run 2026-04-14; ScheduleWizard.jsx 0 commits since 2026-03-20 (GitHub API) |
-| Jobs/Crew grids, 3-Day span | **Unverifiable** from code (per-user localStorage, no telemetry) | Killed by owner decision, not data |
+| Jobs/Crew grids | **Unverifiable** from code (per-user localStorage, no telemetry) | Killed by owner decision, not data (the 3-Day span is KEPT per the ② amendment — iPad) |
 | Prior schedule plan doc | **None exists** | The twice-referenced "appointments→scheduled-jobs refactor" (`UPR-Web-Context.md` Calendar-sync section, `GOOGLE-INTEGRATIONS-HANDOFF.md`) has no plan file — superseded by this doc (refs struck in place this session) |
 | Schema drift | **Disclosed** | ~19 live schedule/customer RPCs have no file in `supabase/migrations/` (incl. `update_appointment`, `delete_appointment`, `get_dispatch_panel_jobs`, `apply_schedule_plan`); no CREATE TABLE for `appointments` is tracked. This initiative ships zero schema and does not capture the drift — the tech-v2 Phase F drift-capture migration covers the tech RPC surface; the dispatch RPCs remain uncaptured (accepted, on record) |
 | Orphan tables | **Disclosed** | `schedule_blocks`, `on_call_schedule`: 0 rows AND 0 code references; `appointment_dependencies`: 0 rows. Stay in place (additive-only rule) — documented as retired |
@@ -179,8 +195,9 @@ changes beyond the shared component swap.
 > medium** (large deletion on a live page; mechanical but Rule-8-sensitive).
 > **Read scope:** this block + `CLAUDE.md` + the frozen-contract list below.
 > **Close-out checklist (all true before the PR):**
-> - [ ] Removal complete: Jobs/Crew grid views + 3-Day span gone from Schedule.jsx (viewMode axis
->       collapsed → Calendar-only with Day/Week/Month; stale localStorage reads sanitized);
+> - [ ] Removal complete: Jobs/Crew grid views gone from Schedule.jsx (viewMode axis collapsed →
+>       Calendar-only with Day/**3-Day (KEPT per the ② amendment — iPad)**/Week/Month spans; only
+>       the `upr_schedule_view` localStorage key is retired — `upr_schedule_span` untouched);
 >       ScheduleTemplates.jsx + `/schedule/templates` route + App.jsx import + **both** navItems
 >       entries + **Admin.jsx page-access row** deleted; ScheduleWizard.jsx + its JobPage and
 >       JobPanel integrations deleted; dead code removed (EditAppointmentModal clone-visit block,
@@ -195,14 +212,15 @@ changes beyond the shared component swap.
 >       select); schedule-from-job works end-to-end on dev.
 > - [ ] F2 remodeling-filter fix shipped as its **own commit**.
 > - [ ] `npm run test` + `npm run build` + eslint pass; zero schema migrations; grep proves zero
->       remaining references to removed components/RPCs; Week/Month/Day visually unchanged on dev;
->       mobile spot-check (mobile only ever saw Calendar).
+>       remaining references to removed components/RPCs; Day/3-Day/Week/Month visually unchanged
+>       on dev; mobile spot-check (mobile only ever saw Calendar; decision ⑨ — no mobile work).
 > - [ ] `upr-pattern-checker` clean; `UPR-Web-Context.md` updated (Schedule System bullets
 >       rewritten — views list, templates marked retired, the 6 dead RPCs listed as
 >       retired-no-callers) + session entry; reconcile this doc's checkboxes; test rows deleted;
 >       push; PR into `dev` as a handoff, then stop.
 
-Scope: Schedule.jsx (deletion + span options), ScheduleTemplates.jsx (delete), ScheduleWizard.jsx
+Scope: Schedule.jsx (view-axis deletion — span options untouched per the ② amendment),
+ScheduleTemplates.jsx (delete), ScheduleWizard.jsx
 (delete), JobPanel.jsx, JobPage.jsx, App.jsx (route region: `/schedule/templates` only — tech-v2
 co-edits tech routes; rebase-aware), `src/lib/navItems.jsx`, `src/pages/Admin.jsx` (one row),
 EditAppointmentModal.jsx, index.css (inside the Phase-2 marker + deleting orphaned rules), new
@@ -210,21 +228,36 @@ EditAppointmentModal.jsx, index.css (inside the Phase-2 marker + deleting orphan
 C), any DB object drop (tables/RPCs stay, documented retired), any styling change to surviving
 views.
 
-### Session C — Phase 3: Month-view parity (UX upgrade)
+### Session C — Phase 3: Month-view upgrade — Week's design system at month density
+
+*(Rescoped 2026-07-03: the original "parity, visuals identical" instruction is superseded by
+decision ①'s design call — Month adopts Week's design SYSTEM, not its card geometry.)*
 
 > **Branch:** harness-assigned (illustrative: `schedule/phase-3-month`), cut from `origin/dev`.
 > **Prerequisite:** Session B merged into `dev`. Model: **Opus 4.8 (or strongest available) ·
 > medium** (drag-drop interaction work; reschedule email side effect in play).
-> **Read scope:** this block + `CLAUDE.md` + `UPR-Design-System.md` + the frozen-contract list.
+> **Read scope:** this block + decision ① + `CLAUDE.md` + `UPR-Design-System.md` + the
+> frozen-contract list.
 > **Close-out checklist (all true before the PR):**
-> - [ ] Month renders `kind='event'` rows (F1 fixed) with the same event styling language the
->       other views use; division filter continues to hide events (existing rule).
+> - [ ] **Month restyled on Week's design system at month density:** chips rebuilt as miniature
+>       single-line `eventCardStyle` cards — soft-tint background + 3px left accent + dark text
+>       (replacing today's solid `divColor` blocks with white text, which also fixes the
+>       DIV_COLORS-vs-eventCardStyle palette clash), completed = gray at reduced opacity, events
+>       styled exactly as Week styles events. Density preserved: single-line chips, per-cell
+>       overflow ("+N more") intact — Week's full card geometry is explicitly NOT transplanted.
+> - [ ] **Week's hover popover added to Month chips** (reuse/adapt the ApptPopover pattern) — full
+>       appointment detail without leaving the month overview.
+> - [ ] Month renders `kind='event'` rows (F1 fixed); division filter continues to hide events
+>       (existing rule), crew filter applies.
 > - [ ] Click-day → creationPicker prefilled with that date (day-number keeps zoom-to-Day);
 >       drag-to-reschedule chips between days (date-only `update_appointment`, optimistic +
 >       rollback like Week); chips enriched with `_jobId`/`_division`/`_address` stamped from the
 >       parent job row so hover/edit paths match Week (E5).
-> - [ ] Week view: zero code changes expected — regression-verified only.
-> - [ ] Visual parity: before/after screenshots of Week + Month on dev — same chips, colors, grid.
+> - [ ] Week view: zero code changes — regression-verified only (byte-identical rendering).
+> - [ ] Before/after screenshots on dev prove Month now speaks Week's visual language at month
+>       density, and Week is unchanged. Owner eyeballs on staging; if the soft tints read too
+>       quiet at month size, the tint/accent ratio is a one-variable tweak in the chip style —
+>       disclosed as the tuning lever, not a redesign.
 > - [ ] Reschedule email CAS verified with test rows (notify OFF): date-only drags respect the
 >       `client_time_sig` logic; no mass-email risk.
 > - [ ] `npm run test` + `npm run build` + eslint pass; zero schema migrations;
@@ -232,8 +265,9 @@ views.
 >       rows deleted; push; PR into `dev` as a handoff, then stop.
 
 Scope: `src/components/schedule/MonthView.jsx` (primary), Schedule.jsx (props/wiring), possibly
-CalendarView.jsx (shared drop helpers), index.css (Phase-3 marker only). Deliberately NOT: Week
-feature work, multi-day bars (deferred with decision ⑥), any RPC change.
+CalendarView.jsx (shared drop/popover helpers), `src/components/schedule/eventCardStyle.js`
+(consumed read-only), index.css (Phase-3 marker only). Deliberately NOT: Week feature or visual
+work, multi-day bars (deferred with decision ⑥), any RPC change, any mobile work (decision ⑨).
 
 ## Dependency graph
 
@@ -306,7 +340,9 @@ until the prod PR.
 | lead_source write path | **Post-insert `db.update`** | Adding `p_lead_source` to `create_job_with_contact` — right when CreateJobModal unification happens; must be a DROP+CREATE (not REPLACE) in one migration with an old-caller compat test, per the overload incident |
 | Appointment data model | **Single-day rows; "(continued)" cloning for spillover** | True multi-day via the dormant `duration_days` — right only with a dedicated initiative that upgrades every consumer (tech app, gcal sync, dispatch RPCs) together |
 | Recurrence | **Deferred, no schema** | Recurrence schema + expansion — right when a real recurring-work pattern shows up in operations |
-| View retirement | **Delete Jobs/Crew/3-Day code** | Flag-gating them off — pointless for a solo-decided kill; git history is the archive |
+| View retirement | **Delete Jobs/Crew grid code** (~~3-Day~~ — KEPT per the ② amendment: iPad pairs Week + 3-Day) | Flag-gating them off — pointless for a solo-decided kill; git history is the archive |
+| Month upgrade shape (owner delegated to planner judgment, 2026-07-03) | **Week's design SYSTEM at month DENSITY** — miniature single-line eventCardStyle chips (soft-tint + left accent), Week's event/completed/status semantics, Week's hover popover; overflow "+N more" preserved | Literal Week-card transplant into month cells — rejected: cells are ~90px, Week cards 40-70px → ~1 appointment/day visible, destroys the overview. Right only if Month ever becomes an expandable/scrollable-cell layout (e.g. the future Gantt evolution) |
+| Mobile scope | **Non-goal for the desktop schedule page (decision ⑨)** — tech app owns mobile scheduling | Making /schedule mobile-first — right only if the tech app's schedule ever retires |
 | appointments→scheduled-jobs refactor | **Superseded by this plan** | — (stale references struck in place this session) |
 
 ## Challenge report (adversarial pass, run before this doc was committed)
