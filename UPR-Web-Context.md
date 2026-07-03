@@ -1241,7 +1241,8 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 **`react-i18next` + `i18next`** (v17 / v26).
 - **Engine init:** `src/i18n/index.js` — bundles the locale JSON (static imports, synchronous init so
   `t()` works on first render → `react.useSuspense:false`), `fallbackLng:'en'`, `supportedLngs:['en','pt','es']`,
-  namespaces `['common','nav','more','settings']`, `interpolation.escapeValue:false`. **`fallbackLng:'en'`
+  namespaces `['common','nav','more','settings','tech','tasks','dash','schedule','claims']`,
+  `interpolation.escapeValue:false`. **`fallbackLng:'en'`
   is what makes the phased rollout safe — a missing pt/es key renders the English source, never a blank.**
 - **Prefs helper:** `src/i18n/langPrefs.js` (pure, React-free, testable) — `LANG_STORAGE_KEY='upr_lang_pref'`,
   `LANGS=['en','pt','es']`, `LANG_LABELS` (endonyms), `DEFAULT_LANG='en'`, `readStoredLang()` / `writeStoredLang()` /
@@ -1256,15 +1257,28 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 - **Locales:** `src/i18n/locales/{en,pt,es}/{common,nav,more,settings}.json`. EN is the source of truth;
   **each translation batch ships all three languages** (a committed parity test fails on a missing/extra key).
   Embedded bold uses named `<b>` tags rendered via react-i18next `<Trans components={{ b: … }}>`.
-- **Pilot scope translated (Phase 0):** the always-visible chrome — `TechLayout` bottom-nav labels +
-  install banner, all of `TechMore`, and the full `/tech/settings` screen (Appearance + Language +
-  Notifications cards). Everything else is still English (safe via fallback) until later screen batches.
+- **Shared `tech` namespace + locale-aware dates (Phase 0.5):** `src/i18n/locales/{en,pt,es}/tech.json`
+  holds cross-screen strings — appointment/claim **status** + **division** + appointment-**type** label maps
+  (rendered as `t('tech:apptStatus.'+s, { defaultValue: mungedEnum })` so an unknown enum still shows),
+  common buttons, shared photo/note **toasts** (with `{{message}}` interpolation), and **date words**
+  (Today/Tomorrow/Yesterday/ago with plurals). `src/lib/techDateUtils.js` is now **locale-aware**:
+  `currentLocaleTag()` maps the active lang → BCP-47 (`en-US`/`pt-BR`/`es`), and `formatTime`/`relativeDate`/
+  `relativeTime`/`formatLossDate`/`photoDateTime` follow it. It also **centralizes** the `relativeTime` ("ago")
+  + `formatLossDate` helpers that were copy-pasted across tech files. The billing-adjacent duration formatter
+  (`clockPrecheck.fmtElapsed`, "1h 5m") is deliberately left alone (language-neutral).
+- **Screens translated so far:** the always-visible chrome (`TechLayout` nav + install banner, `TechMore`,
+  `/tech/settings`) **plus the daily-driver screens** — `TechTasks` (`tasks` ns), `TechDash` (`dash` ns),
+  `TechSchedule` (`schedule` ns), `TechClaims` (`claims` ns). Interpolation/plurals handled (greeting name,
+  appointment/task/job counts, away-jobsite + overtime banners, "Clocked out of {job} ({elapsed})").
+  **Still English (safe via fallback):** `TechAppointment`, `TechJobDetail`, `TechClaimDetail`, and the field
+  sheets (demo/readings/equipment/OOP) + help prose — the next batches.
 - **PT/ES are Claude drafts pending a native-speaker review pass** (industry terms like Claims→Sinistros/Reclamos).
-- **Tests:** `src/i18n/langPrefs.test.js` (pure helpers), `src/i18n/i18n.test.js` (t()/interpolation/fallback/parity),
-  `src/components/tech/settings/settingsCards.render.test.jsx` (renderToStaticMarkup smoke — real cards render
-  translated in all 3 langs).
-- **Roadmap:** later batches translate the daily-driver screens (Dash, Schedule, Tasks, Appointment, Claims)
-  then the long tail. Office/desktop app is intentionally out of scope (English).
+- **Tests:** `src/i18n/langPrefs.test.js` (pure helpers), `src/i18n/i18n.test.js` (t()/interpolation/fallback/
+  **parity across every namespace**), `src/lib/techDateUtils.test.js` (locale-aware helpers),
+  `src/components/tech/settings/settingsCards.render.test.jsx` (renderToStaticMarkup smoke).
+- **Adding a screen:** create `locales/{en,pt,es}/<ns>.json` (all three — parity test enforces it), register the
+  ns in `src/i18n/index.js` (imports + `NAMESPACES` + `resources`), then `useTranslation('<ns>')` in the page.
+  Replace hardcoded `'en-US'` date calls with `currentLocaleTag()`. Office/desktop app is out of scope (English).
 
 ---
 
