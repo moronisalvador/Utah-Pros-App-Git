@@ -1334,6 +1334,66 @@ S/D wave fills in.
   window); `TechDash` no longer re-skeletons when data already exists.
 - **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
 
+### Session D — Dashboard v2 (Jul 3 2026)
+
+Fills the `TechDashV2` stub — "mission control for today" behind `page:tech_dash_v2`. **Zero
+schema/RPCs.** Owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` + the
+`TECH-V2: DASH` css marker (new `tv2-dash-*` / `tv2-fab-*` classes only).
+
+- **One query:** `useQuery(techKeys.dash(employee.id) → get_tech_dashboard)`. Clock/photo taps
+  refresh via `invalidateTech(qc, 'clock'|'photo')` (techQuery's map) — no full refetch.
+  Pull-to-refresh and window-focus revalidate in place; the cold skeleton shows only on the
+  first load with no cached data (never re-skeletons after).
+- **Sections:** Now/Next hero (composes the frozen `TimeTracker` as the single primary action
+  when a visit is today/live; countdown when scheduled; next-day preview otherwise; empty state
+  → schedule) · attention strip (`StalledWidget` + away-from-jobsite geo, gated on the `active`
+  pane prop + 20s debounce, + 5PM "still clocked in" reading `open_entry` from the payload) ·
+  today mini-timeline (horizontal, status-color chips) · My numbers (hours today/week as
+  labeled travel + on-site + total, tasks done/total, photos today) · completed rows WITH a
+  per-visit travel/on-site/total breakdown (a small read-only `job_time_entries` fetch per
+  completed row — the payload carries only the open entry) · Coming Up (7 days, me-scoped) ·
+  greeting header (sticky, two-click Sign Out — no `confirm()`) · Create FAB.
+- **dash helpers** (`src/pages/tech/v2/dash/dashHelpers.js`, unit-tested): `fmtHours`,
+  `hoursBreakdown`, `toPickShape` (adapts the payload appt to the frozen `pickNowNext` shape),
+  `selectHero`, `splitToday` (cancelled → no bucket, Finding-6 belt-and-suspenders).
+- **Nav** through `apptHref()/jobHref()` only. Snap-first photo flow (`PhotoCaptureButton`)
+  ported verbatim from v1 (offline-queue + inline paths, `PhotoNoteSheet`, room tagging).
+- **Tests:** `src/pages/tech/v2/dash/dashHelpers.test.js` (16, no creds) — pickNowNext edge
+  cases (all completed / none today / paused), hours formatting, cancelled-exclusion.
+
+### Session S — Schedule v2 (Jul 3 2026 — shipped)
+
+Fills the `TechScheduleV2` stub behind `page:tech_sched_v2` (owner-only). Legacy
+`TechSchedule.jsx` untouched. Owns `src/pages/tech/v2/TechScheduleV2.jsx` +
+`src/pages/tech/v2/schedule/**` + CSS in the `TECH-V2: SCHED` marker. Zero schema/RPCs.
+
+- **Views:** **Agenda** (default) — continuous bidirectional list, sticky per-day
+  headers, today anchored on first paint via a ref + rect math on the pane scroll
+  container (found with `ref.closest('.tv2-pane-scroll')`, re-asserted in a microtask
+  to beat the pane host's scroll-restore; no `setTimeout`, no
+  `querySelector('.tech-content')`). Prepending past days compensates `scrollTop` so the
+  viewport never jumps; scrolling drives the strip highlight + floating Today pill.
+  **Day timeline** — hour grid, status-tinted positioned blocks with overlap lanes, an
+  all-day strip, and a red now-line that ticks each minute and pauses when the pane is
+  inactive (`active` prop). **Month view is deferred** (rides with Phase C) — not built.
+- **Week strip:** infinite scroll-snap pager (one week per page), haptic tick via
+  `lib/nativeHaptics` on week change, grows at whichever edge you swipe toward with
+  `scrollLeft` compensation. Day taps are pure client state — never a fetch.
+- **Data:** `useScheduleData` runs one `get_appointments_range` query per calendar month
+  via the FROZEN `techKeys.schedMonth`, ±1 month prefetch, a GROWING loaded-month set
+  (never shrinks → stable agenda scroll), dedupe by id. PTR + focus revalidate through
+  `invalidateTech(qc,'appointment')`; skeletons only on true cold start.
+- **Rendering:** `color/kind/duration_days/is_milestone` all surfaced — STATUS owns the
+  color channel (chip + timeline block tint), division demoted to a small pill, events
+  (`kind='event'`/no job) styled distinctly. Nav strictly via `apptHref()/jobHref()`.
+- **Filters/search/create:** carried over with legacy parity — me/all/multi-crew +
+  division (`MITIGATION_DIVS = water/mold/contents`, matching legacy), persisted under the
+  SAME `tech_schedule_filters_{empId}` localStorage key; create picker → existing
+  `/tech/new-appointment` & `/tech/new-event`.
+- **Pure logic** in `schedule/scheduleSelectors.js` (month-key math, grouping/sorting,
+  filter predicates) with 24 committed vitest cases (`scheduleSelectors.test.js`, TEST
+  fixtures only — never live rows). `npm test`/`build`/`eslint` green.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
@@ -4530,6 +4590,18 @@ great for iPad") alongside Week (daily driver, "pretty much perfect as is") and 
 span" item above; `docs/schedule-roadmap.md` carries the same dated amendment. Session B of the
 Schedule initiative must scope its viewMode-axis collapse to Jobs/Crew grids only.
 
+**⚠️ Second amendment round (2026-07-03, owner conversation — this session):** ① Session C
+rescoped from "Month parity, visuals identical" to **"Month upgraded to Week's design SYSTEM at
+month DENSITY"** — miniature single-line eventCardStyle chips (soft-tint + left accent, replacing
+the solid divColor blocks), Week's event/completed/status semantics, Week's hover popover; Week's
+full card geometry explicitly NOT transplanted (month cells ~90px — density is the acceptance
+bar). Owner delegated the design specifics to planner judgment ("do what's really best for the
+monthly view"); the trade-off is in the roadmap's options-on-record. ② Week view: zero changes in
+any phase, byte-identical. ③ **Mobile declared an explicit non-goal** for the desktop schedule
+page (roadmap decision ⑨) — the tech app owns mobile scheduling and is untouched. ④ The stale
+in-place "3-Day gone" text in the roadmap/dispatch Session B blocks was fixed to match the first
+amendment. `docs/schedule-roadmap.md` + `docs/schedule-dispatch.md` are authoritative.
+
 ## Notification Center — plan of record (session 2026-07-03, docs only — no feature code)
 
 **What this session shipped** (committed straight to `dev`): `docs/notify-roadmap.md` (the
@@ -4567,9 +4639,87 @@ precedent), `google_calendar_links.assigned_notified_at`/`time_sig`. `push_subsc
 ship with NO anon SELECT (endpoint+p256dh+auth are send-capability secrets) — a documented
 deviation from the house USING(true) pattern.
 
-### F1 (delivery spike) — not started
-*Reserved. F1 documents the SW re-enable, webPush.js, push_subscriptions, subscribe flow, and
-the owner-gate result here.*
+### F1 (delivery spike) — built, awaiting owner gate (2026-07-03)
+
+Web Push proven end-to-end in code; the **stop-the-line owner gate** (real push on the owner's
+iPhone PWA + desktop) is the only open item — it needs owner actions (env vars + flag flip +
+device install), so it cannot be closed in-session.
+
+**Crypto — `functions/lib/webPush.js`** (pure WebCrypto, zero npm deps, runs in Workers):
+- `encrypt(payload, {p256dh,auth}, {asKeyPair,salt})` — RFC 8291 message encryption (aes128gcm /
+  RFC 8188). Injectable `{asKeyPair, salt}` reproduces **RFC 8291 Appendix A byte-for-byte**
+  (test-pinned); prod defaults to a fresh ephemeral ECDH pair + random 16-byte salt per call.
+- VAPID (RFC 8292) ES256: `importVapidPrivateKey` (PKCS8 base64/PEM — raw EC private import is
+  unsupported, mirrors send-push's `importP8Key`), `buildVapidJwt` (aud = endpoint origin,
+  exp ≤ 24h, sub = mailto), `vapidAuthorizationHeader` (`vapid t=…, k=…`).
+- `sendWebPush(subscription, payload, env, opts)` — encrypt + POST one subscription; **503-skips**
+  when VAPID env is unset (APNs precedent), surfaces 404/410 for caller-side pruning.
+- Tests: `functions/lib/webPush.test.js` (10) — Appendix A KAT, VAPID verify round-trip (never a
+  byte-compare — ECDSA is randomized), b64url edges. Committed failing first.
+
+**Schema — `push_subscriptions`** (migration `20260703_notify_f1_push_subscriptions.sql`, applied
+via MCP): one row per device (`employee_id`, `endpoint` UNIQUE, `p256dh`, `auth`, `user_agent`).
+**RLS ON with NO policy** — the documented deviation (finding 4): endpoint+p256dh+auth are
+send-capability secrets, so no house `USING(true)` policy; reachable only via the two
+SECURITY DEFINER own-row RPCs + the service-role worker (dashboard_layouts precedent). RPCs:
+`upsert_push_subscription(p_endpoint,p_p256dh,p_auth,p_user_agent DEFAULT NULL) → push_subscriptions`
+and `delete_push_subscription(p_endpoint) → void` (caller resolved via `auth.uid()`,
+GRANT EXECUTE TO authenticated). PostgREST cache busted.
+
+**Service worker — `public/sw.js`** rewritten as **push + notificationclick handlers ONLY, zero
+fetch caching** (the Apr-2026 MIME/blank-page trap cannot re-form without a caching fetch
+handler). `push` → `showNotification`; `notificationclick` → focus an open window (navigate) or
+`openWindow(url)`.
+
+**SW re-enable — `src/main.jsx`** SW block is now flag-gated on `feature:web_push`: **ON** →
+register `/sw.js`; **OFF** → the original kill-switch (unregister + cache wipe + `/reset` bounce)
+**verbatim**. Flags load post-auth, so main.jsx reads a **localStorage mirror**
+(`upr:web_push_enabled`) written by `AuthContext.loadFeatureFlags` (same enabled/dev-only
+resolution as `isFeatureEnabled`; missing row = OFF; one-page-load lag accepted). `BUILD_ID`
+bumped to `2026-07-03-web-push-f1`. `src/lib/registerSW.js` rewritten as the registration + mirror
+helper (`isWebPushEnabled`, `registerPushServiceWorker`, `WEB_PUSH_FLAG_MIRROR_KEY`).
+
+**Subscribe client — `src/lib/webPushClient.js`**: `enablePush(db)` (permission →
+`pushManager.subscribe({applicationServerKey: VITE_VAPID_PUBLIC_KEY})` → `upsert_push_subscription`),
+`disablePush(db)` (unsubscribe + `delete_push_subscription`), capability guards
+(`isPushSupported`/`isPushConfigured`/`pushPermission`) — iOS only exposes Push in an installed PWA.
+
+**UI — `src/pages/Settings.jsx`**: new **Notifications** entry in `SETTINGS_NAV` + skeleton
+`NotificationsPanel` with one working "Enable push on this device" row (inline two-click "Turn
+off" confirm, toasts, iOS Add-to-Home-Screen guidance when uninstalled). The full types × channels
+matrix is Session C's.
+
+**Reference event — `functions/api/feedback-notify.js`**: additive fire-and-forget Web Push channel
+(`sendWebPushToAdmins`) alongside the existing bell + APNs — pushes each admin recipient's
+subscriptions behind `feature:web_push` (globally-enabled OR the recipient is the flag's
+`dev_only_user_id` — the owner-gate window), 503-skips when VAPID is unset, prunes 404/410. Note:
+audience is **admins minus the submitter** (catalog semantics) — for the owner gate, a *non-owner*
+must submit the test feedback (or the owner submits from a second account) for the push to reach
+the owner's device.
+
+**Flag:** `feature:web_push` seeded in `featureFlags.js` (enabled:false) + a live `feature_flags`
+row (enabled=false, `dev_only_user_id` = owner `dd188c16-…`) so the owner can self-enable to run
+the gate without exposing push to staff.
+
+**VAPID config — stored in Supabase (no Cloudflare env needed).** Owner preference (2026-07-03):
+manage VAPID like every other worker secret rather than in Cloudflare. `loadVapidConfig(env, db)`
+in `webPush.js` prefers Cloudflare env but falls back to Supabase — **private key** in
+`integration_credentials` (`provider='web_push'.access_token`, PKCS8; RLS-on-no-policy, same
+lockdown as the existing Deepgram/CallRail/GitHub tokens — never client-readable), **public key +
+subject** in `integration_config` (`vapid_public_key` / `vapid_subject`). The client fetches the
+public key at runtime from the new `GET /api/vapid-public-key` worker (returns ONLY the public
+key), so there is **no build-time `VITE_VAPID_PUBLIC_KEY`** and zero Cloudflare dependency. All
+three values were stored in the shared Supabase this session (Cloudflare env still works as an
+override if ever preferred).
+
+**Owner gate (OPEN — hand-off):** VAPID is already stored in Supabase, so no Cloudflare steps.
+Owner keeps `feature:web_push` dev-only-on for themselves, installs the PWA (Share → Add to Home
+Screen), enables push in Settings → Notifications, then a non-owner submits test feedback → a real
+push must land on the locked iPhone AND desktop Chrome. **If iOS delivery fails: HALT — F2 and the
+wave do not launch against a dead channel.** (VAPID keypair generated this session; private key is
+in `integration_credentials`, never committed to the repo.)
+
+### F2 (data foundation) — not started
 
 ### F2 (data foundation) — not started
 *Reserved. F2 documents the catalog/prefs schema, bell cutover, dispatcher, stubs, and

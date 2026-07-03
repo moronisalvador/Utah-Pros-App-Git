@@ -45,6 +45,13 @@ import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
 
+// Add one hour to an 'HH:MM' time, capped at the last selectable option (22:30).
+function addOneHour(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = Math.min(h * 60 + m + 60, 22 * 60 + 30);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 export default function TechNewAppointment() {
   // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
@@ -63,7 +70,8 @@ export default function TechNewAppointment() {
   /* ── Form ── */
   const [date, setDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
   const [timeStart, setTimeStart] = useState('07:00');
-  const [timeEnd, setTimeEnd] = useState('15:30');
+  const [timeEnd, setTimeEnd] = useState('08:00'); // default 1-hour block
+  const [endEdited, setEndEdited] = useState(false); // once the end is set by hand, stop auto-following the start
   const [type, setType] = useState('reconstruction');
   const [notes, setNotes] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -392,7 +400,7 @@ export default function TechNewAppointment() {
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={timeStart}
-              onChange={e => setTimeStart(e.target.value)}
+              onChange={e => { const v = e.target.value; setTimeStart(v); if (!endEdited) setTimeEnd(addOneHour(v)); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
             >
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
@@ -400,7 +408,7 @@ export default function TechNewAppointment() {
             <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>to</div>
             <select
               value={timeEnd}
-              onChange={e => setTimeEnd(e.target.value)}
+              onChange={e => { setEndEdited(true); setTimeEnd(e.target.value); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
             >
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}

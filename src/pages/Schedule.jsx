@@ -627,8 +627,8 @@ export default function Schedule() {
       const tasks = await db.select('job_tasks', `appointment_id=eq.${appt.id}&is_completed=eq.false&select=id,title,phase_name`);
       if (!tasks || tasks.length === 0) { errToast('No incomplete tasks on this appointment.'); return; }
       const startMins = appt.time_start ? (parseInt(appt.time_start.split(':')[0]) * 60 + parseInt(appt.time_start.split(':')[1] || 0)) : 0;
-      const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 120;
-      setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id, timeStart: appt.time_start || '09:00', timeEnd: appt.time_end || '11:00' });
+      const endMins = appt.time_end ? (parseInt(appt.time_end.split(':')[0]) * 60 + parseInt(appt.time_end.split(':')[1] || 0)) : startMins + 60;
+      setPlacementMode({ jobId: appt._jobId || appt.job_id, jobName: appt._jobName, taskIds: tasks.map(t => t.id), taskCount: tasks.length, crew: appt.crew || [], duration: Math.max(endMins - startMins, 60), type: appt.type || 'reconstruction', sourceApptId: appt.id, timeStart: appt.time_start || '09:00', timeEnd: appt.time_end || '10:00' });
     } catch (e) { console.error('Reschedule remaining:', e); }
   };
 
@@ -640,7 +640,7 @@ export default function Schedule() {
     setGridPlacementPicker({
       dateKey,
       timeStart: placementMode.timeStart || '09:00',
-      timeEnd: placementMode.timeEnd || '11:00',
+      timeEnd: placementMode.timeEnd || '10:00',
       crew: [...(placementMode.crew || [])], // editable copy
     });
   };

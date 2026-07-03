@@ -166,11 +166,13 @@ Build in this order:
 
 Test-first (commit failing first): a scheduleUtils/filter test proving the remodeling bucket fix
 (remodeling visible under its chosen chip, hidden under the other), and a localStorage-fallback
-test for the '3day'/'jobs'/'crew' → sane-default sanitization.
+test for stale 'jobs'/'crew' view values → sane default ('3day' span values are VALID and stay —
+the ② amendment keeps the 3-Day span).
 
 Close-out: npm run test + npm run build + eslint green; zero schema migrations; grep proves zero
-remaining references to removed components/RPCs; Week/Month/Day visually unchanged on
-dev.utahpros.app; mobile spot-check (mobile only ever saw Calendar — the toggle was CSS-hidden);
+remaining references to removed components/RPCs; Day/3-Day/Week/Month ALL visually unchanged on
+dev.utahpros.app (3-Day KEPT per the owner amendment); mobile spot-check only — no mobile work,
+the tech app owns mobile scheduling (roadmap decision ⑨);
 upr-pattern-checker clean; update UPR-Web-Context.md (rewrite the Schedule System bullets — views
 list, templates retired, dead RPCs listed retired-no-callers) + session entry; reconcile the
 Session B checkboxes in docs/schedule-roadmap.md honestly; delete any test rows (no client_email /
@@ -187,14 +189,19 @@ Model: Opus 4.8 (or strongest available)
 Effort: Medium
 Launch after: Session B merged into dev
 
-You are building Schedule Desktop Phase 3 — Month-view parity — one phase only, no scope creep.
-The Week view is the owner's beloved standard and takes ZERO code changes this phase
-(regression-verify only); Month gains parity without changing its visual language.
+You are building Schedule Desktop Phase 3 — the Month-view upgrade: Week's design SYSTEM at month
+DENSITY — one phase only, no scope creep. The Week view is the owner's beloved standard ("spot
+on") and takes ZERO code changes this phase (regression-verify only). Month is rescoped by owner
+decision ① (2026-07-03): it ADOPTS Week's visual and interaction language — its current look is
+superseded, not preserved — but at month density. Do NOT transplant Week's card geometry: month
+cells are ~90px, Week cards 40-70px; full cards would show ~1 appointment/day and destroy the
+overview. Miniaturize the language instead.
 
-Read scope: CLAUDE.md, the "Session C" phase block + frozen-list in docs/schedule-roadmap.md
-(binding), UPR-Design-System.md. Foundation shipped for you: MonthView lives in
-src/components/schedule/MonthView.jsx (Session B's verbatim extraction); the creationPicker
-(New job / Job appointment / Event) is live; the page is Calendar-only with Day/Week/Month.
+Read scope: CLAUDE.md, the "Session C" phase block + decision ① + frozen-list in
+docs/schedule-roadmap.md (binding), UPR-Design-System.md. Foundation shipped for you: MonthView
+lives in src/components/schedule/MonthView.jsx (Session B's verbatim extraction); the
+creationPicker (New job / Job appointment / Event) is live; the page is Calendar-only with
+Day/3-Day/Week/Month spans (3-Day kept — iPad).
 
 Work on your session's assigned branch cut from origin/dev.
 
@@ -203,18 +210,25 @@ objects carry NO job_id (it lives on the parent job row), so chip enrichment is 
 exactly as the Week path does (_jobId/_division/_address from the job row). appointments contracts
 frozen (see roadmap). index.css writes only inside the Phase 3 SCHEDULE V2 marker. The
 update_appointment path fires the live gcal-sync + client-reschedule-email chain — test rows only,
-notify OFF.
+notify OFF. Mobile is a NON-GOAL (roadmap decision ⑨) — no mobile-specific work; the tech app
+owns mobile scheduling and is untouched. Week view: byte-identical.
 
 Build in this order (riskiest first):
-① Drag-to-reschedule in Month: chips draggable between day cells (date-only change), reusing the
+① Restyle Month on Week's design system, month density: chips become miniature single-line
+   eventCardStyle cards — soft-tint background + 3px left accent + dark text (replacing the solid
+   divColor blocks with white text; this also fixes the DIV_COLORS-vs-eventCardStyle palette
+   clash), completed = gray at reduced opacity, events styled exactly as Week styles events.
+   Single-line chips + "+N more" overflow preserved — density is the acceptance bar.
+② Drag-to-reschedule in Month: chips draggable between day cells (date-only change), reusing the
    page's optimistic handleApptDrop → update_appointment → silent reload → rollback-on-failure
    pattern; completed appointments stay non-draggable, consistent with Week.
-② Click-day → creationPicker prefilled with that date (replacing the jump-to-Day navigation);
+③ Week's hover popover on Month chips (reuse/adapt the ApptPopover pattern from CalendarView) —
+   full appointment detail without leaving the month overview.
+④ Click-day → creationPicker prefilled with that date (replacing the jump-to-Day navigation);
    the day NUMBER keeps zoom-to-Day so the drill-down isn't lost.
-③ Events in Month: render kind='event' rows (pass the page's filteredEvents into MonthView) with
-   the same event styling language the other views use; the existing rule stands — an active
-   division filter hides events, crew filter applies.
-④ Chip enrichment: stamp _jobId/_division/_address/_jobNumber from the parent job row so the
+⑤ Events in Month: render kind='event' rows (pass the page's filteredEvents into MonthView); the
+   existing rule stands — an active division filter hides events, crew filter applies.
+⑥ Chip enrichment: stamp _jobId/_division/_address/_jobNumber from the parent job row so the
    hover/edit/'View job' paths from Month match Week exactly.
 
 Test-first (commit failing first): the by-date bucketing/enrichment helper — events merged with
@@ -222,10 +236,12 @@ job appointments per day cell, enrichment fields present, +N-more overflow count
 mixed kinds.
 
 Close-out: npm run test + npm run build + eslint green; upr-pattern-checker clean; before/after
-screenshots of Week + Month on dev.utahpros.app proving visual parity (same chips, colors, grid);
-drag a TEST appointment (notify OFF) and verify the reschedule email CAS logic isn't tripped by
-date-only moves; update UPR-Web-Context.md (Schedule System + session entry); reconcile the
-Session C checkboxes in docs/schedule-roadmap.md honestly; delete test rows; push -u, open a PR to
-dev via the template, mark it ready to merge, then stop — do NOT subscribe to, babysit, or wait
-for a review on it.
+screenshots of Week + Month on dev.utahpros.app proving Month now speaks Week's visual language
+at month density while Week is byte-identical (if the soft tints read too quiet at month size,
+disclose the tint/accent ratio as the one-variable tuning lever — owner adjusts on staging, not a
+redesign); drag a TEST appointment (notify OFF) and verify the reschedule email CAS logic isn't
+tripped by date-only moves; update UPR-Web-Context.md (Schedule System + session entry); reconcile
+the Session C checkboxes in docs/schedule-roadmap.md honestly; delete test rows; push -u, open a
+PR to dev via the template, mark it ready to merge, then stop — do NOT subscribe to, babysit, or
+wait for a review on it.
 ```

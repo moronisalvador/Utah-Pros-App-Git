@@ -4244,7 +4244,7 @@ tr:hover td { background: var(--bg-secondary); }
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--bg-primary);
   padding-top: env(safe-area-inset-top, 0px);
 
   /* Tech design tokens */
@@ -4261,6 +4261,7 @@ tr:hover td { background: var(--bg-secondary); }
   --tech-row-height: 56px;
   --tech-nav-height: 64px;
   --tech-accent: #cbd5e1; /* neutral accent bar when an appointment has no color */
+  --tech-nav-bg: rgba(255, 255, 255, 0.92); /* translucent nav — dark theme overrides */
 
   /* Status palette */
   --status-scheduled-bg: #eff6ff;
@@ -4291,7 +4292,7 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-nav {
   display: flex;
   align-items: stretch;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--tech-nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05);
@@ -4299,6 +4300,84 @@ tr:hover td { background: var(--bg-secondary); }
   padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
   flex-shrink: 0;
   height: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)));
+}
+
+/* ─── TECH DARK THEME ───────────────────────────────────────────────
+   Scoped to the tech shell so ONLY /tech/* goes dark (desktop unaffected).
+   Same scoped-token-override trick as .crm-roadmap-page.dark — re-point the
+   core tokens the tech rules already read via var(). data-theme is set on
+   <html> by ThemeContext. Detail-screen inline hexes are a later polish pass. */
+[data-theme="dark"] .tech-layout {
+  --bg-primary: #15171c;
+  --bg-secondary: #0f1115;
+  --bg-tertiary: #1c1f26;
+  --bg-elevated: #1a1d23;
+  --border-color: #2c303a;
+  --border-light: #23262e;
+  --text-primary: #f1f3f6;
+  --text-secondary: #a8afbb;
+  --text-tertiary: #767d8a;
+  --accent-light: #1c2438;
+  --tech-nav-bg: rgba(21, 23, 28, 0.92);
+  /* Status pill tints re-toned for dark (color/border keep their hue) */
+  --status-scheduled-bg: #14233d;
+  --status-enroute-bg: #2e2410;
+  --status-working-bg: #0f2b22;
+  --status-paused-bg: #2c1618;
+  --status-completed-bg: #1c1f26;
+}
+
+/* ─── TECH SETTINGS (/tech/settings hub) ─── */
+.tech-settings-stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.tech-settings-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--tech-radius-card);
+  padding: var(--space-4);
+}
+.tech-settings-card-head { margin-bottom: var(--space-3); }
+.tech-settings-card-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.tech-settings-card-sub { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tech-settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  min-height: var(--tech-min-tap); flex-wrap: wrap;
+}
+.tech-settings-row-main { flex: 1; min-width: 0; }
+.tech-settings-row-label { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.tech-settings-row-value { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tech-settings-btn {
+  min-height: var(--tech-min-tap); padding: 0 16px; border-radius: var(--tech-radius-button);
+  font-size: 14px; font-weight: 700; font-family: var(--font-sans); cursor: pointer;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border-light); touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.tech-settings-btn:disabled { opacity: 0.5; cursor: default; }
+.tech-settings-btn--primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tech-settings-btn[data-confirm="true"] { background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border); }
+.tech-settings-seg {
+  display: flex; gap: 8px; padding: 4px; border-radius: var(--tech-radius-button);
+  background: var(--bg-secondary); border: 1px solid var(--border-light);
+}
+.tech-settings-seg-btn {
+  flex: 1; min-height: var(--tech-min-tap); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid transparent; border-radius: calc(var(--tech-radius-button) - 4px);
+  background: transparent; color: var(--text-secondary);
+  font-size: 14px; font-weight: 600; font-family: var(--font-sans); cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.tech-settings-seg-btn[data-active="true"] {
+  background: var(--bg-primary); color: var(--accent);
+  border-color: var(--accent); box-shadow: var(--tech-shadow-card-active);
+}
+.tech-settings-seg-label { line-height: 1.1; }
+.tech-settings-seg-sub { font-size: 10px; font-weight: 500; color: var(--text-tertiary); }
+.tech-settings-hint { margin-top: 12px; font-size: 12.5px; color: var(--text-tertiary); }
+.tech-settings-note {
+  margin-top: 12px; padding: 12px 14px; font-size: 12.5px; line-height: 1.6;
+  color: var(--text-secondary); background: var(--bg-secondary);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
 }
 
 .tech-nav-tab {
@@ -5084,8 +5163,850 @@ tr:hover td { background: var(--bg-secondary); }
 @media (prefers-reduced-motion: reduce) { .tv2-skel { animation: none; } }
 
 /* ─── TECH-V2: SCHED (Session S — schedule/calendar) ──────────────────────── */
+/* All selectors are new tv2-* classes (never restyle a legacy .tech-*). Mobile
+   is the only target for the tech app; desktop-gating is unnecessary here. */
+
+.tv2-sched { min-height: 100%; }
+.tv2-sched__scroll { flex: 1; }
+
+/* Sticky header — stays put on pull-to-refresh (it's before the PTR content). */
+.tv2-sched-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-light);
+}
+.tv2-sched-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 8px 16px;
+}
+/* Month is the title now (the tab bar already says "Schedule"), which frees the
+   width for the search/filter icons that replaced the old full search bar. */
+.tv2-sched-header__month {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv2-sched-header__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Agenda / Day segmented control (compact so the icon row fits one line) */
+.tv2-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: var(--tech-radius-button);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.tv2-segmented button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-segmented button.is-active { background: var(--accent); color: #fff; }
+
+/* Header icon buttons — 44px (Apple HIG min tap target), narrow enough that
+   search + filter + view toggle + create all sit on one row. */
+.tv2-icon-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: var(--tech-radius-button);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-icon-btn--accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tv2-icon-btn:active { opacity: 0.85; }
+/* Active (search has a query / filters engaged). */
+.tv2-icon-btn.is-active { border: 2px solid var(--accent); background: var(--accent-light); color: var(--accent); }
+.tv2-icon-btn__dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--accent);
+  border: 2px solid var(--bg-primary);
+}
+
+/* Transient search field row (shown only when the search icon is toggled on) */
+.tv2-sched-header__searchrow {
+  display: flex;
+  align-items: center;
+  padding: 2px 16px 8px;
+}
+.tv2-search {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.tv2-search > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.tv2-search input {
+  width: 100%;
+  height: 48px;
+  padding: 0 36px 0 36px;
+  font-size: 16px; /* ≥16px stops iOS zoom-on-focus */
+  border-radius: var(--tech-radius-button);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+.tv2-search__clear {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+/* Filter panel */
+.tv2-filter-panel {
+  padding: 6px 16px 8px;
+  border-top: 1px solid var(--border-light);
+}
+.tv2-filter-group { margin-bottom: 8px; }
+.tv2-filter-group:last-child { margin-bottom: 4px; }
+.tv2-filter-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.tv2-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.tv2-chip-row--scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 4px;
+}
+.tv2-chip-row--scroll::-webkit-scrollbar { display: none; }
+.tv2-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-chip.is-active {
+  border: 2px solid var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ── Week strip pager ── */
+.tv2-weekstrip {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 8px;
+}
+.tv2-weekstrip::-webkit-scrollbar { display: none; }
+.tv2-weekstrip__page {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  scroll-snap-align: start;
+}
+.tv2-weekstrip__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-height: 56px;
+  padding: 4px 0 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-weekstrip__dow {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.tv2-weekstrip__day.is-today .tv2-weekstrip__dow { color: var(--accent); }
+.tv2-weekstrip__num {
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border: 2px solid transparent;
+}
+.tv2-weekstrip__day.is-today .tv2-weekstrip__num {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.tv2-weekstrip__day.is-selected .tv2-weekstrip__num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.tv2-weekstrip__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background: transparent;
+}
+.tv2-weekstrip__dot.has-appt { background: var(--text-tertiary); }
+.tv2-weekstrip__day.is-selected .tv2-weekstrip__dot.has-appt { background: var(--accent); }
+
+/* ── Agenda ── */
+.tv2-agenda { padding-bottom: 8px; }
+.tv2-agenda__header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.tv2-agenda__header.is-today { background: var(--accent-light); color: var(--accent); }
+.tv2-agenda__count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--bg-primary);
+  border-radius: var(--radius-full);
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tv2-agenda__header.is-today .tv2-agenda__count { color: var(--accent); background: var(--bg-primary); }
+.tv2-agenda__rows { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+
+/* ── Schedule row ── */
+.tv2-sched-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-height: var(--tech-min-tap);
+  padding: 10px 10px 10px 0;
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  text-align: left;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-sched-row:active { box-shadow: var(--tech-shadow-card-active); opacity: 0.9; }
+.tv2-sched-row--event { background: #faf5ff; }
+.tv2-sched-row__bar { width: 5px; flex-shrink: 0; border-radius: 0 3px 3px 0; }
+.tv2-sched-row__time {
+  width: 66px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-left: 6px;
+}
+.tv2-sched-row__time-start { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tv2-sched-row__time-dur { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.tv2-sched-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv2-sched-row__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv2-sched-row__milestone { color: var(--accent); flex-shrink: 0; }
+.tv2-sched-row__lock { color: #92400e; display: inline-flex; flex-shrink: 0; }
+.tv2-sched-row__sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv2-sched-row__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.tv2-sched-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+.tv2-sched-pill--span { background: var(--bg-tertiary); color: var(--text-secondary); }
+.tv2-sched-row__tasks { font-size: 11px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-sched-row__chevron { display: flex; align-items: center; color: var(--text-tertiary); flex-shrink: 0; padding-right: 4px; }
+
+/* ── Crew avatars (assigned employee initials, desktop-parity) ── */
+.tv2-crew { display: inline-flex; align-items: center; flex-shrink: 0; }
+.tv2-crew__dot {
+  width: var(--tv2-crew-size, 18px);
+  height: var(--tv2-crew-size, 18px);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  border: 1.5px solid var(--bg-primary);
+  margin-left: -5px;
+  flex-shrink: 0;
+}
+.tv2-crew__dot:first-child { margin-left: 0; }
+.tv2-crew__dot--more { background: var(--text-tertiary); font-size: 8.5px; }
+
+/* ── Day timeline ── */
+.tv2-timeline { --tv2-tl-gutter: 48px; padding: 4px 12px 24px 8px; }
+.tv2-timeline__allday {
+  display: flex;
+  gap: 8px;
+  padding: 8px 4px 10px var(--tv2-tl-gutter);
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 6px;
+}
+.tv2-timeline__allday-label {
+  position: absolute;
+  margin-left: calc(-1 * var(--tv2-tl-gutter));
+  width: var(--tv2-tl-gutter);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding-top: 4px;
+}
+.tv2-timeline__allday-items { display: flex; gap: 8px; flex-wrap: wrap; }
+.tv2-timeline__allday-chip {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--tech-radius-button);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.tv2-timeline__grid { position: relative; }
+.tv2-timeline__hour {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  display: flex;
+  align-items: flex-start;
+}
+.tv2-timeline__hour-label {
+  width: var(--tv2-tl-gutter);
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  transform: translateY(-7px);
+  text-align: right;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+.tv2-timeline__hour-line { flex: 1; height: 1px; background: var(--border-light); margin-top: 0; }
+.tv2-timeline__block {
+  position: absolute;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent);
+  padding: 6px 8px;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-sans);
+  box-shadow: var(--tech-shadow-card);
+}
+.tv2-timeline__block-title {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv2-timeline__block-time { font-size: 11px; font-weight: 600; opacity: 0.85; }
+.tv2-timeline__now { position: absolute; left: 0; right: 0; height: 0; z-index: 3; pointer-events: none; }
+.tv2-timeline__now-label {
+  position: absolute;
+  left: -6px;
+  top: -7px;
+  width: calc(var(--tv2-tl-gutter) + 2px);
+  text-align: right;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--status-needs-response);
+  background: var(--bg-secondary);
+  white-space: nowrap;
+}
+.tv2-timeline__now-dot {
+  position: absolute;
+  left: calc(var(--tv2-tl-gutter) - 5px);
+  top: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--status-needs-response);
+}
+.tv2-timeline__now-line {
+  position: absolute;
+  left: var(--tv2-tl-gutter);
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: var(--status-needs-response);
+}
+
+/* ── Floating Today pill ── */
+.tv2-today-pill {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 14px);
+  z-index: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.22);
+  animation: tv2-pill-in 0.18s ease-out;
+}
+@keyframes tv2-pill-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ── Create sheet ── */
+.tv2-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  padding-bottom: calc(var(--tech-nav-height) + env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card) var(--tech-radius-card) 0 0;
+  padding-bottom: 8px;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.14);
+  overflow: hidden;
+  animation: tv2-pill-in 0.2s ease-out;
+}
+.tv2-sheet__head { padding: 16px 20px 12px; border-bottom: 1px solid var(--border-light); }
+.tv2-sheet__title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.tv2-sheet__sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.tv2-sheet__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 20px;
+  min-height: var(--tech-min-tap);
+  background: var(--bg-primary);
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-sheet__row:last-child { border-bottom: none; }
+.tv2-sheet__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tv2-sheet__icon--job { background: var(--accent-light); color: var(--accent); }
+.tv2-sheet__icon--event { background: #faf5ff; color: #7c3aed; }
+.tv2-sheet__text { flex: 1; }
+.tv2-sheet__label { display: block; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.tv2-sheet__desc { display: block; font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.tv2-sheet__chev { font-size: 18px; color: var(--text-tertiary); }
+
+/* ── Empty state ── */
+.tv2-sched-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 60px 32px;
+  color: var(--text-tertiary);
+}
+.tv2-sched-empty > svg { opacity: 0.5; margin-bottom: 12px; }
+.tv2-sched-empty__title { font-size: 16px; font-weight: 700; color: var(--text-secondary); }
+.tv2-sched-empty__sub { font-size: 13px; margin-top: 4px; }
+.tv2-sched-empty__cta {
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: var(--tech-radius-button);
+  border: 1px solid var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
 
 /* ─── TECH-V2: DASH (Session D — dashboard) ───────────────────────────────── */
+/* All selectors are new tv2-dash-* / tv2-fab* classes — no existing .tech-*
+   selector is restyled (ownership manifest §5). Mobile-only rules use
+   @media (max-width: 768px); the tech app is mobile-first so most apply globally. */
+
+.tv2-dash-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 16px 8px;
+}
+.tv2-dash-section-title {
+  font-size: var(--tech-text-label);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
+/* ── Greeting header (sticky, stays put on pull-to-refresh) ── */
+.tv2-dash-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 14px 16px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.tv2-dash-header__date { font-size: var(--tech-text-label); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+.tv2-dash-header__name { font-size: var(--tech-text-heading); font-weight: 800; color: var(--text-primary); margin-top: 2px; }
+.tv2-dash-header__summary { font-size: var(--tech-text-body); color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-header__icon-btn {
+  width: var(--tech-min-tap); height: var(--tech-min-tap);
+  border-radius: var(--tech-radius-button);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-header__icon-btn[data-active='true'] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.tv2-dash-header > .tv2-dash-header__icon-btn { position: absolute; top: 10px; right: calc(16px + var(--tech-min-tap) + 8px); }
+.tv2-dash-header__menu { position: absolute; top: 10px; right: 16px; }
+.tv2-dash-menu {
+  position: absolute; right: 0; top: 54px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--tech-radius-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 180px; overflow: hidden;
+}
+.tv2-dash-menu__item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 14px 16px;
+  background: none; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; text-align: left;
+  color: var(--text-primary); font-family: var(--font-sans);
+}
+.tv2-dash-menu__item + .tv2-dash-menu__item { border-top: 1px solid var(--border-light); }
+.tv2-dash-menu__item[data-danger='true'] { color: var(--status-paused-color); }
+
+/* ── Attention strip (banners) ── */
+.tv2-dash-attention { display: flex; flex-direction: column; gap: 12px; }
+.tv2-dash-attention:empty { display: none; }
+.tv2-dash-banner {
+  padding: 12px 14px;
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  border: 1px solid var(--border-light);
+}
+.tv2-dash-banner--warn { background: var(--status-enroute-bg); border-color: var(--status-enroute-border); color: var(--status-enroute-color); }
+.tv2-dash-banner--alert { background: var(--status-paused-bg); border-color: var(--status-paused-border); color: var(--status-paused-color); }
+.tv2-dash-banner__row { display: flex; align-items: flex-start; gap: 10px; }
+.tv2-dash-banner__icon { flex-shrink: 0; margin-top: 2px; }
+.tv2-dash-banner__text { flex: 1; min-width: 0; }
+.tv2-dash-banner__title { font-size: 14px; font-weight: 700; }
+.tv2-dash-banner__body { font-size: 13px; opacity: 0.9; margin-top: 2px; }
+.tv2-dash-banner__actions { display: flex; gap: 8px; margin-top: 10px; }
+.tv2-dash-banner__btn {
+  flex: 1; min-height: var(--tech-min-tap);
+  border-radius: var(--tech-radius-button);
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+  background: var(--bg-primary); color: inherit;
+  border: 1px solid currentColor;
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-banner__btn:disabled { opacity: 0.6; cursor: wait; }
+.tv2-dash-banner__btn--primary,
+.tv2-dash-banner__btn--alert { color: #fff; border-color: transparent; }
+.tv2-dash-banner__btn--primary { background: var(--status-enroute-color); }
+.tv2-dash-banner__btn--alert { background: var(--status-paused-color); }
+.tv2-dash-banner__btn--full { width: 100%; margin-top: 10px; }
+
+/* ── Now / Next hero ── */
+.tv2-dash-hero {
+  padding: 16px;
+  border-radius: var(--tech-radius-card);
+  background: var(--bg-primary);
+  box-shadow: var(--tech-shadow-card);
+  border-left: 4px solid var(--tech-accent);
+}
+.tv2-dash-hero--enroute { border-left-color: var(--status-enroute-color); }
+.tv2-dash-hero--working { border-left-color: var(--status-working-color); }
+.tv2-dash-hero--paused { border-left-color: var(--status-paused-color); }
+.tv2-dash-hero--scheduled { border-left-color: var(--status-scheduled-color); }
+.tv2-dash-hero--neutral { border-left-color: var(--tech-accent); }
+.tv2-dash-hero__eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tv2-dash-hero__badge {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.tv2-dash-hero__badge--enroute { background: var(--status-enroute-bg); color: var(--status-enroute-color); }
+.tv2-dash-hero__badge--working { background: var(--status-working-bg); color: var(--status-working-color); }
+.tv2-dash-hero__badge--paused { background: var(--status-paused-bg); color: var(--status-paused-color); }
+.tv2-dash-hero__badge--scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-color); }
+.tv2-dash-hero__countdown { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.tv2-dash-hero__identity {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; padding: 8px 0 0; cursor: pointer;
+  font-family: var(--font-sans);
+}
+.tv2-dash-hero__client { display: block; font-size: 18px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-hero__sub { display: block; font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-hero__addr {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 6px 0;
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  font-family: var(--font-sans); text-align: left;
+}
+.tv2-dash-hero__tracker { margin-top: 12px; border-radius: var(--tech-radius-card); overflow: hidden; }
+.tv2-dash-hero__actions { display: flex; gap: 8px; margin-top: 12px; }
+.tv2-dash-hero--empty { text-align: center; padding: 28px 16px; border-left-color: var(--tech-accent); }
+.tv2-dash-hero__empty-icon { color: var(--text-tertiary); display: flex; justify-content: center; }
+.tv2-dash-hero__empty-title { font-size: 15px; font-weight: 700; color: var(--text-secondary); margin-top: 10px; }
+.tv2-dash-hero__empty-link { margin-top: 6px; background: none; border: none; color: var(--accent); font-weight: 700; font-size: 14px; cursor: pointer; font-family: var(--font-sans); }
+
+.tv2-dash-secondary-btn {
+  flex: 1; min-height: var(--tech-min-tap);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: var(--tech-radius-button);
+  font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-secondary-btn[data-busy='true'] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); cursor: wait; }
+
+/* Photo-saved toast (fixed, above the bottom nav) */
+.tv2-dash-photo-toast {
+  position: fixed;
+  bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px);
+  left: 16px; right: 16px; z-index: 100;
+  padding: 10px 14px;
+  background: var(--status-working-bg);
+  border: 1px solid var(--status-working-border);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.tv2-dash-photo-toast__label { font-size: 14px; font-weight: 600; color: var(--status-working-color); }
+.tv2-dash-photo-toast__note { background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); font-family: var(--font-sans); }
+
+/* ── Today mini-timeline (horizontal) ── */
+.tv2-dash-timeline {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.tv2-dash-timeline::-webkit-scrollbar { display: none; }
+.tv2-dash-timeline__chip {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 96px; max-width: 150px;
+  padding: 8px 10px;
+  border-radius: var(--tech-radius-button);
+  background: var(--chip-bg);
+  border: none;
+  text-align: left; cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-timeline__time { font-size: 11px; font-weight: 800; color: var(--chip-fg); }
+.tv2-dash-timeline__label { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── My numbers ── */
+.tv2-dash-numbers { display: flex; flex-direction: column; gap: 10px; }
+.tv2-dash-hours {
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  padding: 12px 14px;
+}
+.tv2-dash-hours__title { font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.tv2-dash-hours__grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.tv2-dash-hours__cell { text-align: center; padding: 6px 4px; border-radius: var(--tech-radius-button); background: var(--bg-secondary); }
+.tv2-dash-hours__cell--total { background: var(--accent-light); }
+.tv2-dash-hours__value { font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-hours__cell--total .tv2-dash-hours__value { color: var(--accent); }
+.tv2-dash-hours__label { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-stat-row { display: flex; gap: 10px; }
+.tv2-dash-stat {
+  flex: 1; text-align: center;
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  padding: 12px;
+}
+.tv2-dash-stat__value { font-size: 22px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-stat__label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 2px; }
+
+/* ── Completed rows (with per-visit breakdown) ── */
+.tv2-dash-completed { display: flex; flex-direction: column; gap: 8px; }
+.tv2-dash-completed-row {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 100%; text-align: left;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--status-completed-color);
+  border-radius: var(--tech-radius-button);
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-completed-row__head { display: flex; align-items: center; gap: 8px; }
+.tv2-dash-completed-row__time { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-dash-completed-row__label { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.tv2-dash-completed-row__breakdown { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-tertiary); padding-left: 23px; }
+.tv2-dash-completed-row__breakdown strong { color: var(--text-secondary); }
+
+/* ── Rest of today + Coming up ── */
+.tv2-dash-rest { display: flex; flex-direction: column; gap: 8px; }
+.tv2-dash-rest .tv2-appt-row + .tv2-appt-row { margin-top: 0; }
+.tv2-dash-comingup__day + .tv2-dash-comingup__day { margin-top: 12px; }
+.tv2-dash-comingup__dayhead { font-size: 13px; font-weight: 700; color: var(--text-secondary); padding: 4px 2px; }
+.tv2-dash-comingup__rows { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Create FAB ── */
+.tv2-fab-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.25); z-index: 90; -webkit-tap-highlight-color: transparent; touch-action: none; }
+.tv2-fab-stack {
+  position: fixed;
+  bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)) + 16px);
+  right: 16px; z-index: 91;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+.tv2-fab {
+  width: 56px; height: 56px; border-radius: 28px;
+  background: var(--accent); color: #fff; border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transition: transform 0.2s ease; -webkit-tap-highlight-color: transparent;
+}
+.tv2-fab[data-open='true'] { transform: rotate(45deg); }
+.tv2-fab-pill {
+  height: var(--tech-min-tap); padding: 0 20px; border-radius: 24px;
+  color: #fff; border: none;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-sans); -webkit-tap-highlight-color: transparent;
+}
+.tv2-fab-pill--job { background: var(--accent); box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); }
+.tv2-fab-pill--customer { background: var(--status-working-color); box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35); }
 
 /* ─── TECH-V2: HUB (Phase M1 — job hub) ───────────────────────────────────── */
 

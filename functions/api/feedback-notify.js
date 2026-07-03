@@ -5,9 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   When someone files a bug report or improvement idea, this quietly tells the
- *   admins. It does two things: drops a notice in the in-app notification bell
- *   (which everyone already sees), and — for each admin who is NOT the person
- *   who just submitted — asks the phone-push worker to buzz their phone. It is
+ *   admins. It does three things: drops a notice in the in-app notification bell
+ *   (which everyone already sees); for each admin who is NOT the submitter, asks
+ *   the phone-push worker (APNs) to buzz their phone; and web-pushes each admin's
+ *   subscribed browsers/PWAs (the installed iPhone home screen + desktop). It is
  *   called "fire and forget" right after a feedback row is saved, so a hiccup
  *   here never breaks someone's submit.
  *
@@ -18,10 +19,13 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
- *              /api/send-push (called same-origin, never edited)
+ *              ../lib/webPush.js (sendWebPush), /api/send-push (same-origin APNs)
  *   Data:      reads  → tech_feedback (the just-filed row), employees (admins +
- *                        the submitter's name)
- *              writes → notifications (via create_notification RPC — the bell)
+ *                        the submitter's name), feature_flags (feature:web_push
+ *                        gate), push_subscriptions (admins' web-push devices),
+ *                        integration_credentials/integration_config (VAPID keys)
+ *              writes → notifications (via create_notification RPC — the bell);
+ *                        prunes dead push_subscriptions (404/410)
  *
  * NOTES / GOTCHAS:
  *   - Push delivery reaches NOBODY until the owner configures APNS_* env vars
@@ -40,6 +44,7 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
 
 // ─── SECTION: Pure helpers (node-testable — see feedback-notify.test.js) ───
 
@@ -67,6 +72,75 @@ export function buildPushPayload(feedback, submitterName) {
     body: `${who}: ${feedback?.title || ''}`.trim(),
     data: { feedback_id: feedback?.id, route: '/tech-feedback' },
   };
+}
+
+// ─── SECTION: Web Push fan-out (additive — Notification Center Phase F1) ───
+
+/**
+ * Fire-and-forget Web Push to admins' subscribed devices (the installed iPhone
+ * PWA + desktop). Additive to the existing bell + APNs channels; a hardcoded
+ * `feedback.submitted` push proving the F1 delivery spike end-to-end. F2 replaces
+ * this with the real prefs-driven dispatcher.
+ *
+ * Gated by feature:web_push (read from the shared feature_flags row): sends only
+ * to a recipient for whom the flag is globally enabled OR who is the flag's
+ * dev_only_user_id (the owner-gate window). 503-skips silently when VAPID env is
+ * unset (the APNs precedent), and prunes 404/410 (dead) subscriptions. Never
+ * throws into the caller — a push hiccup must never fail a feedback submit.
+ *
+ * @param sendImpl  injectable send (defaults to webPush.sendWebPush) for tests.
+ */
+export async function sendWebPushToAdmins({ db, env, adminIds, payload, fetchImpl, sendImpl = sendWebPush }) {
+  // Structural gate: only push when web_push is on for the recipient.
+  let flag = null;
+  try {
+    const rows = await db.select(
+      'feature_flags',
+      'key=eq.feature:web_push&select=enabled,dev_only_user_id,force_disabled',
+    );
+    flag = rows?.[0] || null;
+  } catch { flag = null; }
+  if (!flag || flag.force_disabled) return { sent: 0, attempted: 0, pruned: 0, skipped: true };
+
+  const allowed = (adminIds || []).filter(
+    (id) => flag.enabled === true || flag.dev_only_user_id === id,
+  );
+  if (allowed.length === 0) return { sent: 0, attempted: 0, pruned: 0 };
+
+  const pushBody = JSON.stringify({
+    title: payload.title,
+    body: payload.body,
+    url: '/tech-feedback',
+    data: payload.data,
+  });
+
+  // Resolve VAPID once (env → Supabase integration_credentials/config) and pass
+  // it down so we don't re-read the DB per subscription.
+  let vapid;
+  try { vapid = await loadVapidConfig(env, db); } catch { vapid = undefined; }
+
+  let sent = 0, attempted = 0, pruned = 0, vapidMissing = false;
+  for (const id of allowed) {
+    let subs = [];
+    try {
+      subs = await db.select('push_subscriptions', `employee_id=eq.${id}&select=id,endpoint,p256dh,auth`);
+    } catch { subs = []; }
+    for (const s of subs || []) {
+      attempted++;
+      try {
+        const res = await sendImpl(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          pushBody, env, { fetchImpl, vapid },
+        );
+        if (res.skipped) { vapidMissing = true; continue; }
+        if (res.ok) { sent++; continue; }
+        if (res.status === 404 || res.status === 410) {
+          try { await db.delete('push_subscriptions', `id=eq.${s.id}`); pruned++; } catch { /* prune best-effort */ }
+        }
+      } catch { /* one bad subscription never breaks the fan-out */ }
+    }
+  }
+  return { sent, attempted, pruned, ...(vapidMissing ? { vapidMissing: true } : {}) };
 }
 
 // ─── SECTION: Auth (same shape as send-push.js) ───
@@ -160,9 +234,17 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
   }));
 
   const notified = results.filter(r => r.ok).length;
+
+  // Channel 3 — Web Push to admins' subscribed devices (additive, fire-and-forget,
+  // behind feature:web_push). Never fails the request (the APNs precedent).
+  let web = { sent: 0, attempted: 0, pruned: 0 };
+  try {
+    web = await sendWebPushToAdmins({ db, env, adminIds, payload, fetchImpl });
+  } catch { /* fire-and-forget: web push never fails a feedback submit */ }
+
   return {
     status: 200,
-    data: { notified, attempted: results.length, bell, results },
+    data: { notified, attempted: results.length, bell, results, web },
   };
 }
 
