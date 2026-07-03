@@ -194,9 +194,9 @@ describe('b64url', () => {
   });
 
   it('decodes input that carries standard-base64 chars or padding', () => {
-    // 0xFF,0xFF,0xFE → std "//4=" / url "__4"; accept both, with/without pad.
-    expect([...b64urlDecode('__4')]).toEqual([255, 255, 254]);
-    expect([...b64urlDecode('//4=')]).toEqual([255, 255, 254]);
+    // 0xFF,0xFE → std "//4=" / url "__4"; accept both, with and without padding.
+    expect([...b64urlDecode('__4')]).toEqual([255, 254]);
+    expect([...b64urlDecode('//4=')]).toEqual([255, 254]);
   });
 
   it('encodes the classic 0xFB,0xFF byte pair to url-safe "-_8"', () => {
