@@ -25,19 +25,19 @@ describe('readStoredThemeMode', () => {
     try { localStorage.clear(); } catch { /* jsdom absent in this env */ }
   });
 
-  it('defaults to system when nothing is stored', () => {
-    expect(readStoredThemeMode()).toBe('system');
+  it('defaults to light when nothing is stored', () => {
+    expect(readStoredThemeMode()).toBe('light');
   });
 
   it('returns a valid stored mode and rejects garbage', () => {
     // localStorage may be undefined in the pure-node test env; guard so the
     // suite is meaningful where it exists and a no-op (still passing) where not.
-    if (typeof localStorage === 'undefined') { expect(readStoredThemeMode()).toBe('system'); return; }
+    if (typeof localStorage === 'undefined') { expect(readStoredThemeMode()).toBe('light'); return; }
     for (const m of THEME_MODES) {
       localStorage.setItem(THEME_STORAGE_KEY, m);
       expect(readStoredThemeMode()).toBe(m);
     }
     localStorage.setItem(THEME_STORAGE_KEY, 'not-a-mode');
-    expect(readStoredThemeMode()).toBe('system');
+    expect(readStoredThemeMode()).toBe('light');
   });
 });

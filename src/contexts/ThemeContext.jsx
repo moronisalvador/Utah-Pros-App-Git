@@ -20,6 +20,8 @@
  *   Data:      reads/writes localStorage key `upr_theme_pref` only (no DB)
  *
  * NOTES / GOTCHAS:
+ *   - Default when the person hasn't chosen is LIGHT (not System) — the app has
+ *     always been light, so a device set to dark shouldn't silently flip it.
  *   - Sets `data-theme="dark|light"` on <html>. The tech dark palette is scoped
  *     to `[data-theme="dark"] .tech-layout` in index.css, so only the tech shell
  *     goes dark today — the desktop/office UI is unaffected until a later phase.
@@ -44,13 +46,18 @@ export function resolveEffectiveTheme(mode, systemPrefersDark) {
   return systemPrefersDark ? 'dark' : 'light'; // mode === 'system' (or anything unknown)
 }
 
-/** Read the stored mode, defaulting to 'system'. Never throws. */
+/**
+ * Read the stored mode. Defaults to 'light' when the person hasn't chosen —
+ * the app has always been light, so that's what everyone expects. They can
+ * still switch to 'system' (match the phone) or 'dark'. Never throws.
+ */
+export const DEFAULT_THEME_MODE = 'light';
 export function readStoredThemeMode() {
   try {
     const v = localStorage.getItem(THEME_STORAGE_KEY);
-    return THEME_MODES.includes(v) ? v : 'system';
+    return THEME_MODES.includes(v) ? v : DEFAULT_THEME_MODE;
   } catch {
-    return 'system';
+    return DEFAULT_THEME_MODE;
   }
 }
 
