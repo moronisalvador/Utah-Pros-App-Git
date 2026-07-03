@@ -1,0 +1,15 @@
+{
+  "title": "Tarefas",
+  "tab": { "today": "Hoje", "all": "Todas" },
+  "searchPlaceholder": "Buscar tarefas, trabalhos, clientes...",
+  "done": "Feito",
+  "summaryDone": "{{done}} de {{total}} concluídas",
+  "todaysTasks": "tarefas de hoje",
+  "emptyToday": "Nenhuma tarefa para hoje",
+  "emptyAll": "Nenhuma tarefa atribuída",
+  "viewAll": "Ver todas as tarefas",
+  "jobFallback": "Trabalho",
+  "toastLoadFailed": "Falha ao carregar as tarefas",
+  "toastUpdated": "Tarefa atualizada",
+  "toastToggleFailed": "Falha ao alterar a tarefa"
+}
