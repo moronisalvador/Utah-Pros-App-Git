@@ -23,6 +23,35 @@
 import { supabase } from '../lib/supabase.js';
 import { validateTwilioSignature } from '../lib/twilio.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { dispatchEvent } from './notify.js';
+
+// ── message.inbound notification hook (Notification Center, Session B) ──
+// Additive + fire-and-forget: hands the just-saved inbound message to the shared
+// dispatcher as a `message.inbound` event. Audience = the conversation's assigned
+// rep when set, otherwise the office/admin fallback (resolved inside notify.js).
+// INERT until the catalog type is enabled (dispatchEvent returns {skipped}), and
+// wrapped so a notify hiccup can NEVER break the SMS-ingest business path.
+export async function notifyInboundMessage({ db, env, conversation, contact, from, text, dispatchImpl = dispatchEvent }) {
+  try {
+    const assignedTo = conversation?.assigned_to || null;
+    const who = (contact?.name && String(contact.name).trim()) || from;
+    const preview = (text || '').trim().slice(0, 140);
+    await dispatchImpl({
+      db, env,
+      typeKey: 'message.inbound',
+      body: {
+        title: `New text from ${who}`,
+        body: preview || '[Media]',
+        link: '/conversations',
+        entity_type: 'conversation',
+        entity_id: conversation?.id || null,
+        // Assigned rep wins; unassigned falls back to ROLE_AUDIENCE (office/admin).
+        recipient_ids: assignedTo ? [assignedTo] : undefined,
+        data: { conversation_id: conversation?.id || null, route: '/conversations' },
+      },
+    });
+  } catch { /* fire-and-forget — a notify failure never breaks SMS ingest */ }
+}
 
 // ── STOP/HELP/START keyword detection ──
 // CTIA requires handling these exact keywords (case-insensitive)
@@ -252,7 +281,11 @@ export async function onRequestPost(context) {
       updated_at: new Date().toISOString(),
     });
 
-    // ── 7. Run automation rules (future) ──
+    // ── 7. Notify the assigned rep / office of the inbound message ──
+    // Fire-and-forget in the background so Twilio still gets its TwiML instantly.
+    context.waitUntil(notifyInboundMessage({ db, env, conversation, contact, from, text: body }));
+
+    // ── 8. Run automation rules (future) ──
     // TODO: Check automation_rules for matching triggers and execute actions
 
     // Return empty TwiML (no auto-reply for normal messages)

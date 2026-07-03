@@ -35,8 +35,36 @@
  */
 
 import { qboFetch } from './quickbooks.js';
+import { dispatchEvent } from '../api/notify.js';
 
 const MINOR_VERSION = '70';
+
+// ── payment.received notification hook (Notification Center, Session B) ──
+// Additive + fire-and-forget: announces a newly-recorded payment to the admins
+// via the shared dispatcher. Lives in this LIB (not a worker) so BOTH the QBO
+// webhook and the hourly reconciliation cron cover the same event. INERT until
+// the catalog type is enabled, and wrapped so a notify failure can NEVER throw
+// into the payment-recording path (a lost notification must not lose a payment).
+export async function notifyPaymentReceived({ db, env, amount, invoiceId, jobId, source, reference, dispatchImpl = dispatchEvent }) {
+  try {
+    const amt = Number(amount);
+    const money = Number.isFinite(amt) ? `$${amt.toFixed(2)}` : 'A payment';
+    await dispatchImpl({
+      db, env,
+      typeKey: 'payment.received',
+      body: {
+        title: 'Payment received',
+        body: `${money} recorded${source ? ` via ${source}` : ''}${reference ? ` · ${reference}` : ''}.`,
+        link: invoiceId ? `/invoices/${invoiceId}` : '/collections',
+        entity_type: 'invoice',
+        entity_id: invoiceId || null,
+        job_id: jobId || null,
+        payload: { amount: Number.isFinite(amt) ? amt : null, source: source || null, reference: reference || null },
+        data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
+      },
+    });
+  } catch { /* fire-and-forget — a notify failure never breaks payment recording */ }
+}
 
 // ─── SECTION: Helpers ──────────────
 
@@ -160,6 +188,13 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
       reference_number: `QBO Payment #${qboPaymentId}`,
       qbo_payment_id:  String(qboPaymentId),
       qbo_synced_at:   new Date().toISOString(),
+    });
+    // Notify admins of the newly-recorded payment. Fires only in this insert
+    // branch, so a re-delivered webhook (which hits the 'already-synced' skip
+    // above) never re-fires — idempotent by construction.
+    await notifyPaymentReceived({
+      db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
+      source: 'QuickBooks', reference: `QBO Payment #${qboPaymentId}`,
     });
     results.push({ qboInvoiceId, invoice_id: inv.id, amount: applied, recorded: true });
   }
