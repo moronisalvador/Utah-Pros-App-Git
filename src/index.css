@@ -8247,7 +8247,7 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .notify-def-viewbtn.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   border-color: var(--accent);
 }
 
@@ -8344,8 +8344,8 @@ tr:hover td { background: var(--bg-secondary); }
   transition: all var(--transition-fast);
 }
 .notify-def-lockbtn.locked {
-  background: #fef3c7;
-  border-color: #fcd34d;
+  background: var(--status-waiting-bg);
+  border-color: var(--status-waiting);
 }
 .notify-def-lockbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -8382,9 +8382,9 @@ tr:hover td { background: var(--bg-secondary); }
   transition: all var(--transition-fast);
 }
 .notify-def-clearall.confirm {
-  background: #fef2f2;
-  color: #dc2626;
-  border-color: #fecaca;
+  background: var(--status-paused-bg);
+  color: var(--status-paused-color);
+  border-color: var(--status-paused-border);
 }
 .notify-def-clearall:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -8408,11 +8408,11 @@ tr:hover td { background: var(--bg-secondary); }
   border: 2px dashed var(--border-color);
 }
 .notify-def-tri-toggle.on {
-  background: #16a34a;
+  background: var(--status-working-color);
   border: none;
 }
 .notify-def-tri-toggle.off {
-  background: #dc2626;
+  background: var(--status-paused-color);
   border: none;
 }
 .notify-def-tri-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -8422,8 +8422,8 @@ tr:hover td { background: var(--bg-secondary); }
   width: 14px;
   height: 14px;
   border-radius: var(--radius-full);
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
   transition: left var(--transition-fast);
   display: block;
 }
