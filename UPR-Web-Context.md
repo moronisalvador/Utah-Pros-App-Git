@@ -1210,12 +1210,20 @@ on this table)
 
 ---
 
-## PWA (complete as of Mar 27 2026)
+## PWA (installable; service worker DISABLED — corrected Jul 3 2026)
 - **Manifest:** `public/manifest.json` — standalone display, portrait orientation
-- **Service worker:** `public/sw.js` — cache-first for app shell, network-only for REST/API
-- **Icons:** SVG icons at `/icon-192.svg` and `/icon-512.svg`
+- **Service worker: KILLED (Apr 18 2026 incident; doc corrected Jul 3 2026 — this section
+  previously described the old CacheFirst SW as live, which was wrong and dangerous).** The old
+  CacheFirst SW served an edge-poisoned `text/html` under a hashed `/assets/*.js` URL (SPA
+  fallback race) → iOS Safari blank page. Today `public/sw.js` is a self-destructing kill-switch
+  no-op AND `src/main.jsx:44-72` unregisters every SW + wipes caches + bounces once through
+  `/reset` on every load. **Do NOT re-add any fetch-caching SW.** A push-only SW re-enable
+  (no fetch handler) is planned — see `docs/notify-roadmap.md` Phase F1.
+- **Installability does NOT need a SW** (Chromium ≥117; iOS never required one) — Add to Home
+  Screen works today.
+- **Icons:** SVG icons at `/icon-192.svg` and `/icon-512.svg` (PNG fallback advisable for iOS)
 - **Install prompt:** TechLayout shows banner for field_tech when not in standalone mode (iOS: share instructions, Android: beforeinstallprompt)
-- **Feature flag:** `feature:pwa` — enabled
+- **Feature flag:** `feature:pwa` — enabled (legacy; does not control the SW)
 
 ### ⚠️ iOS PWA meta tags — DO NOT CHANGE without understanding this
 - **`apple-mobile-web-app-status-bar-style` MUST stay `default`** in `index.html`. Do not change to `black-translucent`.
@@ -1261,6 +1269,11 @@ Lightweight **org-wide** (shared-read) notification feed surfaced by a **bell in
 
 ## Schedule System
 - **Views:** Day (default on mobile), 3-Day, Week, Month
+- **Owner decision (Jul 3 2026):** keep 3-Day (great for iPad) + Week (the daily driver on
+  desktop — "pretty much perfect as is", do not redesign) + Month (occasional full picture,
+  and the planned foundation for a future Housecall-Pro-style Gantt build). ⚠️ This AMENDS the
+  same-day `docs/schedule-roadmap.md` plan, which had "kill … 3-Day span" on record — 3-Day
+  stays; see the dated amendment in that doc and in the Schedule Desktop section below.
 - **Drag/drop:** appointments draggable + resizable with ghost placement
 - **Popover:** click appointment → detail popover (not page nav)
 - **Job panel:** overlay + swipe to close (mobile)
@@ -1954,10 +1967,11 @@ landed Apr 17 and covers rooms + offline-first photo capture.
   visibilitychange/30s poll with exponential backoff (1s/4s/15s/1m/5m). Max 5
   retries before status=error. OfflineStatusPill in TechLayout shows
   "Syncing N" / "N failed" (tap to retry) / brief "Synced" flash.
-- **Service worker** — `public/sw.js` CacheFirst for /assets and Supabase
-  Storage reads under job-files/; NetworkFirst (3s timeout → cache) for the
-  three cacheable RPCs: get_job_rooms, get_appointment_detail,
-  get_my_appointments_today. Cache name `upr-v1`.
+- **Service worker** — ⚠️ CORRECTED Jul 3 2026: the CacheFirst `upr-v1` SW this
+  bullet used to describe was KILLED Apr 18 2026 (it caused the iOS blank-page
+  MIME trap). `public/sw.js` is now a self-destruct kill-switch and
+  `src/main.jsx:44-72` unregisters all SWs on every load. Never rebuild
+  fetch-caching into a SW here — see the PWA section + `docs/notify-roadmap.md`.
 - **5 feature flags** seeded dev-only for Moroni Salvador admin
   (`d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`):
   - `page:tech_rooms` — Rooms UI + PhotoNoteSheet Room tab
@@ -1980,7 +1994,9 @@ src/lib/
                              equipment, cacheMeta, idSwaps
   syncRunner.js            — drain/dispatch/backoff/emit
   syncRunnerSingleton.js   — one runner per (db, employee.id)
-  registerSW.js            — SW registration helper (unused; main.jsx already registers)
+  registerSW.js            — SW registration helper (DEAD CODE — zero importers; main.jsx
+                             UNREGISTERS SWs, it does not register. Corrected Jul 3 2026;
+                             its fate is decided by notify Phase F1)
   dispatchers/
     roomDispatcher.js      — create_room RPC + temp→server UUID swap
     photoDispatcher.js     — Storage upload + insert_job_document, resolves roomId swap
@@ -3996,15 +4012,25 @@ landing URL into the iframe URL; origin derived from the script's own `src` (wor
 height messages trusted only from the form origin AND the exact iframe window (`event.source`).
 
 **UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
-types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
-editor, **per-field width** (Full / Half / Third → an optional `field.width` key; fields flow into a
-6-column grid so e.g. City | State | ZIP share one row, collapsing to a single column on mobile —
-purely presentational, backward-compatible, no RPC/migration change), theme colors, restricted
-`[text](url)` markup in labels/description/thank-you, a **live
-preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
-confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
-live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's
-own inline theme colors are intentional (standalone non-SPA). `page:crm`-gated like the rest of the shell.
+types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), each with a **change-type**
+dropdown, **duplicate**, required toggle, optional **help text** (`field.help`) and **default value**
+(`field.default`), and a **per-field width** (Full / Half / Third → `field.width`; a 6-column grid so
+e.g. City | State | ZIP share a row, single column on mobile). Dropdown / multiple-choice / **checkbox**
+use a **structured per-option editor** (add / remove / reorder each option — replaced the raw
+one-per-line textarea); dropdown also takes a custom first-choice `field.prompt`. The **`checkbox`
+type is a multi-select group** (own options; value = array of chosen strings) — distinct from the
+single **consent** opt-in box, which is unchanged (`consentValue` still keys off `type==='consent'`).
+The **Preview tab is interactive & testable**: fill it in and Submit runs the *same*
+`validateSubmission` the live form uses (inline per-field errors → then the thank-you), creating **no
+lead / no write** ("preview only" note + a link to the live `/f/<id>` when published). All new field
+keys are free-form JSON in the existing `form_definition_versions.schema` — **no RPC/migration change**,
+backward compatible (a field with no `width`/`help`/`default` renders as before; a legacy option-less
+checkbox stays a single box). Also: theme colors, restricted `[text](url)` markup in
+labels/description/thank-you (rendered via `sanitizeLinkMarkup`), Save-draft vs Publish (two-click
+confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab (array
+values shown as a comma list). Styles live in the `CRM WAVE RESERVED — Phase 10` marker in
+`src/index.css` (tokens only); the hosted page's inline theme colors are intentional (standalone
+non-SPA). `page:crm`-gated like the rest of the shell.
 
 **Optional Webflow adapter:** not built — the first-party form + embed covers WordPress/any site and
 captures gclid/fbclid + writes `sms_consent_log`, which the Webflow-webhook path can't. Left as the
@@ -4450,3 +4476,64 @@ Wave 1 = Session B (Opus·medium — Templates/Wizard removal end-to-end incl. b
 MonthView extraction, JobPage "Schedule appointment" reverse path, remodeling-filter fix as its
 own commit; gated on PR #102 closure). Wave 2 = Session C (Opus·medium — Month drag-reschedule,
 click-day create, events rendering, chip enrichment; Week regression-verify only).
+
+**⚠️ Owner amendment (2026-07-03, later the same day — recorded by the notify planning
+session):** the owner changed their mind on the view axis — **KEEP the 3-Day view** ("works
+great for iPad") alongside Week (daily driver, "pretty much perfect as is") and Month
+(occasional overview + future HCP-style Gantt foundation). This supersedes the "kill … 3-Day
+span" item above; `docs/schedule-roadmap.md` carries the same dated amendment. Session B of the
+Schedule initiative must scope its viewMode-axis collapse to Jobs/Crew grids only.
+
+## Notification Center — plan of record (session 2026-07-03, docs only — no feature code)
+
+**What this session shipped** (committed straight to `dev`): `docs/notify-roadmap.md` (the
+authoritative plan of record — findings, event catalog, phase blocks, ownership matrix, frozen
+list, dependency graph) + `docs/notify-dispatch.md` (copy-paste cold-session prompts) + the
+stale-SW doc corrections in THIS file (PWA section, Tech SW bullet, registerSW line — they
+described the killed Apr-2026 CacheFirst SW as live) + the Schedule-views owner note.
+
+**The initiative:** Web Push to the installed iPhone PWA + desktop (VAPID/RFC 8291 — zero new
+deps; the crypto was proven by executing RFC 8291 Appendix A byte-for-byte in the repo's test
+runtime during planning) + an email channel + the existing bell, governed by per-user
+preferences (types × push/email/both), role-scoped catalogs, and admin-managed lockable
+system-wide defaults. Event catalog v1: message.inbound, appointment.assigned/updated/canceled,
+estimate.accepted, payment.received, lead.new, esign.signed, feedback.submitted, timesheet/clock
+events.
+
+**Phases:** F1 delivery spike (SW re-enable behind `feature:web_push` + webPush.js crypto +
+push_subscriptions + one hardcoded push; **stop-the-line owner gate: a real push must land on
+the owner's iPhone home-screen PWA before anything else is built**) → F2 data foundation
+(catalog + three-layer prefs + `notifications.recipient_id` + bell RPC DROP+CREATE cutover +
+notify.js dispatcher + frozen stubs + inert appointment triggers) → one parallel wave: B event
+wiring ∥ C my-prefs UI (Settings panel + /tech/notifications) ∥ D admin defaults UI
+(disjointness challenge-proven; `get_effective_notification_prefs` ships fully implemented in
+F2 and is frozen — the predicted C/D collision).
+
+**Key findings recorded there:** main.jsx:44-72 kills any SW on every load (rewrite required;
+flags load post-auth → localStorage mirror); push-only SW cannot re-create the MIME trap;
+`google-calendar.js:531-534` already emails assigned employees (dedupe seam = the emailKind
+decision, Session B); bell RPC cutover must be ALTER-first DROP+CREATE with re-GRANTs
+(challenge-CONFIRMED); payment hook belongs in `functions/lib/qbo-payment-sync.js` (serves both
+QBO paths); callrail-backfill must never fire lead.new. **Schema drift (live, unversioned, do
+not ALTER):** `device_tokens` (+ upsert/delete RPCs; delete has zero callers), orphan
+`notification_queue` (0 rows, anon-open writes — untouched per the `automation_rules`
+precedent), `google_calendar_links.assigned_notified_at`/`time_sig`. `push_subscriptions` will
+ship with NO anon SELECT (endpoint+p256dh+auth are send-capability secrets) — a documented
+deviation from the house USING(true) pattern.
+
+### F1 (delivery spike) — not started
+*Reserved. F1 documents the SW re-enable, webPush.js, push_subscriptions, subscribe flow, and
+the owner-gate result here.*
+
+### F2 (data foundation) — not started
+*Reserved. F2 documents the catalog/prefs schema, bell cutover, dispatcher, stubs, and
+triggers here.*
+
+### Session B (event wiring) — not started
+*Reserved.*
+
+### Session C (my-prefs UI) — not started
+*Reserved.*
+
+### Session D (admin defaults UI) — not started
+*Reserved.*

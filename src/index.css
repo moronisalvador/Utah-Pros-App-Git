@@ -6932,12 +6932,26 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-forms-field-move { display: flex; gap: 4px; }
 .crm-forms-field-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .crm-forms-placeholder { flex: 1; min-width: 160px; }
+/* Keep Required + Width right-aligned on every field, whether or not a placeholder/default sits on the left. */
+.crm-forms-field-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .crm-forms-required { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--crm-text-secondary); white-space: nowrap; }
 .crm-forms-width { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--crm-text-secondary); white-space: nowrap; }
 .crm-forms-width-select { width: auto; padding: 6px 8px; }
 .crm-forms-options { font-family: inherit; resize: vertical; }
 .crm-forms-addbar { display: flex; gap: 8px; align-items: center; }
 .crm-forms-addbar select { max-width: 220px; }
+/* Field-editor conveniences: type switch, help, structured options, default */
+.crm-forms-type-select { width: auto; max-width: 190px; padding: 6px 8px; font-weight: 600; }
+.crm-forms-help-input { font-size: 12px; }
+.crm-forms-consent-input { font-family: inherit; resize: vertical; }
+.crm-forms-consent-hint { font-size: 12px; color: var(--crm-text-tertiary); margin-top: -2px; }
+.crm-forms-consent-hint code { background: var(--crm-bg-content); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.crm-forms-options-editor { display: flex; flex-direction: column; gap: 6px; }
+.crm-forms-option-row { display: flex; gap: 4px; align-items: center; }
+.crm-forms-option-row input { flex: 1; }
+.crm-forms-add-option { align-self: flex-start; }
+.crm-forms-prompt-input { font-size: 12px; }
+.crm-forms-default, .crm-forms-default-select { width: auto; min-width: 150px; padding: 6px 8px; }
 
 /* Settings column */
 .crm-forms-settings { display: flex; flex-direction: column; gap: var(--space-3); background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-3); }
@@ -6960,7 +6974,13 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-forms-preview-row input, .crm-forms-preview-row select, .crm-forms-preview-row textarea { padding: 9px 11px; border: 1px solid var(--crm-border); border-radius: 8px; font: inherit; background: var(--crm-bg-card); }
 .crm-forms-preview-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--crm-text-secondary); }
 .crm-forms-preview-radios { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.crm-forms-preview-submit { margin-top: 6px; width: 100%; padding: 11px; border: 0; border-radius: 8px; background: var(--upr-primary, var(--crm-accent)); color: var(--crm-text-on-accent); font-weight: 700; }
+.crm-forms-preview-submit { margin-top: 6px; width: 100%; padding: 11px; border: 0; border-radius: 8px; background: var(--upr-primary, var(--crm-accent)); color: var(--crm-text-on-accent); font-weight: 700; cursor: pointer; }
+/* Interactive (testable) preview */
+.crm-forms-preview-banner { font-size: 12px; color: var(--crm-text-secondary); background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+.crm-forms-preview-help { font-size: 12px; color: var(--crm-text-tertiary); margin-top: 2px; }
+.crm-forms-preview-error { font-size: 12px; color: var(--crm-danger-text); margin-top: 4px; }
+.crm-forms-preview-thanks { text-align: center; padding: 20px 8px 8px; font-size: 15px; }
+.crm-forms-preview-testnote { text-align: center; font-size: 12px; color: var(--crm-text-tertiary); margin-bottom: 12px; }
 
 /* Embed */
 .crm-forms-embed { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-4); display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }

@@ -163,6 +163,44 @@ describe('checkSpam — honeypot + minimum fill time', () => {
   });
 });
 
+describe('validateSubmission — checkbox multi-select group', () => {
+  const groupSchema = {
+    fields: [
+      { key: 'services', type: 'checkbox', label: 'Which services?', required: true, options: ['Water', 'Fire', 'Mold'] },
+    ],
+  };
+  const optionalGroup = {
+    fields: [{ key: 'extras', type: 'checkbox', label: 'Extras', required: false, options: ['A', 'B'] }],
+  };
+
+  it('accepts one or more chosen options (array value)', () => {
+    expect(validateSubmission(groupSchema, { services: ['Water'] }).valid).toBe(true);
+    expect(validateSubmission(groupSchema, { services: ['Water', 'Mold'] }).valid).toBe(true);
+  });
+
+  it('rejects a required group with nothing selected (empty array / missing)', () => {
+    expect(validateSubmission(groupSchema, { services: [] }).errors.services).toBeTruthy();
+    expect(validateSubmission(groupSchema, {}).errors.services).toBeTruthy();
+  });
+
+  it('rejects a chosen value that is not one of the options', () => {
+    const r = validateSubmission(groupSchema, { services: ['Water', 'Nope'] });
+    expect(r.valid).toBe(false);
+    expect(r.errors.services).toBeTruthy();
+  });
+
+  it('an optional group with nothing selected is valid', () => {
+    expect(validateSubmission(optionalGroup, { extras: [] }).valid).toBe(true);
+    expect(validateSubmission(optionalGroup, {}).valid).toBe(true);
+  });
+
+  it('legacy single checkbox (no options) keeps boolean semantics', () => {
+    const legacy = { fields: [{ key: 'agree', type: 'checkbox', label: 'Agree', required: true }] };
+    expect(validateSubmission(legacy, { agree: false }).errors.agree).toBeTruthy();
+    expect(validateSubmission(legacy, { agree: true }).valid).toBe(true);
+  });
+});
+
 describe('consentValue', () => {
   it('reads the consent field truthiness', () => {
     expect(consentValue(schema, { consent: true })).toBe(true);

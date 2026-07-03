@@ -148,8 +148,9 @@ Build in this order:
    (the modal uses emp.color for crew chips). Verify schedule-from-job end-to-end on dev.
 ③ Collapse the viewMode axis in Schedule.jsx: remove the Jobs grid + Crew grid views (GridPopover,
    ApptCard, CrewApptCard, grid hover state, grid cell drop handlers, gridPlacementPicker + its
-   modal, the Calendar/Jobs/Crew SegControl) and the 3-Day span option; sanitize stale
-   localStorage reads (upr_schedule_view goes away; upr_schedule_span must fall back from '3day').
+   modal, the Calendar/Jobs/Crew SegControl). ⚠️ OWNER AMENDMENT 2026-07-03 (see the roadmap's
+   decision ②): the 3-Day span is KEPT ("works great for iPad") — do NOT remove it, do NOT touch
+   upr_schedule_span; only upr_schedule_view (the Calendar/Jobs/Crew axis) goes away.
    OVER-DELETION GUARD: keep placementMode, handlePlacementClick, handleRescheduleRemaining — the
    Week/Day CalendarView consumes them. Update the "Jobs move here automatically when a schedule
    is generated" empty-state copy for the post-wizard world.

@@ -101,7 +101,23 @@ function validateField(field, value) {
     return null;
   }
   if (type === 'checkbox') {
-    if (required && !isTruthy(value)) return 'This box is required.';
+    const options = Array.isArray(field.options) ? field.options : [];
+    // No options → legacy single yes/no box (backward compatible). The value may
+    // arrive as a boolean (preview) or a 1-element array (hosted page collects
+    // all checked boxes by name) — accept either.
+    if (options.length === 0) {
+      const checked = Array.isArray(value) ? value.length > 0 : isTruthy(value);
+      if (required && !checked) return 'This box is required.';
+      return null;
+    }
+    // Multi-select group: value is an array of chosen option strings.
+    const chosen = Array.isArray(value)
+      ? value
+      : (value == null || value === '' ? [] : [String(value)]);
+    if (required && chosen.length === 0) return 'Select at least one option.';
+    for (const v of chosen) {
+      if (!options.includes(String(v))) return 'Choose from the listed options.';
+    }
     return null;
   }
   if (required && !has) return `${field.label || 'This field'} is required.`;
