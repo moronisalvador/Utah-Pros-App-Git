@@ -43,5 +43,31 @@
   "activeApptFallback": "Cita activa",
   "toastClockedOut": "Salida registrada",
   "toastClockedOutOf": "Salida registrada de {{job}} ({{elapsed}})",
-  "toastClockOutFailed": "No se pudo marcar la salida: {{message}}"
+  "toastClockOutFailed": "No se pudo marcar la salida: {{message}}",
+  "restOfToday": "Resto del día",
+  "completedToday": "Completadas hoy",
+  "toastRefreshFailed": "Error al actualizar",
+  "myNumbers": "Mis números",
+  "hoursToday": "Hoy",
+  "thisWeek": "Esta semana",
+  "tasksDone": "Tareas hechas",
+  "photosToday": "Fotos de hoy",
+  "hours": { "travel": "Traslado", "onSite": "En el sitio", "total": "Total" },
+  "moreAria": "Más",
+  "createNewAria": "Crear nuevo",
+  "visit": "Visita",
+  "todaysVisitsAria": "Visitas de hoy",
+  "openJob": "Abrir trabajo",
+  "hero": {
+    "onMyWay": "EN CAMINO",
+    "working": "TRABAJANDO",
+    "paused": "EN PAUSA",
+    "upNextToday": "SIGUIENTE HOY",
+    "nextVisit": "PRÓXIMA VISITA",
+    "startsIn": "Empieza en {{time}}",
+    "startingNow": "Empezando ahora",
+    "wasDueAgo": "Debía empezar hace {{time}}",
+    "emptyTitle": "Nada en curso ahora",
+    "emptyLink": "Revisa tu agenda →"
+  }
 }

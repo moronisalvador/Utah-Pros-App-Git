@@ -43,5 +43,31 @@
   "activeApptFallback": "Active appointment",
   "toastClockedOut": "Clocked out",
   "toastClockedOutOf": "Clocked out of {{job}} ({{elapsed}})",
-  "toastClockOutFailed": "Could not clock out: {{message}}"
+  "toastClockOutFailed": "Could not clock out: {{message}}",
+  "restOfToday": "Rest of today",
+  "completedToday": "Completed today",
+  "toastRefreshFailed": "Failed to refresh",
+  "myNumbers": "My numbers",
+  "hoursToday": "Today",
+  "thisWeek": "This week",
+  "tasksDone": "Tasks done",
+  "photosToday": "Photos today",
+  "hours": { "travel": "Travel", "onSite": "On-site", "total": "Total" },
+  "moreAria": "More",
+  "createNewAria": "Create new",
+  "visit": "Visit",
+  "todaysVisitsAria": "Today's visits",
+  "openJob": "Open job",
+  "hero": {
+    "onMyWay": "ON MY WAY",
+    "working": "WORKING",
+    "paused": "PAUSED",
+    "upNextToday": "UP NEXT TODAY",
+    "nextVisit": "NEXT VISIT",
+    "startsIn": "Starts in {{time}}",
+    "startingNow": "Starting now",
+    "wasDueAgo": "Was due {{time}} ago",
+    "emptyTitle": "Nothing on right now",
+    "emptyLink": "Check your schedule →"
+  }
 }

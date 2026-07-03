@@ -31,42 +31,35 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import TimeTracker from '@/components/tech/TimeTracker';
 import { apptHref, jobHref } from '@/components/tech/v2/nav.js';
+import { formatTime, currentLocaleTag } from '@/lib/techDateUtils';
 import PhotoCaptureButton from './PhotoCaptureButton.jsx';
 import { fmtHours } from './dashHelpers.js';
 
 // ─── SECTION: Helpers ──────────────
 
-// 'HH:MM:SS' → '8:30 AM'. '' for null/all-day.
-function fmtClock(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':');
-  const hour = Number(h);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  return `${hour % 12 || 12}:${m} ${ampm}`;
-}
-
 // Countdown label from now to a same-day HH:MM:SS start. null when no time.
-function countdownLabel(timeStart) {
+function countdownLabel(timeStart, t) {
   if (!timeStart) return null;
   const [h, m] = timeStart.split(':').map(Number);
   const start = new Date();
   start.setHours(h, m || 0, 0, 0);
   const diffMin = Math.round((start.getTime() - Date.now()) / 60000);
-  if (diffMin > 1) return `Starts in ${fmtHours(diffMin / 60)}`;
-  if (diffMin >= -1) return 'Starting now';
-  return `Was due ${fmtHours(Math.abs(diffMin) / 60)} ago`;
+  if (diffMin > 1) return t('hero.startsIn', { time: fmtHours(diffMin / 60) });
+  if (diffMin >= -1) return t('hero.startingNow');
+  return t('hero.wasDueAgo', { time: fmtHours(Math.abs(diffMin) / 60) });
 }
 
-function ctxHeader(ctxType, appt) {
+function ctxHeader(ctxType, appt, t) {
   if (ctxType === 'now_active') {
-    if (appt.status === 'en_route') return { label: 'ON MY WAY', tone: 'enroute' };
-    if (appt.status === 'in_progress') return { label: 'WORKING', tone: 'working' };
-    return { label: 'PAUSED', tone: 'paused' };
+    if (appt.status === 'en_route') return { label: t('hero.onMyWay'), tone: 'enroute' };
+    if (appt.status === 'in_progress') return { label: t('hero.working'), tone: 'working' };
+    return { label: t('hero.paused'), tone: 'paused' };
   }
-  if (ctxType === 'today') return { label: 'UP NEXT TODAY', tone: 'scheduled' };
-  return { label: 'NEXT VISIT', tone: 'neutral' };
+  if (ctxType === 'today') return { label: t('hero.upNextToday'), tone: 'scheduled' };
+  return { label: t('hero.nextVisit'), tone: 'neutral' };
 }
 
 // ─── SECTION: Render ──────────────
@@ -76,6 +69,7 @@ function ctxHeader(ctxType, appt) {
  *           active?: boolean, onClock?: () => void, onPhoto?: () => void }} props
  */
 export default function NowNextHero({ hero, employee, db, active = true, onClock, onPhoto }) {
+  const { t } = useTranslation(['dash', 'tech']);
   const navigate = useNavigate();
   const [, forceTick] = useState(0);
 
@@ -96,20 +90,20 @@ export default function NowNextHero({ hero, employee, db, active = true, onClock
             <polyline points="9 16 11 18 15 14" strokeWidth="2" />
           </svg>
         </div>
-        <div className="tv2-dash-hero__empty-title">Nothing on right now</div>
+        <div className="tv2-dash-hero__empty-title">{t('hero.emptyTitle')}</div>
         <button type="button" className="tv2-dash-hero__empty-link" onClick={() => navigate('/tech/schedule')}>
-          Check your schedule →
+          {t('hero.emptyLink')}
         </button>
       </div>
     );
   }
 
   const { ctxType, appt } = hero;
-  const head = ctxHeader(ctxType, appt);
+  const head = ctxHeader(ctxType, appt, t);
   const job = appt.jobs;
-  const clientName = job?.insured_name || appt.title || 'Appointment';
+  const clientName = job?.insured_name || appt.title || t('tech:misc.appointment');
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
-  const time = fmtClock(appt.time_start);
+  const time = formatTime(appt.time_start);
   const showTracker = ctxType === 'now_active' || ctxType === 'today';
 
   const openMap = (e) => {
@@ -125,9 +119,9 @@ export default function NowNextHero({ hero, employee, db, active = true, onClock
     <div className={`tv2-dash-hero tv2-dash-hero--${head.tone}`}>
       <div className="tv2-dash-hero__eyebrow">
         <span className={`tv2-dash-hero__badge tv2-dash-hero__badge--${head.tone}`}>{head.label}</span>
-        {ctxType === 'today' && <span className="tv2-dash-hero__countdown">{countdownLabel(appt.time_start)}</span>}
+        {ctxType === 'today' && <span className="tv2-dash-hero__countdown">{countdownLabel(appt.time_start, t)}</span>}
         {ctxType === 'next' && (
-          <span className="tv2-dash-hero__countdown">{[appt.date && new Date(appt.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), time].filter(Boolean).join(' · ')}</span>
+          <span className="tv2-dash-hero__countdown">{[appt.date && new Date(appt.date + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { weekday: 'short', month: 'short', day: 'numeric' }), time].filter(Boolean).join(' · ')}</span>
         )}
         {(ctxType === 'now_active') && time && <span className="tv2-dash-hero__countdown">{time}</span>}
       </div>
@@ -135,7 +129,7 @@ export default function NowNextHero({ hero, employee, db, active = true, onClock
       <button type="button" className="tv2-dash-hero__identity" onClick={openDetail}>
         <span className="tv2-dash-hero__client">{clientName}</span>
         <span className="tv2-dash-hero__sub">
-          {[appt.title, job?.job_number ? `#${job.job_number}` : null].filter(Boolean).join(' · ') || 'Appointment'}
+          {[appt.title, job?.job_number ? `#${job.job_number}` : null].filter(Boolean).join(' · ') || t('tech:misc.appointment')}
         </span>
       </button>
 
@@ -156,9 +150,9 @@ export default function NowNextHero({ hero, employee, db, active = true, onClock
         {job && showTracker && (
           <PhotoCaptureButton job={job} appointmentId={appt.id} employee={employee} db={db} onUploaded={onPhoto} />
         )}
-        <button type="button" className="tv2-dash-secondary-btn" onClick={openDetail}>📝 Notes</button>
+        <button type="button" className="tv2-dash-secondary-btn" onClick={openDetail}>{t('notesBtn')}</button>
         {ctxType === 'next' && job && (
-          <button type="button" className="tv2-dash-secondary-btn" onClick={() => navigate(jobHref(appt.job_id))}>Open job</button>
+          <button type="button" className="tv2-dash-secondary-btn" onClick={() => navigate(jobHref(appt.job_id))}>{t('openJob')}</button>
         )}
       </div>
     </div>

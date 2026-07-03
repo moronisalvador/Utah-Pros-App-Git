@@ -41,6 +41,7 @@
  */
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { TechV2Page, SkeletonList, ApptListRow } from '@/components/tech/v2';
@@ -61,6 +62,7 @@ import { selectHero, splitToday } from './dash/dashHelpers.js';
  */
 export default function TechDashV2({ active = true }) {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation('dash');
   const { employee, db, logout } = useAuth();
   const queryClient = useQueryClient();
 
@@ -75,8 +77,8 @@ export default function TechDashV2({ active = true }) {
   const onPhoto = useCallback(() => invalidateTech(queryClient, 'photo'), [queryClient]);
 
   const onRefresh = useCallback(async () => {
-    try { await refetch(); } catch { toast('Failed to refresh', 'error'); }
-  }, [refetch]);
+    try { await refetch(); } catch { toast(t('toastRefreshFailed'), 'error'); }
+  }, [refetch, t]);
 
   // ─── SECTION: Render ──────────────
   // Cold start ONLY: no cached data yet. After first load, PTR/focus refreshes
@@ -124,7 +126,7 @@ export default function TechDashV2({ active = true }) {
 
           {restOfToday.length > 0 && (
             <div className="tv2-dash-rest">
-              <div className="tv2-dash-section-title">Rest of today</div>
+              <div className="tv2-dash-section-title">{t('restOfToday')}</div>
               {restOfToday.map((a) => <ApptListRow key={a.id} appt={a} />)}
             </div>
           )}
