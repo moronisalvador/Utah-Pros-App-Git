@@ -58,12 +58,12 @@ composer, the desktop surface, and the CSS/none-flag wiring.
 
 ### Shared code
 - [x] `src/lib/mediaCompress.js` — pure caps/validation/path helpers above a SECTION marker (33 unit tests green), browser `compressImage` / `probeVideo` below
-- [x] `src/components/FeedbackAttachments.jsx` — snap-first immediate upload, per-tile `picked→compressing/probing→uploading→done|failed` with Retry, best-effort storage DELETE on remove (fixes the live orphaning bug), video duration chip, ≥48px hit areas, `{path,name,mime,size,original_size,width?,height?,duration?}` records, `value/onChange/onBusyChange/disabled/caps` contract, `useAuth()` internally
+- [x] `src/components/FeedbackAttachments.jsx` — snap-first immediate upload, per-tile `picked→compressing/probing→uploading→done|failed` with Retry (cap-re-validated), best-effort storage DELETE on remove behind a busy `removing` state (fixes the live orphaning bug without opening a submit race), video duration chip, ≥48px hit areas, `{path,name,mime,size,original_size,width?,height?,duration?}` records, `value/onChange/onBusyChange/disabled/caps` contract, `useAuth()` internally. **Reset contract: `value` seeds on mount only — parents clear the composer by remounting with a new `key`** (a value-watching effect was removed after adversarial review proved it raced parallel upload completions)
 
 ### Desktop surface + wiring
 - [x] `src/pages/Feedback.jsx` — working form (Bug Report / Improvement), submits `p_source:'desktop'` + `p_attachments`
 - [x] Routed in `App.jsx` inside the authenticated Layout shell, NO admin gate
-- [x] `navItems.jsx` entries (OVERFLOW_ITEMS + SYSTEM_ITEMS) reusing `IconFeedback` with `always: true`
+- [x] `navItems.jsx` entries (OVERFLOW_ITEMS + SYSTEM_ITEMS) reusing `IconFeedback` with `always: true` + `hideForRoles: ['crm_partner']` (that role is locked to /crm/*+/help by Layout's choke point — the link would dead-end); `isItemVisible` gained the generic `hideForRoles` check
 - [ ] Legacy mobile `Sidebar.jsx` link — **deliberately not done**: `Sidebar.jsx` renders `NAV_ITEMS` with inline gating that ignores `always` (and its header freezes the legacy list), so a <1280px office user reaches /feedback by URL or the Settings rail only. Wiring the legacy sidebar is a follow-up decision for the owner, not silently-skipped work.
 - [x] `index.css`: Phase F block + reserved `Session B` / `Session C` markers appended at the bottom
 - [x] Documentation Standard headers on every new file
@@ -72,7 +72,8 @@ composer, the desktop surface, and the CSS/none-flag wiring.
 - [x] `npm test` (347 passed; integration suites self-skip without creds — the feedback suite runs green wherever `VITE_SUPABASE_*` creds + network are available and was proven equivalent live via PostgREST)
 - [x] `npm run build`
 - [x] `npx eslint` on all touched files — no new errors (navItems' 5 `react-refresh/only-export-components` errors pre-exist at HEAD)
-- [x] Visual check of /feedback (Playwright, Supabase stubbed): desktop 1366px + 768px; upload→compress→done tile, remove→storage DELETE, submit payload `p_source:'desktop'` with a real-array `p_attachments`, success toast
+- [x] Visual check of /feedback (Playwright, Supabase stubbed): desktop 1366px + 768px; parallel 2-file upload→compress→done tiles, remove→storage DELETE, submit payload `p_source:'desktop'` with a real-array `p_attachments`, success toast, post-submit composer reset
+- [x] Adversarial review workflow (3 finder lenses × 2-skeptic verification): 5 confirmed findings — value-sync race (major), submit-during-remove window, retry cap bypass, stale failed tiles after reset, crm_partner dead-end link — **all fixed pre-merge** (see the composer reset contract + `hideForRoles` above)
 
 ---
 

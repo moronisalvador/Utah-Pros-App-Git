@@ -29,9 +29,15 @@
  *   - ⚠️ FROZEN for the Feedback Media wave (Phase F owns it — see
  *     docs/feedback-media-roadmap.md ownership matrix). Sessions B and C
  *     consume it as-is; contract changes need a Phase F follow-up.
- *   - Contract: value (array of attachment records), onChange(records),
- *     onBusyChange(bool — any upload still in flight), disabled, caps
- *     ({ maxFiles, maxVideos, maxVideoSeconds } overrides).
+ *   - Contract: value (array of attachment records — read ONCE on mount to
+ *     seed the tiles), onChange(records), onBusyChange(bool — any upload OR
+ *     removal still in flight), disabled, caps ({ maxFiles, maxVideos,
+ *     maxVideoSeconds } overrides).
+ *   - ⚠️ To CLEAR/reset the composer (e.g. after a successful submit),
+ *     REMOUNT it with a new `key` — the composer deliberately does not watch
+ *     `value` after mount. (A live value-sync effect was removed: its stale
+ *     prop closure raced parallel upload completions and silently dropped
+ *     freshly-finished tiles while their records stayed in the parent state.)
  *   - Record shape: { path, name, mime, size, original_size, width?, height?,
  *     duration? } — path is bucket-LESS (see mediaCompress.buildStoragePath);
  *     pass records straight to insert_tech_feedback p_attachments.
@@ -59,13 +65,16 @@ import {
 
 // ─── SECTION: Helpers ──────────────
 
-const IN_FLIGHT = ['picked', 'compressing', 'probing', 'uploading'];
+// 'removing' is in-flight on purpose: while the storage DELETE runs, the
+// record is still in the parent's value, so submit must stay blocked.
+const IN_FLIGHT = ['picked', 'compressing', 'probing', 'uploading', 'removing'];
 
 const STATUS_LABEL = {
   picked: 'Preparing…',
   compressing: 'Shrinking…',
   probing: 'Checking…',
   uploading: 'Uploading…',
+  removing: 'Removing…',
 };
 
 const publicUrl = (db, path) =>
@@ -118,17 +127,10 @@ export default function FeedbackAttachments({ value = [], onChange, onBusyChange
   const busy = tiles.some(t => IN_FLIGHT.includes(t.status));
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
-  // Parent reset/removal sync: a done tile whose record vanished from `value`
-  // (e.g. the form cleared after submit) is dropped here.
-  useEffect(() => {
-    const paths = new Set((value || []).map(r => r.path));
-    const keep = tilesRef.current.filter(t => t.status !== 'done' || paths.has(t.record?.path));
-    if (keep.length === tilesRef.current.length) return;
-    tilesRef.current
-      .filter(t => !keep.includes(t) && t.isObjectUrl && t.previewUrl)
-      .forEach(t => URL.revokeObjectURL(t.previewUrl));
-    mutate(() => keep);
-  }, [value]);
+  // NOTE: there is deliberately NO effect watching `value` — parents reset
+  // the composer by remounting it with a new `key` (see header). A prop-sync
+  // effect here raced parallel upload completions (stale closure `value` vs
+  // live tilesRef) and dropped just-finished tiles.
 
   // Revoke any leftover object URLs on unmount.
   useEffect(() => () => {
@@ -223,24 +225,43 @@ export default function FeedbackAttachments({ value = [], onChange, onBusyChange
 
   const retryTile = (tile) => {
     if (!tile.file) return;
+    // Re-earn the slot: failed tiles don't count toward the caps (so users
+    // can pick a replacement while one is failed), which means an unchecked
+    // retry could push past MAX_FILES/MAX_VIDEOS after a replacement landed.
+    const others = tilesRef.current
+      .filter(t => t.id !== tile.id && t.status !== 'failed')
+      .map(t => ({ mime: t.record?.mime || t.file?.type }));
+    const { rejected } = validateSelection(others, [tile.file], { maxFiles, maxVideos });
+    if (rejected.length) {
+      toast(rejected[0].reason, 'warning');
+      return;
+    }
     updateTile(tile.id, { status: 'picked', error: null });
     processTile(tile);
   };
 
   const removeTile = async (tile) => {
-    if (tile.status === 'done' && tile.record?.path) {
-      // Best-effort storage DELETE BEFORE onChange — fixes the old composer's
-      // orphaned-upload bug. A failure here is invisible on purpose: the
-      // purge RPCs are the retention backstop.
+    const wasDone = tile.status === 'done';
+    if (wasDone && tile.record?.path) {
+      // Best-effort storage DELETE BEFORE the record leaves the parent's
+      // value — fixes the old composer's orphaned-upload bug. The tile shows
+      // 'Removing…' and counts as busy so the form can't submit the
+      // half-removed record; the 8s abort keeps weak signal from wedging it.
+      // A DELETE failure is accepted on purpose: the purge RPCs are the
+      // retention backstop.
+      updateTile(tile.id, { status: 'removing' });
       try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
         await fetch(`${db.baseUrl}/storage/v1/object/job-files/${stripBucketPrefix(tile.record.path)}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${db.apiKey}` },
+          signal: controller.signal,
         });
+        clearTimeout(timer);
       } catch { /* best-effort */ }
     }
     if (tile.isObjectUrl && tile.previewUrl) URL.revokeObjectURL(tile.previewUrl);
-    const wasDone = tile.status === 'done';
     mutate(ts => ts.filter(t => t.id !== tile.id));
     if (wasDone) onChange?.(doneRecords(tilesRef.current));
   };

@@ -4024,16 +4024,23 @@ arrays; the insert RPC now decodes string-scalar input too.
 90s / img in ≤25MB / video ≤50MB; compressImage → 1920px 0.8 JPEG, never larger than the
 original, HEIC fallback ≤10MB; probeVideo never rejects, 5s→nulls; 33 unit tests) and
 `src/components/FeedbackAttachments.jsx` (snap-first immediate upload to
-`job-files/feedback/{employeeId}/{ts}-{sanitized}`, per-tile state machine with Retry,
-best-effort storage DELETE on remove — fixes the old orphaned-upload bug, duration chip,
-≥48px targets; contract `value/onChange/onBusyChange/disabled/caps`, calls useAuth() itself).
+`job-files/feedback/{employeeId}/{ts}-{sanitized}`, per-tile state machine with Retry —
+retry re-validates the caps, best-effort storage DELETE on remove behind a busy `removing`
+state — fixes the old orphaned-upload bug without opening a submit race, duration chip,
+≥48px targets; contract `value/onChange/onBusyChange/disabled/caps`, calls useAuth()
+itself). ⚠️ Composer reset contract: `value` seeds tiles ON MOUNT ONLY — to clear it
+(e.g. after submit) remount with a new `key`; it deliberately has no value-watching effect
+(a prop-sync effect raced parallel upload completions and dropped fresh tiles — caught by
+adversarial review, fixed pre-merge).
 
 **Desktop surface:** `src/pages/Feedback.jsx` at `/feedback` (Layout shell, ungated —
 every employee), submits `p_source:'desktop'` + `p_attachments` as a REAL array (never
-JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` (the legacy
-mobile Sidebar renders NAV_ITEMS with inline gating that ignores `always` — wiring it is an
-owner decision, tracked in the roadmap). CSS: `fbm-*` classes in `index.css` Phase F block,
-with reserved Session B / Session C blocks appended after it.
+JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` +
+`hideForRoles: ['crm_partner']` (isItemVisible gained the generic `hideForRoles` check —
+crm_partner is locked to /crm/*+/help by Layout's choke point, so the link would dead-end
+for them; the legacy mobile Sidebar renders NAV_ITEMS with inline gating that ignores
+`always` — wiring it is an owner decision, tracked in the roadmap). CSS: `fbm-*` classes in
+`index.css` Phase F block, with reserved Session B / Session C blocks appended after it.
 
 ### Session B (TechFeedback rebuild) — not started
 *Reserved. Session B documents its TechFeedback.jsx rebuild here: FeedbackAttachments on

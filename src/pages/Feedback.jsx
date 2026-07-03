@@ -68,6 +68,9 @@ export default function Feedback() {
   const [attachments, setAttachments] = useState([]); // records from FeedbackAttachments
   const [uploadsBusy, setUploadsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Bumped after each successful submit — remounts FeedbackAttachments (its
+  // documented reset contract: it reads `value` on mount only).
+  const [formEpoch, setFormEpoch] = useState(0);
 
   const selected = TYPES.find(t => t.key === type);
   const canSubmit = !!type && title.trim().length >= 3 && !submitting && !uploadsBusy;
@@ -89,7 +92,8 @@ export default function Feedback() {
       setType(null);
       setTitle('');
       setDescription('');
-      setAttachments([]); // FeedbackAttachments drops its done tiles via value-sync
+      setAttachments([]);
+      setFormEpoch(e => e + 1); // remount the composer — clears every tile, failed ones included
     } catch (err) {
       toast('Failed to send: ' + err.message, 'error');
     } finally {
@@ -156,6 +160,7 @@ export default function Feedback() {
         <div className="form-group">
           <span className="label">Photos / video (optional)</span>
           <FeedbackAttachments
+            key={formEpoch}
             value={attachments}
             onChange={setAttachments}
             onBusyChange={setUploadsBusy}

@@ -122,7 +122,10 @@ export const OVERFLOW_ITEMS = [
   // always: true — like Help, visible to every logged-in user. Without it,
   // isItemVisible falls through to canAccess('feedback'), which no role has,
   // hiding the item from everyone (verified trap — Feedback Media Phase F).
-  { key: 'feedback',           label: 'Send Feedback',      path: '/feedback',           icon: IconFeedback,   always: true },
+  // hideForRoles: Layout's crm_partner choke point locks that role to
+  // /crm/* + /help, so /feedback would be a dead-end link that bounces them
+  // to /crm/leads.
+  { key: 'feedback',           label: 'Send Feedback',      path: '/feedback',           icon: IconFeedback,   always: true, hideForRoles: ['crm_partner'] },
 ];
 
 // SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy
@@ -134,8 +137,9 @@ export const SYSTEM_ITEMS = [
   { key: 'demo_sheet_builder', label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder', icon: IconAdmin },
   { key: 'admin_integrations', label: 'API Keys',            path: '/admin/integrations',       icon: IconAdmin,    adminOnly: true },
   { key: 'tech_feedback',      label: 'Tech Feedback',       path: '/tech-feedback',            icon: IconFeedback },
-  // always: true — every employee can send feedback (see OVERFLOW_ITEMS note).
-  { key: 'feedback',           label: 'Send Feedback',       path: '/feedback',                 icon: IconFeedback, always: true },
+  // always: true — every employee can send feedback (see OVERFLOW_ITEMS note,
+  // incl. why crm_partner is excluded).
+  { key: 'feedback',           label: 'Send Feedback',       path: '/feedback',                 icon: IconFeedback, always: true, hideForRoles: ['crm_partner'] },
   { key: 'dev_tools',          label: 'Dev Tools',           path: '/dev-tools',                icon: IconDevTools, moroniOnly: true },
 ];
 
@@ -147,6 +151,10 @@ export const SYSTEM_ITEMS = [
  */
 export function isItemVisible(item, { canAccess, isFeatureEnabled, employee, isMoroni }) {
   if (!employee) return false;
+  // Role exclusion — wins over `always`. Used for links a role can SEE but
+  // never REACH (e.g. crm_partner is redirected off any non-/crm, non-/help
+  // path by Layout's choke point, so an always-on link would dead-end).
+  if (item.hideForRoles?.includes(employee.role)) return false;
   if (item.always) {
     // Help & Guides — visible to every logged-in user, not role-gated.
   } else if (item.moroniOnly) {
