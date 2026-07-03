@@ -16,11 +16,12 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext, @/lib/toast,
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/lib/api,
  *              @/components/FeedbackAttachments
  *   Data:      reads  → none
  *              writes → tech_feedback (insert_tech_feedback, with
  *                        p_source: 'desktop' and p_attachments)
+ *                        + /api/feedback-notify (fire-and-forget admin notify)
  *
  * NOTES / GOTCHAS:
  *   - "Improvement" on screen maps to type 'feature' in the DB (the
@@ -37,6 +38,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
+import { api } from '@/lib/api';
 import FeedbackAttachments from '@/components/FeedbackAttachments';
 
 // ─── SECTION: Constants ──────────────
@@ -80,7 +82,7 @@ export default function Feedback() {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await db.rpc('insert_tech_feedback', {
+      const row = await db.rpc('insert_tech_feedback', {
         p_employee_id: employee.id,
         p_type: type,
         p_title: title.trim(),
@@ -88,6 +90,11 @@ export default function Feedback() {
         p_attachments: attachments, // real array — never JSON.stringify (see header)
         p_source: 'desktop',
       });
+      // Fire-and-forget admin notify — the submit is already saved, so a
+      // failure here must never surface (swallowed catch); the success toast
+      // never depends on it.
+      const feedbackId = row?.id;
+      if (feedbackId) api('feedback-notify', { body: { feedback_id: feedbackId } }).catch(() => {});
       toast('Feedback sent — thank you!');
       setType(null);
       setTitle('');

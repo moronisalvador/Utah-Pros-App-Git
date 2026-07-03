@@ -7081,7 +7081,10 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── FEEDBACK MEDIA RESERVED — Session B ───
    Owner: Session B (TechFeedback.jsx rebuild). Session B's styles go between
-   this marker and the Session C marker — nobody else writes here. */
+   this marker and the Session C marker — nobody else writes here.
+   No dedicated rules needed: TechFeedback styles its form with inline tech
+   tokens and renders the shared FeedbackAttachments composer, which already
+   ships its .fbm-tiles/.fbm-tile/.fbm-add-tile styles in the Phase F block. */
 
 /* ─── FEEDBACK MEDIA RESERVED — Session C ───
    Owner: Session C (AdminFeedback.jsx rebuild + attachment gallery/viewer).
