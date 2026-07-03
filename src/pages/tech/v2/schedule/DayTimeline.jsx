@@ -31,6 +31,7 @@ import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 're
 import { useNavigate } from 'react-router-dom';
 import { apptHref } from '@/components/tech/v2';
 import { minutesOfDay, fmtTime, fmtTimeRange, statusVar, isEvent, divisionMeta } from './scheduleFormat.js';
+import CrewAvatars from './CrewAvatars.jsx';
 
 const HOUR_PX = 80; // taller rows so a 30-min block fits its slot without spilling
 const MIN_BLOCK_PX = 34;
@@ -202,6 +203,9 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
           const height = Math.max(MIN_BLOCK_PX, ((end - start) / 60) * HOUR_PX - 4);
           const widthPct = 100 / laneCount;
           const div = appt.jobs?.division ? divisionMeta(appt.jobs.division) : null;
+          const crew = appt.appointment_crew || [];
+          const city = appt.jobs?.city;
+          const meta = [fmtTimeRange(appt.time_start, appt.time_end), div && div.label, city].filter(Boolean).join(' · ');
           return (
             <button
               key={appt.id}
@@ -222,10 +226,8 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
                 {appt.is_milestone && '◆ '}
                 {appt.jobs?.insured_name || appt.title || (isEvent(appt) ? 'Event' : 'Appointment')}
               </span>
-              <span className="tv2-timeline__block-time">
-                {fmtTimeRange(appt.time_start, appt.time_end)}
-                {div && ` · ${div.label}`}
-              </span>
+              {crew.length > 0 && <CrewAvatars crew={crew} size={18} />}
+              <span className="tv2-timeline__block-time">{meta}</span>
             </button>
           );
         })}

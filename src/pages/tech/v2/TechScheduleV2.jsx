@@ -71,7 +71,7 @@ export default function TechScheduleV2({ active = true }) {
 
   // ─── SECTION: State & hooks ──────────────
   const [selectedDay, setSelectedDay] = useState(today);
-  const [view, setView] = useState('agenda'); // 'agenda' | 'day'
+  const [view, setView] = useState('day'); // 'day' | 'agenda' — Day is the default on mobile
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showFilters, setShowFilters] = useState(false);

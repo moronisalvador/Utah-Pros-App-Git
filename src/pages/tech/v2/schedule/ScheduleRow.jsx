@@ -31,6 +31,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusChip, apptHref } from '@/components/tech/v2';
 import { fmtTime, fmtDuration, divisionMeta, isEvent, statusVar } from './scheduleFormat.js';
+import CrewAvatars from './CrewAvatars.jsx';
 
 const EVENT_ACCENT = '#7c3aed'; // events read distinctly from job work
 
@@ -52,7 +53,10 @@ export default function ScheduleRow({ appt }) {
   const accent = appt.color || (event ? EVENT_ACCENT : statusVar(appt.status, 'color'));
 
   const primary = job?.insured_name || appt.title || (event ? 'Event' : 'Appointment');
-  const secondary = job?.insured_name ? (appt.title || '') : (job ? [job.address, job.city].filter(Boolean).join(', ') : (appt.notes || ''));
+  const secondary = job?.insured_name
+    ? [appt.title, job.city].filter(Boolean).join(' · ')
+    : (job ? [job.address, job.city].filter(Boolean).join(', ') : (appt.notes || ''));
+  const crew = appt.appointment_crew || [];
 
   const div = job?.division ? divisionMeta(job.division) : null;
   const total = Number(appt.task_total || 0);
@@ -83,6 +87,7 @@ export default function ScheduleRow({ appt }) {
           {div && <span className="tv2-sched-pill" style={{ background: div.bg, color: div.color }}>{div.label}</span>}
           {multiDay && <span className="tv2-sched-pill tv2-sched-pill--span">{appt.duration_days}-day</span>}
           {total > 0 && <span className="tv2-sched-row__tasks">{done}/{total} tasks</span>}
+          {crew.length > 0 && <CrewAvatars crew={crew} size={18} />}
         </span>
       </span>
       <span className="tv2-sched-row__chevron" aria-hidden="true">
