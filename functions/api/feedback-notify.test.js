@@ -26,6 +26,7 @@ import {
   selectAdminIds,
   buildPushPayload,
   handleFeedbackNotify,
+  sendWebPushToAdmins,
 } from './feedback-notify.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon-test-key' };
@@ -189,5 +190,90 @@ describe('handleFeedbackNotify', () => {
     expect(res.status).toBe(200);
     expect(res.data.bell).toBe(false);
     expect(res.data.notified).toBe(2);
+  });
+
+  it('carries a web-push summary (no subscriptions in the fake DB → all zero)', async () => {
+    const db = makeDb({ feedback, admins, submitter });
+    const res = await handleFeedbackNotify({
+      request: makeRequest({ auth: 'Bearer tok' }), env: ENV, db, fetchImpl: makeFetch(),
+    });
+    expect(res.data.web).toEqual({ sent: 0, attempted: 0, pruned: 0, skipped: true });
+  });
+});
+
+// ─── Web Push fan-out (Notification Center Phase F1) ───
+describe('sendWebPushToAdmins', () => {
+  const payload = { title: 'New bug report', body: 'Jane: x', data: { feedback_id: 'fb-1', route: '/tech-feedback' } };
+
+  // Fake DB with a feature_flags row + per-employee push_subscriptions; records deletes.
+  function makeDb({ flag = null, subsByEmployee = {} } = {}) {
+    const deletes = [];
+    return {
+      deletes,
+      async select(table, query = '') {
+        if (table === 'feature_flags') return flag ? [flag] : [];
+        if (table === 'push_subscriptions') {
+          const m = /employee_id=eq\.([^&]+)/.exec(query);
+          return (m && subsByEmployee[m[1]]) || [];
+        }
+        return [];
+      },
+      async delete(table, filter) { deletes.push({ table, filter }); return null; },
+    };
+  }
+
+  it('skips entirely when the flag is missing', async () => {
+    const send = () => { throw new Error('should not send'); };
+    const out = await sendWebPushToAdmins({ db: makeDb({ flag: null }), env: {}, adminIds: ['a1'], payload, sendImpl: send });
+    expect(out).toEqual({ sent: 0, attempted: 0, pruned: 0, skipped: true });
+  });
+
+  it('skips when force_disabled, even if enabled is true', async () => {
+    const send = () => { throw new Error('should not send'); };
+    const out = await sendWebPushToAdmins({
+      db: makeDb({ flag: { enabled: true, force_disabled: true } }), env: {}, adminIds: ['a1'], payload, sendImpl: send,
+    });
+    expect(out.skipped).toBe(true);
+  });
+
+  it('only targets the dev_only user while the flag is globally OFF (owner-gate window)', async () => {
+    const calls = [];
+    const send = async (sub) => { calls.push(sub.endpoint); return { ok: true, status: 201 }; };
+    const db = makeDb({
+      flag: { enabled: false, dev_only_user_id: 'owner' },
+      subsByEmployee: {
+        owner: [{ id: 's1', endpoint: 'https://push/owner', p256dh: 'p', auth: 'a' }],
+        other: [{ id: 's2', endpoint: 'https://push/other', p256dh: 'p', auth: 'a' }],
+      },
+    });
+    const out = await sendWebPushToAdmins({ db, env: {}, adminIds: ['owner', 'other'], payload, sendImpl: send });
+    expect(out.sent).toBe(1);
+    expect(calls).toEqual(['https://push/owner']);
+  });
+
+  it('fans out to every device when the flag is globally enabled, and prunes 410s', async () => {
+    const db = makeDb({
+      flag: { enabled: true, dev_only_user_id: null },
+      subsByEmployee: {
+        a1: [
+          { id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' },
+          { id: 's2', endpoint: 'https://push/2', p256dh: 'p', auth: 'a' }, // dead → 410
+        ],
+      },
+    });
+    const send = async (sub) => sub.endpoint.endsWith('/2') ? { ok: false, status: 410 } : { ok: true, status: 201 };
+    const out = await sendWebPushToAdmins({ db, env: {}, adminIds: ['a1'], payload, sendImpl: send });
+    expect(out).toEqual({ sent: 1, attempted: 2, pruned: 1 });
+    expect(db.deletes).toEqual([{ table: 'push_subscriptions', filter: 'id=eq.s2' }]);
+  });
+
+  it('reports vapidMissing (503-skip) without throwing when VAPID env is unset', async () => {
+    const db = makeDb({
+      flag: { enabled: true },
+      subsByEmployee: { a1: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }] },
+    });
+    const send = async () => ({ skipped: true, status: 503 });
+    const out = await sendWebPushToAdmins({ db, env: {}, adminIds: ['a1'], payload, sendImpl: send });
+    expect(out).toEqual({ sent: 0, attempted: 1, pruned: 0, vapidMissing: true });
   });
 });
