@@ -46,7 +46,7 @@ export default function ScheduleHeader({
   monthLabel, view, onViewChange, onCreate,
   searchQuery, onSearchChange, showFilters, onToggleFilters, hasActiveFilters,
   filterEmployee, filterDivision, onSetEmployee, onSetDivision, onToggleCrew, crewMembers, myId,
-  selectedDay, today, apptDates, onSelectDay, onWeekChange,
+  selectedDay, today, apptDates, onSelectDay, onWeekChange, active,
 }) {
   return (
     <div className="tv2-sched-header">
@@ -147,6 +147,7 @@ export default function ScheduleHeader({
         apptDates={apptDates}
         onSelectDay={onSelectDay}
         onWeekChange={onWeekChange}
+        active={active}
       />
     </div>
   );

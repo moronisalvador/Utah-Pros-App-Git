@@ -118,11 +118,15 @@ export default function AgendaView({
   }, [active, sortedDates, today, scrollToDate]);
 
   // Compensate scrollTop when past days are prepended (first date got earlier).
+  // The gate is released on ANY data settle after a past-load request — including a
+  // month that turned out empty — so an empty past month can't wedge loading shut.
   useLayoutEffect(() => {
     const newFirst = sortedDates[0];
-    if (loadingPastRef.current && newFirst && newFirst < firstDateRef.current) {
-      const scroller = scrollerRef.current;
-      if (scroller) scroller.scrollTop += scroller.scrollHeight - savedHeightRef.current;
+    if (loadingPastRef.current) {
+      if (newFirst && firstDateRef.current && newFirst < firstDateRef.current) {
+        const scroller = scrollerRef.current;
+        if (scroller) scroller.scrollTop += scroller.scrollHeight - savedHeightRef.current;
+      }
       loadingPastRef.current = false;
     }
     firstDateRef.current = newFirst;

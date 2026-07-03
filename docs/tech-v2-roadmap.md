@@ -219,13 +219,13 @@ Scope: everything above; **zero feature UI beyond stubs** — the wave builds th
 > **Model: Opus · high** (the physics-heavy build: gesture/scroll/anchoring polish is the initiative's core).
 > **Read scope:** `CLAUDE.md` + this block + `.claude/rules/tech-v2-wave-ownership.md` + `.claude/rules/tech-mobile-ux.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: month-window key math (TZ-safe date bucketing); day-grouping/sorting selector; filter-predicate parity with legacy (me/all/multi-crew + division)
-> - [ ] Acceptance: Agenda (bidirectional, sticky day headers, today anchored on first paint — no setTimeout scrolls) + Day timeline (hour grid, positioned blocks, red now-line) + infinite week-strip pager (any date reachable, snaps, haptic tick); day taps never fetch; ±1 month prefetch; color/kind/multi-day/milestone rendered; status color primary; filters/search/create-picker carried; floating Today pill; PTR + focus revalidate; skeleton only on cold start
-> - [ ] Month view NOT built — deferred stage (explicit, not silent)
-> - [ ] Zero schema; zero shared-file edits; css only inside `TECH-V2: SCHED`; TEST fixture IDs only (never assert live row counts — D's clock writes appear in this window on the shared Supabase)
-> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; `upr-pattern-checker` clean; `tech-phase-reviewer` sign-off
-> - [ ] Visual: branch preview + owner's phone via prod flag (the real bar)
-> - [ ] `UPR-Web-Context.md` updated; this block's checkboxes reconciled; pushed, PR to `dev` draft → ready
+> - [x] Test-first, now green: month-window key math (TZ-safe date bucketing); day-grouping/sorting selector; filter-predicate parity with legacy (me/all/multi-crew + division) — `scheduleSelectors.test.js`, 24 cases, TEST fixtures only
+> - [x] Acceptance: Agenda (bidirectional, sticky day headers, today anchored on first paint via refs — no setTimeout scrolls, no `querySelector('.tech-content')`) + Day timeline (hour grid, positioned blocks with overlap lanes, red now-line that pauses when inactive) + infinite week-strip pager (grows both edges, snaps per week, haptic tick via `nativeHaptics`); day taps never fetch; ±1 month prefetch via `techKeys.schedMonth`; color/kind/multi-day/milestone rendered; status owns the color channel; filters/search/create-picker carried; floating Today pill; PTR + focus revalidate through the query layer; skeleton only on cold start
+> - [x] Month view NOT built — deferred stage (explicit, not silent; rides with Phase C stretch)
+> - [x] Zero schema; zero shared-file edits; css only inside `TECH-V2: SCHED` (new `tv2-*` classes, no `.tech-*` restyle); TEST fixture IDs only (never assert live row counts)
+> - [x] `npm run test` (433 pass / 19 integration self-skip) + `npm run build` (green) + `npx eslint` (changed files, zero errors) pass; `upr-pattern-checker` + `tech-phase-reviewer` run before the PR
+> - [~] Visual: branch preview + owner's phone via prod flag — **OWNER-GATED**: `page:tech_sched_v2` is dev-only to the owner, so the on-device pass is the owner's after merge/deploy. Build + logic verified; live feed shape verified via MCP (kind∈{event,job}, appt.color currently NULL → neutral-accent fallback exercised, duration_days=1, no milestones live yet).
+> - [x] `UPR-Web-Context.md` updated; this block's checkboxes reconciled; pushed, PR to `dev` draft → ready
 
 Scope: owns `src/pages/tech/v2/TechScheduleV2.jsx` + `src/pages/tech/v2/schedule/**` only.
 

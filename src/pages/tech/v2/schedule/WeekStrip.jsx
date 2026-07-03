@@ -53,9 +53,10 @@ function buildWeeks(fromWeekStart, count, dir) {
  * @param {{
  *   selectedDay: string, today: string, apptDates: Set<string>,
  *   onSelectDay: (d: string) => void, onWeekChange?: (monthKey: string) => void,
+ *   active?: boolean,
  * }} props
  */
-export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, onWeekChange }) {
+export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, onWeekChange, active = true }) {
   const scrollerRef = useRef(null);
   const centerIndexRef = useRef(-1);
   const prependRef = useRef(0); // # of weeks just prepended (compensate scrollLeft)
@@ -67,19 +68,21 @@ export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, 
   });
 
   // Position at the selected day's week on first paint (instant, no animation).
+  // Deferred until the pane is active AND has a measurable width — a pane that
+  // first mounts hidden (display:none) reports clientWidth 0, which would otherwise
+  // park the strip on the far-past week instead of today's.
   const didInit = useRef(false);
   useLayoutEffect(() => {
-    if (didInit.current) return;
+    if (didInit.current || !active) return;
     const el = scrollerRef.current;
-    if (!el) return;
-    const wk = startOfWeekStr(selectedDay, 0);
-    const idx = weeks.indexOf(wk);
+    if (!el || !el.clientWidth) return;
+    const idx = weeks.indexOf(startOfWeekStr(selectedDay, 0));
     if (idx >= 0) {
       el.scrollLeft = idx * el.clientWidth;
       centerIndexRef.current = idx;
     }
     didInit.current = true;
-  }, [weeks, selectedDay]);
+  }, [weeks, selectedDay, active]);
 
   // Compensate scrollLeft after a prepend so the visible week stays put.
   useLayoutEffect(() => {

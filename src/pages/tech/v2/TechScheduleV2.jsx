@@ -166,6 +166,7 @@ export default function TechScheduleV2({ active = true }) {
         apptDates={apptDates}
         onSelectDay={pickDay}
         onWeekChange={onWeekChange}
+        active={active}
       />
 
       {isColdStart ? (

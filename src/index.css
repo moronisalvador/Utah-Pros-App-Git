@@ -5517,7 +5517,7 @@ tr:hover td { background: var(--bg-secondary); }
   width: 10px;
   height: 10px;
   border-radius: 5px;
-  background: #ef4444;
+  background: var(--status-needs-response);
 }
 .tv2-timeline__now-line {
   position: absolute;
@@ -5525,7 +5525,7 @@ tr:hover td { background: var(--bg-secondary); }
   right: 0;
   top: -1px;
   height: 2px;
-  background: #ef4444;
+  background: var(--status-needs-response);
 }
 
 /* ── Floating Today pill ── */
