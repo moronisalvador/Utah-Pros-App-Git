@@ -4232,3 +4232,59 @@ index.css block.*
 *Reserved. Session C documents its AdminFeedback.jsx rebuild here: attachments gallery /
 video viewer (lives in AdminFeedback, not the shared composer), source badge,
 resolved/purged states, styles only below its reserved index.css marker.*
+
+## Tech Mobile v2 — plan of record (session 2026-07-03, docs + reviewer agent only — no feature code)
+
+**What this session shipped** (branch `claude/planning-session-sec1ev` → PR into `dev`):
+- `docs/tech-v2-roadmap.md` — the dispatch model of record for rebuilding the tech mobile
+  Dashboard + Schedule to Apple/Google-Calendar polish and then merging TechAppointment +
+  TechJobDetail into a Job Hub. Live-verified gap audit (taxonomy A–H), 7 severity findings,
+  six phase blocks (**F → S ∥ D → C → M1 → M2**; S∥D disjointness adversarially proven,
+  parallelism optional), dependency graph, ownership matrix + frozen list, options-on-record
+  (TanStack Query vs hand-rolled cache; no virtualization dep; persister kept per owner
+  offline decision), 6-agent challenge report folded in.
+- `docs/tech-v2-dispatch.md` — six complete cold-session copy-paste blocks (F, S, D, C, M1, M2).
+- `.claude/agents/tech-phase-reviewer.md` — Opus acceptance grader for tech-v2 phases
+  (weights clock/time-entry math, flag rollout safety, legacy non-regression, frozen-list
+  compliance; reconciles the roadmap checkboxes both directions).
+- Zero code/schema/seed changes — non-CRM initiative; progress tracks via the roadmap doc's
+  checklists (CRM tracker not used, on record).
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **Two P1 root causes of "glitchy/slow":** `TechLayout.jsx:227-230` keys the content wrapper
+  by pathname → every navigation remounts the page (all state dies, every RPC refires);
+  `TechSchedule.jsx:486-510` derives the fetch window from `selectedDay` → every day tap
+  refetches the full ~61-day window. Phase F ships a minimal v1 relief patch for both.
+- **NEW live bug (challenge pass):** `clock_appointment_action` stamps `work_date` with the
+  UTC date — a clock-in at/after 6pm MDT lands on tomorrow's `work_date` (1 of 158 live rows
+  misdated; payroll groups by `work_date`; the midnight-split writer uses Denver — writers
+  disagree). Fix = body-only REPLACE slotted into Phase F.
+- **Schema drift ×13:** the core tech RPC surface (`get_my_appointments_today`,
+  `get_assigned_tasks`, `toggle_appointment_task`, `update_appointment`, …) exists live with
+  ZERO migration coverage. Phase F commits a verbatim `pg_get_functiondef` capture migration
+  first.
+- **The schema already out-runs the UI:** `appointments.color/kind/duration_days/is_milestone`
+  exist but both tech feed RPCs strip them (desktop dispatch RPCs return color). Exposing
+  them is additive jsonb keys — zero consumer breakage (challenge-confirmed).
+- **Flag fail-open trap:** no `feature_flags` row = enabled for EVERYONE
+  (`AuthContext.jsx:262`) — so v2 flag rows must be seeded in Supabase BEFORE any code
+  referencing them merges; `EXPLICIT_FLAGS` entries need explicit `enabled:false`
+  (auto-seed creates missing keys ON); `force_disabled` is inert for `isFeatureEnabled`.
+- **Hours for the dashboard** must SUM the stored `job_time_entries.hours` column (+
+  `travel_minutes`, + a live term for the open entry) — never recompute from timestamps
+  (manual/admin-edited/midnight-split rows diverge); weeks are Monday-start Denver to match
+  `get_payroll_summary`.
+- Cancelled-as-"Upcoming" dash bug is latent-only: cancellation is a hard delete; zero
+  `cancelled` rows have ever existed (no CHECK constraint prevents future writers, so v2
+  feeds filter it anyway).
+
+**Dispatch:** Wave 0 = Session F alone (Opus·high — flags seeded first, drift capture,
+feed upgrades, `get_tech_dashboard`, work_date fix, v1 relief patch, TanStack trio
+@5.101.2 + idb persister `upr-query-cache`, TechLayout pane host, v2 primitives + css
+markers, ownership manifest). Wave 1 after F merges = Session S (Opus·high — Agenda + Day
+timeline + week pager; Month view explicitly deferred) ∥ Session D (Opus·medium — Now/Next
+hero, attention strip, My-numbers, one-RPC dashboard) — parallel-capable, serial fine.
+Then C (Sonnet·medium cutover/cleanup + Month-view stretch, owner-gated bake), M1
+(Opus·high Job Hub behind `page:tech_job_hub`), M2 (Opus·medium href flip + resolver
+redirect + legacy detail deletion). Owner anytime-lane actions: flag flips in DevTools
+(owner-only → all techs), phone bake sign-offs.
