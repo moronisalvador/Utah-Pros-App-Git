@@ -38,7 +38,7 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { sanitizeLinkMarkup } from '../../../functions/lib/forms.js';
+import { sanitizeLinkMarkup, validateSubmission } from '../../../functions/lib/forms.js';
 
 const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
@@ -54,7 +54,12 @@ const FIELD_TYPES = [
   { type: 'date',     label: 'Date' },
   { type: 'consent',  label: 'Consent (SMS opt-in)' },
 ];
-const HAS_OPTIONS = new Set(['select', 'radio']);
+// Field types that carry a list of options (dropdown, multiple-choice, checkbox group).
+const OPTION_TYPES = new Set(['select', 'radio', 'checkbox']);
+// Types whose live render honors a placeholder (so we only show that control for them).
+const PLACEHOLDER_TYPES = new Set(['text', 'email', 'phone', 'textarea']);
+// Types that accept a simple default value the visitor can change.
+const DEFAULT_TYPES = new Set(['text', 'email', 'phone', 'textarea', 'date', 'select', 'radio']);
 const DEFAULT_THEME = { primary: '#6366f1', background: '#ffffff', text: '#111827' };
 
 // Field width on the row. Fields flow into a 6-column grid; two halves or three
@@ -158,8 +163,16 @@ export default function CrmForms() {
     setEditor((e) => {
       const label = type === 'consent' ? CONSENT_DEFAULT : `${FIELD_TYPES.find((t) => t.type === type).label} field`;
       const field = { key: uniqueKey(slugify(label), e.fields), type, label, required: false };
-      if (HAS_OPTIONS.has(type)) field.options = ['Option 1', 'Option 2'];
+      if (OPTION_TYPES.has(type)) field.options = ['Option 1', 'Option 2'];
       return { ...e, fields: [...e.fields, field] };
+    });
+  const duplicateField = (idx) =>
+    setEditor((e) => {
+      const src = e.fields[idx];
+      const copy = { ...src, options: src.options ? [...src.options] : undefined, key: uniqueKey(slugify(src.label || src.type), e.fields) };
+      const next = [...e.fields];
+      next.splice(idx + 1, 0, copy);
+      return { ...e, fields: next };
     });
   const removeField = (idx) => setEditor((e) => ({ ...e, fields: e.fields.filter((_, i) => i !== idx) }));
   const moveField = (idx, dir) =>
@@ -171,8 +184,14 @@ export default function CrmForms() {
       return { ...e, fields: next };
     });
 
+  // Persist options as a trimmed, blank-free string[] so no consumer ever sees an
+  // empty option (which would otherwise be a selectable/valid value).
+  const cleanField = (f) => {
+    if (!OPTION_TYPES.has(f.type)) return f;
+    return { ...f, options: (f.options || []).map((o) => o.trim()).filter(Boolean) };
+  };
   const buildSchema = (e) => ({
-    fields: e.fields,
+    fields: e.fields.map(cleanField),
     description: e.description || undefined,
     submitText: e.submitText || 'Submit',
     thankYou: e.thankYou || undefined,
@@ -183,7 +202,7 @@ export default function CrmForms() {
     if (e.fields.length === 0) return 'Add at least one field.';
     for (const f of e.fields) {
       if (!f.label || !f.label.trim()) return 'Every field needs a label.';
-      if (HAS_OPTIONS.has(f.type) && (!f.options || f.options.filter((o) => o.trim()).length === 0))
+      if (OPTION_TYPES.has(f.type) && (!f.options || f.options.filter((o) => o.trim()).length === 0))
         return `"${f.label}" needs at least one option.`;
     }
     return null;
@@ -243,7 +262,7 @@ export default function CrmForms() {
       setConfirmPublish={setConfirmPublish}
       onSave={save}
       onClose={closeEditor}
-      fieldHandlers={{ setField, addField, removeField, moveField }}
+      fieldHandlers={{ setField, addField, removeField, moveField, duplicateField }}
     />
   );
 }
@@ -293,7 +312,7 @@ function FormsList({ forms, onNew, onOpen, onArchive }) {
 
 // ─── SECTION: Editor ───
 function FormEditor({ editor, setEditor, tab, setTab, saving, confirmPublish, setConfirmPublish, onSave, onClose, fieldHandlers }) {
-  const { setField, addField, removeField, moveField } = fieldHandlers;
+  const { setField, addField, removeField, moveField, duplicateField } = fieldHandlers;
   const [addType, setAddType] = useState('text');
 
   const embedSnippet = editor.public_id
@@ -345,6 +364,7 @@ function FormEditor({ editor, setEditor, tab, setTab, saving, confirmPublish, se
                 onChange={(patch) => setField(idx, patch)}
                 onRemove={() => removeField(idx)}
                 onMove={(dir) => moveField(idx, dir)}
+                onDuplicate={() => duplicateField(idx)}
               />
             ))}
 
@@ -422,16 +442,47 @@ function FormEditor({ editor, setEditor, tab, setTab, saving, confirmPublish, se
 }
 
 // ─── SECTION: Field editor row ───
-function FieldRow({ field, idx, count, onChange, onRemove, onMove }) {
+function FieldRow({ field, idx, count, onChange, onRemove, onMove, onDuplicate }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const typeLabel = FIELD_TYPES.find((t) => t.type === field.type)?.label || field.type;
+  const options = field.options || [];
+  const hasOptions = OPTION_TYPES.has(field.type);
+
+  // Changing type seeds an option list when moving into an options type.
+  const changeType = (type) => {
+    const patch = { type };
+    if (OPTION_TYPES.has(type) && (!field.options || field.options.length === 0)) patch.options = ['Option 1', 'Option 2'];
+    onChange(patch);
+  };
+  const setOption = (i, val) => onChange({ options: options.map((o, k) => (k === i ? val : o)) });
+  const addOption = () => onChange({ options: [...options, `Option ${options.length + 1}`] });
+  const removeOption = (i) => onChange({ options: options.filter((_, k) => k !== i) });
+  const moveOption = (i, dir) => {
+    const next = [...options];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange({ options: next });
+  };
+
+  const labelHint = field.type === 'consent'
+    ? 'Consent wording (shown next to the checkbox)'
+    : field.type === 'checkbox' ? 'Question (shown above the checkboxes)' : 'Field label';
+
   return (
     <div className="crm-forms-field">
       <div className="crm-forms-field-head">
-        <span className="crm-badge crm-forms-field-type">{typeLabel}</span>
+        <select
+          className="crm-integration-input crm-forms-type-select"
+          value={field.type}
+          onChange={(e) => changeType(e.target.value)}
+          aria-label="Field type"
+        >
+          {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+        </select>
         <div className="crm-forms-field-move">
           <button className="crm-btn crm-btn-ghost" disabled={idx === 0} onClick={() => onMove(-1)} title="Move up">↑</button>
           <button className="crm-btn crm-btn-ghost" disabled={idx === count - 1} onClick={() => onMove(1)} title="Move down">↓</button>
+          <button className="crm-btn crm-btn-ghost" onClick={onDuplicate} title="Duplicate field">⧉</button>
           {confirmRemove ? (
             <button className="crm-btn crm-btn-danger" onClick={onRemove} onBlur={() => setConfirmRemove(false)}>Remove?</button>
           ) : (
@@ -444,27 +495,72 @@ function FieldRow({ field, idx, count, onChange, onRemove, onMove }) {
         className="crm-integration-input"
         value={field.label}
         onChange={(e) => onChange({ label: e.target.value })}
-        placeholder={field.type === 'consent' ? 'Consent wording (shown next to the checkbox)' : 'Field label'}
+        placeholder={labelHint}
       />
 
-      {HAS_OPTIONS.has(field.type) && (
-        <textarea
-          className="crm-integration-input crm-forms-options"
-          rows={3}
-          value={(field.options || []).join('\n')}
-          onChange={(e) => onChange({ options: e.target.value.split('\n').map((o) => o.replace(/\r/g, '')) })}
-          placeholder="One option per line"
-        />
+      <input
+        className="crm-integration-input crm-forms-help-input"
+        value={field.help || ''}
+        onChange={(e) => onChange({ help: e.target.value })}
+        placeholder="Help text under the field (optional)"
+      />
+
+      {hasOptions && (
+        <div className="crm-forms-options-editor">
+          {options.map((o, i) => (
+            <div key={i} className="crm-forms-option-row">
+              <input
+                className="crm-integration-input"
+                value={o}
+                onChange={(e) => setOption(i, e.target.value)}
+                placeholder={`Option ${i + 1}`}
+              />
+              <button className="crm-btn crm-btn-ghost" disabled={i === 0} onClick={() => moveOption(i, -1)} title="Move up">↑</button>
+              <button className="crm-btn crm-btn-ghost" disabled={i === options.length - 1} onClick={() => moveOption(i, 1)} title="Move down">↓</button>
+              <button className="crm-btn crm-btn-ghost" disabled={options.length <= 1} onClick={() => removeOption(i)} title="Remove option">✕</button>
+            </div>
+          ))}
+          <button className="crm-btn crm-btn-ghost crm-forms-add-option" onClick={addOption}>+ Add option</button>
+          {field.type === 'select' && (
+            <input
+              className="crm-integration-input crm-forms-prompt-input"
+              value={field.prompt || ''}
+              onChange={(e) => onChange({ prompt: e.target.value })}
+              placeholder="First-choice prompt (default: Choose…)"
+            />
+          )}
+        </div>
       )}
 
       <div className="crm-forms-field-foot">
-        {field.type !== 'consent' && field.type !== 'checkbox' && (
+        {PLACEHOLDER_TYPES.has(field.type) && (
           <input
             className="crm-integration-input crm-forms-placeholder"
             value={field.placeholder || ''}
             onChange={(e) => onChange({ placeholder: e.target.value })}
             placeholder="Placeholder (optional)"
           />
+        )}
+        {DEFAULT_TYPES.has(field.type) && (
+          (field.type === 'select' || field.type === 'radio') ? (
+            <select
+              className="crm-integration-input crm-forms-default-select"
+              value={field.default || ''}
+              onChange={(e) => onChange({ default: e.target.value })}
+              aria-label="Default value"
+            >
+              <option value="">No default</option>
+              {options.filter((o) => o.trim()).map((o, i) => <option key={i} value={o}>{`Default: ${o}`}</option>)}
+            </select>
+          ) : (
+            <input
+              className="crm-integration-input crm-forms-default"
+              type={field.type === 'date' ? 'date' : 'text'}
+              value={field.default || ''}
+              onChange={(e) => onChange({ default: e.target.value })}
+              placeholder="Default value (optional)"
+            />
+          )
         )}
         <label className="crm-forms-required">
           <input type="checkbox" checked={!!field.required} onChange={(e) => onChange({ required: e.target.checked })} /> Required
@@ -490,52 +586,148 @@ function SafeInline({ text, tag = 'span', className }) {
   return <Tag className={className} dangerouslySetInnerHTML={{ __html: sanitizeLinkMarkup(text || '') }} />;
 }
 
+// Seed the interactive preview's answers from each field's default.
+function initialAnswers(fields) {
+  const a = {};
+  for (const f of fields) {
+    if (!f.key) continue;
+    if (f.type === 'checkbox') {
+      const opts = (f.options || []).filter((o) => o.trim());
+      a[f.key] = opts.length === 0 ? false : (Array.isArray(f.default) ? f.default : []);
+    } else if (f.type === 'consent') {
+      a[f.key] = false;
+    } else {
+      a[f.key] = f.default || '';
+    }
+  }
+  return a;
+}
+
 function FormPreview({ editor }) {
   const theme = editor.theme || DEFAULT_THEME;
-  const style = {
-    '--upr-primary': theme.primary,
-    '--upr-bg': theme.background,
-    '--upr-text': theme.text,
+  const style = { '--upr-primary': theme.primary, '--upr-bg': theme.background, '--upr-text': theme.text };
+  const fields = editor.fields;
+  const [answers, setAnswers] = useState(() => initialAnswers(fields));
+  const [errors, setErrors] = useState({});
+  const [done, setDone] = useState(false);
+
+  const setAns = (key, val) => setAnswers((a) => ({ ...a, [key]: val }));
+  const toggleBox = (key, opt) => setAnswers((a) => {
+    const cur = Array.isArray(a[key]) ? a[key] : [];
+    return { ...a, [key]: cur.includes(opt) ? cur.filter((x) => x !== opt) : [...cur, opt] };
+  });
+  const reset = () => { setAnswers(initialAnswers(fields)); setErrors({}); setDone(false); };
+  const submit = () => {
+    // Same validator the live form uses — preview behavior == production behavior.
+    const res = validateSubmission({ fields }, answers);
+    setErrors(res.errors);
+    if (res.valid) setDone(true);
   };
+
+  if (done) {
+    return (
+      <div className="crm-forms-preview-wrap">
+        <div className="crm-forms-preview" style={style}>
+          <SafeInline tag="div" className="crm-forms-preview-thanks" text={editor.thankYou || 'Thank you — we\'ll be in touch shortly.'} />
+          <div className="crm-forms-preview-testnote">Preview only — nothing was saved.</div>
+          <button className="crm-btn crm-btn-ghost" onClick={reset}>Test again</button>
+        </div>
+      </div>
+    );
+  }
+
+  const published = editor.public_id && editor.status === 'published';
   return (
     <div className="crm-forms-preview-wrap">
       <div className="crm-forms-preview" style={style}>
+        <div className="crm-forms-preview-banner">
+          Preview — fill it in to test. Nothing here is saved.
+          {published && <> · <a href={`${window.location.origin}/f/${editor.public_id}`} target="_blank" rel="noreferrer">Open live form ↗</a></>}
+        </div>
         <div className="crm-forms-preview-title">{editor.name || 'Untitled form'}</div>
         {editor.description && <SafeInline tag="p" className="crm-forms-preview-desc" text={editor.description} />}
         <div className="crm-forms-preview-grid">
-        {editor.fields.map((f, i) => (
-          <div key={i} className={`crm-forms-preview-row${widthClass(f.width)}`}>
-            {f.type === 'consent' || f.type === 'checkbox' ? (
-              <label className="crm-forms-preview-choice">
-                <input type="checkbox" disabled />
-                <SafeInline text={f.label + (f.required ? ' *' : '')} />
-              </label>
-            ) : (
-              <>
-                <SafeInline className="crm-forms-preview-label" text={f.label + (f.required ? ' *' : '')} />
-                {f.type === 'textarea' ? (
-                  <textarea disabled rows={3} placeholder={f.placeholder || ''} />
-                ) : f.type === 'select' ? (
-                  <select disabled><option>Choose…</option>{(f.options || []).map((o, k) => <option key={k}>{o}</option>)}</select>
-                ) : f.type === 'radio' ? (
-                  <div className="crm-forms-preview-radios">
-                    {(f.options || []).map((o, k) => <label key={k}><input type="radio" disabled /> {o}</label>)}
-                  </div>
-                ) : (
-                  <input disabled type={f.type === 'date' ? 'date' : 'text'} placeholder={f.placeholder || ''} />
-                )}
-              </>
-            )}
-          </div>
-        ))}
+          {fields.map((f, i) => (
+            <div key={f.key || i} className={`crm-forms-preview-row${widthClass(f.width)}`}>
+              <PreviewField field={f} value={answers[f.key]} setAns={setAns} toggleBox={toggleBox} error={errors[f.key]} />
+            </div>
+          ))}
         </div>
-        <button className="crm-forms-preview-submit" disabled>{editor.submitText || 'Submit'}</button>
+        <button className="crm-forms-preview-submit" onClick={submit}>{editor.submitText || 'Submit'}</button>
       </div>
     </div>
   );
 }
 
+// One interactive field in the preview. Mirrors the hosted page's render per type.
+function PreviewField({ field: f, value, setAns, toggleBox, error }) {
+  const opts = (f.options || []).filter((o) => o.trim());
+  const help = f.help ? <SafeInline tag="div" className="crm-forms-preview-help" text={f.help} /> : null;
+  const errEl = error ? <div className="crm-forms-preview-error">{error}</div> : null;
+  const labelText = f.label + (f.required ? ' *' : '');
+
+  // Consent, or a legacy single checkbox (no options) → one box.
+  if (f.type === 'consent' || (f.type === 'checkbox' && opts.length === 0)) {
+    return (
+      <>
+        <label className="crm-forms-preview-choice">
+          <input type="checkbox" checked={!!value} onChange={(e) => setAns(f.key, e.target.checked)} />
+          <SafeInline text={labelText} />
+        </label>
+        {help}{errEl}
+      </>
+    );
+  }
+  // Checkbox group (multi-select).
+  if (f.type === 'checkbox') {
+    const arr = Array.isArray(value) ? value : [];
+    return (
+      <>
+        <SafeInline className="crm-forms-preview-label" text={labelText} />
+        <div className="crm-forms-preview-radios">
+          {opts.map((o, k) => (
+            <label key={k}><input type="checkbox" checked={arr.includes(o)} onChange={() => toggleBox(f.key, o)} /> {o}</label>
+          ))}
+        </div>
+        {help}{errEl}
+      </>
+    );
+  }
+
+  const label = <SafeInline className="crm-forms-preview-label" text={labelText} />;
+  let control;
+  if (f.type === 'textarea') {
+    control = <textarea rows={3} placeholder={f.placeholder || ''} value={value || ''} onChange={(e) => setAns(f.key, e.target.value)} />;
+  } else if (f.type === 'select') {
+    control = (
+      <select value={value || ''} onChange={(e) => setAns(f.key, e.target.value)}>
+        <option value="">{f.prompt || 'Choose…'}</option>
+        {opts.map((o, k) => <option key={k} value={o}>{o}</option>)}
+      </select>
+    );
+  } else if (f.type === 'radio') {
+    control = (
+      <div className="crm-forms-preview-radios">
+        {opts.map((o, k) => (
+          <label key={k}><input type="radio" name={f.key} checked={value === o} onChange={() => setAns(f.key, o)} /> {o}</label>
+        ))}
+      </div>
+    );
+  } else {
+    const inputType = f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : f.type === 'phone' ? 'tel' : 'text';
+    control = <input type={inputType} placeholder={f.placeholder || ''} value={value || ''} onChange={(e) => setAns(f.key, e.target.value)} />;
+  }
+  return <>{label}{control}{help}{errEl}</>;
+}
+
 // ─── SECTION: Submissions ───
+// Checkbox-group values arrive as arrays; single boxes as booleans.
+function renderSubValue(v) {
+  if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  return String(v);
+}
+
 function SubmissionsView({ submissions, fields }) {
   const labelFor = useMemo(() => {
     const map = {};
@@ -558,7 +750,7 @@ function SubmissionsView({ submissions, fields }) {
             {Object.entries(s.data || {}).map(([k, v]) => (
               <div key={k} className="crm-forms-sub-field">
                 <span className="crm-forms-sub-key">{labelFor[k] || k}</span>
-                <span className="crm-forms-sub-val">{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v)}</span>
+                <span className="crm-forms-sub-val">{renderSubValue(v)}</span>
               </div>
             ))}
           </div>

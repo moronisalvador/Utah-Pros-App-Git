@@ -66,41 +66,59 @@ function renderField(field) {
   const reqMark = field.required ? ' <span class="req" aria-hidden="true">*</span>' : '';
   const label = sanitizeLinkMarkup(field.label || field.key);
   const ph = field.placeholder ? `placeholder="${escapeHtml(field.placeholder)}"` : '';
-  const options = Array.isArray(field.options) ? field.options : [];
+  const options = (Array.isArray(field.options) ? field.options : []).filter((o) => String(o).trim());
   // Field width on the row (whitelisted to the 3 known tokens; anything else → full).
   const w = field.width === 'half' ? ' upr-w-half' : field.width === 'third' ? ' upr-w-third' : '';
+  // Optional help text under the field (link markup allowed, XSS-safe).
+  const help = field.help ? `<div class="upr-help">${sanitizeLinkMarkup(field.help)}</div>` : '';
+  // Optional default value (scalar for text-like/date/select/radio).
+  const def = field.default;
+  const valAttr = (def != null && def !== '' && !Array.isArray(def)) ? `value="${escapeHtml(def)}"` : '';
 
   const labelHtml = (forId) => `<label class="upr-label" for="${forId}">${label}${reqMark}</label>`;
 
   switch (field.type) {
     case 'textarea':
-      return `<div class="upr-row${w}">${labelHtml(id)}<textarea id="${id}" name="${key}" ${ph} ${req} rows="4"></textarea></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<textarea id="${id}" name="${key}" ${ph} ${req} rows="4">${def ? escapeHtml(def) : ''}</textarea>${help}</div>`;
     case 'select':
       return `<div class="upr-row${w}">${labelHtml(id)}<select id="${id}" name="${key}" ${req}>
-        <option value="">Choose…</option>
-        ${options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}
-      </select></div>`;
+        <option value="">${escapeHtml(field.prompt || 'Choose…')}</option>
+        ${options.map((o) => `<option value="${escapeHtml(o)}"${def === o ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+      </select>${help}</div>`;
     case 'radio':
       return `<fieldset class="upr-row${w} upr-fieldset"><legend class="upr-label">${label}${reqMark}</legend>
         ${options
           .map(
             (o, i) =>
-              `<label class="upr-choice"><input type="radio" name="${key}" value="${escapeHtml(o)}" ${i === 0 && field.required ? req : ''}> <span>${escapeHtml(o)}</span></label>`,
+              `<label class="upr-choice"><input type="radio" name="${key}" value="${escapeHtml(o)}"${def === o ? ' checked' : ''} ${i === 0 && field.required ? req : ''}> <span>${escapeHtml(o)}</span></label>`,
           )
           .join('')}
-      </fieldset>`;
-    case 'checkbox':
-      return `<div class="upr-row${w} upr-check"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
+      ${help}</fieldset>`;
+    case 'checkbox': {
+      // No options → legacy single yes/no box; otherwise a multi-select group.
+      if (options.length === 0) {
+        return `<div class="upr-row${w} upr-check"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label>${help}</div>`;
+      }
+      const defArr = Array.isArray(def) ? def : [];
+      return `<fieldset class="upr-row${w} upr-fieldset"><legend class="upr-label">${label}${reqMark}</legend>
+        ${options
+          .map(
+            (o) =>
+              `<label class="upr-choice"><input type="checkbox" name="${key}" value="${escapeHtml(o)}"${defArr.includes(o) ? ' checked' : ''}> <span>${escapeHtml(o)}</span></label>`,
+          )
+          .join('')}
+      ${help}</fieldset>`;
+    }
     case 'consent':
-      return `<div class="upr-row${w} upr-consent"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
+      return `<div class="upr-row${w} upr-consent"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label>${help}</div>`;
     case 'date':
-      return `<div class="upr-row${w}">${labelHtml(id)}<input type="date" id="${id}" name="${key}" ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="date" id="${id}" name="${key}" ${valAttr} ${req}>${help}</div>`;
     case 'email':
-      return `<div class="upr-row${w}">${labelHtml(id)}<input type="email" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="email" id="${id}" name="${key}" ${ph} ${valAttr} ${req}>${help}</div>`;
     case 'phone':
-      return `<div class="upr-row${w}">${labelHtml(id)}<input type="tel" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="tel" id="${id}" name="${key}" ${ph} ${valAttr} ${req}>${help}</div>`;
     default:
-      return `<div class="upr-row${w}">${labelHtml(id)}<input type="text" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="text" id="${id}" name="${key}" ${ph} ${valAttr} ${req}>${help}</div>`;
   }
 }
 
@@ -151,6 +169,7 @@ ${turnstileScript}
   .upr-w-third { grid-column:span 2; }
   @media (max-width:480px) { .upr-fields { grid-template-columns:1fr; } .upr-fields > * { grid-column:1 / -1; } }
   .upr-label { font-size:13px; font-weight:600; }
+  .upr-help { font-size:12px; color:#6b7280; margin-top:2px; }
   .req { color:#dc2626; }
   input, select, textarea { font:inherit; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; width:100%; background:#fff; color:#111827; }
   input:focus, select:focus, textarea:focus { outline:2px solid var(--upr-primary); outline-offset:0; border-color:var(--upr-primary); }
@@ -208,9 +227,14 @@ ${turnstileScript}
   if (window.ResizeObserver) { new ResizeObserver(resize).observe(document.body); }
 
   function readValue(f){
-    if (f.type === 'consent' || f.type === 'checkbox') {
+    if (f.type === 'consent') {
       var box = form.querySelector('[name="'+f.key+'"]');
       return box ? box.checked : false;
+    }
+    if (f.type === 'checkbox') {
+      // Multi-select group (or a legacy single box) → array of checked values.
+      var boxes = form.querySelectorAll('[name="'+f.key+'"]:checked');
+      return Array.prototype.map.call(boxes, function(b){ return b.value; });
     }
     if (f.type === 'radio') {
       var sel = form.querySelector('[name="'+f.key+'"]:checked');
