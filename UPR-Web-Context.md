@@ -4223,10 +4223,45 @@ for them). The legacy mobile Sidebar link is hardcoded after the NAV_ITEMS loop 
 (same crm_partner exclusion) — NAV_ITEMS itself stays identical. CSS: `fbm-*` classes in
 `index.css` Phase F block, with reserved Session B / Session C blocks appended after it.
 
-### Session B (TechFeedback rebuild) — not started
-*Reserved. Session B documents its TechFeedback.jsx rebuild here: FeedbackAttachments on
-the tech form, p_source:'tech', real-array p_attachments, styles only inside its reserved
-index.css block.*
+### Session B (submit surfaces + notify) — shipped Jul 3 2026
+
+**`src/pages/tech/TechFeedback.jsx` rebuilt** on the shared `FeedbackAttachments` composer:
+photos + one short video with free compression/caps, real storage DELETE on remove (fixes the
+old orphaned-upload bug), snap-first (no blocking inputs), ≥48px targets (back button now 48px).
+`'feature'` is relabeled **"Improvement"** in the UI only (DB CHECK still `'bug'|'feature'`).
+Submit passes `p_attachments` as a REAL array (never JSON.stringify) + `p_source:'tech'`, then
+navigates back to `/tech`. No dedicated index.css rules needed — the form uses inline tech
+tokens and the composer ships its own global `.fbm-*` styles (Phase F block); the Session B
+reserved marker carries a note to that effect.
+
+**`src/pages/Feedback.jsx` (desktop)** polished: captures the insert RPC's returned row and
+fires the same notify; header DEPENDS-ON updated. Keeps `p_source:'desktop'`.
+
+**New worker `functions/api/feedback-notify.js`** (+ `feedback-notify.test.js`, 12 tests): POST
+`{feedback_id}`, `requireAuth` in send-push.js's shape (Bearer required; validated against
+`/auth/v1/user` using the **anon key** as apikey — the service-role key is unnecessary for token
+validation, and using anon also sidesteps the block-secrets hook's env-var-name literal match).
+Service-key client (`supabase(env)`) loads the feedback row + submitter `full_name` + admins
+(`employees?role=eq.admin`). Two channels:
+1. **In-app bell** — `create_notification` RPC (`p_type:'feedback'`, link `/tech-feedback`,
+   entity `tech_feedback`/id). Works today; the notifications feed is **global** (no recipient
+   column) so every employee sees the notice — accepted + disclosed per the roadmap.
+2. **Per-admin push** — one same-origin `POST /api/send-push` per admin **excluding the
+   submitter**, forwarding the caller's `Authorization` header, title `New bug report` /
+   `New improvement idea`, body `{submitter}: {title}`, data `{feedback_id, route:'/tech-feedback'}`.
+   Returns `{notified, attempted, bell, results}`.
+
+Both pages call it **fire-and-forget** via `src/lib/api.js` (`api('feedback-notify', …)` attaches
+the user Bearer) with a swallowed `.catch(()=>{})` — the success toast never depends on it.
+Pure helpers `selectAdminIds(employees, submitterId)` + `buildPushPayload(feedback, name)` are
+node-tested; the handler test injects fake db + fetch to prove 401-without-Bearer,
+submitter-excluded fan-out count, and a 503 from send-push reported without failing the request.
+
+⚠️ **Owner-gated — push delivery reaches nobody today:** APNs env vars (`APNS_*`) are unset (the
+send-push worker returns 503) and `device_tokens` has 0 rows, and admins work on desktop where
+the iOS token path never runs. The **in-app bell is the channel that works now**; the push
+fan-out is wired degrade-gracefully and becomes real the day the owner configures APNs + devices
+register. Zero schema migrations shipped (Session B constraint).
 
 ### Session C (AdminFeedback rebuild + gallery) — not started
 *Reserved. Session C documents its AdminFeedback.jsx rebuild here: attachments gallery /

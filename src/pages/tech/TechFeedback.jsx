@@ -138,21 +138,21 @@ export default function TechFeedback() {
           onClick={() => setType('bug')}
           style={{
             height: 80, borderRadius: 'var(--tech-radius-card)',
-            border: `2px solid ${type === 'bug' ? '#dc2626' : 'var(--border-color)'}`,
-            background: type === 'bug' ? '#fef2f2' : 'var(--bg-primary)',
+            border: `2px solid ${type === 'bug' ? 'var(--status-needs-response)' : 'var(--border-color)'}`,
+            background: type === 'bug' ? 'var(--status-needs-response-bg)' : 'var(--bg-primary)',
             cursor: 'pointer', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 6,
             touchAction: 'manipulation', transition: 'border-color 0.15s, background 0.15s',
           }}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'bug' ? '#dc2626' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'bug' ? 'var(--status-needs-response)' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           <span style={{
             fontSize: 15, fontWeight: 700,
-            color: type === 'bug' ? '#dc2626' : 'var(--text-secondary)',
+            color: type === 'bug' ? 'var(--status-needs-response)' : 'var(--text-secondary)',
           }}>
             Bug Report
           </span>
@@ -162,19 +162,19 @@ export default function TechFeedback() {
           onClick={() => setType('feature')}
           style={{
             height: 80, borderRadius: 'var(--tech-radius-card)',
-            border: `2px solid ${type === 'feature' ? '#2563eb' : 'var(--border-color)'}`,
-            background: type === 'feature' ? '#eff6ff' : 'var(--bg-primary)',
+            border: `2px solid ${type === 'feature' ? 'var(--accent)' : 'var(--border-color)'}`,
+            background: type === 'feature' ? 'var(--accent-light)' : 'var(--bg-primary)',
             cursor: 'pointer', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 6,
             touchAction: 'manipulation', transition: 'border-color 0.15s, background 0.15s',
           }}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'feature' ? '#2563eb' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'feature' ? 'var(--accent)' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
           </svg>
           <span style={{
             fontSize: 15, fontWeight: 700,
-            color: type === 'feature' ? '#2563eb' : 'var(--text-secondary)',
+            color: type === 'feature' ? 'var(--accent)' : 'var(--text-secondary)',
           }}>
             Improvement
           </span>
@@ -232,7 +232,7 @@ export default function TechFeedback() {
         style={{
           width: '100%', height: 56, borderRadius: 'var(--tech-radius-button)',
           background: canSubmit ? 'var(--accent)' : 'var(--bg-tertiary)',
-          color: canSubmit ? '#fff' : 'var(--text-tertiary)',
+          color: canSubmit ? 'var(--text-inverse)' : 'var(--text-tertiary)',
           border: 'none', fontSize: 17, fontWeight: 700,
           cursor: canSubmit ? 'pointer' : 'default',
           fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
