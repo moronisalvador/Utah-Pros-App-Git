@@ -19,7 +19,13 @@ contact + claim + job + appointment**, visible on the calendar immediately, no n
 **Owner decisions on record (interview 2026-07-03, two rounds + HCP reference screenshot):**
 ① **Week view is the beloved standard** (the original brief said Month — owner corrected); Week +
 Month both matter, full upgrade for both, neither view's visuals may regress. ② Kill list
-confirmed: Jobs grid view, Crew grid view, 3-Day span, entire Templates/Wizard subsystem. ③ Flow
+confirmed: Jobs grid view, Crew grid view, ~~3-Day span~~, entire Templates/Wizard subsystem.
+**⚠️ AMENDED later the same day (2026-07-03, owner, relayed via the notify planning session):
+the 3-Day span is KEPT** — "the three-day view will work great for iPad"; Week stays the daily
+driver ("pretty much perfect as is"); Month is the occasional overview and the foundation for a
+future HCP-style Gantt. Wherever this doc says to remove the 3-Day span (kill list, Phase B
+scope/close-out, decision matrix), read it as **Jobs/Crew grids + Templates/Wizard only — 3-Day
+survives.** ③ Flow
 shape: HCP-style booking modal, **schedule-page only** (top-bar/CustomerPage keep today's
 CreateJobModal); right column = **dispatch context, not billing** ("in reconstruction, mitigation,
 and insurance work, there is no billing directly to the client"). ④ Claim hierarchy: after
