@@ -12,9 +12,11 @@ waiting on the PR. The owner merges; `dev` auto-deploys to dev.utahpros.app; pro
 reviewed `dev → main` PR.
 
 **Preconditions:** ① Session A launches once the plan-of-record PR (this doc + the roadmap) is
-merged into `dev`. ② **Owner action gating Session B only:** close or rebase **draft PR #102**
-(stale lint PR — it edits 6 of Session B's files including `ScheduleTemplates.jsx`, which B
-deletes). Hard gate — do not launch B on hope. ③ No external gates for Session C beyond B's merge.
+merged into `dev`. ② **Soft coordination before Session B (round-3 — no longer a hard gate):**
+close or rebase **draft PR #102** (stale lint PR editing 6 of Session B's files). B no longer
+*deletes* `ScheduleTemplates.jsx` (it's deactivated, kept dormant), so the file-deletion clash is
+gone; B still edits shared `Schedule.jsx`/`JobPage.jsx`/`JobPanel.jsx`, so clearing #102 first is
+good hygiene — recommended, not required. ③ No external gates for Session C beyond B's merge.
 
 Sessions are strictly serial: A → B → C (shared `src/pages/Schedule.jsx` surface — no
 simultaneous launches in this initiative).
@@ -107,19 +109,24 @@ template, mark it ready to merge, then stop — the PR is a handoff the owner me
 subscribe to, babysit, or wait for a review on it.
 ```
 
-## Wave 1 — Session B (launch after Session A merges into dev AND PR #102 is closed/rebased)
+## Wave 1 — Session B (launch after Session A merges into dev)
 
 ```
 [Session B — Wave 1]
 Branch: session-assigned (illustrative: schedule/phase-2-cleanup), cut from origin/dev
 Model: Opus 4.8 (or strongest available)
 Effort: Medium
-Launch after: Session A merged into dev AND owner has closed/rebased draft PR #102 (hard gate —
-it edits 6 of this session's files including ScheduleTemplates.jsx, which you delete)
+Launch after: Session A merged into dev. (Draft PR #102 — soft coordination, round-3: you no
+longer DELETE ScheduleTemplates.jsx, so the old file-deletion clash is gone; you still edit shared
+Schedule.jsx/JobPage.jsx/JobPanel.jsx, so having the owner close/rebase #102 first is good hygiene,
+not a hard gate.)
 
-You are building Schedule Desktop Phase 2 — dead-weight removal + the JobPage reverse path — one
-phase only, no scope creep. This is a large deletion on a live page (CLAUDE.md Rule 8): removal
-is the deliverable, silent behavior change is the failure mode.
+You are building Schedule Desktop Phase 2 — DEACTIVATE the unused views + the JobPage reverse path
+— one phase only, no scope creep. ⚠️ ROUND-3 OWNER AMENDMENT: this is DEACTIVATE, NOT DELETE. The
+Jobs view, Crew view, and the Templates/Wizard subsystem are HIDDEN from the UI but their code,
+route, tables, and RPCs are KEPT DORMANT for a future revival (Templates/Wizard is the future-Gantt
+groundwork). Deleting any of that code is the failure mode. Live page (CLAUDE.md Rule 8) — no
+silent behavior change to the surviving Calendar view.
 
 Read scope: CLAUDE.md, the "Session B" phase block + frozen-list in docs/schedule-roadmap.md
 (binding). Foundation shipped for you: Session A's BookingModal + shared client/claim component
@@ -128,55 +135,64 @@ the Phase 2 marker.
 
 Work on your session's assigned branch cut from origin/dev.
 
-Hard constraints: ZERO schema migrations; no DB object drops — the template tables
-(schedule_templates, template_phases, template_tasks, job_schedules, job_schedule_phases) and the
-6 dead RPCs (apply_schedule_plan, preview_schedule, get_schedule_template, get_schedule_templates,
-get_job_schedule, get_job_schedules — plus finish_appointment, already caller-less) stay in the DB
-and get documented as retired instead. appointments/appointment_crew contracts frozen (see
-roadmap). App.jsx: touch ONLY the /schedule/templates route + its lazy import — the in-flight
-tech-v2 initiative co-edits tech routes in the same file; rebase-aware, different regions.
+Hard constraints: ZERO schema migrations; ZERO DB object drops; ZERO code-file deletions of the
+deactivated features — the template tables (schedule_templates, template_phases, template_tasks,
+job_schedules, job_schedule_phases), their RPCs (apply_schedule_plan, preview_schedule,
+get_schedule_template(s), get_job_schedule(s)), AND the component files ScheduleTemplates.jsx +
+ScheduleWizard.jsx all STAY, documented as deactivated/dormant. appointments/appointment_crew
+contracts frozen (see roadmap). App.jsx: if you touch it at all, ONLY the /schedule/templates route
+region — but you may leave the route registered (nav-less) since the files survive; the in-flight
+tech-v2 initiative co-edits tech routes in the same file (rebase-aware, different regions).
 
 Build in this order:
-① Delete the Templates/Wizard subsystem end to end: ScheduleTemplates.jsx; the /schedule/templates
-   route + lazyRetry import in App.jsx; BOTH navItems.jsx entries (NAV_ITEMS + OVERFLOW_ITEMS);
-   the schedule_templates page-access row in Admin.jsx (~:971); ScheduleWizard.jsx plus its
-   integrations in JobPage.jsx (import, render, ScheduleTab "Generate schedule" trigger) and
-   JobPanel.jsx (import, trigger block, render).
-② JobPage reverse path: "Schedule appointment" becomes the Schedule tab's CTA (replacing
-   "Generate schedule"), rendering the existing CreateAppointmentModal — JobPage already holds
-   job.id / insured_name / division and an employees array; add color to its employees select
-   (the modal uses emp.color for crew chips). Verify schedule-from-job end-to-end on dev.
-③ Collapse the viewMode axis in Schedule.jsx: remove the Jobs grid + Crew grid views (GridPopover,
-   ApptCard, CrewApptCard, grid hover state, grid cell drop handlers, gridPlacementPicker + its
-   modal, the Calendar/Jobs/Crew SegControl). ⚠️ OWNER AMENDMENT 2026-07-03 (see the roadmap's
-   decision ②): the 3-Day span is KEPT ("works great for iPad") — do NOT remove it, do NOT touch
-   upr_schedule_span; only upr_schedule_view (the Calendar/Jobs/Crew axis) goes away.
+① Deactivate the Templates/Wizard subsystem (HIDE, don't delete): remove BOTH navItems.jsx entries
+   (NAV_ITEMS + OVERFLOW_ITEMS), the schedule_templates page-access row in Admin.jsx (~:971), and
+   the "Generate schedule" entry points in JobPage.jsx (the ScheduleTab trigger) and JobPanel.jsx.
+   KEEP ScheduleTemplates.jsx, ScheduleWizard.jsx, the tables, and the RPCs in place. (Leaving the
+   /schedule/templates route registered but nav-less is fine — the point is the files survive so a
+   future session can re-add the nav and revive it.)
+② JobPage reverse path: "Schedule appointment" becomes the Schedule tab's CTA (the "Generate
+   schedule" button is gone with step ①), rendering the existing CreateAppointmentModal — JobPage
+   already holds job.id / insured_name / division and an employees array; add color to its
+   employees select (the modal uses emp.color for crew chips). Verify schedule-from-job on dev.
+③ Deactivate the Jobs + Crew views in Schedule.jsx (HIDE, don't delete): remove 'jobs' and 'crew'
+   from the view toggle so Calendar is the only selectable view, and HIDE the Calendar/Jobs/Crew
+   SegControl entirely (a single-option toggle is pointless). Sanitize viewMode so it always
+   resolves 'calendar' (a stored upr_schedule_view of 'jobs'/'crew' must fall back to 'calendar' —
+   this auto-fixes the F3 mobile bug and guarantees iPhone + desktop both land on Calendar). ⚠️ Do
+   NOT delete the grid code — GridPopover, ApptCard, CrewApptCard, the grid render blocks, the
+   gridPlacementPicker + its modal all STAY dormant (unreachable). ⚠️ 3-Day span is KEPT ("works
+   great for iPad") — do NOT touch upr_schedule_span; the Day/3-Day/Week/Month span toggle stays.
    OVER-DELETION GUARD: keep placementMode, handlePlacementClick, handleRescheduleRemaining — the
-   Week/Day CalendarView consumes them. Update the "Jobs move here automatically when a schedule
-   is generated" empty-state copy for the post-wizard world.
+   CalendarView consumes them. Update the "Jobs move here automatically when a schedule is
+   generated" empty-state copy for the deactivated-wizard world.
 ④ Extract MonthView VERBATIM to src/components/schedule/MonthView.jsx — a zero-behavior move the
    diff can prove (Session C grows this file).
-⑤ Dead code: EditAppointmentModal's unreachable clone-visit block (~90 lines: nextVisitPrompt
-   footer, handleCloneVisit, getNextBusinessDay), dead DivisionIcon/DIVISION_COLORS imports in
-   Schedule.jsx + JobPanel.jsx, the gridDays no-op memo, the local hexToTint duplicate
-   (scheduleUtils.js exports it); prune index.css mobile rules orphaned by the removals.
+⑤ Optional genuinely-dead code (unreachable, NOT a deactivated feature — safe to remove):
+   EditAppointmentModal's clone-visit block (~90 lines: nextVisitPrompt footer, handleCloneVisit,
+   getNextBusinessDay), the gridDays no-op memo, unused DivisionIcon imports. ⚠️ hexToTint STAYS —
+   still used by the retained (dormant) grid code.
 ⑥ Separate commit: fix the remodeling division filter gap — remodeling jobs currently match
    neither the Mitigation nor the Recon chip (live correctness bug; decide bucket per the division
    palette: remodeling groups with reconstruction).
 
-Test-first (commit failing first): a scheduleUtils/filter test proving the remodeling bucket fix
-(remodeling visible under its chosen chip, hidden under the other), and a localStorage-fallback
-test for stale 'jobs'/'crew' view values → sane default ('3day' span values are VALID and stay —
-the ② amendment keeps the 3-Day span).
+Result: desktop is unchanged (Calendar + Week default; the only visible difference is the
+Calendar/Jobs/Crew toggle is gone); iPhone lands on Calendar (Day span, as today).
 
-Close-out: npm run test + npm run build + eslint green; zero schema migrations; grep proves zero
-remaining references to removed components/RPCs; Day/3-Day/Week/Month ALL visually unchanged on
-dev.utahpros.app (3-Day KEPT per the owner amendment); mobile spot-check only — no mobile work,
-the tech app owns mobile scheduling (roadmap decision ⑨);
-upr-pattern-checker clean; update UPR-Web-Context.md (rewrite the Schedule System bullets — views
-list, templates retired, dead RPCs listed retired-no-callers) + session entry; reconcile the
-Session B checkboxes in docs/schedule-roadmap.md honestly; delete any test rows (no client_email /
-notify OFF / no real crew on test appointments); push -u, open a PR to dev via the template, mark
+Test-first (commit failing first): a scheduleUtils/filter test proving the remodeling bucket fix
+(remodeling visible under its chosen chip, hidden under the other), and a viewMode-sanitize test —
+stored 'jobs'/'crew' resolves to 'calendar' ('3day' span values stay VALID — the ② amendment keeps
+the 3-Day span).
+
+Close-out: npm run test + npm run build + eslint green; zero schema migrations; grep proves the
+Jobs/Crew grid code + ScheduleTemplates.jsx + ScheduleWizard.jsx STILL EXIST (retained) and are
+unreachable from nav/toggle; Day/3-Day/Week/Month ALL visually unchanged on dev.utahpros.app (3-Day
+KEPT); iPhone lands on Calendar, desktop stays Calendar+Week; mobile spot-check only — no mobile
+work (roadmap decision ⑨); upr-pattern-checker clean; update UPR-Web-Context.md (rewrite the
+Schedule System bullets — Jobs/Crew + Templates/Wizard marked DEACTIVATED/DORMANT + revivable, NOT
+removed) + session entry; reconcile the Session B checkboxes in docs/schedule-roadmap.md honestly;
+delete any test rows (no client_email / notify OFF / no real crew on test appointments); push -u,
+open a PR to dev via the template, mark
 it ready to merge, then stop — do NOT subscribe to, babysit, or wait for a review on it.
 ```
 
@@ -200,8 +216,9 @@ overview. Miniaturize the language instead.
 Read scope: CLAUDE.md, the "Session C" phase block + decision ① + frozen-list in
 docs/schedule-roadmap.md (binding), UPR-Design-System.md. Foundation shipped for you: MonthView
 lives in src/components/schedule/MonthView.jsx (Session B's verbatim extraction); the
-creationPicker (New job / Job appointment / Event) is live; the page is Calendar-only with
-Day/3-Day/Week/Month spans (3-Day kept — iPad).
+creationPicker (New job / Job appointment / Event) is live; Calendar is the only active view
+(Jobs/Crew deactivated by Session B, their code dormant) with Day/3-Day/Week/Month spans (3-Day
+kept — iPad).
 
 Work on your session's assigned branch cut from origin/dev.
 

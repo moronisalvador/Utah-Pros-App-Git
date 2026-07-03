@@ -106,9 +106,14 @@ recipient → per-recipient create_notification rows → webPush.js per subscrip
 send-push forward; Bearer auth in feedback-notify's shape + x-webhook-secret acceptance for
 trigger calls; rewire feedback-notify's channels through it (replacing F1's hardcoded block).
 (3) NotificationBell.jsx passes employee.id to the new RPC shapes + mount the bell in
-TechLayout's header; App.jsx route /tech/notifications + TechMore row pointing at a stub
-TechNotifications.jsx page (Session C fills it); reserved index.css markers for Sessions C and
-D; pre-labeled Session B/C/D sub-headers in UPR-Web-Context.md. Close-out: npm run test + build
+TechLayout's header; reserved index.css markers for Sessions C and D; pre-labeled Session
+B/C/D sub-headers in UPR-Web-Context.md. ⚠️ AMENDED 2026-07-03: the tech Settings hub
+(/tech/settings) shipped separately — it already has the TechMore "Settings" row and
+src/components/tech/settings/NotificationsSection.jsx (device enable-push). So do NOT create
+a /tech/notifications route, a TechMore row, or a stub TechNotifications.jsx (they would
+duplicate the hub); if you already created any of them, remove them. Session C fills the
+per-type prefs matrix into the existing NotificationsSection.jsx. Everything else in your F2
+scope (schema, RPCs, dispatcher, triggers, bell) is unchanged. Close-out: npm run test + build
 + eslint; migration-safety-checker + upr-pattern-checker clean; visual check of the bell on
 desktop + tech shell on the branch preview; fill the F2 sub-header; reconcile the F2 checkboxes;
 delete test rows; push -u; PR into dev as a handoff, mark ready, stop — no babysitting.

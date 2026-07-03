@@ -185,15 +185,11 @@ pushed/emailed channel that could be noisy before C/D land ships default-silent.
 > - [x] `npm run test` (430 passed / 77 skipped) + `npm run build` + `npx eslint` (zero new
 >       errors — 5 errors / 2 warnings, identical to base) pass; `migration-safety-checker` +
 >       `upr-pattern-checker` clean (both PASS, no violations).
-> - [ ] **OWNER GATE (stop-the-line) — OPEN, owner action:** VAPID is now stored in **Supabase**
->       (owner preference — no Cloudflare env needed; `integration_credentials` private +
->       `integration_config` public/subject, already seeded this session). Owner keeps
->       `feature:web_push` on (dev-only for the owner is already seeded), installs the PWA + enables
->       push in Settings → Notifications + **a real push lands on the owner's actual iPhone
->       home-screen PWA and on desktop Chrome**. If iOS delivery fails: HALT, re-plan — F2 and the
->       wave do not launch against a dead channel. *(Cannot be closed in-session — needs a physical
->       device install. NOTE: the reference push audience is admins **minus the submitter**, so the
->       test feedback must be filed by a non-owner, or the owner submits from a second account.)*
+> - [x] **OWNER GATE (stop-the-line) — PASSED 2026-07-03.** VAPID stored in **Supabase**
+>       (`integration_credentials` private + `integration_config` public/subject). Owner installed
+>       the PWA, enabled push, and **a real push landed on the owner's device** — delivery
+>       confirmed. F2 and the wave are cleared to launch. *(The tech-side enable-push toggle now
+>       also lives in the shipped `/tech/settings` hub — see the F2 amendment below.)*
 > - [x] `UPR-Web-Context.md` — filled the pre-labeled **F1** sub-header.
 > - [x] Reconciled this doc's checkboxes. No test rows/subscriptions were created (the
 >       `feature_flags` row is a config seed, not test data); nothing to delete. Pushed; PR into
@@ -224,9 +220,18 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 >       F1's hardcoded call); appointment triggers created inert (20260630 pattern:
 >       `integration_config` `notify_worker_url` + `notify_webhook_secret`, inert-guard,
 >       `IS NOT DISTINCT FROM` column guards); named frozen stubs for C + D; NotificationBell
->       passes employee id + mounts in TechLayout; App.jsx `/tech/notifications` route +
->       TechMore row wired to a stub page; reserved index.css markers (C, D); UPR-Web-Context
+>       passes employee id + mounts in TechLayout; reserved index.css markers (C, D); UPR-Web-Context
 >       pre-labeled Session B/C/D sub-headers.
+>
+> **⚠️ AMENDMENT (2026-07-03) — tech notifications surface is the shipped `/tech/settings` hub.**
+> After F2 was planned, a tech **Settings hub** shipped separately (P1): `/tech/settings` route +
+> a "Settings" row in `TechMore.jsx` + `src/components/tech/settings/NotificationsSection.jsx`
+> (already does device enable/disable push, reusing `webPushClient`) + a System/Light/Dark theme.
+> Therefore **F2 does NOT create a `/tech/notifications` route, a TechMore row, or a stub
+> `TechNotifications.jsx`** — those would duplicate the hub. F2 still mounts `NotificationBell`
+> in `TechLayout` and owns everything else unchanged. **Session C** fills the per-type prefs
+> matrix into the existing `NotificationsSection.jsx` (see amended Session C scope). If a running
+> F2 session already created the route/row/stub, it removes them.
 > - [ ] `npm run test` + `npm run build` + `npx eslint` pass; `migration-safety-checker` +
 >       `upr-pattern-checker` clean.
 > - [ ] Visual: bell on desktop + tech shell on the branch preview.
@@ -235,8 +240,9 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 
 Scope: owns the F2 migration (catalog + 3 prefs tables + recipient_id + bell cutover + stubs +
 triggers), `functions/api/notify.js`, `src/components/NotificationBell.jsx`,
-`src/components/TechLayout.jsx` (bell mount), `src/App.jsx` (route), `src/pages/tech/TechMore.jsx`
-(row), stub `src/pages/tech/TechNotifications.jsx`, index.css markers, doc sub-headers.
+`src/components/TechLayout.jsx` (bell mount only), index.css markers, doc sub-headers.
+**Per the amendment above, F2 no longer owns `src/App.jsx` (route), the `TechMore.jsx` row, or a
+stub `TechNotifications.jsx` — the `/tech/settings` hub supersedes them.**
 
 ### Frozen stub signatures (contracts — body-only fills in-wave; `migration-safety-checker` enforces)
 
@@ -291,8 +297,10 @@ dedupe seam only), hook tests. No schema, no UI, no CSS.
 >       row rejected; `get_my_push_subscriptions` never returns p256dh/auth/endpoint secrets).
 > - [ ] Acceptance: NotificationsPanel complete (types×channels for MY role from the resolver,
 >       locked rows disabled with a lock hint, device list + remove w/ real unsubscribe,
->       "Enable push on this device"); `/tech/notifications` complete (≥48px targets, same
->       matrix, tech-visible types only); iOS-not-installed state shows InstallBanner-pattern
+>       "Enable push on this device"); the tech prefs matrix (≥48px targets, same matrix,
+>       tech-visible types only) rendered **inside the shipped `/tech/settings` hub's
+>       `NotificationsSection.jsx`** (NOT a new `/tech/notifications` page — see the F2
+>       amendment); iOS-not-installed state shows InstallBanner-pattern
 >       "Share → Add to Home Screen" guidance; desktop permission flow.
 > - [ ] `npm run test` + `build` + eslint pass; **zero schema beyond its own body-only stub
 >       fills**; frozen files untouched (sw.js, main.jsx, webPushClient.js, App.jsx…).
@@ -300,9 +308,10 @@ dedupe seam only), hook tests. No schema, no UI, no CSS.
 > - [ ] `UPR-Web-Context.md` — **Session C** sub-header only; its index.css reserved section
 >       only. Reconcile; delete test rows; push; PR into `dev` as a handoff.
 
-Scope: owns `src/pages/tech/TechNotifications.jsx` (fills the F2 stub page), the
-NotificationsPanel content (component file(s) it creates; the Settings.jsx skeleton slot was
-wired by F1/F2), its C-stub body fills, its index.css section.
+Scope: owns `src/components/tech/settings/NotificationsSection.jsx` (fills the tech prefs matrix
+into the shipped `/tech/settings` hub — the enable-push row already exists there from P1) and the
+office `Settings.jsx` NotificationsPanel content, its C-stub body fills, its index.css section.
+*(Amended 2026-07-03: replaces the retired `TechNotifications.jsx` standalone page.)*
 
 ## Session D — Admin defaults UI
 
@@ -370,9 +379,9 @@ wave is a preference, never a gate; throttle freely.
 | Session | Owns exclusively (edit only these) | New files it creates |
 |---|---|---|
 | F1 | `public/sw.js`, `src/main.jsx` (SW block), `src/lib/registerSW.js`, `src/pages/Settings.jsx` (NAV entry + skeleton panel), `functions/api/feedback-notify.js` (one additive block), `feature:web_push` seed, push_subscriptions migration | `functions/lib/webPush.js` (+test), `src/lib/webPushClient.js` |
-| F2 | F2 migration (catalog/prefs/recipient_id/cutover/stubs/triggers), `functions/api/notify.js` (+test), `NotificationBell.jsx`, `TechLayout.jsx` (bell mount), `App.jsx` (route), `TechMore.jsx` (row), stub `TechNotifications.jsx`, css markers, doc sub-headers | `functions/api/notify.js`, `src/pages/tech/TechNotifications.jsx` (stub) |
+| F2 | F2 migration (catalog/prefs/recipient_id/cutover/stubs/triggers), `functions/api/notify.js` (+test), `NotificationBell.jsx`, `TechLayout.jsx` (bell mount), css markers, doc sub-headers · *(amended: NO App.jsx route / TechMore row / stub page — superseded by the shipped `/tech/settings` hub)* | `functions/api/notify.js` |
 | B | `functions/api/{twilio-webhook,stripe-webhook,qbo-charge,callrail-webhook,form-submit,submit-esign}.js`, `functions/lib/{qbo-payment-sync,google-calendar}.js` (hooks + emailKind seam) | hook tests |
-| C | `TechNotifications.jsx` (fill), NotificationsPanel component(s), C-stub body fills, its css section | panel component file(s) |
+| C | `src/components/tech/settings/NotificationsSection.jsx` (fill the prefs matrix into the shipped hub), office `NotificationsPanel` component(s), C-stub body fills, its css section | panel component file(s) |
 | D | `src/pages/Admin.jsx` (new tab), admin matrix component(s), D-stub body fills, its css section | matrix component file(s) |
 
 **Frozen in-wave (nobody edits after F2 ships):** `public/sw.js`, `src/main.jsx`,
