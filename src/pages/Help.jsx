@@ -425,6 +425,7 @@ function HowItWorksGuide() {
         </p>
         <Steps items={[
           '<b>Client</b> — search by name, phone, or email <i>first</i>. If they come up (you’ll see how many jobs they already have), pick them. New to us? Click <b>+ New</b> to add them. <i>(If the phone is already on file, it quietly reuses that customer instead of making a duplicate.)</i>',
+          '<b>New or existing claim</b> — a brand-new loss stays on <b>New claim</b>. More work on a loss they already have? Pick <b>Existing claim</b> and choose it — the job files under that claim (address, carrier and claim # prefill from it) instead of opening a duplicate claim. Same choice the techs get on mobile.',
           '<b>Division</b> — pick the one trade this job is: 💧 Water, 🦠 Mold, 🏗️ Recon, 🔨 Remodel, 🔥 Fire, or 📦 Contents. A job is always <b>one</b> division.',
           '<b>Loss / Service Address</b> — this prefills from the customer’s billing address. <b>Change it if the loss is at a different property.</b>',
           '<b>Claim details</b> — set the <b>Date of Loss</b> and <b>Type of Loss</b>, and choose the <b>Insurance Carrier</b> (required). Add the <b>Claim #</b> when you have it. No insurance? Pick <b>Out of pocket / No insurance</b> — that switches the work authorization to the private-pay clause that protects UPR if they file a claim later.',
