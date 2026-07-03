@@ -34,6 +34,7 @@ import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
+import NotificationBell from '@/components/NotificationBell';
 import TechPane from '@/components/tech/v2/TechPane.jsx';
 import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
 
@@ -301,10 +302,23 @@ export default function TechLayout() {
         </div>
       )}
 
-      {/* Floating offline-queue indicator — renders nothing when idle */}
+      {/* Floating notification bell (per-recipient badge + live toast for techs).
+          Top-RIGHT — tech page titles sit top-left, so this stays clear of them.
+          Larger tap target for gloved hands (48px rule). */}
       <div style={{
         position: 'fixed',
-        top: 'calc(env(safe-area-inset-top, 0px) + 10px)',
+        top: 'calc(env(safe-area-inset-top, 0px) + 4px)',
+        right: 6,
+        zIndex: 501,
+      }}>
+        <NotificationBell align="right" size={46} />
+      </div>
+
+      {/* Floating offline-queue indicator — renders nothing when idle. Stacked
+          BELOW the bell so the two never overlap during a sync. */}
+      <div style={{
+        position: 'fixed',
+        top: 'calc(env(safe-area-inset-top, 0px) + 58px)',
         right: 10,
         zIndex: 500,
         pointerEvents: 'none',

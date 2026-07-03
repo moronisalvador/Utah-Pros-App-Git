@@ -8200,3 +8200,15 @@ tr:hover td { background: var(--bg-secondary); }
 @media (max-width: 768px) {
   .fb-media-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
+
+/* ─── NOTIFY CENTER RESERVED — Session C (my-prefs matrix) ───────────────────
+   Owner: Session C (notify My-prefs UI). Session C's styles go between this
+   marker and the Session D marker — nobody else writes here. The tech
+   NotificationsSection lives in /tech/settings (styled with tech tokens); this
+   section is for the desktop Settings NotificationsPanel matrix + any shared
+   type×channel toggle-grid classes. Mobile-only rules use @media (max-width: 768px). */
+
+/* ─── NOTIFY CENTER RESERVED — Session D (admin defaults matrix) ─────────────
+   Owner: Session D (Admin → Notifications tab). Session D's styles go below this
+   marker — nobody else writes here. Role×type×channel matrix + per-employee
+   tri-state override grid. Mobile-only rules use @media (max-width: 768px). */

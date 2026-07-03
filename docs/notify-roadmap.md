@@ -207,21 +207,27 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 > DROP+CREATE cutover on the shared Supabase).
 > **Read scope:** this block + ownership matrix + `CLAUDE.md` + the RPC-cutover facts above.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `supabase/tests/notify_foundation.test.js` — OLD bell call
+> - [x] Test-first, now green: `supabase/tests/notify_foundation.test.js` — OLD bell call
 >       shapes ({}, {p_limit}) still succeed post-cutover (no overload ambiguity); recipient
 >       targeting (targeted row invisible to others, broadcast visible to all); resolver
 >       precedence table (role default → employee override → my-pref → lock);
 >       `functions/api/notify.test.js` — injected-fakes dispatcher (audience resolution,
 >       prefs filtering, NULL-email skip reported, VAPID-missing 503-skip, subscription prune).
-> - [ ] Acceptance: migration applied + verified live via MCP (ALTER-first ordering,
+>       *(The integration suite self-skips without creds like the other CRM suites; its
+>       assertions — bell cutover, targeting, and the full 5-stage resolver precedence —
+>       were verified live against the shared Supabase via MCP this session.)*
+> - [x] Acceptance: migration applied + verified live via MCP (ALTER-first ordering,
 >       re-GRANTs, `bust_postgrest_cache()`); live bell verified working (old code, new RPCs);
->       catalog + conservative seeds live; `get_effective_notification_prefs` FULLY implemented;
->       dispatcher delivers `feedback.submitted` end-to-end through the resolver (replacing
->       F1's hardcoded call); appointment triggers created inert (20260630 pattern:
->       `integration_config` `notify_worker_url` + `notify_webhook_secret`, inert-guard,
->       `IS NOT DISTINCT FROM` column guards); named frozen stubs for C + D; NotificationBell
->       passes employee id + mounts in TechLayout; reserved index.css markers (C, D); UPR-Web-Context
->       pre-labeled Session B/C/D sub-headers.
+>       catalog + conservative seeds live (12 types, only feedback.submitted enabled);
+>       `get_effective_notification_prefs` FULLY implemented; dispatcher delivers
+>       `feedback.submitted` through the resolver (feedback-notify rewired, replacing F1's
+>       hardcoded call); appointment triggers created inert (20260630 pattern:
+>       `integration_config` `notify_worker_url` + `notify_webhook_secret` seeded this session,
+>       inert-guard, `IS NOT DISTINCT FROM` column guards); named frozen stubs for C + D;
+>       NotificationBell passes employee id + mounts in TechLayout; reserved index.css markers
+>       (C, D); UPR-Web-Context pre-labeled Session B/C/D sub-headers. *(APNs `send-push` forward
+>       was deemed optional and omitted — native push stays separate/dormant, Web Push is the
+>       real F2 push channel.)*
 >
 > **⚠️ AMENDMENT (2026-07-03) — tech notifications surface is the shipped `/tech/settings` hub.**
 > After F2 was planned, a tech **Settings hub** shipped separately (P1): `/tech/settings` route +
@@ -232,11 +238,16 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 > in `TechLayout` and owns everything else unchanged. **Session C** fills the per-type prefs
 > matrix into the existing `NotificationsSection.jsx` (see amended Session C scope). If a running
 > F2 session already created the route/row/stub, it removes them.
-> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; `migration-safety-checker` +
->       `upr-pattern-checker` clean.
-> - [ ] Visual: bell on desktop + tech shell on the branch preview.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **F2** sub-header only.
-> - [ ] Reconcile checkboxes; delete test rows; push; PR into `dev` as a handoff.
+> - [x] `npm run test` (487 passed / 85 skipped) + `npm run build` (435 modules) + `npx eslint`
+>       (no new errors) pass; `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [~] Visual: bell on desktop + tech shell — **deferred to the Cloudflare branch preview** the
+>       PR generates: this session's environment has no Supabase creds (only `.env.example`), so
+>       the authenticated app can't render locally. Build passes; the change is two floating
+>       fixed-position elements (office bell unchanged at 36px; tech bell top-right, 46px).
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **F2** sub-header (and refreshed the older
+>       In-App Notifications section to the per-recipient reality).
+> - [x] Reconcile checkboxes; delete test rows (sentinels cascade-cleaned; only the 1 pre-existing
+>       broadcast notification remains); push; PR into `dev` as a handoff.
 
 Scope: owns the F2 migration (catalog + 3 prefs tables + recipient_id + bell cutover + stubs +
 triggers), `functions/api/notify.js`, `src/components/NotificationBell.jsx`,
