@@ -1325,8 +1325,9 @@ token never leaves the server. Token refresh + OAuth lib: `functions/lib/google-
 ### Calendar sync (Jun 28 2026)
 
 Pushes appointments → each assigned crew member's Google Calendar (create / update /
-delete). **Built to survive the planned appointments→scheduled-jobs refactor:** the
-mapping is source-agnostic.
+delete). **Built source-agnostic** (~~to survive the planned appointments→scheduled-jobs
+refactor~~ — that refactor was declared stale and superseded by the Schedule Desktop plan of
+record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnostic regardless).
 
 - **`google_calendar_links`** — durable mapping, one row per (synced occurrence × crew
   member). Cols: `id, source_type` (`'appointment'` today, `'job_schedule'` later),
@@ -4323,3 +4324,50 @@ Then C (Sonnet·medium cutover/cleanup + Month-view stretch, owner-gated bake), 
 (Opus·high Job Hub behind `page:tech_job_hub`), M2 (Opus·medium href flip + resolver
 redirect + legacy detail deletion). Owner anytime-lane actions: flag flips in DevTools
 (owner-only → all techs), phone bake sign-offs.
+
+## Schedule Desktop — plan of record (session 2026-07-03, docs only — no feature code)
+
+**What this session shipped** (branch `claude/build-plan-ftgfa1` → PR into `dev`):
+- `docs/schedule-roadmap.md` — the dispatch model of record for the desktop Schedule page:
+  create-and-schedule booking flow, dead-weight removal, Month-view parity. Live-verified
+  evidence base (E1–E10), 5 severity findings, a full booking-modal design spec, three phase
+  blocks (**A → B → C, strictly serial** — shared Schedule.jsx surface), dependency graph,
+  ownership matrix + frozen-contract list, options-on-record, 3-agent challenge report folded in.
+- `docs/schedule-dispatch.md` — three complete cold-session copy-paste blocks (A, B, C).
+- Struck the stale "appointments→scheduled-jobs refactor" references in place (this doc's
+  Calendar-sync section + `GOOGLE-INTEGRATIONS-HANDOFF.md`) — owner declared it stale; this plan
+  supersedes it.
+- Zero code/schema/seed changes — non-CRM initiative; progress tracks via the roadmap doc's
+  checklists.
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **The pain quantified:** 56 of 105 non-lead jobs (53%) have never had an appointment; every
+  calendar create path requires an existing job; `Layout.jsx` force-navigates to the job page
+  after create, which has zero scheduling affordance.
+- **Templates/Wizard subsystem is data-proven dead** (0/230 appointments ever linked; wizard last
+  run 2026-04-14) — Session B removes the UI; tables/RPCs stay, documented retired.
+- **Owner corrections on record:** Week (not Month) is the beloved view; kill Jobs/Crew grids +
+  3-Day span; HCP-style booking modal on the schedule page only; claim picker rows must show
+  address · date of loss · claim number with "New claim" the default every time.
+- **Live side-effect chain governs test protocol:** appointment INSERT triggers gcal sync; the
+  worker emails the CLIENT ('confirmed', first-sync CAS) when job.client_email && notify_client
+  (default TRUE), and emails + calendar-invites the CREW — test rows need no client_email/notify
+  OFF and no real crew.
+- **`get_dispatch_board` appointment objects carry no job_id** (parent job row does) — Month
+  parity is frontend `_jobId` stamping, no RPC change; auto-show surfaces a new job with an
+  in-range appointment without a pin, but the booking modal pins via `dispatch_board_jobs` to
+  cover Auto-show-OFF.
+- **`jobs.lead_source` exists, is NULL on all 236 jobs, zero writers** — booking modal writes it
+  via post-insert update (an RPC param-add would mint an overload — the clock_appointment_action
+  PGRST203 incident class).
+- **Coordination:** draft PR #102 must be closed/rebased before Session B (it edits 6 of B's
+  files incl. ScheduleTemplates.jsx, which B deletes); tech-v2 co-edits App.jsx (tech routes,
+  different region) + index.css markers — Session A pre-commits all three SCHEDULE V2 markers.
+
+**Dispatch:** Wave 0 = Session A (Opus·high — shared client/claim component extraction, tested
+save chain, BookingModal, creationPicker "New job" entry, ~70%-budget chained-modals fallback).
+Wave 1 = Session B (Opus·medium — Templates/Wizard removal end-to-end incl. both navItems entries
++ Admin.jsx registry row, viewMode-axis collapse with placementMode over-deletion guard, verbatim
+MonthView extraction, JobPage "Schedule appointment" reverse path, remodeling-filter fix as its
+own commit; gated on PR #102 closure). Wave 2 = Session C (Opus·medium — Month drag-reschedule,
+click-day create, events rendering, chip enrichment; Week regression-verify only).
