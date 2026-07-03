@@ -190,7 +190,7 @@ as amended here.
 
 | Session | Phase | Owns exclusively (edit only these) | RPCs / schema (created directly) |
 |---|---|---|---|
-| L | 5-ops | `functions/api/process-crm-automations.js` + `process-crm-automations.test.js`, `src/pages/crm/CrmAutomations.jsx` (all three were Session K's — freed by #253's merge, transferred to L), its one migration + `supabase/tests/`, its reserved `index.css` marker | `set_job_phase(p_job_id uuid, p_to_phase text, p_actor_id uuid DEFAULT NULL)` (new, SECURITY DEFINER — encapsulates the jobs + job_phase_history two-write); `ALTER TABLE crm_automations ADD COLUMN trigger_kind` + `ADD COLUMN scan_config` (additive, Rule 7); recipe-pack seeds (`enabled=false`, idempotent) |
+| L | 5-ops | `functions/api/process-crm-automations.js` + `process-crm-automations.test.js`, `src/pages/crm/CrmAutomations.jsx` (the worker + page were Session K's — freed by #253's merge; the test file already exists from K's suite and L extends it — all three assigned to L), its one migration + `supabase/tests/`, its reserved `index.css` marker | `set_job_phase(p_job_id uuid, p_to_phase text, p_actor_id uuid DEFAULT NULL)` (new, SECURITY DEFINER — encapsulates the jobs + job_phase_history two-write); `ALTER TABLE crm_automations ADD COLUMN trigger_kind` + `ADD COLUMN scan_config` (additive, Rule 7); recipe-pack seeds (`enabled=false`, idempotent) |
 
 **Amendments / rules for Session L:**
 

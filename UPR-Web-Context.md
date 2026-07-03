@@ -4156,8 +4156,9 @@ Owner directive (full scope): extend the shipped automation engine with **ops ac
 two-write-encapsulating RPC, create_draft_invoice via the idempotent `create_invoice_for_job` —
 draft-only, the QBO push door stays human), a **scheduled-scan trigger family** ("something
 DIDN'T happen": estimate aging, missing daily moisture reading [MT day boundary], invoice
-overdue, stuck phase, dispatch SLA — code-defined registry, thresholds-only config,
-deterministic-uuid dedup through the existing `UNIQUE(automation_id, triggering_event_id)`),
+overdue, stuck phase, dispatch SLA (`scan.no_appointment_after_create`) — code-defined registry,
+thresholds-only config, deterministic uuidv5 dedup through the existing
+`UNIQUE(automation_id, triggering_event_id)`),
 and a **7-recipe starter pack seeded `enabled=false`**. Key finding recorded: the job/e-sign
 trigger events ARE emitted (live counts verified — DB-side trigger functions from Mar-era
 migrations; a repo-grep claim to the contrary was refuted), so no emit-path work is needed.
