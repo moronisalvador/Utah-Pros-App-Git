@@ -1235,6 +1235,39 @@ on this table)
 
 ---
 
+## Internationalization / Language (Phase 0 foundation — Jul 3 2026)
+Per-device language preference for the **field-tech PWA** (English default / Português / Español).
+Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localStorage only). Engine is
+**`react-i18next` + `i18next`** (v17 / v26).
+- **Engine init:** `src/i18n/index.js` — bundles the locale JSON (static imports, synchronous init so
+  `t()` works on first render → `react.useSuspense:false`), `fallbackLng:'en'`, `supportedLngs:['en','pt','es']`,
+  namespaces `['common','nav','more','settings']`, `interpolation.escapeValue:false`. **`fallbackLng:'en'`
+  is what makes the phased rollout safe — a missing pt/es key renders the English source, never a blank.**
+- **Prefs helper:** `src/i18n/langPrefs.js` (pure, React-free, testable) — `LANG_STORAGE_KEY='upr_lang_pref'`,
+  `LANGS=['en','pt','es']`, `LANG_LABELS` (endonyms), `DEFAULT_LANG='en'`, `readStoredLang()` / `writeStoredLang()` /
+  `resolveLang()` (allow-list + try/catch, exactly like `readStoredThemeMode`).
+- **Provider:** `src/contexts/LanguageContext.jsx` — `LanguageProvider` (mounted in `App.jsx` beside
+  `ThemeProvider`, outside AuthProvider) + `useLanguage()` → `{ lang, setLang }`. Syncs `i18n.changeLanguage`,
+  localStorage, and `document.documentElement.lang`. Screens read strings with react-i18next's
+  `useTranslation(ns)`; only the picker needs `useLanguage()`.
+- **Picker UI:** `src/components/tech/settings/LanguageSection.jsx` — segmented-control card in
+  `/tech/settings` (reuses `tech-settings-seg` classes, **zero new CSS**), dropped into the slot that
+  `TechSettings.jsx` had reserved.
+- **Locales:** `src/i18n/locales/{en,pt,es}/{common,nav,more,settings}.json`. EN is the source of truth;
+  **each translation batch ships all three languages** (a committed parity test fails on a missing/extra key).
+  Embedded bold uses named `<b>` tags rendered via react-i18next `<Trans components={{ b: … }}>`.
+- **Pilot scope translated (Phase 0):** the always-visible chrome — `TechLayout` bottom-nav labels +
+  install banner, all of `TechMore`, and the full `/tech/settings` screen (Appearance + Language +
+  Notifications cards). Everything else is still English (safe via fallback) until later screen batches.
+- **PT/ES are Claude drafts pending a native-speaker review pass** (industry terms like Claims→Sinistros/Reclamos).
+- **Tests:** `src/i18n/langPrefs.test.js` (pure helpers), `src/i18n/i18n.test.js` (t()/interpolation/fallback/parity),
+  `src/components/tech/settings/settingsCards.render.test.jsx` (renderToStaticMarkup smoke — real cards render
+  translated in all 3 langs).
+- **Roadmap:** later batches translate the daily-driver screens (Dash, Schedule, Tasks, Appointment, Claims)
+  then the long tail. Office/desktop app is intentionally out of scope (English).
+
+---
+
 ## Esign System (recon_agreement added Apr 16 2026)
 - **Flow:** SendEsignModal → `/api/send-esign` → `sign_request` row → email via Resend (functions/lib/email.js)
 - **Sign page:** `/sign/:token` — public, no auth — type (cursive/Dancing Script) or draw (canvas)

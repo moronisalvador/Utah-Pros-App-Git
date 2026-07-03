@@ -13,7 +13,7 @@
  *   Rendered by:  src/pages/tech/TechSettings.jsx
  *
  * DEPENDS ON:
- *   Packages:  react
+ *   Packages:  react-i18next
  *   Internal:  @/contexts/ThemeContext (useTheme)
  *   Data:      none (theme lives in localStorage via ThemeContext)
  *
@@ -22,28 +22,33 @@
  *     have light-colored spots that a later polish pass converts to tokens.
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '@/contexts/ThemeContext';
 
-const OPTIONS = [
-  { key: 'system', label: 'System', sub: 'Match my phone' },
-  { key: 'light', label: 'Light', sub: null },
-  { key: 'dark', label: 'Dark', sub: null },
-];
-
 export default function AppearanceSection() {
+  const { t } = useTranslation('settings');
   const { mode, effective, setMode } = useTheme();
+
+  const options = [
+    { key: 'system', label: t('appearance.optSystem'), sub: t('appearance.optSystemSub') },
+    { key: 'light', label: t('appearance.optLight'), sub: null },
+    { key: 'dark', label: t('appearance.optDark'), sub: null },
+  ];
+  // The sentence agrees with the noun "look/aparência/apariencia", so the word is
+  // its own key (feminine in pt/es) rather than reusing the button label.
+  const lookWord = effective === 'dark' ? t('appearance.lookDark') : t('appearance.lookLight');
 
   return (
     <div className="tech-settings-card">
       <div className="tech-settings-card-head">
-        <div className="tech-settings-card-title">Appearance</div>
+        <div className="tech-settings-card-title">{t('appearance.title')}</div>
         <div className="tech-settings-card-sub">
-          Currently showing the {effective} look.
+          {t('appearance.current', { look: lookWord })}
         </div>
       </div>
 
-      <div className="tech-settings-seg" role="radiogroup" aria-label="Theme">
-        {OPTIONS.map((opt) => (
+      <div className="tech-settings-seg" role="radiogroup" aria-label={t('appearance.title')}>
+        {options.map((opt) => (
           <button
             key={opt.key}
             type="button"
