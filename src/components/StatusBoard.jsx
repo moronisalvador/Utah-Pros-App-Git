@@ -35,11 +35,13 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { liveClockMinutes, fmtMins } from '@/lib/clockTime';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 const ADMIN_ROLES = ['admin', 'office', 'project_manager', 'supervisor'];
+const tnum = { fontVariantNumeric: 'tabular-nums' };
 
 // Status → colors. Uses existing --status-* tokens where defined; falls back to inline hex.
 const STATUS_META = {
@@ -53,17 +55,6 @@ const STATUS_META = {
 const FILTER_ORDER = ['omw', 'on_site', 'paused', 'scheduled', 'idle'];
 
 // ─── SECTION: Helpers ──────────────
-function fmtDuration(sinceIso) {
-  if (!sinceIso) return '—';
-  const ms = Date.now() - new Date(sinceIso).getTime();
-  if (ms < 0) return '—';
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
 function fmtAppt(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -216,9 +207,10 @@ export default function StatusBoard() {
     );
   }
 
+  const now = Date.now();
   const cols = isAdmin
-    ? '1.4fr 104px 1.7fr 1.7fr 78px 116px 200px'
-    : '1.5fr 110px 2fr 2fr 90px 130px';
+    ? '1.3fr 92px 1.4fr 1.4fr 64px 64px 70px 104px 188px'
+    : '1.4fr 100px 1.6fr 1.6fr 66px 66px 74px 118px';
 
   // ─── SECTION: Render ──────────────
   return (
@@ -267,7 +259,9 @@ export default function StatusBoard() {
           <div>Status</div>
           <div>Job / Client</div>
           <div>Address</div>
-          <div>Duration</div>
+          <div style={{ textAlign: 'right' }}>Travel</div>
+          <div style={{ textAlign: 'right' }}>On site</div>
+          <div style={{ textAlign: 'right' }}>Total</div>
           <div>Next appt</div>
           {isAdmin && <div style={{ textAlign: 'right' }}>Actions</div>}
         </div>
@@ -282,6 +276,7 @@ export default function StatusBoard() {
           const meta = STATUS_META[r.status] || STATUS_META.idle;
           const isLast = i === visibleRows.length - 1;
           const open = openClocks[r.employee_id];
+          const t = r.travel_start ? liveClockMinutes(r, now) : null;
           return (
             <div key={r.employee_id} style={{
               display: 'grid', gridTemplateColumns: cols, alignItems: 'center', padding: '12px 16px',
@@ -325,8 +320,10 @@ export default function StatusBoard() {
                 ) : (<span style={{ color: 'var(--text-tertiary)' }}>—</span>)}
               </div>
 
-              {/* Duration */}
-              <div style={{ color: 'var(--text-secondary)' }}>{fmtDuration(r.status_since)}</div>
+              {/* Travel / On site / Total (Total = travel + on-site = real labor cost) */}
+              <div style={{ textAlign: 'right', color: 'var(--text-secondary)', ...tnum }}>{t ? fmtMins(t.travel) : '—'}</div>
+              <div style={{ textAlign: 'right', color: 'var(--text-secondary)', ...tnum }}>{t && r.clock_in ? fmtMins(t.onSite) : '—'}</div>
+              <div style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)', ...tnum }}>{t ? fmtMins(t.total) : '—'}</div>
 
               {/* Next appt */}
               <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
