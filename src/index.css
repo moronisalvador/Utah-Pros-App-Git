@@ -5510,6 +5510,17 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .tv2-timeline__block-time { font-size: 11px; font-weight: 600; opacity: 0.85; }
 .tv2-timeline__now { position: absolute; left: 0; right: 0; height: 0; z-index: 3; pointer-events: none; }
+.tv2-timeline__now-label {
+  position: absolute;
+  left: 0;
+  top: -7px;
+  width: calc(var(--tv2-tl-gutter) - 8px);
+  text-align: right;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--status-needs-response);
+  background: var(--bg-secondary);
+}
 .tv2-timeline__now-dot {
   position: absolute;
   left: calc(var(--tv2-tl-gutter) - 5px);

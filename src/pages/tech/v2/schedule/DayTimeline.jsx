@@ -32,8 +32,8 @@ import { useNavigate } from 'react-router-dom';
 import { apptHref } from '@/components/tech/v2';
 import { minutesOfDay, fmtTime, fmtTimeRange, statusVar, isEvent, divisionMeta } from './scheduleFormat.js';
 
-const HOUR_PX = 58;
-const MIN_BLOCK_PX = 40;
+const HOUR_PX = 80; // taller rows so a 30-min block fits its slot without spilling
+const MIN_BLOCK_PX = 34;
 
 function nowMinutes() {
   const d = new Date();
@@ -190,6 +190,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
 
         {showNow && (
           <div className="tv2-timeline__now" style={{ top: nowTop }} aria-label={`Now ${fmtTime(`${Math.floor(now / 60)}:${now % 60}`)}`}>
+            <span className="tv2-timeline__now-label">{fmtTime(`${Math.floor(now / 60)}:${String(now % 60).padStart(2, '0')}`)}</span>
             <span className="tv2-timeline__now-dot" />
             <span className="tv2-timeline__now-line" />
           </div>

@@ -81,6 +81,10 @@ export default function AgendaView({
   const savedHeightRef = useRef(0);
   const loadingPastRef = useRef(false);
   const lastVisibleDayRef = useRef(selectedDay);
+  // The strip follows the agenda only after a REAL user scroll — never on the
+  // programmatic first-paint anchor (which would otherwise drift the selected day
+  // to the nearest past section and leak into the Day view).
+  const userScrolledRef = useRef(false);
 
   const scrollToDate = useCallback((dateStr, behavior = 'auto') => {
     const scroller = scrollerRef.current;
@@ -163,7 +167,7 @@ export default function AgendaView({
       if (el.getBoundingClientRect().top - scRect.top <= 8) topDay = d;
       else break;
     }
-    if (topDay && topDay !== lastVisibleDayRef.current) {
+    if (userScrolledRef.current && topDay && topDay !== lastVisibleDayRef.current) {
       lastVisibleDayRef.current = topDay;
       onVisibleDayChange?.(topDay);
     }
@@ -188,12 +192,21 @@ export default function AgendaView({
   }, [handleScroll]);
 
   // Attach the scroll listener to our scroll container (shared with the pane host).
+  // A real scroll gesture (touch/wheel) flips userScrolledRef so the strip starts
+  // following the agenda — the programmatic anchor never trips these.
   useEffect(() => {
     const scroller = scrollerRef.current || (rootRef.current && getScroller(rootRef.current));
     if (!scroller) return undefined;
     scrollerRef.current = scroller;
+    const markUser = () => { userScrolledRef.current = true; };
     scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
+    scroller.addEventListener('touchmove', markUser, { passive: true });
+    scroller.addEventListener('wheel', markUser, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      scroller.removeEventListener('touchmove', markUser);
+      scroller.removeEventListener('wheel', markUser);
+    };
   }, [onScroll]);
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
