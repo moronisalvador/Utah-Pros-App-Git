@@ -4544,6 +4544,18 @@ great for iPad") alongside Week (daily driver, "pretty much perfect as is") and 
 span" item above; `docs/schedule-roadmap.md` carries the same dated amendment. Session B of the
 Schedule initiative must scope its viewMode-axis collapse to Jobs/Crew grids only.
 
+**⚠️ Second amendment round (2026-07-03, owner conversation — this session):** ① Session C
+rescoped from "Month parity, visuals identical" to **"Month upgraded to Week's design SYSTEM at
+month DENSITY"** — miniature single-line eventCardStyle chips (soft-tint + left accent, replacing
+the solid divColor blocks), Week's event/completed/status semantics, Week's hover popover; Week's
+full card geometry explicitly NOT transplanted (month cells ~90px — density is the acceptance
+bar). Owner delegated the design specifics to planner judgment ("do what's really best for the
+monthly view"); the trade-off is in the roadmap's options-on-record. ② Week view: zero changes in
+any phase, byte-identical. ③ **Mobile declared an explicit non-goal** for the desktop schedule
+page (roadmap decision ⑨) — the tech app owns mobile scheduling and is untouched. ④ The stale
+in-place "3-Day gone" text in the roadmap/dispatch Session B blocks was fixed to match the first
+amendment. `docs/schedule-roadmap.md` + `docs/schedule-dispatch.md` are authoritative.
+
 ## Notification Center — plan of record (session 2026-07-03, docs only — no feature code)
 
 **What this session shipped** (committed straight to `dev`): `docs/notify-roadmap.md` (the
