@@ -4602,6 +4602,18 @@ page (roadmap decision ⑨) — the tech app owns mobile scheduling and is untou
 in-place "3-Day gone" text in the roadmap/dispatch Session B blocks was fixed to match the first
 amendment. `docs/schedule-roadmap.md` + `docs/schedule-dispatch.md` are authoritative.
 
+**⚠️ Third amendment round (2026-07-03, owner — this session): DEACTIVATE, don't delete.** The
+Jobs view, Crew view, AND the Templates/Wizard subsystem are **deactivated (hidden from the UI,
+all code + route + tables + RPCs retained dormant)** — "deactivate them for a while until we start
+developing those again." **Calendar becomes the only active schedule view**; Templates/Wizard is
+kept as the future-Gantt groundwork. Session B is rescoped from removal to reversible deactivation
+(hide from view toggle / nav / entry points; grid code + ScheduleTemplates.jsx + ScheduleWizard.jsx
+stay). **iPhone now defaults to the Calendar view** (guaranteed — Calendar is the only viewMode;
+Day span on phones, matching the mobile app), which also auto-fixes the F3 stale-localStorage bug;
+**desktop is unchanged (Calendar + Week default)**. Consequence: draft PR #102 downgrades from hard
+gate to soft coordination (B no longer deletes a file #102 edits). `docs/schedule-roadmap.md` +
+`docs/schedule-dispatch.md` are authoritative.
+
 ## Notification Center — plan of record (session 2026-07-03, docs only — no feature code)
 
 **What this session shipped** (committed straight to `dev`): `docs/notify-roadmap.md` (the
