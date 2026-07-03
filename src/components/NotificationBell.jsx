@@ -29,8 +29,10 @@
  *     table; a 60s poll is the fallback if the socket drops. A row targeted at a
  *     DIFFERENT employee is ignored (no count bump, no toast) — realtime delivers
  *     every insert, so the client filters. Broadcast/own rows fire a `upr:toast`.
- *   - `size` sizes the button (office defaults to 36; the tech shell passes a
- *     larger value to meet the 48px field touch target).
+ *   - `triggerClassName` styles the trigger button with a host's own class (the
+ *     tech dashboard passes `tv2-dash-header__icon-btn` so the bell matches the
+ *     Help/menu buttons sitting beside it). Omit it and the office inline style
+ *     (36px, transparent) is used.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -60,7 +62,7 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function NotificationBell({ align = 'left', size = 36 }) {
+export default function NotificationBell({ align = 'left', triggerClassName }) {
   const { db, employee } = useAuth();
   const navigate = useNavigate();
   const dbRef = useRef(db);
@@ -144,14 +146,18 @@ export default function NotificationBell({ align = 'left', size = 36 }) {
         onClick={toggle}
         title="Notifications"
         aria-label="Notifications"
-        style={{
-          position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: size, height: size, borderRadius: 'var(--radius-md)', border: 'none',
-          background: open ? 'var(--bg-tertiary)' : 'transparent', color: 'var(--text-secondary)',
-          cursor: 'pointer',
-        }}
+        className={triggerClassName || undefined}
+        data-active={triggerClassName ? (open ? 'true' : undefined) : undefined}
+        style={triggerClassName
+          ? { position: 'relative' }
+          : {
+              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 36, height: 36, borderRadius: 'var(--radius-md)', border: 'none',
+              background: open ? 'var(--bg-tertiary)' : 'transparent', color: 'var(--text-secondary)',
+              cursor: 'pointer',
+            }}
       >
-        <IconBell style={{ width: Math.round(size * 0.53), height: Math.round(size * 0.53) }} />
+        <IconBell style={{ width: triggerClassName ? 20 : 19, height: triggerClassName ? 20 : 19 }} />
         {unread > 0 && (
           <span style={{
             position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px',
