@@ -97,7 +97,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Load feature flags ──
-  const loadFeatureFlags = async (dbClient = db, emp = employee) => {
+  // emp defaults to null (not the `employee` state) so this stays non-reactive —
+  // both callers pass the freshly-fetched employee explicitly. Closing over
+  // `employee` here would force every caller's hook to list it as a dependency.
+  const loadFeatureFlags = async (dbClient = db, emp = null) => {
     try {
       const rows = await dbClient.rpc('get_feature_flags');
       // Convert array → keyed object for O(1) lookups: { 'page:marketing': { enabled, dev_only_user_id, ... } }
