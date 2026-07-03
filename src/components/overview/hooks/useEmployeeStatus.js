@@ -5,12 +5,14 @@
  *   (green clocked-in / gray off / red likely-forgot-to-clock-out ≥10h), pins
  *   clocked-in techs on top, and surfaces each tech's full name + client + job
  *   address (so the owner sees who is working where, for whom). Carries jobId so
- *   rows deep-link to /jobs/:id. Elapsed is recomputed each poll (no ticker needed).
+ *   rows deep-link to /jobs/:id. Elapsed shown is the FULL time on the job so far
+ *   (travel + on-site — travel is real labor cost), recomputed each poll.
  * ════════════════════════════════════════════════
  */
 import { useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePolledRpc } from './usePolledRpc';
+import { liveClockMinutes } from '@/lib/clockTime';
 
 const ACTIVE = new Set(['on_site', 'omw', 'paused']);
 const FORGOT_CLOCKOUT_MIN = 10 * 60; // ≥10h on the clock ⇒ probably forgot to clock out
@@ -32,7 +34,8 @@ function mapRow(r, now) {
   if (!active) {
     return { jobId: null, name, dot: 'gray', client: '', job: '', address: '', detail: 'Not on a job', elapsed: '—', status: 'Not clocked in', statusKind: 'muted', _sort: 1 };
   }
-  const elapsedMin = r.status_since ? Math.max(0, (now - new Date(r.status_since).getTime()) / 60000) : null;
+  // Full time on the job so far = travel + on-site (travel is real labor cost).
+  const elapsedMin = liveClockMinutes(r, now).total;
   const base = {
     jobId: r.job_id || null, name,
     client: r.client_name || '', job: r.job_number || '', address: r.address || '',
