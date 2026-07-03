@@ -22,7 +22,9 @@
  * NOTES / GOTCHAS:
  *   - PersistQueryClientProvider sits ABOVE the router/auth (both inside <App/>), so
  *     the whole tech tree shares one QueryClient + its on-device cache.
- *   - Service worker registration is intentionally DISABLED (kill-switch only).
+ *   - Service worker registration is flag-gated by feature:web_push (read from a
+ *     localStorage mirror pre-auth): ON registers the push-only /sw.js; OFF runs
+ *     the original kill-switch (unregister + cache wipe + /reset bounce) verbatim.
  *   - BUILD_ID doubles as the persist-cache buster — a new bundle drops a stale shape.
  * ════════════════════════════════════════════════
  */
@@ -34,13 +36,14 @@ import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { buildResetUrl } from './lib/staleChunkReload.js';
 import { techQueryClient } from './lib/techQuery.js';
 import { techQueryPersister } from './lib/techQueryPersister.js';
+import { isWebPushEnabled, registerPushServiceWorker } from './lib/registerSW.js';
 import './index.css';
 
 // Bumped to force a new bundle hash when the Cloudflare edge cached a
 // broken response (text/html instead of application/javascript) for an
 // immutable /assets/*.js URL. Any time you suspect edge poisoning again,
 // changing this literal is the cheapest way to invalidate.
-const BUILD_ID = '2026-07-01-crm-chunk-loop-fix';
+const BUILD_ID = '2026-07-03-web-push-f1';
 
 // Notify Capgo that the app booted successfully so a bad OTA bundle isn't
 // auto-rolled-back. Defensive try/catch: a top-level module throw here would
@@ -77,39 +80,49 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 );
 
-// Service worker registration is DISABLED (Apr 18 2026) until we redesign
-// the caching strategy to avoid the /assets/* MIME-mismatch trap that
-// blanked iOS Safari. /sw.js is still served (as a kill-switch no-op) so
-// any already-installed client receives it and unregisters itself.
-//
-// When we re-enable caching, register BELOW a navigator.serviceWorker check
-// AND verify the installed SW version before trusting it.
+// Service worker policy is now flag-gated (Notification Center, Phase F1).
+//   feature:web_push ON  → register the PUSH-ONLY /sw.js (push + notificationclick
+//                          handlers, NO fetch caching — the MIME/blank-page trap
+//                          cannot re-form without a caching fetch handler).
+//   feature:web_push OFF → the original kill-switch, VERBATIM: unregister every
+//                          SW, wipe caches, and /reset-bounce once so no client is
+//                          left serving stale index.html-as-JS.
+// The flag loads only after sign-in, so this pre-auth path reads a localStorage
+// mirror AuthContext writes when flags load (one-page-load lag accepted, safe
+// both directions). Absent mirror = OFF = kill-switch preserved.
 if ('serviceWorker' in navigator) {
-  // Proactively unregister any SW clinging on from an older deploy, and wipe its
-  // caches so the browser isn't served stale index.html-as-JS. If a registration
-  // ACTUALLY existed, bounce ONCE through /reset (Clear-Site-Data: "cache") so this
-  // client also drops its poisoned HTTP-cached assets and lands fully fresh — no
-  // user action. Guarded by a once-per-session flag so it can't loop.
-  const resetOnce = () => {
-    if (sessionStorage.getItem('swReset')) return;
-    sessionStorage.setItem('swReset', '1');
-    window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
-  };
-  navigator.serviceWorker.getRegistrations()
-    .then((regs) => {
-      const had = regs.length > 0;
-      return Promise.all(regs.map((r) => r.unregister().catch(() => {}))).then(() => had);
-    })
-    .then((had) => { if (had) resetOnce(); })
-    .catch(() => {});
-  if (typeof caches !== 'undefined' && caches.keys) {
-    caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => caches.delete(k).catch(() => {}))))
+  if (isWebPushEnabled()) {
+    // Fire-and-forget: SW registration must never block or blank the app.
+    registerPushServiceWorker();
+  } else {
+    // ── Kill-switch (flag OFF) — preserved byte-for-byte from the Apr 18 2026
+    // fix. Proactively unregister any SW clinging on from an older deploy, and
+    // wipe its caches so the browser isn't served stale index.html-as-JS. If a
+    // registration ACTUALLY existed, bounce ONCE through /reset
+    // (Clear-Site-Data: "cache") so this client also drops its poisoned
+    // HTTP-cached assets and lands fully fresh — no user action. Guarded by a
+    // once-per-session flag so it can't loop.
+    const resetOnce = () => {
+      if (sessionStorage.getItem('swReset')) return;
+      sessionStorage.setItem('swReset', '1');
+      window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
+    };
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => {
+        const had = regs.length > 0;
+        return Promise.all(regs.map((r) => r.unregister().catch(() => {}))).then(() => had);
+      })
+      .then((had) => { if (had) resetOnce(); })
       .catch(() => {});
+    if (typeof caches !== 'undefined' && caches.keys) {
+      caches.keys()
+        .then((keys) => Promise.all(keys.map((k) => caches.delete(k).catch(() => {}))))
+        .catch(() => {});
+    }
+    // Second path: the kill-switch SW postMessages after cleanup, in case
+    // navigate() is a no-op in some browsers. Same once-guard.
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e && e.data && e.data.type === 'upr-reset') resetOnce();
+    });
   }
-  // Second path: the kill-switch SW postMessages after cleanup, in case navigate()
-  // is a no-op in some browsers. Same once-guard.
-  navigator.serviceWorker.addEventListener('message', (e) => {
-    if (e && e.data && e.data.type === 'upr-reset') resetOnce();
-  });
 }

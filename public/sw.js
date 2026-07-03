@@ -1,46 +1,78 @@
-// KILL-SWITCH SERVICE WORKER (Apr 18 2026)
+// ════════════════════════════════════════════════
+// SERVICE WORKER — Web Push ONLY (Notification Center, Phase F1)
+// ════════════════════════════════════════════════
 //
-// The previous SW (upr-v2 and earlier) did CacheFirst on /assets/*.js. When
-// Cloudflare's edge cached index.html with Content-Type: text/html under a
-// hashed JS URL (SPA fallback race), the SW served that poisoned response
-// forever. iOS Safari strictly refuses text/html for <script type="module">,
-// so affected users got a blank page with no way out — the old SW kept
-// intercepting the request and serving the bad body.
+// WHAT THIS DOES (plain language):
+//   This tiny background script lets a closed browser tab / installed PWA
+//   receive push notifications (the buzz on a locked iPhone home screen). It
+//   does exactly TWO things: show a notification when a push arrives, and open
+//   the right screen when the user taps it.
 //
-// This version replaces the old SW with a no-op that:
-//   1. on install: skipWaiting so the browser picks it up immediately
-//   2. on activate: deletes every cache, claims all clients, unregisters
-//      itself, and forces each open window to navigate(url) to refetch
-//      everything fresh from the network (no SW in the path anymore)
-//   3. on fetch: passes every request through unchanged (no caching)
+// WHY THERE IS NO `fetch` HANDLER (load-bearing — do not add one):
+//   The April-2026 blank-page incident was caused by a PREVIOUS service worker
+//   that CACHED responses on `fetch`. When Cloudflare's edge briefly served
+//   index.html (text/html) under a hashed /assets/*.js URL, that SW cached the
+//   poisoned response and served it forever — iOS Safari refuses text/html for
+//   <script type="module">, so users got a permanent blank page. A push-only
+//   SW with NO fetch handler CANNOT re-create that trap: it never intercepts,
+//   caches, or rewrites a single network response. Keep it that way.
 //
-// Combined with main.jsx no longer registering a SW, this returns the app
-// to a plain network-first PWA until we add back a safer caching strategy
-// that avoids the hashed-asset/HTML MIME trap.
+// Registration is gated by the `feature:web_push` flag in src/main.jsx; when the
+// flag is OFF, main.jsx runs the original kill-switch (unregister + cache wipe).
+// ════════════════════════════════════════════════
 
+// Take control ASAP so a freshly enabled push subscription works without a reload.
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    try {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch (err) { /* best-effort */ }
-    try { await self.clients.claim(); } catch (err) { /* ignore */ }
-    try { await self.registration.unregister(); } catch (err) { /* ignore */ }
-    try {
-      const clients = await self.clients.matchAll({ type: 'window' });
-      for (const c of clients) {
-        // postMessage as a belt-and-suspenders in case navigate() is a no-op
-        // (main.jsx listens and bounces through /reset); then force the reload.
-        try { c.postMessage({ type: 'upr-reset' }); } catch (err) { /* ignore */ }
-        try { await c.navigate(c.url); } catch (err) { /* ignore */ }
-      }
-    } catch (err) { /* ignore */ }
-  })());
+  event.waitUntil(self.clients.claim());
 });
 
-// Pass-through: do not intercept any request. The browser handles it directly.
-self.addEventListener('fetch', () => { /* intentionally no respondWith */ });
+// ─── Push received → show a notification ───
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    // Non-JSON payload — fall back to raw text as the body.
+    try { payload = { body: event.data ? event.data.text() : '' }; } catch { payload = {}; }
+  }
+
+  const title = payload.title || 'Utah Pros';
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/icon-192.svg',
+    badge: payload.badge || '/icon-192.svg',
+    tag: payload.tag || undefined,          // same tag replaces an existing toast
+    data: {
+      url: payload.url || (payload.data && payload.data.url) || '/',
+      ...(payload.data || {}),
+    },
+    requireInteraction: !!payload.requireInteraction,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ─── Notification tapped → focus an open tab or open the target URL ───
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil((async () => {
+    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // Prefer an already-open window — navigate + focus it rather than spawning a new one.
+    for (const client of clientList) {
+      if ('focus' in client) {
+        try {
+          if ('navigate' in client && target) await client.navigate(target);
+        } catch { /* cross-origin or blocked navigate — just focus */ }
+        return client.focus();
+      }
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(target);
+    return undefined;
+  })());
+});

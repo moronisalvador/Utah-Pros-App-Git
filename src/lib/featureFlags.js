@@ -58,6 +58,18 @@ const EXPLICIT_FLAGS = [
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',
   },
+  // ── Notification Center — Web Push (Phase F1) ────────────────────────────────
+  // enabled:false is LOAD-BEARING. DevTools auto-seeds any missing registry key
+  // ENABLED; without the explicit false this would seed ON and register the push
+  // service worker for everyone. The live row is also seeded enabled:false +
+  // dev_only_user_id (owner) so push is owner-only until the F1 owner gate passes
+  // (VAPID env set + a real push confirmed on the owner's iPhone PWA + desktop).
+  {
+    key: 'feature:web_push',
+    label: 'Web Push Notifications',
+    description: 'Browser/PWA push notifications (installed iPhone home screen + desktop). Gates the push service worker + the "Enable push on this device" control. Owner-only during the Notification Center rollout.',
+    enabled: false,
+  },
   // ── Tech Mobile v2 rollout flags (Phase F) ───────────────────────────────────
   // enabled:false is LOAD-BEARING here. The DevTools auto-seed creates any missing
   // registry key ENABLED; without the explicit false these would seed ON and swap

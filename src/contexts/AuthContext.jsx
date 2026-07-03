@@ -3,8 +3,23 @@ import { realtimeClient } from '@/lib/realtime';
 import { createSupabaseClient, db } from '@/lib/supabase';
 import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotifications';
 import { setBiometricEnabled } from '@/lib/nativeBiometric';
+import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
 
 const AuthContext = createContext(null);
+
+// Mirror the effective `feature:web_push` state into localStorage so main.jsx —
+// which runs BEFORE auth/flags load — can decide at the next page-load whether to
+// register the push service worker. Uses the SAME enabled/dev-only resolution as
+// isFeatureEnabled so the worker registration always tracks what the UI gates on.
+// A missing flag row = OFF here (deliberately stricter than isFeatureEnabled's
+// "missing = unrestricted": we never want to register the SW for everyone by
+// accident — the flag is seeded explicitly OFF).
+function writeWebPushMirror(flag, emp) {
+  try {
+    const on = !!flag && (flag.enabled || (emp && flag.dev_only_user_id === emp.id));
+    localStorage.setItem(WEB_PUSH_FLAG_MIRROR_KEY, on ? '1' : '0');
+  } catch { /* storage blocked — main.jsx defaults to OFF */ }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);        // Supabase auth user
@@ -82,13 +97,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Load feature flags ──
-  const loadFeatureFlags = async (dbClient = db) => {
+  const loadFeatureFlags = async (dbClient = db, emp = employee) => {
     try {
       const rows = await dbClient.rpc('get_feature_flags');
       // Convert array → keyed object for O(1) lookups: { 'page:marketing': { enabled, dev_only_user_id, ... } }
       const flagMap = {};
       (rows || []).forEach(f => { flagMap[f.key] = f; });
       setFeatureFlags(flagMap);
+      // Mirror feature:web_push into localStorage so main.jsx (which runs BEFORE
+      // auth/flags load) can decide at next page-load whether to register the
+      // push service worker. One-load lag is accepted. Mirror the SAME
+      // enabled/dev-only logic isFeatureEnabled uses so the SW matches the UI.
+      writeWebPushMirror(flagMap['feature:web_push'], emp);
     } catch (err) {
       console.error('Feature flags load error:', err);
       setFeatureFlags({}); // Fail open — no flags = everything unrestricted
@@ -128,7 +148,7 @@ export function AuthProvider({ children }) {
         // Load permissions, feature flags, and page access overrides in parallel
         await Promise.all([
           loadPermissions(employees[0].role, authenticatedDb),
-          loadFeatureFlags(authenticatedDb),
+          loadFeatureFlags(authenticatedDb, employees[0]),
           loadEmployeePageAccess(employees[0].id, authenticatedDb),
         ]);
         // Register for push on native (silent no-op on web).
@@ -215,7 +235,7 @@ export function AuthProvider({ children }) {
       setAuthDb(createSupabaseClient()); // Uses anon key in dev
       await Promise.all([
         loadPermissions(emp.role),
-        loadFeatureFlags(),
+        loadFeatureFlags(db, emp),
         loadEmployeePageAccess(emp.id),
       ]);
     } catch (err) {
