@@ -33,7 +33,7 @@ const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon-test-key
 // Fake supabase client: canned feedback row + submitter name.
 function makeDb({ feedback, submitter } = {}) {
   return {
-    async select(table, query = '') {
+    async select(table) {
       if (table === 'tech_feedback') return feedback ? [feedback] : [];
       if (table === 'employees') return submitter ? [submitter] : [];
       return [];

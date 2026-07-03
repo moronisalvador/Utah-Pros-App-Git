@@ -21,12 +21,16 @@
  *              writes → notifications (via mark_notification_read / mark_all_notifications_read RPCs)
  *
  * NOTES / GOTCHAS:
- *   - The feed is ORG-WIDE and shares one read state — if one person marks an alert
- *     read, it's read for everyone. Intentional for a small office; revisit with a
- *     per-user read table if that ever becomes a problem.
+ *   - The feed is PER-RECIPIENT since F2: the bell passes the current employee id
+ *     to the RPCs, so each person sees broadcast rows (recipient_id IS NULL) plus
+ *     the rows aimed at them, with their own read state. A NULL employee id (not
+ *     yet loaded) sees broadcast-only.
  *   - Live updates come from a Supabase realtime subscription on the notifications
- *     table; a 60s poll is the fallback if the socket drops. Both paths refresh the
- *     unread count, and a new insert also fires a `upr:toast` (the "live toast").
+ *     table; a 60s poll is the fallback if the socket drops. A row targeted at a
+ *     DIFFERENT employee is ignored (no count bump, no toast) — realtime delivers
+ *     every insert, so the client filters. Broadcast/own rows fire a `upr:toast`.
+ *   - `size` sizes the button (office defaults to 36; the tech shell passes a
+ *     larger value to meet the 48px field touch target).
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -56,11 +60,13 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function NotificationBell({ align = 'left' }) {
-  const { db } = useAuth();
+export default function NotificationBell({ align = 'left', size = 36 }) {
+  const { db, employee } = useAuth();
   const navigate = useNavigate();
   const dbRef = useRef(db);
   dbRef.current = db; // always call through the latest db client (survives token refresh)
+  const empRef = useRef(employee?.id);
+  empRef.current = employee?.id; // latest recipient id for callbacks (survives reloads)
 
   // ─── SECTION: State & hooks ───
   const [open, setOpen] = useState(false);
@@ -70,7 +76,7 @@ export default function NotificationBell({ align = 'left' }) {
 
   const loadCount = useCallback(async () => {
     try {
-      const n = await dbRef.current.rpc('get_unread_notification_count');
+      const n = await dbRef.current.rpc('get_unread_notification_count', { p_employee_id: empRef.current });
       setUnread(typeof n === 'number' ? n : (Array.isArray(n) ? n[0] : 0) || 0);
     } catch { /* non-fatal — bell just won't show a count */ }
   }, []);
@@ -78,23 +84,25 @@ export default function NotificationBell({ align = 'left' }) {
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await dbRef.current.rpc('get_notifications', { p_limit: 30 });
+      const rows = await dbRef.current.rpc('get_notifications', { p_limit: 30, p_employee_id: empRef.current });
       setItems(rows || []);
     } catch { setItems([]); }
     finally { setLoading(false); }
   }, []);
 
-  // Initial count + 60s poll fallback
+  // Initial count + 60s poll fallback (re-runs once the employee id arrives)
   useEffect(() => {
     loadCount();
     const t = setInterval(loadCount, 60000);
     return () => clearInterval(t);
-  }, [loadCount]);
+  }, [loadCount, employee?.id]);
 
-  // Realtime: bump count, refresh the open list, and fire a live toast
+  // Realtime: bump count, refresh the open list, and fire a live toast — but
+  // ignore rows targeted at a different employee (realtime delivers every insert).
   useEffect(() => {
     const unsub = subscribeToNotifications((payload) => {
       const row = payload?.new;
+      if (row && row.recipient_id && row.recipient_id !== empRef.current) return;
       loadCount();
       setOpen((isOpen) => { if (isOpen) loadList(); return isOpen; });
       if (row) {
@@ -126,7 +134,7 @@ export default function NotificationBell({ align = 'left' }) {
   const markAll = async () => {
     setUnread(0);
     setItems((prev) => prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() })));
-    try { await dbRef.current.rpc('mark_all_notifications_read'); } catch { /* non-fatal */ }
+    try { await dbRef.current.rpc('mark_all_notifications_read', { p_employee_id: empRef.current }); } catch { /* non-fatal */ }
   };
 
   // ─── SECTION: Render ───
@@ -138,12 +146,12 @@ export default function NotificationBell({ align = 'left' }) {
         aria-label="Notifications"
         style={{
           position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 36, height: 36, borderRadius: 'var(--radius-md)', border: 'none',
+          width: size, height: size, borderRadius: 'var(--radius-md)', border: 'none',
           background: open ? 'var(--bg-tertiary)' : 'transparent', color: 'var(--text-secondary)',
           cursor: 'pointer',
         }}
       >
-        <IconBell style={{ width: 19, height: 19 }} />
+        <IconBell style={{ width: Math.round(size * 0.53), height: Math.round(size * 0.53) }} />
         {unread > 0 && (
           <span style={{
             position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16, padding: '0 4px',
