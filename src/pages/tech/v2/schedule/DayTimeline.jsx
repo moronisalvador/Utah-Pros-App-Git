@@ -27,7 +27,7 @@
  *     grid rather than being dropped.
  * ════════════════════════════════════════════════
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apptHref } from '@/components/tech/v2';
 import { minutesOfDay, fmtTime, fmtTimeRange, statusVar, isEvent, divisionMeta } from './scheduleFormat.js';
@@ -38,6 +38,19 @@ const MIN_BLOCK_PX = 34;
 function nowMinutes() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
+}
+
+// Our own scroll container (the pane host), or the nearest scrollable ancestor.
+function getScroller(el) {
+  const pane = el.closest('.tv2-pane-scroll');
+  if (pane) return pane;
+  let node = el.parentElement;
+  while (node) {
+    const oy = window.getComputedStyle(node).overflowY;
+    if (oy === 'auto' || oy === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
 }
 
 // Greedy lane packing: overlapping blocks get side-by-side columns.
@@ -84,6 +97,8 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
   const navigate = useNavigate();
   const [now, setNow] = useState(nowMinutes);
   const isToday = selectedDay === today;
+  const rootRef = useRef(null);
+  const gridRef = useRef(null);
 
   // Tick the now-line each minute — only while the pane is active.
   useEffect(() => {
@@ -124,8 +139,31 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
   const nowTop = ((now - rangeStart) / 60) * HOUR_PX;
   const showNow = isToday && now >= rangeStart && now <= endHour * 60;
 
+  // Open the day parked at a sensible spot instead of wherever the shared pane
+  // scroll last was (which is why the day used to open at the bottom): the current
+  // time for today, else the first appointment, else the top. Runs before paint on
+  // entry (mount) and on day change — NOT on the minute tick (would yank scroll).
+  useLayoutEffect(() => {
+    if (!active) return;
+    const root = rootRef.current;
+    const grid = gridRef.current;
+    if (!root || !grid) return;
+    const scroller = getScroller(root);
+    if (!scroller) return;
+    // Scoped to our own pane (not a global querySelector) — measures the sticky
+    // header so the anchor lands just below it, not hidden underneath.
+    const header = scroller.querySelector('.tv2-sched-header');
+    const headerH = header ? header.offsetHeight : 0;
+    const scRect = scroller.getBoundingClientRect();
+    const gridDocTop = scroller.scrollTop + (grid.getBoundingClientRect().top - scRect.top);
+    const anchorMin = isToday ? nowMinutes() : (placed.length ? placed[0].start : rangeStart);
+    const px = ((anchorMin - rangeStart) / 60) * HOUR_PX;
+    scroller.scrollTop = Math.max(0, gridDocTop + Math.max(0, px) - headerH - 12);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDay, active]);
+
   return (
-    <div className="tv2-timeline">
+    <div className="tv2-timeline" ref={rootRef}>
       {untimed.length > 0 && (
         <div className="tv2-timeline__allday">
           <span className="tv2-timeline__allday-label">All day</span>
@@ -145,7 +183,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
         </div>
       )}
 
-      <div className="tv2-timeline__grid" style={{ height: gridHeight }}>
+      <div className="tv2-timeline__grid" style={{ height: gridHeight }} ref={gridRef}>
         {hours.map((h) => (
           <div key={h} className="tv2-timeline__hour" style={{ top: (h - startHour) * HOUR_PX }}>
             <span className="tv2-timeline__hour-label">
