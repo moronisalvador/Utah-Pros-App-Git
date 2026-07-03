@@ -4260,6 +4260,7 @@ tr:hover td { background: var(--bg-secondary); }
   --tech-min-tap: 48px;
   --tech-row-height: 56px;
   --tech-nav-height: 64px;
+  --tech-accent: #cbd5e1; /* neutral accent bar when an appointment has no color */
 
   /* Status palette */
   --status-scheduled-bg: #eff6ff;
@@ -5027,8 +5028,8 @@ tr:hover td { background: var(--bg-secondary); }
 /* Sticky header stays put on pull-to-refresh (it's OUTSIDE the scroll container). */
 .tv2-pane-header {
   flex: 0 0 auto;
-  background: #ffffff;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Status chip — status owns the color channel (read from 3 feet). */
@@ -5058,7 +5059,7 @@ tr:hover td { background: var(--bg-secondary); }
   gap: 12px;
   min-height: var(--tech-min-tap);
   padding: 12px 16px;
-  background: #ffffff;
+  background: var(--bg-primary);
   border-radius: var(--tech-radius-card);
   box-shadow: var(--tech-shadow-card);
   text-align: left;
@@ -5067,7 +5068,7 @@ tr:hover td { background: var(--bg-secondary); }
   cursor: pointer;
 }
 .tv2-appt-row:active { box-shadow: var(--tech-shadow-card-active); opacity: 0.85; }
-.tv2-appt-row__bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--tech-accent, #cbd5e1); }
+.tv2-appt-row__bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--tech-accent); }
 .tv2-appt-row__body { flex: 1; min-width: 0; }
 .tv2-appt-row__title { font-size: var(--tech-text-body); font-weight: 600; color: var(--text-primary); }
 .tv2-appt-row__meta { font-size: var(--tech-text-label); color: var(--text-secondary); margin-top: 2px; }

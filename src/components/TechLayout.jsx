@@ -1,3 +1,34 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechLayout.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The shell around every field-tech screen: the bottom tab bar, the offline
+ *   indicator, the install banner, and the toast pop-ups. It also hosts the Tech
+ *   Mobile v2 "panes" — the rebuilt dashboard and schedule stay alive in the
+ *   background (behind their feature flags) so switching tabs is instant and
+ *   nothing reloads; each other screen still renders in the normal spot.
+ *
+ * WHERE IT LIVES:
+ *   Route:        wraps all /tech/* routes
+ *   Rendered by:  src/App.jsx (TechRoutes → <TechLayout/> layout element)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
+ *              components/tech/v2 (TechPane, skeletons), pages/tech/v2 (TechDashV2,
+ *              TechScheduleV2 — lazy, flag-gated)
+ *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
+ *
+ * NOTES / GOTCHAS:
+ *   - Pane host: v2 panes render OUTSIDE the pathname-keyed <Outlet/> wrapper so
+ *     they never remount on navigation; hidden with display:none (transforms are
+ *     banned on WKWebView). Flags OFF → panes not mounted, behavior byte-identical.
+ *   - The keyed <Outlet/> replays the 0.2s fade on each route change and is not
+ *     rendered while a v2 pane covers the screen.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';

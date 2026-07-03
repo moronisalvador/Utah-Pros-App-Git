@@ -1,3 +1,31 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: main.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The app's entry point — the very first file the browser runs. It draws the
+ *   whole React app onto the page, wraps it so the tech screens can remember their
+ *   loaded data on the device (instant cold-open), tells the iOS updater the app
+ *   booted OK, and cleans up any leftover service worker from older builds.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (bootstrap)
+ *   Rendered by:  n/a — this is the root; it renders <App/>
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-dom, @tanstack/react-query-persist-client, @capgo/capacitor-updater
+ *   Internal:  App.jsx, lib/techQuery (shared QueryClient), lib/techQueryPersister
+ *              (idb cache), lib/staleChunkReload, index.css
+ *   Data:      none directly (the QueryClient's cache persists to IndexedDB, not Supabase)
+ *
+ * NOTES / GOTCHAS:
+ *   - PersistQueryClientProvider sits ABOVE the router/auth (both inside <App/>), so
+ *     the whole tech tree shares one QueryClient + its on-device cache.
+ *   - Service worker registration is intentionally DISABLED (kill-switch only).
+ *   - BUILD_ID doubles as the persist-cache buster — a new bundle drops a stale shape.
+ * ════════════════════════════════════════════════
+ */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';

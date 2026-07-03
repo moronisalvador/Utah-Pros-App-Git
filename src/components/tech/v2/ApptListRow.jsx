@@ -54,7 +54,7 @@ export default function ApptListRow({ appt, onNavigate }) {
   const where = job ? [job.insured_name, job.city].filter(Boolean).join(' · ') : (appt.notes || '');
   const total = Number(appt.task_total || 0);
   const done = Number(appt.task_completed || 0);
-  const accent = appt.color || 'var(--tech-accent, #cbd5e1)';
+  const accent = appt.color || 'var(--tech-accent)';
 
   return (
     <button type="button" className="tv2-appt-row" onClick={go}>
