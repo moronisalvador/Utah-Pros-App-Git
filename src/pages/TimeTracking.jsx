@@ -227,7 +227,7 @@ export default function TimeTracking() {
     <span>Requests{pendingReqCount > 0 && <span className="coll-count-badge" style={{ marginLeft:6 }}>{pendingReqCount}</span>}</span>
   ) });
   if (isAdmin) tabs.push({ value:'job', label:'By Job' });
-  if (isAdmin) tabs.push({ value:'payroll', label:'Payroll' });
+  if (isAdmin) tabs.push({ value:'payroll', label:'By Employee' });
 
   const showPeriod = view !== 'board' && view !== 'requests';
 
@@ -271,7 +271,7 @@ export default function TimeTracking() {
         <JobView db={db} startDate={startDate} endDate={endDate} employees={employees} />
       )}
       {view === 'payroll' && isAdmin && (
-        <PayrollView db={db} startDate={startDate} endDate={endDate} />
+        <EmployeeLaborView db={db} startDate={startDate} endDate={endDate} />
       )}
     </div>
   );
@@ -890,9 +890,10 @@ function JobView({ db, startDate, endDate, employees }) {
     for (const r of data) {
       if (!g[r.job_id]) g[r.job_id] = {
         job_id:r.job_id, job_number:r.job_number, insured_name:r.insured_name,
-        division:r.division, total_hours:0, total_cost:0, approved_cost:0, rows:[],
+        division:r.division, total_hours:0, travel_hours:0, total_cost:0, approved_cost:0, rows:[],
       };
       g[r.job_id].total_hours   += Number(r.total_hours||0);
+      g[r.job_id].travel_hours  += Number(r.travel_hours||0);
       g[r.job_id].total_cost    += Number(r.total_cost||0);
       g[r.job_id].approved_cost += Number(r.approved_cost||0);
       g[r.job_id].rows.push(r);
@@ -903,17 +904,19 @@ function JobView({ db, startDate, endDate, employees }) {
     return list;
   }, [data, q]);
 
-  const grandHours = jobGroups.reduce((s,j) => s+j.total_hours, 0);
-  const grandCost  = jobGroups.reduce((s,j) => s+j.total_cost, 0);
+  const grandOnSite = jobGroups.reduce((s,j) => s+j.total_hours, 0);
+  const grandTravel = jobGroups.reduce((s,j) => s+j.travel_hours, 0);
+  const grandTotal  = grandOnSite + grandTravel;
+  const grandCost   = jobGroups.reduce((s,j) => s+j.total_cost, 0);
 
-  const cols = '1.4fr 1.6fr 1fr 0.8fr 1fr 1fr 28px';
+  const cols = '1.25fr 1.35fr 0.85fr 0.66fr 0.66fr 0.72fr 0.95fr 0.9fr 28px';
   const headStyle = { display:'grid', gridTemplateColumns:cols, gap:12, alignItems:'center' };
 
   return (
     <>
       <KpiGrid cols={3}>
         <Kpi label="Jobs with labor" value={jobGroups.length} />
-        <Kpi label="Total hours" value={fmtHours(grandHours)} />
+        <Kpi label="Total hours" value={fmtHours(grandTotal)}>travel + on-site</Kpi>
         <Kpi label="Total labor cost" value={money(grandCost)} valueColor={STATUS.success.text} />
       </KpiGrid>
 
@@ -936,7 +939,9 @@ function JobView({ db, startDate, endDate, employees }) {
           <div className="coll-tablewrap">
             <div className="coll-thead" style={headStyle}>
               <span>Job #</span><span>Client</span><span>Division</span>
-              <span style={{ textAlign:'right' }}>Hours</span>
+              <span style={{ textAlign:'right' }}>Travel</span>
+              <span style={{ textAlign:'right' }}>On site</span>
+              <span style={{ textAlign:'right' }}>Total</span>
               <span style={{ textAlign:'right' }}>Labor cost</span>
               <span style={{ textAlign:'right' }}>Approved</span>
               <span />
@@ -952,21 +957,33 @@ function JobView({ db, startDate, endDate, employees }) {
                     </span>
                     <span style={{ fontSize:13, color:C.body, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{job.insured_name}</span>
                     <span style={{ fontSize:12, fontWeight:600, color:divColor(job.division) }}>{divLabel(job.division)}</span>
+                    <span style={{ textAlign:'right', ...tnum, color:job.travel_hours>0?C.muted:C.faint }}>{job.travel_hours>0?fmtHours(job.travel_hours):'—'}</span>
                     <span style={{ textAlign:'right', fontWeight:600, ...tnum }}>{fmtHours(job.total_hours)}</span>
+                    <span style={{ textAlign:'right', fontWeight:700, ...tnum }}>{fmtHours(job.total_hours + job.travel_hours)}</span>
                     <span style={{ textAlign:'right', fontWeight:700, color:STATUS.success.text, ...tnum }}>{money(job.total_cost)}</span>
                     <span style={{ textAlign:'right', fontSize:12.5, color:C.muted, ...tnum }}>{money(job.approved_cost)}</span>
                     <span style={{ textAlign:'right', fontSize:11, color:C.faint }}>{isOpen?'▾':'▸'}</span>
                   </div>
                   {isOpen && (
                     <div style={{ background:C.headFill, padding:'4px 18px 10px 34px' }}>
-                      {job.rows.map(r => (
-                        <div key={r.employee_id} style={{ display:'grid', gridTemplateColumns:'1.5fr 0.8fr 1fr 0.8fr', gap:12, padding:'7px 0', borderBottom:`1px solid ${C.hairline}`, fontSize:12.5 }}>
+                      <div style={{ display:'grid', gridTemplateColumns:'1.5fr 0.7fr 0.7fr 0.7fr 0.9fr', gap:12, padding:'2px 0 6px', fontSize:10.5, fontWeight:700, letterSpacing:'.04em', textTransform:'uppercase', color:C.faint }}>
+                        <span>Employee</span>
+                        <span style={{ textAlign:'right' }}>Travel</span>
+                        <span style={{ textAlign:'right' }}>On site</span>
+                        <span style={{ textAlign:'right' }}>Total</span>
+                        <span style={{ textAlign:'right' }}>Cost</span>
+                      </div>
+                      {job.rows.map(r => {
+                        const tHrs = Number(r.travel_hours||0);
+                        return (
+                        <div key={r.employee_id} style={{ display:'grid', gridTemplateColumns:'1.5fr 0.7fr 0.7fr 0.7fr 0.9fr', gap:12, padding:'7px 0', borderBottom:`1px solid ${C.hairline}`, fontSize:12.5 }}>
                           <span style={{ color:C.body }}>{r.employee_name}</span>
+                          <span style={{ textAlign:'right', ...tnum, color:tHrs>0?C.muted:C.faint }}>{tHrs>0?fmtHours(tHrs):'—'}</span>
                           <span style={{ textAlign:'right', fontWeight:600, ...tnum }}>{fmtHours(r.total_hours)}</span>
+                          <span style={{ textAlign:'right', fontWeight:700, ...tnum }}>{fmtHours(Number(r.total_hours||0)+tHrs)}</span>
                           <span style={{ textAlign:'right', ...tnum }}>{costCell(r.total_cost)}</span>
-                          <span style={{ textAlign:'right', color:C.muted, ...tnum }}>{r.entry_count} entr{r.entry_count>1?'ies':'y'}</span>
                         </div>
-                      ))}
+                      ); })}
                     </div>
                   )}
                 </div>
@@ -975,7 +992,7 @@ function JobView({ db, startDate, endDate, employees }) {
           </div>
         )}
         {!loading && !error && jobGroups.length > 0 && (
-          <div className="coll-foot"><div>{jobGroups.length} jobs · {fmtHours(grandHours)} · {money(grandCost)}</div></div>
+          <div className="coll-foot"><div>{jobGroups.length} jobs · {fmtHours(grandTravel)} travel · {fmtHours(grandOnSite)} on-site · {fmtHours(grandTotal)} total · {money(grandCost)}</div></div>
         )}
       </CollCard>
     </>
@@ -983,10 +1000,14 @@ function JobView({ db, startDate, endDate, employees }) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// PAYROLL VIEW — per employee summary, OT calc, CSV export
+// BY EMPLOYEE — labor cost per employee for job costing (includes travel).
+// NOTE: payroll of record is Gusto — this is a cost view, not a payroll run,
+// so it drops the regular/OT split and counts travel like everything else.
+// Aggregated client-side from get_timesheet_entries_admin (total_cost already
+// includes travel), so no separate RPC is needed.
 // ══════════════════════════════════════════════════════════════
-function PayrollView({ db, startDate, endDate }) {
-  const [data, setData]   = useState([]);
+function EmployeeLaborView({ db, startDate, endDate }) {
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -994,104 +1015,116 @@ function PayrollView({ db, startDate, endDate }) {
     if (!startDate || !endDate) return;
     setLoading(true); setError(null);
     try {
-      const rows = await db.rpc('get_payroll_summary', { p_start_date:startDate, p_end_date:endDate });
-      setData(rows || []);
+      const data = await db.rpc('get_timesheet_entries_admin', {
+        p_start_date: startDate, p_end_date: endDate,
+        p_employee_id: null, p_job_id: null, p_status: null, p_division: null,
+      });
+      setEntries(data || []);
     } catch (err) { setError(friendlyErr(err.message)); }
     finally { setLoading(false); }
   }, [db, startDate, endDate]);
 
   useEffect(() => { load(); }, [load]);
 
+  const rows = useMemo(() => {
+    const g = {};
+    for (const e of entries) {
+      if (!g[e.employee_id]) g[e.employee_id] = {
+        employee_id: e.employee_id, employee_name: e.employee_name,
+        rate: 0, onSite: 0, travel: 0, cost: 0, unapproved: 0, count: 0,
+      };
+      const r = g[e.employee_id];
+      r.onSite += Number(e.hours||0);
+      r.travel += Number(e.travel_minutes||0)/60;
+      r.cost   += Number(e.total_cost||0);
+      if (!e.approved) r.unapproved += Number(e.total_cost||0);
+      r.rate = Math.max(r.rate, Number(e.hourly_rate||0));
+      r.count += 1;
+    }
+    return Object.values(g).map(r => ({ ...r, total: r.onSite + r.travel })).sort((a,b) => b.cost - a.cost);
+  }, [entries]);
+
+  const totalCost       = rows.reduce((s,r) => s+r.cost, 0);
+  const totalOnSite     = rows.reduce((s,r) => s+r.onSite, 0);
+  const totalTravel     = rows.reduce((s,r) => s+r.travel, 0);
+  const totalHours      = totalOnSite + totalTravel;
+  const totalUnapproved = rows.reduce((s,r) => s+r.unapproved, 0);
+
   const handleExportCSV = () => {
-    const headers = ['Employee','Hourly Rate','OT Rate','Regular Hours','OT Hours',
-                     'Total Hours','Regular Pay','OT Pay','Total Pay','Approved Hrs','Pending Hrs'];
-    const rows = data.map(e => [
-      e.employee_name, e.hourly_rate??'', e.overtime_rate??'',
-      e.regular_hours??0, e.overtime_hours??0, e.total_hours??0,
-      e.regular_cost??0, e.overtime_cost??0, e.total_cost??0,
-      e.approved_hours??0, e.pending_hours??0,
+    const headers = ['Employee','Hourly Rate','Travel Hours','On-site Hours','Total Hours','Labor Cost','Unapproved Cost','Entries'];
+    const out = rows.map(r => [
+      r.employee_name, r.rate||'', r.travel.toFixed(2), r.onSite.toFixed(2),
+      r.total.toFixed(2), r.cost.toFixed(2), r.unapproved.toFixed(2), r.count,
     ]);
     const csvEsc = (v) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; };
-    const csv = [headers, ...rows].map(r => r.map(csvEsc).join(',')).join('\n');
+    const csv = [headers, ...out].map(r => r.map(csvEsc).join(',')).join('\n');
     const blob = new Blob([csv], { type:'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `payroll_${startDate}_to_${endDate}.csv`;
+    a.href = url; a.download = `labor_by_employee_${startDate}_to_${endDate}.csv`;
     a.click(); URL.revokeObjectURL(url);
   };
 
-  const totalPay     = data.reduce((s,e) => s+Number(e.total_cost||0), 0);
-  const totalHours   = data.reduce((s,e) => s+Number(e.total_hours||0), 0);
-  const totalOT      = data.reduce((s,e) => s+Number(e.overtime_hours||0), 0);
-  const totalPending = data.reduce((s,e) => s+Number(e.pending_hours||0), 0);
-
-  const cols = '1.4fr 0.9fr 0.9fr 0.8fr 0.9fr 1fr 0.9fr 1fr 0.9fr';
+  const cols = '1.5fr 0.8fr 0.7fr 0.7fr 0.75fr 1fr 0.95fr';
   const headStyle = { display:'grid', gridTemplateColumns:cols, gap:12, alignItems:'center' };
 
   return (
     <>
       <KpiGrid cols={4}>
-        <Kpi label="Employees" value={data.length} />
-        <Kpi label="Total hours" value={fmtHours(totalHours)} />
-        <Kpi label="OT hours" value={fmtHours(totalOT)} valueColor={totalOT ? STATUS.warning.text : C.ink} />
-        <Kpi label="Total payroll" value={money(totalPay)} valueColor={STATUS.success.text}>
-          {totalPending > 0 ? `${fmtHours(totalPending)} pending approval` : 'all approved'}
+        <Kpi label="Employees" value={rows.length} />
+        <Kpi label="Total hours" value={fmtHours(totalHours)}>travel + on-site</Kpi>
+        <Kpi label="Travel hours" value={fmtHours(totalTravel)} valueColor={totalTravel ? STATUS.warning.text : C.ink} />
+        <Kpi label="Total labor cost" value={money(totalCost)} valueColor={STATUS.success.text}>
+          {totalUnapproved > 0 ? `${money(totalUnapproved)} unapproved` : 'all approved'}
         </Kpi>
       </KpiGrid>
 
       <CollCard pad={0}>
         <div className="coll-toolbar">
-          <span style={{ fontSize:13, fontWeight:700, color:C.title }}>Payroll summary</span>
+          <span style={{ fontSize:13, fontWeight:700, color:C.title }}>Labor cost by employee</span>
+          <span style={{ fontSize:11.5, color:C.muted }}>Job costing · payroll runs in Gusto</span>
           <div style={{ marginLeft:'auto' }}>
             <GhostButton onClick={handleExportCSV}>↓ Export CSV</GhostButton>
           </div>
         </div>
 
         {loading ? (
-          <div className="coll-loading">Loading payroll…</div>
+          <div className="coll-loading">Loading labor by employee…</div>
         ) : error ? (
           <div className="coll-empty"><div className="coll-empty-title" style={{ color:STATUS.danger.text }}>{error}</div><button className="coll-link" onClick={load}>Retry</button></div>
-        ) : data.length === 0 ? (
-          <EmptyState icon="💰" title="No payroll data for this period" />
+        ) : rows.length === 0 ? (
+          <EmptyState icon="👷" title="No labor recorded for this period" />
         ) : (
           <div className="coll-tablewrap">
             <div className="coll-thead" style={headStyle}>
               <span>Employee</span>
               <span style={{ textAlign:'right' }}>Rate</span>
-              <span style={{ textAlign:'right' }}>Reg hrs</span>
-              <span style={{ textAlign:'right' }}>OT hrs</span>
-              <span style={{ textAlign:'right' }}>Total hrs</span>
-              <span style={{ textAlign:'right' }}>Reg pay</span>
-              <span style={{ textAlign:'right' }}>OT pay</span>
-              <span style={{ textAlign:'right' }}>Total pay</span>
-              <span style={{ textAlign:'right' }}>Pending</span>
+              <span style={{ textAlign:'right' }}>Travel</span>
+              <span style={{ textAlign:'right' }}>On site</span>
+              <span style={{ textAlign:'right' }}>Total</span>
+              <span style={{ textAlign:'right' }}>Labor cost</span>
+              <span style={{ textAlign:'right' }}>Unapproved</span>
             </div>
-            {data.map(emp => (
-              <div key={emp.employee_id} className="coll-row coll-static" style={headStyle}>
-                <span style={{ fontWeight:600, color:C.ink }}>{emp.employee_name}</span>
-                <span style={{ textAlign:'right', fontSize:12.5, color:C.body, ...tnum }}>{emp.hourly_rate ? `$${Number(emp.hourly_rate).toFixed(2)}` : '—'}</span>
-                <span style={{ textAlign:'right', ...tnum }}>{fmtHours(emp.regular_hours)}</span>
-                <span style={{ textAlign:'right', ...tnum, color: Number(emp.overtime_hours||0) > 0 ? STATUS.warning.text : C.faint, fontWeight: Number(emp.overtime_hours||0)>0?600:400 }}>
-                  {Number(emp.overtime_hours||0) > 0 ? fmtHours(emp.overtime_hours) : '—'}
-                </span>
-                <span style={{ textAlign:'right', fontWeight:600, ...tnum }}>{fmtHours(emp.total_hours)}</span>
-                <span style={{ textAlign:'right', ...tnum }}>{money(emp.regular_cost)}</span>
-                <span style={{ textAlign:'right', ...tnum, color: Number(emp.overtime_cost||0) > 0 ? STATUS.warning.text : C.faint }}>
-                  {Number(emp.overtime_cost||0) > 0 ? money(emp.overtime_cost) : '—'}
-                </span>
-                <span style={{ textAlign:'right', fontWeight:700, color:STATUS.success.text, ...tnum }}>{money(emp.total_cost)}</span>
+            {rows.map(r => (
+              <div key={r.employee_id} className="coll-row coll-static" style={headStyle}>
+                <span style={{ fontWeight:600, color:C.ink }}>{r.employee_name}</span>
+                <span style={{ textAlign:'right', fontSize:12.5, color:C.body, ...tnum }}>{r.rate ? `$${r.rate.toFixed(2)}` : '—'}</span>
+                <span style={{ textAlign:'right', ...tnum, color:r.travel>0?C.muted:C.faint }}>{r.travel>0?fmtHours(r.travel):'—'}</span>
+                <span style={{ textAlign:'right', fontWeight:600, ...tnum }}>{fmtHours(r.onSite)}</span>
+                <span style={{ textAlign:'right', fontWeight:700, ...tnum }}>{fmtHours(r.total)}</span>
+                <span style={{ textAlign:'right', fontWeight:700, color:STATUS.success.text, ...tnum }}>{money(r.cost)}</span>
                 <span style={{ textAlign:'right', ...tnum }}>
-                  {Number(emp.pending_hours||0) > 0
-                    ? <span style={{ color:STATUS.warning.text, fontWeight:600 }}>{fmtHours(emp.pending_hours)}</span>
+                  {r.unapproved > 0
+                    ? <span style={{ color:STATUS.warning.text, fontWeight:600 }}>{money(r.unapproved)}</span>
                     : <span style={{ color:STATUS.success.text, fontSize:11 }}>✓ clear</span>}
                 </span>
               </div>
             ))}
           </div>
         )}
-        {!loading && !error && data.length > 0 && (
+        {!loading && !error && rows.length > 0 && (
           <div className="coll-foot">
-            <div>{data.length} employees · {fmtHours(totalHours)} · {money(totalPay)}</div>
+            <div>{rows.length} employees · {fmtHours(totalTravel)} travel · {fmtHours(totalOnSite)} on-site · {fmtHours(totalHours)} total · {money(totalCost)}</div>
             <button className="coll-link" onClick={handleExportCSV}>Export CSV →</button>
           </div>
         )}
