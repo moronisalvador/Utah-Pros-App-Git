@@ -482,13 +482,28 @@ export default function TechSchedule() {
   const todayStr = fmtDate(new Date());
   const tomorrowStr = fmtDate(addDays(new Date(), 1));
 
-  // Load a wide range around the selected day
-  const dateRange = useMemo(() => {
-    const sel = new Date(selectedDay + 'T12:00:00');
-    const start = fmtDate(addDays(sel, -STRIP_CENTER));
-    const end = fmtDate(addDays(sel, STRIP_DAYS - STRIP_CENTER));
-    return { start, end };
-  }, [selectedDay]);
+  // The loaded fetch window. Anchored to TODAY on first paint (not the selected
+  // day) so day-strip taps are pure client-side scrolls — we only re-fetch when
+  // the selection leaves the window it's already loaded (v1 relief patch: day
+  // taps used to refetch the whole ~61-day window every time).
+  const [dateRange, setDateRange] = useState(() => {
+    const t = new Date(todayStr + 'T12:00:00');
+    return {
+      start: fmtDate(addDays(t, -STRIP_CENTER)),
+      end: fmtDate(addDays(t, STRIP_DAYS - STRIP_CENTER)),
+    };
+  });
+
+  // Re-anchor the window ONLY when the selected day falls outside it.
+  useEffect(() => {
+    if (selectedDay < dateRange.start || selectedDay > dateRange.end) {
+      const sel = new Date(selectedDay + 'T12:00:00');
+      setDateRange({
+        start: fmtDate(addDays(sel, -STRIP_CENTER)),
+        end: fmtDate(addDays(sel, STRIP_DAYS - STRIP_CENTER)),
+      });
+    }
+  }, [selectedDay, dateRange.start, dateRange.end]);
 
   // ─── SECTION: Data fetching ──────────────
   const hasFetched = useRef(false);

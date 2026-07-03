@@ -726,8 +726,12 @@ export default function TechDash() {
   const [openClock, setOpenClock] = useState(null); // open LIVE entry for the 5 PM "still clocked in" banner
 
   // ─── SECTION: Data fetching ──────────────
+  // Only show the full-page skeleton on the FIRST load. Pull-to-refresh and
+  // post-clock-action reloads keep the current content on screen and refresh in
+  // place (v1 relief patch: load() used to blank the whole dashboard every time).
+  const hasFetched = useRef(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!hasFetched.current) setLoading(true);
     try {
       const result = await db.rpc('get_my_appointments_today', { p_employee_id: employee.id });
       setAppointments(result || []);
@@ -735,6 +739,7 @@ export default function TechDash() {
       toast('Failed to load appointments', 'error');
     }
     setLoading(false);
+    hasFetched.current = true;
   }, [db, employee.id]);
 
   // "Away from jobsite" reminder — compares tech's current location against
