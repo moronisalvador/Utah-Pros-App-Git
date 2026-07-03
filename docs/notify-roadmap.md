@@ -330,18 +330,25 @@ office `Settings.jsx` NotificationsPanel content, its C-stub body fills, its ind
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md` +
 > `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: stub-fill tests (role-default upsert; per-employee override +
->       delete; lock flips propagate through `get_effective_notification_prefs` — asserted via
->       the F2 resolver, not re-implemented).
-> - [ ] Acceptance: Admin.jsx "Notifications" tab — role × type × channel matrix
->       (PermissionsTab pattern, auto-save toggles), per-employee tri-state overrides
->       (PageAccessTab pattern: default/override/effective + clear), `user_customizable` lock
->       per role×type; admin-only (AdminRoute precedent — in-component role check).
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema beyond its own body-only stub
->       fills**; frozen files untouched; `upr-pattern-checker` clean.
-> - [ ] Visual: Admin tab on the branch preview.
-> - [ ] `UPR-Web-Context.md` — **Session D** sub-header only; its index.css reserved section
->       only. Reconcile; delete test rows; push; PR into `dev` as a handoff.
+> - [x] Test-first, now green: stub-fill tests (`supabase/tests/notify_d_admin_defaults.test.js` —
+>       role-default upsert incl. NULL-lock-leaves-unchanged; per-employee override set + delete;
+>       lock flip asserted THROUGH `get_effective_notification_prefs`, not re-implemented).
+>       Committed failing first. Self-skips without creds like the other notify suites; its three
+>       assertions were verified live against the shared Supabase via MCP this session.
+> - [x] Acceptance: Admin.jsx "Notifications" tab — role × type × channel matrix (auto-save
+>       toggles), per-employee tri-state overrides (default/override/effective + per-cell clear +
+>       two-click clear-all), `user_customizable` lock per role×type (writes all 3 channels in
+>       sync; hint that locked rows leave the user's self-service matrix); admin-only (in-component
+>       role check on Admin.jsx, behind AdminRoute). Five frozen stubs filled body-only.
+> - [x] `npm run test` (518 passed / 88 skipped) + `build` + eslint pass (new file lint-clean; no
+>       new errors in Admin.jsx); **zero schema beyond its own body-only stub fills**; frozen files
+>       untouched; `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [~] Visual: Admin tab — **deferred to the Cloudflare branch preview** the PR generates: this
+>       environment has no Supabase creds, so the authenticated admin app can't render locally.
+>       Build passes; the RPCs were exercised live via MCP.
+> - [x] `UPR-Web-Context.md` — filled the **Session D** sub-header; index.css writes only inside
+>       the reserved Session D marker. Reconciled these checkboxes; sentinel test rows deleted;
+>       push; PR into `dev` as a handoff.
 
 Scope: owns `src/pages/Admin.jsx` (new tab), new admin matrix component file(s), its D-stub
 body fills, its index.css section.
