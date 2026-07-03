@@ -3997,7 +3997,10 @@ height messages trusted only from the form origin AND the exact iframe window (`
 
 **UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
 types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
-editor, theme colors, restricted `[text](url)` markup in labels/description/thank-you, a **live
+editor, **per-field width** (Full / Half / Third → an optional `field.width` key; fields flow into a
+6-column grid so e.g. City | State | ZIP share one row, collapsing to a single column on mobile —
+purely presentational, backward-compatible, no RPC/migration change), theme colors, restricted
+`[text](url)` markup in labels/description/thank-you, a **live
 preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
 confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
 live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's

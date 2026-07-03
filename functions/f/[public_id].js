@@ -67,19 +67,21 @@ function renderField(field) {
   const label = sanitizeLinkMarkup(field.label || field.key);
   const ph = field.placeholder ? `placeholder="${escapeHtml(field.placeholder)}"` : '';
   const options = Array.isArray(field.options) ? field.options : [];
+  // Field width on the row (whitelisted to the 3 known tokens; anything else → full).
+  const w = field.width === 'half' ? ' upr-w-half' : field.width === 'third' ? ' upr-w-third' : '';
 
   const labelHtml = (forId) => `<label class="upr-label" for="${forId}">${label}${reqMark}</label>`;
 
   switch (field.type) {
     case 'textarea':
-      return `<div class="upr-row">${labelHtml(id)}<textarea id="${id}" name="${key}" ${ph} ${req} rows="4"></textarea></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<textarea id="${id}" name="${key}" ${ph} ${req} rows="4"></textarea></div>`;
     case 'select':
-      return `<div class="upr-row">${labelHtml(id)}<select id="${id}" name="${key}" ${req}>
+      return `<div class="upr-row${w}">${labelHtml(id)}<select id="${id}" name="${key}" ${req}>
         <option value="">Choose…</option>
         ${options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}
       </select></div>`;
     case 'radio':
-      return `<fieldset class="upr-row upr-fieldset"><legend class="upr-label">${label}${reqMark}</legend>
+      return `<fieldset class="upr-row${w} upr-fieldset"><legend class="upr-label">${label}${reqMark}</legend>
         ${options
           .map(
             (o, i) =>
@@ -88,17 +90,17 @@ function renderField(field) {
           .join('')}
       </fieldset>`;
     case 'checkbox':
-      return `<div class="upr-row upr-check"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
+      return `<div class="upr-row${w} upr-check"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
     case 'consent':
-      return `<div class="upr-row upr-consent"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
+      return `<div class="upr-row${w} upr-consent"><label class="upr-choice"><input type="checkbox" id="${id}" name="${key}" value="true" ${req}> <span>${label}${reqMark}</span></label></div>`;
     case 'date':
-      return `<div class="upr-row">${labelHtml(id)}<input type="date" id="${id}" name="${key}" ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="date" id="${id}" name="${key}" ${req}></div>`;
     case 'email':
-      return `<div class="upr-row">${labelHtml(id)}<input type="email" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="email" id="${id}" name="${key}" ${ph} ${req}></div>`;
     case 'phone':
-      return `<div class="upr-row">${labelHtml(id)}<input type="tel" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="tel" id="${id}" name="${key}" ${ph} ${req}></div>`;
     default:
-      return `<div class="upr-row">${labelHtml(id)}<input type="text" id="${id}" name="${key}" ${ph} ${req}></div>`;
+      return `<div class="upr-row${w}">${labelHtml(id)}<input type="text" id="${id}" name="${key}" ${ph} ${req}></div>`;
   }
 }
 
@@ -143,7 +145,11 @@ ${turnstileScript}
   .upr-card { background:var(--upr-bg); max-width:520px; margin:0 auto; padding:20px; border-radius:12px; }
   .upr-title { font-size:20px; font-weight:700; margin:0 0 6px; }
   .upr-desc { font-size:14px; color:#4b5563; margin:0 0 16px; }
-  .upr-row { margin-bottom:14px; display:flex; flex-direction:column; gap:6px; }
+  .upr-fields { display:grid; grid-template-columns:repeat(6,1fr); column-gap:14px; }
+  .upr-row { grid-column:1 / -1; margin-bottom:14px; display:flex; flex-direction:column; gap:6px; }
+  .upr-w-half { grid-column:span 3; }
+  .upr-w-third { grid-column:span 2; }
+  @media (max-width:480px) { .upr-fields { grid-template-columns:1fr; } .upr-fields > * { grid-column:1 / -1; } }
   .upr-label { font-size:13px; font-weight:600; }
   .req { color:#dc2626; }
   input, select, textarea { font:inherit; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; width:100%; background:#fff; color:#111827; }
@@ -169,7 +175,9 @@ ${turnstileScript}
       <div class="upr-title">${title}</div>
       ${description}
       <div id="upr-form-error" class="upr-form-error"></div>
-      ${fieldsHtml}
+      <div class="upr-fields">
+        ${fieldsHtml}
+      </div>
       <!-- honeypot: real users never fill this -->
       <div class="upr-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>
       ${turnstileWidget}

@@ -57,6 +57,16 @@ const FIELD_TYPES = [
 const HAS_OPTIONS = new Set(['select', 'radio']);
 const DEFAULT_THEME = { primary: '#6366f1', background: '#ffffff', text: '#111827' };
 
+// Field width on the row. Fields flow into a 6-column grid; two halves or three
+// thirds share one line, everything collapses to a single column on mobile.
+const WIDTHS = [
+  { value: 'full',  label: 'Full width' },
+  { value: 'half',  label: 'Half (½)' },
+  { value: 'third', label: 'Third (⅓)' },
+];
+// Class suffix for a field's width ('' for full so existing/default fields are untouched).
+const widthClass = (w) => (w === 'half' ? ' w-half' : w === 'third' ? ' w-third' : '');
+
 const CONSENT_DEFAULT =
   'I agree to receive text messages from Utah Pros Restoration about my request. ' +
   'Message & data rates may apply. Reply STOP to opt out.';
@@ -459,6 +469,16 @@ function FieldRow({ field, idx, count, onChange, onRemove, onMove }) {
         <label className="crm-forms-required">
           <input type="checkbox" checked={!!field.required} onChange={(e) => onChange({ required: e.target.checked })} /> Required
         </label>
+        <label className="crm-forms-width">
+          Width
+          <select
+            className="crm-integration-input crm-forms-width-select"
+            value={field.width || 'full'}
+            onChange={(e) => onChange({ width: e.target.value })}
+          >
+            {WIDTHS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+          </select>
+        </label>
       </div>
     </div>
   );
@@ -482,8 +502,9 @@ function FormPreview({ editor }) {
       <div className="crm-forms-preview" style={style}>
         <div className="crm-forms-preview-title">{editor.name || 'Untitled form'}</div>
         {editor.description && <SafeInline tag="p" className="crm-forms-preview-desc" text={editor.description} />}
+        <div className="crm-forms-preview-grid">
         {editor.fields.map((f, i) => (
-          <div key={i} className="crm-forms-preview-row">
+          <div key={i} className={`crm-forms-preview-row${widthClass(f.width)}`}>
             {f.type === 'consent' || f.type === 'checkbox' ? (
               <label className="crm-forms-preview-choice">
                 <input type="checkbox" disabled />
@@ -507,6 +528,7 @@ function FormPreview({ editor }) {
             )}
           </div>
         ))}
+        </div>
         <button className="crm-forms-preview-submit" disabled>{editor.submitText || 'Submit'}</button>
       </div>
     </div>
