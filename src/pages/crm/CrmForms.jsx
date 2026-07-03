@@ -562,19 +562,21 @@ function FieldRow({ field, idx, count, onChange, onRemove, onMove, onDuplicate }
             />
           )
         )}
-        <label className="crm-forms-required">
-          <input type="checkbox" checked={!!field.required} onChange={(e) => onChange({ required: e.target.checked })} /> Required
-        </label>
-        <label className="crm-forms-width">
-          Width
-          <select
-            className="crm-integration-input crm-forms-width-select"
-            value={field.width || 'full'}
-            onChange={(e) => onChange({ width: e.target.value })}
-          >
-            {WIDTHS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-          </select>
-        </label>
+        <div className="crm-forms-field-controls">
+          <label className="crm-forms-required">
+            <input type="checkbox" checked={!!field.required} onChange={(e) => onChange({ required: e.target.checked })} /> Required
+          </label>
+          <label className="crm-forms-width">
+            Width
+            <select
+              className="crm-integration-input crm-forms-width-select"
+              value={field.width || 'full'}
+              onChange={(e) => onChange({ width: e.target.value })}
+            >
+              {WIDTHS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
     </div>
   );

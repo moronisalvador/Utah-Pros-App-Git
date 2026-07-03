@@ -6932,6 +6932,8 @@ tr:hover td { background: var(--bg-secondary); }
 .crm-forms-field-move { display: flex; gap: 4px; }
 .crm-forms-field-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .crm-forms-placeholder { flex: 1; min-width: 160px; }
+/* Keep Required + Width right-aligned on every field, whether or not a placeholder/default sits on the left. */
+.crm-forms-field-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .crm-forms-required { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--crm-text-secondary); white-space: nowrap; }
 .crm-forms-width { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--crm-text-secondary); white-space: nowrap; }
 .crm-forms-width-select { width: auto; padding: 6px 8px; }
