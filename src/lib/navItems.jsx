@@ -119,6 +119,10 @@ export const OVERFLOW_ITEMS = [
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,       featureFlag: 'page:leads' },
   { key: 'marketing',          label: 'Marketing',          path: '/marketing',          icon: IconMarketing,  featureFlag: 'page:marketing' },
   { key: 'homebuilding',       label: 'Homebuilding',       path: '/homebuilding',       icon: IconHomebuilding, moroniOnly: true },
+  // always: true — like Help, visible to every logged-in user. Without it,
+  // isItemVisible falls through to canAccess('feedback'), which no role has,
+  // hiding the item from everyone (verified trap — Feedback Media Phase F).
+  { key: 'feedback',           label: 'Send Feedback',      path: '/feedback',           icon: IconFeedback,   always: true },
 ];
 
 // SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy
@@ -130,6 +134,8 @@ export const SYSTEM_ITEMS = [
   { key: 'demo_sheet_builder', label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder', icon: IconAdmin },
   { key: 'admin_integrations', label: 'API Keys',            path: '/admin/integrations',       icon: IconAdmin,    adminOnly: true },
   { key: 'tech_feedback',      label: 'Tech Feedback',       path: '/tech-feedback',            icon: IconFeedback },
+  // always: true — every employee can send feedback (see OVERFLOW_ITEMS note).
+  { key: 'feedback',           label: 'Send Feedback',       path: '/feedback',                 icon: IconFeedback, always: true },
   { key: 'dev_tools',          label: 'Dev Tools',           path: '/dev-tools',                icon: IconDevTools, moroniOnly: true },
 ];
 

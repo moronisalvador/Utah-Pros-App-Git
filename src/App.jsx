@@ -79,6 +79,7 @@ const Status = lazyRetry(() => import('@/pages/Status'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
+const Feedback = lazyRetry(() => import('@/pages/Feedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
 const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
 const AdminIntegrations = lazyRetry(() => import('@/pages/admin/AdminIntegrations'));
@@ -348,6 +349,13 @@ function WebRoutes() {
         } />
         <Route path="import/encircle" element={
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+        } />
+
+        {/* Send Feedback (desktop) — deliberately ungated: every logged-in
+            employee may report a bug / suggest an improvement.
+            Feedback Media Phase F (docs/feedback-media-roadmap.md). */}
+        <Route path="feedback" element={
+          <ErrorBoundary section="Feedback"><Feedback /></ErrorBoundary>
         } />
 
         {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each
