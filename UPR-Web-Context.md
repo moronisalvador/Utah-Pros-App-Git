@@ -1334,6 +1334,33 @@ S/D wave fills in.
   window); `TechDash` no longer re-skeletons when data already exists.
 - **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
 
+### Session D — Dashboard v2 (Jul 3 2026)
+
+Fills the `TechDashV2` stub — "mission control for today" behind `page:tech_dash_v2`. **Zero
+schema/RPCs.** Owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` + the
+`TECH-V2: DASH` css marker (new `tv2-dash-*` / `tv2-fab-*` classes only).
+
+- **One query:** `useQuery(techKeys.dash(employee.id) → get_tech_dashboard)`. Clock/photo taps
+  refresh via `invalidateTech(qc, 'clock'|'photo')` (techQuery's map) — no full refetch.
+  Pull-to-refresh and window-focus revalidate in place; the cold skeleton shows only on the
+  first load with no cached data (never re-skeletons after).
+- **Sections:** Now/Next hero (composes the frozen `TimeTracker` as the single primary action
+  when a visit is today/live; countdown when scheduled; next-day preview otherwise; empty state
+  → schedule) · attention strip (`StalledWidget` + away-from-jobsite geo, gated on the `active`
+  pane prop + 20s debounce, + 5PM "still clocked in" reading `open_entry` from the payload) ·
+  today mini-timeline (horizontal, status-color chips) · My numbers (hours today/week as
+  labeled travel + on-site + total, tasks done/total, photos today) · completed rows WITH a
+  per-visit travel/on-site/total breakdown (a small read-only `job_time_entries` fetch per
+  completed row — the payload carries only the open entry) · Coming Up (7 days, me-scoped) ·
+  greeting header (sticky, two-click Sign Out — no `confirm()`) · Create FAB.
+- **dash helpers** (`src/pages/tech/v2/dash/dashHelpers.js`, unit-tested): `fmtHours`,
+  `hoursBreakdown`, `toPickShape` (adapts the payload appt to the frozen `pickNowNext` shape),
+  `selectHero`, `splitToday` (cancelled → no bucket, Finding-6 belt-and-suspenders).
+- **Nav** through `apptHref()/jobHref()` only. Snap-first photo flow (`PhotoCaptureButton`)
+  ported verbatim from v1 (offline-queue + inline paths, `PhotoNoteSheet`, room tagging).
+- **Tests:** `src/pages/tech/v2/dash/dashHelpers.test.js` (16, no creds) — pickNowNext edge
+  cases (all completed / none today / paused), hours formatting, cancelled-exclusion.
+
 ### Session S — Schedule v2 (Jul 3 2026 — shipped)
 
 Fills the `TechScheduleV2` stub behind `page:tech_sched_v2` (owner-only). Legacy
