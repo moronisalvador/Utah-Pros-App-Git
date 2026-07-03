@@ -6943,6 +6943,9 @@ tr:hover td { background: var(--bg-secondary); }
 /* Field-editor conveniences: type switch, help, structured options, default */
 .crm-forms-type-select { width: auto; max-width: 190px; padding: 6px 8px; font-weight: 600; }
 .crm-forms-help-input { font-size: 12px; }
+.crm-forms-consent-input { font-family: inherit; resize: vertical; }
+.crm-forms-consent-hint { font-size: 12px; color: var(--crm-text-tertiary); margin-top: -2px; }
+.crm-forms-consent-hint code { background: var(--crm-bg-content); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
 .crm-forms-options-editor { display: flex; flex-direction: column; gap: 6px; }
 .crm-forms-option-row { display: flex; gap: 4px; align-items: center; }
 .crm-forms-option-row input { flex: 1; }

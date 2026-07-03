@@ -73,7 +73,8 @@ const WIDTHS = [
 const widthClass = (w) => (w === 'half' ? ' w-half' : w === 'third' ? ' w-third' : '');
 
 const CONSENT_DEFAULT =
-  'I agree to receive text messages from Utah Pros Restoration about my request. ' +
+  'I agree to receive SMS text messages from Utah Pros Restoration about my request, and I agree to the ' +
+  '[Privacy Policy](https://utahpros.app/privacy) and [Terms & Conditions](https://utahpros.app/terms). ' +
   'Message & data rates may apply. Reply STOP to opt out.';
 
 function slugify(s) {
@@ -491,12 +492,27 @@ function FieldRow({ field, idx, count, onChange, onRemove, onMove, onDuplicate }
         </div>
       </div>
 
-      <input
-        className="crm-integration-input"
-        value={field.label}
-        onChange={(e) => onChange({ label: e.target.value })}
-        placeholder={labelHint}
-      />
+      {field.type === 'consent' ? (
+        <>
+          <textarea
+            className="crm-integration-input crm-forms-consent-input"
+            rows={3}
+            value={field.label}
+            onChange={(e) => onChange({ label: e.target.value })}
+            placeholder={labelHint}
+          />
+          <div className="crm-forms-consent-hint">
+            Add links with <code>[text](https://…)</code> — e.g. <code>[Privacy Policy](https://utahpros.app/privacy)</code>. Links open in a new tab.
+          </div>
+        </>
+      ) : (
+        <input
+          className="crm-integration-input"
+          value={field.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          placeholder={labelHint}
+        />
+      )}
 
       <input
         className="crm-integration-input crm-forms-help-input"
