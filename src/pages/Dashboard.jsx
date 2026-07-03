@@ -50,7 +50,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIVISIONS, PERIODS } from '@/components/overview/tokens';
 import {
   RevenueRecognized, PaymentsReceived, AvgTicket, OpenEstimates,
-  NewClaimsBooked, JobsCompleted,
+  NewJobsClosed, JobsCompleted,
   ActiveDrying, Collections,
   ActionRequired, EmployeeStatus,
   ProductionPipeline, RestrictedCard,
@@ -58,7 +58,7 @@ import {
 import { WidgetBoundary } from '@/components/overview/WidgetBoundary';
 import { useEmployeeStatus } from '@/components/overview/hooks/useEmployeeStatus';
 import { useCollections } from '@/components/overview/hooks/useCollections';
-import { useNewClaims } from '@/components/overview/hooks/useNewClaims';
+import { useJobsClosed } from '@/components/overview/hooks/useJobsClosed';
 import { useRevenue } from '@/components/overview/hooks/useRevenue';
 import { usePaymentsReceived } from '@/components/overview/hooks/usePaymentsReceived';
 import { useAvgTicket } from '@/components/overview/hooks/useAvgTicket';
@@ -108,7 +108,7 @@ export default function Dashboard() {
   // never even fetch revenue/collections (not just hidden in the UI).
   const emp = useEmployeeStatus();
   const coll = useCollections(canFin);
-  const claims = useNewClaims(period);
+  const jobsClosed = useJobsClosed(period);
   const rev = useRevenue(period, canFin);
   const pay = usePaymentsReceived(period, canFin);
   const avg = useAvgTicket(period, canFin);
@@ -150,7 +150,7 @@ export default function Dashboard() {
       ? <PaymentsReceived periodLabel={periodLabel} showHandle={editing} data={pay.data ?? undefined} loading={pay.loading} error={pay.error} onRetry={pay.reload} />
       : <RestrictedCard spanClass="ovw-span-4" title="Payments received" showHandle={editing} />,
     openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} loading={est.loading} error={est.error} onRetry={est.reload} />,
-    newClaims:      <NewClaimsBooked periodLabel={periodLabel} showHandle={editing} data={claims.data ?? undefined} loading={claims.loading} error={claims.error} onRetry={claims.reload} />,
+    newClaims:      <NewJobsClosed periodLabel={periodLabel} showHandle={editing} data={jobsClosed.data ?? undefined} loading={jobsClosed.loading} error={jobsClosed.error} onRetry={jobsClosed.reload} />,
     jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} data={jobs.data ?? undefined} loading={jobs.loading} error={jobs.error} onRetry={jobs.reload} />,
     activeDrying:   <ActiveDrying showHandle={editing} data={drying.data ?? undefined} loading={drying.loading} error={drying.error} onRetry={drying.reload} />,
     collections: canFin
