@@ -51,6 +51,36 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { firstOf, mapCallPayload, mapFormPayload, extractCallId, callrailApiRecordingUrl, shouldAutoTranscribe } from '../lib/callrail.js';
 import { resolveCallRailAccountId } from '../lib/callrail-api.js';
 import { transcribeLead } from './transcribe-call.js';
+import { dispatchEvent } from './notify.js';
+
+// ── lead.new notification hook (Notification Center, Session B) ──
+// Additive + fire-and-forget: announces a genuinely-new inbound lead to admins.
+// The webhook fires MANY deliveries per call (started / completed / recording-
+// ready), so the caller only invokes this on the FIRST one (the delivery that
+// actually created the row — see the pre-existence check in onRequestPost). This
+// hook lives ONLY in the webhook, never in the shared upsert RPC, so the
+// callrail-backfill worker (which reuses that RPC) can never fire it. Obvious
+// spam is skipped. INERT until the catalog type is enabled.
+export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEvent }) {
+  try {
+    if (!lead || lead.spam_flag) return;   // never alert on flagged spam
+    const caller = lead.caller_number || 'Unknown caller';
+    const src = lead.source ? ` · ${lead.source}` : '';
+    await dispatchImpl({
+      db, env,
+      typeKey: 'lead.new',
+      body: {
+        title: 'New lead',
+        body: `Call from ${caller}${src}.`,
+        link: '/leads',
+        entity_type: 'inbound_lead',
+        entity_id: lead.id || null,
+        payload: { source_type: lead.source_type || 'call', callrail_id: lead.callrail_id || null },
+        data: { route: '/leads', lead_id: lead.id || null },
+      },
+    });
+  } catch { /* fire-and-forget — a notify failure never breaks lead ingest */ }
+}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -134,12 +164,26 @@ export async function onRequestPost(context) {
     } catch { /* keep original URL — playback rewrite is the safety net */ }
   }
 
+  // Newness pre-check: this lead is NEW iff no inbound_lead already carries this
+  // callrail_id. Re-deliveries (call completed / recording ready) find the row and
+  // will NOT re-fire lead.new. Default to "existing" on any lookup error so a
+  // transient read never produces a spurious notification.
+  let leadExisted = true;
+  try {
+    const [row] = await db.select('inbound_leads', `callrail_id=eq.${encodeURIComponent(params.p_callrail_id)}&select=id&limit=1`);
+    leadExisted = !!row;
+  } catch { leadExisted = true; }
+
   try {
     const lead = await db.rpc('upsert_lead_from_callrail', params);
     await db.insert('worker_runs', {
       worker_name: 'callrail-webhook', status: 'completed', records_processed: 1,
       started_at: startedAt, completed_at: new Date().toISOString(),
     });
+    // Notify admins on the first delivery only (idempotent by the pre-check).
+    if (!leadExisted) {
+      context.waitUntil(notifyNewLead({ db, env, lead }));
+    }
     // Auto-transcribe once the recording lands (background, non-blocking). Only the
     // recording-ready delivery passes the guard, and a re-delivery after the
     // transcript exists is skipped — so Deepgram is never re-billed for a call.

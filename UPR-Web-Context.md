@@ -4839,8 +4839,73 @@ skip, VAPID 503-skip, 404/410 prune, auth) + `supabase/tests/notify_foundation.t
 (integration — old bell shapes, targeting, resolver precedence; self-skips without creds, verified
 live via MCP). `feedback-notify.test.js` rewired to assert delegation.
 
-### Session B (event wiring) — not started
-*Reserved.*
+### Session B (event wiring) — shipped Jul 3 2026
+One emit hook at each event origin, all **additive + fire-and-forget** (a notify failure can never
+throw into a webhook's business path — payment webhooks especially). Every hook calls the frozen
+`dispatchEvent` in-process (never edits `notify.js`) and is **inert until its catalog type is
+enabled** (a disabled type returns `{skipped}`). **Zero schema migrations.**
+
+**Hooks (files owned by Session B):**
+- **`message.inbound`** — `functions/api/twilio-webhook.js` (`notifyInboundMessage`, exported/tested),
+  fired via `context.waitUntil` after the inbound `messages` insert. Audience = `conversation.assigned_to`
+  when set, else the office/admin fallback (`ROLE_AUDIENCE`). Never fires for STOP/START/HELP (they
+  return before the message insert).
+- **`payment.received`** — one shared helper `notifyPaymentReceived` in
+  **`functions/lib/qbo-payment-sync.js`** (the LIB, so BOTH `qbo-webhook` and the hourly
+  `qbo-payments-sync` cron are covered — fires only in the `recorded` insert branch, so a
+  re-delivered webhook that hits `already-synced` never re-fires), reused by
+  `functions/api/stripe-webhook.js` (fires only on a fresh `payments` insert) and
+  `functions/api/qbo-charge.js` (after the card payment is recorded).
+- **`lead.new`** — `functions/api/callrail-webhook.js` (`notifyNewLead`) + `functions/api/form-submit.js`
+  (`notifyNewLeadFromForm`). **Idempotent by a pre-existence check** on `inbound_leads.callrail_id`
+  (calls send `started/completed/recording-ready`; form tokens can resubmit) → fires only on the
+  FIRST delivery. Hook lives ONLY in the webhook/form worker, **never in the shared upsert RPC**, so
+  `callrail-backfill.js` can never fire it (regression-guarded by test). Flagged spam is skipped.
+- **`esign.signed`** — `functions/api/submit-esign.js` (`notifyEsignSigned`): **rewired** — replaced
+  the legacy global `create_notification('esign_signed')` bell with `dispatchEvent('esign.signed')`
+  (per-recipient bell + push + email via prefs; audience = admins). Job-note + internal PDF email unchanged.
+- **`appointment.assigned` email dedupe seam** — `functions/lib/google-calendar.js`
+  (`decideEmailKind` + `assignedEmailAllowed`, both exported/tested). The legacy calendar-sync
+  "assigned"/"rescheduled" employee email **is** the appointment.assigned EMAIL channel (finding 5):
+  now gated per-recipient on the employee's EFFECTIVE `appointment.assigned` email pref
+  (**default-silent** — no longer fires ungated). The notify path delivers appointment.assigned as
+  bell + push only (`email_default=false`), so this one path owns the email → **no double email**.
+
+**Types enabled live (data flip, not schema).** `message.inbound`, `payment.received`, `lead.new`,
+`esign.signed` flipped `enabled=true` via MCP with their F2 seeds unchanged (bell+push on; email off
+except the curated `payment.received`). These four are **code-hook** types with NO DB trigger, so the
+flip is inert until the worker code deploys — zero live risk on the shared prod DB. Effective-prefs
+resolution for an admin verified live (bell+push on; email only on payment.received).
+
+**Deferred (owner/preview-gated activation) — `appointment.assigned|updated|canceled`.** Their
+emission triggers are ALREADY live in the DB and POST to `notify_worker_url = https://utahpros.app/api/notify`
+(**prod**), where `notify.js` is **not yet deployed** (it's on `dev`, not `main`). Flipping these
+`enabled=true` now would fire prod triggers into a 404 and can't be E2E-verified without a preview.
+So they stay **disabled**, to be enabled at the `dev → main` release once `notify.js` is on prod and
+the trigger is E2E-verified on the branch preview. Activation runbook lives in `docs/notify-roadmap.md`
+(Session B block). One SQL statement:
+`UPDATE notification_types SET enabled=true WHERE type_key IN ('appointment.assigned','appointment.updated','appointment.canceled');`
+
+**Decision forks (resolved).**
+- **payment.received: worker-hooks (chosen)** over a payments-INSERT trigger. A trigger would also
+  cover frontend inserts (InvoiceEditor/ClaimBilling) + MCP bulk imports but needs a retroactive-import
+  guard and IS schema (forbidden in B). Coverage gap accepted: a manually-entered payment (frontend)
+  or an MCP import won't notify — a human entering it already knows. Flagged as a possible future trigger.
+- **estimate.accepted: not wired by B.** Its only origins (the `convert_estimate_to_invoice` code sites
+  / an estimates-status trigger) are OUTSIDE Session B's 8-file ownership (and a trigger = schema).
+  Direction chosen = code-site hooks (covers all in-app acceptances; the 1/14 out-of-band approved row
+  isn't worth a schema trigger), but the hook is a follow-up — `estimate.accepted` stays **disabled**.
+- **create_manual_lead: OUT of `lead.new`** (default). Manual entry means a human already knows; and
+  `CrmLeads.jsx` isn't in B's file scope anyway.
+- **Noisy-channel guardrail:** kept F2's conservative seeds as-is (push structurally opt-in via
+  `push_subscriptions`; email silent except the curated `payment.received`). No channel is emailed
+  broadly before C/D land.
+
+**Tests (all injected-fake, no creds):** `twilio-webhook.test.js` (message.inbound), `lead-notify.test.js`
+(callrail + form lead.new + backfill-never-fires guard), `qbo-payment-sync.test.js` (payment.received
+helper + recorded-only idempotency), `submit-esign.test.js` (esign.signed), `google-calendar.test.js`
+(prefs-off suppression + no-double-email). Full suite green; every hook proven to swallow a dispatcher
+error without throwing into its business path.
 
 ### Session C (my-prefs UI) — not started
 *Reserved.*

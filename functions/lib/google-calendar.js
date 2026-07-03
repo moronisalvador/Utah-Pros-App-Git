@@ -47,6 +47,41 @@
 import { getValidAccessToken } from './google-drive.js';
 import { sendEmail } from './email.js';
 
+// ── appointment.assigned email dedupe seam (Notification Center, Session B) ──
+// The legacy "assigned"/"rescheduled" employee email below IS the email channel
+// for the appointment.assigned notification type (finding 5 in
+// docs/notify-roadmap.md). It fires from THIS calendar-sync worker, so the new
+// Notification Center delivers appointment.assigned as bell + push only and lets
+// this path own the email — deduped per-recipient by the employee's EFFECTIVE
+// appointment.assigned email preference. Default is silent (the type seeds
+// email_default=false), so this legacy email no longer fires ungated; an employee
+// (or admin) turns it back on via the prefs UI. Keeping the notify email channel
+// off + gating this one path here is what guarantees "no double email".
+
+// The pure email-kind decision (unchanged legacy logic), extracted for testing.
+export function decideEmailKind({ notify, email, firstCreate, link, timeSig }) {
+  if (!notify || !email) return null;
+  if (firstCreate) return 'assigned';
+  if (link?.time_sig && link.time_sig !== timeSig) return 'rescheduled';
+  return null;
+}
+
+// Is the recipient employee's EFFECTIVE appointment.assigned email channel on?
+// Default-silent: any missing row / lookup error → false (suppress the email).
+// prefsImpl is injectable for tests; prod resolves via get_effective_notification_prefs.
+export async function assignedEmailAllowed(db, employeeId, prefsImpl) {
+  if (!employeeId) return false;
+  try {
+    const rows = prefsImpl
+      ? await prefsImpl(employeeId)
+      : await db.rpc('get_effective_notification_prefs', { p_employee_id: employeeId });
+    const row = (rows || []).find((p) => p.type_key === 'appointment.assigned' && p.channel === 'email');
+    return !!(row && row.enabled);
+  } catch {
+    return false;
+  }
+}
+
 const CAL_API   = 'https://www.googleapis.com/calendar/v3/calendars';
 const TIMEZONE  = 'America/Denver';   // UPR ops timezone (appointments have no TZ of their own)
 const SOURCE    = 'appointment';
@@ -511,10 +546,12 @@ export async function syncAppointment(env, db, appointmentId, opts = {}) {
       // firstCreate = the single run that actually created the event (others 409),
       // and we've never emailed this person about this appointment.
       const firstCreate = didCreate && !link?.assigned_notified_at;
-      let emailKind = null;
-      if (notify && email) {
-        if (firstCreate) emailKind = 'assigned';
-        else if (link?.time_sig && link.time_sig !== timeSig) emailKind = 'rescheduled';
+      let emailKind = decideEmailKind({ notify, email, firstCreate, link, timeSig });
+      // Notification-Center dedupe: this legacy email is the appointment.assigned
+      // EMAIL channel — suppress it unless the recipient's effective pref has it on
+      // (default-silent). Bell + push are delivered separately by the notify path.
+      if (emailKind && !(await assignedEmailAllowed(db, employeeId))) {
+        emailKind = null;
       }
 
       const fields = {

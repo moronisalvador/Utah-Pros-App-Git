@@ -16,6 +16,7 @@ import { jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { stripeConfigured, constructEvent, retrieveCharge } from '../lib/stripe.js';
 import { getConnection, createPayment, createPurchase, createTransfer, deletePayment, deleteEntity } from '../lib/quickbooks.js';
+import { notifyPaymentReceived } from '../lib/qbo-payment-sync.js';
 
 const ymd = (unixSec) => new Date((unixSec ? unixSec * 1000 : Date.now())).toISOString().slice(0, 10);
 
@@ -138,6 +139,7 @@ async function handlePaymentIntent(env, db, pi) {
 
   // Charge-level idempotency: reuse the existing UPR payment if this charge was seen.
   let pay = (await db.select('payments', `stripe_charge_id=eq.${chargeId}&select=*&limit=1`))?.[0];
+  let wasNewPayment = false;
   if (!pay) {
     const inserted = await db.insert('payments', {
       invoice_id: inv.id, job_id: inv.job_id || null, contact_id: contactId || null,
@@ -146,6 +148,16 @@ async function handlePaymentIntent(env, db, pi) {
       stripe_payment_intent_id: pi.id, stripe_charge_id: chargeId, stripe_fee: fee,
     });
     pay = Array.isArray(inserted) ? inserted[0] : inserted;
+    wasNewPayment = true;
+  }
+
+  // Notify admins of the newly-recorded payment (fire-and-forget; only on a fresh
+  // insert, so a re-seen charge never re-fires). The QBO push below is unaffected.
+  if (wasNewPayment) {
+    await notifyPaymentReceived({
+      db, env, amount: gross, invoiceId: inv.id, jobId: inv.job_id || null,
+      source: 'Stripe', reference: inv.invoice_number ? `Invoice ${inv.invoice_number}` : chargeId,
+    });
   }
 
   // ── Push to QBO (deposit to clearing) + book the fee ──
