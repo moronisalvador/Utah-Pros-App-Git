@@ -1,0 +1,13 @@
+{
+  "title": "Reclamos",
+  "total": "{{count}} en total",
+  "scopeMine": "Mis reclamos",
+  "scopeAll": "Todos los reclamos",
+  "searchPlaceholder": "Buscar reclamos...",
+  "noMatch": "Ningún reclamo coincide con '{{query}}'",
+  "noneFound": "No se encontraron reclamos",
+  "clearSearch": "Limpiar búsqueda",
+  "jobsCount_one": "{{count}} trabajo",
+  "jobsCount_other": "{{count}} trabajos",
+  "toastLoadFailed": "Error al cargar los reclamos"
+}

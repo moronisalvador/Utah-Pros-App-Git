@@ -16,9 +16,10 @@
  *                  shell)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
- *              @/components/Icons, ./techConstants, @/lib/toast
+ *              @/components/Icons, ./techConstants, @/lib/toast,
+ *              @/lib/techDateUtils (currentLocaleTag)
  *   Data:      All access goes through the db client from useAuth (RPC only).
  *              Tables below were resolved from each RPC, not guessed:
  *              reads  → appointment_crew, appointments, claims, contacts,
@@ -39,15 +40,18 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import TechHelpButton from '@/components/tech/TechHelpButton';
 import { IconSearch } from '@/components/Icons';
 import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
 export default function TechClaims() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['claims', 'tech']);
   const { db, employee } = useAuth();
   const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
@@ -84,11 +88,11 @@ export default function TechClaims() {
         result = await db.rpc('get_claims_list');
       }
       setClaims(result || []);
-    } catch (e) {
-      toast('Failed to load claims', 'error');
+    } catch {
+      toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
-  }, [db, employee?.id, scope]);
+  }, [db, employee?.id, scope, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -110,7 +114,7 @@ export default function TechClaims() {
   // ─── SECTION: Helpers ──────────────
   const formatDate = (dateStr) => {
     if (!dateStr) return '';
-    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   // ─── SECTION: Render ──────────────
@@ -123,30 +127,30 @@ export default function TechClaims() {
       <div style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
         <div className="tech-page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <div className="tech-page-title">Claims</div>
-            <div className="tech-page-subtitle">{claims.length} total</div>
+            <div className="tech-page-title">{t('title')}</div>
+            <div className="tech-page-subtitle">{t('total', { count: claims.length })}</div>
           </div>
           <TechHelpButton topicKey="claims" />
         </div>
 
         {/* Scope toggle */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 'var(--space-4)' }}>
-          {[{ key: 'mine', label: 'My Claims' }, { key: 'all', label: 'All Claims' }].map(t => (
+          {[{ key: 'mine', label: t('scopeMine') }, { key: 'all', label: t('scopeAll') }].map(s => (
             <button
-              key={t.key}
-              onClick={() => setScope(t.key)}
+              key={s.key}
+              onClick={() => setScope(s.key)}
               style={{
                 padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
-                fontSize: 14, fontWeight: scope === t.key ? 600 : 400, cursor: 'pointer',
+                fontSize: 14, fontWeight: scope === s.key ? 600 : 400, cursor: 'pointer',
                 height: 48,
-                background: scope === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-                color: scope === t.key ? '#fff' : 'var(--text-secondary)',
-                borderColor: scope === t.key ? 'var(--accent)' : 'var(--border-color)',
+                background: scope === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+                color: scope === s.key ? '#fff' : 'var(--text-secondary)',
+                borderColor: scope === s.key ? 'var(--accent)' : 'var(--border-color)',
                 fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {t.label}
+              {s.label}
             </button>
           ))}
         </div>
@@ -156,7 +160,7 @@ export default function TechClaims() {
           <IconSearch style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, color: 'var(--text-tertiary)' }} />
           <input
             className="input"
-            placeholder="Search claims..."
+            placeholder={t('searchPlaceholder')}
             value={query}
             onChange={e => setQuery(e.target.value)}
             style={{
@@ -177,7 +181,7 @@ export default function TechClaims() {
               </svg>
             </div>
             <div className="empty-state-text">
-              {query ? `No claims match '${query}'` : 'No claims found'}
+              {query ? t('noMatch', { query }) : t('noneFound')}
             </div>
             {query && (
               <div className="empty-state-sub">
@@ -189,7 +193,7 @@ export default function TechClaims() {
                     fontFamily: 'var(--font-sans)',
                   }}
                 >
-                  Clear search
+                  {t('clearSearch')}
                 </button>
               </div>
             )}
@@ -231,7 +235,7 @@ export default function TechClaims() {
 
                 {/* Row 2: insured name */}
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-                  {claim.insured_name || 'Unknown'}
+                  {claim.insured_name || t('tech:misc.unknown')}
                 </div>
 
                 {/* Row 3: address */}
@@ -249,7 +253,7 @@ export default function TechClaims() {
                       borderRadius: 'var(--radius-full)',
                       background: divColor.bg, color: divColor.color,
                     }}>
-                      {claim.primary_division}
+                      {t(`tech:division.${claim.primary_division}`, { defaultValue: claim.primary_division })}
                     </span>
                   )}
                   {claim.job_count > 0 && (
@@ -258,7 +262,7 @@ export default function TechClaims() {
                       borderRadius: 'var(--radius-full)',
                       background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
                     }}>
-                      {claim.job_count} job{claim.job_count !== 1 ? 's' : ''}
+                      {t('jobsCount', { count: claim.job_count })}
                     </span>
                   )}
                   <span style={{
@@ -266,7 +270,7 @@ export default function TechClaims() {
                     borderRadius: 'var(--radius-full)',
                     background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
                   }}>
-                    {claim.status || 'open'}
+                    {t(`tech:claimStatus.${claim.status || 'open'}`, { defaultValue: claim.status || 'open' })}
                   </span>
                 </div>
               </div>
