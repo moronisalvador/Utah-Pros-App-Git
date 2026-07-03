@@ -40,6 +40,7 @@ import enMore from './locales/en/more.json';
 import enSettings from './locales/en/settings.json';
 import enTech from './locales/en/tech.json';
 import enTasks from './locales/en/tasks.json';
+import enDash from './locales/en/dash.json';
 
 import ptCommon from './locales/pt/common.json';
 import ptNav from './locales/pt/nav.json';
@@ -47,6 +48,7 @@ import ptMore from './locales/pt/more.json';
 import ptSettings from './locales/pt/settings.json';
 import ptTech from './locales/pt/tech.json';
 import ptTasks from './locales/pt/tasks.json';
+import ptDash from './locales/pt/dash.json';
 
 import esCommon from './locales/es/common.json';
 import esNav from './locales/es/nav.json';
@@ -54,14 +56,15 @@ import esMore from './locales/es/more.json';
 import esSettings from './locales/es/settings.json';
 import esTech from './locales/es/tech.json';
 import esTasks from './locales/es/tasks.json';
+import esDash from './locales/es/dash.json';
 
 /** Every translation namespace (one file per screen area). Keep in sync with resources. */
-export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks'];
+export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash'];
 
 export const resources = {
-  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks },
-  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks },
-  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks },
+  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash },
+  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash },
+  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash },
 };
 
 i18n.use(initReactI18next).init({

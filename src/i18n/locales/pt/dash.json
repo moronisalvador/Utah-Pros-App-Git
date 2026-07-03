@@ -1,0 +1,47 @@
+{
+  "greeting": "Olá {{name}} 👋",
+  "apptsToday_one": "{{count}} agendamento hoje",
+  "apptsToday_other": "{{count}} agendamentos hoje",
+  "apptFallback": "Agendamento",
+  "fab": { "newJob": "Novo trabalho", "newCustomer": "Novo cliente" },
+  "tasksProgress": "Tarefas {{done}}/{{total}}",
+  "photoBtn": "📸 Foto",
+  "uploadingBtn": "⏳ Enviando…",
+  "notesBtn": "📝 Notas",
+  "confirm": "Confirmar?",
+  "clockIn": "▶ Registrar entrada",
+  "addNoteLink": "Adicionar nota",
+  "comingUp": "Em breve",
+  "upcoming": "Próximos",
+  "completed": "Concluídos",
+  "emptyToday": "Nenhum agendamento hoje",
+  "checkSchedule": "Veja sua agenda →",
+  "menu": {
+    "adminView": "Visão de administrador",
+    "sendFeedback": "Enviar feedback",
+    "signOut": "Sair",
+    "signOutConfirm": "Toque de novo para sair"
+  },
+  "helpAria": "Ajuda e guias",
+  "away": {
+    "distance": "Você está a ~{{distance}} m do local",
+    "body": "{{place}} ainda está {{state}}. Pause ou marque como concluído.",
+    "statePaused": "pausado",
+    "stateRunning": "em andamento",
+    "pause": "Pausar",
+    "finish": "Concluir",
+    "finishConfirm": "Toque de novo para concluir"
+  },
+  "overtime": {
+    "title": "Você ainda está com o ponto aberto",
+    "body": "Já passou das 17h e um trabalho ainda está em andamento. Conclua antes de ir para casa — senão ele fecha automaticamente à meia-noite.",
+    "finishDay": "Encerrar meu dia",
+    "clockOutNow": "Registrar saída agora"
+  },
+  "toastLoadFailed": "Falha ao carregar os agendamentos",
+  "toastClockElsewhere": "Você ainda está com o ponto aberto em outro trabalho — registre a saída lá primeiro.",
+  "activeApptFallback": "Agendamento ativo",
+  "toastClockedOut": "Saída registrada",
+  "toastClockedOutOf": "Saída registrada de {{job}} ({{elapsed}})",
+  "toastClockOutFailed": "Não foi possível registrar a saída: {{message}}"
+}

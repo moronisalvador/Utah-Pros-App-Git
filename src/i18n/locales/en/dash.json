@@ -1,0 +1,47 @@
+{
+  "greeting": "Hey {{name}} 👋",
+  "apptsToday_one": "{{count}} appointment today",
+  "apptsToday_other": "{{count}} appointments today",
+  "apptFallback": "Appointment",
+  "fab": { "newJob": "New Job", "newCustomer": "New Customer" },
+  "tasksProgress": "Tasks {{done}}/{{total}}",
+  "photoBtn": "📸 Photo",
+  "uploadingBtn": "⏳ Uploading…",
+  "notesBtn": "📝 Notes",
+  "confirm": "Confirm?",
+  "clockIn": "▶ Clock In",
+  "addNoteLink": "Add note",
+  "comingUp": "Coming Up",
+  "upcoming": "Upcoming",
+  "completed": "Completed",
+  "emptyToday": "No appointments today",
+  "checkSchedule": "Check your upcoming schedule →",
+  "menu": {
+    "adminView": "Admin View",
+    "sendFeedback": "Send Feedback",
+    "signOut": "Sign Out",
+    "signOutConfirm": "Tap again to Sign Out"
+  },
+  "helpAria": "Help and guides",
+  "away": {
+    "distance": "You're ~{{distance}}m from the jobsite",
+    "body": "{{place}} is still {{state}}. Pause it or mark it finished.",
+    "statePaused": "paused",
+    "stateRunning": "running",
+    "pause": "Pause",
+    "finish": "Finish",
+    "finishConfirm": "Tap again to Finish"
+  },
+  "overtime": {
+    "title": "You're still clocked in",
+    "body": "It's past 5 PM and a job is still running. Finish it before you head home — otherwise it auto-closes at midnight.",
+    "finishDay": "Finish my day",
+    "clockOutNow": "Clock out now"
+  },
+  "toastLoadFailed": "Failed to load appointments",
+  "toastClockElsewhere": "You're still clocked in on another job — clock out there first.",
+  "activeApptFallback": "Active appointment",
+  "toastClockedOut": "Clocked out",
+  "toastClockedOutOf": "Clocked out of {{job}} ({{elapsed}})",
+  "toastClockOutFailed": "Could not clock out: {{message}}"
+}

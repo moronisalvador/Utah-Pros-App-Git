@@ -16,8 +16,9 @@
  *   Rendered by:  src/App.jsx (the "tech" route, inside the TechLayout shell)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *   Packages:  react, react-router-dom, react-i18next
+ *   Internal:  @/contexts/AuthContext, @/lib/techDateUtils (currentLocaleTag),
+ *              @/components/PullToRefresh,
  *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
  *              @/components/tech/StalledWidget, @/lib/toast, @/lib/nativeCamera,
  *              @/lib/nativeGeolocation, @/lib/nativeHaptics,
@@ -52,7 +53,9 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
@@ -71,6 +74,7 @@ import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 /* ── Create FAB ── */
 
 function CreateFAB() {
+  const { t } = useTranslation('dash');
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -110,7 +114,7 @@ function CreateFAB() {
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-              New Job
+              {t('fab.newJob')}
             </button>
             <button
               onClick={() => { setOpen(false); navigate('/tech/new-customer'); }}
@@ -125,7 +129,7 @@ function CreateFAB() {
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              New Customer
+              {t('fab.newCustomer')}
             </button>
           </>
         )}
@@ -155,6 +159,7 @@ function CreateFAB() {
 /* ── Active Appointment Card ── */
 
 function ActiveCard({ appt, employee, db, onReload }) {
+  const { t } = useTranslation(['dash', 'tech']);
   const navigate = useNavigate();
   const { isFeatureEnabled } = useAuth();
   const { enqueue } = useOfflineQueue();
@@ -207,8 +212,8 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
   const uploadPhotoFile = async (file) => {
     if (!file || !job) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
     // ── Offline-queue path (gated) ────────────────────────────────────────
     if (offlineQueueEnabled) {
@@ -238,10 +243,10 @@ function ActiveCard({ appt, employee, db, onReload }) {
         });
         impact('light');
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast('Photo queued — will upload when online', 'success');
+          toast(t('tech:toast.photoQueued'), 'success');
         }
       } catch (err) {
-        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
       }
       return;
     }
@@ -273,7 +278,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
       setUploading(false);
     }
@@ -306,7 +311,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
         const file = await takeNativePhoto();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       fileRef.current?.click();
@@ -387,9 +392,9 @@ function ActiveCard({ appt, employee, db, onReload }) {
       if (String(e.message || '').includes('OPEN_ENTRY_EXISTS')) {
         const pc = await runOmwPrecheck(db, appt.id, employee.id);
         if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
-        else toast("You're still clocked in on another job — clock out there first.", 'error');
+        else toast(t('toastClockElsewhere'), 'error');
       } else {
-        toast('Action failed: ' + e.message, 'error');
+        toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
       }
     }
     setActing(false);
@@ -419,7 +424,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
     setSupersede(null);
     const ok = await fireOmw();
     if (ok && open) {
-      toast(`Clocked out of ${jobLabel(open)} (${fmtElapsed(open.elapsed_minutes)})`, 'success');
+      toast(t('toastClockedOutOf', { job: jobLabel(open), elapsed: fmtElapsed(open.elapsed_minutes) }), 'success');
     }
   };
 
@@ -448,7 +453,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
 
       {/* Appointment title */}
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-        {appt.title || job?.division || 'Appointment'}
+        {appt.title || job?.division || t('apptFallback')}
       </div>
 
       {/* Address */}
@@ -463,7 +468,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
       {tasksLoaded && totalCount > 0 && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            Tasks {doneCount}/{totalCount}
+            {t('tasksProgress', { done: doneCount, total: totalCount })}
           </div>
           <div className="tech-task-progress-bar">
             <div className="tech-task-progress-fill" style={{ width: `${progressPct}%` }} />
@@ -498,7 +503,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
               opacity: uploading ? 0.8 : 1,
             }}
           >
-            {uploading ? '⏳ Uploading...' : '📸 Photo'}
+            {uploading ? t('uploadingBtn') : t('photoBtn')}
           </button>
 
           {/* Notes — navigates to appointment detail */}
@@ -512,7 +517,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
               fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
             }}
           >
-            📝 Notes
+            {t('notesBtn')}
           </button>
 
           {/* Clock In (two-click confirm) */}
@@ -530,7 +535,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
               opacity: acting ? 0.6 : 1,
             }}
           >
-            {confirmOmw ? 'Confirm?' : '▶ Clock In'}
+            {confirmOmw ? t('confirm') : t('clockIn')}
           </button>
         </div>
       )}
@@ -552,7 +557,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
             animation: 'tech-fade-in 0.15s ease-out',
           }}
         >
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>Photo saved ✓</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>{t('tech:toast.photoSaved')}</span>
           <button
             onClick={openPhotoNoteSheet}
             style={{
@@ -562,7 +567,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
               touchAction: 'manipulation',
             }}
           >
-            Add note
+            {t('addNoteLink')}
           </button>
         </div>
       )}
@@ -594,6 +599,7 @@ function ActiveCard({ appt, employee, db, onReload }) {
 /* ── Future Appointment Row (timeline style) ── */
 
 function FutureRow({ appt, showCrew }) {
+  const { t } = useTranslation('dash');
   const navigate = useNavigate();
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
@@ -609,7 +615,7 @@ function FutureRow({ appt, showCrew }) {
       </div>
       <div className="tech-future-line" />
       <div className="tech-future-content">
-        <div className="tech-future-title">{job?.insured_name || appt.title || 'Appointment'}</div>
+        <div className="tech-future-title">{job?.insured_name || appt.title || t('apptFallback')}</div>
         <div className="tech-future-address">
           {[appt.title, job?.job_number ? `#${job.job_number}` : null].filter(Boolean).join(' · ')}
         </div>
@@ -623,6 +629,7 @@ function FutureRow({ appt, showCrew }) {
 /* ── Upcoming Section (reusable) ── */
 
 function UpcomingSection({ upcoming }) {
+  const { t } = useTranslation('dash');
   if (!upcoming || upcoming.length === 0) return null;
 
   const grouped = {};
@@ -635,7 +642,7 @@ function UpcomingSection({ upcoming }) {
 
   const formatDate = (ds) => {
     const d = new Date(ds + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString(currentLocaleTag(), { weekday: 'long', month: 'short', day: 'numeric' });
   };
 
   return (
@@ -645,7 +652,7 @@ function UpcomingSection({ upcoming }) {
         textTransform: 'uppercase', letterSpacing: '0.06em',
         marginBottom: 12, paddingLeft: 4,
       }}>
-        Coming Up
+        {t('comingUp')}
       </div>
       {sorted.map(ds => (
         <div key={ds}>
@@ -710,6 +717,7 @@ function denverHour() {
 
 export default function TechDash() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['dash', 'tech']);
   const { employee, db, logout } = useAuth();
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
@@ -736,11 +744,11 @@ export default function TechDash() {
       const result = await db.rpc('get_my_appointments_today', { p_employee_id: employee.id });
       setAppointments(result || []);
     } catch {
-      toast('Failed to load appointments', 'error');
+      toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
     hasFetched.current = true;
-  }, [db, employee.id]);
+  }, [db, employee.id, t]);
 
   // "Away from jobsite" reminder — compares tech's current location against
   // the arrival coords of any active (in_progress / paused) appointment. If
@@ -769,7 +777,7 @@ export default function TechDash() {
       const addr = [active.address, active.city].filter(Boolean).join(', ');
       setAwayFromJobsite({
         appointment_id: active.appointment_id,
-        title: active.title || 'Active appointment',
+        title: active.title || t('activeApptFallback'),
         address: addr,
         status: active.status,
         distance: Math.round(meters),
@@ -777,7 +785,7 @@ export default function TechDash() {
     } catch {
       // Silent fail — reminder is additive; never block the dashboard
     }
-  }, [db, employee.id]);
+  }, [db, employee.id, t]);
 
   const resolveAway = useCallback(async (action) => {
     if (!awayFromJobsite) return;
@@ -807,11 +815,11 @@ export default function TechDash() {
       notify('success');
       await load();
     } catch (e) {
-      toast('Action failed: ' + e.message, 'error');
+      toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
     } finally {
       setAwayActing(false);
     }
-  }, [awayFromJobsite, awayConfirmFinish, db, employee.id, load]);
+  }, [awayFromJobsite, awayConfirmFinish, db, employee.id, load, t]);
 
   // Fetch upcoming 7 days — always, for all crew
   const loadUpcoming = useCallback(async () => {
@@ -847,13 +855,13 @@ export default function TechDash() {
     try {
       await db.rpc('clock_finish_entry', { p_entry_id: openClock.id, p_employee_id: employee.id });
       notify('success');
-      toast('Clocked out', 'success');
+      toast(t('toastClockedOut'), 'success');
       await loadOpenClock();
       await load();
     } catch (e) {
-      toast('Could not clock out: ' + e.message, 'error');
+      toast(t('toastClockOutFailed', { message: e.message }), 'error');
     }
-  }, [openClock, db, employee.id, navigate, loadOpenClock, load]);
+  }, [openClock, db, employee.id, navigate, loadOpenClock, load, t]);
 
   // Check jobsite proximity on mount + whenever the app returns to foreground
   useEffect(() => {
@@ -892,7 +900,7 @@ export default function TechDash() {
   };
 
   const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const dateStr = today.toLocaleDateString(currentLocaleTag(), { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = (employee.display_name || employee.full_name || '').split(' ')[0];
 
   // ─── SECTION: Render ──────────────
@@ -935,7 +943,7 @@ export default function TechDash() {
                 background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
                 color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              Admin View
+              {t('menu.adminView')}
             </button>
           )}
           <button onClick={() => { setShowMenu(false); navigate('/tech/feedback'); }} onMouseDown={e => e.preventDefault()}
@@ -944,7 +952,7 @@ export default function TechDash() {
               color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left',
               borderTop: '1px solid var(--border-light)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            Send Feedback
+            {t('menu.sendFeedback')}
           </button>
           <button onClick={() => { setShowMenu(false); handleLogoutTap(); }} onMouseDown={e => e.preventDefault()}
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '14px 16px',
@@ -952,7 +960,7 @@ export default function TechDash() {
               color: confirmLogout ? '#dc2626' : 'var(--text-primary)', fontFamily: 'var(--font-sans)', textAlign: 'left',
               borderTop: '1px solid var(--border-light)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={confirmLogout ? '#dc2626' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            {confirmLogout ? 'Tap again to Sign Out' : 'Sign Out'}
+            {confirmLogout ? t('menu.signOutConfirm') : t('menu.signOut')}
           </button>
         </div>
       )}
@@ -963,7 +971,7 @@ export default function TechDash() {
   const helpButton = (
     <button
       onClick={() => navigate('/tech/help')}
-      aria-label="Help and guides"
+      aria-label={t('helpAria')}
       style={{
         position: 'absolute', top: 'var(--space-3)', right: 'calc(var(--space-4) + 40px + var(--space-2))', zIndex: 20,
         width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
@@ -998,11 +1006,13 @@ export default function TechDash() {
         </svg>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 2 }}>
-            You're ~{awayFromJobsite.distance}m from the jobsite
+            {t('away.distance', { distance: awayFromJobsite.distance })}
           </div>
           <div style={{ fontSize: 13, color: '#92400e', opacity: 0.85 }}>
-            {awayFromJobsite.title}{awayFromJobsite.address ? ` · ${awayFromJobsite.address}` : ''} is still{' '}
-            {awayFromJobsite.status === 'paused' ? 'paused' : 'running'}. Pause it or mark it finished.
+            {t('away.body', {
+              place: `${awayFromJobsite.title}${awayFromJobsite.address ? ` · ${awayFromJobsite.address}` : ''}`,
+              state: awayFromJobsite.status === 'paused' ? t('away.statePaused') : t('away.stateRunning'),
+            })}
           </div>
         </div>
       </div>
@@ -1020,7 +1030,7 @@ export default function TechDash() {
             }}
             onBlur={() => setAwayConfirmFinish(false)}
           >
-            Pause
+            {t('away.pause')}
           </button>
         )}
         <button
@@ -1036,7 +1046,7 @@ export default function TechDash() {
             opacity: awayActing ? 0.6 : 1,
           }}
         >
-          {awayConfirmFinish ? 'Tap again to Finish' : 'Finish'}
+          {awayConfirmFinish ? t('away.finishConfirm') : t('away.finish')}
         </button>
       </div>
     </div>
@@ -1060,10 +1070,10 @@ export default function TechDash() {
         </svg>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#b91c1c', marginBottom: 2 }}>
-            You're still clocked in
+            {t('overtime.title')}
           </div>
           <div style={{ fontSize: 13, color: '#b91c1c', opacity: 0.85 }}>
-            It's past 5 PM and a job is still running. Finish it before you head home — otherwise it auto-closes at midnight.
+            {t('overtime.body')}
           </div>
         </div>
       </div>
@@ -1077,7 +1087,7 @@ export default function TechDash() {
           cursor: 'pointer', touchAction: 'manipulation',
         }}
       >
-        {openClock.appointment_id ? 'Finish my day' : 'Clock out now'}
+        {openClock.appointment_id ? t('overtime.finishDay') : t('overtime.clockOutNow')}
       </button>
     </div>
   ) : null;
@@ -1089,8 +1099,8 @@ export default function TechDash() {
           {helpButton}
           {menuButton}
           <div className="tech-dash-date">{dateStr}</div>
-          <div className="tech-dash-name">Hey {firstName} 👋</div>
-          <div className="tech-dash-summary">0 appointments today</div>
+          <div className="tech-dash-name">{t('greeting', { name: firstName })}</div>
+          <div className="tech-dash-summary">{t('apptsToday', { count: 0 })}</div>
         </div>
 
         {awayBanner}
@@ -1111,10 +1121,10 @@ export default function TechDash() {
                 <polyline points="9 16 11 18 15 14" strokeWidth="2"/>
               </svg>
             </div>
-            <div className="empty-state-text">No appointments today</div>
+            <div className="empty-state-text">{t('emptyToday')}</div>
             <div className="empty-state-sub">
               <Link to="/tech/schedule" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
-                Check your upcoming schedule →
+                {t('checkSchedule')}
               </Link>
             </div>
           </div>
@@ -1133,9 +1143,9 @@ export default function TechDash() {
         {helpButton}
         {menuButton}
         <div className="tech-dash-date">{dateStr}</div>
-        <div className="tech-dash-name">Hey {firstName} 👋</div>
+        <div className="tech-dash-name">{t('greeting', { name: firstName })}</div>
         <div className="tech-dash-summary">
-          {appointments.length} appointment{appointments.length !== 1 ? 's' : ''} today
+          {t('apptsToday', { count: appointments.length })}
         </div>
       </div>
 
@@ -1160,7 +1170,7 @@ export default function TechDash() {
                 textTransform: 'uppercase', letterSpacing: '0.06em',
                 marginBottom: 8, paddingLeft: 4,
               }}>
-                Upcoming
+                {t('upcoming')}
               </div>
               {future.map(appt => (
                 <FutureRow key={appt.id} appt={appt} />
@@ -1176,7 +1186,7 @@ export default function TechDash() {
                 textTransform: 'uppercase', letterSpacing: '0.06em',
                 marginBottom: 8, paddingLeft: 4,
               }}>
-                Completed
+                {t('completed')}
               </div>
               {completed.map(appt => {
                 const timeStr = appt.time_start ? formatTimeStr(appt.time_start) : '';
@@ -1196,7 +1206,7 @@ export default function TechDash() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{timeStr}</span>
                       <span style={{ fontSize: 14, fontWeight: 600, color: '#6b7280' }}>
-                        {appt.title || 'Appointment'}
+                        {appt.title || t('apptFallback')}
                       </span>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
                         <polyline points="20 6 9 17 4 12" />

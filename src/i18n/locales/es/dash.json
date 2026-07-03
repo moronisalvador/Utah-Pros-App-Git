@@ -1,0 +1,47 @@
+{
+  "greeting": "Hola {{name}} 👋",
+  "apptsToday_one": "{{count}} cita hoy",
+  "apptsToday_other": "{{count}} citas hoy",
+  "apptFallback": "Cita",
+  "fab": { "newJob": "Nuevo trabajo", "newCustomer": "Nuevo cliente" },
+  "tasksProgress": "Tareas {{done}}/{{total}}",
+  "photoBtn": "📸 Foto",
+  "uploadingBtn": "⏳ Subiendo…",
+  "notesBtn": "📝 Notas",
+  "confirm": "¿Confirmar?",
+  "clockIn": "▶ Marcar entrada",
+  "addNoteLink": "Agregar nota",
+  "comingUp": "Próximamente",
+  "upcoming": "Próximas",
+  "completed": "Completadas",
+  "emptyToday": "No hay citas hoy",
+  "checkSchedule": "Revisa tu agenda →",
+  "menu": {
+    "adminView": "Vista de administrador",
+    "sendFeedback": "Enviar comentarios",
+    "signOut": "Cerrar sesión",
+    "signOutConfirm": "Toca de nuevo para cerrar sesión"
+  },
+  "helpAria": "Ayuda y guías",
+  "away": {
+    "distance": "Estás a ~{{distance}} m del sitio",
+    "body": "{{place}} sigue {{state}}. Pausa o marca como terminado.",
+    "statePaused": "en pausa",
+    "stateRunning": "en curso",
+    "pause": "Pausar",
+    "finish": "Terminar",
+    "finishConfirm": "Toca de nuevo para terminar"
+  },
+  "overtime": {
+    "title": "Aún tienes la entrada marcada",
+    "body": "Ya pasaron las 5 PM y un trabajo sigue en curso. Termínalo antes de irte a casa — de lo contrario se cierra automáticamente a medianoche.",
+    "finishDay": "Terminar mi día",
+    "clockOutNow": "Marcar salida ahora"
+  },
+  "toastLoadFailed": "Error al cargar las citas",
+  "toastClockElsewhere": "Aún tienes la entrada marcada en otro trabajo — marca la salida allí primero.",
+  "activeApptFallback": "Cita activa",
+  "toastClockedOut": "Salida registrada",
+  "toastClockedOutOf": "Salida registrada de {{job}} ({{elapsed}})",
+  "toastClockOutFailed": "No se pudo marcar la salida: {{message}}"
+}
