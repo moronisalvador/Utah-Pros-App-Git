@@ -1276,6 +1276,53 @@ Lightweight **org-wide** (shared-read) notification feed surfaced by a **bell in
 
 ---
 
+## Tech Mobile v2 — Phase F Foundation (Jul 3 2026)
+
+The field-tech Dashboard (`/tech`) + Schedule (`/tech/schedule`) rebuild. Full plan:
+`docs/tech-v2-roadmap.md`; wave ownership: `.claude/rules/tech-v2-wave-ownership.md`.
+Phase F ships **schema/RPC + data layer + wiring only** — the two v2 pages are STUBS the
+S/D wave fills in.
+
+- **Feature flags (seeded live, `enabled=false`, `dev_only_user_id`=owner):**
+  `page:tech_dash_v2`, `page:tech_sched_v2`. Owner-only during the wave; everyone else gets
+  the legacy pages, byte-identical. Registered in `src/lib/featureFlags.js` EXPLICIT_FLAGS
+  with `enabled:false` (load-bearing — the DevTools auto-seed would otherwise create them ON).
+- **RPCs:**
+  - `get_tech_dashboard(p_employee_id uuid) → jsonb` **(NEW)** — one round trip:
+    `{ server_now, today, week_start, appointments (Denver day, cancelled excluded),
+    upcoming (next 7 days scoped to me), open_entry, hours_today, hours_week (each
+    `{ travel, on_site, total }`), photos_today }`. Hours = SUM(stored `hours`) + live term
+    for the single open entry; travel = SUM(`travel_minutes`)/60 + live en-route term; week
+    = Monday-start America/Denver (payroll parity). Helper `tech_hours_bucket(...)`.
+  - `get_appointments_range(date,date)` + `get_my_appointments_today(uuid, p_include_cancelled boolean DEFAULT true)`
+    — additive jsonb keys `color/kind/duration_days/is_milestone`, crew `employees` gain
+    `color/avatar_url`, plus `task_total`/`task_completed`. Legacy keys unchanged
+    (backward-compat tests committed). `get_my_appointments_today` 1-arg legacy call still
+    resolves (default). ⚠️ Note: this feed keys "today" off `CURRENT_DATE` (UTC) — legacy
+    behavior, left as-is; `get_tech_dashboard` uses the Denver day instead.
+  - `clock_appointment_action(...)` — same signature; OMW `work_date` now stamps in
+    `America/Denver` (was UTC — misdated evening clock-ins; Finding #3).
+  - **Drift capture:** 13 previously migration-less tech RPCs are now captured verbatim in
+    `supabase/migrations/20260703_tech_v2_phaseF_drift_capture.sql` (no behavior change).
+- **Data layer:** TanStack Query trio pinned `5.101.2`. `src/lib/techQuery.js` is the FROZEN
+  query-key + invalidation registry (kinds: dash/sched-month/active-clock/tasks/rooms/docs;
+  `techKeys`, `invalidateTech`, `techQueryClient`). Cache persisted to a dedicated IndexedDB
+  DB `upr-query-cache` via `src/lib/techQueryPersister.js`; `PersistQueryClientProvider`
+  mounted in `src/main.jsx`.
+- **Pane host:** `TechLayout` renders the two v2 panes persistently OUTSIDE the keyed
+  `<Outlet/>` (no remount storm), hidden via `display:none`, with continuous scrollTop
+  tracking + restore and an `active` prop (gates pollers/geo). Flags off → panes not mounted,
+  legacy identical.
+- **Primitives** (`src/components/tech/v2/`): `StatusChip` (status owns color), `ApptListRow`,
+  `TechV2Page`, `TechPane`, skeletons, and `apptHref()/jobHref()` (nav — M2 flips
+  `HUB_ENABLED`). CSS = new `tv2-*` classes inside reserved `TECH-V2:` markers in `index.css`.
+- **v1 relief patch (legacy, only window before the freeze):** `TechSchedule` fetch window
+  anchored to today (day taps no longer refetch the ~61-day range unless they exit the
+  window); `TechDash` no longer re-skeletons when data already exists.
+- **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
+
+---
+
 ## Cloudflare Workers — Environment Variables
 ```
 SUPABASE_URL                    — https://glsmljpabrwonfiltiqm.supabase.co
