@@ -4952,5 +4952,45 @@ the other notify suites; verified live via MCP): my-pref upsert round-trip, lock
 and the push-subscription listing leaks no endpoint/p256dh/auth. `npm test` 518 pass / 88 skip,
 `npm run build` clean, eslint no new errors, `upr-pattern-checker` clean.
 
-### Session D (admin defaults UI) — not started
-*Reserved.*
+### Session D (admin defaults UI) — shipped 2026-07-03
+
+Admin → **Notifications** tab (`src/pages/Admin.jsx` wires it; all logic in the new
+`src/components/admin/NotificationDefaultsTab.jsx`). Admin-only via the existing in-component
+role check on `Admin.jsx` (behind `AdminRoute`). Two sub-views:
+
+- **Role Defaults** — a role selector (admin/office/project_manager/supervisor/field_tech/
+  crm_partner) → a type × channel (bell/push/email) matrix with auto-save toggles, plus a
+  per-role×type **lock** (🔓/🔒). Types not yet enabled show a "Not live yet" badge. The lock is
+  stored per role×type×channel but presented once per row; flipping it writes all three channels
+  (each keeping its current on/off) so they stay in sync — a locked row hides from the user's
+  self-service matrix (Session C).
+- **Employee Overrides** — employee selector → per-type tri-state per channel: dashed = follows
+  role default, green = override ON, red = override OFF, with a per-cell **×** clear and a
+  two-click inline **Clear all overrides** (Rule 2 — no confirm/modal). The "effective" value the
+  RPC returns is computed identically to `get_effective_notification_prefs` so the admin sees
+  exactly what the resolver will apply (except a user's own unlocked pref, layer 3).
+
+**RPCs — body-only fills of the F2 frozen stubs** (`20260703_notify_d_admin_defaults_rpcs.sql`,
+applied + verified live via MCP; signatures frozen, zero schema):
+- `get_notification_defaults() → SETOF json` — full role × type × channel matrix; where no
+  `notification_role_defaults` row exists, `enabled` falls back to the catalog channel default and
+  `user_customizable` to `true` (fields: role, type_key, label, category, sort_order, channel,
+  type_enabled, type_channel_default, enabled, user_customizable, has_default). Role set is a fixed
+  SQL VALUES list matching Admin.jsx `ROLES`.
+- `set_notification_default(p_role, p_type_key, p_channel, p_enabled, p_user_customizable DEFAULT NULL) → notification_role_defaults`
+  — upsert on `(role,type_key,channel)`; **`p_user_customizable` NULL = leave the lock unchanged**
+  (new rows default customizable=true).
+- `get_employee_notification_overrides(p_employee_id) → SETOF json` — one row per type×channel:
+  role_default, user_customizable, has_override, override_enabled, has_my_pref, and a
+  resolver-identical `effective`.
+- `set_employee_notification_override(p_employee_id, p_type_key, p_channel, p_enabled, p_actor_id DEFAULT NULL) → notification_employee_overrides`
+  — upsert; stamps `updated_by`.
+- `delete_employee_notification_override(p_employee_id, p_type_key, p_channel) → void`.
+
+Never re-REPLACEs `get_effective_notification_prefs` (F2-owned). CSS lives only in the
+`NOTIFY CENTER RESERVED — Session D` marker (`notify-def-*` classes). Test:
+`supabase/tests/notify_d_admin_defaults.test.js` (role-default upsert incl. NULL-lock-unchanged,
+override set/delete round-trip, and a lock flip asserted THROUGH the F2 resolver) — self-skips
+without creds like the other notify suites; its assertions were verified live via MCP this session.
+`migration-safety-checker` + `upr-pattern-checker` clean; build + full `npm test` (518 passed)
+green. Sentinel test rows deleted.
