@@ -3996,15 +3996,25 @@ landing URL into the iframe URL; origin derived from the script's own `src` (wor
 height messages trusted only from the form origin AND the exact iframe window (`event.source`).
 
 **UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
-types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
-editor, **per-field width** (Full / Half / Third → an optional `field.width` key; fields flow into a
-6-column grid so e.g. City | State | ZIP share one row, collapsing to a single column on mobile —
-purely presentational, backward-compatible, no RPC/migration change), theme colors, restricted
-`[text](url)` markup in labels/description/thank-you, a **live
-preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
-confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
-live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's
-own inline theme colors are intentional (standalone non-SPA). `page:crm`-gated like the rest of the shell.
+types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), each with a **change-type**
+dropdown, **duplicate**, required toggle, optional **help text** (`field.help`) and **default value**
+(`field.default`), and a **per-field width** (Full / Half / Third → `field.width`; a 6-column grid so
+e.g. City | State | ZIP share a row, single column on mobile). Dropdown / multiple-choice / **checkbox**
+use a **structured per-option editor** (add / remove / reorder each option — replaced the raw
+one-per-line textarea); dropdown also takes a custom first-choice `field.prompt`. The **`checkbox`
+type is a multi-select group** (own options; value = array of chosen strings) — distinct from the
+single **consent** opt-in box, which is unchanged (`consentValue` still keys off `type==='consent'`).
+The **Preview tab is interactive & testable**: fill it in and Submit runs the *same*
+`validateSubmission` the live form uses (inline per-field errors → then the thank-you), creating **no
+lead / no write** ("preview only" note + a link to the live `/f/<id>` when published). All new field
+keys are free-form JSON in the existing `form_definition_versions.schema` — **no RPC/migration change**,
+backward compatible (a field with no `width`/`help`/`default` renders as before; a legacy option-less
+checkbox stays a single box). Also: theme colors, restricted `[text](url)` markup in
+labels/description/thank-you (rendered via `sanitizeLinkMarkup`), Save-draft vs Publish (two-click
+confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab (array
+values shown as a comma list). Styles live in the `CRM WAVE RESERVED — Phase 10` marker in
+`src/index.css` (tokens only); the hosted page's inline theme colors are intentional (standalone
+non-SPA). `page:crm`-gated like the rest of the shell.
 
 **Optional Webflow adapter:** not built — the first-party form + embed covers WordPress/any site and
 captures gclid/fbclid + writes `sms_consent_log`, which the Webflow-webhook path can't. Left as the
