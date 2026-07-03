@@ -274,7 +274,7 @@ functions/
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
-    twilio-webhook.js             — Inbound SMS handler
+    twilio-webhook.js             — Inbound SMS handler. Detects STOP/START/HELP keywords (+ synonyms) via exported `detectKeyword`; ALWAYS writes opt-in/DND state to `contacts` + audits to `sms_consent_log`. Customer-facing reply comes from exported `keywordReplyBody(keyword, {advancedOptOut})`: default sends a CTIA reply (HELP shows SMS support (385) 336-0611 / restoration@utah-pros.com, kept in sync with the Privacy Policy); when env `TWILIO_ADVANCED_OPT_OUT='true'` (set only after enabling Advanced Opt-Out on the Twilio Messaging Service) it returns empty TwiML so Twilio owns the reply — avoids double-texting / post-STOP error 21610.
     encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
     encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
     encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
