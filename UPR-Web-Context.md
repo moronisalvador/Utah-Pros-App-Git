@@ -4521,9 +4521,77 @@ precedent), `google_calendar_links.assigned_notified_at`/`time_sig`. `push_subsc
 ship with NO anon SELECT (endpoint+p256dh+auth are send-capability secrets) — a documented
 deviation from the house USING(true) pattern.
 
-### F1 (delivery spike) — not started
-*Reserved. F1 documents the SW re-enable, webPush.js, push_subscriptions, subscribe flow, and
-the owner-gate result here.*
+### F1 (delivery spike) — built, awaiting owner gate (2026-07-03)
+
+Web Push proven end-to-end in code; the **stop-the-line owner gate** (real push on the owner's
+iPhone PWA + desktop) is the only open item — it needs owner actions (env vars + flag flip +
+device install), so it cannot be closed in-session.
+
+**Crypto — `functions/lib/webPush.js`** (pure WebCrypto, zero npm deps, runs in Workers):
+- `encrypt(payload, {p256dh,auth}, {asKeyPair,salt})` — RFC 8291 message encryption (aes128gcm /
+  RFC 8188). Injectable `{asKeyPair, salt}` reproduces **RFC 8291 Appendix A byte-for-byte**
+  (test-pinned); prod defaults to a fresh ephemeral ECDH pair + random 16-byte salt per call.
+- VAPID (RFC 8292) ES256: `importVapidPrivateKey` (PKCS8 base64/PEM — raw EC private import is
+  unsupported, mirrors send-push's `importP8Key`), `buildVapidJwt` (aud = endpoint origin,
+  exp ≤ 24h, sub = mailto), `vapidAuthorizationHeader` (`vapid t=…, k=…`).
+- `sendWebPush(subscription, payload, env, opts)` — encrypt + POST one subscription; **503-skips**
+  when VAPID env is unset (APNs precedent), surfaces 404/410 for caller-side pruning.
+- Tests: `functions/lib/webPush.test.js` (10) — Appendix A KAT, VAPID verify round-trip (never a
+  byte-compare — ECDSA is randomized), b64url edges. Committed failing first.
+
+**Schema — `push_subscriptions`** (migration `20260703_notify_f1_push_subscriptions.sql`, applied
+via MCP): one row per device (`employee_id`, `endpoint` UNIQUE, `p256dh`, `auth`, `user_agent`).
+**RLS ON with NO policy** — the documented deviation (finding 4): endpoint+p256dh+auth are
+send-capability secrets, so no house `USING(true)` policy; reachable only via the two
+SECURITY DEFINER own-row RPCs + the service-role worker (dashboard_layouts precedent). RPCs:
+`upsert_push_subscription(p_endpoint,p_p256dh,p_auth,p_user_agent DEFAULT NULL) → push_subscriptions`
+and `delete_push_subscription(p_endpoint) → void` (caller resolved via `auth.uid()`,
+GRANT EXECUTE TO authenticated). PostgREST cache busted.
+
+**Service worker — `public/sw.js`** rewritten as **push + notificationclick handlers ONLY, zero
+fetch caching** (the Apr-2026 MIME/blank-page trap cannot re-form without a caching fetch
+handler). `push` → `showNotification`; `notificationclick` → focus an open window (navigate) or
+`openWindow(url)`.
+
+**SW re-enable — `src/main.jsx`** SW block is now flag-gated on `feature:web_push`: **ON** →
+register `/sw.js`; **OFF** → the original kill-switch (unregister + cache wipe + `/reset` bounce)
+**verbatim**. Flags load post-auth, so main.jsx reads a **localStorage mirror**
+(`upr:web_push_enabled`) written by `AuthContext.loadFeatureFlags` (same enabled/dev-only
+resolution as `isFeatureEnabled`; missing row = OFF; one-page-load lag accepted). `BUILD_ID`
+bumped to `2026-07-03-web-push-f1`. `src/lib/registerSW.js` rewritten as the registration + mirror
+helper (`isWebPushEnabled`, `registerPushServiceWorker`, `WEB_PUSH_FLAG_MIRROR_KEY`).
+
+**Subscribe client — `src/lib/webPushClient.js`**: `enablePush(db)` (permission →
+`pushManager.subscribe({applicationServerKey: VITE_VAPID_PUBLIC_KEY})` → `upsert_push_subscription`),
+`disablePush(db)` (unsubscribe + `delete_push_subscription`), capability guards
+(`isPushSupported`/`isPushConfigured`/`pushPermission`) — iOS only exposes Push in an installed PWA.
+
+**UI — `src/pages/Settings.jsx`**: new **Notifications** entry in `SETTINGS_NAV` + skeleton
+`NotificationsPanel` with one working "Enable push on this device" row (inline two-click "Turn
+off" confirm, toasts, iOS Add-to-Home-Screen guidance when uninstalled). The full types × channels
+matrix is Session C's.
+
+**Reference event — `functions/api/feedback-notify.js`**: additive fire-and-forget Web Push channel
+(`sendWebPushToAdmins`) alongside the existing bell + APNs — pushes each admin recipient's
+subscriptions behind `feature:web_push` (globally-enabled OR the recipient is the flag's
+`dev_only_user_id` — the owner-gate window), 503-skips when VAPID is unset, prunes 404/410. Note:
+audience is **admins minus the submitter** (catalog semantics) — for the owner gate, a *non-owner*
+must submit the test feedback (or the owner submits from a second account) for the push to reach
+the owner's device.
+
+**Flag:** `feature:web_push` seeded in `featureFlags.js` (enabled:false) + a live `feature_flags`
+row (enabled=false, `dev_only_user_id` = owner `dd188c16-…`) so the owner can self-enable to run
+the gate without exposing push to staff.
+
+**Owner gate (OPEN — hand-off):** owner sets `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (PKCS8) /
+`VAPID_SUBJECT` / `VITE_VAPID_PUBLIC_KEY` in BOTH Cloudflare env sets (Production + Preview),
+flips/keeps `feature:web_push` dev-only-on for themselves, installs the PWA (Share → Add to Home
+Screen), enables push in Settings → Notifications, then a non-owner submits test feedback → a real
+push must land on the locked iPhone AND desktop Chrome. **If iOS delivery fails: HALT — F2 and the
+wave do not launch against a dead channel.** VAPID keypair was generated this session and handed to
+the owner in the PR/chat (private key never committed).
+
+### F2 (data foundation) — not started
 
 ### F2 (data foundation) — not started
 *Reserved. F2 documents the catalog/prefs schema, bell cutover, dispatcher, stubs, and

@@ -165,28 +165,37 @@ pushed/emailed channel that could be noisy before C/D land ships default-silent.
 > kill-switch on the platform it once blanked, and net-new browser crypto).
 > **Read scope:** this block + ownership matrix below + `CLAUDE.md` + the SW/crypto facts above.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `functions/lib/webPush.test.js` — RFC 8291 Appendix A
+> - [x] Test-first, now green: `functions/lib/webPush.test.js` — RFC 8291 Appendix A
 >       byte-for-byte (injectable `{asKeyPair, salt}`); VAPID JWT via `crypto.subtle.verify`
->       round-trip + header/claims decode; b64url edges. `supabase/tests/` or worker test for
->       `upsert_push_subscription`/`delete_push_subscription` (own-row semantics).
-> - [ ] Acceptance: new push-only `sw.js` (push + notificationclick, zero fetch caching);
->       `main.jsx:44-72` rewrite with localStorage flag mirror (flag OFF path byte-equivalent
->       to today's kill-switch); BUILD_ID bumped; `registerSW.js` fate decided;
->       `push_subscriptions` migration (RLS on, **no anon SELECT**, own-row RPCs, GRANTs);
+>       round-trip + header/claims decode; b64url edges. (10 tests; committed failing first.)
+>       Own-row RPCs: `supabase/tests/notify_f1_push_subscriptions.test.js` locks the anon
+>       boundary (table not anon-SELECTable; RPCs not anon-EXECUTable). *The authenticated
+>       own-row happy path needs a real user JWT the vitest harness lacks — it's exercised by the
+>       browser subscribe flow + the owner gate; disclosed in the test header.*
+> - [x] Acceptance: new push-only `sw.js` (push + notificationclick, zero fetch caching);
+>       `main.jsx` SW block rewrite with localStorage flag mirror (flag OFF path = today's
+>       kill-switch verbatim); BUILD_ID bumped (`2026-07-03-web-push-f1`); `registerSW.js`
+>       rewritten as the registration + mirror helper; `push_subscriptions` migration applied via
+>       MCP (RLS on, **no anon SELECT/policy**, own-row RPCs, GRANTs, UNIQUE endpoint);
 >       `src/lib/webPushClient.js` subscribe primitives; SETTINGS_NAV "Notifications" entry +
 >       skeleton NotificationsPanel with ONE working "Enable push on this device" row;
 >       one hardcoded `feedback.submitted` push (called from feedback-notify, additive,
 >       fire-and-forget) behind `feature:web_push`; VAPID keypair generated and handed to the
 >       owner (PKCS8 private; public also as `VITE_VAPID_PUBLIC_KEY`).
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass;
->       `migration-safety-checker` + `upr-pattern-checker` clean.
-> - [ ] **OWNER GATE (stop-the-line):** owner sets `VAPID_*` env vars in BOTH Cloudflare env
->       sets + flips `feature:web_push` + **a real push lands on the owner's actual iPhone
->       home-screen PWA and on desktop Chrome**. If iOS delivery fails: HALT, re-plan — F2 and
->       the wave do not launch against a dead channel.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **F1** sub-header only.
-> - [ ] Reconcile this doc's checkboxes; delete test rows/subscriptions; push; PR into `dev`
->       as a handoff (owner merges; no babysitting).
+> - [x] `npm run test` (430 passed / 77 skipped) + `npm run build` + `npx eslint` (zero new
+>       errors — 5 errors / 2 warnings, identical to base) pass; `migration-safety-checker` +
+>       `upr-pattern-checker` clean (both PASS, no violations).
+> - [ ] **OWNER GATE (stop-the-line) — OPEN, owner action:** owner sets `VAPID_*` env vars in
+>       BOTH Cloudflare env sets + keeps/flips `feature:web_push` on (dev-only for the owner is
+>       already seeded) + **a real push lands on the owner's actual iPhone home-screen PWA and on
+>       desktop Chrome**. If iOS delivery fails: HALT, re-plan — F2 and the wave do not launch
+>       against a dead channel. *(Cannot be closed in-session — needs env vars + a physical device
+>       install. NOTE: the reference push audience is admins **minus the submitter**, so the test
+>       feedback must be filed by a non-owner, or the owner submits from a second account.)*
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **F1** sub-header.
+> - [x] Reconciled this doc's checkboxes. No test rows/subscriptions were created (the
+>       `feature_flags` row is a config seed, not test data); nothing to delete. Pushed; PR into
+>       `dev` as a handoff (owner merges; no babysitting).
 
 Scope: owns `public/sw.js`, `src/main.jsx` (SW block), `src/lib/registerSW.js`,
 `functions/lib/webPush.js` (+test), `src/lib/webPushClient.js`, the `push_subscriptions`

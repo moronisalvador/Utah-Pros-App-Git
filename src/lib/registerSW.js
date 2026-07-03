@@ -13,10 +13,9 @@
  *   safe: a stale-OFF just delays push by one refresh; a stale-ON registers a
  *   push-only worker that does nothing until a subscription exists.
  *
- * WHERE IT LIVES:
- *   Route:        n/a (bootstrap helper)
- *   Rendered by:  n/a — imported by main.jsx; the mirror is written by
- *                 contexts/AuthContext.jsx when feature flags load.
+ * IMPORTED BY:
+ *   main.jsx; the localStorage mirror it reads is written by
+ *   contexts/AuthContext.jsx when feature flags load.
  *
  * DEPENDS ON:
  *   Packages:  none

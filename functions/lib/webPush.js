@@ -14,10 +14,8 @@
  *   token), using only built-in crypto so it runs inside a Cloudflare Worker
  *   with no external library.
  *
- * WHERE IT LIVES:
- *   Route:        n/a (worker-side library)
- *   Rendered by:  n/a — imported by functions/api/feedback-notify.js (and, later,
- *                 the notification dispatcher)
+ * IMPORTED BY:
+ *   functions/api/feedback-notify.js (and, later, the notification dispatcher).
  *
  * DEPENDS ON:
  *   Packages:  none (WebCrypto globalThis.crypto.subtle — Workers + Node 18+)

@@ -11,10 +11,8 @@
  *   turning push OFF again. It only reports what actually happened — it never
  *   pretends success.
  *
- * WHERE IT LIVES:
- *   Route:        n/a (browser helper)
- *   Rendered by:  n/a — imported by the Settings "Notifications" panel (and,
- *                 later, the tech notifications screen)
+ * IMPORTED BY:
+ *   the Settings "Notifications" panel (and, later, the tech notifications screen).
  *
  * DEPENDS ON:
  *   Packages:  none (browser Push API + Notification API)
