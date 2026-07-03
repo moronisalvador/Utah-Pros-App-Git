@@ -16,7 +16,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, ensureQboCustomer } from '../lib/quickbooks.js';
 
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
@@ -107,9 +107,15 @@ export async function onRequestPost(context) {
     const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
     if (!job) throw new Error('Job not found for invoice');
 
-    const contact = inv.contact_id
+    let contact = inv.contact_id
       ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0]
       : null;
+    // On-demand: create the QBO customer now (when actually invoiced) if it
+    // doesn't exist yet — the contact-insert auto-sync trigger is being retired.
+    if (inv.contact_id && !contact?.qbo_customer_id) {
+      await ensureQboCustomer(request, env, inv.contact_id);
+      contact = (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0];
+    }
     if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
 
     const map = divisionToQbo(job.division);

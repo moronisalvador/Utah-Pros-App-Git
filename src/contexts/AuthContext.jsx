@@ -253,12 +253,23 @@ export function AuthProvider({ children }) {
   // flag.enabled = globally on for everyone
   // flag.dev_only_user_id === employee.id = visible only to that specific user
   const isFeatureEnabled = useCallback((key) => {
+    // A crm_partner account exists solely to use the CRM — it always passes the
+    // page:crm gate regardless of the dev_only_user_id rollout flag that keeps
+    // CRM hidden from internal staff mid-build (that flag governs internal
+    // rollout timing, not whether an already-provisioned partner can log in).
+    if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
     const flag = featureFlags[key];
     if (!flag) return true;                                          // No row = unrestricted
     if (flag.enabled) return true;                                   // Globally on
     if (employee && flag.dev_only_user_id === employee.id) return true; // Dev-only for this user
+    // Explicit per-employee grant opens page:crm for one internal user (e.g. a
+    // second admin during the CRM rollout) WITHOUT enabling it for all staff.
+    // Grant-only (an override can add access here, never revoke); set from
+    // Admin → Page Access (employee_page_access.can_view). Phase 6b generalizes
+    // this into per-screen CRM roles.
+    if (key === 'page:crm' && employee && employeePageAccess.crm === true) return true;
     return false;
-  }, [featureFlags, employee]);
+  }, [featureFlags, employee, employeePageAccess]);
 
   const value = {
     user,

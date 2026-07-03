@@ -1,8 +1,14 @@
 # UPR Platform — Design System Reference
-**Last updated:** March 27, 2026
+**Last updated:** July 1, 2026 (added the Collections Kit, Overview Kit, and Conversations sections — audit found they'd grown into real, reused systems with zero doc coverage)
 **For:** Claude Code — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
+
+**Three design systems currently coexist.** Most of the app (Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs) uses the tokens/classes below. Two newer, deliberately page-scoped systems have since grown up alongside it — **not drift, but not merged in either**:
+- **Collections Kit** (§ below) — Collections/AR, Time Tracking, Invoice Editor, Estimate Editor
+- **Overview Kit** (§ below) — Dashboard/home only
+
+Building in one of those areas? Use that section, not the tokens below. Building anywhere else? Use the tokens below, as always.
 
 ---
 
@@ -752,11 +758,102 @@ window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed t
 
 ---
 
+## Collections Kit — Second Design System
+
+**Scope:** `Collections.jsx` (AR dashboard, invoices/estimates/payments lists), `TimeTracking.jsx`, `InvoiceEditor.jsx`, `EstimateEditor.jsx`. Also touches `NewEstimateModal.jsx` (partially — see Known Inconsistencies).
+
+**Status:** deliberate, not accidental. `collTokens.js` states directly: *"Page-scoped palette (same approach as the Overview dashboard's tokens.js). Don't import these into unrelated pages until the app-wide rollout decision."* Treat it as sanctioned for the four areas above and nowhere else, until that rollout decision is made.
+
+**Source:** `src/components/collections/collTokens.js` (palette), `src/components/collections/collKit.jsx` (components), CSS at `src/index.css:5538+` (`.coll-*` classes).
+
+### Token palette
+```js
+// collTokens.js — hex values, NOT var(--token). Do not mix with the main token set above.
+C.ink: '#101828'      C.body: '#475467'     C.faint: '#98a2b3'
+C.pageBg: '#f4f5f7'    C.inputBorder: ...
+STATUS.success  { solid:'#1f9d55', tint:'#e9f7ef', text:'#1f9d55' }
+STATUS.warning  { ... }   STATUS.danger { solid:'#c0322c', ... }
+STATUS.info     { ... }   STATUS.neutral { ... }
+```
+Note: this is a **different green/red** than the main Status Color Palette above (`#16a34a`/`#dc2626`) — don't assume they're interchangeable.
+
+### Page shell
+`.coll-page` (max-width 1320px, centered, `padding: 24px 28px 60px`) → `.coll-header` (title/subtitle/actions) → `.coll-tabrow` (SegControl tabs, optional period SegControl) → view content. Used by both `Collections.jsx` and `TimeTracking.jsx`.
+
+### SegControl (black-pill segmented control)
+`.coll-seg` container (white bg, `#e7e9ee` border, `border-radius: 10px`, `padding: 3px`) with `.coll-seg-btn` children; active = `background: #101828; color: #fff`. Three sizes (`lg`/`md`/`sm`). This is a **third** tab/toggle visual (distinct from the Pill Tabs and Segmented Control patterns above) — use it only within Collections Kit pages.
+
+### KPI tile grid
+`Kpi`/`KpiGrid` (`collKit.jsx`) — `.coll-kpi-grid` (`.coll-kpi-4`/`.coll-kpi-3` column-count modifiers) of `.coll-card.coll-kpi` tiles: uppercase label → big value → context line. Optionally clickable (`onClick`) with an active-ring state, acting as a quick-filter — unlike the static Stat Card pattern above.
+
+### CSS-grid "table" (not `<table>`)
+`.coll-thead` header row + `.coll-row` data rows, both `display: grid` with a shared `gridTemplateColumns` built from a `COL` config (`{ label, fr, num }`) and a `COL_ORDER`/`LOCKED` column-visibility scheme. Used identically across the AR dashboard, invoices/estimates/payments lists, and Time Tracking's timesheet/job/payroll views. Supports clickable sortable headers (`.coll-th-sort`, `data-active`, ▲/▼). No semantic `<table>` markup — don't expect the Admin Table's mobile-card fallback here; it doesn't apply.
+
+### Toolbar with Filters/Columns popovers
+`.coll-toolbar`: `SearchBox` + status `SegControl` + result count + `PopoverButton` ("Filters": chips/range inputs) + `PopoverButton` ("Columns": checkbox list with locked/required columns). `PopoverButton` (`collKit.jsx`) is a generic anchored popover (closes on outside-click/Escape, render-prop body) — reuse it instead of hand-rolling another dropdown.
+
+### Buttons / cards / badges
+`GhostButton`/`PrimaryButton` → `.coll-ghost`/`.coll-primary` (not `.btn`). `CollCard` → `.coll-card` (not `.card`). `StatusBadge`/`Pill`/`StatusText` (`collKit.jsx`) — a 5-status vocabulary (`success`/`warning`/`danger`/`info`/`neutral`), pill or plain-text treatment depending on context; not the main Status Badge classes.
+
+### Editable line-item grid (Invoice/Estimate editors)
+The core pattern behind `InvoiceEditor.jsx`/`EstimateEditor.jsx`: a CSS-grid line-item table with drag handle (⠿) + reorder (persists `sort_order` via sequential `db.update`), `SearchSelect` for QBO Item/Class, `AutoGrowTextarea` for description, computed read-only totals, delete button, and a footer combining "+ Add line" with a right-aligned Subtotal/Tax/Total stack. Both editors also render a full customer-facing print/PDF preview overlay (`@media print` CSS-in-JS) and a payments sub-ledger with a **view-then-deliberate-Edit** flow (distinct from two-click-delete — guards against accidental edits, not deletions).
+
+### Time Tracking-specific patterns
+Built on the same kit, plus: inline click-to-edit table cells (click → `<input>`, commit on blur/Enter, revert on Escape/error); bulk-select + bulk-action toolbar (Approve/Unapprove/Clock-out/Delete-N, swaps to a reason-input + confirm state for bulk delete); an approve/lock workflow (approved rows go read-only, require "Unapprove & edit" to reopen); a field-tech change-request diff-review UI (old-value strikethrough → new-value grid); CSV export; a semi-monthly payroll period selector.
+
+### AI chat FAB
+`ARChatBubble.jsx` — a floating circular button (`.coll-chat-fab`, portaled to `document.body` to escape a transformed ancestor) opening a non-blocking slide-in panel (`.coll-chat-panel`, no backdrop — the page stays usable underneath), with message bubbles, typing-dots indicator, and an auto-growing composer. First AI-chat UI pattern in the app — reuse this shell for any future in-app assistant.
+
+---
+
+## Overview Kit — Third Design System (Dashboard/Home)
+
+**Scope:** `Dashboard.jsx` and `src/components/overview/*` only.
+
+**Status:** also deliberate — `tokens.js` in this folder explicitly states its palette is dashboard-scoped and not for reuse elsewhere.
+
+**Source:** `src/components/overview/tokens.js` (palette), `Card.jsx`/`Widgets.jsx`/`WidgetBoundary.jsx` (components), CSS at `src/index.css:5181+` (`.ovw-*` classes).
+
+### Widget grid
+The dashboard is **not** a static page of stat cards — it's a `react-grid-layout` `ResponsiveGridLayout` of 11 draggable/resizable widget cards (Revenue Recognized, Payments Received, Avg Ticket, Open Estimates, New Claims Booked, Jobs Completed, Active Drying, Collections, Action Required, Employee Status, Production Pipeline), each independently wrapped in a `WidgetBoundary` error boundary. Layout is per-user, persisted, with an Edit-layout/Reset control in the header (`dashboard_layouts` table, `save_dashboard_layout`/`get_dashboard_layout` RPCs).
+
+### Widget card shell
+`Card.jsx` provides the shared chrome every widget uses: a loading skeleton (`CardSkeleton`), an inline retry error state (`CardError`), a drag handle (⠿, edit-mode only), a `DeltaPill` (up/down % indicator), and a footer link/summary row. A `RestrictedCard` variant renders a lock icon + "Restricted" for permission-gated widgets. Chart bodies are home-grown: CSS bars, a conic-gradient donut, or an inline SVG sparkline — there's no shared charting library.
+
+### When to use this vs. Collections Kit vs. the main system
+Dashboard only. Don't reuse `.ovw-*` classes or `tokens.js` values anywhere else, same rule as the Collections Kit.
+
+---
+
+## Conversations Messaging Pattern
+
+**Scope:** `Conversations.jsx` only (used from both the office app and `/tech/conversations`).
+
+A bespoke two-pane messaging shell, not built from either kit above: `.conversations-layout` → `.conv-list-panel` (search, filters, `.conv-list-items` rows with avatar/name/preview/unread badge) + `.conv-thread-panel` (header, `.conv-messages` with `.message-bubble` + `.conv-date-sep` date separators, a compose bar with an inline **action sheet** — `.conv-actions-sheet`/`.conv-action-item` — for Note/Templates/Schedule/Attach) + a slide-out `.conv-detail-panel` (contact info, linked job card, conversation meta). On mobile, a `mobile-thread` class flips which panel is visible with a back button, instead of a true two-pane layout. ~35 `conv-*` classes total, all real (`index.css`), none shared with anything else in the app. Reuse this shell for any future threaded/chat UI rather than inventing another one.
+
+---
+
+## Known Inconsistencies (flagged, not auto-fixed — confirm before changing)
+
+Found during the July 1 2026 audit. These are real behavioral/visual gaps, not just doc gaps — listed here rather than silently fixed since some require a product call:
+
+- **Division color mismatch.** Collections Kit's `DIV_COLOR` map (`collTokens.js`) disagrees with the app-wide `DIVISION_COLORS` (`DivisionIcons.jsx`) — e.g. "water" renders `#0e9384` in Collections/Time Tracking but `#2563eb` everywhere else. Same division, two different colors depending which screen you're on.
+- **`Leads.jsx` / `Marketing.jsx`** render a bare, unclassed `<table>` — not `.admin-table`, not the Collections Kit grid pattern. No responsive/mobile-card fallback exists for a raw `<table>`, so these likely render poorly on phone widths.
+- **`InvoiceEditor.jsx`'s Payment modal and Xactimate-import modal** are hand-rolled `position:fixed` overlays that skip the app-wide mobile bottom-sheet behavior every other modal gets (Mobile-Specific Rule #3 above).
+- **Two searchable-dropdown implementations** coexist: `LookupSelect` (`@/components/AddContactModal`, listed in Component Imports above) and `SearchSelect` (`src/components/collections/SearchSelect.jsx`, Collections Kit). No stated rule for which to use where beyond "Collections Kit pages use SearchSelect."
+- **Two destructive-confirm idioms** coexist: the standard two-click confirm (above) and a heavier type-"DELETE"-to-confirm modal (`CustomerPage.jsx` `ClaimsTab`). No documented rule for when the heavier one is warranted.
+- **`CustomerPage.jsx`'s header** doesn't match the Tabbed Detail Page pattern's documented header shape (division icon + job number + client + address) — it's customer-shaped instead (avatar + client name + role/DND badges + job/claim count), with an undocumented `.customer-action-btn` row (Call/Text/Email/New Job/New Invoice) in place of the documented phase-badge/action-button area. This is correct for what a customer header should look like — the doc's example was just job-specific and never got a customer variant.
+- **`empty-state-title`** is used (Leads/Marketing/Conversations) as a simpler two-line empty state without an icon — real CSS, but not listed under Empty State above alongside `.empty-state-icon`/`.empty-state-text`/`.empty-state-sub`.
+
+---
+
 ## Existing CSS Classes by Category
 
 ### Page shells
 `.page` `.page-header` `.page-title` `.page-subtitle`
-`.jobs-page` `.job-page` `.customers-page` `.admin-page` `.settings-page` `.tt-page` `.collections-page` `.create-job-page`
+`.jobs-page` `.job-page` `.customers-page` `.admin-page` `.settings-page` `.create-job-page`
+
+Collections Kit / Overview Kit / Conversations pages use their own shell classes (`.coll-page`, `.ovw-page`, `.conversations-layout`) — see their sections above, not enumerated here.
 
 ### Navigation
 `.sidebar` `.sidebar-link` `.sidebar-link.active` `.sidebar-nav` `.sidebar-footer` `.sidebar-badge`
@@ -774,7 +871,7 @@ window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed t
 ### Buttons
 `.btn` `.btn-primary` `.btn-secondary` `.btn-ghost` `.btn-sm` `.btn-lg`
 `.admin-action-btn` `.admin-action-btn-warning` `.admin-action-btn-danger` `.admin-action-btn-success`
-`.job-card-open-btn`
+`.job-card-open-btn` `.customer-action-btn` (CustomerPage header icon+label row)
 
 ### Forms
 `.input` `.textarea` `.label` `.form-group`
@@ -809,7 +906,7 @@ window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed t
 
 ### Misc
 `.loading-page` `.spinner`
-`.empty-state` `.empty-state-icon` `.empty-state-text` `.empty-state-sub`
+`.empty-state` `.empty-state-icon` `.empty-state-text` `.empty-state-sub` `.empty-state-title` (simpler 2-line, no-icon variant)
 `.create-menu-container` `.create-menu-fab` `.create-menu-popup`
 
 ---
@@ -823,8 +920,13 @@ import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
-import { LookupSelect } from '@/components/AddContactModal';  // searchable dropdown
+import { LookupSelect } from '@/components/AddContactModal';  // searchable dropdown — use outside Collections Kit pages
 import JobDetailPanel from '@/components/JobDetailPanel';
+
+// Collections Kit pages only (Collections, Time Tracking, Invoice/Estimate editors) — see § Collections Kit
+import { CollCard, GhostButton, PrimaryButton, SegControl, Kpi, KpiGrid, PopoverButton, StatusBadge, Pill } from '@/components/collections/collKit';
+import { C, STATUS, DIV_COLOR, fmt$2, fmtDate } from '@/components/collections/collTokens';
+import SearchSelect from '@/components/collections/SearchSelect';  // searchable dropdown — Collections Kit pages only
 ```
 
 ---

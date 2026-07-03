@@ -16,6 +16,30 @@ import {
   resendGet, resendRequest, resendSend, resendGetEmail,
   resendListDomains, resendGetDomain, resendVerifyDomain,
 } from './resend.js';
+import {
+  callrailGet, callrailRequest, callrailListCalls, callrailGetCall,
+  callrailListFormSubmissions, resolveRecording, deepgramTranscribeUrl,
+} from './callrail.js';
+import {
+  stripeGet, stripeRequest, getBalance as stripeGetBalance, listCharges as stripeListCharges,
+  retrieveCharge as stripeRetrieveCharge, listPayouts as stripeListPayouts,
+  listExternalAccounts as stripeListExternalAccounts, createPayout as stripeCreatePayout,
+  createPaymentLink as stripeCreatePaymentLink,
+} from './stripe.js';
+import {
+  twilioGet, twilioRequest, listMessages as twilioListMessages,
+  getMessage as twilioGetMessage, sendMessage as twilioSendMessage,
+} from './twilio.js';
+import { googleAdsQuery, campaignSpend as googleAdsCampaignSpend } from './googleads.js';
+import { metaGet, campaignInsights as metaCampaignInsights } from './metaads.js';
+import {
+  githubGet, githubRequest, listPulls as githubListPulls, getPull as githubGetPull,
+  listIssues as githubListIssues, searchCode as githubSearchCode, createIssue as githubCreateIssue,
+  mergePull as githubMergePull, createPull as githubCreatePull, updatePull as githubUpdatePull,
+  createBranch as githubCreateBranch, getFile as githubGetFile, commitFile as githubCommitFile,
+  listCommits as githubListCommits, getCommit as githubGetCommit, listBranches as githubListBranches,
+  addComment as githubAddComment,
+} from './github.js';
 import { supabase } from './supabase.js';
 
 const n = (v) => (v == null ? v : Number(v));
@@ -622,6 +646,315 @@ export const TOOLS = {
       return supabase(env).delete(a.table, a.filter);
     },
   },
+
+  // ── CallRail (call tracking) + Deepgram (transcription) ──────────────────────
+  callrail_list_calls: {
+    write: false,
+    description: 'List CallRail tracked calls (newest first). Optional start_date/end_date (YYYY-MM-DD), search (matches caller/number), per_page, page. The CallRail account id is resolved automatically.',
+    inputSchema: { type: 'object', properties: { start_date: { type: 'string' }, end_date: { type: 'string' }, search: { type: 'string' }, per_page: { type: 'number' }, page: { type: 'number' } } },
+    run: (env, a) => callrailListCalls(env, a),
+  },
+  callrail_get_call: {
+    write: false,
+    description: 'Fetch one CallRail call by id, with recording/transcription/tags/source fields expanded.',
+    inputSchema: { type: 'object', properties: { call_id: { type: 'string' } }, required: ['call_id'] },
+    run: (env, a) => callrailGetCall(env, a.call_id),
+  },
+  callrail_list_form_submissions: {
+    write: false,
+    description: 'List CallRail web-form submissions (leads captured from forms). Optional start_date/end_date (YYYY-MM-DD), per_page, page.',
+    inputSchema: { type: 'object', properties: { start_date: { type: 'string' }, end_date: { type: 'string' }, per_page: { type: 'number' }, page: { type: 'number' } } },
+    run: (env, a) => callrailListFormSubmissions(env, a),
+  },
+  callrail_get_recording: {
+    write: false,
+    description: "Resolve a CallRail recording URL (from a call's recording field) to a fetchable signed audio URL. Only api.callrail.com URLs are allowed (SSRF guard).",
+    inputSchema: { type: 'object', properties: { recording_url: { type: 'string' } }, required: ['recording_url'] },
+    run: (env, a) => resolveRecording(env, a.recording_url),
+  },
+  callrail_transcribe: {
+    write: true,
+    description: 'Transcribe a CallRail recording to diarized text via Deepgram. GUARDED: Deepgram is a paid per-call API, so this previews unless confirm:true. recording_url must be an api.callrail.com recording URL.',
+    inputSchema: { type: 'object', properties: { recording_url: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['recording_url'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Transcribe CallRail recording via Deepgram (paid API call).`, { recording_url: a.recording_url });
+      return deepgramTranscribeUrl(env, a.recording_url);
+    },
+  },
+  callrail_get: {
+    write: false,
+    description: 'Power tool: GET any CallRail v3 path (read-only). Account-relative paths (e.g. "/calls.json", "/users.json") get the account id injected; pass account:false or an absolute "/a/{id}/…" path to skip that.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' }, account: { type: 'boolean' } }, required: ['path'] },
+    run: (env, a) => callrailGet(env, a.path, { account: a.account !== false }),
+  },
+  callrail_request: {
+    write: true,
+    description: 'Power tool: call any CallRail endpoint with any method (POST/PUT/DELETE). Account id is injected for account-relative paths. Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, body: { type: 'object' }, account: { type: 'boolean' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on CallRail.`, a.body || {});
+      return callrailRequest(env, a.method, a.path, a.body, { account: a.account !== false });
+    },
+  },
+
+  // ── Stripe (card payments + payouts) ─────────────────────────────────────────
+  stripe_get_balance: {
+    write: false,
+    description: "Get UPR's Stripe balance (available, pending, and instant_available totals).",
+    inputSchema: { type: 'object', properties: {} },
+    run: (env) => stripeGetBalance(env),
+  },
+  stripe_list_charges: {
+    write: false,
+    description: 'List recent Stripe charges. Optional customer (Stripe customer id) and limit (max 100).',
+    inputSchema: { type: 'object', properties: { customer: { type: 'string' }, limit: { type: 'number' } } },
+    run: (env, a) => stripeListCharges(env, a),
+  },
+  stripe_retrieve_charge: {
+    write: false,
+    description: 'Retrieve one Stripe charge by id, with its balance_transaction (amount/fee/net) expanded.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    run: (env, a) => stripeRetrieveCharge(env, a.id),
+  },
+  stripe_list_payouts: {
+    write: false,
+    description: 'List recent Stripe payouts to the bank/card (limit max 100).',
+    inputSchema: { type: 'object', properties: { limit: { type: 'number' } } },
+    run: (env, a) => stripeListPayouts(env, a),
+  },
+  stripe_list_external_accounts: {
+    write: false,
+    description: 'List Stripe payout destinations (bank accounts + debit cards) with their instant-eligibility and default flags.',
+    inputSchema: { type: 'object', properties: {} },
+    run: (env) => stripeListExternalAccounts(env),
+  },
+  stripe_create_payout: {
+    write: true,
+    description: 'Create a Stripe payout (default instant) to an external account. amount_cents required; destination is an external account id (omit for the default). MOVES REAL MONEY — previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { amount_cents: { type: 'number' }, destination: { type: 'string' }, method: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['amount_cents'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Create a ${a.method || 'instant'} Stripe payout of $${(Number(a.amount_cents) / 100).toFixed(2)}${a.destination ? ' to ' + a.destination : ' (default destination)'}.`, { amount_cents: a.amount_cents, destination: a.destination, method: a.method || 'instant' });
+      return stripeCreatePayout(env, { amountCents: n(a.amount_cents), destination: a.destination, method: a.method || 'instant' });
+    },
+  },
+  stripe_create_payment_link: {
+    write: true,
+    description: 'Create a Stripe hosted Checkout pay-now link for an amount. amount_cents required; optional description, customer_email, success_url, cancel_url. Returns the session (url). Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { amount_cents: { type: 'number' }, description: { type: 'string' }, customer_email: { type: 'string' }, success_url: { type: 'string' }, cancel_url: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['amount_cents'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Create a Stripe pay-now link for $${(Number(a.amount_cents) / 100).toFixed(2)} (${a.description || 'Payment'}).`, { amount_cents: a.amount_cents, description: a.description });
+      return stripeCreatePaymentLink(env, { amountCents: n(a.amount_cents), description: a.description, customerEmail: a.customer_email, successUrl: a.success_url, cancelUrl: a.cancel_url });
+    },
+  },
+  stripe_get: {
+    write: false,
+    description: 'Power tool: GET any Stripe API path (read-only). e.g. "/customers", "/payment_intents/pi_123". Optional params object becomes the querystring.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' }, params: { type: 'object' } }, required: ['path'] },
+    run: (env, a) => stripeGet(env, a.path, a.params),
+  },
+  stripe_request: {
+    write: true,
+    description: 'Power tool: call any Stripe endpoint with any method (POST/DELETE). path + optional params (form-encoded). Covers refunds, invoice items, customer updates, etc. Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, params: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on Stripe.`, a.params || {});
+      return stripeRequest(env, a.method, a.path, a.params);
+    },
+  },
+
+  // ── Twilio (SMS/MMS) ─────────────────────────────────────────────────────────
+  twilio_list_messages: {
+    write: false,
+    description: 'List recent Twilio messages. Optional to / from (E.164 number) and date_sent (YYYY-MM-DD) filters, page_size (max 200).',
+    inputSchema: { type: 'object', properties: { to: { type: 'string' }, from: { type: 'string' }, date_sent: { type: 'string' }, page_size: { type: 'number' } } },
+    run: (env, a) => twilioListMessages(env, a),
+  },
+  twilio_get_message: {
+    write: false,
+    description: 'Fetch one Twilio message by its SID (SM…/MM…), including status and error details.',
+    inputSchema: { type: 'object', properties: { sid: { type: 'string' } }, required: ['sid'] },
+    run: (env, a) => twilioGetMessage(env, a.sid),
+  },
+  twilio_send_sms: {
+    write: true,
+    description: 'Send an SMS/MMS via Twilio to a phone number. to (E.164) + body required; optional media_urls (array) for MMS. Sends a REAL text (costs money, reaches a person) — previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { to: { type: 'string' }, body: { type: 'string' }, media_urls: { type: 'array' }, confirm: { type: 'boolean' } }, required: ['to', 'body'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Send an SMS to ${a.to}: "${String(a.body || '').slice(0, 120)}".`, { to: a.to, body: a.body, media_urls: a.media_urls || [] });
+      return twilioSendMessage(env, { to: a.to, body: a.body, mediaUrls: a.media_urls });
+    },
+  },
+  twilio_get: {
+    write: false,
+    description: 'Power tool: GET any Twilio path under /Accounts/{sid} (read-only). e.g. "/Messages.json", "/Calls.json". Optional params object becomes the querystring.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' }, params: { type: 'object' } }, required: ['path'] },
+    run: (env, a) => twilioGet(env, a.path, a.params),
+  },
+  twilio_request: {
+    write: true,
+    description: 'Power tool: call any Twilio endpoint under /Accounts/{sid} with any method (POST/DELETE). path + optional params (form-encoded). Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, params: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on Twilio.`, a.params || {});
+      return twilioRequest(env, a.method, a.path, a.params);
+    },
+  },
+
+  // ── Google Ads (spend reporting) ─────────────────────────────────────────────
+  google_ads_campaign_spend: {
+    write: false,
+    description: 'Google Ads spend per campaign per day for a date range. start_date + end_date (YYYY-MM-DD). Returns [{campaignId, campaignName, date, spend ($), impressions, clicks, conversions}].',
+    inputSchema: { type: 'object', properties: { start_date: { type: 'string' }, end_date: { type: 'string' } }, required: ['start_date', 'end_date'] },
+    run: (env, a) => googleAdsCampaignSpend(env, a.start_date, a.end_date),
+  },
+  google_ads_query: {
+    write: false,
+    description: 'Run a raw GAQL query against the configured Google Ads customer (searchStream). Read-only. e.g. "SELECT campaign.name, metrics.cost_micros FROM campaign WHERE segments.date DURING LAST_7_DAYS".',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    run: (env, a) => googleAdsQuery(env, a.query),
+  },
+
+  // ── Meta Ads (spend reporting) ───────────────────────────────────────────────
+  meta_ads_insights: {
+    write: false,
+    description: 'Meta (Facebook/Instagram) ad spend per campaign per day for a date range. start_date + end_date (YYYY-MM-DD). Returns [{campaignId, campaignName, date, spend ($), impressions, clicks, conversions}].',
+    inputSchema: { type: 'object', properties: { start_date: { type: 'string' }, end_date: { type: 'string' } }, required: ['start_date', 'end_date'] },
+    run: (env, a) => metaCampaignInsights(env, a.start_date, a.end_date),
+  },
+  meta_ads_get: {
+    write: false,
+    description: 'Power tool: GET any Meta Graph API path (read-only) with the account token attached. e.g. "/me/adaccounts", "/act_123/campaigns". Optional params object becomes the querystring.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' }, params: { type: 'object' } }, required: ['path'] },
+    run: (env, a) => metaGet(env, a.path, a.params || {}),
+  },
+
+  // ── GitHub (repo / PRs / issues) ─────────────────────────────────────────────
+  github_list_prs: {
+    write: false,
+    description: 'List pull requests in a repo (defaults to GITHUB_DEFAULT_REPO). Optional repo ("owner/name"), state (open/closed/all), per_page.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, state: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListPulls(env, a),
+  },
+  github_get_pr: {
+    write: false,
+    description: 'Fetch one pull request by number (defaults to GITHUB_DEFAULT_REPO). number required; optional repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' } }, required: ['number'] },
+    run: (env, a) => githubGetPull(env, a),
+  },
+  github_list_issues: {
+    write: false,
+    description: 'List issues in a repo (defaults to GITHUB_DEFAULT_REPO). Optional repo, state (open/closed/all), per_page. Note: GitHub returns PRs here too.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, state: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListIssues(env, a),
+  },
+  github_search_code: {
+    write: false,
+    description: 'Search code (scoped to GITHUB_DEFAULT_REPO unless the query already has a repo: qualifier). q required; optional repo.',
+    inputSchema: { type: 'object', properties: { q: { type: 'string' }, repo: { type: 'string' } }, required: ['q'] },
+    run: (env, a) => githubSearchCode(env, a),
+  },
+  github_create_issue: {
+    write: true,
+    description: 'Open a GitHub issue (defaults to GITHUB_DEFAULT_REPO). title required; optional body, labels (array), repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' }, labels: { type: 'array' }, confirm: { type: 'boolean' } }, required: ['title'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Open a GitHub issue "${a.title}"${a.repo ? ' in ' + a.repo : ''}.`, { title: a.title, body: a.body, labels: a.labels });
+      return githubCreateIssue(env, a);
+    },
+  },
+  github_merge_pr: {
+    write: true,
+    description: 'Merge a pull request (defaults to GITHUB_DEFAULT_REPO). number required; merge_method = squash (default) | merge | rebase; optional commit_title/commit_message, repo. Merges real code — previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, merge_method: { type: 'string' }, commit_title: { type: 'string' }, commit_message: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Merge PR #${a.number}${a.repo ? ' in ' + a.repo : ''} via ${a.merge_method || 'squash'}.`, { number: a.number, merge_method: a.merge_method || 'squash' });
+      return githubMergePull(env, a);
+    },
+  },
+  github_create_pr: {
+    write: true,
+    description: 'Open a pull request (defaults to GITHUB_DEFAULT_REPO). title + head (source branch) + base (target branch) required; optional body, draft, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, title: { type: 'string' }, head: { type: 'string' }, base: { type: 'string' }, body: { type: 'string' }, draft: { type: 'boolean' }, confirm: { type: 'boolean' } }, required: ['title', 'head', 'base'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Open PR "${a.title}" (${a.head} → ${a.base})${a.repo ? ' in ' + a.repo : ''}.`, { title: a.title, head: a.head, base: a.base, draft: !!a.draft });
+      return githubCreatePull(env, a);
+    },
+  },
+  github_update_pr: {
+    write: true,
+    description: 'Edit a pull request or close/reopen it (defaults to GITHUB_DEFAULT_REPO). number required; optional title, body, state (open/closed), base, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, title: { type: 'string' }, body: { type: 'string' }, state: { type: 'string' }, base: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Update PR #${a.number}${a.state ? ` (state → ${a.state})` : ''}${a.repo ? ' in ' + a.repo : ''}.`, { number: a.number, title: a.title, state: a.state, base: a.base });
+      return githubUpdatePull(env, a);
+    },
+  },
+  github_create_branch: {
+    write: true,
+    description: 'Create a branch (defaults to GITHUB_DEFAULT_REPO). branch (new name) required; from = base branch or sha (default the repo HEAD); optional repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, branch: { type: 'string' }, from: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['branch'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Create branch "${a.branch}" from ${a.from || 'HEAD'}${a.repo ? ' in ' + a.repo : ''}.`, { branch: a.branch, from: a.from || 'HEAD' });
+      return githubCreateBranch(env, a);
+    },
+  },
+  github_get_file: {
+    write: false,
+    description: 'Read a file from the repo (the REST "pull"). path required; optional ref (branch/tag/sha), repo. Returns GitHub\'s content object incl. the blob sha needed to update it.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, path: { type: 'string' }, ref: { type: 'string' } }, required: ['path'] },
+    run: (env, a) => githubGetFile(env, a),
+  },
+  github_commit_file: {
+    write: true,
+    description: 'Create or update a file and commit it (the REST "push"). path + content (plain text) + message required; pass sha (the existing file\'s blob sha from github_get_file) to UPDATE, omit to CREATE; optional branch, repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, path: { type: 'string' }, content: { type: 'string' }, message: { type: 'string' }, branch: { type: 'string' }, sha: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['path', 'content', 'message'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${a.sha ? 'Update' : 'Create'} ${a.path}${a.branch ? ' on ' + a.branch : ''}${a.repo ? ' in ' + a.repo : ''} — "${a.message}".`, { path: a.path, branch: a.branch, update: !!a.sha, bytes: String(a.content || '').length });
+      return githubCommitFile(env, a);
+    },
+  },
+  github_list_commits: {
+    write: false,
+    description: 'List commits in a repo (defaults to GITHUB_DEFAULT_REPO). Optional sha (branch/sha to start from), path (commits touching a file), per_page, repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, sha: { type: 'string' }, path: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListCommits(env, a),
+  },
+  github_get_commit: {
+    write: false,
+    description: 'Fetch one commit by ref/sha (defaults to GITHUB_DEFAULT_REPO), including its file diffs. ref required; optional repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, ref: { type: 'string' } }, required: ['ref'] },
+    run: (env, a) => githubGetCommit(env, a),
+  },
+  github_list_branches: {
+    write: false,
+    description: 'List branches in a repo (defaults to GITHUB_DEFAULT_REPO). Optional per_page, repo.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, per_page: { type: 'number' } } },
+    run: (env, a) => githubListBranches(env, a),
+  },
+  github_add_comment: {
+    write: true,
+    description: 'Comment on a pull request or issue (defaults to GITHUB_DEFAULT_REPO). number + body required; optional repo. Previews unless confirm:true.',
+    inputSchema: { type: 'object', properties: { repo: { type: 'string' }, number: { type: 'number' }, body: { type: 'string' }, confirm: { type: 'boolean' } }, required: ['number', 'body'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`Comment on #${a.number}${a.repo ? ' in ' + a.repo : ''}: "${String(a.body || '').slice(0, 120)}".`, { number: a.number, body: a.body });
+      return githubAddComment(env, a);
+    },
+  },
+  github_get: {
+    write: false,
+    description: 'Power tool: GET any GitHub REST path (read-only). e.g. "/repos/{owner}/{repo}/commits", "/user". Use for endpoints without a dedicated tool.',
+    inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    run: (env, a) => githubGet(env, a.path),
+  },
+  github_request: {
+    write: true,
+    description: 'Power tool: call any GitHub endpoint with any method (POST/PATCH/PUT/DELETE). method + path + optional body. Covers comments, labels, reviews, etc. Guarded — preview unless confirm:true.',
+    inputSchema: { type: 'object', properties: { method: { type: 'string' }, path: { type: 'string' }, body: { type: 'object' }, confirm: { type: 'boolean' } }, required: ['method', 'path'] },
+    run: async (env, a) => {
+      if (!a.confirm) return preview(`${String(a.method).toUpperCase()} ${a.path} on GitHub.`, a.body || {});
+      return githubRequest(env, a.method, a.path, a.body);
+    },
+  },
 };
 
 export function toolList() {
@@ -636,7 +969,7 @@ export function toolList() {
       annotations: {
         title: name,
         readOnlyHint: readOnly,
-        destructiveHint: readOnly ? false : /delete|relink|send|update|rpc/i.test(name),
+        destructiveHint: readOnly ? false : /delete|relink|send|update|rpc|create|payout|payment_link|transcribe|sms|request|merge|commit|comment|branch/i.test(name),
         openWorldHint: true,
       },
     };

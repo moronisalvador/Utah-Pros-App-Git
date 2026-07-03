@@ -58,6 +58,30 @@ const EXPLICIT_FLAGS = [
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',
   },
+  // ── CRM per-screen rollout sub-flags (Phase 6b) ──────────────────────────────
+  // One switch per CRM screen. These are the rollout kill-switches CrmLayout ANDs
+  // with each employee's page access (canAccess('crm_<screen>')): a screen shows
+  // only when its sub-flag is open AND the employee has access. Left ON here so
+  // they default open (isFeatureEnabled treats a missing/enabled flag as
+  // unrestricted); flip one OFF to hide that screen from everyone during rollout.
+  // The whole /crm/* tree still sits behind page:crm — these gate WITHIN it.
+  ...[
+    ['feature:crm_leads',         'CRM · Leads'],
+    ['feature:crm_contacts',      'CRM · Contacts'],
+    ['feature:crm_conversations', 'CRM · Conversations'],
+    ['feature:crm_call_log',      'CRM · Call Log'],
+    ['feature:crm_tasks',         'CRM · Tasks'],
+    ['feature:crm_sequences',     'CRM · Sequences'],
+    ['feature:crm_forms',         'CRM · Forms'],
+    ['feature:crm_attribution',   'CRM · Attribution'],
+    ['feature:crm_reports',       'CRM · Reports'],
+    ['feature:crm_campaigns',     'CRM · Campaigns'],
+    ['feature:crm_integrations',  'CRM · Integrations'],
+    ['feature:crm_settings',      'CRM · Settings'],
+  ].map(([key, label]) => ({
+    key, label,
+    description: `Per-screen access sub-flag for the ${label.replace('CRM · ', '')} CRM screen — combined with each employee's page access.`,
+  })),
 ];
 
 // ─── SECTION: Nav-derived flags (pages already gated in navItems) ───

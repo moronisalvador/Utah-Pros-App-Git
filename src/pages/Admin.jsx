@@ -15,6 +15,21 @@ const NAV_KEYS = [
   { key: 'schedule', label: 'Schedule', section: 'Operations' },
   { key: 'time_tracking', label: 'Time Tracking', section: 'Operations' },
   { key: 'marketing', label: 'Marketing', section: 'Growth' },
+  // CRM per-screen roles (Phase 6b). Keys match CrmLayout's crm_<screen> access
+  // keys and the feature:crm_<screen> sub-flags — defined here BEFORE page:crm
+  // opens to staff so every screen has a role decision on day one.
+  { key: 'crm_leads', label: 'CRM · Leads', section: 'CRM' },
+  { key: 'crm_contacts', label: 'CRM · Contacts', section: 'CRM' },
+  { key: 'crm_conversations', label: 'CRM · Conversations', section: 'CRM' },
+  { key: 'crm_call_log', label: 'CRM · Call Log', section: 'CRM' },
+  { key: 'crm_tasks', label: 'CRM · Tasks', section: 'CRM' },
+  { key: 'crm_sequences', label: 'CRM · Sequences', section: 'CRM' },
+  { key: 'crm_forms', label: 'CRM · Forms', section: 'CRM' },
+  { key: 'crm_attribution', label: 'CRM · Attribution', section: 'CRM' },
+  { key: 'crm_reports', label: 'CRM · Reports', section: 'CRM' },
+  { key: 'crm_campaigns', label: 'CRM · Campaigns', section: 'CRM' },
+  { key: 'crm_integrations', label: 'CRM · Integrations', section: 'CRM' },
+  { key: 'crm_settings', label: 'CRM · Settings', section: 'CRM' },
   { key: 'admin_panel', label: 'Admin', section: 'System' },
   { key: 'settings', label: 'Settings', section: 'System' },
 ];
@@ -25,6 +40,7 @@ const ROLES = [
   { key: 'project_manager', label: 'Project Manager' },
   { key: 'supervisor', label: 'Supervisor' },
   { key: 'field_tech', label: 'Field Tech' },
+  { key: 'crm_partner', label: 'CRM Partner (external)' },
 ];
 
 const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.key, r.label]));
@@ -455,6 +471,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
     role: employee?.role || 'field_tech',
     hourly_rate: employee?.hourly_rate ?? '',
     overtime_rate: employee?.overtime_rate ?? '',
+    is_external: employee?.is_external ?? false,
     password: '',
   });
 
@@ -477,6 +494,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         if (form.role !== employee.role) payload.role = form.role;
         if (form.hourly_rate !== (employee.hourly_rate ?? '')) payload.hourly_rate = form.hourly_rate;
         if (form.overtime_rate !== (employee.overtime_rate ?? '')) payload.overtime_rate = form.overtime_rate;
+        if (form.is_external !== (employee.is_external ?? false)) payload.is_external = form.is_external;
         if (form.password) payload.password = form.password;
 
         const res = await fetch('/api/admin-users', {
@@ -502,6 +520,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
             phone: form.phone,
             hourly_rate: form.hourly_rate,
             overtime_rate: form.overtime_rate,
+            is_external: form.is_external,
           }),
         });
         const data = await res.json();
@@ -593,6 +612,17 @@ function EmployeeModal({ employee, onClose, onSaved }) {
                   <option key={r.key} value={r.key}>{r.label}</option>
                 ))}
               </select>
+            </div>
+            <div className="admin-field">
+              <label className="admin-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={form.is_external}
+                  onChange={e => set('is_external', e.target.checked)}
+                />
+                External account (vendor/agency — not internal staff)
+              </label>
+              <span className="admin-field-hint">Reporting/audit marker only — a CRM Partner's actual access is scoped entirely by their Role above.</span>
             </div>
             <div className="admin-field">
               {isEdit ? (
@@ -943,6 +973,20 @@ const PAGE_ACCESS_KEYS = [
   { key: 'collections',        label: 'Collections',        section: 'Operations' },
   { key: 'leads',              label: 'Leads',              section: 'Operations' },
   { key: 'marketing',          label: 'Marketing',          section: 'Growth' },
+  // CRM per-screen overrides (Phase 6b) — grant/revoke an individual employee
+  // access to a single CRM screen. Backs canAccess('crm_<screen>') in CrmLayout.
+  { key: 'crm_leads',          label: 'CRM · Leads',          section: 'CRM' },
+  { key: 'crm_contacts',       label: 'CRM · Contacts',       section: 'CRM' },
+  { key: 'crm_conversations',  label: 'CRM · Conversations',  section: 'CRM' },
+  { key: 'crm_call_log',       label: 'CRM · Call Log',       section: 'CRM' },
+  { key: 'crm_tasks',          label: 'CRM · Tasks',          section: 'CRM' },
+  { key: 'crm_sequences',      label: 'CRM · Sequences',      section: 'CRM' },
+  { key: 'crm_forms',          label: 'CRM · Forms',          section: 'CRM' },
+  { key: 'crm_attribution',    label: 'CRM · Attribution',    section: 'CRM' },
+  { key: 'crm_reports',        label: 'CRM · Reports',        section: 'CRM' },
+  { key: 'crm_campaigns',      label: 'CRM · Campaigns',      section: 'CRM' },
+  { key: 'crm_integrations',   label: 'CRM · Integrations',   section: 'CRM' },
+  { key: 'crm_settings',       label: 'CRM · Settings',       section: 'CRM' },
 ];
 
 function PageAccessTab() {

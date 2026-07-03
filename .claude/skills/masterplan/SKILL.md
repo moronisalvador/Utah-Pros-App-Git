@@ -1,0 +1,236 @@
+---
+name: masterplan
+description: Run a full planning session for any UPR initiative (build, remake, or improve anything) to the roadmap-v3 standard — live-verified evidence audit, gap taxonomy with HAVE/PARTIAL/MISSING verdicts, Foundation-then-parallel-wave phase design with a file-ownership manifest, an adversarial challenge pass, security/reliability guardrails, seeded progress tracking, and copy-paste cold-session dispatch blocks. Use when the owner asks to plan any non-trivial initiative or invokes /masterplan <initiative>.
+---
+
+# masterplan
+
+You are running a PLANNING session, not a build session. The deliverable is an
+adversarially-reviewed plan of record committed to the repo (roadmap section, dispatch
+blocks, seeds, agents) — zero feature code. Work read-only until the owner explicitly
+approves the commit step (section 6). Best run as: fresh session, strongest available
+model, high effort, plan mode on, "ultracode" included in the invocation — the
+challenge pass (section 5) fans out many agents.
+
+**Delegation vocabulary (used throughout):** "fan out" = spawn parallel READ-ONLY
+subagents. Use the Workflow orchestration tool when available (ultracode sessions);
+otherwise launch parallel Explore-type subagents via the Agent/Task tool. Same intent
+either way: many independent read-only investigators, results structured back to you.
+
+**Calibration:** the worked example of this entire standard is the "Roadmap v3"
+section of `docs/crm-roadmap.md` plus `docs/crm-dispatch.md` — skim both first to see
+what "done" looks like.
+
+**Setup:** the initiative is whatever follows `/masterplan`. If genuinely ambiguous
+(which surface, for whom, replace vs extend), ask 2-3 sharp questions first — then
+proceed without check-ins until the plan is presented. Pick a short kebab-case slug
+once (e.g. `sched-board`) and use it consistently for `docs/<slug>-roadmap.md`,
+`docs/<slug>-dispatch.md`, and `.claude/rules/<slug>-wave-ownership.md`.
+
+## 1. Read scope, then verify the ACTUAL state — never trust docs or memory
+
+- Read `CLAUDE.md` and the domain doc for the surface (`UPR-Web-Context.md`
+  schema/RPCs; `BILLING-CONTEXT.md` money/QBO; `UPR-Design-System.md` UI;
+  `EMAIL-DELIVERABILITY.md` sends; if the surface has no dedicated doc, default to
+  `UPR-Web-Context.md` + `UPR-Design-System.md`), plus any existing
+  `docs/*-roadmap.md` touching it.
+- Verify live via Supabase MCP (`information_schema.columns`, `pg_tables` +
+  `pg_policies` for RLS posture, `pg_get_functiondef` for RPCs — some live functions
+  are NOT in `supabase/migrations/`; that schema drift is itself a finding) and via
+  real file reads. If the initiative has a live progress tracker (CRM:
+  `crm_build_phases`/`crm_build_stages`), statuses come from IT, "not assumed from
+  the doc"; otherwise from the roadmap doc's checklists.
+- Fan out the broad inventories (frontend, backend/schema, docs/conventions) — keep
+  this session's context for judgment.
+- Produce a **finish-first list**: everything open in in-flight work, as concrete
+  stages with acceptance criteria, BEFORE proposing anything new. Disclose stale
+  checkbox states (shipped-but-unticked, done-looking-but-todo) — never silently flip.
+
+## 2. Gap audit against a capability taxonomy
+
+- Use the owner's taxonomy if given; otherwise construct one for the domain (grouped
+  capability areas A/B/C…) and say so.
+- Every row gets a verdict — **HAVE / PARTIAL / MISSING** (compounds like
+  "PARTIAL + P0 bug" or "wired, unverified" allowed) — with concrete evidence:
+  `file:line`, RPC/table name, or live-query result. **HAVE only from code/schema,
+  never from docs.**
+- Any bug found: write a numbered severity finding (mechanism + root cause),
+  **quantify real exposure with a live query**, give interim operating guidance until
+  the fix lands, and slot the fix into the earliest phase (or flag it as a standalone
+  hotfix with its own dispatch block).
+
+## 3. Design the phases
+
+- Group MISSING/PARTIAL into phases sized for **one focused session each** (a phase
+  ≈ 1 table-group + 1 worker + 1 screen; 3× that is a scope defect — split it).
+  ROI-order for the business, not feature-count.
+- Every phase block uses the standard schema: `### Phase X — Title` + blockquote
+  (**Branch** (session-assigned; illustrative name) / **Prerequisite** / **Model ·
+  effort** / **Read scope**) + checkbox **Close-out checklist** (named test-first
+  targets → acceptance criteria → `npm run test` + `build` + eslint → reviewer-agent
+  gauntlet → visual check → `UPR-Web-Context.md` → set-status + reconcile + test-data
+  cleanup + push/PR) + one-line **Scope** naming owned files and fillable RPC bodies.
+- **Model/effort logic:** Opus·high for money math, consent/compliance, live-RPC
+  replaces, public unauthenticated surfaces; Opus·medium for data-integrity CRUD;
+  Sonnet·medium for verification/close-out and mechanical scaffolding. State which
+  and why per phase.
+- Explicit **out-of-scope list**. Contested build-vs-buy / replace-vs-keep calls get
+  an **options-on-record evaluation** (alternatives, trade-offs, firm recommendation,
+  the caveat under which the cheaper option wins). Undecided owner calls become
+  **decision forks** encoded in the work ("if X, close stage as superseded; default =
+  verify anyway") so sessions proceed deterministically either way.
+- External dependencies (carrier approvals, tokens, credentials) are **hard gates —
+  "do not launch on hope"**, and the gated session must not build or test the gated
+  live path until the gate is confirmed. They get an anytime lane, not a wave slot.
+
+## 4. Restructure for maximum parallelism (Foundation → one wave)
+
+- Extract every shared dependency into **Phase F — Foundation** (one Opus·high
+  session): 100% of the wave's SCHEMA (tables/columns/policies/indexes — wave
+  sessions ship ZERO schema); the only shared live-RPC REPLACEs (each
+  backward-compatible: new params DEFAULT, committed test that the shipped caller
+  still succeeds — one shared Supabase means a replace is live in production the
+  moment it applies); **signature-frozen stubs** for every phase-private RPC
+  (SECURITY DEFINER + GRANT, body RAISE 'not implemented'; signatures are contracts —
+  changing one post-F is forbidden, `migration-safety-checker` enforces); shared
+  helpers extracted once with tests; shared UI extracted behavior-identical;
+  **slot components** so two phases never co-edit a page; ALL wiring (routes via a
+  stub-page pattern, nav, icons, reserved css section markers per phase); and the
+  **ownership manifest** `.claude/rules/<slug>-wave-ownership.md` (Session → files
+  owned exclusively → RPC bodies it fills, plus the frozen-file list nobody edits
+  in-wave; shared log tables get DATA writes only).
+- Wave sessions may ship **function-body-only** `CREATE OR REPLACE` migrations for
+  their OWN frozen stubs — the standing amendment to "zero migrations" (a literal
+  rule would force Foundation to build the whole backend serially without per-phase
+  test-first). Any further rule you bend gets **rule-amendment transparency**: state
+  the original, the amendment, the rationale.
+- Where Foundation can pre-build a gated capability behind a default-OFF kill-switch
+  (e.g. a send path behind an `automation_settings` flag), do it — it dissolves
+  serial constraints between phases that would otherwise edit the same seam.
+- **Dispatch model:** Wave 0 = Foundation PLUS any phase that consumes nothing from
+  it (verification/close-out work runs beside F, not behind it). Wave 1 = everything
+  else in parallel once F merges. **Merge order within a wave is a preference, never
+  a gate** — each PR is independent, and how many sessions run at once is purely the
+  owner's review-bandwidth choice ("throttle freely"). The dependency graph names its
+  edge types: hard artifact edges, independent, externally-gated, soft
+  verification-tails, and future/unscheduled.
+- Cross-phase consumptions that survive become **disclosed verification tails**
+  (build against frozen signatures + directly-inserted TEST rows; the E2E check runs
+  after the other phase merges — said in the PR, never faked).
+- Close with the honest **"what resisted maximum parallelism"** ledger: every rule
+  bent, dependency softened, external gate, protocol-fragile pair (with its
+  fallback-to-serial), risk accepted by owner directive, and Foundation-as-single-
+  point-of-failure priced in via the reviewer gauntlet.
+
+## 5. Adversarial challenge pass (mandatory — never present an unchallenged plan)
+
+Fan out read-only agents against the designed structure:
+1. **Refute-first re-verification** of the ~5 least-certain HAVE/PARTIAL verdicts —
+   fresh file/DB reads, prompted to REFUTE, structured verdict
+   CONFIRMED/REFUTED/MODIFIED + plan impact.
+2. **Disjointness proofs** for every pair of phases the wave runs in parallel:
+   enumerate the exact tables and files each touches; hunt hidden shared artifacts
+   (icon modules, shared css, shared libs, RPCs two phases would edit, shared-DB
+   signature hazards). Can't prove disjoint → mark serial, split the phase, or move
+   the seam into Foundation.
+3. **Counter-ordering**: one skeptical Opus-tier agent argues the strongest case for
+   a DIFFERENT priority ordering (for CRM initiatives the `crm-phase-reviewer` agent
+   type fits; otherwise a general-purpose agent prompted as a skeptical
+   acceptance-grader), then adjudicate and record which ordering survived and why.
+Fold every outcome back into sections 2-4 and **report what changed** — demoted
+verdicts, new serial constraints, reordered waves. The challenge runs BEFORE anything
+is committed or seeded.
+
+## 6. Present, then WAIT
+
+Present the plan + the challenge report ("what changed"). **Commit nothing until the
+owner says go.** If plan mode is active, exit via the approval flow.
+
+## 7. On go — commit the plan of record (docs, seeds, agents only — no feature code)
+
+1. Branch per CLAUDE.md (session-assigned, cut from `dev`).
+2. **Roadmap doc**: append a dated, versioned section to `docs/<slug>-roadmap.md`
+   (create it if new): status-reconciliation table + stale-todo disclosures, severity
+   findings with exposure + interim guidance, gap-audit appendix (evidence table,
+   Challenge-CONFIRMED markers on adversarially-survived claims), all phase blocks,
+   dependency graph (ASCII, edge types named), dispatch model (waves, merge-order-is-
+   preference, throttle note, owner pre-decisions), ownership matrix + frozen list +
+   amended migration rule, what-resisted ledger, options-on-record evaluations.
+   Supersede outdated rules in place (strike + pointer) — don't rewrite history.
+3. **Seed progress tracking**: CRM-side initiatives seed `crm_build_phases` /
+   `crm_build_stages` idempotently (`ON CONFLICT (phase_key) DO NOTHING` /
+   `ON CONFLICT (phase_key, title) DO NOTHING`; never touch existing rows; text
+   phase_keys; status changes only ever via `set_crm_phase_status` /
+   `set_crm_stage_status`; progress surfaces on /crm/roadmap + public /status via
+   `get_crm_build_progress()`). Non-CRM initiatives: no generic tracker exists —
+   track via the roadmap doc's checklists, or propose cloning the tracker pattern as
+   explicit owner-approved scope; never bolt onto the CRM tracker.
+4. **Dispatch doc** `docs/<slug>-dispatch.md`: a Preconditions preamble (which PR
+   unlocks each wave + owner pre-decisions due, each tied to the session it forks),
+   then one code-fenced copy-paste block per session — settings header
+   (`[Session <letter> — Wave <n>]` / Branch / Model / Effort / Launch after) +
+   a COMPLETE cold-session prompt: role + "one phase only, no scope creep", read
+   scope (CLAUDE.md + its phase block + the ownership manifest), branch instruction,
+   "Foundation shipped" recap, hard constraints (zero schema, frozen files, reserved
+   css section, call-only send paths where relevant), ordered build list (riskiest
+   first — e.g. data-integrity migrations before UI), named test-first targets, and
+   the full close-out. Each wave session's close-out ends by opening a **PR into `dev`
+   as a handoff and stopping** — the owner/orchestrator merges it; sessions never
+   click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off).
+   No block may reference any conversation. Blocks that cite Foundation's artifact names
+   note the manifest + phase block are authoritative if names drift. State per wave that
+   its sessions may launch simultaneously.
+5. **Agents**: reuse `upr-pattern-checker`, `crm-phase-reviewer`,
+   `migration-safety-checker`, `consent-path-auditor`. Create a new agent ONLY for a
+   job recurring across 3+ phases (frontmatter name/description/tools/model;
+   read-only tools + sonnet for checkers, opus for judgment graders; body = ground
+   truth, procedure, classification taxonomy, output format).
+6. **CLAUDE.md**: amend the relevant workflow section only if the initiative changes
+   standing rules; otherwise leave it.
+7. **`UPR-Web-Context.md`** (Rule 9): session entry — what shipped, key findings,
+   dispatch summary.
+8. Verify: `npm run test` + `npm run build` green; eslint n/a if no JS changed (say
+   so); apply + verify any seed migration live via MCP (re-query the rollup); run
+   `upr-pattern-checker` on changed files.
+9. Ship the plan-of-record the routine way (CLAUDE.md Rule 4): **commit the
+   doc/seed/agent artifacts directly to `dev`** (auto-deploys to staging) — no branch,
+   no PR. (The wave *build* sessions this plan dispatches are the exception — they use
+   branch + PR handoffs; see step 4.) Never push `main`.
+10. **Final message = the Wave 0 dispatch blocks verbatim** + the wave table, so the
+    owner can launch immediately.
+
+## Standing guardrails (bind every phase whose surface they touch — carry them into the blocks)
+
+- Additive-only migrations; RLS + explicit policy in the SAME migration as every
+  CREATE TABLE; `org_id` on domain parents (documented child/global-tracker
+  exceptions); UNIQUE on external-system IDs + ON CONFLICT upserts (namespaced
+  synthetic IDs like `'form:'||token` count); GRANT EXECUTE on SECURITY DEFINER RPCs
+  (worker-only exceptions commented); idempotent seeds.
+- Consent gate structurally unbypassable (any phase that sends): automated/marketing
+  sends only through `sendAutomatedMessage()`/`sendGatedEmail()`; no direct
+  Twilio/Resend, no `skip_compliance` outside `send-message.js` itself; consent
+  writes land in `sms_consent_log`/`email_suppressions` with actor/IP (+ consent-text
+  version for forms); suppressed/DND contacts excluded from audiences AND durably
+  skipped at send time. TCPA penalties are per message — weight reviews accordingly.
+- Public unauthenticated endpoints: server-side validation, XSS-safe rendering (no
+  raw HTML; scheme-whitelisted links), spam gate (honeypot + fill-time + rate limit +
+  Turnstile-behind-a-toggle), draft/publish versioning that never mutates a published
+  row.
+- UTC storage, Mountain-Time day boundaries via the tested `functions/lib/date-mt.js`
+  helpers; every cron/webhook worker writes a `worker_runs` row.
+- Test-first with NAMED targets on money/consent/idempotency/date-boundary/public-
+  surface logic; committed failing test → implementation; never edit a committed test
+  to green it. Test data disposable (TEST org / dev tracking number) and deleted at
+  close-out.
+- Isolation by feature flag (+ `dev_only_user_id`), not branch; staff rollout gated
+  on a roles-defined phase; flag flips stay the owner's.
+- End-of-phase order: commit → set status shipped → update docs → THEN open the PR
+  into `dev` as a handoff (owner/orchestrator merges; sessions don't click-merge,
+  subscribe, or babysit); two-direction checkbox reconciliation (no
+  done-to-look-finished, no finished-left-as-todo; owner-blocked stages stay open with
+  the reason disclosed) — the phase reviewer audits this.
+
+Companion skills for the sessions this skill DISPATCHES (this skill only plans):
+`/new-feature` is the per-session build loop for any surface; `/new-crm-module`
+additionally scaffolds CRM phases. Before writing any query, confirm real column
+names live — never from memory.

@@ -23,7 +23,7 @@
  *              writes → none (calls the Resend HTTP API)
  *
  * EXPORTS:
- *   sendEmail(env, { to, subject, html, text, replyTo, attachments, from })
+ *   sendEmail(env, { to, subject, html, text, replyTo, attachments, from, headers })
  *     → Promise<{ ok, status, id, error }>  (normalized; never throws on an
  *       HTTP-level failure — inspect `ok`)
  *
@@ -39,6 +39,9 @@
  *     callers that already base64-encode a PDF can pass it through unchanged.
  *   - Resend's success response is `{ id }`; failures come back as JSON with a
  *     `message`. We normalize both into `{ ok, status, id, error }`.
+ *   - `headers` (e.g. List-Unsubscribe for bulk/marketing mail — CRM Phase 4c,
+ *     functions/lib/automated-send.js) passes through to Resend's own
+ *     `headers` object untouched; omit it for ordinary transactional sends.
  * ════════════════════════════════════════════════
  */
 
@@ -79,9 +82,10 @@ function toAddressList(to) {
  * @param {string} [opts.from]                    override sender (else env.EMAIL_FROM / default)
  * @param {string} [opts.replyTo]                 override reply-to (else env.EMAIL_REPLY_TO / default)
  * @param {Array}  [opts.attachments]             [{ filename, content (base64), contentType }]
+ * @param {object} [opts.headers]                 extra headers (e.g. List-Unsubscribe) — bulk/marketing sends only
  * @returns {Promise<{ok:boolean,status:number,id:string|null,error:string|null}>}
  */
-export async function sendEmail(env, { to, subject, html, text, from, replyTo, attachments } = {}) {
+export async function sendEmail(env, { to, subject, html, text, from, replyTo, attachments, headers } = {}) {
   if (!env?.RESEND_API_KEY) {
     return { ok: false, status: 0, id: null, error: 'RESEND_API_KEY missing' };
   }
@@ -108,6 +112,10 @@ export async function sendEmail(env, { to, subject, html, text, from, replyTo, a
       content:      a.content,                        // base64 string
       content_type: a.contentType || a.content_type,  // optional; Resend infers if omitted
     }));
+  }
+
+  if (headers && Object.keys(headers).length) {
+    payload.headers = headers;
   }
 
   let res;

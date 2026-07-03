@@ -14,6 +14,7 @@ import {
   enablePrivacyScreen,
 } from '@/lib/nativeBiometric';
 import { realtimeClient } from '@/lib/realtime';
+import { shouldReloadForStaleChunk, buildResetUrl } from '@/lib/staleChunkReload';
 
 // Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
 // small (esp. the native tech app, which never loads admin/desktop pages).
@@ -24,22 +25,31 @@ import TechLayout from '@/components/TechLayout';
 // Wrap React.lazy so a failed dynamic import — almost always a STALE CHUNK after a new
 // deploy (the hashed file this already-open tab references no longer exists on the server) —
 // triggers a single automatic page reload to fetch the current chunk map, instead of dropping
-// the user on the "ran into a problem" screen. A sessionStorage flag guards against reload
-// loops: if the import still fails after one reload (a genuine error, not a stale chunk),
-// we rethrow and let the ErrorBoundary show.
+// the user on the "ran into a problem" screen.
+//
+// The guard is a TIMESTAMP cooldown (shouldReloadForStaleChunk), NOT a boolean flag. The old
+// flag-based guard cleared itself on every successful chunk load, so a sibling chunk loading
+// fine re-armed the reload — and a persistently-missing chunk (e.g. an edge-poisoned /crm
+// chunk) looped the page forever. A timestamp can't be cleared by unrelated successes: we
+// recover at most once per window, then surface the error to the ErrorBoundary.
+//
+// Recovery goes through /reset (not a plain reload): /reset is served with
+// `Clear-Site-Data: "cache"` (public/_headers), which evicts the browser's HTTP cache of a
+// poisoned `immutable` /assets/*.js — the one thing a plain reload (or even DevTools "Clear
+// site data") can miss — then returns to the original path. Zero user action, no logout.
+const CHUNK_RELOAD_KEY = 'chunkReloadAt';
 function lazyRetry(factory) {
   return lazy(async () => {
     try {
-      const mod = await factory();
-      sessionStorage.removeItem('chunkReloaded'); // loaded fine → arm the guard for next time
-      return mod;
+      return await factory();
     } catch (err) {
-      if (!sessionStorage.getItem('chunkReloaded')) {
-        sessionStorage.setItem('chunkReloaded', '1');
-        window.location.reload();
-        return new Promise(() => {}); // hold render until the reload takes over
+      const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+      if (shouldReloadForStaleChunk(Date.now(), last)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+        window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
+        return new Promise(() => {}); // hold render until the redirect takes over
       }
-      throw err; // already retried once — surface it to the ErrorBoundary
+      throw err; // recovered recently and still failing → surface to the ErrorBoundary
     }
   });
 }
@@ -65,11 +75,13 @@ const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
+const Status = lazyRetry(() => import('@/pages/Status'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
 const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
+const AdminIntegrations = lazyRetry(() => import('@/pages/admin/AdminIntegrations'));
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
 const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
@@ -77,6 +89,22 @@ const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
 const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
 const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
 const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
+const CrmLayout = lazyRetry(() => import('@/components/CrmLayout'));
+const CrmRoadmap = lazyRetry(() => import('@/pages/crm/CrmRoadmap'));
+const CrmOverview = lazyRetry(() => import('@/pages/crm/CrmOverview'));
+const CrmLeads = lazyRetry(() => import('@/pages/crm/CrmLeads'));
+const CrmCallLog = lazyRetry(() => import('@/pages/crm/CrmCallLog'));
+const CrmTasks = lazyRetry(() => import('@/pages/crm/CrmTasks'));
+const CrmAttribution = lazyRetry(() => import('@/pages/crm/CrmAttribution'));
+const CrmReports = lazyRetry(() => import('@/pages/crm/CrmReports'));
+const CrmCampaigns = lazyRetry(() => import('@/pages/crm/CrmCampaigns'));
+const CrmIntegrations = lazyRetry(() => import('@/pages/crm/CrmIntegrations'));
+const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
+const CrmContacts = lazyRetry(() => import('@/pages/crm/CrmContacts'));
+const CrmConversations = lazyRetry(() => import('@/pages/crm/CrmConversations'));
+const CrmSequences = lazyRetry(() => import('@/pages/crm/CrmSequences'));
+const CrmAutomations = lazyRetry(() => import('@/pages/crm/CrmAutomations'));
+const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
 
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
@@ -151,9 +179,11 @@ function AccessRoute({ navKey, children }) {
 }
 
 // Redirect field_tech users from / to /tech (web only — native always redirects)
+// and crm_partner users straight into the CRM (they have no access to Dashboard).
 function HomeRedirect() {
   const { employee } = useAuth();
   if (employee?.role === 'field_tech') return <Navigate to="/tech" replace />;
+  if (employee?.role === 'crm_partner') return <Navigate to="/crm/leads" replace />;
   return <ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>;
 }
 
@@ -242,6 +272,10 @@ function WebRoutes() {
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
+          visitor via the anon-granted get_crm_build_progress RPC. The ONLY
+          public CRM surface; every other /crm/* route stays behind page:crm. */}
+      <Route path="/status" element={<ErrorBoundary section="Status"><Status /></ErrorBoundary>} />
 
 
       {/* Tech layout — field_tech role, no sidebar */}
@@ -317,6 +351,31 @@ function WebRoutes() {
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
         } />
 
+        {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each
+            phase is ready for wider rollout (page:crm dev_only_user_id flag). */}
+        <Route path="crm" element={
+          <FeatureRoute flag="page:crm">
+            <ErrorBoundary section="CRM"><CrmLayout /></ErrorBoundary>
+          </FeatureRoute>
+        }>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="roadmap" element={<CrmRoadmap />} />
+          <Route path="overview" element={<CrmOverview />} />
+          <Route path="leads" element={<CrmLeads />} />
+          <Route path="contacts" element={<CrmContacts />} />
+          <Route path="conversations" element={<CrmConversations />} />
+          <Route path="call-log" element={<CrmCallLog />} />
+          <Route path="tasks" element={<CrmTasks />} />
+          <Route path="sequences" element={<CrmSequences />} />
+          <Route path="automations" element={<CrmAutomations />} />
+          <Route path="forms" element={<CrmForms />} />
+          <Route path="attribution" element={<CrmAttribution />} />
+          <Route path="reports" element={<CrmReports />} />
+          <Route path="campaigns" element={<CrmCampaigns />} />
+          <Route path="integrations" element={<CrmIntegrations />} />
+          <Route path="settings" element={<CrmSettings />} />
+        </Route>
+
         {/* Tools */}
         <Route path="tools/oop-pricing" element={
           <FeatureRoute flag="tool:oop_pricing">
@@ -332,6 +391,7 @@ function WebRoutes() {
           <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
           <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
           <Route path="admin/demo-sheet-builder" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
+          <Route path="admin/integrations" element={<AdminRoute><ErrorBoundary section="AdminIntegrations"><AdminIntegrations /></ErrorBoundary></AdminRoute>} />
           <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
           {/* Dev Tools — Moroni only, not role-based */}
           <Route path="dev-tools" element={<DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>} />
