@@ -47,10 +47,11 @@ export async function getVapidPublicKey() {
   if (_vapidPublicKey !== undefined) return _vapidPublicKey;
   try {
     const res = await fetch('/api/vapid-public-key');
+    if (!res.ok) return '';                 // transient server hiccup — don't cache, retry next call
     const data = await res.json().catch(() => ({}));
     _vapidPublicKey = data && data.publicKey ? data.publicKey : '';
   } catch {
-    _vapidPublicKey = '';
+    return '';                              // network error — don't poison the cache
   }
   return _vapidPublicKey;
 }
