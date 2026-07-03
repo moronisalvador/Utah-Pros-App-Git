@@ -1258,12 +1258,14 @@ on this table)
   2. **Activity timeline** — inserts a system-authored `job_notes` row (`author_name='E-Signature'`, body `✍️ <name> signed the <doc>.`) so it shows on the Job page activity tab (which renders `job_notes` + phase history, not `system_events`).
   3. **Internal email** — `sendEmail` to `restoration@utah-pros.com` (Resend) with the signed PDF attached + an "Open the job in UPR" link.
 
-## In-App Notifications (Jun 24 2026)
-Lightweight **org-wide** (shared-read) notification feed surfaced by a **bell in the sidebar header**. First and only producer today is e-signature completion; designed to be reused for future events.
-- **Table `notifications`:** `id UUID PK, type TEXT, title TEXT, body TEXT, link TEXT (in-app route), entity_type TEXT, entity_id UUID, job_id UUID, payload JSONB, read_at TIMESTAMPTZ (null = unread), created_at TIMESTAMPTZ`. RLS: SELECT to anon/authenticated; **writes only via the SECURITY DEFINER RPC** (no insert policy). Added to the `supabase_realtime` publication.
-- **RPCs:** `create_notification(p_type,p_title,p_body,p_link,p_entity_type,p_entity_id,p_job_id,p_payload)` (also granted to `service_role` for workers), `get_notifications(p_limit DEFAULT 30)`, `get_unread_notification_count()`, `mark_notification_read(p_id)`, `mark_all_notifications_read()`.
-- **Frontend:** `src/components/NotificationBell.jsx` (mounted in `Sidebar.jsx` header) — bell + unread badge + dropdown; polls the count every 60s and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`) to update live and fire a `upr:toast`. Clicking an item marks it read and navigates to `link`. **Shared read state** — marking read clears it for everyone (fine for a small office; swap to a per-user read table if needed).
-- **Migration:** `supabase/migrations/20260624_notifications.sql` (applied).
+## In-App Notifications (Jun 24 2026; per-recipient since F2 2026-07-03)
+Notification feed surfaced by a **bell** (sidebar/TopNav in the office, top-right in the tech
+shell). Originally org-wide shared-read; **F2 made it per-recipient** (see Notification Center
+→ F2). Producers: e-signature completion, feedback, time-entry/clock RPCs, and the F2 dispatcher.
+- **Table `notifications`:** `id UUID PK, type TEXT, title TEXT, body TEXT, link TEXT (in-app route), entity_type TEXT, entity_id UUID, job_id UUID, payload JSONB, read_at TIMESTAMPTZ (null = unread), created_at TIMESTAMPTZ` **+ `recipient_id UUID NULL` (F2 — NULL = broadcast to all), `type_key TEXT` (catalog key)**. RLS: SELECT to anon/authenticated; **writes only via the SECURITY DEFINER RPC** (plus a narrow `type='__f2test__'` DELETE policy for the F2 test suite). Added to the `supabase_realtime` publication.
+- **RPCs (F2 cutover — DROP+CREATE, recipient-aware):** `create_notification(p_type,p_title,p_body,p_link,p_entity_type,p_entity_id,p_job_id,p_payload,p_recipient_id,p_type_key)` (also `service_role`), `get_notifications(p_limit DEFAULT 30, p_employee_id DEFAULT NULL)`, `get_unread_notification_count(p_employee_id DEFAULT NULL)`, `mark_notification_read(p_id)`, `mark_all_notifications_read(p_employee_id DEFAULT NULL)`. Read/unread/mark-all filter `recipient_id IS NULL OR recipient_id = p_employee_id`; old `{}`/`{p_limit}` call shapes still resolve (see F2 note for the overload-trap avoidance).
+- **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`.
+- **Migrations:** `20260624_notifications.sql` (original) + `20260703_notify_f2_foundation.sql` (per-recipient cutover, applied).
 
 ---
 
@@ -4731,11 +4733,78 @@ push must land on the locked iPhone AND desktop Chrome. **If iOS delivery fails:
 wave do not launch against a dead channel.** (VAPID keypair generated this session; private key is
 in `integration_credentials`, never committed to the repo.)
 
-### F2 (data foundation) — not started
+### F2 (data foundation) — shipped 2026-07-03
 
-### F2 (data foundation) — not started
-*Reserved. F2 documents the catalog/prefs schema, bell cutover, dispatcher, stubs, and
-triggers here.*
+Migration `20260703_notify_f2_foundation.sql` (applied via MCP; bell cutover, resolver
+precedence + per-recipient targeting all verified live).
+
+**Per-recipient bell.** `notifications` gained additive `recipient_id uuid NULL` (FK employees,
+ON DELETE CASCADE) + `type_key text`. **NULL recipient = broadcast** → every pre-existing row
+and every legacy `create_notification` caller keeps today's org-wide behavior. The three bell
+RPCs were rebuilt via **DROP+CREATE** (never `OR REPLACE` — a wider signature mints an ambiguous
+overload for the old `{}`/`{p_limit}` shapes, the `20260702_feedback_media.sql` trap):
+`get_notifications(p_limit int DEFAULT 30, p_employee_id uuid DEFAULT NULL)`,
+`get_unread_notification_count(p_employee_id uuid DEFAULT NULL)`,
+`mark_all_notifications_read(p_employee_id uuid DEFAULT NULL)` — all with
+`recipient_id IS NULL OR recipient_id = p_employee_id` semantics (fixes the P3 global-mark-all
+bug). `create_notification` DROP+CREATEd with trailing `p_recipient_id`/`p_type_key` (defaulted,
+so the 5 legacy callers are unaffected). Re-GRANTed to anon/authenticated/service_role after each.
+A narrow `notifications_delete_testrows` policy lets the integration suite delete only its
+`type='__f2test__'` sentinels (self-cleaning; real code never emits that type).
+
+**Frontend:** `NotificationBell.jsx` now passes `employee.id` to the three RPCs (so each person
+sees broadcast + own-targeted rows with their own read state) and ignores realtime inserts aimed
+at a different employee; gained a `size` prop (office bell unchanged at 36). Mounted in
+`TechLayout.jsx` (top-right, size 46 for the 48px field target; offline pill stacked below) so
+techs get the badge + live toast. **Per the roadmap amendment, F2 adds NO `/tech/notifications`
+route / TechMore row / stub page** — the shipped `/tech/settings` hub is the tech surface.
+
+**Catalog — `notification_types`** (RLS + policy): 12 seeded types (`message.inbound`,
+`appointment.assigned|updated|canceled`, `estimate.accepted`, `payment.received`, `lead.new`,
+`esign.signed`, `feedback.submitted`, `timesheet.change_requested|change_reviewed`,
+`clock.abandoned`) with `bell_default`/`push_default`/`email_default` + an `enabled` master
+switch. Conservative seeds: bell on; push structurally opt-in; email silent except
+`estimate.accepted`/`payment.received`; **only `feedback.submitted` enabled** — every other type
+is INERT until Session B flips it.
+
+**Three-layer prefs** (all RLS + policy at creation): `notification_role_defaults`
+(role×type×channel + `user_customizable` lock — Session D writes), `notification_employee_overrides`
+(admin per-employee — Session D writes), `notification_prefs` (self-service — Session C writes).
+The ONE resolver, **`get_effective_notification_prefs(p_employee_id) → SETOF json`** (F2-owned,
+fully implemented, **frozen in-wave — nobody REPLACEs it**), returns one row per (type,channel)
+with `enabled` + `user_customizable`, precedence lowest→highest: catalog default → role default
+→ admin override → my-pref, and **the lock wins** (a `user_customizable=false` row ignores
+my-pref so the admin value stands). Missing role default ⇒ customizable, value from the catalog.
+
+**Frozen stubs** (SECURITY DEFINER + GRANT + `RAISE 'not implemented'`; signatures per the
+roadmap — `migration-safety-checker` enforces). Session C: `get_my_notification_prefs`,
+`set_my_notification_pref`, `get_my_push_subscriptions`. Session D: `get_notification_defaults`,
+`set_notification_default`, `get_employee_notification_overrides`,
+`set_employee_notification_override`, `delete_employee_notification_override`.
+
+**Dispatcher — `functions/api/notify.js`** (POST `/api/notify`): resolve audience →
+`get_effective_notification_prefs` per recipient → per-recipient `create_notification` (bell) →
+Web Push per subscription (`webPush.js`; 503-skip when VAPID unset, prune 404/410) →
+transactional email via `sendEmail` (from `UPR - Notifications <restoration@utahpros.app>`;
+NULL-address skip reported). Auth accepts a matching `x-webhook-secret` (DB triggers) OR a valid
+Bearer user token. Disabled types are inert (`{skipped}`). `dispatchEvent` is the reusable core
+imported in-process by `feedback-notify.js`, which F2 **rewired** to replace F1's hardcoded
+bell+APNs+webpush block with one `dispatchEvent('feedback.submitted', …)` call (still
+fire-and-forget). Optional APNs forward was omitted — native push stays separate/dormant.
+
+**Emission triggers** (live `20260630` pattern; **doubly inert**): `trg_appointment_crew_notify`
+(appointment_crew INSERT → `appointment.assigned`) and `trg_appointment_notify` (appointments
+guarded UPDATE → `appointment.updated`/`.canceled`, `IS NOT DISTINCT FROM` column guard). Both
+call `notify_emit(type_key, body)`, which returns early unless the catalog type is enabled AND
+`integration_config.notify_worker_url` is set → **zero traffic until Session B enables the types**.
+`integration_config` seeded this session: `notify_worker_url = https://utahpros.app/api/notify` +
+a server-generated `notify_webhook_secret` (never committed; the worker validates against it via
+service role — no Cloudflare env needed).
+
+**Tests:** `functions/api/notify.test.js` (injected fakes — audience, prefs gating, NULL-email
+skip, VAPID 503-skip, 404/410 prune, auth) + `supabase/tests/notify_foundation.test.js`
+(integration — old bell shapes, targeting, resolver precedence; self-skips without creds, verified
+live via MCP). `feedback-notify.test.js` rewired to assert delegation.
 
 ### Session B (event wiring) — not started
 *Reserved.*
