@@ -4842,8 +4842,50 @@ live via MCP). `feedback-notify.test.js` rewired to assert delegation.
 ### Session B (event wiring) — not started
 *Reserved.*
 
-### Session C (my-prefs UI) — not started
-*Reserved.*
+### Session C (my-prefs UI) — shipped (2026-07-03)
+Self-service notification preferences on both the office **Settings → Notifications** panel and
+the field-tech **/tech/settings** hub, plus a device manager. Ships **zero schema** — only
+body-fills its three frozen stubs (`20260703_notify_c_my_prefs_rpcs.sql`, function-body-only
+`CREATE OR REPLACE`, signatures unchanged; `migration-safety-checker` clean).
+
+**RPC stub fills (applied + verified live via MCP):**
+- `get_my_notification_prefs(p_employee_id) → SETOF json` — reads THROUGH the frozen resolver
+  `get_effective_notification_prefs` and filters to **live types only** (`type_enabled=true`), so
+  precedence/lock logic lives in exactly one place. Until Session B enables types, this returns
+  only `feedback.submitted` (the sole enabled type today).
+- `set_my_notification_pref(p_employee_id, p_type_key, p_channel, p_enabled) → notification_prefs`
+  — upserts the caller's own pref (`ON CONFLICT (employee_id,type_key,channel)`), but **RAISEs when
+  the role default locks the cell** (`user_customizable=false`; missing role default ⇒ customizable,
+  matching the resolver's `COALESCE(...,true)`). Validates channel ∈ (bell,push,email).
+- `get_my_push_subscriptions(p_employee_id) → SETOF json` — device list as `{id, label (user_agent),
+  created_at, endpoint_hash}` — **NEVER** endpoint/p256dh/auth (send-capability secrets).
+  `endpoint_hash` = first 16 hex of `extensions.digest(endpoint,'sha256')` (schema-qualified —
+  pgcrypto lives in `extensions`); the client SHA-256s the current subscription's endpoint locally
+  to recognise "this device" without ever seeing the raw endpoint.
+
+**Frontend:**
+- `src/components/settings/NotificationPrefsMatrix.jsx` (new, shared) — type × channel checkbox
+  grid from `get_my_notification_prefs`; optimistic toggle with revert-on-error toast; locked cells
+  render a disabled box + 🔒 hint (server also rejects the write — defence-in-depth). `variant`
+  prop (`office`/`tech`) picks sizing; `categoryFilter` narrows rows.
+- `src/components/settings/PushDevicesList.jsx` (new, office) — device list; the current device is
+  badged "This device" and removable with a two-click confirm (real `pushManager.unsubscribe` +
+  `delete_push_subscription` via `disablePush`). Other devices are info-only (a remote browser's
+  registration can't be revoked from here; dead endpoints self-prune on 404/410).
+- `src/pages/Settings.jsx` — `NotificationsPanel` now renders the enable-push row (F1) + device list
+  + the office matrix (all enabled types).
+- `src/components/tech/settings/NotificationsSection.jsx` — a second card renders the matrix with
+  `variant="tech"` (≥48px targets), filtered to tech-visible categories `['appointments','messaging']`
+  (interim until Session D seeds per-role defaults). iOS-not-installed → the existing
+  display-mode:standalone check shows the "Share → Add to Home Screen" guidance before the enable
+  button. New i18n keys under `settings.notifications.*` (en/es/pt).
+- CSS: all inside the **`NOTIFY CENTER RESERVED — Session C`** marker in `index.css` (`.notif-matrix*`,
+  `.notif-device*`, `.notif-prefs-section*`; tokens only, theme-aware).
+
+**Tests:** `supabase/tests/notify_c_my_prefs.test.js` (integration, self-skips without creds like
+the other notify suites; verified live via MCP): my-pref upsert round-trip, locked-row rejection,
+and the push-subscription listing leaks no endpoint/p256dh/auth. `npm test` 518 pass / 88 skip,
+`npm run build` clean, eslint no new errors, `upr-pattern-checker` clean.
 
 ### Session D (admin defaults UI) — not started
 *Reserved.*
