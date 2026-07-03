@@ -34,6 +34,7 @@ import {
   checkSpam,
   consentValue,
   MIN_FILL_MS,
+  pickConfiguredKey,
 } from './forms.js';
 
 describe('sanitizeLinkMarkup — XSS resistance', () => {
@@ -211,5 +212,28 @@ describe('consentValue', () => {
 
   it('returns false when the form has no consent field', () => {
     expect(consentValue({ fields: [{ key: 'name', type: 'text' }] }, { name: 'x' })).toBe(false);
+  });
+});
+
+describe('pickConfiguredKey — Supabase-first, env fallback', () => {
+  it('prefers the integration_config value over the env value', () => {
+    expect(pickConfiguredKey('from-db', 'from-env')).toBe('from-db');
+  });
+
+  it('falls back to the env value when the config value is empty/missing', () => {
+    expect(pickConfiguredKey('', 'from-env')).toBe('from-env');
+    expect(pickConfiguredKey(null, 'from-env')).toBe('from-env');
+    expect(pickConfiguredKey(undefined, 'from-env')).toBe('from-env');
+  });
+
+  it('trims surrounding whitespace on both sources', () => {
+    expect(pickConfiguredKey('  db-key  ', 'env')).toBe('db-key');
+    expect(pickConfiguredKey('   ', '  env-key  ')).toBe('env-key');
+  });
+
+  it('returns "" when neither is set (→ caller treats Turnstile as dormant)', () => {
+    expect(pickConfiguredKey('', '')).toBe('');
+    expect(pickConfiguredKey(null, undefined)).toBe('');
+    expect(pickConfiguredKey(undefined, null)).toBe('');
   });
 });

@@ -37,13 +37,15 @@
  *     cors.js used by authenticated staff endpoints).
  *   - Spam-dropped submissions return 200 {ok:true} so a bot cannot tell it was
  *     filtered. Real validation failures return 400 with per-field errors.
- *   - Turnstile is per-form (form.turnstile_enabled). If enabled but no
- *     TURNSTILE_SECRET_KEY is configured yet, the check is skipped so forms keep
- *     working before the site key exists (roadmap requirement).
+ *   - Turnstile is per-form (form.turnstile_enabled). The secret key lives in the
+ *     integration_config table (key 'turnstile_secret_key'), read via the
+ *     service-role client — that table is RLS-locked so anon/authenticated can
+ *     never read it. env.TURNSTILE_SECRET_KEY is a fallback. If neither is set,
+ *     the check is skipped so forms keep working before a key exists.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup } from '../lib/forms.js';
+import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup, pickConfiguredKey } from '../lib/forms.js';
 
 const RATE_LIMIT_MAX = 10;          // max submissions per IP per window
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -68,9 +70,22 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: cors() });
 }
 
-async function verifyTurnstile(env, token, ip) {
-  const secret = env.TURNSTILE_SECRET_KEY;
-  if (!secret) return true; // not configured yet → don't block (roadmap: works before the key exists)
+// The Turnstile secret lives in integration_config (managed in Supabase); a
+// Cloudflare env var is a fallback. Read with the service-role client — the
+// table is RLS-locked, so the secret is never visible to anon/authenticated.
+async function turnstileSecret(db, env) {
+  let configValue = '';
+  try {
+    const rows = await db.select('integration_config', 'key=eq.turnstile_secret_key&select=value');
+    configValue = (rows[0] && rows[0].value) || '';
+  } catch (e) {
+    console.error('turnstile secret lookup failed (falling back to env):', e);
+  }
+  return pickConfiguredKey(configValue, env.TURNSTILE_SECRET_KEY);
+}
+
+async function verifyTurnstile(secret, token, ip) {
+  if (!secret) return true; // not configured yet → don't block (works before the key exists)
   try {
     const body = new URLSearchParams({ secret, response: token || '' });
     if (ip) body.set('remoteip', ip);
@@ -152,7 +167,8 @@ export async function onRequestPost(context) {
 
   // ── spam gate 3: optional Cloudflare Turnstile (per-form toggle) ──
   if (form.turnstile_enabled) {
-    const ok = await verifyTurnstile(env, body.turnstile_token, ip);
+    const secret = await turnstileSecret(db, env);
+    const ok = await verifyTurnstile(secret, body.turnstile_token, ip);
     if (!ok) return json({ error: 'Verification failed. Please try again.' }, 400);
   }
 

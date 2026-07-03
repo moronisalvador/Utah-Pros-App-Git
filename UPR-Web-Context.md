@@ -4053,8 +4053,10 @@ GRANT anon/authenticated):
 **Worker — `functions/api/form-submit.js`** (new; public `POST /api/form-submit`): permissive CORS
 `*` on purpose (embeddable, credential-free, RPC-gated); spam gate = honeypot + min-fill-time +
 per-IP rate limit (`form_submissions` in a 10-min window) + optional **per-form** Cloudflare Turnstile
-(`form.turnstile_enabled`; if enabled but no `TURNSTILE_SECRET_KEY` yet, the check is skipped so forms
-work before the site key exists); server-side `validateSubmission` against the PUBLISHED version;
+(`form.turnstile_enabled`; secret read from `integration_config.turnstile_secret_key` via the
+service-role client — that table is RLS-locked so anon/authenticated never see it — with
+`env.TURNSTILE_SECRET_KEY` as fallback; if neither is set the check is skipped so forms work before a
+key exists); server-side `validateSubmission` against the PUBLISHED version;
 computes consent server-side from the submitted data; calls `upsert_lead_from_form`; logs a
 `worker_runs` row. Spam-dropped submissions return `200 {ok:true}` (a bot can't tell it was filtered).
 
@@ -4063,7 +4065,16 @@ SPA) rendered from the published schema; every field label/option/value escaped,
 thank-you via `sanitizeLinkMarkup`; sets `Content-Security-Policy: frame-ancestors *` and never
 `X-Frame-Options`, so it embeds on any customer site; posts JSON to `/api/form-submit`; reads the
 UTM/gclid/fbclid/referrer/landing that `embed.js` forwarded onto its URL into hidden attribution;
-`postMessage` auto-resize; Turnstile widget only when enabled AND `TURNSTILE_SITE_KEY` is set.
+`postMessage` auto-resize; Turnstile widget only when enabled AND a site key is set — site key read
+from `integration_config.turnstile_site_key` (service-role), `env.TURNSTILE_SITE_KEY` as fallback,
+looked up only when the form has Turnstile on.
+
+**Turnstile keys live in Supabase (Jul 3 2026):** both keys are managed as rows in the RLS-locked
+`integration_config` key/value table (`turnstile_site_key`, `turnstile_secret_key`) rather than
+Cloudflare env vars — set/rotate them with a SQL `INSERT … ON CONFLICT (key) DO UPDATE`, no redeploy
+to activate. `env.TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` remain as fallbacks. Both workers resolve
+via `pickConfiguredKey(configValue, envValue)` in `functions/lib/forms.js` (DB wins, trimmed, `''` →
+dormant; unit-tested in `forms.test.js`).
 
 **Embed — `public/embed.js`** (new static asset, served at `/embed.js`):
 `<script src="…/embed.js" data-upr-form="PUBLIC_ID" async></script>` injects an `<iframe>` to
