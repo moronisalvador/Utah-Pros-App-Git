@@ -14,8 +14,8 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (a plain data module, not a screen)
- *   Rendered by:  n/a — imported by src/pages/Roadmap.jsx (in-app, side-menu)
- *                 and src/pages/PublicRoadmap.jsx (public, no login), both via
+ *   Rendered by:  n/a — imported by src/pages/PublicRoadmap.jsx (the public
+ *                 no-login /roadmap page, also linked from the side menu) via
  *                 the shared src/components/RoadmapView.jsx.
  *
  * DEPENDS ON:
