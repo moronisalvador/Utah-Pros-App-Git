@@ -7086,3 +7086,67 @@ tr:hover td { background: var(--bg-secondary); }
 /* ─── FEEDBACK MEDIA RESERVED — Session C ───
    Owner: Session C (AdminFeedback.jsx rebuild + attachment gallery/viewer).
    Session C's styles go below this marker — nobody else writes here. */
+
+/* Manual-purge two-click button (destructive — arms red on first click) */
+.fb-purge-btn {
+  height: 32px; padding: 0 14px; border-radius: var(--radius-md);
+  font-size: 12px; font-weight: 600; font-family: var(--font-sans);
+  background: var(--bg-tertiary); color: var(--text-tertiary);
+  border: 1px solid var(--border-light); cursor: pointer;
+  transition: all 0.12s; white-space: nowrap;
+}
+.fb-purge-btn:disabled { opacity: 0.5; cursor: default; }
+.fb-purge-btn[data-armed="true"] {
+  background: #fef2f2; color: #dc2626; border-color: #fecaca;
+}
+.fb-purge-btn-sm { height: 26px; padding: 0 10px; font-size: 11px; }
+
+/* Attachment gallery */
+.fb-media-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.fb-media-tile {
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  overflow: hidden; background: var(--bg-primary); display: flex; flex-direction: column;
+}
+.fb-media-imgbtn {
+  padding: 0; border: 0; background: var(--bg-secondary); cursor: pointer;
+  display: block; width: 100%; line-height: 0;
+}
+.fb-media-el {
+  width: 100%; height: 130px; object-fit: cover; display: block; background: #000;
+}
+.fb-media-tile video.fb-media-el { object-fit: contain; }
+.fb-media-meta {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 8px;
+  border-top: 1px solid var(--border-light);
+}
+.fb-media-name {
+  font-size: 11px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fb-media-size { font-size: 10px; color: var(--text-tertiary); }
+
+/* Own lightbox (image enlarge — videos play inline, not here) */
+.fb-lightbox {
+  position: fixed; inset: 0; z-index: 400;
+  background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; cursor: zoom-out;
+}
+.fb-lightbox-img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  border-radius: var(--radius-md); cursor: default;
+}
+.fb-lightbox-close {
+  position: absolute; top: 16px; right: 20px;
+  width: 40px; height: 40px; border-radius: var(--radius-full);
+  background: rgba(255,255,255,0.12); color: #fff; border: 0;
+  font-size: 26px; line-height: 1; cursor: pointer;
+}
+.fb-lightbox-close:hover { background: rgba(255,255,255,0.22); }
+
+@media (max-width: 768px) {
+  .fb-media-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}

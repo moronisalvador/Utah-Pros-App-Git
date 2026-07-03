@@ -699,7 +699,7 @@ function EmployeesTab() {
 /* ════════════════════════════════════════════════════
    WORKERS TAB
    ════════════════════════════════════════════════════ */
-const WORKER_NAMES = ['send-message', 'twilio-webhook', 'twilio-status', 'process-scheduled', 'sync-encircle', 'encircle-backfill'];
+const WORKER_NAMES = ['send-message', 'twilio-webhook', 'twilio-status', 'process-scheduled', 'sync-encircle', 'encircle-backfill', 'purge-feedback-media'];
 
 const STATUS_STYLE = {
   completed: { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
