@@ -209,8 +209,8 @@ export default function StatusBoard() {
 
   const now = Date.now();
   const cols = isAdmin
-    ? '1.3fr 92px 1.4fr 1.4fr 64px 64px 70px 104px 188px'
-    : '1.4fr 100px 1.6fr 1.6fr 66px 66px 74px 118px';
+    ? '1.3fr 92px 1.35fr 1.35fr 62px 62px 74px 118px 184px'
+    : '1.4fr 100px 1.5fr 1.5fr 64px 64px 78px 128px';
 
   // ─── SECTION: Render ──────────────
   return (
@@ -251,7 +251,7 @@ export default function StatusBoard() {
       <div style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', overflow: 'hidden', background: 'var(--bg-primary)' }}>
         {/* Header row */}
         <div style={{
-          display: 'grid', gridTemplateColumns: cols, padding: '8px 16px',
+          display: 'grid', gridTemplateColumns: cols, columnGap: 14, padding: '8px 16px',
           background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)',
           fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase',
         }}>
@@ -279,7 +279,7 @@ export default function StatusBoard() {
           const t = r.travel_start ? liveClockMinutes(r, now) : null;
           return (
             <div key={r.employee_id} style={{
-              display: 'grid', gridTemplateColumns: cols, alignItems: 'center', padding: '12px 16px',
+              display: 'grid', gridTemplateColumns: cols, columnGap: 14, alignItems: 'center', padding: '12px 16px',
               borderBottom: isLast ? 'none' : '1px solid var(--border-light)', background: 'var(--bg-primary)', fontSize: 13,
             }}>
               {/* Tech name + division */}
