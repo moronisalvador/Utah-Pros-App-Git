@@ -62,7 +62,8 @@ API-key restrictions, not from hiding them).
 Appointment + assigned crew → push create/update/delete events to each crew member's Google Calendar.
 Reuses the same `user_google_accounts` connection + token refresh. **Migration applied** (inert until
 someone connects the calendar scope).
-- **Source-agnostic by design** (survives the appointments→scheduled-jobs refactor): mapping table
+- **Source-agnostic by design** (~~survives the appointments→scheduled-jobs refactor~~ — refactor
+  declared stale, superseded by `docs/schedule-roadmap.md` 2026-07-03): mapping table
   `google_calendar_links (source_type, source_id, employee_id, google_event_id, sync_hash, status …)`.
   Today `source_type='appointment'`; flip to `'job_schedule'` later with no schema change.
 - **Scope:** `calendar.events` added to the single "Connect Google" consent. **Internal Workspace app
