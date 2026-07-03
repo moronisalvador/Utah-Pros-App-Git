@@ -328,20 +328,30 @@ dedupe seam only), hook tests. No schema, no UI, no CSS.
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md` +
 > `.claude/rules/tech-mobile-ux.md` + `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: stub-fill migration tests (my-pref upsert round-trip; locked
+> - [x] Test-first, now green: stub-fill migration tests (my-pref upsert round-trip; locked
 >       row rejected; `get_my_push_subscriptions` never returns p256dh/auth/endpoint secrets).
-> - [ ] Acceptance: NotificationsPanel complete (types×channels for MY role from the resolver,
->       locked rows disabled with a lock hint, device list + remove w/ real unsubscribe,
->       "Enable push on this device"); the tech prefs matrix (≥48px targets, same matrix,
->       tech-visible types only) rendered **inside the shipped `/tech/settings` hub's
->       `NotificationsSection.jsx`** (NOT a new `/tech/notifications` page — see the F2
->       amendment); iOS-not-installed state shows InstallBanner-pattern
->       "Share → Add to Home Screen" guidance; desktop permission flow.
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema beyond its own body-only stub
->       fills**; frozen files untouched (sw.js, main.jsx, webPushClient.js, App.jsx…).
-> - [ ] Visual: tech page at 390px + Settings panel on the branch preview.
-> - [ ] `UPR-Web-Context.md` — **Session C** sub-header only; its index.css reserved section
->       only. Reconcile; delete test rows; push; PR into `dev` as a handoff.
+>       `supabase/tests/notify_c_my_prefs.test.js` (integration — self-skips without creds like
+>       the other notify suites; committed failing first, then verified live via MCP: round-trip,
+>       lock rejection P0001, hash-only shape).
+> - [x] Acceptance: NotificationsPanel complete (types×channels from the resolver via
+>       `get_my_notification_prefs`, locked rows disabled with a 🔒 hint, device list + two-click
+>       remove w/ real unsubscribe for the current device, "Enable push on this device"); the tech
+>       prefs matrix (≥48px targets, same shared `NotificationPrefsMatrix`, tech-visible categories
+>       only) rendered **inside the shipped `/tech/settings` hub's `NotificationsSection.jsx`** (no
+>       new `/tech/notifications` page); iOS-not-installed state shows the standalone-check
+>       "Share → Add to Home Screen" guidance; desktop permission flow via the existing enable row.
+> - [x] `npm run test` (518 pass / 88 skip) + `build` (clean) + eslint (no new errors — the 3
+>       pre-existing `LookupTable` react-hooks errors in Settings.jsx are untouched) pass; **zero
+>       schema beyond its own body-only stub fills**; frozen files untouched (sw.js, main.jsx,
+>       webPushClient.js, App.jsx…); `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [~] Visual: tech page at 390px + Settings panel — **deferred to the Cloudflare branch preview**
+>       the PR generates (this environment has no Supabase creds, so the authenticated app can't
+>       render locally — same as F2). Build passes; new UI is checkbox-grid + device-list markup
+>       styled with tokens in the Session C css marker.
+> - [x] `UPR-Web-Context.md` — filled the **Session C** sub-header only; wrote its index.css
+>       reserved section only. Reconciled these checkboxes; deleted all test rows/subscriptions
+>       (sentinel types cascade-cleaned; 0 leftover verified via MCP); push; PR into `dev` as a
+>       handoff.
 
 Scope: owns `src/components/tech/settings/NotificationsSection.jsx` (fills the tech prefs matrix
 into the shipped `/tech/settings` hub — the enable-push row already exists there from P1) and the

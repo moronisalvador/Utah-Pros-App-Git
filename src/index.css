@@ -8208,6 +8208,97 @@ tr:hover td { background: var(--bg-secondary); }
    section is for the desktop Settings NotificationsPanel matrix + any shared
    type×channel toggle-grid classes. Mobile-only rules use @media (max-width: 768px). */
 
+/* Preferences section wrapper (desktop Settings panel) */
+.notif-prefs-section { margin-top: var(--space-6); }
+.notif-prefs-section-head { margin-bottom: var(--space-4); }
+.notif-prefs-section-title { font-size: var(--text-base); font-weight: 600; margin: 0; }
+.notif-prefs-section-sub {
+  font-size: var(--text-sm); color: var(--text-secondary); margin: 4px 0 0; line-height: 1.5;
+}
+
+/* Type × channel matrix — shared by office (default) and tech (--tech) */
+.notif-matrix {
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden;
+}
+.notif-matrix-head,
+.notif-matrix-row {
+  display: grid; grid-template-columns: 1fr 72px 72px 72px; align-items: center;
+}
+.notif-matrix-head {
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+}
+.notif-matrix-row + .notif-matrix-row,
+.notif-matrix-row { border-top: 1px solid var(--border-light); }
+.notif-matrix-row:first-of-type { border-top: 0; }
+.notif-matrix-ch-h {
+  text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-tertiary); padding: 10px 4px;
+}
+.notif-matrix-type-h { padding: 10px 14px; }
+.notif-matrix-type {
+  padding: 12px 14px; font-size: var(--text-sm); color: var(--text-primary); min-width: 0;
+}
+.notif-matrix-cell { display: flex; justify-content: center; align-items: center; padding: 8px 4px; }
+
+.notif-check {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 32px; min-height: 32px; cursor: pointer;
+}
+.notif-check input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent, #2563eb); }
+.notif-check--locked { cursor: not-allowed; }
+.notif-check--locked input { cursor: not-allowed; }
+.notif-lock { font-size: 11px; line-height: 1; opacity: 0.7; }
+
+.notif-matrix-empty,
+.notif-matrix-loading,
+.notif-devices-loading {
+  padding: 16px 14px; font-size: var(--text-sm); color: var(--text-tertiary);
+}
+
+/* Registered devices list (office panel) */
+.notif-devices { margin-top: var(--space-5); }
+.notif-devices-title {
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;
+}
+.notif-device-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: 10px 0; border-top: 1px solid var(--border-light);
+}
+.notif-device-row:first-of-type { border-top: 0; }
+.notif-device-main { min-width: 0; }
+.notif-device-name {
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+}
+.notif-device-badge {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--accent, #2563eb); background: var(--bg-tertiary);
+  border-radius: var(--radius-sm); padding: 2px 6px;
+}
+.notif-device-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.notif-device-remove {
+  background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border-light);
+}
+.notif-device-remove[data-confirm="true"] {
+  background: var(--status-paused-bg); color: var(--status-paused-color);
+  border-color: var(--status-paused-border);
+}
+
+/* Tech variant — bigger tap targets (48px rows/boxes) per tech-mobile-ux */
+.notif-matrix--tech {
+  border-color: var(--border-color); border-radius: 12px;
+}
+.notif-matrix--tech .notif-matrix-head,
+.notif-matrix--tech .notif-matrix-row { grid-template-columns: 1fr 64px 64px 64px; }
+.notif-matrix--tech .notif-matrix-type {
+  padding: 14px 14px; font-size: 15px; min-height: 48px; display: flex; align-items: center;
+}
+.notif-matrix--tech .notif-matrix-cell { min-height: 48px; padding: 8px 4px; }
+.notif-matrix--tech .notif-check { min-width: 48px; min-height: 48px; }
+.notif-matrix--tech .notif-check input { width: 24px; height: 24px; }
+.notif-matrix--tech .notif-matrix-ch-h { padding: 12px 4px; font-size: 11px; }
+
+
 /* ─── NOTIFY CENTER RESERVED — Session D (admin defaults matrix) ─────────────
    Owner: Session D (Admin → Notifications tab). Session D's styles go below this
    marker — nobody else writes here. Role×type×channel matrix + per-employee

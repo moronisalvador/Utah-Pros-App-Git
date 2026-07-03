@@ -36,6 +36,13 @@
     "iosGuide": "Para recibir notificaciones en tu iPhone, primero agrega esta app a la pantalla de inicio: toca <b>Compartir</b> → <b>Agregar a inicio</b>, luego ábrela desde la pantalla de inicio y actívalas aquí.",
     "cantReceive": "Este dispositivo no puede recibir notificaciones push.",
     "serverNotSet": "Las notificaciones aún no están configuradas en el servidor — vuelve pronto.",
-    "blockedHint": "Las notificaciones están bloqueadas para esta app. Vuelve a activarlas en los ajustes del teléfono y reabre la app."
+    "blockedHint": "Las notificaciones están bloqueadas para esta app. Vuelve a activarlas en los ajustes del teléfono y reabre la app.",
+    "prefsTitle": "Avísame sobre…",
+    "prefsSub": "Elige cómo quieres enterarte de cada cosa.",
+    "chBell": "Campana",
+    "chPush": "Push",
+    "chEmail": "Correo",
+    "prefsEmpty": "Aún no hay notificaciones activadas para tu rol.",
+    "prefsLocked": "Bloqueado por tu administrador"
   }
 }

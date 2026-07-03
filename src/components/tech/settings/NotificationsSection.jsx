@@ -22,9 +22,10 @@
  *              RPCs and GET /api/vapid-public-key (no direct DB access here)
  *
  * NOTES / GOTCHAS:
- *   - This is the device-push on/off only. The full per-type notification
- *     preferences matrix is a later phase (notify Session C) that fills the
- *     <NotificationsSection> slot with more rows.
+ *   - Two cards: the device-push on/off, then the per-type × channel preferences
+ *     matrix (notify Session C). The matrix reads LIVE types only via the resolver
+ *     and is filtered to tech-visible categories (appointments, messaging) until
+ *     Session D seeds per-role defaults.
  *   - iOS only exposes web push inside an installed (Home-Screen) PWA — the
  *     guidance box shows the Add-to-Home-Screen steps when that's the blocker.
  *   - Two-click confirm on "Turn off" (no confirm() dialog — house rule).
@@ -38,11 +39,17 @@ import {
   isPushSupported, getExistingSubscription, getVapidPublicKey,
   pushPermission, enablePush, disablePush,
 } from '@/lib/webPushClient';
+import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatrix';
+
+// Field techs are an audience only for these catalog categories. Until Session D
+// seeds per-role defaults (which will gate this precisely), we filter client-side
+// so a tech never sees admin-only types (billing, sales, admin).
+const TECH_CATEGORIES = ['appointments', 'messaging'];
 
 export default function NotificationsSection() {
   // ─── State & hooks ──────────────
   const { t } = useTranslation(['settings', 'common']);
-  const { db, isFeatureEnabled } = useAuth();
+  const { db, employee, isFeatureEnabled } = useAuth();
   const flagOn = isFeatureEnabled('feature:web_push');
   const supported = isPushSupported();
 
@@ -95,6 +102,7 @@ export default function NotificationsSection() {
 
   // ─── Render ──────────────
   return (
+    <>
     <div className="tech-settings-card">
       <div className="tech-settings-card-head">
         <div className="tech-settings-card-title">{t('notifications.title')}</div>
@@ -160,5 +168,27 @@ export default function NotificationsSection() {
         </div>
       )}
     </div>
+
+    {/* Per-type × channel preferences (tech-visible types only, ≥48px targets). */}
+    <div className="tech-settings-card">
+      <div className="tech-settings-card-head">
+        <div className="tech-settings-card-title">{t('notifications.prefsTitle')}</div>
+        <div className="tech-settings-card-sub">{t('notifications.prefsSub')}</div>
+      </div>
+      <NotificationPrefsMatrix
+        db={db}
+        employeeId={employee?.id}
+        variant="tech"
+        categoryFilter={TECH_CATEGORIES}
+        labels={{
+          channelBell:  t('notifications.chBell'),
+          channelPush:  t('notifications.chPush'),
+          channelEmail: t('notifications.chEmail'),
+          empty:        t('notifications.prefsEmpty'),
+          locked:       t('notifications.prefsLocked'),
+        }}
+      />
+    </div>
+    </>
   );
 }
