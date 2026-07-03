@@ -34,6 +34,15 @@
     "fire": "Incêndio",
     "contents": "Conteúdos"
   },
+  "apptType": {
+    "monitoring": "Monitoramento",
+    "mitigation": "Mitigação",
+    "inspection": "Inspeção",
+    "reconstruction": "Reconstr.",
+    "estimate": "Orçamento",
+    "mold_remediation": "Rem. mofo",
+    "other": "Outro"
+  },
   "btn": {
     "back": "Voltar",
     "retry": "Tentar de novo",
@@ -50,7 +59,8 @@
     "notePlaceholder": "O que você quer anotar?"
   },
   "misc": {
-    "unknown": "Desconhecido"
+    "unknown": "Desconhecido",
+    "appointment": "Agendamento"
   },
   "toast": {
     "photoTooLarge": "A foto é muito grande (máx. 10 MB)",

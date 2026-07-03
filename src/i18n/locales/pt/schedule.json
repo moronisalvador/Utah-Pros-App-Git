@@ -1,0 +1,23 @@
+{
+  "title": "Agenda",
+  "today": "Hoje",
+  "goToToday": "Ir para hoje",
+  "createAria": "Criar agendamento ou evento",
+  "searchPlaceholder": "Buscar por nome, endereço, nº do trabalho...",
+  "filterType": "Tipo",
+  "div": { "all": "Todos", "mitigation": "Mitigação", "reconstruction": "Reconstrução" },
+  "filterCrew": "Equipe",
+  "me": "Eu",
+  "all": "Todos",
+  "meWithName": "Eu ({{name}})",
+  "private": "Privado",
+  "emptyDay": "Nenhum agendamento neste dia",
+  "emptyRange": "Nenhum agendamento neste período",
+  "emptyRangeHint": "Deslize a faixa de datas ou toque no mês para navegar",
+  "createNew": "Criar novo",
+  "jobAppt": "Agendamento de trabalho",
+  "jobApptSub": "Vinculado a um trabalho, com tarefas e equipe",
+  "event": "Evento",
+  "eventSub": "Reunião, folga, treinamento — sem trabalho",
+  "toastLoadFailed": "Falha ao carregar a agenda"
+}

@@ -41,6 +41,7 @@ import enSettings from './locales/en/settings.json';
 import enTech from './locales/en/tech.json';
 import enTasks from './locales/en/tasks.json';
 import enDash from './locales/en/dash.json';
+import enSchedule from './locales/en/schedule.json';
 
 import ptCommon from './locales/pt/common.json';
 import ptNav from './locales/pt/nav.json';
@@ -49,6 +50,7 @@ import ptSettings from './locales/pt/settings.json';
 import ptTech from './locales/pt/tech.json';
 import ptTasks from './locales/pt/tasks.json';
 import ptDash from './locales/pt/dash.json';
+import ptSchedule from './locales/pt/schedule.json';
 
 import esCommon from './locales/es/common.json';
 import esNav from './locales/es/nav.json';
@@ -57,14 +59,15 @@ import esSettings from './locales/es/settings.json';
 import esTech from './locales/es/tech.json';
 import esTasks from './locales/es/tasks.json';
 import esDash from './locales/es/dash.json';
+import esSchedule from './locales/es/schedule.json';
 
 /** Every translation namespace (one file per screen area). Keep in sync with resources. */
-export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash'];
+export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule'];
 
 export const resources = {
-  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash },
-  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash },
-  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash },
+  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash, schedule: enSchedule },
+  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash, schedule: ptSchedule },
+  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash, schedule: esSchedule },
 };
 
 i18n.use(initReactI18next).init({

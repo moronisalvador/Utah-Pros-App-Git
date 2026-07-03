@@ -34,6 +34,15 @@
     "fire": "Fire",
     "contents": "Contents"
   },
+  "apptType": {
+    "monitoring": "Monitoring",
+    "mitigation": "Mitigation",
+    "inspection": "Inspection",
+    "reconstruction": "Recon",
+    "estimate": "Estimate",
+    "mold_remediation": "Mold Remed.",
+    "other": "Other"
+  },
   "btn": {
     "back": "Back",
     "retry": "Retry",
@@ -50,7 +59,8 @@
     "notePlaceholder": "What do you want to note?"
   },
   "misc": {
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "appointment": "Appointment"
   },
   "toast": {
     "photoTooLarge": "Photo is too large (max 10 MB)",

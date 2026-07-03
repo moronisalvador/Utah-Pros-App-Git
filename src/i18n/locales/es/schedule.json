@@ -1,0 +1,23 @@
+{
+  "title": "Agenda",
+  "today": "Hoy",
+  "goToToday": "Ir a hoy",
+  "createAria": "Crear cita o evento",
+  "searchPlaceholder": "Buscar por nombre, dirección, n.º de trabajo...",
+  "filterType": "Tipo",
+  "div": { "all": "Todos", "mitigation": "Mitigación", "reconstruction": "Reconstrucción" },
+  "filterCrew": "Equipo",
+  "me": "Yo",
+  "all": "Todos",
+  "meWithName": "Yo ({{name}})",
+  "private": "Privado",
+  "emptyDay": "No hay citas este día",
+  "emptyRange": "No hay citas en este rango",
+  "emptyRangeHint": "Desliza la franja de fechas o toca el mes para navegar",
+  "createNew": "Crear nuevo",
+  "jobAppt": "Cita de trabajo",
+  "jobApptSub": "Vinculada a un trabajo, con tareas y equipo",
+  "event": "Evento",
+  "eventSub": "Reunión, PTO, capacitación — sin trabajo",
+  "toastLoadFailed": "Error al cargar la agenda"
+}

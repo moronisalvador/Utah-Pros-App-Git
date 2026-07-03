@@ -1,0 +1,23 @@
+{
+  "title": "Schedule",
+  "today": "Today",
+  "goToToday": "Go to Today",
+  "createAria": "Create appointment or event",
+  "searchPlaceholder": "Search by name, address, job #...",
+  "filterType": "Type",
+  "div": { "all": "All", "mitigation": "Mitigation", "reconstruction": "Reconstruction" },
+  "filterCrew": "Crew",
+  "me": "Me",
+  "all": "All",
+  "meWithName": "Me ({{name}})",
+  "private": "Private",
+  "emptyDay": "No appointments this day",
+  "emptyRange": "No appointments in this range",
+  "emptyRangeHint": "Scroll the date strip or tap the month to navigate",
+  "createNew": "Create new",
+  "jobAppt": "Job appointment",
+  "jobApptSub": "Linked to a job, with tasks & crew",
+  "event": "Event",
+  "eventSub": "Meeting, PTO, training — no job needed",
+  "toastLoadFailed": "Failed to load schedule"
+}
