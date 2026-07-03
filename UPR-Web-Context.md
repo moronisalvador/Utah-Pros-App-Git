@@ -1334,6 +1334,39 @@ S/D wave fills in.
   window); `TechDash` no longer re-skeletons when data already exists.
 - **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
 
+### Session S — Schedule v2 (Jul 3 2026 — shipped)
+
+Fills the `TechScheduleV2` stub behind `page:tech_sched_v2` (owner-only). Legacy
+`TechSchedule.jsx` untouched. Owns `src/pages/tech/v2/TechScheduleV2.jsx` +
+`src/pages/tech/v2/schedule/**` + CSS in the `TECH-V2: SCHED` marker. Zero schema/RPCs.
+
+- **Views:** **Agenda** (default) — continuous bidirectional list, sticky per-day
+  headers, today anchored on first paint via a ref + rect math on the pane scroll
+  container (found with `ref.closest('.tv2-pane-scroll')`, re-asserted in a microtask
+  to beat the pane host's scroll-restore; no `setTimeout`, no
+  `querySelector('.tech-content')`). Prepending past days compensates `scrollTop` so the
+  viewport never jumps; scrolling drives the strip highlight + floating Today pill.
+  **Day timeline** — hour grid, status-tinted positioned blocks with overlap lanes, an
+  all-day strip, and a red now-line that ticks each minute and pauses when the pane is
+  inactive (`active` prop). **Month view is deferred** (rides with Phase C) — not built.
+- **Week strip:** infinite scroll-snap pager (one week per page), haptic tick via
+  `lib/nativeHaptics` on week change, grows at whichever edge you swipe toward with
+  `scrollLeft` compensation. Day taps are pure client state — never a fetch.
+- **Data:** `useScheduleData` runs one `get_appointments_range` query per calendar month
+  via the FROZEN `techKeys.schedMonth`, ±1 month prefetch, a GROWING loaded-month set
+  (never shrinks → stable agenda scroll), dedupe by id. PTR + focus revalidate through
+  `invalidateTech(qc,'appointment')`; skeletons only on true cold start.
+- **Rendering:** `color/kind/duration_days/is_milestone` all surfaced — STATUS owns the
+  color channel (chip + timeline block tint), division demoted to a small pill, events
+  (`kind='event'`/no job) styled distinctly. Nav strictly via `apptHref()/jobHref()`.
+- **Filters/search/create:** carried over with legacy parity — me/all/multi-crew +
+  division (`MITIGATION_DIVS = water/mold/contents`, matching legacy), persisted under the
+  SAME `tech_schedule_filters_{empId}` localStorage key; create picker → existing
+  `/tech/new-appointment` & `/tech/new-event`.
+- **Pure logic** in `schedule/scheduleSelectors.js` (month-key math, grouping/sorting,
+  filter predicates) with 24 committed vitest cases (`scheduleSelectors.test.js`, TEST
+  fixtures only — never live rows). `npm test`/`build`/`eslint` green.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
