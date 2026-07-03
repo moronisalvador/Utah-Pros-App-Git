@@ -1,8 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
+import TechPane from '@/components/tech/v2/TechPane.jsx';
+import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
+
+// Tech Mobile v2 panes — lazy so their chunk loads only when the flag is on
+// (dev-only during the wave). They render PERSISTENTLY in the pane host below,
+// outside the keyed <Outlet/>, so tab switches don't remount them.
+const TechDashV2 = lazy(() => import('@/pages/tech/v2/TechDashV2.jsx'));
+const TechScheduleV2 = lazy(() => import('@/pages/tech/v2/TechScheduleV2.jsx'));
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -185,9 +193,22 @@ function InstallBanner() {
 export default function TechLayout() {
   const location = useLocation();
   const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
-  const { employee, db } = useAuth();
+  const { employee, db, isFeatureEnabled } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
   const [toasts, setToasts] = useState([]);
+
+  // ── Tech v2 pane host ──
+  // Each v2 pane is MOUNTED whenever its flag is on and kept alive across
+  // navigation (that is the whole point — no remount storm, state + scroll
+  // survive tab switches). A pane is ACTIVE only on its own path; inactive panes
+  // are hidden with display:none. When a v2 pane is active it covers the screen,
+  // so the keyed legacy <Outlet/> is not rendered underneath it. Flags OFF (every
+  // non-owner during the wave) → no pane mounts and behavior is byte-identical.
+  const dashV2 = isFeatureEnabled('page:tech_dash_v2');
+  const schedV2 = isFeatureEnabled('page:tech_sched_v2');
+  const dashActive = dashV2 && location.pathname === '/tech';
+  const schedActive = schedV2 && location.pathname === '/tech/schedule';
+  const paneCovering = dashActive || schedActive;
 
   /* ── Global toast listener ── */
   useEffect(() => {
@@ -222,14 +243,32 @@ export default function TechLayout() {
 
   return (
     <div className="tech-layout">
-      {/* Keyed by pathname so each navigation remounts + replays the slide.
-          Back (POP) slides in from the left; forward (PUSH/REPLACE) from the right. */}
-      <div
-        key={location.pathname}
-        className={`tech-content tech-content--${navType === 'POP' ? 'back' : 'fwd'}`}
-      >
-        <Outlet />
-      </div>
+      {/* v2 persistent panes (outside the keyed wrapper so they never remount). */}
+      {dashV2 && (
+        <TechPane active={dashActive}>
+          <Suspense fallback={<SkeletonList />}>
+            <TechDashV2 active={dashActive} />
+          </Suspense>
+        </TechPane>
+      )}
+      {schedV2 && (
+        <TechPane active={schedActive}>
+          <Suspense fallback={<SkeletonList />}>
+            <TechScheduleV2 active={schedActive} />
+          </Suspense>
+        </TechPane>
+      )}
+
+      {/* Legacy + detail routes: keyed by pathname so each navigation remounts +
+          replays the 0.2s fade. Not rendered while a v2 pane covers the screen. */}
+      {!paneCovering && (
+        <div
+          key={location.pathname}
+          className={`tech-content tech-content--${navType === 'POP' ? 'back' : 'fwd'}`}
+        >
+          <Outlet />
+        </div>
+      )}
 
       {/* Floating offline-queue indicator — renders nothing when idle */}
       <div style={{

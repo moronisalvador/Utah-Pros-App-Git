@@ -4990,6 +4990,104 @@ tr:hover td { background: var(--bg-secondary); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TECH MOBILE v2 — reserved CSS sections (Phase F Foundation)
+   ───────────────────────────────────────────────────────────────────────────
+   Each wave session writes ONLY inside its own marker below, using new `tv2-*`
+   class names — never restyle an existing `.tech-*` selector (that would leak
+   into the frozen legacy pages). Foundation ships the shared primitive styles
+   used by StatusChip / ApptListRow / TechV2Page / skeletons here in the header
+   block; SCHED / DASH / HUB stay empty until their session fills them.
+   Ownership: .claude/rules/tech-v2-wave-ownership.md.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── TECH-V2: SHARED (Foundation-owned primitive styles) ─────────────────── */
+.tv2-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* A persistent v2 pane: fixed header + its own scroll container. Kept mounted
+   across navigation by the TechLayout pane host; hidden with display:none when
+   it isn't the active tab (transforms are banned on WKWebView). */
+.tv2-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tv2-pane[hidden] { display: none !important; }
+.tv2-pane-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-secondary);
+  padding-bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)));
+}
+/* Sticky header stays put on pull-to-refresh (it's OUTSIDE the scroll container). */
+.tv2-pane-header {
+  flex: 0 0 auto;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+/* Status chip — status owns the color channel (read from 3 feet). */
+.tv2-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: var(--tech-text-label);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.tv2-status-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Appointment list row — one glanceable line, 48px+ tap target. */
+.tv2-appt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tech-min-tap);
+  padding: 12px 16px;
+  background: #ffffff;
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  text-align: left;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+}
+.tv2-appt-row:active { box-shadow: var(--tech-shadow-card-active); opacity: 0.85; }
+.tv2-appt-row__bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--tech-accent, #cbd5e1); }
+.tv2-appt-row__body { flex: 1; min-width: 0; }
+.tv2-appt-row__title { font-size: var(--tech-text-body); font-weight: 600; color: var(--text-primary); }
+.tv2-appt-row__meta { font-size: var(--tech-text-label); color: var(--text-secondary); margin-top: 2px; }
+
+/* Skeleton shimmer for cold-start only. */
+.tv2-skel {
+  background: linear-gradient(90deg, #eef1f4 25%, #f6f8fa 37%, #eef1f4 63%);
+  background-size: 400% 100%;
+  animation: tv2-shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--tech-radius-button);
+}
+@keyframes tv2-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .tv2-skel { animation: none; } }
+
+/* ─── TECH-V2: SCHED (Session S — schedule/calendar) ──────────────────────── */
+
+/* ─── TECH-V2: DASH (Session D — dashboard) ───────────────────────────────── */
+
+/* ─── TECH-V2: HUB (Phase M1 — job hub) ───────────────────────────────────── */
+
 /* ═══════════════════════════════════════════════════
    Doc Checklist — Job Page Tab
    ═══════════════════════════════════════════════════ */

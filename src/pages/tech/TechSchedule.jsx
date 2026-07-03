@@ -494,16 +494,18 @@ export default function TechSchedule() {
     };
   });
 
-  // Re-anchor the window ONLY when the selected day falls outside it.
-  useEffect(() => {
-    if (selectedDay < dateRange.start || selectedDay > dateRange.end) {
-      const sel = new Date(selectedDay + 'T12:00:00');
+  // Re-anchor the loaded window around a day only if it falls outside the window.
+  // Called from the day-select handler (not an effect) so a tap inside the window
+  // is a pure client-side scroll with zero refetch.
+  const reanchorIfNeeded = useCallback((dayKey) => {
+    if (dayKey < dateRange.start || dayKey > dateRange.end) {
+      const sel = new Date(dayKey + 'T12:00:00');
       setDateRange({
         start: fmtDate(addDays(sel, -STRIP_CENTER)),
         end: fmtDate(addDays(sel, STRIP_DAYS - STRIP_CENTER)),
       });
     }
-  }, [selectedDay, dateRange.start, dateRange.end]);
+  }, [dateRange.start, dateRange.end]);
 
   // ─── SECTION: Data fetching ──────────────
   const hasFetched = useRef(false);
@@ -640,6 +642,7 @@ export default function TechSchedule() {
 
   const handleSelectDay = (dayKey) => {
     setSelectedDay(dayKey);
+    reanchorIfNeeded(dayKey); // only refetches when the tap leaves the loaded window
     if (view === 'list' && dateRefs.current[dayKey]) {
       dateRefs.current[dayKey].scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
