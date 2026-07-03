@@ -5119,7 +5119,7 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-dash-header__name { font-size: var(--tech-text-heading); font-weight: 800; color: var(--text-primary); margin-top: 2px; }
 .tv2-dash-header__summary { font-size: var(--tech-text-body); color: var(--text-secondary); margin-top: 2px; }
 .tv2-dash-header__icon-btn {
-  width: 40px; height: 40px;
+  width: var(--tech-min-tap); height: var(--tech-min-tap);
   border-radius: var(--tech-radius-button);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
@@ -5128,10 +5128,10 @@ tr:hover td { background: var(--bg-secondary); }
   cursor: pointer; touch-action: manipulation;
 }
 .tv2-dash-header__icon-btn[data-active='true'] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
-.tv2-dash-header > .tv2-dash-header__icon-btn { position: absolute; top: 12px; right: calc(16px + 40px + 8px); }
-.tv2-dash-header__menu { position: absolute; top: 12px; right: 16px; }
+.tv2-dash-header > .tv2-dash-header__icon-btn { position: absolute; top: 10px; right: calc(16px + var(--tech-min-tap) + 8px); }
+.tv2-dash-header__menu { position: absolute; top: 10px; right: 16px; }
 .tv2-dash-menu {
-  position: absolute; right: 0; top: 46px;
+  position: absolute; right: 0; top: 54px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--tech-radius-card);
@@ -5166,7 +5166,7 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-dash-banner__body { font-size: 13px; opacity: 0.9; margin-top: 2px; }
 .tv2-dash-banner__actions { display: flex; gap: 8px; margin-top: 10px; }
 .tv2-dash-banner__btn {
-  flex: 1; min-height: 44px;
+  flex: 1; min-height: var(--tech-min-tap);
   border-radius: var(--tech-radius-button);
   font-size: 13px; font-weight: 700; font-family: var(--font-sans);
   background: var(--bg-primary); color: inherit;

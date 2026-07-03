@@ -37,6 +37,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StalledWidget from '@/components/tech/StalledWidget';
+import { apptHref } from '@/components/tech/v2/nav.js';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
 import { notify, impact } from '@/lib/nativeHaptics';
 import { toast } from '@/lib/toast';
@@ -135,7 +136,7 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
   // ── 5 PM "still clocked in" nudge (reads openEntry from the payload) ──
   const finishOpenClock = useCallback(async () => {
     if (!openEntry) return;
-    if (openEntry.appointment_id) { navigate(`/tech/appointment/${openEntry.appointment_id}`); return; }
+    if (openEntry.appointment_id) { navigate(apptHref(openEntry.appointment_id, openEntry.job_id)); return; }
     try {
       await db.rpc('clock_finish_entry', { p_entry_id: openEntry.id, p_employee_id: employee.id });
       notify('success');

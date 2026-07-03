@@ -235,12 +235,12 @@ Scope: owns `src/pages/tech/v2/TechScheduleV2.jsx` + `src/pages/tech/v2/schedule
 > **Model: Opus · medium** (composition of existing widgets + F-tested RPC; hours MATH already tested in F).
 > **Read scope:** `CLAUDE.md` + this block + ownership manifest + `.claude/rules/tech-mobile-ux.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `pickNowNext` edge cases (all completed / none today / paused); hours display formatting (travel + on-site + total, labeled); cancelled-filter regression (Finding 6)
-> - [ ] Acceptance: Now/Next hero (live timer clocked-in, countdown otherwise, ONE dominant action); attention strip (away / 5PM / stalled — existing logic, unified skin); today mini-timeline; My-numbers (hours today/week Monday-Denver, tasks done/total, photos today); completed rows WITH travel/on-site/total breakdown; Coming-up scoped to me; single `get_tech_dashboard` query + invalidation wiring; PTR never re-skeletons
-> - [ ] Zero schema; zero shared-file edits; css only inside `TECH-V2: DASH`; TEST fixture IDs only
-> - [ ] `npm run test` + `npm run build` + `npx eslint` pass; `upr-pattern-checker` clean; `tech-phase-reviewer` sign-off
-> - [ ] Visual: branch preview + owner's phone via prod flag
-> - [ ] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR to `dev` draft → ready
+> - [x] Test-first, now green: `pickNowNext` edge cases (all completed / none today / paused); hours display formatting (travel + on-site + total, labeled); cancelled-filter regression (Finding 6) — `src/pages/tech/v2/dash/dashHelpers.test.js` (16 unit tests, no creds)
+> - [x] Acceptance: Now/Next hero (live timer clocked-in, countdown otherwise, ONE dominant action); attention strip (away / 5PM / stalled — existing logic, unified skin); today mini-timeline; My-numbers (hours today/week Monday-Denver, tasks done/total, photos today); completed rows WITH travel/on-site/total breakdown; Coming-up scoped to me; single `get_tech_dashboard` query + invalidation wiring; PTR never re-skeletons
+> - [x] Zero schema; zero shared-file edits; css only inside `TECH-V2: DASH`; TEST fixture IDs only (unit tests use literal fixture ids, no live rows)
+> - [x] `npm run test` (425 pass / 77 skip) + `npm run build` + `npx eslint` pass; `upr-pattern-checker` clean (Sign-Out two-click fix applied); `tech-phase-reviewer` sign-off (blocking hardcoded-nav fix applied → SHIP)
+> - [ ] Visual: branch preview + owner's phone via prod flag — **owner-gated** (`page:tech_dash_v2` flag flip is the owner's, DevTools → Flags)
+> - [x] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR to `dev` draft → ready (merge is the owner's per manifest §2)
 
 Scope: owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` only.
 
