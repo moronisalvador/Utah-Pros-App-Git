@@ -4148,3 +4148,24 @@ amendments, S1 guard), the **Session K dispatch block** in `docs/crm-dispatch.md
 `supabase/migrations/20260702_crm_phase5_replan_stages.sql` (applied + verified live: phase
 title → "Automation recipes — linear visual builder", status still `planned`, placeholder stage
 replaced by 7 real stages).
+
+## CRM Phase 5-Ops plan (Jul 3 2026) — plan of record committed (no feature code)
+
+Owner directive (full scope): extend the shipped automation engine with **ops actions**
+(notify_staff via `create_notification`, job_note via `job_notes`, set_job_phase via a NEW
+two-write-encapsulating RPC, create_draft_invoice via the idempotent `create_invoice_for_job` —
+draft-only, the QBO push door stays human), a **scheduled-scan trigger family** ("something
+DIDN'T happen": estimate aging, missing daily moisture reading [MT day boundary], invoice
+overdue, stuck phase, dispatch SLA — code-defined registry, thresholds-only config,
+deterministic-uuid dedup through the existing `UNIQUE(automation_id, triggering_event_id)`),
+and a **7-recipe starter pack seeded `enabled=false`**. Key finding recorded: the job/e-sign
+trigger events ARE emitted (live counts verified — DB-side trigger functions from Mar-era
+migrations; a repo-grep claim to the contrary was refuted), so no emit-path work is needed.
+Commissions are explicitly NOT an action (stay derived via `is_real_job` → `get_commissions`).
+Artifacts: roadmap "Phase 5-Ops plan (2026-07-03)" section, ownership manifest **§8** (Session L
+row — Session K's two code files transferred post-#253; additive-ALTER allowance; call-only
+plumbing list), Session L dispatch block in `docs/crm-dispatch.md`, and
+`supabase/migrations/20260703_crm_phase5ops_stages.sql` (applied + verified: phase `5-ops`
+seeded `planned` with 7 stages). Also this session: PR #169 (commissions foundation) reconciled
+onto `dev` and merged — commission tracking starts from now (historical jobs stay unattributed
+by owner decision).

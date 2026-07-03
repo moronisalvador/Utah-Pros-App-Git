@@ -487,3 +487,68 @@ via set_crm_stage_status; push -u, PR to dev via the template, mark it ready to 
 then stop — the PR is a handoff the owner merges; do NOT subscribe to, babysit, or
 wait for a review on it.
 ```
+
+---
+
+## Post-wave — Session L (Phase 5-Ops) may launch once the 5-Ops plan is on dev
+
+Added by the Phase 5-Ops plan (2026-07-03). Authoritative read scope: the "Phase 5-Ops plan
+(2026-07-03)" section of `docs/crm-roadmap.md` + `.claude/rules/crm-wave-ownership.md` **§8**.
+Prereq: #253 merged ✅. May run in parallel with the Feedback Media sessions (disjoint).
+
+```
+[Session L — Post-wave]
+Branch: session-assigned (illustrative: crm/phase-5-ops-actions), cut from origin/dev
+Model: Opus 4.8
+Effort: High
+Launch after: the Phase 5-Ops plan commit is on dev (Phase 5 / PR #253 already merged — no other gate). May run simultaneously with Feedback Media sessions.
+
+You are building CRM Phase 5-Ops — ops action types, scheduled-scan triggers, and a
+starter recipe pack for the existing automation engine; one phase only, billing- and
+consent-adjacent so weighted accordingly. Read scope: CLAUDE.md, the "Phase 5-Ops plan
+(2026-07-03)" section in docs/crm-roadmap.md (it specifies the scan design — deterministic,
+do not improvise), and .claude/rules/crm-wave-ownership.md §8 (binding; §§1-7 apply except
+as §8 amends). Work on your session's assigned branch cut from origin/dev. You own (freed
+by #253's merge): functions/api/process-crm-automations.js + its test and
+src/pages/crm/CrmAutomations.jsx, plus ONE additive migration and your reserved index.css
+marker. Hard constraints: migration is additive-only — exactly ADD COLUMN trigger_kind
+(text NOT NULL DEFAULT 'event', CHECK event|scan) + ADD COLUMN scan_config (jsonb DEFAULT
+'{}') on crm_automations, a new set_job_phase(p_job_id, p_to_phase, p_actor_id DEFAULT
+NULL) SECURITY DEFINER RPC that performs BOTH the jobs update AND the job_phase_history
+insert (the fixed review-request automation reads job_phase_history — one write without
+the other is a correctness bug), and the 7 recipe-pack seeds (all enabled=false,
+idempotent ON CONFLICT); no ALTER/DROP on any other table, no DROP anywhere. Plumbing is
+CALL-ONLY: create_notification (org-wide staff feed; no consent gate applies to internal
+staff notices), create_invoice_for_job (draft-only + idempotent one-per-job — your action
+must NEVER call /api/qbo-invoice; the human Save→QBO gate is sacred per BILLING-CONTEXT;
+never write computed columns), and sendAutomatedMessage() for any customer-facing send
+(held/quiet-hours semantics inherited untouched). Frozen: automated-send.js,
+run-automations.js, process-sequences.js (import-only), send workers, JobDetailPanel.jsx
+(replicate its two-write inside set_job_phase; do not edit it). Build in this order
+(riskiest first): ① the migration; ② the four action handlers in executeAction
+(notify_staff via db.rpc create_notification; job_note via db.insert job_notes with
+author_name 'Automation'; set_job_phase via the new RPC; create_draft_invoice via
+create_invoice_for_job) each returning the send-result shape {ok|skipped+reason|error};
+③ the SCAN pass — a code-defined registry keyed by trigger_event_type
+(scan.estimate_aging, scan.missing_moisture_reading [MT day boundary via
+functions/lib/date-mt.js], scan.invoice_overdue [reminders only — never mutate amounts],
+scan.stuck_phase, scan.no_appointment_after_create); scan_config carries THRESHOLDS ONLY,
+never queries; scans enqueue runs with deterministic triggering_event_id =
+uuidv5(automation_id ‖ entity_id ‖ threshold-key) so UNIQUE(automation_id,
+triggering_event_id) makes each (rule, entity) fire once — escalation ladders are
+separate rules; ④ builder UI — action-type dropdown + config UIs + run-log labels for
+the 4 new types, scan-rule editor (scan picker + threshold inputs), the recipes visible
+as disabled rules; useAuth() db only, upr:toast, two-click delete, mobile only via
+@media (max-width: 768px) inside your marker. Test-first (commit failing first): ① scan
+idempotency (one rule+entity+threshold → one run, ever); ② draft-invoice action never
+double-invoices and never references /api/qbo-invoice; ③ set_job_phase writes BOTH
+tables; ④ the moisture scan honors the Mountain-Time day boundary; ⑤ all seeds
+enabled=false + idempotent. Close-out: npm run test + npm run build + npx eslint
+(changed files) pass; migration-safety-checker + upr-pattern-checker +
+consent-path-auditor clean; crm-phase-reviewer (Opus) sign-off weighted on the
+draft-invoice action + scan idempotency; delete test rules/runs/draft invoices (TEST
+org / test job); update UPR-Web-Context.md; set phase '5-ops' to shipped via
+set_crm_phase_status and reconcile its crm_build_stages via set_crm_stage_status;
+push -u, PR to dev via the template, mark it ready to merge, then stop — the PR is a
+handoff the owner merges; do NOT subscribe to, babysit, or wait for a review on it.
+```

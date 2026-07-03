@@ -1469,3 +1469,100 @@ DISJOINT** — tables, RPCs, workers, and pages all distinct; the only shared su
 insert-only logs (`system_events`, `worker_runs`), the import-only send gate, and seam edits
 only Phase 5 makes. Counter-ordering: the combined single session won over the 5a→5b split
 (adopted above).
+
+---
+
+# Phase 5-Ops plan (2026-07-03) — Ops actions, scan triggers & starter recipes
+
+**Owner go (2026-07-03, full scope):** extend the shipped Phase 5 engine so automations can act
+on the OPERATIONS side (mitigation/reconstruction/cash), not just CRM messaging. Three parts:
+① four ops **action types**; ② a **scheduled-scan trigger** family ("something DIDN'T happen");
+③ a **starter recipe pack** seeded DISABLED for the owner to review and toggle. Commissions are
+explicitly NOT an action — they stay derived (`is_real_job` → `get_commissions`, the one place
+commission math lives).
+
+## Evidence base (verified 2026-07-03; one prior claim refuted live)
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| Job/e-sign trigger events are emitted | **CONFIRMED (refuting a repo-grep claim)** | live counts: `job.created` 235 (latest Jul 2), `claim.created` 110, `job.payment_received` 63, `esign.signed` 6, `job.phase_changed` 8 — emitters are DB-side trigger functions (Mar-era migrations), invisible to repo grep. **No emit-path prerequisite.** |
+| Engine supports job-keyed, contact-less runs | CONFIRMED | `crm_automation_runs.contact_id` nullable; dedup key excludes it; `resolveContactId` backfills from `jobs.primary_contact_id`; send actions self-skip on `no_contact` |
+| Notify-staff plumbing | HAVE | `create_notification` RPC (`20260624_notifications.sql:36-50`); worker precedent `submit-esign.js:197-206`; the consent gate does NOT apply to internal staff notices. Feed is org-wide — per-person targeting deferred (see options) |
+| Job-note plumbing | HAVE | `db.insert('job_notes', {job_id, author_name:'Automation', body})` — precedent `submit-esign.js:208-211` |
+| Job-phase plumbing | PARTIAL | no RPC exists; the live pattern is a two-write (`jobs` update + `job_phase_history` insert, `JobDetailPanel.jsx:26-53`). BOTH writes required — the fixed review-request automation reads `job_phase_history`. This phase ships a `set_job_phase` SECURITY DEFINER RPC to encapsulate it |
+| Draft-invoice plumbing | HAVE, safe by construction | `create_invoice_for_job(p_job_id, p_created_by)` — inserts `status='draft'`, **idempotent one-invoice-per-job**, never touches QBO; the only QBO push door is the human Save → `/api/qbo-invoice` (BILLING-CONTEXT human-in-the-loop) |
+
+## Scan-trigger design (spec'd here so the session doesn't improvise)
+
+- **Schema (additive, Rule 7):** `ALTER TABLE crm_automations ADD COLUMN trigger_kind text NOT NULL
+  DEFAULT 'event' CHECK (trigger_kind IN ('event','scan'))` + `ADD COLUMN scan_config jsonb DEFAULT '{}'`
+  (thresholds only). Additive columns on a feature-flagged table with zero production rows.
+- **Scans are a CODE-DEFINED registry** in `process-crm-automations.js` — `scan_config` carries
+  thresholds (days/hours), NEVER queries. A scan rule's `trigger_event_type` holds the scan key.
+  v1 registry (5): `scan.estimate_aging` (estimate sent, no response in N days),
+  `scan.missing_moisture_reading` (job in a drying phase, no hydro reading today by cutoff —
+  MT day boundary via `date-mt.js`), `scan.invoice_overdue` (unpaid N days past issue;
+  reminder-only — never mutates amounts), `scan.stuck_phase` (job in a phase > N days),
+  `scan.no_appointment_after_create` (job created, no appointment within N hours).
+- **Idempotency without an event row:** a scan enqueues runs with a **deterministic
+  `triggering_event_id` = uuidv5(automation_id ‖ entity_id ‖ threshold-key)** so the existing
+  `UNIQUE(automation_id, triggering_event_id)` makes each (rule, entity) fire **once** per
+  threshold. Escalation ladders (15/30/45-day AR) = three rules, not re-fires.
+- **SMS in scan recipes** inherits the existing held-not-dropped semantics (kill-switch +
+  quiet-hours) untouched.
+
+## Phase 5-Ops — ops actions, scan triggers & recipe pack
+
+> **Branch:** harness-assigned (illustrative: `crm/phase-5-ops-actions`).
+> **Prerequisite:** Phase 5 merged ✅ (#253) + this plan on `dev`. May run ∥ Feedback Media
+> (disjoint files/tables). Model: **Opus · high** (touches the send-adjacent engine + the
+> billing-adjacent draft-invoice action; BILLING-CONTEXT rules bind).
+> **Read scope:** this section + `CLAUDE.md` + `.claude/rules/crm-wave-ownership.md` §8.
+> **Close-out checklist:**
+> - [ ] Test-first, now green (committed failing first): ① scan idempotency — one (rule, entity, threshold) never creates two runs (deterministic-uuid dedup exercised); ② draft-invoice action never double-invoices (the RPC's one-per-job dedup asserted) and NEVER calls `/api/qbo-invoice`; ③ phase action writes BOTH `jobs` and `job_phase_history` (the review-request consumer keeps working); ④ moisture-reading scan honors the MT day boundary; ⑤ recipe-pack seeds are all `enabled=false` and idempotent.
+> - [ ] Acceptance: the 4 action types (notify_staff / job_note / set_job_phase / create_draft_invoice) selectable in the builder with config UIs + run-log labels; `trigger_kind='scan'` rules configurable (scan picker + thresholds) and fired by the engine's new SCAN pass; the 7 starter recipes visible in `/crm/automations` as disabled rules; the S1 guard untouched and still passing.
+> - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass.
+> - [ ] `migration-safety-checker` (additive-only: 2 ADD COLUMNs + `set_job_phase` RPC + seeds) + `upr-pattern-checker` + `consent-path-auditor` clean; `crm-phase-reviewer` (Opus) sign-off weighted on the draft-invoice action + scan idempotency.
+> - [ ] Visual: builder with ops actions + a scan rule on preview (owner-gated — disclose if not producible).
+> - [ ] `UPR-Web-Context.md` updated.
+> - [ ] Set `5-ops` shipped via `set_crm_phase_status`; reconcile stages; delete test rules/runs/invoices (TEST org / test job); push; PR into `dev` as a handoff, then stop (no babysitting).
+
+Scope: edits ONLY `functions/api/process-crm-automations.js` + its test, `src/pages/crm/CrmAutomations.jsx`
+(both Session-K files, freed by #253's merge — §8 grants them to Session L), ONE additive migration
+(2 columns + `set_job_phase` RPC + recipe seeds), `supabase/tests/`, `UPR-Web-Context.md`, its
+reserved `index.css` marker. Call-only: `create_notification`, `create_invoice_for_job`,
+`sendAutomatedMessage`. Deliberately NOT: per-person staff targeting (org-wide feed for v1 —
+needs a `notifications` schema change + push infra, deferred), auto-push to QBO (forbidden),
+commissions-as-action (forbidden — derived), editing `run-automations.js`/`process-sequences.js`,
+branching canvas.
+
+### Starter recipe pack (all seeded `enabled=false`; owner toggles)
+
+1. **Work auth signed → draft invoice + notify billing + job note** (`esign.signed`)
+2. **Payment received → thank-you email + job note** (`job.payment_received`; consent-gated email)
+3. **Mitigation job completed → recon-consult task + email** (`job.phase_changed`, `to_phase=completed`; the mitigation→reconstruction cross-sell)
+4. **Emergency form lead → notify staff + urgent task** (`crm_form_submitted`)
+5. **Estimate aging 5 days → follow-up email + estimator task** (`scan.estimate_aging`)
+6. **Drying job missing today's reading → notify + task** (`scan.missing_moisture_reading`)
+7. **Invoice 30 days overdue → reminder email + collections task** (`scan.invoice_overdue`)
+
+## Options on record (owner decisions 2026-07-03)
+
+| Decision | Chosen | Rejected + caveat |
+|---|---|---|
+| Scope | **Full** (actions + scan trigger + recipe pack) | minimal 4-actions-only (the scan family carries the majority of the business value — dispatch SLA, drying compliance, AR ladder) |
+| Scan mechanism | code-defined registry + deterministic-uuid dedup through the EXISTING runs table | a second scheduler/engine (rejected — S1 taught us: more engines = more double-fire namespaces) |
+| Staff targeting | org-wide notifications feed (v1) | per-employee targeting — needs `notifications` schema + APNs/device_tokens infra; revisit when push lands |
+| Invoice action | draft-only via `create_invoice_for_job` | any QBO push (forbidden by BILLING-CONTEXT human-in-the-loop; the Save→QBO gate stays sacred) |
+
+**Interplay (intended, documented):** a rule that moves a job's phase to `completed` makes the
+fixed review-request automation eligible on its next run — correct behavior, not a collision
+(different dedup namespaces never double-SEND the same message type; the S1 guard covers the
+four fixed triggers).
+
+**Challenge transparency:** this rider was NOT given a fresh 3-agent challenge pass. Its evidence
+base is (a) the plumbing investigation (file:line-cited), (b) a live-DB refutation of that
+investigation's one wrong claim (the emit paths), (c) live verification of both reused RPCs, and
+(d) the Phase 5 re-plan's adjudicated architecture (engine, S1, dedup). The scan design above is
+deliberately deterministic so the build session invents nothing. Residual risk accepted by owner
+scope choice; the reviewer gauntlet + crm-phase-reviewer still gate the PR.
