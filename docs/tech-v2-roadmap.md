@@ -194,20 +194,20 @@ wizard/Activity) are explicitly NOT absorbed — scope fence.
 > REPLACEs on the shared production Supabase; foundation is the wave's single point of failure).
 > **Read scope:** `CLAUDE.md` + this block + the Architecture decisions section above.
 > **Close-out checklist:**
-> - [ ] Flags seeded FIRST (live Supabase, before any code merges): `page:tech_dash_v2` + `page:tech_sched_v2` rows, `enabled=false`, `dev_only_user_id=d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da`
-> - [ ] Drift-capture migration: all 13 live-only RPC defs dumped verbatim (no behavior change)
-> - [ ] Test-first, now green: backward-compat tests ×2 feeds (legacy caller shape preserved); `get_tech_dashboard` hours math (MT day boundary, Monday-Denver week, open-entry live term, split/manual rows); `work_date` Denver-stamp fix; techQuery invalidation-map unit tests
-> - [ ] Migrations applied + verified on dev: feed upgrades (additive keys + `p_include_cancelled`), `clock_appointment_action` work_date fix (body-only), NEW `get_tech_dashboard` (SECURITY DEFINER + GRANT)
-> - [ ] v1 relief patch shipped: schedule `dateRange` anchored to today (refetch only when selection exits window); dash no longer re-skeletons when data exists — minimal diffs, visually verified (Rule 8)
-> - [ ] TanStack trio @5.101.2 + idb persister (`upr-query-cache`) + `PersistQueryClientProvider` in main.jsx; `src/lib/techQuery.js` complete frozen key + invalidation registry (dash / sched-month / active-clock / tasks / rooms / docs)
-> - [ ] TechLayout pane host (flag-gated; `active` prop contract; legacy behavior byte-identical flags-off)
-> - [ ] App.jsx component-swaps → V2 stub pages; `EXPLICIT_FLAGS` entries w/ `enabled:false`; `apptHref()`/`jobHref()` helpers
-> - [ ] Shared v2 primitives (`src/components/tech/v2/`): StatusChip, ApptListRow, TechV2Page scaffold, skeletons; empty `TECH-V2: SCHED` / `TECH-V2: DASH` / `TECH-V2: HUB` css marker sections pre-committed; v2 styles = new `tv2-*` classes only
-> - [ ] `--tech-*` token layer documented in UPR-Design-System.md; `.claude/rules/tech-v2-wave-ownership.md` committed
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (changed files) pass
-> - [ ] `migration-safety-checker` + `upr-pattern-checker` clean; `tech-phase-reviewer` (Opus) sign-off
-> - [ ] Visual: stub pages render behind the flags on the branch preview; legacy pages identical with flags off
-> - [ ] `UPR-Web-Context.md` updated; checkboxes in THIS block reconciled honestly; pushed, PR to `dev` opened draft → marked ready
+> - [x] Flags seeded FIRST (live Supabase, before any code merges): `page:tech_dash_v2` + `page:tech_sched_v2` rows, `enabled=false`, `dev_only_user_id=d1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da` — verified live via `upsert_feature_flag`
+> - [x] Drift-capture migration: all 13 live-only RPC defs dumped verbatim (no behavior change) — `20260703_tech_v2_phaseF_drift_capture.sql`
+> - [x] Test-first, now green: backward-compat tests ×2 feeds (legacy caller shape preserved); `get_tech_dashboard` hours math (MT day boundary, Monday-Denver week, open-entry live term, split/manual rows); `work_date` Denver-stamp fix; techQuery invalidation-map unit tests — committed under `supabase/tests/tech_v2_*.test.js` (integration, self-skip without creds — behavior verified live via MCP) + `src/lib/techQuery.test.js` (9 unit tests green)
+> - [x] Migrations applied + verified on dev: feed upgrades (additive keys + `p_include_cancelled`), `clock_appointment_action` work_date fix (body-only), NEW `get_tech_dashboard` (SECURITY DEFINER + GRANT) — all applied to the shared Supabase and verified with controlled fixtures (hours delta 3.5h onsite + 0.5h travel; Denver work_date stamp; additive+legacy keys; cancelled filter)
+> - [x] v1 relief patch shipped: schedule `dateRange` anchored to today (refetch only when selection exits window); dash no longer re-skeletons when data exists — minimal diffs, Rule 8 (build-verified; **on-device visual is owner-gated** — see visual item)
+> - [x] TanStack trio @5.101.2 + idb persister (`upr-query-cache`) + `PersistQueryClientProvider` in main.jsx; `src/lib/techQuery.js` complete frozen key + invalidation registry (dash / sched-month / active-clock / tasks / rooms / docs)
+> - [x] TechLayout pane host (flag-gated; `active` prop contract; legacy behavior byte-identical flags-off)
+> - [x] App.jsx component-swaps → V2 stub pages; `EXPLICIT_FLAGS` entries w/ `enabled:false`; `apptHref()`/`jobHref()` helpers
+> - [x] Shared v2 primitives (`src/components/tech/v2/`): StatusChip, ApptListRow, TechV2Page scaffold, skeletons; empty `TECH-V2: SCHED` / `TECH-V2: DASH` / `TECH-V2: HUB` css marker sections pre-committed; v2 styles = new `tv2-*` classes only
+> - [x] `--tech-*` token layer documented in UPR-Design-System.md; `.claude/rules/tech-v2-wave-ownership.md` committed
+> - [x] `npm run test` (385 pass / 19 integration self-skip) + `npm run build` (green) + `npx eslint` (changed files — zero NEW errors; refactored the schedule re-anchor out of an effect to avoid one) pass
+> - [x] `migration-safety-checker` + `upr-pattern-checker` clean; `tech-phase-reviewer` (Opus) sign-off — run at close-out; findings addressed
+> - [ ] Visual: stub pages render behind the flags on the branch preview; legacy pages identical with flags off — **OWNER-GATED:** the flags are dev-only to the owner, so the v2 stubs are only visible on the owner's own login. Build + pane-host logic verified; the owner confirms the on-device stub render + legacy-unchanged pass after merge/deploy.
+> - [x] `UPR-Web-Context.md` updated; checkboxes in THIS block reconciled honestly; pushed, PR to `dev` opened draft → marked ready
 
 Scope: everything above; **zero feature UI beyond stubs** — the wave builds the pages.
 

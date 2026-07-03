@@ -7,6 +7,8 @@ This document reflects the actual UI patterns extracted from the live codebase. 
 **Three design systems currently coexist.** Most of the app (Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs) uses the tokens/classes below. Two newer, deliberately page-scoped systems have since grown up alongside it — **not drift, but not merged in either**:
 - **Collections Kit** (§ below) — Collections/AR, Time Tracking, Invoice Editor, Estimate Editor
 - **Overview Kit** (§ below) — Dashboard/home only
+- **Tech Mobile token layer** (§ "Tech Mobile token layer" below) — the field-tech app
+  (`.tech-layout`-scoped `--tech-*` / `--status-*` tokens; v2 adds `tv2-*` classes)
 
 Building in one of those areas? Use that section, not the tokens below. Building anywhere else? Use the tokens below, as always.
 
@@ -928,6 +930,53 @@ import { CollCard, GhostButton, PrimaryButton, SegControl, Kpi, KpiGrid, Popover
 import { C, STATUS, DIV_COLOR, fmt$2, fmtDate } from '@/components/collections/collTokens';
 import SearchSelect from '@/components/collections/SearchSelect';  // searchable dropdown — Collections Kit pages only
 ```
+
+---
+
+## Tech Mobile token layer (`--tech-*`, scoped to `.tech-layout`)
+
+The field-tech app (`src/pages/tech/**`, `src/components/tech/**`) is a third page-scoped
+system. It scopes its own design tokens on the `.tech-layout` root in `index.css` — building
+a tech screen, use these, not the global tokens. The **Tech Mobile v2** wave adds `tv2-*`
+classes on top of the same tokens (see `.claude/rules/tech-v2-wave-ownership.md`).
+
+### Sizing / type / shape tokens (defined on `.tech-layout`)
+
+| Token | Value | Use |
+|---|---|---|
+| `--tech-text-body` | `15px` | Row/body copy |
+| `--tech-text-label` | `12px` | Meta, chips, secondary lines |
+| `--tech-text-heading` | `22px` | Page/section headings |
+| `--tech-text-hero` | `28px` | Now/Next hero title |
+| `--tech-text-timer` | `40px` | Live clock timer |
+| `--tech-radius-card` | `16px` | Cards, list rows |
+| `--tech-radius-button` | `14px` | Buttons, skeletons |
+| `--tech-shadow-card` | (soft 2-layer) | Resting card elevation |
+| `--tech-shadow-card-active` | (tight) | Pressed card |
+| `--tech-min-tap` | `48px` | **Minimum touch target — no exceptions** (gloves/sun) |
+| `--tech-row-height` | `56px` | Standard list row |
+| `--tech-nav-height` | `64px` | Bottom tab bar height (safe-area math keys off this) |
+
+### Status color palette — **status owns the color channel** (read from 3 feet)
+
+Per `.claude/rules/tech-mobile-ux.md`. Each status has a `bg`/`color`/`border` trio as CSS
+custom properties on `.tech-layout` — reference the token, never a hex literal:
+
+| Status | Token prefix | Reads as |
+|---|---|---|
+| scheduled / confirmed | `--status-scheduled-*` | Blue |
+| en_route (On My Way) | `--status-enroute-*` | Amber |
+| in_progress (Working) | `--status-working-*` | Green |
+| paused | `--status-paused-*` | Red |
+| completed / cancelled | `--status-completed-*` | Gray |
+
+Example (the v2 `StatusChip` pattern): `style={{ background: 'var(--status-working-bg)',
+color: 'var(--status-working-color)' }}`. Division color is demoted to a small pill in v2 —
+it must never out-shout status.
+
+> Note: `src/pages/tech/techConstants.js` also exports `APPT_STATUS_COLORS` (hex map) for
+> JS-side lookups (e.g. dynamic inline styles where a CSS var isn't reachable). The
+> `.tech-layout` `--status-*` tokens are the canonical CSS source; keep the two in sync.
 
 ---
 
