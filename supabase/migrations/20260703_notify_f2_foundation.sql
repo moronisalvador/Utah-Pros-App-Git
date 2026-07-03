@@ -308,6 +308,11 @@ GRANT EXECUTE ON FUNCTION public.delete_employee_notification_override(uuid, tex
 --       ship enabled=false — Session B flips them after verifying E2E), and
 --   (b) returns early when integration_config lacks notify_worker_url.
 -- So creating these triggers now emits ZERO traffic until Session B is ready.
+--
+-- notify_emit is INTENTIONALLY worker-/trigger-only: it is SECURITY DEFINER with
+-- NO GRANT EXECUTE to anon/authenticated (only the two trigger functions, which
+-- run as definer, ever call it). It is never RPC-exposed — mirrors the live
+-- notify_google_calendar_sync precedent in 20260630_client_appointment_notifications.sql.
 CREATE OR REPLACE FUNCTION public.notify_emit(p_type_key text, p_body jsonb)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
