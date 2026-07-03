@@ -4,10 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   A simple form where a field technician can report a bug or ask for a new
- *   feature in the app. They pick "Bug" or "Feature", type a short title and
- *   optional details, and can attach up to three screenshots. Submitting sends
- *   it to the office and bounces the tech back to their dashboard.
+ *   The field-tech form for reporting a bug or suggesting an improvement. Pick
+ *   "Bug" or "Improvement", type a short title and optional details, and snap
+ *   photos or one short video — each attachment uploads the moment it's picked
+ *   (big photos are shrunk first), so nothing blocks the snap→save flow.
+ *   Submitting sends it to the office feedback inbox and bounces back to the
+ *   tech dashboard.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/feedback
@@ -15,31 +17,38 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext, @/lib/toast
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/lib/api,
+ *              @/components/FeedbackAttachments
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → none
- *              writes → tech_feedback (insert_tech_feedback)
- *                        + job-files storage bucket (direct REST upload of
- *                          screenshots under a feedback/… path)
+ *              writes → tech_feedback (insert_tech_feedback, p_source:'tech',
+ *                        p_attachments as a real JSON array)
+ *                        + job-files storage bucket (the composer uploads
+ *                          under feedback/… and DELETEs on remove)
  *
  * NOTES / GOTCHAS:
- *   - Screenshots upload as soon as they're picked (max 3, 10 MB each,
- *     image/* only); their storage paths are passed to the RPC as a JSON array.
- *   - Submit stays disabled until a type is chosen, the title is at least 3
- *     characters, and no screenshot is still uploading.
- *   - Local preview URLs are created with URL.createObjectURL and revoked when
- *     a photo is removed or its upload fails.
+ *   - "Improvement" on screen maps to type 'feature' in the DB (the
+ *     tech_feedback CHECK only allows 'bug' | 'feature').
+ *   - p_attachments takes FeedbackAttachments' records as a REAL JSON array —
+ *     never JSON.stringify (that double-encoding is the legacy bug the
+ *     20260702_feedback_media migration had to normalize away).
+ *   - Submit stays disabled while any attachment is still uploading OR being
+ *     removed (onBusyChange) — snap-first, but never a half-attached submit.
+ *   - After a successful submit we notify admins fire-and-forget via
+ *     /api/feedback-notify; the success toast NEVER depends on it (push reaches
+ *     nobody until APNs env + device tokens exist — the in-app bell works now).
+ *   - The composer's reset contract: `value` seeds tiles on MOUNT ONLY. We
+ *     don't need to remount here because we navigate away on success.
  * ════════════════════════════════════════════════
  */
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
+import { api } from '@/lib/api';
+import FeedbackAttachments from '@/components/FeedbackAttachments';
 
 // ─── SECTION: Constants ──────────────
-const MAX_PHOTOS = 3;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-
 const inputStyle = {
   width: '100%', height: 48, padding: '0 14px',
   fontSize: 16, borderRadius: 'var(--tech-radius-button)',
@@ -56,88 +65,34 @@ const labelStyle = {
 export default function TechFeedback() {
   const navigate = useNavigate();
   const { employee, db } = useAuth();
-  const fileRef = useRef(null);
 
   // ─── SECTION: State & hooks ──────────────
-  const [type, setType] = useState(null);       // 'bug' | 'feature'
+  const [type, setType] = useState(null);            // 'bug' | 'feature'
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [photos, setPhotos] = useState([]);      // [{ path, url, uploading }]
+  const [attachments, setAttachments] = useState([]); // records from FeedbackAttachments
+  const [uploadsBusy, setUploadsBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const canSubmit = !!type && title.trim().length >= 3 && !submitting && !uploadsBusy;
+
   // ─── SECTION: Event handlers ──────────────
-  /* ── Photo capture ── */
-  const handleAddPhoto = () => {
-    if (photos.length >= MAX_PHOTOS) {
-      toast(`Maximum ${MAX_PHOTOS} screenshots`, 'warning');
-      return;
-    }
-    fileRef.current?.click();
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    if (file.size > MAX_FILE_SIZE) {
-      toast('Photo is too large (max 10 MB)', 'error');
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast('Only image files are allowed', 'error');
-      return;
-    }
-
-    // Create a local preview URL
-    const previewUrl = URL.createObjectURL(file);
-    const idx = photos.length;
-    setPhotos(prev => [...prev, { path: null, url: previewUrl, uploading: true }]);
-
-    try {
-      const ts = Date.now();
-      const storagePath = `feedback/${employee.id}/${ts}-${file.name}`;
-      const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${storagePath}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': file.type },
-        body: file,
-      });
-      if (!res.ok) throw new Error('Upload failed');
-
-      setPhotos(prev => prev.map((p, i) =>
-        i === idx ? { ...p, path: `job-files/${storagePath}`, uploading: false } : p
-      ));
-      toast('Screenshot added');
-    } catch (err) {
-      toast('Upload failed: ' + err.message, 'error');
-      setPhotos(prev => prev.filter((_, i) => i !== idx));
-      URL.revokeObjectURL(previewUrl);
-    }
-  };
-
-  const removePhoto = (idx) => {
-    setPhotos(prev => {
-      const removed = prev[idx];
-      if (removed?.url) URL.revokeObjectURL(removed.url);
-      return prev.filter((_, i) => i !== idx);
-    });
-  };
-
-  /* ── Submit ── */
-  const canSubmit = type && title.trim().length >= 3 && !submitting && !photos.some(p => p.uploading);
-
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      const screenshotPaths = photos.filter(p => p.path).map(p => p.path);
-      await db.rpc('insert_tech_feedback', {
+      const row = await db.rpc('insert_tech_feedback', {
         p_employee_id: employee.id,
         p_type: type,
         p_title: title.trim(),
         p_description: description.trim() || null,
-        p_screenshots: JSON.stringify(screenshotPaths),
+        p_attachments: attachments, // real array — never JSON.stringify (see header)
+        p_source: 'tech',
       });
+      // Fire-and-forget: tell the admins. The submit is already saved; a
+      // failure here must never surface to the tech (swallowed catch).
+      const feedbackId = row?.id;
+      if (feedbackId) api('feedback-notify', { body: { feedback_id: feedbackId } }).catch(() => {});
       toast('Feedback submitted — thank you!');
       navigate('/tech');
     } catch (err) {
@@ -154,8 +109,9 @@ export default function TechFeedback() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
           onClick={() => navigate('/tech')}
+          aria-label="Back to dashboard"
           style={{
-            width: 40, height: 40, borderRadius: 'var(--tech-radius-button)',
+            width: 48, height: 48, borderRadius: 'var(--tech-radius-button)',
             background: 'var(--bg-tertiary)', border: '1px solid var(--border-light)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', flexShrink: 0, touchAction: 'manipulation',
@@ -170,7 +126,7 @@ export default function TechFeedback() {
             Send Feedback
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            Report a bug or request a feature
+            Report a bug or suggest an improvement
           </div>
         </div>
       </div>
@@ -182,21 +138,21 @@ export default function TechFeedback() {
           onClick={() => setType('bug')}
           style={{
             height: 80, borderRadius: 'var(--tech-radius-card)',
-            border: `2px solid ${type === 'bug' ? '#dc2626' : 'var(--border-color)'}`,
-            background: type === 'bug' ? '#fef2f2' : 'var(--bg-primary)',
+            border: `2px solid ${type === 'bug' ? 'var(--status-needs-response)' : 'var(--border-color)'}`,
+            background: type === 'bug' ? 'var(--status-needs-response-bg)' : 'var(--bg-primary)',
             cursor: 'pointer', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 6,
             touchAction: 'manipulation', transition: 'border-color 0.15s, background 0.15s',
           }}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'bug' ? '#dc2626' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'bug' ? 'var(--status-needs-response)' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           <span style={{
             fontSize: 15, fontWeight: 700,
-            color: type === 'bug' ? '#dc2626' : 'var(--text-secondary)',
+            color: type === 'bug' ? 'var(--status-needs-response)' : 'var(--text-secondary)',
           }}>
             Bug Report
           </span>
@@ -206,21 +162,21 @@ export default function TechFeedback() {
           onClick={() => setType('feature')}
           style={{
             height: 80, borderRadius: 'var(--tech-radius-card)',
-            border: `2px solid ${type === 'feature' ? '#2563eb' : 'var(--border-color)'}`,
-            background: type === 'feature' ? '#eff6ff' : 'var(--bg-primary)',
+            border: `2px solid ${type === 'feature' ? 'var(--accent)' : 'var(--border-color)'}`,
+            background: type === 'feature' ? 'var(--accent-light)' : 'var(--bg-primary)',
             cursor: 'pointer', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 6,
             touchAction: 'manipulation', transition: 'border-color 0.15s, background 0.15s',
           }}
         >
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'feature' ? '#2563eb' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={type === 'feature' ? 'var(--accent)' : 'var(--text-tertiary)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
           </svg>
           <span style={{
             fontSize: 15, fontWeight: 700,
-            color: type === 'feature' ? '#2563eb' : 'var(--text-secondary)',
+            color: type === 'feature' ? 'var(--accent)' : 'var(--text-secondary)',
           }}>
-            Feature Request
+            Improvement
           </span>
         </button>
       </div>
@@ -228,13 +184,13 @@ export default function TechFeedback() {
       {/* Title */}
       <div style={{ marginBottom: 20 }}>
         <label style={labelStyle}>
-          {type === 'bug' ? "What's the problem?" : type === 'feature' ? "What would you like?" : "Short title"}
+          {type === 'bug' ? "What's the problem?" : type === 'feature' ? "What would you like?" : 'Short title'}
         </label>
         <input
           type="text"
           value={title}
           onChange={e => setTitle(e.target.value)}
-          placeholder={type === 'bug' ? 'e.g. Photos not saving' : type === 'feature' ? 'e.g. Add dark mode' : 'Give it a short title'}
+          placeholder={type === 'bug' ? 'e.g. Photos not saving' : type === 'feature' ? 'e.g. Sort customers by recent job' : 'Give it a short title'}
           maxLength={120}
           style={inputStyle}
         />
@@ -258,72 +214,15 @@ export default function TechFeedback() {
         />
       </div>
 
-      {/* Screenshots */}
+      {/* Attachments — snap-first shared composer (photos + one short video) */}
       <div style={{ marginBottom: 28 }}>
-        <label style={labelStyle}>Screenshots (optional)</label>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {photos.map((photo, idx) => (
-            <div key={idx} style={{
-              position: 'relative', width: 88, height: 88,
-              borderRadius: 'var(--radius-lg)', overflow: 'hidden',
-              border: '1px solid var(--border-color)',
-            }}>
-              <img
-                src={photo.url}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              {photo.uploading && (
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  background: 'rgba(0,0,0,0.4)', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <div style={{
-                    width: 24, height: 24, border: '3px solid rgba(255,255,255,0.3)',
-                    borderTopColor: '#fff', borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
-                  }} />
-                </div>
-              )}
-              {!photo.uploading && (
-                <button
-                  onClick={() => removePhoto(idx)}
-                  style={{
-                    position: 'absolute', top: 4, right: 4,
-                    width: 24, height: 24, borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.6)', color: '#fff',
-                    border: 'none', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, lineHeight: 1, touchAction: 'manipulation',
-                  }}
-                >
-                  {'\u2715'}
-                </button>
-              )}
-            </div>
-          ))}
-
-          {photos.length < MAX_PHOTOS && (
-            <button
-              onClick={handleAddPhoto}
-              style={{
-                width: 88, height: 88, borderRadius: 'var(--radius-lg)',
-                border: '2px dashed var(--border-color)', background: 'var(--bg-secondary)',
-                cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 4,
-                touchAction: 'manipulation',
-              }}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>Add</span>
-            </button>
-          )}
-        </div>
+        <label style={labelStyle}>Photos / video (optional)</label>
+        <FeedbackAttachments
+          value={attachments}
+          onChange={setAttachments}
+          onBusyChange={setUploadsBusy}
+          disabled={submitting}
+        />
       </div>
 
       {/* Submit */}
@@ -333,26 +232,15 @@ export default function TechFeedback() {
         style={{
           width: '100%', height: 56, borderRadius: 'var(--tech-radius-button)',
           background: canSubmit ? 'var(--accent)' : 'var(--bg-tertiary)',
-          color: canSubmit ? '#fff' : 'var(--text-tertiary)',
+          color: canSubmit ? 'var(--text-inverse)' : 'var(--text-tertiary)',
           border: 'none', fontSize: 17, fontWeight: 700,
           cursor: canSubmit ? 'pointer' : 'default',
           fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
           transition: 'background 0.15s, color 0.15s',
         }}
       >
-        {submitting ? 'Sending...' : 'Submit Feedback'}
+        {submitting ? 'Sending...' : uploadsBusy ? 'Uploading attachments...' : 'Submit Feedback'}
       </button>
-
-      {/* Hidden file input */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-      />
-
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
