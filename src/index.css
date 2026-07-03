@@ -5103,25 +5103,24 @@ tr:hover td { background: var(--bg-secondary); }
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 16px 4px;
+  padding: 12px 12px 8px 16px;
 }
-.tv2-sched-header__title h1 {
-  font-size: var(--tech-text-heading);
+/* Month is the title now (the tab bar already says "Schedule"), which frees the
+   width for the search/filter icons that replaced the old full search bar. */
+.tv2-sched-header__month {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0;
-  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tv2-sched-header__month {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
-  margin-top: 2px;
-}
-.tv2-sched-header__actions { display: flex; align-items: center; gap: 8px; }
+.tv2-sched-header__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
-/* Agenda / Day segmented control */
+/* Agenda / Day segmented control (compact so the icon row fits one line) */
 .tv2-segmented {
   display: inline-flex;
   border: 1px solid var(--border-color);
@@ -5130,8 +5129,8 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--bg-secondary);
 }
 .tv2-segmented button {
-  min-height: 40px;
-  padding: 0 14px;
+  min-height: 44px;
+  padding: 0 12px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -5143,10 +5142,12 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .tv2-segmented button.is-active { background: var(--accent); color: #fff; }
 
+/* Header icon buttons — 44px (Apple HIG min tap target), narrow enough that
+   search + filter + view toggle + create all sit on one row. */
 .tv2-icon-btn {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border-radius: var(--tech-radius-button);
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
@@ -5160,13 +5161,24 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .tv2-icon-btn--accent { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tv2-icon-btn:active { opacity: 0.85; }
+/* Active (search has a query / filters engaged). */
+.tv2-icon-btn.is-active { border: 2px solid var(--accent); background: var(--accent-light); color: var(--accent); }
+.tv2-icon-btn__dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--accent);
+  border: 2px solid var(--bg-primary);
+}
 
-/* Search + filter row */
-.tv2-sched-header__search {
+/* Transient search field row (shown only when the search icon is toggled on) */
+.tv2-sched-header__searchrow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px 8px;
+  padding: 2px 16px 8px;
 }
 .tv2-search {
   position: relative;
@@ -5208,22 +5220,6 @@ tr:hover td { background: var(--bg-secondary); }
   cursor: pointer;
   padding: 0;
 }
-.tv2-filter-btn.is-active {
-  border: 2px solid var(--accent);
-  background: var(--accent-light);
-  color: var(--accent);
-}
-.tv2-filter-btn__dot {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
-  background: var(--accent);
-  border: 2px solid var(--bg-primary);
-}
-
 /* Filter panel */
 .tv2-filter-panel {
   padding: 6px 16px 8px;

@@ -73,6 +73,7 @@ export default function TechScheduleV2({ active = true }) {
   const [selectedDay, setSelectedDay] = useState(today);
   const [view, setView] = useState('agenda'); // 'agenda' | 'day'
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [scrollSignal, setScrollSignal] = useState(0); // bumps on explicit day pick
@@ -151,6 +152,8 @@ export default function TechScheduleV2({ active = true }) {
         onCreate={() => setShowCreate(true)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        showSearch={showSearch}
+        onToggleSearch={() => setShowSearch((v) => !v)}
         showFilters={showFilters}
         onToggleFilters={() => setShowFilters((v) => !v)}
         hasActiveFilters={hasActiveFilters}
