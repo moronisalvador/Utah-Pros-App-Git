@@ -141,7 +141,7 @@ export default function Feedback() {
           <label className="label" htmlFor="fbm-desc">Details (optional)</label>
           <textarea
             id="fbm-desc"
-            className="textarea"
+            className="input textarea"
             rows={5}
             value={description}
             maxLength={2000}
