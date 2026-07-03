@@ -74,7 +74,8 @@ const widthClass = (w) => (w === 'half' ? ' w-half' : w === 'third' ? ' w-third'
 
 const CONSENT_DEFAULT =
   'I agree to receive SMS text messages from Utah Pros Restoration about my request, and I agree to the ' +
-  '[Privacy Policy](https://utahpros.app/privacy) and [Terms & Conditions](https://utahpros.app/terms). ' +
+  '[Privacy Policy](https://utahrestorationpros.com/privacy-policy) and ' +
+  '[Terms & Conditions](https://utahrestorationpros.com/terms-and-conditions). ' +
   'Message & data rates may apply. Reply STOP to opt out.';
 
 function slugify(s) {
@@ -502,7 +503,7 @@ function FieldRow({ field, idx, count, onChange, onRemove, onMove, onDuplicate }
             placeholder={labelHint}
           />
           <div className="crm-forms-consent-hint">
-            Add links with <code>[text](https://…)</code> — e.g. <code>[Privacy Policy](https://utahpros.app/privacy)</code>. Links open in a new tab.
+            Add links with <code>[text](https://…)</code> — e.g. <code>[Privacy Policy](https://utahrestorationpros.com/privacy-policy)</code>. Only the text shows; links open in a new tab.
           </div>
         </>
       ) : (
