@@ -24,14 +24,33 @@
  *   - iOS only exposes the Push API in an INSTALLED PWA (Add to Home Screen).
  *     In mobile Safari (not installed) `PushManager`/`Notification` are absent —
  *     isPushSupported() returns false and the UI must show install guidance.
- *   - applicationServerKey must be the RAW VAPID public key as a Uint8Array;
- *     VITE_VAPID_PUBLIC_KEY holds it base64url. Missing env = push unconfigured.
+ *   - applicationServerKey must be the RAW VAPID public key as a Uint8Array. The
+ *     key is fetched at RUNTIME from GET /api/vapid-public-key (which reads it
+ *     from Cloudflare env OR Supabase) — no build-time env var needed, so the
+ *     owner can configure VAPID entirely in the database.
  *   - The SW is registered by main.jsx (flag-gated). Here we wait for
  *     navigator.serviceWorker.ready rather than registering again.
  * ════════════════════════════════════════════════
  */
 
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
+// Cached across calls: undefined = not fetched, '' = unconfigured, string = key.
+let _vapidPublicKey;
+
+/**
+ * Fetch (and memoize) the VAPID public key from the server. Returns '' when push
+ * isn't configured yet. Never throws — a network hiccup reads as unconfigured.
+ */
+export async function getVapidPublicKey() {
+  if (_vapidPublicKey !== undefined) return _vapidPublicKey;
+  try {
+    const res = await fetch('/api/vapid-public-key');
+    const data = await res.json().catch(() => ({}));
+    _vapidPublicKey = data && data.publicKey ? data.publicKey : '';
+  } catch {
+    _vapidPublicKey = '';
+  }
+  return _vapidPublicKey;
+}
 
 // ─── SECTION: capability + state ───
 
@@ -45,9 +64,9 @@ export function isPushSupported() {
   );
 }
 
-/** True when the VAPID public key is configured in this build. */
-export function isPushConfigured() {
-  return !!VAPID_PUBLIC_KEY;
+/** True when the server has a VAPID public key configured (async — fetches once). */
+export async function isPushConfigured() {
+  return !!(await getVapidPublicKey());
 }
 
 /** Current Notification permission ('default' | 'granted' | 'denied' | 'unsupported'). */
@@ -98,7 +117,8 @@ function subscriptionKeys(sub) {
  */
 export async function enablePush(db) {
   if (!isPushSupported()) return { ok: false, reason: 'unsupported' };
-  if (!isPushConfigured()) return { ok: false, reason: 'unconfigured' };
+  const publicKey = await getVapidPublicKey();
+  if (!publicKey) return { ok: false, reason: 'unconfigured' };
 
   // Ask for permission (idempotent — a prior grant resolves immediately).
   let permission;
@@ -116,7 +136,7 @@ export async function enablePush(db) {
     if (!sub) {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
     }
     const keys = subscriptionKeys(sub);

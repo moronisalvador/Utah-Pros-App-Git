@@ -218,6 +218,36 @@ export function readVapidConfig(env) {
 }
 
 /**
+ * Resolve VAPID config, preferring Cloudflare env but falling back to Supabase —
+ * the repo's standard secret pattern (integration_credentials for the secret
+ * token, integration_config for non-secret key/value), so the owner can manage
+ * everything in the DB instead of Cloudflare env. Private key lives in
+ * integration_credentials (provider='web_push'.access_token); public key +
+ * subject in integration_config (vapid_public_key / vapid_subject). env wins when
+ * set, so the Cloudflare path still works unchanged.
+ */
+export async function loadVapidConfig(env, db) {
+  const fromEnv = readVapidConfig(env);
+  if (fromEnv.ok || !db) return fromEnv;
+  try {
+    const creds = await db.select('integration_credentials', 'provider=eq.web_push&select=access_token');
+    const cfgRows = await db.select('integration_config', 'key=in.(vapid_public_key,vapid_subject)&select=key,value');
+    const cfg = Object.fromEntries((cfgRows || []).map((r) => [r.key, r.value]));
+    const privateKeyPkcs8 = env.VAPID_PRIVATE_KEY || creds?.[0]?.access_token;
+    const publicKey = env.VAPID_PUBLIC_KEY || cfg.vapid_public_key;
+    const subject = env.VAPID_SUBJECT || cfg.vapid_subject;
+    const missing = [];
+    if (!privateKeyPkcs8) missing.push('VAPID_PRIVATE_KEY');
+    if (!publicKey) missing.push('VAPID_PUBLIC_KEY');
+    if (!subject) missing.push('VAPID_SUBJECT');
+    if (missing.length) return { ok: false, missing };
+    return { ok: true, privateKeyPkcs8, publicKey, subject };
+  } catch {
+    return { ok: false, missing: fromEnv.missing };
+  }
+}
+
+/**
  * Encrypt + POST one Web Push message to a single subscription.
  *
  * @param subscription  { endpoint, keys:{ p256dh, auth } } (or { p256dh, auth } flat).
@@ -226,10 +256,13 @@ export function readVapidConfig(env) {
  * @param opts.ttl      seconds the push service may hold the message (default 2419200 = 28d).
  * @param opts.urgency  'very-low' | 'low' | 'normal' | 'high' (default 'normal').
  * @param opts.fetchImpl  injectable fetch for tests.
- * @returns { status, ok, skipped? } — skipped:true + status:503 when VAPID env is unset.
+ * @param opts.vapid      a pre-resolved config from loadVapidConfig (avoids a
+ *                        per-subscription DB read when fanning out).
+ * @param opts.db         service-role client for the Supabase VAPID fallback.
+ * @returns { status, ok, skipped? } — skipped:true + status:503 when VAPID is unset.
  */
 export async function sendWebPush(subscription, payload, env, opts = {}) {
-  const cfg = readVapidConfig(env);
+  const cfg = opts.vapid || (opts.db ? await loadVapidConfig(env, opts.db) : readVapidConfig(env));
   if (!cfg.ok) return { skipped: true, status: 503, missing: cfg.missing };
 
   const fetchImpl = opts.fetchImpl || fetch;

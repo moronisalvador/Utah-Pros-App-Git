@@ -22,7 +22,8 @@
  *              ../lib/webPush.js (sendWebPush), /api/send-push (same-origin APNs)
  *   Data:      reads  → tech_feedback (the just-filed row), employees (admins +
  *                        the submitter's name), feature_flags (feature:web_push
- *                        gate), push_subscriptions (admins' web-push devices)
+ *                        gate), push_subscriptions (admins' web-push devices),
+ *                        integration_credentials/integration_config (VAPID keys)
  *              writes → notifications (via create_notification RPC — the bell);
  *                        prunes dead push_subscriptions (404/410)
  *
@@ -43,7 +44,7 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { sendWebPush } from '../lib/webPush.js';
+import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
 
 // ─── SECTION: Pure helpers (node-testable — see feedback-notify.test.js) ───
 
@@ -113,6 +114,11 @@ export async function sendWebPushToAdmins({ db, env, adminIds, payload, fetchImp
     data: payload.data,
   });
 
+  // Resolve VAPID once (env → Supabase integration_credentials/config) and pass
+  // it down so we don't re-read the DB per subscription.
+  let vapid;
+  try { vapid = await loadVapidConfig(env, db); } catch { vapid = undefined; }
+
   let sent = 0, attempted = 0, pruned = 0, vapidMissing = false;
   for (const id of allowed) {
     let subs = [];
@@ -124,7 +130,7 @@ export async function sendWebPushToAdmins({ db, env, adminIds, payload, fetchImp
       try {
         const res = await sendImpl(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          pushBody, env, { fetchImpl },
+          pushBody, env, { fetchImpl, vapid },
         );
         if (res.skipped) { vapidMissing = true; continue; }
         if (res.ok) { sent++; continue; }

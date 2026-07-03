@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import {
-  isPushSupported, isPushConfigured, pushPermission,
+  isPushSupported, getVapidPublicKey, pushPermission,
   getExistingSubscription, enablePush, disablePush,
 } from '@/lib/webPushClient';
 
@@ -392,9 +392,9 @@ function NotificationsPanel({ db }) {
   const { isFeatureEnabled } = useAuth();
   const flagOn    = isFeatureEnabled('feature:web_push');
   const supported = isPushSupported();
-  const configured = isPushConfigured();
 
   const [loading, setLoading]   = useState(true);
+  const [configured, setConfigured] = useState(false); // server has a VAPID key
   const [subscribed, setSubscribed] = useState(false);
   const [permission, setPermission] = useState('default');
   const [busy, setBusy]         = useState(false);
@@ -404,8 +404,9 @@ function NotificationsPanel({ db }) {
     setLoading(true);
     try {
       setPermission(pushPermission());
-      const sub = await getExistingSubscription();
+      const [sub, key] = await Promise.all([getExistingSubscription(), getVapidPublicKey()]);
       setSubscribed(!!sub);
+      setConfigured(!!key);
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
