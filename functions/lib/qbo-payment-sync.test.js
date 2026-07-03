@@ -81,7 +81,7 @@ function makeDb({ existingPayment = false } = {}) {
   const inserts = [];
   return {
     inserts,
-    async select(table, query = '') {
+    async select(table) {
       if (table === 'invoices') return [{ id: 'inv-1', job_id: 'job-1', contact_id: 'c-1' }];
       if (table === 'payments') return existingPayment ? [{ id: 'pay-existing' }] : [];
       return [];
