@@ -185,13 +185,15 @@ pushed/emailed channel that could be noisy before C/D land ships default-silent.
 > - [x] `npm run test` (430 passed / 77 skipped) + `npm run build` + `npx eslint` (zero new
 >       errors — 5 errors / 2 warnings, identical to base) pass; `migration-safety-checker` +
 >       `upr-pattern-checker` clean (both PASS, no violations).
-> - [ ] **OWNER GATE (stop-the-line) — OPEN, owner action:** owner sets `VAPID_*` env vars in
->       BOTH Cloudflare env sets + keeps/flips `feature:web_push` on (dev-only for the owner is
->       already seeded) + **a real push lands on the owner's actual iPhone home-screen PWA and on
->       desktop Chrome**. If iOS delivery fails: HALT, re-plan — F2 and the wave do not launch
->       against a dead channel. *(Cannot be closed in-session — needs env vars + a physical device
->       install. NOTE: the reference push audience is admins **minus the submitter**, so the test
->       feedback must be filed by a non-owner, or the owner submits from a second account.)*
+> - [ ] **OWNER GATE (stop-the-line) — OPEN, owner action:** VAPID is now stored in **Supabase**
+>       (owner preference — no Cloudflare env needed; `integration_credentials` private +
+>       `integration_config` public/subject, already seeded this session). Owner keeps
+>       `feature:web_push` on (dev-only for the owner is already seeded), installs the PWA + enables
+>       push in Settings → Notifications + **a real push lands on the owner's actual iPhone
+>       home-screen PWA and on desktop Chrome**. If iOS delivery fails: HALT, re-plan — F2 and the
+>       wave do not launch against a dead channel. *(Cannot be closed in-session — needs a physical
+>       device install. NOTE: the reference push audience is admins **minus the submitter**, so the
+>       test feedback must be filed by a non-owner, or the owner submits from a second account.)*
 > - [x] `UPR-Web-Context.md` — filled the pre-labeled **F1** sub-header.
 > - [x] Reconciled this doc's checkboxes. No test rows/subscriptions were created (the
 >       `feature_flags` row is a config seed, not test data); nothing to delete. Pushed; PR into

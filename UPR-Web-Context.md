@@ -4583,13 +4583,23 @@ the owner's device.
 row (enabled=false, `dev_only_user_id` = owner `dd188c16-…`) so the owner can self-enable to run
 the gate without exposing push to staff.
 
-**Owner gate (OPEN — hand-off):** owner sets `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (PKCS8) /
-`VAPID_SUBJECT` / `VITE_VAPID_PUBLIC_KEY` in BOTH Cloudflare env sets (Production + Preview),
-flips/keeps `feature:web_push` dev-only-on for themselves, installs the PWA (Share → Add to Home
+**VAPID config — stored in Supabase (no Cloudflare env needed).** Owner preference (2026-07-03):
+manage VAPID like every other worker secret rather than in Cloudflare. `loadVapidConfig(env, db)`
+in `webPush.js` prefers Cloudflare env but falls back to Supabase — **private key** in
+`integration_credentials` (`provider='web_push'.access_token`, PKCS8; RLS-on-no-policy, same
+lockdown as the existing Deepgram/CallRail/GitHub tokens — never client-readable), **public key +
+subject** in `integration_config` (`vapid_public_key` / `vapid_subject`). The client fetches the
+public key at runtime from the new `GET /api/vapid-public-key` worker (returns ONLY the public
+key), so there is **no build-time `VITE_VAPID_PUBLIC_KEY`** and zero Cloudflare dependency. All
+three values were stored in the shared Supabase this session (Cloudflare env still works as an
+override if ever preferred).
+
+**Owner gate (OPEN — hand-off):** VAPID is already stored in Supabase, so no Cloudflare steps.
+Owner keeps `feature:web_push` dev-only-on for themselves, installs the PWA (Share → Add to Home
 Screen), enables push in Settings → Notifications, then a non-owner submits test feedback → a real
 push must land on the locked iPhone AND desktop Chrome. **If iOS delivery fails: HALT — F2 and the
-wave do not launch against a dead channel.** VAPID keypair was generated this session and handed to
-the owner in the PR/chat (private key never committed).
+wave do not launch against a dead channel.** (VAPID keypair generated this session; private key is
+in `integration_credentials`, never committed to the repo.)
 
 ### F2 (data foundation) — not started
 
