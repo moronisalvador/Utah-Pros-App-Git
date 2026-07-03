@@ -5086,6 +5086,269 @@ tr:hover td { background: var(--bg-secondary); }
 /* ─── TECH-V2: SCHED (Session S — schedule/calendar) ──────────────────────── */
 
 /* ─── TECH-V2: DASH (Session D — dashboard) ───────────────────────────────── */
+/* All selectors are new tv2-dash-* / tv2-fab* classes — no existing .tech-*
+   selector is restyled (ownership manifest §5). Mobile-only rules use
+   @media (max-width: 768px); the tech app is mobile-first so most apply globally. */
+
+.tv2-dash-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 16px 8px;
+}
+.tv2-dash-section-title {
+  font-size: var(--tech-text-label);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
+/* ── Greeting header (sticky, stays put on pull-to-refresh) ── */
+.tv2-dash-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 14px 16px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.tv2-dash-header__date { font-size: var(--tech-text-label); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+.tv2-dash-header__name { font-size: var(--tech-text-heading); font-weight: 800; color: var(--text-primary); margin-top: 2px; }
+.tv2-dash-header__summary { font-size: var(--tech-text-body); color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-header__icon-btn {
+  width: 40px; height: 40px;
+  border-radius: var(--tech-radius-button);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-header__icon-btn[data-active='true'] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.tv2-dash-header > .tv2-dash-header__icon-btn { position: absolute; top: 12px; right: calc(16px + 40px + 8px); }
+.tv2-dash-header__menu { position: absolute; top: 12px; right: 16px; }
+.tv2-dash-menu {
+  position: absolute; right: 0; top: 46px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--tech-radius-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 180px; overflow: hidden;
+}
+.tv2-dash-menu__item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 14px 16px;
+  background: none; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; text-align: left;
+  color: var(--text-primary); font-family: var(--font-sans);
+}
+.tv2-dash-menu__item + .tv2-dash-menu__item { border-top: 1px solid var(--border-light); }
+.tv2-dash-menu__item[data-danger='true'] { color: var(--status-paused-color); }
+
+/* ── Attention strip (banners) ── */
+.tv2-dash-attention { display: flex; flex-direction: column; gap: 12px; }
+.tv2-dash-attention:empty { display: none; }
+.tv2-dash-banner {
+  padding: 12px 14px;
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  border: 1px solid var(--border-light);
+}
+.tv2-dash-banner--warn { background: var(--status-enroute-bg); border-color: var(--status-enroute-border); color: var(--status-enroute-color); }
+.tv2-dash-banner--alert { background: var(--status-paused-bg); border-color: var(--status-paused-border); color: var(--status-paused-color); }
+.tv2-dash-banner__row { display: flex; align-items: flex-start; gap: 10px; }
+.tv2-dash-banner__icon { flex-shrink: 0; margin-top: 2px; }
+.tv2-dash-banner__text { flex: 1; min-width: 0; }
+.tv2-dash-banner__title { font-size: 14px; font-weight: 700; }
+.tv2-dash-banner__body { font-size: 13px; opacity: 0.9; margin-top: 2px; }
+.tv2-dash-banner__actions { display: flex; gap: 8px; margin-top: 10px; }
+.tv2-dash-banner__btn {
+  flex: 1; min-height: 44px;
+  border-radius: var(--tech-radius-button);
+  font-size: 13px; font-weight: 700; font-family: var(--font-sans);
+  background: var(--bg-primary); color: inherit;
+  border: 1px solid currentColor;
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-banner__btn:disabled { opacity: 0.6; cursor: wait; }
+.tv2-dash-banner__btn--primary,
+.tv2-dash-banner__btn--alert { color: #fff; border-color: transparent; }
+.tv2-dash-banner__btn--primary { background: var(--status-enroute-color); }
+.tv2-dash-banner__btn--alert { background: var(--status-paused-color); }
+.tv2-dash-banner__btn--full { width: 100%; margin-top: 10px; }
+
+/* ── Now / Next hero ── */
+.tv2-dash-hero {
+  padding: 16px;
+  border-radius: var(--tech-radius-card);
+  background: var(--bg-primary);
+  box-shadow: var(--tech-shadow-card);
+  border-left: 4px solid var(--tech-accent);
+}
+.tv2-dash-hero--enroute { border-left-color: var(--status-enroute-color); }
+.tv2-dash-hero--working { border-left-color: var(--status-working-color); }
+.tv2-dash-hero--paused { border-left-color: var(--status-paused-color); }
+.tv2-dash-hero--scheduled { border-left-color: var(--status-scheduled-color); }
+.tv2-dash-hero--neutral { border-left-color: var(--tech-accent); }
+.tv2-dash-hero__eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tv2-dash-hero__badge {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.tv2-dash-hero__badge--enroute { background: var(--status-enroute-bg); color: var(--status-enroute-color); }
+.tv2-dash-hero__badge--working { background: var(--status-working-bg); color: var(--status-working-color); }
+.tv2-dash-hero__badge--paused { background: var(--status-paused-bg); color: var(--status-paused-color); }
+.tv2-dash-hero__badge--scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-color); }
+.tv2-dash-hero__countdown { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.tv2-dash-hero__identity {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; padding: 8px 0 0; cursor: pointer;
+  font-family: var(--font-sans);
+}
+.tv2-dash-hero__client { display: block; font-size: 18px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-hero__sub { display: block; font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-hero__addr {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 6px 0;
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  font-family: var(--font-sans); text-align: left;
+}
+.tv2-dash-hero__tracker { margin-top: 12px; border-radius: var(--tech-radius-card); overflow: hidden; }
+.tv2-dash-hero__actions { display: flex; gap: 8px; margin-top: 12px; }
+.tv2-dash-hero--empty { text-align: center; padding: 28px 16px; border-left-color: var(--tech-accent); }
+.tv2-dash-hero__empty-icon { color: var(--text-tertiary); display: flex; justify-content: center; }
+.tv2-dash-hero__empty-title { font-size: 15px; font-weight: 700; color: var(--text-secondary); margin-top: 10px; }
+.tv2-dash-hero__empty-link { margin-top: 6px; background: none; border: none; color: var(--accent); font-weight: 700; font-size: 14px; cursor: pointer; font-family: var(--font-sans); }
+
+.tv2-dash-secondary-btn {
+  flex: 1; min-height: var(--tech-min-tap);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: var(--tech-radius-button);
+  font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-secondary-btn[data-busy='true'] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); cursor: wait; }
+
+/* Photo-saved toast (fixed, above the bottom nav) */
+.tv2-dash-photo-toast {
+  position: fixed;
+  bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px);
+  left: 16px; right: 16px; z-index: 100;
+  padding: 10px 14px;
+  background: var(--status-working-bg);
+  border: 1px solid var(--status-working-border);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.tv2-dash-photo-toast__label { font-size: 14px; font-weight: 600; color: var(--status-working-color); }
+.tv2-dash-photo-toast__note { background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); font-family: var(--font-sans); }
+
+/* ── Today mini-timeline (horizontal) ── */
+.tv2-dash-timeline {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.tv2-dash-timeline::-webkit-scrollbar { display: none; }
+.tv2-dash-timeline__chip {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 96px; max-width: 150px;
+  padding: 8px 10px;
+  border-radius: var(--tech-radius-button);
+  background: var(--chip-bg);
+  border: none;
+  text-align: left; cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-timeline__time { font-size: 11px; font-weight: 800; color: var(--chip-fg); }
+.tv2-dash-timeline__label { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── My numbers ── */
+.tv2-dash-numbers { display: flex; flex-direction: column; gap: 10px; }
+.tv2-dash-hours {
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  padding: 12px 14px;
+}
+.tv2-dash-hours__title { font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.tv2-dash-hours__grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.tv2-dash-hours__cell { text-align: center; padding: 6px 4px; border-radius: var(--tech-radius-button); background: var(--bg-secondary); }
+.tv2-dash-hours__cell--total { background: var(--accent-light); }
+.tv2-dash-hours__value { font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-hours__cell--total .tv2-dash-hours__value { color: var(--accent); }
+.tv2-dash-hours__label { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 2px; }
+.tv2-dash-stat-row { display: flex; gap: 10px; }
+.tv2-dash-stat {
+  flex: 1; text-align: center;
+  background: var(--bg-primary);
+  border-radius: var(--tech-radius-card);
+  box-shadow: var(--tech-shadow-card);
+  padding: 12px;
+}
+.tv2-dash-stat__value { font-size: 22px; font-weight: 800; color: var(--text-primary); }
+.tv2-dash-stat__label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-top: 2px; }
+
+/* ── Completed rows (with per-visit breakdown) ── */
+.tv2-dash-completed { display: flex; flex-direction: column; gap: 8px; }
+.tv2-dash-completed-row {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 100%; text-align: left;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--status-completed-color);
+  border-radius: var(--tech-radius-button);
+  cursor: pointer; touch-action: manipulation;
+}
+.tv2-dash-completed-row__head { display: flex; align-items: center; gap: 8px; }
+.tv2-dash-completed-row__time { font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-dash-completed-row__label { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.tv2-dash-completed-row__breakdown { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-tertiary); padding-left: 23px; }
+.tv2-dash-completed-row__breakdown strong { color: var(--text-secondary); }
+
+/* ── Rest of today + Coming up ── */
+.tv2-dash-rest { display: flex; flex-direction: column; gap: 8px; }
+.tv2-dash-rest .tv2-appt-row + .tv2-appt-row { margin-top: 0; }
+.tv2-dash-comingup__day + .tv2-dash-comingup__day { margin-top: 12px; }
+.tv2-dash-comingup__dayhead { font-size: 13px; font-weight: 700; color: var(--text-secondary); padding: 4px 2px; }
+.tv2-dash-comingup__rows { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Create FAB ── */
+.tv2-fab-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.25); z-index: 90; -webkit-tap-highlight-color: transparent; touch-action: none; }
+.tv2-fab-stack {
+  position: fixed;
+  bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)) + 16px);
+  right: 16px; z-index: 91;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+.tv2-fab {
+  width: 56px; height: 56px; border-radius: 28px;
+  background: var(--accent); color: #fff; border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transition: transform 0.2s ease; -webkit-tap-highlight-color: transparent;
+}
+.tv2-fab[data-open='true'] { transform: rotate(45deg); }
+.tv2-fab-pill {
+  height: var(--tech-min-tap); padding: 0 20px; border-radius: 24px;
+  color: #fff; border: none;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-sans); -webkit-tap-highlight-color: transparent;
+}
+.tv2-fab-pill--job { background: var(--accent); box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); }
+.tv2-fab-pill--customer { background: var(--status-working-color); box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35); }
 
 /* ─── TECH-V2: HUB (Phase M1 — job hub) ───────────────────────────────────── */
 
