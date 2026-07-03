@@ -232,22 +232,28 @@ Scope (everything additive):
 > **Prerequisite:** Phase F merged into `dev`. Model: **Opus · medium**.
 > **Read scope:** this block + ownership matrix + `CLAUDE.md` + `.claude/rules/tech-mobile-ux.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `functions/api/feedback-notify.test.js` — pure helpers (admin-id
+> - [x] Test-first, now green: `functions/api/feedback-notify.test.js` — pure helpers (admin-id
 >       selection excludes submitter; push-payload builder) + injected-fake handler (401 without
->       Bearer; fan-out count; tolerates a 503 from send-push without failing the request).
-> - [ ] Acceptance: TechFeedback rebuilt on the shared composer (photos + video, compression, caps,
+>       Bearer; fan-out count; tolerates a 503 from send-push without failing the request). 12 tests.
+> - [x] Acceptance: TechFeedback rebuilt on the shared composer (photos + video, compression, caps,
 >       real storage DELETE on remove, ≥48px targets, snap-first — no blocking inputs); desktop
 >       `Feedback.jsx` polished with `source:'desktop'`; both pages call `feedback-notify`
 >       fire-and-forget via `src/lib/api.js` (success toast never depends on it); in-app bell
 >       notification arrives on submit; "Improvement" relabel (UI-only — DB keeps `feature`).
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass; **zero schema
->       migrations**; frozen files untouched (composer, mediaCompress, App.jsx, navItems, send-push —
->       call-only).
-> - [ ] `upr-pattern-checker` clean.
-> - [ ] Visual: tech form at 390px width + desktop form on the branch preview.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **Session B** sub-header only.
-> - [ ] Reconcile this doc's checkboxes (disclose the push-reaches-nobody gate in the PR); delete
->       test rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
+> - [x] `npm run test` (388 passed / 68 skipped) + `npm run build` + `npx eslint` (no new errors)
+>       pass; **zero schema migrations**; frozen files untouched (composer, mediaCompress, App.jsx,
+>       navItems, send-push — call-only).
+> - [x] `upr-pattern-checker` clean (one flagged item — pre-existing inline hex in TechFeedback's
+>       type selector — fixed by tokenizing to match the sibling desktop page).
+> - [~] Visual: desktop `/feedback` + tech `/tech/feedback` — **deferred to the Cloudflare branch
+>       preview** (same as Phase F): the container's egress blocks supabase.co and both routes
+>       require an authenticated session, so a headless render isn't possible here. Build is green;
+>       owner spot-checks the preview (390px tech + desktop).
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **Session B** sub-header only.
+> - [x] Reconcile this doc's checkboxes (push-reaches-nobody gate disclosed in the PR + the
+>       UPR-Web-Context sub-header); no test rows created (nothing submitted live — the build
+>       container can't reach Supabase); PR into `dev` opened as a handoff the owner merges (no
+>       babysitting).
 
 Scope: owns `src/pages/tech/TechFeedback.jsx` (rebuild), `src/pages/Feedback.jsx` (polish),
 **new** `functions/api/feedback-notify.js` (+ test): POST `{feedback_id}`, requireAuth shape from
