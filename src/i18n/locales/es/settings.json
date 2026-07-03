@@ -1,0 +1,41 @@
+{
+  "title": "Configuración",
+  "subtitle": "Preferencias de este dispositivo",
+  "appearance": {
+    "title": "Apariencia",
+    "current": "Mostrando la apariencia {{look}} en este momento.",
+    "lookLight": "clara",
+    "lookDark": "oscura",
+    "optSystem": "Sistema",
+    "optSystemSub": "Seguir mi teléfono",
+    "optLight": "Claro",
+    "optDark": "Oscuro"
+  },
+  "language": {
+    "title": "Idioma",
+    "sub": "Elige el idioma de esta app en este dispositivo."
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "sub": "Recibe alertas en este teléfono — aunque la app esté cerrada.",
+    "rowLabel": "Notificaciones en este dispositivo",
+    "statusOn": "Activadas — este teléfono recibirá alertas.",
+    "statusOff": "Aún no activadas en este teléfono.",
+    "turnOff": "Desactivar",
+    "tapAgain": "Toca de nuevo para desactivar",
+    "turnOn": "Activar",
+    "turningOn": "Activando…",
+    "toastEnabled": "Notificaciones activadas en este dispositivo",
+    "toastBlocked": "Las notificaciones están bloqueadas. Actívalas en los ajustes del teléfono e inténtalo de nuevo.",
+    "toastUnconfigured": "Las notificaciones aún no están configuradas en el servidor.",
+    "toastUnsupported": "Este dispositivo no puede recibir notificaciones push.",
+    "toastGenericOn": "No se pudieron activar las notificaciones — inténtalo de nuevo.",
+    "toastTurnedOff": "Notificaciones desactivadas en este dispositivo",
+    "toastGenericOff": "No se pudieron desactivar por completo — inténtalo de nuevo.",
+    "hintRollout": "Las notificaciones aún se están implementando y no están activas en tu cuenta.",
+    "iosGuide": "Para recibir notificaciones en tu iPhone, primero agrega esta app a la pantalla de inicio: toca <b>Compartir</b> → <b>Agregar a inicio</b>, luego ábrela desde la pantalla de inicio y actívalas aquí.",
+    "cantReceive": "Este dispositivo no puede recibir notificaciones push.",
+    "serverNotSet": "Las notificaciones aún no están configuradas en el servidor — vuelve pronto.",
+    "blockedHint": "Las notificaciones están bloqueadas para esta app. Vuelve a activarlas en los ajustes del teléfono y reabre la app."
+  }
+}

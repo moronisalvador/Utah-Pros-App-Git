@@ -15,7 +15,7 @@
  *   Rendered by:  src/App.jsx (TechRoutes → <TechLayout/> layout element)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
  *              components/tech/v2 (TechPane, skeletons), pages/tech/v2 (TechDashV2,
  *              TechScheduleV2 — lazy, flag-gated)
@@ -31,6 +31,7 @@
  */
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
@@ -143,6 +144,7 @@ const TABS = [
 /* ── PWA Install Banner ── */
 
 function InstallBanner() {
+  const { t } = useTranslation('nav');
   const { employee } = useAuth();
   // Read display-mode + dismissed state once during render (client-only SPA) —
   // lazy init avoids a setState-in-effect cascade and a first-render banner flash.
@@ -189,8 +191,8 @@ function InstallBanner() {
     }}>
       <div style={{ flex: 1 }}>
         {isIOS
-          ? <>Tap <strong>Share</strong> → <strong>Add to Home Screen</strong> to install UPR</>
-          : 'Install UPR for the best experience'
+          ? <Trans t={t} i18nKey="installIos" components={{ b: <strong /> }} />
+          : t('installBanner')
         }
       </div>
       {showAndroid && (
@@ -203,7 +205,7 @@ function InstallBanner() {
             cursor: 'pointer', fontFamily: 'var(--font-sans)', flexShrink: 0,
           }}
         >
-          Install App
+          {t('installApp')}
         </button>
       )}
       <button
@@ -223,6 +225,7 @@ function InstallBanner() {
 /* ── TechLayout ── */
 
 export default function TechLayout() {
+  const { t } = useTranslation('nav');
   const location = useLocation();
   const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
   const { employee, db, isFeatureEnabled } = useAuth();
@@ -347,7 +350,7 @@ export default function TechLayout() {
                   background: '#ef4444',
                 }} />
               )}
-              <span>{tab.label}</span>
+              <span>{t(tab.key, tab.label)}</span>
             </Link>
           );
         })}

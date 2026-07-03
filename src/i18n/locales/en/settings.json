@@ -1,0 +1,41 @@
+{
+  "title": "Settings",
+  "subtitle": "Preferences for this device",
+  "appearance": {
+    "title": "Appearance",
+    "current": "Currently showing the {{look}} look.",
+    "lookLight": "light",
+    "lookDark": "dark",
+    "optSystem": "System",
+    "optSystemSub": "Match my phone",
+    "optLight": "Light",
+    "optDark": "Dark"
+  },
+  "language": {
+    "title": "Language",
+    "sub": "Choose the language for this app on this device."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "sub": "Get alerts on this phone — even when the app is closed.",
+    "rowLabel": "Push on this device",
+    "statusOn": "On — this phone will get push alerts.",
+    "statusOff": "Not on yet for this phone.",
+    "turnOff": "Turn off",
+    "tapAgain": "Tap again to turn off",
+    "turnOn": "Turn on",
+    "turningOn": "Turning on…",
+    "toastEnabled": "Push enabled on this device",
+    "toastBlocked": "Notifications are blocked. Turn them on in your phone settings, then try again.",
+    "toastUnconfigured": "Push isn’t set up on the server yet.",
+    "toastUnsupported": "This device can’t receive push notifications.",
+    "toastGenericOn": "Could not turn on push — please try again.",
+    "toastTurnedOff": "Push turned off on this device",
+    "toastGenericOff": "Could not fully turn off push — please try again.",
+    "hintRollout": "Push is still rolling out and isn’t on for your account yet.",
+    "iosGuide": "To get push on your iPhone, add this app to your Home Screen first: tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the Home Screen and turn push on here.",
+    "cantReceive": "This device can’t receive push notifications.",
+    "serverNotSet": "Push isn’t set up on the server yet — check back soon.",
+    "blockedHint": "Notifications are blocked for this app. Turn them back on in your phone settings, then reopen the app."
+  }
+}
