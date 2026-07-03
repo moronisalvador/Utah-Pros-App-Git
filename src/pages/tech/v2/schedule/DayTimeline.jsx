@@ -143,27 +143,36 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
   const showNow = isToday && now >= rangeStart && now <= endHour * 60;
 
   // Open the day parked at a sensible spot instead of wherever the shared pane
-  // scroll last was (which is why the day used to open at the bottom): the current
-  // time for today, else the first appointment, else the top. Runs before paint on
-  // entry (mount) and on day change — NOT on the minute tick (would yank scroll).
+  // scroll last was: for today, ~2.5h above the now-line; else the first
+  // appointment; else the top. We anchor ONCE per selected day (not on the minute
+  // tick, and not on every tab-return — so a scroll you left is respected when you
+  // come back). A queued microtask re-asserts the position so it wins over the
+  // pane host's scroll-restore on activation (which otherwise snaps back to 0 →
+  // the "showing all the way to 6 AM" bug).
+  const anchoredDayRef = useRef(null);
   useLayoutEffect(() => {
-    if (!active) return;
+    if (!active || anchoredDayRef.current === selectedDay) return;
     const root = rootRef.current;
     const grid = gridRef.current;
     if (!root || !grid) return;
     const scroller = getScroller(root);
     if (!scroller) return;
-    // Scoped to our own pane (not a global querySelector) — measures the sticky
-    // header so the anchor lands just below it, not hidden underneath.
-    const header = scroller.querySelector('.tv2-sched-header');
-    const headerH = header ? header.offsetHeight : 0;
-    const scRect = scroller.getBoundingClientRect();
-    const gridDocTop = scroller.scrollTop + (grid.getBoundingClientRect().top - scRect.top);
-    const anchorMin = isToday
-      ? Math.max(rangeStart, nowMinutes() - NOW_ABOVE_MIN)
-      : (placed.length ? placed[0].start : rangeStart);
-    const px = ((anchorMin - rangeStart) / 60) * HOUR_PX;
-    scroller.scrollTop = Math.max(0, gridDocTop + Math.max(0, px) - headerH - 12);
+    const apply = () => {
+      // Scoped to our own pane (not a global querySelector) — measures the sticky
+      // header so the anchor lands just below it, not hidden underneath.
+      const header = scroller.querySelector('.tv2-sched-header');
+      const headerH = header ? header.offsetHeight : 0;
+      const scRect = scroller.getBoundingClientRect();
+      const gridDocTop = scroller.scrollTop + (grid.getBoundingClientRect().top - scRect.top);
+      const anchorMin = isToday
+        ? Math.max(rangeStart, nowMinutes() - NOW_ABOVE_MIN)
+        : (placed.length ? placed[0].start : rangeStart);
+      const px = ((anchorMin - rangeStart) / 60) * HOUR_PX;
+      scroller.scrollTop = Math.max(0, gridDocTop + Math.max(0, px) - headerH - 12);
+    };
+    apply();
+    queueMicrotask(apply);
+    anchoredDayRef.current = selectedDay;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay, active]);
 
