@@ -1,0 +1,69 @@
+{
+  "date": {
+    "today": "Hoje",
+    "tomorrow": "Amanhã",
+    "yesterday": "Ontem",
+    "justNow": "agora",
+    "minsAgo_one": "há {{count}} min",
+    "minsAgo_other": "há {{count}} min",
+    "hrsAgo_one": "há {{count}} h",
+    "hrsAgo_other": "há {{count}} h",
+    "daysAgo_one": "há {{count}} d",
+    "daysAgo_other": "há {{count}} d"
+  },
+  "apptStatus": {
+    "scheduled": "agendado",
+    "confirmed": "confirmado",
+    "en_route": "a caminho",
+    "in_progress": "em andamento",
+    "paused": "pausado",
+    "completed": "concluído",
+    "cancelled": "cancelado"
+  },
+  "claimStatus": {
+    "open": "aberto",
+    "active": "ativo",
+    "closed": "fechado",
+    "pending": "pendente"
+  },
+  "division": {
+    "water": "Água",
+    "mold": "Mofo",
+    "reconstruction": "Reconstrução",
+    "remodeling": "Reforma",
+    "fire": "Incêndio",
+    "contents": "Conteúdos"
+  },
+  "btn": {
+    "back": "Voltar",
+    "retry": "Tentar de novo",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "delete": "Excluir",
+    "deleting": "Excluindo…",
+    "addPhoto": "Adicionar foto",
+    "addNote": "Adicionar nota",
+    "uploading": "Enviando…",
+    "seeAll": "Ver tudo →",
+    "saveNote": "Salvar nota",
+    "notePlaceholder": "O que você quer anotar?"
+  },
+  "misc": {
+    "unknown": "Desconhecido"
+  },
+  "toast": {
+    "photoTooLarge": "A foto é muito grande (máx. 10 MB)",
+    "onlyImages": "Somente arquivos de imagem são permitidos",
+    "photoQueued": "Foto na fila — será enviada quando estiver on-line",
+    "photoUploading": "Enviando foto…",
+    "photoUploaded": "Foto enviada",
+    "photoSaved": "Foto salva ✓",
+    "photoUploadFailed": "Falha ao enviar a foto: {{message}}",
+    "photoQueueFailed": "Falha ao colocar a foto na fila: {{message}}",
+    "cameraError": "Erro da câmera: {{message}}",
+    "noteSaved": "Nota salva",
+    "noteSaveFailed": "Falha ao salvar a nota: {{message}}",
+    "actionFailed": "Falha na ação: {{message}}"
+  }
+}

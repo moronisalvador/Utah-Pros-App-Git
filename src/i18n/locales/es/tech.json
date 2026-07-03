@@ -1,0 +1,69 @@
+{
+  "date": {
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "yesterday": "Ayer",
+    "justNow": "ahora",
+    "minsAgo_one": "hace {{count}} min",
+    "minsAgo_other": "hace {{count}} min",
+    "hrsAgo_one": "hace {{count}} h",
+    "hrsAgo_other": "hace {{count}} h",
+    "daysAgo_one": "hace {{count}} d",
+    "daysAgo_other": "hace {{count}} d"
+  },
+  "apptStatus": {
+    "scheduled": "programado",
+    "confirmed": "confirmado",
+    "en_route": "en camino",
+    "in_progress": "en curso",
+    "paused": "en pausa",
+    "completed": "completado",
+    "cancelled": "cancelado"
+  },
+  "claimStatus": {
+    "open": "abierto",
+    "active": "activo",
+    "closed": "cerrado",
+    "pending": "pendiente"
+  },
+  "division": {
+    "water": "Agua",
+    "mold": "Moho",
+    "reconstruction": "Reconstrucción",
+    "remodeling": "Remodelación",
+    "fire": "Incendio",
+    "contents": "Contenidos"
+  },
+  "btn": {
+    "back": "Atrás",
+    "retry": "Reintentar",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "delete": "Eliminar",
+    "deleting": "Eliminando…",
+    "addPhoto": "Agregar foto",
+    "addNote": "Agregar nota",
+    "uploading": "Subiendo…",
+    "seeAll": "Ver todo →",
+    "saveNote": "Guardar nota",
+    "notePlaceholder": "¿Qué quieres anotar?"
+  },
+  "misc": {
+    "unknown": "Desconocido"
+  },
+  "toast": {
+    "photoTooLarge": "La foto es demasiado grande (máx. 10 MB)",
+    "onlyImages": "Solo se permiten archivos de imagen",
+    "photoQueued": "Foto en cola — se subirá cuando haya conexión",
+    "photoUploading": "Subiendo foto…",
+    "photoUploaded": "Foto subida",
+    "photoSaved": "Foto guardada ✓",
+    "photoUploadFailed": "Error al subir la foto: {{message}}",
+    "photoQueueFailed": "Error al poner la foto en cola: {{message}}",
+    "cameraError": "Error de la cámara: {{message}}",
+    "noteSaved": "Nota guardada",
+    "noteSaveFailed": "Error al guardar la nota: {{message}}",
+    "actionFailed": "Error en la acción: {{message}}"
+  }
+}

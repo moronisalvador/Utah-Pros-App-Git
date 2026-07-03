@@ -38,24 +38,27 @@ import enCommon from './locales/en/common.json';
 import enNav from './locales/en/nav.json';
 import enMore from './locales/en/more.json';
 import enSettings from './locales/en/settings.json';
+import enTech from './locales/en/tech.json';
 
 import ptCommon from './locales/pt/common.json';
 import ptNav from './locales/pt/nav.json';
 import ptMore from './locales/pt/more.json';
 import ptSettings from './locales/pt/settings.json';
+import ptTech from './locales/pt/tech.json';
 
 import esCommon from './locales/es/common.json';
 import esNav from './locales/es/nav.json';
 import esMore from './locales/es/more.json';
 import esSettings from './locales/es/settings.json';
+import esTech from './locales/es/tech.json';
 
 /** Every translation namespace (one file per screen area). Keep in sync with resources. */
-export const NAMESPACES = ['common', 'nav', 'more', 'settings'];
+export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech'];
 
 export const resources = {
-  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings },
-  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings },
-  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings },
+  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech },
+  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech },
+  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech },
 };
 
 i18n.use(initReactI18next).init({
