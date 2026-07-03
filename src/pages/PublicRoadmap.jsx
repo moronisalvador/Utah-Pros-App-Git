@@ -4,15 +4,16 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   A public, read-only page anyone can open WITHOUT logging in that shows
- *   everything the team is working on and how far along each effort is. It is
- *   the shareable version of the in-app /roadmap page. Nothing on it can be
- *   clicked to change anything, it does not link into the rest of the app, and
- *   it does not read from the UPR database — the content is a plain hand-kept
- *   list baked into the app — so there is no data or permission to protect.
+ *   The roadmap page anyone can open WITHOUT logging in that shows everything
+ *   the team is working on and how far along each effort is. It lives at the
+ *   short public URL /roadmap (utahpros.app/roadmap) and is also linked from
+ *   the side menu. Nothing on it can be clicked to change anything, it does not
+ *   link into the rest of the app, and it does not read from the UPR database —
+ *   the content is a plain hand-kept list baked into the app — so there is no
+ *   data or permission to protect.
  *
  * WHERE IT LIVES:
- *   Route:        /roadmap/public
+ *   Route:        /roadmap  (the old /roadmap/public redirects here)
  *   Rendered by:  src/App.jsx — a public route, outside ProtectedRoute/Layout,
  *                 the same way /login, /privacy and /status render.
  *
