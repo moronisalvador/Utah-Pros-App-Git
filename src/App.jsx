@@ -76,6 +76,7 @@ const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
 const Status = lazyRetry(() => import('@/pages/Status'));
+const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
@@ -293,6 +294,12 @@ function WebRoutes() {
           visitor via the anon-granted get_crm_build_progress RPC. The ONLY
           public CRM surface; every other /crm/* route stays behind page:crm. */}
       <Route path="/status" element={<ErrorBoundary section="Status"><Status /></ErrorBoundary>} />
+      {/* Public, read-only roadmap at the short /roadmap URL (utahpros.app/roadmap)
+          — no login, not tied to the DB (content is a hand-kept file in
+          @/lib/roadmapData). Also linked from the side menu. The old
+          /roadmap/public path redirects here so earlier links keep working. */}
+      <Route path="/roadmap" element={<ErrorBoundary section="Roadmap"><PublicRoadmap /></ErrorBoundary>} />
+      <Route path="/roadmap/public" element={<Navigate to="/roadmap" replace />} />
 
 
       {/* Tech layout — field_tech role, no sidebar */}
