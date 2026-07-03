@@ -7097,7 +7097,7 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .fb-purge-btn:disabled { opacity: 0.5; cursor: default; }
 .fb-purge-btn[data-armed="true"] {
-  background: #fef2f2; color: #dc2626; border-color: #fecaca;
+  background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border);
 }
 .fb-purge-btn-sm { height: 26px; padding: 0 10px; font-size: 11px; }
 

@@ -262,25 +262,34 @@ forwarding the caller's Authorization header (503s reported, never thrown); retu
 > **Prerequisite:** Phase F merged into `dev`. Model: **Opus · high** (irreversible storage deletes).
 > **Read scope:** this block + ownership matrix + `CLAUDE.md` + `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `functions/api/purge-feedback-media.test.js` — `stripBucketPrefix`/
+> - [x] Test-first, now green: `functions/api/purge-feedback-media.test.js` — `stripBucketPrefix`/
 >       `collectPaths` (legacy `{path}`-only elements included); injectable `runPurge` with fakes:
 >       dry-run marks nothing, delete-failure skips marking (retries next run), not-found counts as
 >       success, empty run still writes a `worker_runs` row, orphan sweep only touches
->       `feedback/`-prefix objects unreferenced by any row and >7 days old.
-> - [ ] Acceptance: AdminFeedback rebuilt — media gallery renders images (lightbox) AND videos
+>       `feedback/`-prefix objects unreferenced by any row and >7 days old. **12 tests, committed
+>       failing first.**
+> - [x] Acceptance: AdminFeedback rebuilt — media gallery renders images (own lightbox) AND videos
 >       (`<video controls preload="metadata">`), per-file name/size + "10.4 MB → 0.8 MB" when
 >       `original_size` present, source badge (tech/desktop), purged state ("attachments purged"
 >       on reopened items — files never come back), **per-row draft notes** (Finding 2 dead),
->       filters, two-click inline manual purge (per-item + "sweep all eligible") working with zero
->       cron; worker `GET /api/purge-feedback-media?days&dry_run` runs clean live (dry-run first).
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass; **zero schema
->       migrations**; frozen files untouched.
-> - [ ] `upr-pattern-checker` clean.
+>       filters, two-click inline manual purge (per-item + "purge all eligible") working with zero
+>       cron. Worker retention query verified **live via MCP** (`get_purgeable_feedback_media`
+>       clamp: `days=0/1/90` → 0 purgeable). **Owner-gated:** hitting the deployed
+>       `GET /api/purge-feedback-media?dry_run=1` needs the branch preview (the build container's
+>       egress blocks supabase.co) — run the dry-run there before any real pass.
+> - [x] `npm run test` (388 passed / 68 skipped) + `npm run build` + `npx eslint` (no new errors)
+>       pass; **zero schema migrations**; frozen files untouched.
+> - [x] `upr-pattern-checker` clean — 2 Rule-3 hex flags: the new `.fb-purge-btn[data-armed]`
+>       armed-red converted to `var(--status-paused-*)`; the `TYPE_BADGE`/`STATUS_BADGE` palette
+>       objects are inherited verbatim from the pre-rebuild file (no exact 1:1 token for every
+>       badge, e.g. `resolved`) and left as-is (not new debt).
 > - [ ] Visual: `/tech-feedback` on the branch preview with a seeded image+video test row.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **Session C** sub-header only.
-> - [ ] Reconcile this doc's checkboxes (disclose "wire external cron trigger" as an owner-gated
->       item in the PR); delete test rows + test storage objects; pushed; PR into `dev` opened as a
->       handoff the owner merges (no babysitting).
+>       **Preview-gated** — deferred to the branch preview (no headless browser reach to live
+>       Storage to upload a real image+video row). Recommended owner spot-check post-merge.
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **Session C** sub-header only.
+> - [x] Reconcile this doc's checkboxes (cron trigger disclosed as owner-gated in the PR); no test
+>       rows/objects were seeded (headless egress blocks Storage upload), so nothing to delete;
+>       pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: owns `src/pages/AdminFeedback.jsx` (rebuild; builds its **own** viewer/lightbox — do NOT
 edit tech-scoped `src/components/tech/Lightbox.jsx`, img-only and shared by 5 tech screens),
