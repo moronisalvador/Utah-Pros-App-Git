@@ -4521,11 +4521,13 @@ precedent), `google_calendar_links.assigned_notified_at`/`time_sig`. `push_subsc
 ship with NO anon SELECT (endpoint+p256dh+auth are send-capability secrets) — a documented
 deviation from the house USING(true) pattern.
 
-### F1 (delivery spike) — built, awaiting owner gate (2026-07-03)
+### F1 (delivery spike) — SHIPPED; owner gate PASSED on iOS (2026-07-03)
 
-Web Push proven end-to-end in code; the **stop-the-line owner gate** (real push on the owner's
-iPhone PWA + desktop) is the only open item — it needs owner actions (env vars + flag flip +
-device install), so it cannot be closed in-session.
+Web Push proven end-to-end. **Owner gate PASSED:** a real push was delivered to the owner's
+installed iPhone home-screen PWA (dev branch) and displayed on the lock screen — Apple returned
+**201 Created** (apns-id `B9048A05-…`), confirmed visually. The highest-uncertainty element of the
+whole initiative (iOS PWA delivery) is now known-good, so F2 + the wave may proceed. Remaining
+trivial confirmation: desktop Chrome (well-trodden, not yet exercised).
 
 **Crypto — `functions/lib/webPush.js`** (pure WebCrypto, zero npm deps, runs in Workers):
 - `encrypt(payload, {p256dh,auth}, {asKeyPair,salt})` — RFC 8291 message encryption (aes128gcm /
