@@ -58,6 +58,7 @@ export function IconMarketing(p){return(<svg viewBox="0 0 24 24" fill="none" str
 export function IconEstimate(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 17.5V11"/><path d="M13.8 12.3a2 2 0 0 0-3.6 1.1c0 1.7 3.6.9 3.6 2.7a2 2 0 0 1-3.6 1.1"/></svg>);}
 export function IconHomebuilding(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M3 21h18"/><path d="M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg>);}
 export function IconCrm(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v5"/><path d="M8 13h3"/></svg>);}
+export function IconRoadmap(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 20l-5.4 1.8a1 1 0 0 1-1.3-1V6.2a1 1 0 0 1 .7-1L9 3m0 17 6-2m-6 2V3m6 15 5.4 1.8a1 1 0 0 0 1.3-1V4.4a1 1 0 0 0-.7-1L15 1.5m0 16.5V1.5m0 0L9 3"/></svg>);}
 
 // ─── SECTION: Legacy sidebar list (mobile + ≤1279px desktop — keep identical) ───
 // featureFlag: if set, this nav item is hidden when that flag is disabled.
@@ -126,6 +127,9 @@ export const OVERFLOW_ITEMS = [
   // /crm/* + /help, so /feedback would be a dead-end link that bounces them
   // to /crm/leads.
   { key: 'feedback',           label: 'Send Feedback',      path: '/feedback',           icon: IconFeedback,   always: true, hideForRoles: ['crm_partner'] },
+  // always: true — a read-only "what are we building" board every logged-in
+  // employee may see (no permission key). Public no-login mirror: /roadmap/public.
+  { key: 'roadmap',            label: 'Roadmap',            path: '/roadmap',            icon: IconRoadmap,    always: true, hideForRoles: ['crm_partner'] },
 ];
 
 // SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy

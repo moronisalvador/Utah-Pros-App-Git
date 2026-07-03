@@ -3372,6 +3372,41 @@ project (`information_schema.routine_privileges`), not through the browser.
 
 ---
 
+## Company Roadmap page — `/roadmap` (in-app) + `/roadmap/public` (no-login) (Jul 3 2026)
+
+A high-level, **read-only "what are we building right now"** board covering every active initiative —
+Mobile App, Desktop Schedule improvements, CRM, Settings overhaul, Security & Compliance checks, and
+other ongoing work — each with a status badge and a derived progress bar. Distinct from `/crm/roadmap`
++ `/status` (those are the DB-backed *CRM build* tracker); this is a company-wide, **deliberately
+DB-free** overview so it can be shared publicly with zero data/permission exposure.
+
+**Content source — no DB, no RPC, no permissions**: all content lives in `src/lib/roadmapData.js`
+(`ROADMAP_INITIATIVES`, `ROADMAP_UPDATED`, `roadmapOverall()`). To update the board you edit that one
+file — there is no table, RPC, or admin screen. This is what makes the public page safe to share:
+it touches no Supabase table at all. Progress % is **derived** from each initiative's `items`
+(`done ÷ total`), never hand-typed.
+
+**Two entry points, one renderer**:
+- In-app: `src/pages/Roadmap.jsx` at `/roadmap`, inside `Layout` (logged-in). Reached from the side
+  menu — added as a hardcoded link in `Sidebar.jsx` (after Help & Guides, `crm_partner` excluded, same
+  pattern as the Feedback link) and as an `always: true` entry (`key: 'roadmap'`) in
+  `OVERFLOW_ITEMS`/`navItems.jsx` for the ≥1280px overflow drawer. New `IconRoadmap` in `navItems.jsx`.
+  Has a local light/dark toggle (reuses `.crm-roadmap-page.dark`) and a "Public view ↗" link.
+- Public: `src/pages/PublicRoadmap.jsx` at `/roadmap/public`, a top-level public route in `WebRoutes()`
+  (alongside `/status`/`/login`/`/privacy`) — outside `ProtectedRoute`/`Layout`, no `useAuth()`, no db.
+  Reuses the `.status-page` shell. Not in `NativeRoutes()`.
+- Both render `src/components/RoadmapView.jsx` (pure presentational, takes `initiatives` prop) so the
+  logged-in and public views never drift. CSS reuses the existing `.crm-roadmap-*` block — **no new
+  CSS added**.
+
+**Verification**: `npm run build` (all three chunks emit + content confirmed in bundle), full `vitest`
+suite (414 passed / 77 skipped), `eslint` on changed files clean (the 5 pre-existing
+`react-refresh/only-export-components` errors in `navItems.jsx` are unchanged, not new). `/roadmap/public`
+serves HTTP 200 with no login against `vite preview`.
+
+
+---
+
 ## Roadmap v3 — gap audit + parallel-wave dispatch model (session 2026-07-02, docs/seed only — no feature code)
 
 **What this session shipped** (branch `claude/new-session-vloxml` → PR into `dev`):

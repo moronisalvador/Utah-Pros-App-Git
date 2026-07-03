@@ -76,6 +76,8 @@ const Collections = lazyRetry(() => import('@/pages/Collections'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
 const Status = lazyRetry(() => import('@/pages/Status'));
+const Roadmap = lazyRetry(() => import('@/pages/Roadmap'));
+const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
@@ -293,6 +295,10 @@ function WebRoutes() {
           visitor via the anon-granted get_crm_build_progress RPC. The ONLY
           public CRM surface; every other /crm/* route stays behind page:crm. */}
       <Route path="/status" element={<ErrorBoundary section="Status"><Status /></ErrorBoundary>} />
+      {/* Public, read-only roadmap — no login, not tied to the DB (content is a
+          hand-kept file in @/lib/roadmapData). Shareable mirror of the in-app
+          /roadmap page below. */}
+      <Route path="/roadmap/public" element={<ErrorBoundary section="PublicRoadmap"><PublicRoadmap /></ErrorBoundary>} />
 
 
       {/* Tech layout — field_tech role, no sidebar */}
@@ -315,6 +321,10 @@ function WebRoutes() {
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+
+        {/* Roadmap — visible to every logged-in employee (see Sidebar/navItems).
+            Public no-login mirror lives at /roadmap/public above. */}
+        <Route path="roadmap" element={<ErrorBoundary section="Roadmap"><Roadmap /></ErrorBoundary>} />
 
         {/* Homebuilding Entry Analysis — private to Moroni (side-nav link is Moroni-only too) */}
         <Route path="homebuilding" element={
