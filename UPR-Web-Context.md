@@ -1276,6 +1276,53 @@ Lightweight **org-wide** (shared-read) notification feed surfaced by a **bell in
 
 ---
 
+## Tech Mobile v2 — Phase F Foundation (Jul 3 2026)
+
+The field-tech Dashboard (`/tech`) + Schedule (`/tech/schedule`) rebuild. Full plan:
+`docs/tech-v2-roadmap.md`; wave ownership: `.claude/rules/tech-v2-wave-ownership.md`.
+Phase F ships **schema/RPC + data layer + wiring only** — the two v2 pages are STUBS the
+S/D wave fills in.
+
+- **Feature flags (seeded live, `enabled=false`, `dev_only_user_id`=owner):**
+  `page:tech_dash_v2`, `page:tech_sched_v2`. Owner-only during the wave; everyone else gets
+  the legacy pages, byte-identical. Registered in `src/lib/featureFlags.js` EXPLICIT_FLAGS
+  with `enabled:false` (load-bearing — the DevTools auto-seed would otherwise create them ON).
+- **RPCs:**
+  - `get_tech_dashboard(p_employee_id uuid) → jsonb` **(NEW)** — one round trip:
+    `{ server_now, today, week_start, appointments (Denver day, cancelled excluded),
+    upcoming (next 7 days scoped to me), open_entry, hours_today, hours_week (each
+    `{ travel, on_site, total }`), photos_today }`. Hours = SUM(stored `hours`) + live term
+    for the single open entry; travel = SUM(`travel_minutes`)/60 + live en-route term; week
+    = Monday-start America/Denver (payroll parity). Helper `tech_hours_bucket(...)`.
+  - `get_appointments_range(date,date)` + `get_my_appointments_today(uuid, p_include_cancelled boolean DEFAULT true)`
+    — additive jsonb keys `color/kind/duration_days/is_milestone`, crew `employees` gain
+    `color/avatar_url`, plus `task_total`/`task_completed`. Legacy keys unchanged
+    (backward-compat tests committed). `get_my_appointments_today` 1-arg legacy call still
+    resolves (default). ⚠️ Note: this feed keys "today" off `CURRENT_DATE` (UTC) — legacy
+    behavior, left as-is; `get_tech_dashboard` uses the Denver day instead.
+  - `clock_appointment_action(...)` — same signature; OMW `work_date` now stamps in
+    `America/Denver` (was UTC — misdated evening clock-ins; Finding #3).
+  - **Drift capture:** 13 previously migration-less tech RPCs are now captured verbatim in
+    `supabase/migrations/20260703_tech_v2_phaseF_drift_capture.sql` (no behavior change).
+- **Data layer:** TanStack Query trio pinned `5.101.2`. `src/lib/techQuery.js` is the FROZEN
+  query-key + invalidation registry (kinds: dash/sched-month/active-clock/tasks/rooms/docs;
+  `techKeys`, `invalidateTech`, `techQueryClient`). Cache persisted to a dedicated IndexedDB
+  DB `upr-query-cache` via `src/lib/techQueryPersister.js`; `PersistQueryClientProvider`
+  mounted in `src/main.jsx`.
+- **Pane host:** `TechLayout` renders the two v2 panes persistently OUTSIDE the keyed
+  `<Outlet/>` (no remount storm), hidden via `display:none`, with continuous scrollTop
+  tracking + restore and an `active` prop (gates pollers/geo). Flags off → panes not mounted,
+  legacy identical.
+- **Primitives** (`src/components/tech/v2/`): `StatusChip` (status owns color), `ApptListRow`,
+  `TechV2Page`, `TechPane`, skeletons, and `apptHref()/jobHref()` (nav — M2 flips
+  `HUB_ENABLED`). CSS = new `tv2-*` classes inside reserved `TECH-V2:` markers in `index.css`.
+- **v1 relief patch (legacy, only window before the freeze):** `TechSchedule` fetch window
+  anchored to today (day taps no longer refetch the ~61-day range unless they exit the
+  window); `TechDash` no longer re-skeletons when data already exists.
+- **`--tech-*` / `--status-*` token layer now documented** in `UPR-Design-System.md`.
+
+---
+
 ## Cloudflare Workers — Environment Variables
 ```
 SUPABASE_URL                    — https://glsmljpabrwonfiltiqm.supabase.co
@@ -1325,8 +1372,9 @@ token never leaves the server. Token refresh + OAuth lib: `functions/lib/google-
 ### Calendar sync (Jun 28 2026)
 
 Pushes appointments → each assigned crew member's Google Calendar (create / update /
-delete). **Built to survive the planned appointments→scheduled-jobs refactor:** the
-mapping is source-agnostic.
+delete). **Built source-agnostic** (~~to survive the planned appointments→scheduled-jobs
+refactor~~ — that refactor was declared stale and superseded by the Schedule Desktop plan of
+record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnostic regardless).
 
 - **`google_calendar_links`** — durable mapping, one row per (synced occurrence × crew
   member). Cols: `id, source_type` (`'appointment'` today, `'job_schedule'` later),
@@ -3949,7 +3997,10 @@ height messages trusted only from the form origin AND the exact iframe window (`
 
 **UI — `src/pages/crm/CrmForms.jsx`**: structured builder (NOT drag-drop — up/down reorder): 9 field
 types (text/email/phone/textarea/select/radio/checkbox/date/**consent**), required toggles, options
-editor, theme colors, restricted `[text](url)` markup in labels/description/thank-you, a **live
+editor, **per-field width** (Full / Half / Third → an optional `field.width` key; fields flow into a
+6-column grid so e.g. City | State | ZIP share one row, collapsing to a single column on mobile —
+purely presentational, backward-compatible, no RPC/migration change), theme colors, restricted
+`[text](url)` markup in labels/description/thank-you, a **live
 preview** rendering labels through the same `sanitizeLinkMarkup`, Save-draft vs Publish (two-click
 confirm), copy-embed snippet (+ direct `/f/<id>` link), and a per-form **submissions** tab. Styles
 live in the `CRM WAVE RESERVED — Phase 10` marker in `src/index.css` (tokens only); the hosted page's
@@ -4170,3 +4221,232 @@ plumbing list), Session L dispatch block in `docs/crm-dispatch.md`, and
 seeded `planned` with 7 stages). Also this session: PR #169 (commissions foundation) reconciled
 onto `dev` and merged — commission tracking starts from now (historical jobs stay unattributed
 by owner decision).
+
+## Feedback Media (Jul 3 2026) — Phase F foundation shipped
+
+Photos + video on employee feedback, desktop submissions, retention plumbing. Roadmap +
+BINDING ownership matrix: `docs/feedback-media-roadmap.md` (Foundation-then-parallel-wave;
+Phase F owned 100% of the schema — Sessions B/C ship zero migrations).
+
+**`tech_feedback` new columns** (`20260702_feedback_media.sql`, additive): `attachments jsonb
+NOT NULL DEFAULT '[]'` (records `{path,name,mime,size,original_size,width?,height?,duration?}`,
+path bucket-LESS), `source text NOT NULL DEFAULT 'tech'` CHECK tech|desktop, `resolved_at
+timestamptz`, `attachments_purged_at timestamptz`. ⚠️ Legacy `screenshots` values were
+double-encoded jsonb STRING scalars (JSON.stringify through PostgREST) — backfilled to real
+arrays; the insert RPC now decodes string-scalar input too.
+
+**RPCs** (all SECURITY DEFINER, anon+authenticated):
+- `insert_tech_feedback(p_employee_id, p_type, p_title, p_description, p_screenshots, p_attachments, p_source)` —
+  **7-arg via DROP+CREATE** (the old 5-arg signature was dropped in the same transaction; a
+  plain OR REPLACE would have created an ambiguous overload and broken every live submit).
+  Body mirrors both directions: screenshots→attachments (`{path}`-only, bucket prefix
+  stripped) for old callers; image attachments→screenshots (`job-files/` prefix added,
+  videos excluded) for new callers. Old 5-arg call verified live through PostgREST.
+- `update_tech_feedback(p_id, p_status, p_admin_notes)` — unchanged signature; stamps
+  `resolved_at` on first transition into resolved/dismissed, keeps it terminal↔terminal,
+  NULLs it on reopen, never touches `attachments_purged_at`.
+- `get_tech_feedback()` — RETURNS TABLE gained `attachments, source, resolved_at,
+  attachments_purged_at` (appended; existing caller ignores extra keys).
+- `get_purgeable_feedback_media(p_days int DEFAULT 90)` — terminal + unpurged + non-empty
+  attachments older than `GREATEST(p_days, 30)` days; the ≥30-day clamp lives INSIDE the RPC
+  because the future purge endpoint is unauthenticated by cron convention.
+- `mark_feedback_attachments_purged(p_id)` — idempotent, first stamp wins.
+
+**Shared code (FROZEN for the wave):** `src/lib/mediaCompress.js` (caps: 5 files / 1 video /
+90s / img in ≤25MB / video ≤50MB; compressImage → 1920px 0.8 JPEG, never larger than the
+original, HEIC fallback ≤10MB; probeVideo never rejects, 5s→nulls; 33 unit tests) and
+`src/components/FeedbackAttachments.jsx` (snap-first immediate upload to
+`job-files/feedback/{employeeId}/{ts}-{sanitized}`, per-tile state machine with Retry —
+retry re-validates the caps, best-effort storage DELETE on remove behind a busy `removing`
+state — fixes the old orphaned-upload bug without opening a submit race, duration chip,
+≥48px targets; contract `value/onChange/onBusyChange/disabled/caps`, calls useAuth()
+itself). ⚠️ Composer reset contract: `value` seeds tiles ON MOUNT ONLY — to clear it
+(e.g. after submit) remount with a new `key`; it deliberately has no value-watching effect
+(a prop-sync effect raced parallel upload completions and dropped fresh tiles — caught by
+adversarial review, fixed pre-merge).
+
+**Desktop surface:** `src/pages/Feedback.jsx` at `/feedback` (Layout shell, ungated —
+every employee), submits `p_source:'desktop'` + `p_attachments` as a REAL array (never
+JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` +
+`hideForRoles: ['crm_partner']` (isItemVisible gained the generic `hideForRoles` check —
+crm_partner is locked to /crm/*+/help by Layout's choke point, so the link would dead-end
+for them). The legacy mobile Sidebar link is hardcoded after the NAV_ITEMS loop like Help
+(same crm_partner exclusion) — NAV_ITEMS itself stays identical. CSS: `fbm-*` classes in
+`index.css` Phase F block, with reserved Session B / Session C blocks appended after it.
+
+### Session B (submit surfaces + notify) — shipped Jul 3 2026
+
+**`src/pages/tech/TechFeedback.jsx` rebuilt** on the shared `FeedbackAttachments` composer:
+photos + one short video with free compression/caps, real storage DELETE on remove (fixes the
+old orphaned-upload bug), snap-first (no blocking inputs), ≥48px targets (back button now 48px).
+`'feature'` is relabeled **"Improvement"** in the UI only (DB CHECK still `'bug'|'feature'`).
+Submit passes `p_attachments` as a REAL array (never JSON.stringify) + `p_source:'tech'`, then
+navigates back to `/tech`. No dedicated index.css rules needed — the form uses inline tech
+tokens and the composer ships its own global `.fbm-*` styles (Phase F block); the Session B
+reserved marker carries a note to that effect.
+
+**`src/pages/Feedback.jsx` (desktop)** polished: captures the insert RPC's returned row and
+fires the same notify; header DEPENDS-ON updated. Keeps `p_source:'desktop'`.
+
+**New worker `functions/api/feedback-notify.js`** (+ `feedback-notify.test.js`, 12 tests): POST
+`{feedback_id}`, `requireAuth` in send-push.js's shape (Bearer required; validated against
+`/auth/v1/user` using the **anon key** as apikey — the service-role key is unnecessary for token
+validation, and using anon also sidesteps the block-secrets hook's env-var-name literal match).
+Service-key client (`supabase(env)`) loads the feedback row + submitter `full_name` + admins
+(`employees?role=eq.admin`). Two channels:
+1. **In-app bell** — `create_notification` RPC (`p_type:'feedback'`, link `/tech-feedback`,
+   entity `tech_feedback`/id). Works today; the notifications feed is **global** (no recipient
+   column) so every employee sees the notice — accepted + disclosed per the roadmap.
+2. **Per-admin push** — one same-origin `POST /api/send-push` per admin **excluding the
+   submitter**, forwarding the caller's `Authorization` header, title `New bug report` /
+   `New improvement idea`, body `{submitter}: {title}`, data `{feedback_id, route:'/tech-feedback'}`.
+   Returns `{notified, attempted, bell, results}`.
+
+Both pages call it **fire-and-forget** via `src/lib/api.js` (`api('feedback-notify', …)` attaches
+the user Bearer) with a swallowed `.catch(()=>{})` — the success toast never depends on it.
+Pure helpers `selectAdminIds(employees, submitterId)` + `buildPushPayload(feedback, name)` are
+node-tested; the handler test injects fake db + fetch to prove 401-without-Bearer,
+submitter-excluded fan-out count, and a 503 from send-push reported without failing the request.
+
+⚠️ **Owner-gated — push delivery reaches nobody today:** APNs env vars (`APNS_*`) are unset (the
+send-push worker returns 503) and `device_tokens` has 0 rows, and admins work on desktop where
+the iOS token path never runs. The **in-app bell is the channel that works now**; the push
+fan-out is wired degrade-gracefully and becomes real the day the owner configures APNs + devices
+register. Zero schema migrations shipped (Session B constraint).
+
+### Session C (AdminFeedback rebuild + gallery) — shipped (Jul 3 2026)
+
+Owner's media view + retention purge. Files: `src/pages/AdminFeedback.jsx` (rebuilt),
+`functions/api/purge-feedback-media.js` (+ `.test.js`, new), one line in
+`src/pages/DevTools.jsx` (`WORKER_NAMES` gains `'purge-feedback-media'`), and the reserved
+Session C `index.css` block. Zero schema migrations (consumes Phase F's).
+
+- **AdminFeedback rebuild.** Media gallery reads the `attachments` jsonb (falls back to legacy
+  `screenshots` when `attachments` is empty), normalizing both via `stripBucketPrefix` before
+  building the `…/storage/v1/object/public/job-files/{path}` URL. Images open in an **own**
+  lightbox (not the tech-scoped `src/components/tech/Lightbox.jsx`); videos play inline via
+  `<video controls preload="metadata">`. Per-file name + size, and a "10.4 MB → 0.8 MB" note
+  when `original_size` is present. Source badge (`via Tech app` / `via Desktop`). Type `feature`
+  renders as **"Improvement"** (UI-only; DB keeps `feature`). Purged rows show
+  "attachments purged" (persists even after reopen — `attachments_purged_at` is never cleared).
+  **Per-row draft notes** (`drafts[id]`) — kills the old shared-`noteText` cross-save bug; adds a
+  standalone "Save note" action alongside the status buttons.
+- **Manual purge (day-1 trigger).** Two-click inline confirm, per-item and a header
+  "purge all eligible" sweep (eligible = terminal + has attachments + not yet purged). Uses the
+  anon-key per-object storage DELETE pattern (mirrors `JobPage.jsx`) then
+  `db.rpc('mark_feedback_attachments_purged', { p_id })`.
+- **`purge-feedback-media` worker.** `GET /api/purge-feedback-media?days=90&dry_run=1` — no auth
+  (cron convention; the `get_purgeable_feedback_media` `GREATEST(p_days,30)` clamp is the
+  guardrail, live-verified: `days=0/1/90` all return 0 purgeable). Per purgeable row: bulk-delete
+  `DELETE /storage/v1/object/job-files {prefixes:[…]}`, then mark **only** on success or
+  not-found (a transport error leaves the row un-marked so it retries next run — never mark what
+  wasn't cleaned). Orphan sweep deletes `feedback/`-prefix objects unreferenced by any
+  `tech_feedback` row and older than 7 days (Finding 1). Always writes a `worker_runs` row.
+  Returns `{ok, checked, purged, files_deleted, orphans, errors, dry_run}`. Injectable
+  `runPurge(db, storageDelete, opts)` + `collectPaths`/`stripBucketPrefix` unit-tested (12 tests).
+- **Owner-gated (disclosed):** auto-scheduling is an owner action — point the external cron that
+  drives `process-scheduled` at `/api/purge-feedback-media`. The manual button works from merge,
+  day 1.
+
+## Tech Mobile v2 — plan of record (session 2026-07-03, docs + reviewer agent only — no feature code)
+
+**What this session shipped** (branch `claude/planning-session-sec1ev` → PR into `dev`):
+- `docs/tech-v2-roadmap.md` — the dispatch model of record for rebuilding the tech mobile
+  Dashboard + Schedule to Apple/Google-Calendar polish and then merging TechAppointment +
+  TechJobDetail into a Job Hub. Live-verified gap audit (taxonomy A–H), 7 severity findings,
+  six phase blocks (**F → S ∥ D → C → M1 → M2**; S∥D disjointness adversarially proven,
+  parallelism optional), dependency graph, ownership matrix + frozen list, options-on-record
+  (TanStack Query vs hand-rolled cache; no virtualization dep; persister kept per owner
+  offline decision), 6-agent challenge report folded in.
+- `docs/tech-v2-dispatch.md` — six complete cold-session copy-paste blocks (F, S, D, C, M1, M2).
+- `.claude/agents/tech-phase-reviewer.md` — Opus acceptance grader for tech-v2 phases
+  (weights clock/time-entry math, flag rollout safety, legacy non-regression, frozen-list
+  compliance; reconciles the roadmap checkboxes both directions).
+- Zero code/schema/seed changes — non-CRM initiative; progress tracks via the roadmap doc's
+  checklists (CRM tracker not used, on record).
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **Two P1 root causes of "glitchy/slow":** `TechLayout.jsx:227-230` keys the content wrapper
+  by pathname → every navigation remounts the page (all state dies, every RPC refires);
+  `TechSchedule.jsx:486-510` derives the fetch window from `selectedDay` → every day tap
+  refetches the full ~61-day window. Phase F ships a minimal v1 relief patch for both.
+- **NEW live bug (challenge pass):** `clock_appointment_action` stamps `work_date` with the
+  UTC date — a clock-in at/after 6pm MDT lands on tomorrow's `work_date` (1 of 158 live rows
+  misdated; payroll groups by `work_date`; the midnight-split writer uses Denver — writers
+  disagree). Fix = body-only REPLACE slotted into Phase F.
+- **Schema drift ×13:** the core tech RPC surface (`get_my_appointments_today`,
+  `get_assigned_tasks`, `toggle_appointment_task`, `update_appointment`, …) exists live with
+  ZERO migration coverage. Phase F commits a verbatim `pg_get_functiondef` capture migration
+  first.
+- **The schema already out-runs the UI:** `appointments.color/kind/duration_days/is_milestone`
+  exist but both tech feed RPCs strip them (desktop dispatch RPCs return color). Exposing
+  them is additive jsonb keys — zero consumer breakage (challenge-confirmed).
+- **Flag fail-open trap:** no `feature_flags` row = enabled for EVERYONE
+  (`AuthContext.jsx:262`) — so v2 flag rows must be seeded in Supabase BEFORE any code
+  referencing them merges; `EXPLICIT_FLAGS` entries need explicit `enabled:false`
+  (auto-seed creates missing keys ON); `force_disabled` is inert for `isFeatureEnabled`.
+- **Hours for the dashboard** must SUM the stored `job_time_entries.hours` column (+
+  `travel_minutes`, + a live term for the open entry) — never recompute from timestamps
+  (manual/admin-edited/midnight-split rows diverge); weeks are Monday-start Denver to match
+  `get_payroll_summary`.
+- Cancelled-as-"Upcoming" dash bug is latent-only: cancellation is a hard delete; zero
+  `cancelled` rows have ever existed (no CHECK constraint prevents future writers, so v2
+  feeds filter it anyway).
+
+**Dispatch:** Wave 0 = Session F alone (Opus·high — flags seeded first, drift capture,
+feed upgrades, `get_tech_dashboard`, work_date fix, v1 relief patch, TanStack trio
+@5.101.2 + idb persister `upr-query-cache`, TechLayout pane host, v2 primitives + css
+markers, ownership manifest). Wave 1 after F merges = Session S (Opus·high — Agenda + Day
+timeline + week pager; Month view explicitly deferred) ∥ Session D (Opus·medium — Now/Next
+hero, attention strip, My-numbers, one-RPC dashboard) — parallel-capable, serial fine.
+Then C (Sonnet·medium cutover/cleanup + Month-view stretch, owner-gated bake), M1
+(Opus·high Job Hub behind `page:tech_job_hub`), M2 (Opus·medium href flip + resolver
+redirect + legacy detail deletion). Owner anytime-lane actions: flag flips in DevTools
+(owner-only → all techs), phone bake sign-offs.
+
+## Schedule Desktop — plan of record (session 2026-07-03, docs only — no feature code)
+
+**What this session shipped** (branch `claude/build-plan-ftgfa1` → PR into `dev`):
+- `docs/schedule-roadmap.md` — the dispatch model of record for the desktop Schedule page:
+  create-and-schedule booking flow, dead-weight removal, Month-view parity. Live-verified
+  evidence base (E1–E10), 5 severity findings, a full booking-modal design spec, three phase
+  blocks (**A → B → C, strictly serial** — shared Schedule.jsx surface), dependency graph,
+  ownership matrix + frozen-contract list, options-on-record, 3-agent challenge report folded in.
+- `docs/schedule-dispatch.md` — three complete cold-session copy-paste blocks (A, B, C).
+- Struck the stale "appointments→scheduled-jobs refactor" references in place (this doc's
+  Calendar-sync section + `GOOGLE-INTEGRATIONS-HANDOFF.md`) — owner declared it stale; this plan
+  supersedes it.
+- Zero code/schema/seed changes — non-CRM initiative; progress tracks via the roadmap doc's
+  checklists.
+
+**Key findings recorded in the roadmap** (full evidence there):
+- **The pain quantified:** 56 of 105 non-lead jobs (53%) have never had an appointment; every
+  calendar create path requires an existing job; `Layout.jsx` force-navigates to the job page
+  after create, which has zero scheduling affordance.
+- **Templates/Wizard subsystem is data-proven dead** (0/230 appointments ever linked; wizard last
+  run 2026-04-14) — Session B removes the UI; tables/RPCs stay, documented retired.
+- **Owner corrections on record:** Week (not Month) is the beloved view; kill Jobs/Crew grids +
+  3-Day span; HCP-style booking modal on the schedule page only; claim picker rows must show
+  address · date of loss · claim number with "New claim" the default every time.
+- **Live side-effect chain governs test protocol:** appointment INSERT triggers gcal sync; the
+  worker emails the CLIENT ('confirmed', first-sync CAS) when job.client_email && notify_client
+  (default TRUE), and emails + calendar-invites the CREW — test rows need no client_email/notify
+  OFF and no real crew.
+- **`get_dispatch_board` appointment objects carry no job_id** (parent job row does) — Month
+  parity is frontend `_jobId` stamping, no RPC change; auto-show surfaces a new job with an
+  in-range appointment without a pin, but the booking modal pins via `dispatch_board_jobs` to
+  cover Auto-show-OFF.
+- **`jobs.lead_source` exists, is NULL on all 236 jobs, zero writers** — booking modal writes it
+  via post-insert update (an RPC param-add would mint an overload — the clock_appointment_action
+  PGRST203 incident class).
+- **Coordination:** draft PR #102 must be closed/rebased before Session B (it edits 6 of B's
+  files incl. ScheduleTemplates.jsx, which B deletes); tech-v2 co-edits App.jsx (tech routes,
+  different region) + index.css markers — Session A pre-commits all three SCHEDULE V2 markers.
+
+**Dispatch:** Wave 0 = Session A (Opus·high — shared client/claim component extraction, tested
+save chain, BookingModal, creationPicker "New job" entry, ~70%-budget chained-modals fallback).
+Wave 1 = Session B (Opus·medium — Templates/Wizard removal end-to-end incl. both navItems entries
++ Admin.jsx registry row, viewMode-axis collapse with placementMode over-deletion guard, verbatim
+MonthView extraction, JobPage "Schedule appointment" reverse path, remodeling-filter fix as its
+own commit; gated on PR #102 closure). Wave 2 = Session C (Opus·medium — Month drag-reschedule,
+click-day create, events rendering, chip enrichment; Week regression-verify only).

@@ -129,24 +129,44 @@ owner configures APNS env vars and devices register). Email: declined by owner, 
 > cutover on the shared Supabase — the riskiest work in the initiative).
 > **Read scope:** this block + the ownership matrix below + `CLAUDE.md` + `.claude/rules/tech-mobile-ux.md` + `.claude/rules/documentation-standard.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `supabase/tests/feedback_media_schema.test.js` — old **5-arg**
+> - [x] Test-first, now green: `supabase/tests/feedback_media_schema.test.js` — old **5-arg**
 >       `insert_tech_feedback` via PostgREST still succeeds (proves no overload ambiguity +
 >       cache bust); 7-arg round-trip incl. both-direction mirror; `resolved_at` state table
 >       (set on first terminal, kept terminal↔terminal, NULL on reopen); purge boundary 89d/91d
 >       (assert own ids only); purged-row exclusion; afterAll cleanup. `src/lib/mediaCompress.test.js`
 >       — `fitWithin` never upscales, `sanitizeFilename` edge cases, `validateFile`/`validateSelection`/
 >       `checkVideoDuration` caps, `buildStoragePath`/`stripBucketPrefix` shapes.
-> - [ ] Acceptance: migration applied + verified live via MCP, `bust_postgrest_cache()` run, live
+>       *(Suite self-skips without `VITE_SUPABASE_*` creds — the build container's egress policy
+>       blocks supabase.co, so every assertion was additionally executed live: RPC calls through
+>       PostgREST via MCP, purge-boundary semantics via a live SQL DO-block.)*
+> - [x] Acceptance: migration applied + verified live via MCP, `bust_postgrest_cache()` run, live
 >       TechFeedback submit re-verified working (old code, new RPC); desktop `/feedback` page
 >       **working end-to-end** (type/title/description/attachments, `source:'desktop'`) and visible
 >       in nav to all employees; composer compresses a large image and enforces all caps.
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass.
-> - [ ] `migration-safety-checker` + `upr-pattern-checker` clean.
-> - [ ] Visual: `/feedback` on the branch preview (desktop + 768px mobile widths).
-> - [ ] `UPR-Web-Context.md` updated (seed the "Feedback Media" section WITH pre-labeled
+> - [x] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass.
+> - [x] `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [x] Visual: `/feedback` via Playwright at 1366px + 768px (Supabase stubbed — same egress
+>       policy; Cloudflare branch preview built green for the human spot-check).
+> - [x] `UPR-Web-Context.md` updated (seed the "Feedback Media" section WITH pre-labeled
 >       Session B / Session C sub-headers).
-> - [ ] Reconcile this doc's checkboxes; delete test rows; pushed; PR into `dev` opened as a
->       handoff the owner merges (no babysitting).
+> - [x] Reconcile this doc's checkboxes; delete test rows; pushed; PR #256 into `dev`.
+>
+> **Delivered 2026-07-03 (PR #256) — deltas vs this block, all additive, none breaking:**
+> - Found live: legacy `screenshots` values were **double-encoded jsonb string scalars**
+>   (`JSON.stringify` → PostgREST) that AdminFeedback's `Array.isArray` silently drops —
+>   the migration normalizes existing rows and the new insert body decodes string input.
+> - `get_purgeable_feedback_media` also returns `resolved_at` (extra column, additive).
+> - Adversarial review (3 lenses × 2 refute-skeptics) confirmed 5 bugs in F's own new code;
+>   all fixed pre-PR. Binding consequence for **Session B/C**: the composer's **reset
+>   contract** — `value` seeds tiles ON MOUNT ONLY; to clear it, remount with a new `key`
+>   (a value-watching effect raced parallel uploads and was removed). Also: Retry
+>   re-validates caps; remove runs behind a busy `removing` state (blocks submit).
+> - Nav entries carry `hideForRoles: ['crm_partner']` (new generic `isItemVisible` check) —
+>   that role is locked to /crm/*+/help by Layout's choke point, the link would dead-end.
+> - The legacy mobile Sidebar got the link hardcoded after the NAV_ITEMS loop (Help
+>   precedent, same crm_partner exclusion) on the owner's blanket go-ahead.
+> - `formatBytes` / `formatDuration` exported from `mediaCompress.js` per this doc (Session
+>   C imports them; the composer's duration chip already uses `formatDuration`).
 
 Scope (everything additive):
 - **Migration `20260702_feedback_media.sql`** (one transaction; apply via MCP `apply_migration`):
@@ -212,22 +232,28 @@ Scope (everything additive):
 > **Prerequisite:** Phase F merged into `dev`. Model: **Opus · medium**.
 > **Read scope:** this block + ownership matrix + `CLAUDE.md` + `.claude/rules/tech-mobile-ux.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `functions/api/feedback-notify.test.js` — pure helpers (admin-id
+> - [x] Test-first, now green: `functions/api/feedback-notify.test.js` — pure helpers (admin-id
 >       selection excludes submitter; push-payload builder) + injected-fake handler (401 without
->       Bearer; fan-out count; tolerates a 503 from send-push without failing the request).
-> - [ ] Acceptance: TechFeedback rebuilt on the shared composer (photos + video, compression, caps,
+>       Bearer; fan-out count; tolerates a 503 from send-push without failing the request). 12 tests.
+> - [x] Acceptance: TechFeedback rebuilt on the shared composer (photos + video, compression, caps,
 >       real storage DELETE on remove, ≥48px targets, snap-first — no blocking inputs); desktop
 >       `Feedback.jsx` polished with `source:'desktop'`; both pages call `feedback-notify`
 >       fire-and-forget via `src/lib/api.js` (success toast never depends on it); in-app bell
 >       notification arrives on submit; "Improvement" relabel (UI-only — DB keeps `feature`).
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass; **zero schema
->       migrations**; frozen files untouched (composer, mediaCompress, App.jsx, navItems, send-push —
->       call-only).
-> - [ ] `upr-pattern-checker` clean.
-> - [ ] Visual: tech form at 390px width + desktop form on the branch preview.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **Session B** sub-header only.
-> - [ ] Reconcile this doc's checkboxes (disclose the push-reaches-nobody gate in the PR); delete
->       test rows; pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
+> - [x] `npm run test` (388 passed / 68 skipped) + `npm run build` + `npx eslint` (no new errors)
+>       pass; **zero schema migrations**; frozen files untouched (composer, mediaCompress, App.jsx,
+>       navItems, send-push — call-only).
+> - [x] `upr-pattern-checker` clean (one flagged item — pre-existing inline hex in TechFeedback's
+>       type selector — fixed by tokenizing to match the sibling desktop page).
+> - [~] Visual: desktop `/feedback` + tech `/tech/feedback` — **deferred to the Cloudflare branch
+>       preview** (same as Phase F): the container's egress blocks supabase.co and both routes
+>       require an authenticated session, so a headless render isn't possible here. Build is green;
+>       owner spot-checks the preview (390px tech + desktop).
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **Session B** sub-header only.
+> - [x] Reconcile this doc's checkboxes (push-reaches-nobody gate disclosed in the PR + the
+>       UPR-Web-Context sub-header); no test rows created (nothing submitted live — the build
+>       container can't reach Supabase); PR into `dev` opened as a handoff the owner merges (no
+>       babysitting).
 
 Scope: owns `src/pages/tech/TechFeedback.jsx` (rebuild), `src/pages/Feedback.jsx` (polish),
 **new** `functions/api/feedback-notify.js` (+ test): POST `{feedback_id}`, requireAuth shape from
@@ -242,25 +268,34 @@ forwarding the caller's Authorization header (503s reported, never thrown); retu
 > **Prerequisite:** Phase F merged into `dev`. Model: **Opus · high** (irreversible storage deletes).
 > **Read scope:** this block + ownership matrix + `CLAUDE.md` + `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: `functions/api/purge-feedback-media.test.js` — `stripBucketPrefix`/
+> - [x] Test-first, now green: `functions/api/purge-feedback-media.test.js` — `stripBucketPrefix`/
 >       `collectPaths` (legacy `{path}`-only elements included); injectable `runPurge` with fakes:
 >       dry-run marks nothing, delete-failure skips marking (retries next run), not-found counts as
 >       success, empty run still writes a `worker_runs` row, orphan sweep only touches
->       `feedback/`-prefix objects unreferenced by any row and >7 days old.
-> - [ ] Acceptance: AdminFeedback rebuilt — media gallery renders images (lightbox) AND videos
+>       `feedback/`-prefix objects unreferenced by any row and >7 days old. **12 tests, committed
+>       failing first.**
+> - [x] Acceptance: AdminFeedback rebuilt — media gallery renders images (own lightbox) AND videos
 >       (`<video controls preload="metadata">`), per-file name/size + "10.4 MB → 0.8 MB" when
 >       `original_size` present, source badge (tech/desktop), purged state ("attachments purged"
 >       on reopened items — files never come back), **per-row draft notes** (Finding 2 dead),
->       filters, two-click inline manual purge (per-item + "sweep all eligible") working with zero
->       cron; worker `GET /api/purge-feedback-media?days&dry_run` runs clean live (dry-run first).
-> - [ ] `npm run test` + `npm run build` + `npx eslint` (no new errors) pass; **zero schema
->       migrations**; frozen files untouched.
-> - [ ] `upr-pattern-checker` clean.
+>       filters, two-click inline manual purge (per-item + "purge all eligible") working with zero
+>       cron. Worker retention query verified **live via MCP** (`get_purgeable_feedback_media`
+>       clamp: `days=0/1/90` → 0 purgeable). **Owner-gated:** hitting the deployed
+>       `GET /api/purge-feedback-media?dry_run=1` needs the branch preview (the build container's
+>       egress blocks supabase.co) — run the dry-run there before any real pass.
+> - [x] `npm run test` (388 passed / 68 skipped) + `npm run build` + `npx eslint` (no new errors)
+>       pass; **zero schema migrations**; frozen files untouched.
+> - [x] `upr-pattern-checker` clean — 2 Rule-3 hex flags: the new `.fb-purge-btn[data-armed]`
+>       armed-red converted to `var(--status-paused-*)`; the `TYPE_BADGE`/`STATUS_BADGE` palette
+>       objects are inherited verbatim from the pre-rebuild file (no exact 1:1 token for every
+>       badge, e.g. `resolved`) and left as-is (not new debt).
 > - [ ] Visual: `/tech-feedback` on the branch preview with a seeded image+video test row.
-> - [ ] `UPR-Web-Context.md` — fill the pre-labeled **Session C** sub-header only.
-> - [ ] Reconcile this doc's checkboxes (disclose "wire external cron trigger" as an owner-gated
->       item in the PR); delete test rows + test storage objects; pushed; PR into `dev` opened as a
->       handoff the owner merges (no babysitting).
+>       **Preview-gated** — deferred to the branch preview (no headless browser reach to live
+>       Storage to upload a real image+video row). Recommended owner spot-check post-merge.
+> - [x] `UPR-Web-Context.md` — filled the pre-labeled **Session C** sub-header only.
+> - [x] Reconcile this doc's checkboxes (cron trigger disclosed as owner-gated in the PR); no test
+>       rows/objects were seeded (headless egress blocks Storage upload), so nothing to delete;
+>       pushed; PR into `dev` opened as a handoff the owner merges (no babysitting).
 
 Scope: owns `src/pages/AdminFeedback.jsx` (rebuild; builds its **own** viewer/lightbox — do NOT
 edit tech-scoped `src/components/tech/Lightbox.jsx`, img-only and shared by 5 tech screens),

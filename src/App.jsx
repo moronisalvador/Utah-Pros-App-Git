@@ -79,6 +79,7 @@ const Status = lazyRetry(() => import('@/pages/Status'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
 const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
+const Feedback = lazyRetry(() => import('@/pages/Feedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
 const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
 const AdminIntegrations = lazyRetry(() => import('@/pages/admin/AdminIntegrations'));
@@ -209,12 +210,28 @@ function PageLoader() {
   );
 }
 
+// Tech Mobile v2 component-level swaps. When the v2 flag is on, the PERSISTENT
+// pane in TechLayout renders the screen (kept alive across navigation), so the
+// route yields null here; when off, the legacy page renders in the <Outlet/>.
+// Flag rows are seeded enabled:false + dev-only, so only the owner sees v2 during
+// the wave — every other tech gets the legacy page, byte-identical.
+function TechDashSwap() {
+  const { isFeatureEnabled } = useAuth();
+  if (isFeatureEnabled('page:tech_dash_v2')) return null;
+  return <ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>;
+}
+function TechScheduleSwap() {
+  const { isFeatureEnabled } = useAuth();
+  if (isFeatureEnabled('page:tech_sched_v2')) return null;
+  return <ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>;
+}
+
 // Shared tech routes — used by both native and web trees
 function TechRoutes() {
   return (
     <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
-      <Route path="tech" element={<ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>} />
-      <Route path="tech/schedule" element={<ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>} />
+      <Route path="tech" element={<TechDashSwap />} />
+      <Route path="tech/schedule" element={<TechScheduleSwap />} />
       <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
@@ -349,6 +366,13 @@ function WebRoutes() {
         } />
         <Route path="import/encircle" element={
           <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+        } />
+
+        {/* Send Feedback (desktop) — deliberately ungated: every logged-in
+            employee may report a bug / suggest an improvement.
+            Feedback Media Phase F (docs/feedback-media-roadmap.md). */}
+        <Route path="feedback" element={
+          <ErrorBoundary section="Feedback"><Feedback /></ErrorBoundary>
         } />
 
         {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each

@@ -58,6 +58,23 @@ const EXPLICIT_FLAGS = [
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',
   },
+  // ── Tech Mobile v2 rollout flags (Phase F) ───────────────────────────────────
+  // enabled:false is LOAD-BEARING here. The DevTools auto-seed creates any missing
+  // registry key ENABLED; without the explicit false these would seed ON and swap
+  // every tech onto the unfinished v2 pages. The live rows are also seeded
+  // enabled:false + dev_only_user_id (owner) so v2 is owner-only during the wave.
+  {
+    key: 'page:tech_dash_v2',
+    label: 'Tech Dashboard v2',
+    description: 'Rebuilt field-tech dashboard (mission control). Owner-only during the Tech Mobile v2 wave; legacy dashboard shows for everyone else.',
+    enabled: false,
+  },
+  {
+    key: 'page:tech_sched_v2',
+    label: 'Tech Schedule v2',
+    description: 'Rebuilt field-tech schedule/calendar. Owner-only during the Tech Mobile v2 wave; legacy schedule shows for everyone else.',
+    enabled: false,
+  },
   // ── CRM per-screen rollout sub-flags (Phase 6b) ──────────────────────────────
   // One switch per CRM screen. These are the rollout kill-switches CrmLayout ANDs
   // with each employee's page access (canAccess('crm_<screen>')): a screen shows
