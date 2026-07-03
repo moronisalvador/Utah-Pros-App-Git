@@ -1,11 +1,12 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import Layout from '@/components/Layout';
 import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { statusBarDark, hideSplash } from '@/lib/nativeAppearance';
+import { hideSplash } from '@/lib/nativeAppearance';
 import {
   checkBiometricAvailable,
   isBiometricEnabled,
@@ -111,6 +112,7 @@ const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
 // Tech pages (field_tech role)
 const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
 const TechSchedule = lazyRetry(() => import('@/pages/tech/TechSchedule'));
+const TechSettings = lazyRetry(() => import('@/pages/tech/TechSettings'));
 const TechTasks = lazyRetry(() => import('@/pages/tech/TechTasks'));
 const TechClaims = lazyRetry(() => import('@/pages/tech/TechClaims'));
 const TechClaimDetail = lazyRetry(() => import('@/pages/tech/TechClaimDetail'));
@@ -250,6 +252,7 @@ function TechRoutes() {
       <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
+      <Route path="tech/settings" element={<ErrorBoundary section="TechSettings"><TechSettings /></ErrorBoundary>} />
       <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
       <Route path="tech/tools/oop-pricing" element={
         <FeatureRoute flag="tool:oop_pricing">
@@ -509,8 +512,8 @@ function BiometricGate({ children }) {
 
 export default function App() {
   useEffect(() => {
-    // Default appearance for the app shell — individual screens can override
-    statusBarDark();
+    // Shell status bar is driven by ThemeProvider (light vs dark); individual
+    // gradient-hero screens still override it on mount/unmount.
     // Blur the app snapshot in the app-switcher / on background
     enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
@@ -519,12 +522,14 @@ export default function App() {
     // that's the Capgo-recommended placement and earlier = safer rollback behavior
   }, []);
   return (
-    <BrowserRouter>
-      <BiometricGate>
-        <AuthProvider>
-          {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
-        </AuthProvider>
-      </BiometricGate>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <BiometricGate>
+          <AuthProvider>
+            {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
+          </AuthProvider>
+        </BiometricGate>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
