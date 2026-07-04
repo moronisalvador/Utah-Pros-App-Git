@@ -194,8 +194,11 @@ src/
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     PaymentSettings.jsx           — Stripe pay-link + payout settings (route /payments/settings)
   pages/tech/
-    TechDash.jsx                  — Field tech dashboard: sticky greeting (doesn't scroll on pull-to-refresh), active cards with client name + task progress bar + Photo/Notes/Clock In, timeline future rows, compact completed rows, upcoming 7-day preview when 0 appointments today, snap-first photo flow (auto-upload, optional caption via toast). Time-Tracking PR-2: ActiveCard OMW runs clock_omw_precheck + ClockSupersedeSheet. PR-3: red "You're still clocked in" banner when the tech has an open LIVE entry and Denver local time ≥ 17:00 (denverHour() helper), linking to the appointment to finish the day; the midnight split is the backend safety net.
-    TechSchedule.jsx              — Field tech 14-day schedule: type icons, jump-to-today FAB
+    TechDash.jsx / TechSchedule.jsx — DELETED (Tech Mobile v2 Phase C, Jul 4 2026 cutover). Both
+      v2 flags (page:tech_dash_v2, page:tech_sched_v2) baked and went live for all techs, so the
+      legacy pages + their App.jsx swap shims were removed; /tech and /tech/schedule now always
+      render the persistent v2 panes in TechLayout.jsx. See pages/tech/v2/TechDashV2.jsx and
+      TechScheduleV2.jsx below.
     TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups. Reached via More tab (demoted from primary nav Apr 16 2026).
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search. Scope toggle ("Mine"/"All") defaults to All, sticky per-device via localStorage `upr:tech-claims-scope`.
     TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, statusBarLight on mount.
@@ -1428,6 +1431,43 @@ Fills the `TechScheduleV2` stub behind `page:tech_sched_v2` (owner-only). Legacy
 - **Pure logic** in `schedule/scheduleSelectors.js` (month-key math, grouping/sorting,
   filter predicates) with 24 committed vitest cases (`scheduleSelectors.test.js`, TEST
   fixtures only — never live rows). `npm test`/`build`/`eslint` green.
+
+### Phase C — Cutover & cleanup (Jul 4 2026 — shipped)
+
+Both `page:tech_dash_v2` and `page:tech_sched_v2` baked and are now `enabled=true`,
+`dev_only_user_id=null`, `force_disabled=false` for every tech — verified live against
+`feature_flags` immediately before AND after this phase's edits (owner-gated precondition
+per `docs/tech-v2-roadmap.md`).
+
+- **Legacy pages deleted:** `src/pages/tech/TechDash.jsx` + `src/pages/tech/TechSchedule.jsx`
+  are gone. `src/App.jsx`'s `TechDashSwap`/`TechScheduleSwap` wrapper functions + their two
+  lazy imports are removed; the `/tech` and `/tech/schedule` routes now render
+  `element={null}` — `TechLayout.jsx`'s persistent v2 pane host (untouched, frozen) already
+  covers those paths whenever its flags read true, so nothing else changes there.
+  **Consequence:** rolling back the v2 pages is no longer a flag-flip (that now yields a
+  blank `/tech`/`/tech/schedule` — the legacy fallback no longer exists) — it is a `git
+  revert` of this phase's PR. By design for a post-bake cutover.
+- **Dead CSS removed** from `src/index.css` (~300 lines): `.tech-dash-greeting/-date/-name/
+  -summary/-greeting-sticky`, `.tech-appt-card` (+ `:active`/`:focus`/`[data-status=...]`),
+  `.tech-appt-time`, `.tech-appt-title`, `.tech-appt-address`, `.tech-tasks-toggle`,
+  `.tech-appt-actions`, `.tech-skeleton-card`/`-line` (+ variants/keyframe),
+  `.tech-future-*` (row/time-col/time/line/content/title/address), `.tech-quick-action*`,
+  `.tech-page-header-sticky`, `.tech-jump-today-fab`, `.tech-schedule-row` (+
+  `[data-division]` variants), `@keyframes techFabIn` — each verified zero remaining JSX
+  consumers before removal. Selectors still shared with live components were left alone:
+  `.tech-tracker`/`-btn`/`-btn-secondary` (`TimeTracker.jsx`), `.tech-page-enter` (album/room/
+  claim/job detail pages), `.tech-check-pop` (`TechTasks.jsx`), `.tech-section-header-sticky`
+  (`TechAppointment.jsx`, `GenerateReportButton.jsx`). No `TECH-V2:` reserved marker touched.
+- **Month view stretch stage — deferred again:** no scaffolding exists yet in
+  `src/pages/tech/v2/schedule/**`; building one is a net-new UI feature out of scope for this
+  session's mechanical-deletion mandate. Left for a future dedicated pass.
+- Doc-header "Rendered by: TechDash.jsx" mentions remain in Foundation-frozen shared files
+  (`TimeTracker.jsx`, `PhotoNoteSheet.jsx`, `StalledWidget.jsx`, `ClockSupersedeSheet.jsx`,
+  `clockPrecheck.js`) — Phase C doesn't own those files, so they were left as-is; a future
+  touch of those files should repoint the comment at the v2 dash.
+- Could not do a live on-device visual walkthrough from this remote session (no Supabase
+  credentials in this container — nothing renders); owner-gated post-deploy pass, same
+  convention as Sessions S/D.
 
 ---
 

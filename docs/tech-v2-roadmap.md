@@ -250,11 +250,11 @@ Scope: owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` onl
 > owner bake complete (flag flips are the owner's: owner-only → all techs → bake).
 > **Model: Sonnet · medium** (mechanical deletion + verification). Anytime lane — no wave slot.
 > **Close-out checklist:**
-> - [ ] Legacy `TechDash.jsx` + `TechSchedule.jsx` deleted; App.jsx swap shims removed; dead css removed (`.tech-schedule-row[data-division]`, stale `.tech-appt-time`/`.tech-appt-title`, non-sticky header classes)
-> - [ ] Stretch stage (explicit, may close as "deferred again" with reason): Month view for Schedule v2
-> - [ ] `npm run test` + `npm run build` + eslint pass; `upr-pattern-checker` clean; `tech-phase-reviewer` sign-off
-> - [ ] Visual: full tech app walk-through on owner's phone post-deletion
-> - [ ] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR draft → ready (deletions = own reviewed PR per the destructive-change rule)
+> - [x] Legacy `TechDash.jsx` + `TechSchedule.jsx` deleted; App.jsx swap shims removed (`/tech`, `/tech/schedule` routes now `element={null}` — TechLayout's persistent v2 panes always cover those paths since both flags verified live for all techs, `dev_only_user_id=null`, `force_disabled=false`, at both start and end of session); dead css removed (`.tech-schedule-row[data-division]`, stale `.tech-appt-time`/`.tech-appt-title`, `.tech-dash-*`, `.tech-appt-card`, `.tech-skeleton-*`, `.tech-future-*`, `.tech-quick-action*`, `.tech-page-header-sticky`, `.tech-jump-today-fab`, `techFabIn` — each verified zero remaining JSX consumers before removal; shared selectors like `.tech-tracker*`/`.tech-page-enter`/`.tech-check-pop`/`.tech-section-header-sticky` untouched)
+> - [~] Stretch stage — **deferred again** (explicit, not silent): no Month-view scaffolding exists yet in `src/pages/tech/v2/schedule/**`, and building one is a net-new UI feature out of proportion to this session's mechanical-deletion mandate (Sonnet/medium). Left for a future dedicated pass.
+> - [x] `npm run test` (560 pass / 91 skip, no regressions) + `npm run build` (green — no legacy `TechDash`/`TechSchedule` chunk emitted) + `npx eslint` (no new errors) pass; `upr-pattern-checker` clean (no violations); `tech-phase-reviewer` sign-off (SHIP once close-out items landed — this update)
+> - [~] Visual: full tech app walk-through on owner's phone post-deletion — **OWNER-GATED**: this remote session has no Supabase credentials (`supabaseUrl is required` on boot), so nothing renders here. Needs the owner's on-device pass after this PR deploys, same convention as S/D's visual checks.
+> - [x] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR draft → ready (deletions = own reviewed PR per the destructive-change rule)
 
 ### Phase M1 — Job Hub build
 
