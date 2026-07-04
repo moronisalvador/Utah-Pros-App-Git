@@ -237,6 +237,10 @@ roadmap checkboxes; push -u and open a PR to dev using the repo PR template (del
 their own reviewed PR — do not bundle unrelated work), mark it ready for review.
 ```
 
+> ⚠️ **The two blocks below (M1, M2) are RETIRED (2026-07-04).** M1 shipped (#307) and the
+> owner rejected the UX; M2 is superseded. **Dispatch Job Hub work ONLY from the
+> "Job Hub v2" blocks (H1/H2/H3) at the end of this file.**
+
 ```
 [Session M1 — Job Hub build]
 Branch: session-assigned (illustrative: tech-v2/job-hub), cut from origin/dev
@@ -309,4 +313,163 @@ phone (dash card → hub, schedule row → hub, claims → hub, 5PM banner → h
 TWO-DIRECTION checkbox reconciliation across the WHOLE tech-v2 roadmap (this is the
 final phase — every stage either genuinely done or open with a disclosed reason);
 push -u and open a PR to dev using the repo PR template, mark it ready for review.
+```
+
+---
+
+## Job Hub v2 — "the visit is the screen" (H1 → H2 → owner bake → H3; strictly serial)
+
+```
+[Session H1 — Job Hub v2: Stage & Dock]
+Branch: session-assigned (illustrative: tech-v2/jobhub-h1-stage), cut from origin/dev
+Model: Opus 4.8 (or newest Opus-tier)
+Effort: High
+Launch after: the Job Hub v2 plan-of-record commit is on dev — nothing else
+
+You are building Job Hub v2 Phase H1 — the Stage & Dock: the experience core of the
+redesigned field-tech job surface; one phase only, no scope creep. Context you must
+internalize: the FIRST Job Hub (M1, merged #307) was rejected by the owner because it
+stacked the two legacy pages into one long page ("a filing cabinet with every drawer
+open"). You are replacing that surface's guts at the same route /tech/job/:jobId?appt=
+behind the same page:tech_job_hub flag (currently OFF for everyone). The design bar: a
+64-year-old tech in gloves opens the page and the screen already knows where he is in his
+visit. Read scope: CLAUDE.md, the ENTIRE "Job Hub v2" section of docs/tech-v2-roadmap.md
+(the Z1-Z4 layout spec and binding design principles are the acceptance criteria — follow
+them to the letter; where this prompt and that section disagree, the roadmap wins),
+.claude/rules/tech-v2-wave-ownership.md §7 (the Job Hub v2 addendum — your ownership +
+the ONE authorized frozen-file amendment), and .claude/rules/tech-mobile-ux.md (persona
+is law). Work on your session's assigned branch cut from origin/dev.
+Order of work (riskiest first):
+(1) Migration (additive only, applied via Supabase MCP, migration-safety-checker clean):
+[a] drift-capture get_job_contacts verbatim via pg_get_functiondef (it has ZERO migration
+coverage today); [b] REPLACE get_job_hub adding ONE key: contacts[] = the get_job_contacts
+result shape (adjuster/policy/deductible/date_of_loss/insurance_company already ride on
+job.* — do NOT add a claim_detail block); committed test that the v1 keys are unchanged.
+(2) techQuery.js amendment (AUTHORIZED by manifest §7 — the one frozen-file change): add
+kind hub(jobId) → ['tech','hub',jobId]; extend MUTATION_INVALIDATIONS so clock, task,
+photo, room, doc, appointment ALSO invalidate hub; update src/lib/techQuery.test.js in
+the SAME commit (it asserts the kinds list). The hub page reads through React Query
+(cache-first paint via the existing idb persister) — NOT local useState like M1.
+(3) useVisitClock(db, appointmentId, employeeId) — NEW hub-owned read-only hook, a
+DISCLOSED COPY-IN of TimeTracker's entry derivation (TimeTracker.jsx:213-241 semantics:
+scheduled → omw → on_site → paused → completed; multi-entry Visit-N aware; travel/on-site
+minute math). Unit-test it first (all 5 states, multi-entry, non-crew). Do NOT edit
+TimeTracker. Then StageClock — a NEW display-only component: big live elapsed time
+(--tech-text-timer 40px), status-tinted, amber stale-clock hint when the open entry is
+≥10h old (FORGOT_CLOCKOUT_MIN parity).
+(4) Build Z1 + Z2 + Z3 exactly per the roadmap spec. Non-negotiables the challenge pass
+burned in: state modulates EMPHASIS never ACCESS (checklist/tools/notes reachable in all
+states); stage state = the VIEWING tech's OWN clock (non-crew → read-only stage; viewer
+clocked into a DIFFERENT appointment → "You're clocked into {job} — Go there" banner,
+captures still tag the SELECTED visit); TimeTracker consumed AS-IS and handed the
+get_appointment_detail object (NEVER the hub appointment row — crew shape differs,
+appt.jobs absent, silent data loss); the moisture LOG and equipment LIST read views ship
+here (entry sheets alone lose the drying log and the Day-N billing counter); ALL per-visit
+captures (photo, reading, equipment place/remove) keep the offline:queue fork with their
+existing item types + offline toasts + sync:item-done listeners; office notes (appt.notes)
+visible in every state; snap-first photo toast → PhotoNoteSheet (note + room tag +
+create-room) preserved verbatim; docked bar hides while an inline input has focus (iOS
+keyboard); two-tap-red-3s is the ONLY confirm idiom here.
+(5) Z4 ships as FUNCTIONAL MINIMUM only: the visits switcher must work (selectVisitId
+reused as-is — you need it to exercise states); Job&Claim and photos render as compact
+stubs labeled for H2. Do NOT polish Z4 — protecting the stage's design budget is the
+whole reason H1/H2 are split.
+(6) i18n from day one: every string through t() (new 'hub' namespace + the existing
+'tech' namespace); EN complete; PT/ES keys present (draft quality ok — H2 sweeps); parity
+test extended. The pages this initiative replaces are fully translated — an English-only
+hub is a REGRESSION.
+(7) CSS only inside the §HUB marker, new tv2-* classes, --status-*/--tech-* tokens, 48px
+minimum targets, 100dvh, PullToRefresh below the fixed header, docked-bar formula
+bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom))) with
+matching page scroll padding.
+Named tests first (committed red, then green): useVisitClock derivation; non-crew +
+clocked-elsewhere stage selection; get_job_hub v1-key backward-compat; checklist
+optimistic-toggle revert; techQuery kinds list. Close-out: npm run test + npm run build +
+npx eslint (changed files) pass; migration-safety-checker + upr-pattern-checker clean;
+tech-phase-reviewer (Opus) graded against the H1 block in docs/tech-v2-roadmap.md;
+reconcile the H1 checkboxes honestly (both directions); update UPR-Web-Context.md;
+push -u and open a PR to dev using the repo PR template, mark it ready for review, and
+STOP — the owner/orchestrator merges. The flag stays OFF: do not enable page:tech_job_hub
+for anyone; do not touch nav.js.
+```
+
+```
+[Session H2 — Job Hub v2: Below-fold & polish]
+Branch: session-assigned (illustrative: tech-v2/jobhub-h2-belowfold), cut from origin/dev
+Model: Opus 4.8 (or newest Opus-tier)
+Effort: High
+Launch after: H1 merged into dev
+
+You are building Job Hub v2 Phase H2 — completing the below-the-fold zones and polishing
+the whole surface to the v2 Dashboard/Schedule design language; one phase only. Read
+scope: CLAUDE.md, the ENTIRE "Job Hub v2" section of docs/tech-v2-roadmap.md (the Z4 spec
++ the H2 checklist are your acceptance criteria; the roadmap wins over this prompt),
+.claude/rules/tech-v2-wave-ownership.md §7, .claude/rules/tech-mobile-ux.md. Work on your
+session's assigned branch cut from origin/dev. H1 already shipped: the stage (Z1/Z2/Z3),
+useVisitClock + StageClock, the hub React-Query key, the migration, i18n scaffolding.
+Your work:
+(1) Z4 complete, IN THIS ORDER (binding — reference before gallery): Visits switcher
+(select-in-place, upcoming/past, ?appt= sync replace:true, "Schedule appointment" CTA +
+dashed empty state → /tech/new-appointment?jobId=) → Job & Claim (collapsible, ABOVE
+photos; all contacts[] tel:/mailto:, carrier/policy/adjuster, deductible admin-only,
+claim breadcrumb → /tech/claims/:id, full legacy JobDetailsPanel field list) → Photos &
+Notes (ONE notes model = job_documents notes; selected visit's first then job-wide,
+grouped by day; capped ~12 + "See all" → /tech/jobs/:id/photos; tap → Lightbox with an
+"Add note / room" action opening PhotoNoteSheet; inline add-note; sync:item-done
+listeners per the roadmap) → GenerateReportButton (self-gated, as-is).
+(2) Admin kebab flows complete: MergeModal + typed-DELETE archive (the ONLY typed-confirm
+on the surface; everything else is two-tap-red-3s).
+(3) Error/not-found/retry screen (Back + Retry — TechJobDetail parity, never a dead end);
+cancelled-visit rendering (WRAPPED-gray, no clock); every empty state.
+(4) Delete the obsolete M1 modules your zones replaced (JobPhotos/VisitContext/
+VisitPicker/JobDetailsPanel/ClaimBreadcrumb as applicable — check what H1 already
+removed); keep hubHelpers + its tests and the WorkAuthBanner predicate.
+(5) PT/ES translation sweep to real quality across 'hub' (H1's drafts + your new
+strings); parity test green.
+(6) Visual polish pass: side-by-side coherence with TechDashV2/TechScheduleV2 (spacing,
+cards, chips, skeletons); css only in §HUB, tv2-* classes.
+Close-out: npm run test + build + eslint pass; upr-pattern-checker clean;
+tech-phase-reviewer (Opus) graded against the H2 block; honest two-direction checkbox
+reconciliation; UPR-Web-Context.md; push -u, PR to dev ready, STOP. Flag stays owner-only
+OFF for everyone else; do not touch nav.js. After your merge the OWNER GATE opens: the
+owner bakes the hub on their phone; H3 must not dispatch until the owner signs off.
+```
+
+```
+[Session H3 — Job Hub v2: Cutover]
+Branch: session-assigned (illustrative: tech-v2/jobhub-h3-cutover), cut from origin/dev
+Model: Opus 4.8 (or newest Opus-tier)
+Effort: Medium
+Launch after: the OWNER has baked H2 on their phone and signed off IN WRITING (paste the
+sign-off into your session start). Do not proceed on hope.
+
+You are running Job Hub v2 Phase H3 — the cutover; the last phase. Read scope: CLAUDE.md,
+the "Job Hub v2" section of docs/tech-v2-roadmap.md (H3 checklist), the manifest §7, and
+docs/tech-v2-dispatch.md history. Work on your session's assigned branch cut from
+origin/dev. Tasks:
+(1) Flag: page:tech_job_hub → enabled=true for all techs ONLY if the owner's sign-off
+explicitly authorizes it; otherwise leave the flip to the owner in DevTools and say so.
+(2) /tech/appointment/:id becomes a resolver: appointment HAS a job → redirect to
+/tech/job/:jobId?appt=:id (React Router redirect, no history spam); appointment has
+job_id NULL (private/job-less — REAL, test-documented case; payroll clocks live here) →
+render a slim JoblessVisit surface reusing H1 pieces (StageClock/TimeTracker + checklist
++ office notes + photos-to-appointment). Deleting this path's surface without the
+fallback is the challenge pass's #1 blocker — do not skip it.
+(3) Retargets: ONE authorized line in the frozen TimeTracker — the supersede "Go to job"
+hardcoded /tech/appointment/ link goes through apptHref (disclose it in the PR body);
+re-grep src/ for /tech/appointment/ and /tech/jobs/ stragglers (the resolver makes most
+retargets optional — only retarget non-frozen files); re-verify functions/ contains zero
+such deep links.
+(4) Deletions: TechAppointment.jsx + TechJobDetail.jsx + their routes + dead css; the
+orphaned i18n namespaces 'appointment' (62 keys) and 'job' (60 keys) in all 3 locales +
+their 6 static imports in src/i18n/index.js.
+(5) Verify google-calendar links + push notification payloads embed no old route
+(re-verify — zero at plan time; the notify enrichment links /tech/appointment/:id →
+now resolves via your resolver, confirm it does).
+Close-out: npm run test + build + eslint; upr-pattern-checker clean; tech-phase-reviewer
+(Opus) sign-off; visual: every tap-through on the owner's phone (dash card → hub,
+schedule row → hub, claims → hub, notification deep link → resolver → hub, an OLD
+/tech/appointment/ URL → correct redirect, a job-less private appt → JoblessVisit);
+UPR-Web-Context.md; TWO-DIRECTION checkbox reconciliation across the WHOLE tech-v2
+roadmap (final phase); push -u, PR to dev ready, STOP.
 ```

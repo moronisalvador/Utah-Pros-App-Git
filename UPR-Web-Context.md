@@ -1574,6 +1574,32 @@ job-rooted surface at **`/tech/job/:jobId?appt=<id>`**, behind `page:tech_job_hu
   green. M2 will flip `HUB_ENABLED`, add the `/tech/appointment/:id` resolver redirect, and
   delete the two legacy pages.
 
+> ⚠️ **UPDATE (Jul 4 2026): M1 was rejected by the owner** ("it just stacked one page onto the
+> other") and its surface is **superseded by "Job Hub v2"** (below). M1's flag was reverted to
+> `enabled=false, dev_only_user_id=null`. M1's shared-component reuse (`Hero`/`ActionBar`/
+> `TimeTracker`/`PhotoNoteSheet`/sheets) and pure `hubHelpers` survive; the stacked page shell +
+> hand-rolled section lists are being replaced.
+
+### Job Hub v2 — "the visit is the screen" (plan of record Jul 4 2026, docs-only)
+
+Ground-up redesign replacing M1's surface at the same route/flag. Instead of stacking every
+section, the **selected visit's clock state** drives what's prominent (ARRIVING / WORKING /
+WRAPPED), everything stays reachable in every state, and capture/comms live in a docked
+thumb-zone bar. **6-agent adversarial challenge pass complete** (all MODIFIED, none REFUTED —
+fixed 2 parity blockers incl. job-less private appointments + the equipment/Day-N billing list).
+Full spec + Z1–Z4 layout + challenge report: `docs/tech-v2-roadmap.md` → "Job Hub v2" section.
+Cold-session prompts: `docs/tech-v2-dispatch.md` → H1/H2/H3. Ownership + the one authorized
+`techQuery` amendment: `.claude/rules/tech-v2-wave-ownership.md` §7.
+- **Phases (strictly serial):** H1 Stage & Dock (Opus·high — migration `get_job_hub` v2 adds
+  `contacts[]` only + `get_job_contacts` drift-capture; `useVisitClock` hook + `StageClock`;
+  Z1/Z2/Z3; i18n from day one) → H2 Below-fold & polish (Opus·high) → **owner bake (written
+  sign-off)** → H3 Cutover (Opus·medium — flag to all techs; `/tech/appointment/:id` resolver
+  incl. a **slim job-less-appointment surface** so private-appt payroll clocks keep a home;
+  delete the two legacy pages + orphaned `appointment`/`job` i18n namespaces).
+- **Nav retarget already shipped** (Jul 4): the per-user runtime `setHubNav`/`isHubNav` switch
+  in `src/components/tech/v2/nav.js` (mirrored from `page:tech_job_hub` by `AuthContext`) replaced
+  the static `HUB_ENABLED` const — so cutover is the flag opening, not a code flip.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
