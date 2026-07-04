@@ -60,8 +60,8 @@ export default function Templates() {
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Document Templates</h2>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>Document Templates</h2>
+        <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
           Click a document to open its editor. Changes only take effect after you save inside the editor.
         </p>
       </div>
@@ -74,14 +74,14 @@ export default function Templates() {
                 <div style={{ fontSize: 28, lineHeight: 1 }}>{doc.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{doc.label}</span>
-                    {hasCustom && <span style={{ fontSize: 10, fontWeight: 700, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: 9999, padding: '1px 7px' }}>Custom</span>}
+                    <span style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>{doc.label}</span>
+                    {hasCustom && <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid #bfdbfe', borderRadius: 9999, padding: '1px 7px' }}>Custom</span>}
                   </div>
                   <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{doc.description}</p>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{doc.sections} {doc.sections === 1 ? 'section' : 'sections'}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>{doc.sections} {doc.sections === 1 ? 'section' : 'sections'}</span>
                 <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/settings/templates/${doc.key}`)} style={{ gap: 5, fontSize: 12 }}>
                   <IconEdit style={{ width: 12, height: 12 }} /> Edit Document
                 </button>
@@ -91,7 +91,7 @@ export default function Templates() {
         })}
       </div>
       <div style={{ marginTop: 20, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-light)', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-        💡 Use <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 3 }}>{'{{variable}}'}</code> for job data · <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 3, color: '#1d4ed8' }}>{'{{insurance_section}}'}</code> in Work Authorization auto-switches between insurance DTP and private-pay+conditional-assignment language
+        💡 Use <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 3 }}>{'{{variable}}'}</code> for job data · <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: 3, color: 'var(--accent-hover)' }}>{'{{insurance_section}}'}</code> in Work Authorization auto-switches between insurance DTP and private-pay+conditional-assignment language
       </div>
     </div>
   );
