@@ -146,8 +146,11 @@ tech-v2 initiative co-edits tech routes in the same file (rebase-aware, differen
 
 Build in this order:
 ① Deactivate the Templates/Wizard subsystem (HIDE, don't delete): remove BOTH navItems.jsx entries
-   (NAV_ITEMS + OVERFLOW_ITEMS), the schedule_templates page-access row in Admin.jsx (~:971), and
-   the "Generate schedule" entry points in JobPage.jsx (the ScheduleTab trigger) and JobPanel.jsx.
+   (the `schedule_templates` rows in NAV_ITEMS + OVERFLOW_ITEMS — line numbers shifted after the
+   Settings Overhaul but the two entries are unchanged), the `schedule_templates` page-access row
+   which now lives in **`src/lib/navKeys.js` (PAGE_ACCESS_KEYS)** — NOT Admin.jsx, which the Settings
+   Overhaul (Phase F, 2026-07-04) dissolved into `src/pages/settings/*` — and the "Generate schedule"
+   entry points in JobPage.jsx (the ScheduleTab trigger) and JobPanel.jsx.
    KEEP ScheduleTemplates.jsx, ScheduleWizard.jsx, the tables, and the RPCs in place. (Leaving the
    /schedule/templates route registered but nav-less is fine — the point is the files survive so a
    future session can re-add the nav and revive it.)
