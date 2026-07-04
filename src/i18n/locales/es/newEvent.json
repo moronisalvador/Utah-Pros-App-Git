@@ -1,0 +1,21 @@
+{
+  "title": "Nuevo evento",
+  "labelTitle": "Título",
+  "titlePlaceholder": "Reunión BNI, PTO, capacitación...",
+  "labelDate": "Fecha",
+  "labelTime": "Hora",
+  "timeError": "La hora de fin debe ser posterior a la de inicio",
+  "labelNotes": "Notas",
+  "optional": "(opcional)",
+  "notesPlaceholder": "Detalles adicionales...",
+  "labelPrivate": "Privado",
+  "privateHint": "Solo los administradores, gerentes de proyecto y el equipo asignado verán este evento.",
+  "labelAssignedTo": "Asignado a",
+  "companyWideHint": "déjalo vacío para toda la empresa",
+  "searchEmployeesPlaceholder": "Buscar empleados...",
+  "leadBadge": "LÍDER",
+  "btnCreate": "Crear evento",
+  "btnCreating": "Creando...",
+  "toastCreated": "Evento creado",
+  "toastCreateFailed": "Error al crear el evento: {{message}}"
+}

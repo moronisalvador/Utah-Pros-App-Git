@@ -1,0 +1,13 @@
+{
+  "title": "Claims",
+  "total": "{{count}} total",
+  "scopeMine": "My Claims",
+  "scopeAll": "All Claims",
+  "searchPlaceholder": "Search claims...",
+  "noMatch": "No claims match '{{query}}'",
+  "noneFound": "No claims found",
+  "clearSearch": "Clear search",
+  "jobsCount_one": "{{count}} job",
+  "jobsCount_other": "{{count}} jobs",
+  "toastLoadFailed": "Failed to load claims"
+}

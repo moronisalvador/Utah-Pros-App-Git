@@ -24,9 +24,15 @@
  *     EXCLUDE travel while billing includes it — the breakdown makes that honest.
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { hoursBreakdown } from './dashHelpers.js';
 
+// Stable English label (from hoursBreakdown) → translation key. The `=== 'Total'`
+// check below stays on the English label so the styling logic never breaks.
+const HOURS_LABEL_KEY = { 'Travel': 'travel', 'On-site': 'onSite', 'Total': 'total' };
+
 function HoursCard({ title, bucket }) {
+  const { t } = useTranslation('dash');
   const parts = hoursBreakdown(bucket);
   return (
     <div className="tv2-dash-hours">
@@ -35,7 +41,7 @@ function HoursCard({ title, bucket }) {
         {parts.map((p) => (
           <div key={p.label} className={`tv2-dash-hours__cell${p.label === 'Total' ? ' tv2-dash-hours__cell--total' : ''}`}>
             <div className="tv2-dash-hours__value">{p.value}</div>
-            <div className="tv2-dash-hours__label">{p.label}</div>
+            <div className="tv2-dash-hours__label">{t(`hours.${HOURS_LABEL_KEY[p.label] || p.label}`, { defaultValue: p.label })}</div>
           </div>
         ))}
       </div>
@@ -57,14 +63,15 @@ function StatPill({ value, label }) {
  *           tasksTotal: number, photosToday: number }} props
  */
 export default function MyNumbers({ hoursToday, hoursWeek, tasksDone, tasksTotal, photosToday }) {
+  const { t } = useTranslation('dash');
   return (
     <div className="tv2-dash-numbers">
-      <div className="tv2-dash-section-title">My numbers</div>
-      <HoursCard title="Today" bucket={hoursToday} />
-      <HoursCard title="This week" bucket={hoursWeek} />
+      <div className="tv2-dash-section-title">{t('myNumbers')}</div>
+      <HoursCard title={t('hoursToday')} bucket={hoursToday} />
+      <HoursCard title={t('thisWeek')} bucket={hoursWeek} />
       <div className="tv2-dash-stat-row">
-        <StatPill value={`${tasksDone}/${tasksTotal}`} label="Tasks done" />
-        <StatPill value={photosToday} label="Photos today" />
+        <StatPill value={`${tasksDone}/${tasksTotal}`} label={t('tasksDone')} />
+        <StatPill value={photosToday} label={t('photosToday')} />
       </div>
     </div>
   );

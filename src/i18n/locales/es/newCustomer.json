@@ -1,0 +1,33 @@
+{
+  "title": "Nuevo cliente",
+  "labelContactType": "Tipo de contacto",
+  "role": {
+    "homeowner": "Propietario",
+    "tenant": "Inquilino",
+    "adjuster": "Ajustador",
+    "other": "Otro"
+  },
+  "labelFullName": "Nombre completo",
+  "namePlaceholder": "Juan Pérez",
+  "labelPhone": "Teléfono",
+  "phonePlaceholder": "(801) 555-1234",
+  "labelEmail": "Correo",
+  "emailPlaceholder": "juan@correo.com",
+  "labelCarrier": "Aseguradora / Empresa",
+  "carrierPlaceholder": "State Farm, Allstate, etc.",
+  "labelBillingAddress": "Dirección de facturación",
+  "streetPlaceholder": "Dirección",
+  "cityPlaceholder": "Ciudad",
+  "statePlaceholder": "ST",
+  "zipPlaceholder": "ZIP",
+  "labelNotes": "Notas",
+  "notesPlaceholder": "Notas opcionales...",
+  "btnSave": "Guardar cliente",
+  "btnSaving": "Guardando...",
+  "toastInvalidPhone": "Ingresa un teléfono válido de 10 dígitos",
+  "toastCreated": "Cliente creado",
+  "toastCreateFailed": "Error al crear el cliente",
+  "toastAlreadyExists": "El cliente ya existe: {{name}}",
+  "toastDuplicatePhone": "Ya existe un cliente con este teléfono",
+  "toastSaveFailed": "Error al guardar el cliente. Inténtalo de nuevo."
+}

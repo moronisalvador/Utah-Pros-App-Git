@@ -36,6 +36,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
@@ -50,6 +51,7 @@ import { getSyncRunner } from '@/lib/syncRunnerSingleton';
  *           onUploaded?: () => void }} props
  */
 export default function PhotoCaptureButton({ job, appointmentId, employee, db, onUploaded }) {
+  const { t } = useTranslation(['dash', 'tech']);
   const { isFeatureEnabled } = useAuth();
   const { enqueue } = useOfflineQueue();
   const offlineQueueEnabled = isFeatureEnabled('offline:queue');
@@ -80,8 +82,8 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
 
   const uploadPhotoFile = async (file) => {
     if (!file || !job) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
     // ── Offline-queue path (gated) ────────────────────────────────────────
     if (offlineQueueEnabled) {
@@ -99,10 +101,10 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
         });
         impact('light');
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast('Photo queued — will upload when online', 'success');
+          toast(t('tech:toast.photoQueued'), 'success');
         }
       } catch (err) {
-        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
       }
       return;
     }
@@ -133,7 +135,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
       setUploading(false);
     }
@@ -164,7 +166,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
         const file = await takeNativePhoto();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       fileRef.current?.click();
@@ -209,15 +211,15 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
         disabled={uploading}
         data-busy={uploading ? 'true' : undefined}
       >
-        {uploading ? '⏳ Uploading…' : '📸 Photo'}
+        {uploading ? t('uploadingBtn') : t('photoBtn')}
       </button>
 
       {/* Fixed photo-saved toast — above the bottom nav */}
       {photoToast && (
         <div className="tv2-dash-photo-toast" onClick={(e) => e.stopPropagation()}>
-          <span className="tv2-dash-photo-toast__label">Photo saved ✓</span>
+          <span className="tv2-dash-photo-toast__label">{t('tech:toast.photoSaved')}</span>
           <button type="button" className="tv2-dash-photo-toast__note" onClick={openPhotoNoteSheet}>
-            Add note
+            {t('addNoteLink')}
           </button>
         </div>
       )}

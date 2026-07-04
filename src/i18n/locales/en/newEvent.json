@@ -1,0 +1,21 @@
+{
+  "title": "New Event",
+  "labelTitle": "Title",
+  "titlePlaceholder": "BNI Meeting, PTO, Team training...",
+  "labelDate": "Date",
+  "labelTime": "Time",
+  "timeError": "End time must be after start time",
+  "labelNotes": "Notes",
+  "optional": "(optional)",
+  "notesPlaceholder": "Additional details...",
+  "labelPrivate": "Private",
+  "privateHint": "Only admins, project managers, and assigned crew will see this event.",
+  "labelAssignedTo": "Assigned to",
+  "companyWideHint": "leave empty for company-wide",
+  "searchEmployeesPlaceholder": "Search employees...",
+  "leadBadge": "LEAD",
+  "btnCreate": "Create event",
+  "btnCreating": "Creating...",
+  "toastCreated": "Event created",
+  "toastCreateFailed": "Failed to create event: {{message}}"
+}

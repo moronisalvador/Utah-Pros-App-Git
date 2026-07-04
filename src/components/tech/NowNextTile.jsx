@@ -36,24 +36,26 @@
  *     (employeeId); completed/cancelled appointments are skipped.
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
 
 // ─── SECTION: Render ──────────────
 export default function NowNextTile({ appt, ctxType, onOpen }) {
+  const { t } = useTranslation('tech');
   let label, bg, border, color;
   if (ctxType === 'now_active') {
-    if (appt.status === 'en_route')         { label = 'ON MY WAY'; color = '#d97706'; bg = '#fffbeb'; border = '#fde68a'; }
-    else if (appt.status === 'in_progress') { label = 'WORKING';   color = '#059669'; bg = '#ecfdf5'; border = '#a7f3d0'; }
-    else                                     { label = 'PAUSED';    color = '#dc2626'; bg = '#fef2f2'; border = '#fecaca'; }
+    if (appt.status === 'en_route')         { label = t('nowNext.onMyWay'); color = '#d97706'; bg = '#fffbeb'; border = '#fde68a'; }
+    else if (appt.status === 'in_progress') { label = t('nowNext.working'); color = '#059669'; bg = '#ecfdf5'; border = '#a7f3d0'; }
+    else                                     { label = t('nowNext.paused'); color = '#dc2626'; bg = '#fef2f2'; border = '#fecaca'; }
   } else if (ctxType === 'today') {
-    label = 'TODAY'; color = '#2563eb'; bg = '#eff6ff'; border = '#bfdbfe';
+    label = t('nowNext.today'); color = '#2563eb'; bg = '#eff6ff'; border = '#bfdbfe';
   } else {
-    label = 'NEXT'; color = 'var(--text-secondary)'; bg = 'var(--bg-secondary)'; border = 'var(--border-color)';
+    label = t('nowNext.next'); color = 'var(--text-secondary)'; bg = 'var(--bg-secondary)'; border = 'var(--border-color)';
   }
 
   const time = formatTime(appt.time_start);
   const dateRel = ctxType === 'next' ? relativeDate(appt.date) : '';
-  const title = appt.title || (appt.type || '').replace(/_/g, ' ') || 'Appointment';
+  const title = appt.title || (appt.type || '').replace(/_/g, ' ') || t('misc.appointment');
   const crewNames = (appt.crew || []).map(c => (c.full_name || '').split(' ')[0]).filter(Boolean).join(', ');
 
   const headerPieces = [label];
@@ -79,7 +81,7 @@ export default function NowNextTile({ appt, ctxType, onOpen }) {
       </div>
       {(appt.job_number || crewNames) && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-          {[appt.job_number, crewNames && `Crew: ${crewNames}`].filter(Boolean).join(' · ')}
+          {[appt.job_number, crewNames && t('crewPrefix', { names: crewNames })].filter(Boolean).join(' · ')}
         </div>
       )}
       <span style={{

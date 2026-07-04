@@ -32,10 +32,12 @@
  * ════════════════════════════════════════════════
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { SkeletonList } from '@/components/tech/v2';
 import { fmtDate } from '@/lib/scheduleUtils';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 import { useScheduleData } from './schedule/useScheduleData.js';
 import {
   monthKeyOf, addMonths, addDaysStr,
@@ -64,6 +66,7 @@ function toggleCrew(prev, id, myId) {
 }
 
 export default function TechScheduleV2({ active = true }) {
+  const { t } = useTranslation(['schedule', 'tech']);
   const { employee } = useAuth();
   const myId = employee.id;
   const today = useMemo(() => fmtDate(new Date()), []);
@@ -104,7 +107,7 @@ export default function TechScheduleV2({ active = true }) {
     for (const a of appointments) {
       for (const c of a.appointment_crew || []) {
         if (!map.has(c.employee_id)) {
-          map.set(c.employee_id, { id: c.employee_id, name: c.employees?.display_name || c.employees?.full_name || 'Unknown' });
+          map.set(c.employee_id, { id: c.employee_id, name: c.employees?.display_name || c.employees?.full_name || t('tech:misc.unknown') });
         }
       }
     }
@@ -113,10 +116,10 @@ export default function TechScheduleV2({ active = true }) {
       if (b.id === myId) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [appointments, myId]);
+  }, [appointments, myId, t]);
 
   const monthLabel = useMemo(
-    () => new Date(selectedDay + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    () => new Date(selectedDay + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { month: 'long', year: 'numeric' }),
     [selectedDay],
   );
   const dayAppts = useMemo(() => grouped[selectedDay] || [], [grouped, selectedDay]);
@@ -205,7 +208,7 @@ export default function TechScheduleV2({ active = true }) {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
           </svg>
-          Today
+          {t('today')}
         </button>
       )}
 
@@ -215,6 +218,7 @@ export default function TechScheduleV2({ active = true }) {
 }
 
 function EmptyState({ hasFilters, onCreate }) {
+  const { t } = useTranslation('schedule');
   return (
     <div className="tv2-sched-empty">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -223,13 +227,13 @@ function EmptyState({ hasFilters, onCreate }) {
         <polyline points="9 16 11 18 15 14" strokeWidth="2" />
       </svg>
       <div className="tv2-sched-empty__title">
-        {hasFilters ? 'No appointments match' : 'Nothing scheduled here'}
+        {hasFilters ? t('empty.noMatch') : t('empty.nothingScheduled')}
       </div>
       <div className="tv2-sched-empty__sub">
-        {hasFilters ? 'Try clearing search or filters.' : 'Swipe the week strip to browse, or add something.'}
+        {hasFilters ? t('empty.tryClearing') : t('empty.swipeToBrowse')}
       </div>
       {!hasFilters && (
-        <button type="button" className="tv2-sched-empty__cta" onClick={onCreate}>+ New appointment</button>
+        <button type="button" className="tv2-sched-empty__cta" onClick={onCreate}>{t('empty.newAppointment')}</button>
       )}
     </div>
   );
