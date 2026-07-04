@@ -48,6 +48,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
@@ -55,6 +56,7 @@ import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 import { getAuthHeader } from '@/lib/realtime';
 import TechHelpButton from '@/components/tech/TechHelpButton';
+import i18n from '@/i18n';
 
 // ─── SECTION: Helpers ──────────────
 // Push a new claim up to Encircle. Awaited by the caller (with an internal
@@ -74,36 +76,32 @@ async function syncClaimToEncircle(claimId) {
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok) {
-      if (!data.skipped) toast('Synced to Encircle', 'success');
+      if (!data.skipped) toast(i18n.t('newJob:toastSynced'), 'success');
     } else {
-      toast('Encircle sync failed — retry from Dev Tools', 'error');
+      toast(i18n.t('newJob:toastSyncFailed'), 'error');
     }
   } catch (e) {
     // AbortError = request likely still completing server-side; stay quiet so we
     // don't show a false failure. Real network errors surface to the user.
-    if (e.name !== 'AbortError') toast('Encircle sync failed: ' + e.message, 'error');
+    if (e.name !== 'AbortError') toast(i18n.t('newJob:toastSyncError', { message: e.message }), 'error');
   } finally {
     clearTimeout(timer);
   }
 }
 
 // ─── SECTION: Constants ──────────────
+// Labels resolved at render via t('division.<value>') / t('source.<value>');
+// emoji + value + color stay static.
 const DIVISIONS = [
-  { value: 'water', emoji: '\u{1F4A7}', label: 'Water', color: '#2563eb' },
-  { value: 'mold', emoji: '\u{1F9A0}', label: 'Mold', color: '#9d174d' },
-  { value: 'reconstruction', emoji: '\u{1F3D7}\uFE0F', label: 'Recon', color: '#d97706' },
-  { value: 'remodeling', emoji: '\u{1F528}', label: 'Remodel', color: '#f2664a' },
-  { value: 'fire', emoji: '\u{1F525}', label: 'Fire', color: '#dc2626' },
-  { value: 'contents', emoji: '\u{1F4E6}', label: 'Contents', color: '#059669' },
+  { value: 'water', emoji: '\u{1F4A7}', color: '#2563eb' },
+  { value: 'mold', emoji: '\u{1F9A0}', color: '#9d174d' },
+  { value: 'reconstruction', emoji: '\u{1F3D7}\uFE0F', color: '#d97706' },
+  { value: 'remodeling', emoji: '\u{1F528}', color: '#f2664a' },
+  { value: 'fire', emoji: '\u{1F525}', color: '#dc2626' },
+  { value: 'contents', emoji: '\u{1F4E6}', color: '#059669' },
 ];
 
-const SOURCES = [
-  { value: 'insurance', label: 'Insurance' },
-  { value: 'retail', label: 'Retail / Cash' },
-  { value: 'hoa', label: 'HOA' },
-  { value: 'commercial', label: 'Commercial' },
-  { value: 'tpa', label: 'TPA' },
-];
+const SOURCES = ['insurance', 'retail', 'hoa', 'commercial', 'tpa'];
 
 // division → emoji, for the existing-claim picker's mini job pills
 const DIV_EMOJI = DIVISIONS.reduce((m, d) => { m[d.value] = d.emoji; return m; }, {});
@@ -131,6 +129,7 @@ const labelStyle = {
 
 export default function TechNewJob() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation('newJob');
   const navigate = useNavigate();
   const { db, employee } = useAuth();
   const searchRef = useRef(null);
@@ -272,7 +271,7 @@ export default function TechNewJob() {
     if (!inlineName.trim() || !inlinePhone.trim() || inlineSaving) return;
     const phone = normalizePhone(inlinePhone);
     if (!phone) {
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: t('toastInvalidPhone'), type: 'error' } }));
       return;
     }
     setInlineSaving(true);
@@ -287,7 +286,7 @@ export default function TechNewJob() {
       const result = await db.insert('contacts', data);
       if (result?.length > 0) {
         selectContact(result[0]);
-        toast('Customer created');
+        toast(t('toastCustomerCreated'));
         window.dispatchEvent(new CustomEvent('upr:contact-created'));
       }
     } catch (err) {
@@ -298,13 +297,13 @@ export default function TechNewJob() {
           const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`);
           if (existing?.length > 0) {
             selectContact(existing[0]);
-            toast(`Found existing customer: ${existing[0].name}`, 'success');
+            toast(t('toastFoundExisting', { name: existing[0].name }), 'success');
             return;
           }
         } catch { /* fall through */ }
-        toast('A customer with this phone number already exists', 'error');
+        toast(t('toastDuplicatePhone'), 'error');
       } else {
-        toast('Failed to create customer. Please try again.', 'error');
+        toast(t('toastCustomerFailed'), 'error');
       }
     } finally {
       setInlineSaving(false);
@@ -316,17 +315,17 @@ export default function TechNewJob() {
     await db.rpc('upsert_insurance_carrier', { p_name: name, p_sort_order: 999 });
     const updated = await db.rpc('get_insurance_carriers').catch(() => carriers);
     setCarriers(updated);
-    toast(`"${name}" added to carriers`);
+    toast(t('toastCarrierAdded', { name }));
   };
 
   /* ── Submit ── */
   const canSubmit = contact && (f.address?.trim() || f.city?.trim()) && f.insurance_company && f.source;
 
   const handleSubmit = async () => {
-    if (!contact) { toast('Select or create a client first', 'error'); return; }
-    if (!f.address?.trim() && !f.city?.trim()) { toast('Enter a loss/service address', 'error'); return; }
-    if (!f.source) { toast('Select a referral source', 'error'); return; }
-    if (!f.insurance_company) { toast('Select an insurance carrier', 'error'); return; }
+    if (!contact) { toast(t('toastSelectClient'), 'error'); return; }
+    if (!f.address?.trim() && !f.city?.trim()) { toast(t('toastEnterAddress'), 'error'); return; }
+    if (!f.source) { toast(t('toastSelectSource'), 'error'); return; }
+    if (!f.insurance_company) { toast(t('toastSelectCarrier'), 'error'); return; }
     if (saving) return;
     setSaving(true);
     try {
@@ -365,7 +364,7 @@ export default function TechNewJob() {
         p_existing_claim_id: claimMode === 'existing' ? selectedClaimId : null,
       });
       const jobNum = result?.job?.job_number || '';
-      toast(jobNum ? `Job #${jobNum} created` : 'Job created');
+      toast(jobNum ? t('toastJobCreated', { num: jobNum }) : t('toastJobCreatedNoNum'));
       // Encircle: only push when we minted a NEW claim. A job filed under an
       // existing claim is already synced — re-pushing would risk a duplicate.
       // Awaited (with an internal timeout) so the request completes while this
@@ -376,7 +375,7 @@ export default function TechNewJob() {
       if (newJobId) navigate(`/tech/jobs/${newJobId}`, { replace: true });
       else navigate(-1);
     } catch (err) {
-      toast('Failed to create job: ' + (err.message || ''), 'error');
+      toast(t('toastJobFailed', { message: err.message || '' }), 'error');
     } finally {
       setSaving(false);
     }
@@ -404,7 +403,7 @@ export default function TechNewJob() {
           </svg>
         </button>
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-          New Job
+          {t('title')}
         </span>
         <TechHelpButton topicKey="newjob" style={{ marginLeft: 'auto' }} />
       </div>
@@ -415,7 +414,7 @@ export default function TechNewJob() {
         {/* ═══ CLIENT ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ ...labelStyle, marginBottom: 8 }}>
-            Client <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelClient')} <span style={{ color: '#ef4444' }}>*</span>
           </div>
 
           {!contact ? (
@@ -429,7 +428,7 @@ export default function TechNewJob() {
                   type="text"
                   value={contactSearch}
                   onChange={onSearch}
-                  placeholder="Search by name or phone..."
+                  placeholder={t('clientSearchPlaceholder')}
                   autoFocus
                   style={{ ...inputStyle, paddingLeft: 40 }}
                 />
@@ -450,7 +449,7 @@ export default function TechNewJob() {
                 }}>
                   {results.length === 0 ? (
                     <div style={{ padding: '16px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 12 }}>No clients found</div>
+                      <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 12 }}>{t('noClientsFound')}</div>
                       <button
                         onClick={() => { setShowDrop(false); setShowInlineCreate(true); setInlineName(contactSearch); }}
                         style={{
@@ -459,7 +458,7 @@ export default function TechNewJob() {
                           fontSize: 14, fontWeight: 600, cursor: 'pointer',
                         }}
                       >
-                        + Create New Customer
+                        {t('createNewCustomer')}
                       </button>
                     </div>
                   ) : (
@@ -488,7 +487,7 @@ export default function TechNewJob() {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</div>
                             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                              {fmtPhone(c.phone)}{c.job_count ? ` · ${c.job_count} job${c.job_count > 1 ? 's' : ''}` : ''}
+                              {fmtPhone(c.phone)}{c.job_count ? ` · ${t('jobCount', { count: c.job_count })}` : ''}
                             </div>
                           </div>
                         </button>
@@ -502,7 +501,7 @@ export default function TechNewJob() {
                           minHeight: 'var(--tech-min-tap)',
                         }}
                       >
-                        + Create New Customer
+                        {t('createNewCustomer')}
                       </button>
                     </>
                   )}
@@ -515,19 +514,19 @@ export default function TechNewJob() {
                   marginTop: 12, padding: 16, borderRadius: 'var(--tech-radius-card)',
                   border: '1px solid var(--accent)', background: 'var(--accent-light)',
                 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 12 }}>Quick Add Customer</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 12 }}>{t('quickAddCustomer')}</div>
                   <input
                     type="text"
                     value={inlineName}
                     onChange={e => setInlineName(e.target.value)}
-                    placeholder="Full name *"
+                    placeholder={t('quickNamePlaceholder')}
                     style={{ ...inputStyle, marginBottom: 8 }}
                   />
                   <input
                     type="tel"
                     value={inlinePhone}
                     onChange={e => setInlinePhone(e.target.value)}
-                    placeholder="Phone * (801) 555-1234"
+                    placeholder={t('quickPhonePlaceholder')}
                     style={{ ...inputStyle, marginBottom: 12 }}
                   />
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -539,7 +538,7 @@ export default function TechNewJob() {
                         fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer',
                       }}
                     >
-                      Cancel
+                      {t('cancel')}
                     </button>
                     <button
                       onClick={handleInlineCreate}
@@ -551,7 +550,7 @@ export default function TechNewJob() {
                         border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer',
                       }}
                     >
-                      {inlineSaving ? 'Saving...' : 'Save & Select'}
+                      {inlineSaving ? t('btnSaving') : t('btnSaveSelect')}
                     </button>
                   </div>
                 </div>
@@ -596,7 +595,7 @@ export default function TechNewJob() {
         {/* ═══ CLAIM ═══ */}
         {contact && (
           <div style={{ marginBottom: 20 }}>
-            <div style={labelStyle}>Claim</div>
+            <div style={labelStyle}>{t('labelClaim')}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
@@ -610,7 +609,7 @@ export default function TechNewJob() {
                   cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                New claim
+                {t('newClaim')}
               </button>
               <button
                 type="button"
@@ -628,7 +627,7 @@ export default function TechNewJob() {
                   WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                Existing claim{contactClaims.length ? ` (${contactClaims.length})` : ''}
+                {contactClaims.length ? t('existingClaimCount', { count: contactClaims.length }) : t('existingClaim')}
               </button>
             </div>
 
@@ -663,7 +662,7 @@ export default function TechNewJob() {
                           </span>
                         )}
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-tertiary)' }}>
-                          {jobs.length} job{jobs.length === 1 ? '' : 's'}
+                          {t('jobCount', { count: jobs.length })}
                         </span>
                       </div>
                       {loc && (
@@ -679,7 +678,7 @@ export default function TechNewJob() {
 
         {/* ═══ DIVISION ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Division <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDivision')} <span style={{ color: '#ef4444' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8 }}>
             {DIVISIONS.map(d => (
               <button
@@ -698,7 +697,7 @@ export default function TechNewJob() {
                 <span style={{
                   fontSize: 11, fontWeight: 600,
                   color: f.division === d.value ? d.color : 'var(--text-secondary)',
-                }}>{d.label}</span>
+                }}>{t('division.' + d.value)}</span>
               </button>
             ))}
           </div>
@@ -706,22 +705,22 @@ export default function TechNewJob() {
 
         {/* ═══ REFERRAL SOURCE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Referral Source <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelReferralSource')} <span style={{ color: '#ef4444' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {SOURCES.map(src => (
               <button
-                key={src.value}
-                onClick={() => s('source', src.value)}
+                key={src}
+                onClick={() => s('source', src)}
                 style={{
                   height: 44, padding: '0 16px', borderRadius: 'var(--tech-radius-button)',
-                  border: f.source === src.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
-                  background: f.source === src.value ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  border: f.source === src ? '2px solid var(--accent)' : '2px solid var(--border-color)',
+                  background: f.source === src ? 'var(--accent-light)' : 'var(--bg-primary)',
                   fontSize: 14, fontWeight: 600,
-                  color: f.source === src.value ? 'var(--accent)' : 'var(--text-secondary)',
+                  color: f.source === src ? 'var(--accent)' : 'var(--text-secondary)',
                   cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                {src.label}
+                {t('source.' + src)}
               </button>
             ))}
           </div>
@@ -730,7 +729,7 @@ export default function TechNewJob() {
         {claimLocked ? (
           /* Existing-claim summary — Address / Insurance / Claim# come from the claim (tap Edit to change) */
           <div style={{ marginBottom: 20 }}>
-            <div style={labelStyle}>Loss Details</div>
+            <div style={labelStyle}>{t('labelLossDetails')}</div>
             <div style={{
               padding: '12px 14px', borderRadius: 'var(--tech-radius-card)',
               border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
@@ -748,14 +747,14 @@ export default function TechNewJob() {
                     fontSize: 12, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer',
                   }}
                 >
-                  Edit
+                  {t('edit')}
                 </button>
               </div>
               <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 2 }}>
-                {[f.address, f.city, f.state, f.zip].filter(Boolean).join(', ') || 'No address on claim'}
+                {[f.address, f.city, f.state, f.zip].filter(Boolean).join(', ') || t('noAddressOnClaim')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                {isOop ? 'Out of pocket' : (f.insurance_company || 'No carrier')}
+                {isOop ? t('outOfPocket') : (f.insurance_company || t('noCarrier'))}
                 {f.claim_number ? ` · ${f.claim_number}` : ''}
               </div>
             </div>
@@ -764,12 +763,12 @@ export default function TechNewJob() {
         <>
         {/* ═══ ADDRESS ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Loss / Service Address <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelLossAddress')} <span style={{ color: '#ef4444' }}>*</span></div>
           <AddressAutocomplete
             value={f.address}
             onChange={v => s('address', v)}
             onSelect={p => sF(prev => ({ ...prev, address: p.address, city: p.city, state: p.state || prev.state, zip: p.zip }))}
-            placeholder="Street address"
+            placeholder={t('streetPlaceholder')}
             style={{ ...inputStyle, marginBottom: 8 }}
             touchTarget
           />
@@ -778,34 +777,34 @@ export default function TechNewJob() {
               type="text"
               value={f.city}
               onChange={e => s('city', e.target.value)}
-              placeholder="City"
+              placeholder={t('cityPlaceholder')}
               style={{ ...inputStyle, flex: 2 }}
             />
             <input
               type="text"
               value={f.state}
               onChange={e => s('state', e.target.value)}
-              placeholder="ST"
+              placeholder={t('statePlaceholder')}
               style={{ ...inputStyle, flex: 0.6, padding: '0 10px', textAlign: 'center' }}
             />
             <input
               type="text"
               value={f.zip}
               onChange={e => s('zip', e.target.value)}
-              placeholder="ZIP"
+              placeholder={t('zipPlaceholder')}
               style={{ ...inputStyle, flex: 1, padding: '0 10px' }}
             />
           </div>
           {contact?.billing_address && f.address === contact.billing_address && (
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.4 }}>
-              Prefilled from {contact.name}'s billing address — edit if this claim is for a different property.
+              {t('prefilledHint', { name: contact.name })}
             </div>
           )}
         </div>
 
         {/* ═══ INSURANCE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Insurance Carrier <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelInsuranceCarrier')} <span style={{ color: '#ef4444' }}>*</span></div>
           <CarrierSelect
             value={f.insurance_company}
             onChange={v => s('insurance_company', v)}
@@ -819,12 +818,12 @@ export default function TechNewJob() {
         {/* Claim number — only when not OOP */}
         {!isOop && f.insurance_company && (
           <div style={{ marginBottom: 20 }}>
-            <div style={labelStyle}>Claim Number</div>
+            <div style={labelStyle}>{t('labelClaimNumber')}</div>
             <input
               type="text"
               value={f.claim_number}
               onChange={e => s('claim_number', e.target.value)}
-              placeholder="Optional"
+              placeholder={t('optionalPlaceholder')}
               style={inputStyle}
             />
           </div>
@@ -834,23 +833,23 @@ export default function TechNewJob() {
 
         {/* ═══ TYPE OF LOSS ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Type of Loss</div>
+          <div style={labelStyle}>{t('labelTypeOfLoss')}</div>
           <input
             type="text"
             value={f.type_of_loss}
             onChange={e => s('type_of_loss', e.target.value)}
-            placeholder="Pipe burst, storm, sewage, etc."
+            placeholder={t('typeOfLossPlaceholder')}
             style={inputStyle}
           />
         </div>
 
         {/* ═══ NOTES ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Internal Notes</div>
+          <div style={labelStyle}>{t('labelInternalNotes')}</div>
           <textarea
             value={f.internal_notes}
             onChange={e => s('internal_notes', e.target.value)}
-            placeholder="Optional notes..."
+            placeholder={t('notesPlaceholder')}
             rows={3}
             style={{
               ...inputStyle, height: 'auto', padding: '12px 14px',
@@ -878,7 +877,7 @@ export default function TechNewJob() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {saving ? 'Creating...' : 'Create Job'}
+          {saving ? t('btnCreating') : t('btnCreate')}
         </button>
       </div>
     </div>
