@@ -5027,3 +5027,45 @@ override set/delete round-trip, and a lock flip asserted THROUGH the F2 resolver
 without creds like the other notify suites; its assertions were verified live via MCP this session.
 `migration-safety-checker` + `upr-pattern-checker` clean; build + full `npm test` (518 passed)
 green. Sentinel test rows deleted.
+
+## Omnichannel Inbox — plan of record (session 2026-07-04, docs only — no feature code)
+
+Planned the unified email+SMS conversation inbox (slug `omni-inbox`) to the roadmap-v3
+standard. Deliverables committed this session (zero feature code): `docs/omni-inbox-roadmap.md`,
+`docs/omni-inbox-dispatch.md` (4 cold-session blocks), `.claude/rules/omni-inbox-wave-ownership.md`.
+
+**Goal.** Land inbound client email replies inside the existing SMS-only inbox
+(`Conversations.jsx`, one component reused by staff/CRM/tech), unified into ONE per-contact
+thread, channel-badged, with a structurally channel-safe composer. Owner decisions: unified
+per-contact thread; inbound via a standalone **Cloudflare Email Worker**; **reply-only,
+channel-locked, transactional** email.
+
+**Key live findings (2026-07-04).** `messages.type` folds channel+direction into
+`sms_inbound|sms_outbound|internal_note`; `messages.channel` exists (CHECK `sms|mms|rcs`) but
+is mostly null with **no DEFAULT**; `conversations` is `twilio_number`-bound with no channel
+(but threads already resolve by participant `contact_id` → already de-facto per-contact);
+`conversation_participants` is phone-only (no email); **no inbound-email path exists**; outbound
+`email.js` stores no Message-ID (and Resend does NOT return the RFC Message-ID — so the
+plus-addressed reply token is the sole correlator); **no Resend bounce/complaint webhook** and
+`email_suppressions` is empty (fed only by unsubscribe clicks). A live footgun:
+`Conversations.jsx:452-466` silently `db.insert`s a message on worker error, bypassing channel
+routing.
+
+**Structure.** Foundation (F: all schema — widened `messages` type/channel CHECKs +
+`channel DEFAULT 'sms'` + email columns, `conversation_participants.email`,
+`conversations.email_reply_token`, `email_inbound_events` + `claim_inbound_email` RPC;
+`email-threading.js` + `conversation-email.js` (reason-aware suppression gate);
+`resend-webhook.js` (Svix/Web-Crypto → hard_bounce/complaint suppression); one-line
+`process-sequences.js` reply widen; feature flag) → wave **I ∥ O** → **U**. Dependency edges:
+F→I/O/U hard, **O→U hard** (no send UI before the channel-safe worker), I externally gated on
+the owner's Cloudflare `reply@` route + `INBOUND_EMAIL_SECRET`. Six wrong-channel invariants
+bind O/U (worker is sole writer of external rows; stored channel = transport actually used; no
+cross-channel fallback; internal_note unsendable; channel-selected consent gate; token sets
+thread only). Full detail in `docs/omni-inbox-roadmap.md`.
+
+**Challenge pass.** Reordered from flat-parallel to F→(I∥O)→U; found the send footgun; forced
+the channel DEFAULT + backfill; dropped an impossible In-Reply-To correlation fallback (token
+only); added a triage queue for unmatched inbound + a bounce/complaint webhook; verified
+Cloudflare subaddressing (base `reply@` rule + toggle, no catch-all) and Resend Svix signing.
+Reviewer agents reused (no new agent): `migration-safety-checker`, `consent-path-auditor`,
+`upr-pattern-checker`.
