@@ -39,7 +39,8 @@ import NotificationBell from '@/components/NotificationBell';
 import NewMenu from '@/components/NewMenu';
 import UserMenu from '@/components/UserMenu';
 import GlobalSearch from '@/components/GlobalSearch';
-import { PRIMARY_ITEMS, isItemVisible, IconHelp } from '@/lib/navItems';
+import { PRIMARY_ITEMS, isItemVisible, IconHelp, anySettingsChildVisible } from '@/lib/navItems';
+import { isMoroni as isMoroniOwner } from '@/lib/owner';
 import { IconSettings } from '@/components/Icons';
 
 function IconMenu(p) {
@@ -52,7 +53,7 @@ function IconMenu(p) {
 
 export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled } = useAuth();
-  const isMoroni = employee?.email === 'moroni@utah-pros.com';
+  const isMoroni = isMoroniOwner(employee);
   const ctx = { canAccess, isFeatureEnabled, employee, isMoroni };
 
   return (
@@ -88,9 +89,10 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <NavLink to="/help" className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
           <IconHelp style={{ width: 18, height: 18 }} />
         </NavLink>
-        {/* Gear matches the sidebar's canAccess('settings') gate and the AccessRoute on
-            /settings — it was the one ungated path into Settings (Phase 0, settings overhaul). */}
-        {canAccess('settings') && (
+        {/* Gear → settings hub. Matches the Settings nav entry's any-visible-child
+            gate (GC3/GC8): shown when the user can reach at least one settings page.
+            crm_partner is excluded (Layout's choke point locks them to /crm/* + /help). */}
+        {employee?.role !== 'crm_partner' && anySettingsChildVisible(ctx) && (
           <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
             <IconSettings style={{ width: 18, height: 18 }} />
           </NavLink>

@@ -101,10 +101,13 @@ export const NAV_ITEMS = [
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing' },
 
   { section: 'System' },
-  { key: 'admin_panel',          label: 'Admin',              path: '/admin',                       icon: IconAdmin },
-  { key: 'demo_sheet_builder',   label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder',    icon: IconAdmin },
-  { key: 'tech_feedback',        label: 'Tech Feedback',      path: '/tech-feedback',               icon: IconFeedback },
-  { key: 'settings',             label: 'Settings',           path: '/settings',                    icon: IconSettings },
+  // Settings Overhaul Phase F: the System section is now a SINGLE Settings entry
+  // (GC5). It leads to the grouped hub (SettingsHome), so the individual
+  // Admin / Scope Sheet Builder / Tech Feedback links moved inside there (their
+  // old paths permanently redirect). Visibility = any-visible-child (GC3/GC8) so
+  // every staff member sees it (at minimum their Personal group); crm_partner is
+  // excluded (Layout's choke point locks that role to /crm/* + /help).
+  { key: 'settings', label: 'Settings', path: '/settings', icon: IconSettings, settingsHub: true, hideForRoles: ['crm_partner'] },
 ];
 
 // ─── SECTION: Desktop top-nav groupings (≥1024px) ───
@@ -230,7 +233,10 @@ export function isItemVisible(item, { canAccess, isFeatureEnabled, employee, isM
   // never REACH (e.g. crm_partner is redirected off any non-/crm, non-/help
   // path by Layout's choke point, so an always-on link would dead-end).
   if (item.hideForRoles?.includes(employee.role)) return false;
-  if (item.always) {
+  // Settings hub — reachable when ANY child settings page is visible (GC3/GC8).
+  if (item.settingsHub) {
+    if (!anySettingsChildVisible({ canAccess, employee, isMoroni })) return false;
+  } else if (item.always) {
     // Help & Guides — visible to every logged-in user, not role-gated.
   } else if (item.moroniOnly) {
     if (!isMoroni) return false;
