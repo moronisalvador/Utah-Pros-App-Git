@@ -1,8 +1,24 @@
 /**
- * Unit tests for the billing-settings save controller (revert-on-error).
- * vitest runs in plain node here (no jsdom), so we test the DOM-free
- * `makeBillingSave` factory directly against a tiny in-memory state container
- * that mimics React's setState (value or updater fn).
+ * ════════════════════════════════════════════════
+ * FILE: useBillingSettings.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves the Payment Settings save behaves safely: when a save to the server
+ *   fails, the screen must put the old value back instead of pretending the new
+ *   one stuck. These are money settings, so a silent "looks saved but wasn't"
+ *   is the exact bug this guards against.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./useBillingSettings (the makeBillingSave factory under test)
+ *   Data:      reads → none · writes → none (pure logic; RPC is stubbed)
+ *
+ * NOTES / GOTCHAS:
+ *   - vitest runs in plain node here (no jsdom), so we test the DOM-free
+ *     `makeBillingSave` factory directly against a tiny in-memory state
+ *     container that mimics React's setState (value or updater fn).
+ * ════════════════════════════════════════════════
  */
 import { describe, it, expect, vi } from 'vitest';
 import { makeBillingSave } from './useBillingSettings';

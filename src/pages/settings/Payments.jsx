@@ -177,7 +177,7 @@ export default function PaymentSettings() {
   // ─── SECTION: Render ──────────────
   return (
     <div className="pay-page">
-      <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections')} style={{ gap: 4, marginBottom: 10 }}>← Collections</button>
+      <button className="btn btn-ghost btn-sm" onClick={() => navigate('/collections')} style={{ gap: 'var(--space-1)', marginBottom: 'var(--space-3)' }}>← Collections</button>
       <SettingsPageHeader title="Payment Settings" subtitle="How payments are accepted, invoiced, and reconciled to QuickBooks." />
 
       {!isFeatureEnabled('feature:billing') && (
@@ -301,7 +301,7 @@ export default function PaymentSettings() {
               <option value="">Select account…</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
             </select>
-          ) : <span className="pay-row__hint" style={{ fontSize: 13 }}>{s.qbo_stripe_clearing_account_name || 'Load accounts to choose'}</span>}
+          ) : <span className="pay-fallback">{s.qbo_stripe_clearing_account_name || 'Load accounts to choose'}</span>}
         </Row>
         <Row label="Merchant fees expense account" hint="Where Stripe processing fees are booked.">
           {accounts.length ? (
@@ -309,7 +309,7 @@ export default function PaymentSettings() {
               <option value="">Select account…</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
             </select>
-          ) : <span className="pay-row__hint" style={{ fontSize: 13 }}>{s.qbo_fee_expense_account_name || 'Load accounts to choose'}</span>}
+          ) : <span className="pay-fallback">{s.qbo_fee_expense_account_name || 'Load accounts to choose'}</span>}
         </Row>
         <Row label="Deposit bank account" hint="Real bank where Stripe payouts land — clearing transfers the net here.">
           {accounts.length ? (
@@ -317,7 +317,7 @@ export default function PaymentSettings() {
               <option value="">Select account…</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
             </select>
-          ) : <span className="pay-row__hint" style={{ fontSize: 13 }}>{s.qbo_bank_account_name || 'Load accounts to choose'}</span>}
+          ) : <span className="pay-fallback">{s.qbo_bank_account_name || 'Load accounts to choose'}</span>}
         </Row>
       </Section>
 

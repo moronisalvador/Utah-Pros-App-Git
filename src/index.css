@@ -8479,12 +8479,15 @@ tr:hover td { background: var(--bg-secondary); }
 .pay-row__control { flex-shrink: 0; display: flex; align-items: center; gap: var(--space-2); }
 .pay-note { font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; }
 .pay-card .pay-note { padding-top: var(--space-2); }
+/* Read-only fallback text shown in a control slot before QBO accounts are loaded */
+.pay-fallback { font-size: var(--text-sm); color: var(--text-tertiary); }
 
 /* Toggle switch — inner track keeps the visual small while the button hit area can grow on mobile */
 .pay-toggle { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: none; border: 0; cursor: pointer; }
 .pay-toggle__track { display: block; width: 46px; height: 26px; border-radius: var(--radius-full); padding: 3px; background: var(--border-color); transition: background .15s; }
 .pay-toggle.is-on .pay-toggle__track { background: var(--accent); }
-.pay-toggle__knob { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); transform: translateX(0); transition: transform .15s; }
+/* knob stays pure-white on the accent/border track in BOTH themes → --accent-text (theme-stable #fff), not --bg-elevated (which darkens in dark mode) */
+.pay-toggle__knob { display: block; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-text); box-shadow: var(--shadow-sm); transform: translateX(0); transition: transform .15s; }
 .pay-toggle.is-on .pay-toggle__knob { transform: translateX(20px); }
 
 /* Connection badge */
