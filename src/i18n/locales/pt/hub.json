@@ -1,0 +1,118 @@
+{
+  "header": {
+    "back": "Voltar",
+    "backToClaim": "Voltar ao sinistro",
+    "signed": "Assinado",
+    "getSignature": "Obter assinatura",
+    "private": "Privado",
+    "menu": "Mais opções"
+  },
+  "clockStatus": {
+    "scheduled": "Agendado",
+    "omw": "A caminho",
+    "on_site": "Trabalhando",
+    "paused": "Pausado",
+    "completed": "Concluído"
+  },
+  "stage": {
+    "yourClock": "Seu relógio",
+    "visitBadge": "Visita {{n}}",
+    "staleHint": "Ainda no relógio — esqueceu de registrar a saída?",
+    "thisVisit": "Esta visita",
+    "tools": "Ferramentas",
+    "scopeSheet": "Ficha de Escopo",
+    "scopeSheetDesc": "Registre o escopo do trabalho sala por sala e envie por e-mail",
+    "tasks": "Tarefas",
+    "addTask": "Adicionar tarefa",
+    "addTaskPlaceholder": "Nova tarefa…",
+    "noTasks": "Nenhuma tarefa ainda",
+    "editTasks": "Editar lista",
+    "moisture": "Umidade",
+    "addReading": "Adicionar leitura",
+    "noReadings": "Nenhuma leitura ainda. Registre MC, UR e temperatura para iniciar o registro de secagem.",
+    "readingsCount": "{{count}}",
+    "stalled": "{{count}} estagnadas",
+    "stalledBadge": "ESTAGNADA",
+    "unaffected": "(não afetado)",
+    "goal": "meta {{value}}%",
+    "untagged": "Sem sala",
+    "olderReadings": "+{{count}} mais antigas",
+    "equipment": "Equipamento",
+    "place": "Colocar",
+    "noEquipment": "Nenhum equipamento no local. Coloque desumidificadores, sopradores ou AFDs para começar a contar os dias no local.",
+    "onSiteCount": "{{count}} no local",
+    "day": "Dia {{n}}",
+    "remove": "Remover",
+    "confirm": "Confirmar",
+    "officeNotes": "Notas do escritório",
+    "crew": "Equipe",
+    "lead": "Líder",
+    "readOnly": "Somente leitura — você não está na equipe desta visita",
+    "cancelledVisit": "Esta visita foi cancelada",
+    "timeBreakdown": "Tempo nesta visita",
+    "travel": "Deslocamento",
+    "onSiteLabel": "No local",
+    "total": "Total",
+    "nextVisit": "Próxima visita neste trabalho"
+  },
+  "banner": {
+    "clockedElsewhere": "Você está registrado em {{job}}",
+    "goThere": "Ir para lá",
+    "anotherJob": "outro trabalho"
+  },
+  "dock": {
+    "photo": "Foto",
+    "uploading": "Enviando…",
+    "more": "Mais",
+    "editVisit": "Editar visita",
+    "addNote": "Adicionar nota"
+  },
+  "below": {
+    "visits": "Visitas",
+    "upcoming": "Próximas",
+    "past": "Anteriores",
+    "viewing": "Vendo",
+    "crewLabel": "Equipe: {{names}}",
+    "tasksLabel": "{{done}}/{{total}} tarefas",
+    "scheduleAppt": "Agendar visita",
+    "noVisits": "Nenhuma visita agendada para este trabalho ainda.",
+    "aVisit": "Visita",
+    "jobClaim": "Trabalho e Sinistro",
+    "h2tag": "Em breve",
+    "viewClaim": "Ver sinistro {{number}}",
+    "photos": "Fotos e Notas",
+    "seeAllPhotos": "Ver todas as fotos e notas"
+  },
+  "common": {
+    "add": "Adicionar",
+    "cancel": "Cancelar"
+  },
+  "states": {
+    "loadErrorTitle": "Trabalho não encontrado",
+    "loadErrorSub": "Este trabalho pode ter sido removido ou está indisponível.",
+    "back": "Voltar",
+    "retry": "Tentar novamente",
+    "refreshFailed": "Não foi possível atualizar",
+    "unknownCustomer": "Desconhecido",
+    "visitUnavailable": "Esta visita está indisponível."
+  },
+  "time": {
+    "justNow": "agora mesmo",
+    "minutesAgo": "há {{n}}min",
+    "hoursAgo": "há {{n}}h",
+    "yesterday": "ontem",
+    "daysAgo": "há {{n}}d"
+  },
+  "toast": {
+    "taskFailed": "Não foi possível atualizar a tarefa",
+    "taskAdded": "Tarefa adicionada",
+    "taskAddFailed": "Não foi possível adicionar a tarefa",
+    "readingSaved": "Leitura salva",
+    "readingQueued": "Leitura na fila — será enviada quando houver conexão",
+    "placed": "Equipamento colocado",
+    "placementQueued": "Colocação na fila — será enviada quando houver conexão",
+    "equipRemoved": "Equipamento removido",
+    "equipMarkedRemoval": "Equipamento marcado para remoção",
+    "removeFailed": "Falha ao remover: {{message}}"
+  }
+}
