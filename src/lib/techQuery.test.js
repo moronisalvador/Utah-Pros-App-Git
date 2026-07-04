@@ -35,11 +35,12 @@ describe('techQuery — frozen key registry', () => {
     expect(techKeys.tasks('e1')).toEqual(['tech', 'tasks', 'e1']);
     expect(techKeys.rooms('j1')).toEqual(['tech', 'rooms', 'j1']);
     expect(techKeys.docs('a1')).toEqual(['tech', 'docs', 'a1']);
+    expect(techKeys.hub('j1')).toEqual(['tech', 'hub', 'j1']);
   });
 
-  it('exposes exactly the six documented kinds', () => {
+  it('exposes exactly the seven documented kinds', () => {
     expect(Object.values(TECH_QUERY_KINDS).sort()).toEqual(
-      ['active-clock', 'dash', 'docs', 'rooms', 'sched-month', 'tasks'],
+      ['active-clock', 'dash', 'docs', 'hub', 'rooms', 'sched-month', 'tasks'],
     );
   });
 
@@ -64,28 +65,36 @@ describe('invalidateTech', () => {
     return { calls, invalidateQueries: (arg) => { calls.push(arg.queryKey); return Promise.resolve(); } };
   };
 
-  it('clock refreshes dash, active-clock and the schedule window', async () => {
+  it('clock refreshes dash, active-clock, the schedule window and the hub', async () => {
     const c = fakeClient();
     await invalidateTech(c, 'clock');
-    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'active-clock'], ['tech', 'sched-month']]);
+    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'active-clock'], ['tech', 'sched-month'], ['tech', 'hub']]);
   });
 
-  it('task refreshes dash, tasks and the schedule window', async () => {
+  it('task refreshes dash, tasks, the schedule window and the hub', async () => {
     const c = fakeClient();
     await invalidateTech(c, 'task');
-    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'tasks'], ['tech', 'sched-month']]);
+    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'tasks'], ['tech', 'sched-month'], ['tech', 'hub']]);
   });
 
-  it('photo refreshes dash and docs', async () => {
+  it('photo refreshes dash, docs and the hub', async () => {
     const c = fakeClient();
     await invalidateTech(c, 'photo');
-    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'docs']]);
+    expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'docs'], ['tech', 'hub']]);
+  });
+
+  it('every mutation invalidates the hub (Phase H1)', async () => {
+    for (const mutation of ['clock', 'task', 'photo', 'doc', 'room', 'appointment']) {
+      const c = fakeClient();
+      await invalidateTech(c, mutation);
+      expect(c.calls, mutation).toContainEqual(['tech', 'hub']);
+    }
   });
 
   it('targets each kind by its two-element prefix (all ids of that kind)', async () => {
     const c = fakeClient();
     await invalidateTech(c, 'room');
-    expect(c.calls).toEqual([['tech', 'rooms']]);
+    expect(c.calls).toEqual([['tech', 'rooms'], ['tech', 'hub']]);
     expect(c.calls[0]).toHaveLength(2); // no id → whole kind invalidated
   });
 
