@@ -8508,6 +8508,12 @@ tr:hover td { background: var(--bg-secondary); }
   font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font-sans);
   border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-secondary);
 }
+.fb-status-btn.fb-badge-bug       { background: var(--fb-badge-bug-bg); color: var(--fb-badge-bug-color); border-color: var(--fb-badge-bug-border); }
+.fb-status-btn.fb-badge-feature   { background: var(--fb-badge-feature-bg); color: var(--fb-badge-feature-color); border-color: var(--fb-badge-feature-border); }
+.fb-status-btn.fb-badge-new       { background: var(--fb-badge-new-bg); color: var(--fb-badge-new-color); border-color: var(--fb-badge-new-border); }
+.fb-status-btn.fb-badge-reviewed  { background: var(--fb-badge-reviewed-bg); color: var(--fb-badge-reviewed-color); border-color: var(--fb-badge-reviewed-border); }
+.fb-status-btn.fb-badge-resolved  { background: var(--fb-badge-resolved-bg); color: var(--fb-badge-resolved-color); border-color: var(--fb-badge-resolved-border); }
+.fb-status-btn.fb-badge-dismissed { background: var(--fb-badge-dismissed-bg); color: var(--fb-badge-dismissed-color); border-color: var(--fb-badge-dismissed-border); }
 @media (max-width: 768px) {
   .admin-feedback-header { display: none !important; }
   .fb-row { grid-template-columns: auto 1fr auto !important; gap: 8px; }
