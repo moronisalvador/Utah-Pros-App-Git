@@ -1,0 +1,15 @@
+{
+  "title": "Tasks",
+  "tab": { "today": "Today", "all": "All" },
+  "searchPlaceholder": "Search tasks, jobs, clients...",
+  "done": "Done",
+  "summaryDone": "{{done}} of {{total}} done",
+  "todaysTasks": "today's tasks",
+  "emptyToday": "No tasks for today",
+  "emptyAll": "No tasks assigned",
+  "viewAll": "View all tasks",
+  "jobFallback": "Job",
+  "toastLoadFailed": "Failed to load tasks",
+  "toastUpdated": "Task updated",
+  "toastToggleFailed": "Failed to toggle task"
+}

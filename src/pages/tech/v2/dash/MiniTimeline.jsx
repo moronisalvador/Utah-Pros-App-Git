@@ -25,7 +25,9 @@
  * ════════════════════════════════════════════════
  */
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { apptHref } from '@/components/tech/v2/nav.js';
+import { formatTime } from '@/lib/techDateUtils';
 
 // status → the --status-<tone>-* token set.
 const TONE = {
@@ -33,23 +35,17 @@ const TONE = {
   en_route: 'enroute', in_progress: 'working', paused: 'paused', completed: 'completed',
 };
 
-function fmtClock(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':');
-  const hour = Number(h);
-  return `${hour % 12 || 12}:${m}${hour >= 12 ? 'p' : 'a'}`;
-}
-
 /**
  * @param {{ appointments: object[] }} props - today's visits (already mine, cancelled excluded).
  */
 export default function MiniTimeline({ appointments }) {
+  const { t } = useTranslation('dash');
   const navigate = useNavigate();
   const list = (appointments || []).filter((a) => a.status !== 'cancelled');
   if (list.length < 2) return null; // the hero already covers a single visit
 
   return (
-    <div className="tv2-dash-timeline" role="list" aria-label="Today's visits">
+    <div className="tv2-dash-timeline" role="list" aria-label={t('todaysVisitsAria')}>
       {list.map((a) => {
         const tone = TONE[a.status] || 'scheduled';
         return (
@@ -61,8 +57,8 @@ export default function MiniTimeline({ appointments }) {
             style={{ '--chip-bg': `var(--status-${tone}-bg)`, '--chip-fg': `var(--status-${tone}-color)` }}
             onClick={() => navigate(apptHref(a.id, a.job_id))}
           >
-            <span className="tv2-dash-timeline__time">{fmtClock(a.time_start) || '—'}</span>
-            <span className="tv2-dash-timeline__label">{a.jobs?.insured_name || a.title || 'Visit'}</span>
+            <span className="tv2-dash-timeline__time">{formatTime(a.time_start) || '—'}</span>
+            <span className="tv2-dash-timeline__label">{a.jobs?.insured_name || a.title || t('visit')}</span>
           </button>
         );
       })}

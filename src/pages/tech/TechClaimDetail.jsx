@@ -57,6 +57,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
@@ -74,7 +75,7 @@ import Lightbox from '@/components/tech/Lightbox';
 import DetailRow from '@/components/tech/DetailRow';
 import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
-import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
@@ -82,7 +83,9 @@ import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // T12:00:00 keeps a date-only string on its calendar day in Denver; the
+  // locale tag follows the active UI language.
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function nextApptForJob(jobId, appointments) {
@@ -98,9 +101,11 @@ function nextApptForJob(jobId, appointments) {
 // the job detail page doesn't render multiple jobs, so this stays local.
 // ───────────────────────────────────────────────────────────────
 function JobTile({ job, taskSummary, nextAppt, onOpen }) {
+  const { t } = useTranslation(['claimDetail', 'tech']);
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
   const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
-  const divLabel = (job.division || '').charAt(0).toUpperCase() + (job.division || '').slice(1);
+  const rawDivLabel = (job.division || '').charAt(0).toUpperCase() + (job.division || '').slice(1);
+  const divLabel = job.division ? t('tech:division.' + job.division, { defaultValue: rawDivLabel }) : '';
   const total = taskSummary?.total || 0;
   const completed = taskSummary?.completed || 0;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -151,7 +156,7 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
       {total > 0 ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>Tasks</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('tasks')}</span>
             <span style={{ fontSize: 11, fontWeight: 700, color: allDone ? '#059669' : 'var(--text-primary)' }}>
               {completed}/{total}
             </span>
@@ -165,12 +170,12 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No tasks yet</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('noTasksYet')}</div>
       )}
 
       {nextAppt && (
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
-          Next: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+          {t('nextLabel')} <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
             {relativeDate(nextAppt.date)}{nextAppt.time_start ? ` · ${formatTime(nextAppt.time_start)}` : ''}
           </span>
         </div>
@@ -193,6 +198,7 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
 // ───────────────────────────────────────────────────────────────
 export default function TechClaimDetail() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['claimDetail', 'tech']);
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
@@ -252,7 +258,7 @@ export default function TechClaimDetail() {
         db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }).catch(() => []),
       ]);
       if (!data?.claim) {
-        setLoadError('Claim not found');
+        setLoadError(t('notFound'));
         return;
       }
       setDetail(data);
@@ -275,12 +281,12 @@ export default function TechClaimDetail() {
         setDocs(docList || []);
       }
     } catch (e) {
-      setLoadError(e.message || 'Failed to load claim');
-      toast('Failed to load claim', 'error');
+      setLoadError(e.message || t('toastLoadFailed'));
+      toast(t('toastLoadFailed'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [db, claimId, roomsEnabled]);
+  }, [db, claimId, roomsEnabled, t]);
 
   const handleCreateRoom = useCallback(async (name) => {
     const created = await db.rpc('create_room_for_claim', {
@@ -310,8 +316,8 @@ export default function TechClaimDetail() {
   // ─── SECTION: Event handlers ──────────────
   const uploadPhotoForJob = useCallback(async (file, jobId) => {
     if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
     // ── Offline-queue path (gated) ────────────────────────────────────────
     if (offlineQueueEnabled) {
@@ -341,12 +347,12 @@ export default function TechClaimDetail() {
         });
         impact('light');
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast('Photo queued — will upload when online', 'success');
+          toast(t('tech:toast.photoQueued'), 'success');
         } else {
-          toast('Photo uploading…');
+          toast(t('tech:toast.photoUploading'));
         }
       } catch (err) {
-        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
       }
       return;
     }
@@ -372,14 +378,14 @@ export default function TechClaimDetail() {
         p_appointment_id: null,
       });
       impact('light');
-      toast('Photo uploaded');
+      toast(t('tech:toast.photoUploaded'));
       load();
     } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, load, offlineQueueEnabled, enqueue]);
+  }, [db, employee?.id, load, offlineQueueEnabled, enqueue, t]);
 
   // Reload when a queued photo for one of this claim's jobs finishes syncing.
   useEffect(() => {
@@ -409,7 +415,7 @@ export default function TechClaimDetail() {
         const file = await takeNativePhoto();
         if (file) await uploadPhotoForJob(file, jobId);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       pendingPhotoJobIdRef.current = jobId;
@@ -419,14 +425,14 @@ export default function TechClaimDetail() {
 
   const startAddPhoto = () => {
     const jobs = detail?.jobs || [];
-    if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
+    if (jobs.length === 0) { toast(t('noJobs'), 'error'); return; }
     if (jobs.length === 1) captureForJob(jobs[0].id);
     else setJobPicker({ action: 'photo' });
   };
 
   const startAddNote = () => {
     const jobs = detail?.jobs || [];
-    if (jobs.length === 0) { toast('No jobs on this claim', 'error'); return; }
+    if (jobs.length === 0) { toast(t('noJobs'), 'error'); return; }
     setNoteText('');
     if (jobs.length === 1) setNoteJobId(jobs[0].id);
     else setJobPicker({ action: 'note' });
@@ -447,10 +453,10 @@ export default function TechClaimDetail() {
         status: 'deleted',
         updated_by: employee?.id || null,
       });
-      toast(`Claim ${detail.claim.claim_number} archived`);
+      toast(t('toastClaimArchived', { claimNumber: detail.claim.claim_number }));
       navigate('/tech/claims', { replace: true });
     } catch (err) {
-      toast('Failed to delete claim: ' + err.message, 'error');
+      toast(t('toastDeleteFailed', { message: err.message }), 'error');
     } finally {
       setDeleting(false);
     }
@@ -470,12 +476,12 @@ export default function TechClaimDetail() {
         p_description: noteText.trim(),
         p_appointment_id: null,
       });
-      toast('Note saved');
+      toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteJobId(null);
       load();
     } catch (err) {
-      toast('Failed to save note: ' + err.message, 'error');
+      toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {
       setSavingNote(false);
     }
@@ -494,14 +500,14 @@ export default function TechClaimDetail() {
           justifyContent: 'center', padding: '48px 24px', textAlign: 'center',
         }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
-            {loadError || 'Claim not found'}
+            {loadError || t('notFound')}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20 }}>
-            This claim may have been removed or is unavailable.
+            {t('notFoundSub')}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate('/tech/claims')}>Back to Claims</button>
-            <button className="btn btn-primary" onClick={load}>Retry</button>
+            <button className="btn btn-secondary" onClick={() => navigate('/tech/claims')}>{t('backToClaims')}</button>
+            <button className="btn btn-primary" onClick={load}>{t('tech:btn.retry')}</button>
           </div>
         </div>
       </div>
@@ -510,7 +516,7 @@ export default function TechClaimDetail() {
 
   const { claim, jobs = [], contact, adjuster } = detail;
   const division = jobs[0]?.division || 'water';
-  const insuredName = contact?.name || jobs[0]?.insured_name || 'Unknown';
+  const insuredName = contact?.name || jobs[0]?.insured_name || t('tech:misc.unknown');
   const phone = contact?.phone || jobs[0]?.client_phone || null;
   const address = [claim.loss_address, claim.loss_city, claim.loss_state].filter(Boolean).join(', ');
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
@@ -530,24 +536,24 @@ export default function TechClaimDetail() {
 
   // Build hero meta row pieces
   const metaPieces = [];
-  if (claim.date_of_loss) metaPieces.push(`Loss: ${formatLossDate(claim.date_of_loss)}`);
+  if (claim.date_of_loss) metaPieces.push(t('lossPrefix', { date: formatLossDate(claim.date_of_loss) }));
   if (claim.loss_type) metaPieces.push(claim.loss_type.charAt(0).toUpperCase() + claim.loss_type.slice(1));
-  if (claim.insurance_claim_number) metaPieces.push(`Ins# ${claim.insurance_claim_number}`);
-  if (jobs.length > 0) metaPieces.push(`${jobs.length} job${jobs.length !== 1 ? 's' : ''}`);
+  if (claim.insurance_claim_number) metaPieces.push(t('insPrefix', { num: claim.insurance_claim_number }));
+  if (jobs.length > 0) metaPieces.push(t('jobsMetaCount', { count: jobs.length }));
 
   return (
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
-        eyebrow="Claim"
+        eyebrow={t('eyebrow')}
         topLabel={claim.claim_number}
         title={insuredName}
         address={address}
-        statusText={claim.status || 'open'}
+        statusText={t('tech:claimStatus.' + (claim.status || 'open'), { defaultValue: claim.status || 'open' })}
         statusColors={CLAIM_STATUS_COLORS[claim.status] || CLAIM_STATUS_COLORS.open}
         meta={metaPieces}
         onBack={() => navigate('/tech/claims')}
-        backLabel="Back to claims"
+        backLabel={t('backToClaims')}
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
@@ -569,7 +575,7 @@ export default function TechClaimDetail() {
             fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
             textTransform: 'uppercase', letterSpacing: '0.06em',
           }}>
-            {jobs.length === 1 ? 'Job' : `Jobs (${jobs.length})`}
+            {jobs.length === 1 ? t('jobOne') : t('jobsCount', { count: jobs.length })}
           </div>
           {jobs.map(job => (
             <JobTile
@@ -594,7 +600,7 @@ export default function TechClaimDetail() {
               fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
               textTransform: 'uppercase', letterSpacing: '0.06em',
             }}>
-              {rooms.length === 0 ? 'Rooms' : `${rooms.length} Room${rooms.length === 1 ? '' : 's'}`}
+              {rooms.length === 0 ? t('roomsHeader') : t('roomsCount', { count: rooms.length })}
             </div>
           </div>
           <div
@@ -625,7 +631,7 @@ export default function TechClaimDetail() {
                 fontFamily: 'var(--font-sans)',
                 WebkitTapHighlightColor: 'transparent',
               }}
-              aria-label="Add a room"
+              aria-label={t('addRoomAria')}
             >
               <div
                 style={{
@@ -639,7 +645,7 @@ export default function TechClaimDetail() {
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Add Room</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{t('addRoom')}</div>
             </button>
 
             {rooms.map(room => (
@@ -664,7 +670,7 @@ export default function TechClaimDetail() {
             fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
             textTransform: 'uppercase', letterSpacing: '0.06em',
           }}>
-            Photos & Notes{hasAnyPhotoOrNote ? ` (${totalPhotos + totalNotes})` : ''}
+            {hasAnyPhotoOrNote ? t('photosNotesCount', { count: totalPhotos + totalNotes }) : t('photosNotes')}
           </div>
           {totalPhotos > 0 && (
             <button
@@ -676,7 +682,7 @@ export default function TechClaimDetail() {
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              See all →
+              {t('tech:btn.seeAll')}
             </button>
           )}
         </div>
@@ -699,7 +705,7 @@ export default function TechClaimDetail() {
           })
         ) : (
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
-            No photos or notes yet.
+            {t('noPhotosNotes')}
           </div>
         )}
 
@@ -711,16 +717,19 @@ export default function TechClaimDetail() {
           }}>
             {jobs.length > 1 && (
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                Note for <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                  {jobs.find(j => j.id === noteJobId)?.job_number}
-                </strong>
+                <Trans
+                  t={t}
+                  i18nKey="noteForPrefix"
+                  values={{ jobNumber: jobs.find(j => j.id === noteJobId)?.job_number }}
+                  components={{ b: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }} /> }}
+                />
               </div>
             )}
             <textarea
               className="input textarea"
               value={noteText}
               onChange={e => setNoteText(e.target.value)}
-              placeholder="What do you want to note?"
+              placeholder={t('tech:btn.notePlaceholder')}
               rows={3}
               autoFocus
               style={{ width: '100%', fontSize: 15, fontFamily: 'var(--font-sans)', boxSizing: 'border-box' }}
@@ -735,7 +744,7 @@ export default function TechClaimDetail() {
                   fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
                 }}
               >
-                Cancel
+                {t('tech:btn.cancel')}
               </button>
               <button
                 onClick={saveNote}
@@ -750,7 +759,7 @@ export default function TechClaimDetail() {
                   opacity: savingNote ? 0.7 : 1,
                 }}
               >
-                {savingNote ? 'Saving…' : 'Save note'}
+                {savingNote ? t('tech:btn.saving') : t('tech:btn.saveNote')}
               </button>
             </div>
           </div>
@@ -772,7 +781,7 @@ export default function TechClaimDetail() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
             </svg>
-            {uploading ? 'Uploading…' : 'Add Photo'}
+            {uploading ? t('tech:btn.uploading') : t('tech:btn.addPhoto')}
           </button>
           <button
             onClick={startAddNote}
@@ -791,7 +800,7 @@ export default function TechClaimDetail() {
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
-            Add Note
+            {t('tech:btn.addNote')}
           </button>
         </div>
       </div>
@@ -834,7 +843,7 @@ export default function TechClaimDetail() {
               fontSize: 15, fontWeight: 700, color: 'var(--text-primary)',
               marginBottom: 10, textAlign: 'center',
             }}>
-              {jobPicker.action === 'photo' ? 'Add photo to which job?' : 'Add note to which job?'}
+              {jobPicker.action === 'photo' ? t('pickPhotoJob') : t('pickNoteJob')}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {
@@ -860,7 +869,7 @@ export default function TechClaimDetail() {
                         {job.job_number}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-                        {job.division} · {(job.phase || '').replace(/_/g, ' ')}
+                        {job.division ? t('tech:division.' + job.division, { defaultValue: job.division }) : ''} · {(job.phase || '').replace(/_/g, ' ')}
                       </div>
                     </div>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -879,7 +888,7 @@ export default function TechClaimDetail() {
                 fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
               }}
             >
-              Cancel
+              {t('tech:btn.cancel')}
             </button>
           </div>
         </div>
@@ -892,19 +901,19 @@ export default function TechClaimDetail() {
           textTransform: 'uppercase', letterSpacing: '0.06em',
           marginBottom: 8,
         }}>
-          Scope Sheets{demoSheets.length > 0 ? ` (${demoSheets.length})` : ''}
+          {demoSheets.length > 0 ? t('scopeSheetsCount', { count: demoSheets.length }) : t('scopeSheets')}
         </div>
         {demoSheets.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
-            No scope sheets yet. Open one from any appointment under this claim.
+            {t('noScopeSheets')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {demoSheets.map(s => {
               const isSubmitted = s.status === 'submitted';
               const dateStr = s.form_date
-                ? new Date(s.form_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                : new Date(s.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                ? new Date(s.form_date + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' })
+                : new Date(s.updated_at).toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' });
               return (
                 <button
                   key={s.id}
@@ -931,7 +940,7 @@ export default function TechClaimDetail() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {s.room_count} {s.room_count === 1 ? 'room' : 'rooms'}
+                        {t('sheetRoomCount', { count: s.room_count })}
                       </span>
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
@@ -939,7 +948,7 @@ export default function TechClaimDetail() {
                         color:      isSubmitted ? '#16a34a' : '#d97706',
                         border: `1px solid ${isSubmitted ? '#bbf7d0' : '#fde68a'}`,
                       }}>
-                        {isSubmitted ? 'Submitted' : 'Draft'}
+                        {isSubmitted ? t('submitted') : t('draft')}
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
@@ -971,7 +980,7 @@ export default function TechClaimDetail() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <span>Claim details</span>
+          <span>{t('detailsToggle')}</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
             <polyline points="6 9 12 15 18 9" />
           </svg>
@@ -983,12 +992,12 @@ export default function TechClaimDetail() {
             borderRadius: 12, background: 'var(--bg-primary)',
             border: '1px solid var(--border-color)',
           }}>
-            <DetailRow label="Carrier" value={claim.insurance_carrier || 'Out of pocket'} />
-            <DetailRow label="Policy #" value={claim.policy_number} />
-            <DetailRow label="Ins. claim #" value={claim.insurance_claim_number} mono />
-            <DetailRow label="Date of loss" value={formatLossDate(claim.date_of_loss)} />
-            <DetailRow label="Loss type" value={claim.loss_type} capitalize />
-            {claim.notes && <DetailRow label="Notes" value={claim.notes} multiline />}
+            <DetailRow label={t('detail.carrier')} value={claim.insurance_carrier || t('outOfPocket')} />
+            <DetailRow label={t('detail.policyNum')} value={claim.policy_number} />
+            <DetailRow label={t('detail.insClaimNum')} value={claim.insurance_claim_number} mono />
+            <DetailRow label={t('detail.dateOfLoss')} value={formatLossDate(claim.date_of_loss)} />
+            <DetailRow label={t('detail.lossType')} value={claim.loss_type} capitalize />
+            {claim.notes && <DetailRow label={t('detail.notes')} value={claim.notes} multiline />}
 
             {contact && (
               <>
@@ -997,11 +1006,11 @@ export default function TechClaimDetail() {
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                   marginTop: 14, marginBottom: 6,
                 }}>
-                  Insured / Homeowner
+                  {t('detail.insured')}
                 </div>
-                <DetailRow label="Name" value={contact.name} />
-                <DetailRow label="Phone" value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : null} />
-                <DetailRow label="Email" value={contact.email} href={contact.email ? `mailto:${contact.email}` : null} />
+                <DetailRow label={t('detail.name')} value={contact.name} />
+                <DetailRow label={t('detail.phone')} value={contact.phone} href={contact.phone ? `tel:${contact.phone}` : null} />
+                <DetailRow label={t('detail.email')} value={contact.email} href={contact.email ? `mailto:${contact.email}` : null} />
               </>
             )}
 
@@ -1012,12 +1021,12 @@ export default function TechClaimDetail() {
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                   marginTop: 14, marginBottom: 6,
                 }}>
-                  Adjuster
+                  {t('detail.adjuster')}
                 </div>
-                <DetailRow label="Name" value={adjuster.name} />
-                <DetailRow label="Company" value={adjuster.company} />
-                <DetailRow label="Cell" value={adjuster.phone} href={adjuster.phone ? `tel:${adjuster.phone}` : null} />
-                <DetailRow label="Email" value={adjuster.email} href={adjuster.email ? `mailto:${adjuster.email}` : null} />
+                <DetailRow label={t('detail.name')} value={adjuster.name} />
+                <DetailRow label={t('detail.company')} value={adjuster.company} />
+                <DetailRow label={t('detail.cell')} value={adjuster.phone} href={adjuster.phone ? `tel:${adjuster.phone}` : null} />
+                <DetailRow label={t('detail.email')} value={adjuster.email} href={adjuster.email ? `mailto:${adjuster.email}` : null} />
               </>
             )}
           </div>
@@ -1077,7 +1086,7 @@ export default function TechClaimDetail() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="7 17 17 7" /><polyline points="7 7 17 17" /><circle cx="12" cy="12" r="10" />
               </svg>
-              Merge claim
+              {t('mergeClaim')}
             </button>
             <button
               onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
@@ -1094,7 +1103,7 @@ export default function TechClaimDetail() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
               </svg>
-              Delete claim
+              {t('deleteClaim')}
             </button>
             <button
               onClick={() => setMenuOpen(false)}
@@ -1105,7 +1114,7 @@ export default function TechClaimDetail() {
                 fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
               }}
             >
-              Cancel
+              {t('tech:btn.cancel')}
             </button>
           </div>
         </div>
@@ -1138,12 +1147,21 @@ export default function TechClaimDetail() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>Delete Claim</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>{t('deleteTitle')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
-              This will archive <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{claim.claim_number}</strong>. It can be restored later but will be hidden from all views.
+              <Trans
+                t={t}
+                i18nKey="deleteArchiveNote"
+                values={{ claimNumber: claim.claim_number }}
+                components={{ b: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }} /> }}
+              />
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              Type <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>DELETE</strong> to confirm:
+              <Trans
+                t={t}
+                i18nKey="deleteTypeConfirm"
+                components={{ b: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }} /> }}
+              />
             </div>
             <input
               type="text"
@@ -1170,7 +1188,7 @@ export default function TechClaimDetail() {
                   fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
                 }}
               >
-                Cancel
+                {t('tech:btn.cancel')}
               </button>
               <button
                 onClick={handleSoftDelete}
@@ -1185,7 +1203,7 @@ export default function TechClaimDetail() {
                   opacity: deleting ? 0.7 : 1,
                 }}
               >
-                {deleting ? 'Deleting…' : 'Delete Claim'}
+                {deleting ? t('tech:btn.deleting') : t('deleteTitle')}
               </button>
             </div>
           </div>

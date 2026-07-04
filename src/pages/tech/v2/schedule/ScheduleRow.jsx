@@ -29,6 +29,7 @@
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { StatusChip, apptHref } from '@/components/tech/v2';
 import { fmtTime, fmtDuration, divisionMeta, isEvent, statusVar } from './scheduleFormat.js';
 import CrewAvatars from './CrewAvatars.jsx';
@@ -47,12 +48,13 @@ function LockIcon() {
  * @param {{ appt: object }} props
  */
 export default function ScheduleRow({ appt }) {
+  const { t } = useTranslation(['schedule', 'tech']);
   const navigate = useNavigate();
   const event = isEvent(appt);
   const job = appt.jobs;
   const accent = appt.color || (event ? EVENT_ACCENT : statusVar(appt.status, 'color'));
 
-  const primary = job?.insured_name || appt.title || (event ? 'Event' : 'Appointment');
+  const primary = job?.insured_name || appt.title || (event ? t('event') : t('tech:misc.appointment'));
   const secondary = job?.insured_name
     ? [appt.title, job.city].filter(Boolean).join(' · ')
     : (job ? [job.address, job.city].filter(Boolean).join(', ') : (appt.notes || ''));
@@ -72,21 +74,21 @@ export default function ScheduleRow({ appt }) {
     >
       <span className="tv2-sched-row__bar" style={{ background: accent }} aria-hidden="true" />
       <span className="tv2-sched-row__time">
-        <span className="tv2-sched-row__time-start">{appt.time_start ? fmtTime(appt.time_start) : 'All day'}</span>
+        <span className="tv2-sched-row__time-start">{appt.time_start ? fmtTime(appt.time_start) : t('allDay')}</span>
         {duration && <span className="tv2-sched-row__time-dur">{duration}</span>}
       </span>
       <span className="tv2-sched-row__body">
         <span className="tv2-sched-row__title">
-          {appt.is_milestone && <span className="tv2-sched-row__milestone" aria-label="Milestone">◆</span>}
+          {appt.is_milestone && <span className="tv2-sched-row__milestone" aria-label={t('milestoneAria')}>◆</span>}
           {primary}
-          {appt.is_private && <span className="tv2-sched-row__lock" aria-label="Private"><LockIcon /></span>}
+          {appt.is_private && <span className="tv2-sched-row__lock" aria-label={t('private')}><LockIcon /></span>}
         </span>
         {secondary && <span className="tv2-sched-row__sub">{secondary}</span>}
         <span className="tv2-sched-row__meta">
           <StatusChip status={appt.status} />
-          {div && <span className="tv2-sched-pill" style={{ background: div.bg, color: div.color }}>{div.label}</span>}
-          {multiDay && <span className="tv2-sched-pill tv2-sched-pill--span">{appt.duration_days}-day</span>}
-          {total > 0 && <span className="tv2-sched-row__tasks">{done}/{total} tasks</span>}
+          {div && <span className="tv2-sched-pill" style={{ background: div.bg, color: div.color }}>{t(`tech:division.${job.division}`, { defaultValue: div.label })}</span>}
+          {multiDay && <span className="tv2-sched-pill tv2-sched-pill--span">{t('nDay', { count: appt.duration_days })}</span>}
+          {total > 0 && <span className="tv2-sched-row__tasks">{t('nTasks', { count: total, done, total })}</span>}
           {crew.length > 0 && <CrewAvatars crew={crew} size={18} />}
         </span>
       </span>

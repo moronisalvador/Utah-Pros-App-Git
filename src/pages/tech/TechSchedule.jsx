@@ -17,9 +17,10 @@
  *                  shell)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
+ *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
- *              ./techConstants, @/lib/toast, @/lib/scheduleUtils
+ *              ./techConstants, @/lib/toast, @/lib/scheduleUtils,
+ *              @/lib/techDateUtils (currentLocaleTag)
  *   Data:      All access goes through the db client from useAuth (RPC only).
  *              Tables below were resolved from the RPC, not guessed:
  *              reads  → appointment_crew, appointments, employees, jobs
@@ -43,15 +44,15 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_BORDER_COLORS, TYPE_CONFIG } from './techConstants';
 import { toast } from '@/lib/toast';
 import { fmtDate } from '@/lib/scheduleUtils';
+import { currentLocaleTag, formatTime } from '@/lib/techDateUtils';
 
 // ─── SECTION: Constants ──────────────
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const STRIP_DAYS = 61; // ~1 month each side of today
 const STRIP_CENTER = 30; // index of today in the strip
 const DAY_WIDTH = 52; // px per day cell
@@ -63,12 +64,6 @@ function addDays(d, n) {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
   return r;
-}
-
-function formatTime(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
 function formatDuration(start, end) {
@@ -83,14 +78,12 @@ function formatDuration(start, end) {
   return rm ? `${h}h ${rm}m` : `${h}h`;
 }
 
-function formatDateHeader(dateStr, todayStr, tomorrowStr) {
+function formatDateHeader(dateStr, todayStr, tomorrowStr, t) {
   const d = new Date(dateStr + 'T12:00:00');
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
-  const month = d.toLocaleDateString('en-US', { month: 'short' });
-  const day = d.getDate();
-  if (dateStr === todayStr) return `Today \u00b7 ${weekday} ${month} ${day}`;
-  if (dateStr === tomorrowStr) return `Tomorrow \u00b7 ${weekday} ${month} ${day}`;
-  return `${weekday} ${month} ${day}`;
+  const rest = d.toLocaleDateString(currentLocaleTag(), { weekday: 'short', month: 'short', day: 'numeric' });
+  if (dateStr === todayStr) return `${t('tech:date.today')} \u00b7 ${rest}`;
+  if (dateStr === tomorrowStr) return `${t('tech:date.tomorrow')} \u00b7 ${rest}`;
+  return rest;
 }
 
 /* ── Continuous Date Strip ── */
@@ -164,7 +157,7 @@ function DateStrip({ selectedDay, onSelectDay, apptDates }) {
                   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2,
                   height: 12, lineHeight: '12px',
                 }}>
-                  {MONTHS[d.month].slice(0, 3)}
+                  {d.date.toLocaleDateString(currentLocaleTag(), { month: 'short' })}
                 </div>
               )}
               {!showMonth && <div style={{ height: 12 }} />}
@@ -175,7 +168,7 @@ function DateStrip({ selectedDay, onSelectDay, apptDates }) {
                 color: isSelected ? 'var(--accent)' : (isToday ? 'var(--accent)' : 'var(--text-tertiary)'),
                 marginBottom: 4,
               }}>
-                {DOW[d.dow].charAt(0)}
+                {d.date.toLocaleDateString(currentLocaleTag(), { weekday: 'narrow' })}
               </div>
 
               {/* Date circle */}
@@ -206,6 +199,7 @@ function DateStrip({ selectedDay, onSelectDay, apptDates }) {
 /* ── Month Picker (full calendar overlay) ── */
 
 function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
+  const { t } = useTranslation('schedule');
   const sel = new Date(selectedDay + 'T12:00:00');
   const [viewMonth, setViewMonth] = useState(sel.getMonth());
   const [viewYear, setViewYear] = useState(sel.getFullYear());
@@ -256,7 +250,7 @@ function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
-            {MONTHS[viewMonth]} {viewYear}
+            {new Date(viewYear, viewMonth, 1).toLocaleDateString(currentLocaleTag(), { month: 'long', year: 'numeric' })}
           </div>
           <button onClick={nextMonth} style={{
             width: 40, height: 40, borderRadius: 20, border: 'none',
@@ -269,7 +263,10 @@ function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
 
         {/* DOW headers */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', marginBottom: 4 }}>
-          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          {/* Localized single-letter weekday headers, Sun→Sat (Jan 1 2023 was a Sunday). */}
+          {Array.from({ length: 7 }, (_, i) =>
+            new Date(2023, 0, 1 + i).toLocaleDateString(currentLocaleTag(), { weekday: 'narrow' })
+          ).map((d, i) => (
             <div key={i} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 0' }}>{d}</div>
           ))}
         </div>
@@ -314,7 +311,7 @@ function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
           background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
           fontSize: 14, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer',
         }}>
-          Go to Today
+          {t('goToToday')}
         </button>
       </div>
     </>
@@ -324,6 +321,7 @@ function MonthPicker({ selectedDay, onSelectDay, onClose, apptDates }) {
 /* ── Appointment Row (shared between views) ── */
 
 function ApptRow({ appt, navigate }) {
+  const { t } = useTranslation(['schedule', 'tech']);
   const job = appt.jobs;
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
   const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
@@ -364,12 +362,12 @@ function ApptRow({ appt, navigate }) {
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {appt.title || 'Appointment'}
+              {appt.title || t('tech:misc.appointment')}
             </div>
           </>
         ) : (
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
-            {appt.title || 'Appointment'}
+            {appt.title || t('tech:misc.appointment')}
           </div>
         )}
         {address && (
@@ -384,7 +382,7 @@ function ApptRow({ appt, navigate }) {
               fontSize: 10, fontWeight: 600, padding: '2px 8px',
               borderRadius: 'var(--radius-full)', background: tc.bg, color: tc.color,
             }}>
-              {tc.icon} {tc.label}
+              {tc.icon} {t(`tech:apptType.${appt.type}`, { defaultValue: tc.label })}
             </span>
           )}
           <span style={{
@@ -392,7 +390,7 @@ function ApptRow({ appt, navigate }) {
             borderRadius: 'var(--radius-full)',
             background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
           }}>
-            {(appt.status || 'scheduled').replace(/_/g, ' ')}
+            {t(`tech:apptStatus.${appt.status || 'scheduled'}`, { defaultValue: (appt.status || 'scheduled').replace(/_/g, ' ') })}
           </span>
           {appt.is_private && (
             <span style={{
@@ -402,7 +400,7 @@ function ApptRow({ appt, navigate }) {
               background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a',
             }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Private
+              {t('private')}
             </span>
           )}
         </div>
@@ -425,17 +423,18 @@ function loadFilters(empId) {
       }
       return parsed;
     }
-  } catch {}
+  } catch { /* ignore malformed/absent stored filters */ }
   return { employee: 'me', division: 'all' };
 }
 function saveFilters(empId, filters) {
-  try { localStorage.setItem(`tech_schedule_filters_${empId}`, JSON.stringify(filters)); } catch {}
+  try { localStorage.setItem(`tech_schedule_filters_${empId}`, JSON.stringify(filters)); } catch { /* private mode — skip persist */ }
 }
 
 /* ── Main Component ── */
 
 export default function TechSchedule() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['schedule', 'tech']);
   const { employee, db } = useAuth();
   const navigate = useNavigate();
   const [allAppointments, setAllAppointments] = useState([]);
@@ -466,7 +465,7 @@ export default function TechSchedule() {
         if (!map.has(c.employee_id)) {
           map.set(c.employee_id, {
             id: c.employee_id,
-            name: c.employees?.display_name || c.employees?.full_name || 'Unknown',
+            name: c.employees?.display_name || c.employees?.full_name || t('tech:misc.unknown'),
           });
         }
       });
@@ -477,7 +476,7 @@ export default function TechSchedule() {
       if (b.id === employee.id) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [allAppointments, employee.id]);
+  }, [allAppointments, employee.id, t]);
 
   const todayStr = fmtDate(new Date());
   const tomorrowStr = fmtDate(addDays(new Date(), 1));
@@ -517,12 +516,12 @@ export default function TechSchedule() {
         p_end_date: dateRange.end,
       });
       setAllAppointments(result || []);
-    } catch (e) {
-      toast('Failed to load schedule', 'error');
+    } catch {
+      toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
     hasFetched.current = true;
-  }, [db, dateRange.start, dateRange.end]);
+  }, [db, dateRange.start, dateRange.end, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -637,7 +636,7 @@ export default function TechSchedule() {
   // Month/year label for header
   const headerLabel = useMemo(() => {
     const d = new Date(selectedDay + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return d.toLocaleDateString(currentLocaleTag(), { month: 'long', year: 'numeric' });
   }, [selectedDay]);
 
   const handleSelectDay = (dayKey) => {
@@ -662,7 +661,7 @@ export default function TechSchedule() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 0' }}>
           <div>
             <div style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Schedule
+              {t('title')}
             </div>
             {/* Tappable month/year label → opens month picker */}
             <button
@@ -691,7 +690,7 @@ export default function TechSchedule() {
                   WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                Today
+                {t('today')}
               </button>
             )}
 
@@ -738,7 +737,7 @@ export default function TechSchedule() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
               }}
-              aria-label="Create appointment or event"
+              aria-label={t('createAria')}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -758,7 +757,7 @@ export default function TechSchedule() {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search by name, address, job #..."
+              placeholder={t('searchPlaceholder')}
               style={{
                 width: '100%', height: 40, paddingLeft: 36, paddingRight: searchQuery ? 32 : 12,
                 fontSize: 16, borderRadius: 'var(--tech-radius-button)',
@@ -812,12 +811,12 @@ export default function TechSchedule() {
           <div style={{ padding: '8px 16px 4px', borderTop: '1px solid var(--border-light)', marginTop: 4 }}>
             {/* Division filter */}
             <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Type</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{t('filterType')}</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {[
-                  { key: 'all', label: 'All' },
-                  { key: 'mitigation', label: 'Mitigation' },
-                  { key: 'reconstruction', label: 'Reconstruction' },
+                  { key: 'all', label: t('div.all') },
+                  { key: 'mitigation', label: t('div.mitigation') },
+                  { key: 'reconstruction', label: t('div.reconstruction') },
                 ].map(opt => (
                   <button
                     key={opt.key}
@@ -838,7 +837,7 @@ export default function TechSchedule() {
             </div>
             {/* Employee filter */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Crew</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{t('filterCrew')}</div>
               <div style={{
                 display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4,
                 scrollbarWidth: 'none', msOverflowStyle: 'none',
@@ -857,7 +856,7 @@ export default function TechSchedule() {
                       WebkitTapHighlightColor: 'transparent',
                     }}
                   >
-                    Me
+                    {t('me')}
                   </button>
                   {/* All chip */}
                   <button
@@ -871,7 +870,7 @@ export default function TechSchedule() {
                       WebkitTapHighlightColor: 'transparent',
                     }}
                   >
-                    All
+                    {t('all')}
                   </button>
                   {/* Individual crew members — multi-select */}
                   {crewMembers.map(c => {
@@ -890,7 +889,7 @@ export default function TechSchedule() {
                         WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      {isMe ? `Me (${c.name})` : c.name}
+                      {isMe ? t('meWithName', { name: c.name }) : c.name}
                     </button>
                     );
                   })}
@@ -929,7 +928,7 @@ export default function TechSchedule() {
             borderBottom: '1px solid var(--border-light)',
             fontSize: 14, fontWeight: 700, color: 'var(--accent)',
           }}>
-            {formatDateHeader(selectedDay, todayStr, tomorrowStr)}
+            {formatDateHeader(selectedDay, todayStr, tomorrowStr, t)}
           </div>
 
           {dailyAppts.length === 0 ? (
@@ -938,7 +937,7 @@ export default function TechSchedule() {
                 <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" />
                 <line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
               </svg>
-              <div style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>No appointments this day</div>
+              <div style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>{t('emptyDay')}</div>
             </div>
           ) : (
             dailyAppts.map(appt => <ApptRow key={appt.id} appt={appt} navigate={navigate} />)
@@ -956,9 +955,9 @@ export default function TechSchedule() {
                   <polyline points="9 16 11 18 15 14" strokeWidth="2" />
                 </svg>
               </div>
-              <div className="empty-state-text">No appointments in this range</div>
+              <div className="empty-state-text">{t('emptyRange')}</div>
               <div className="empty-state-sub" style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
-                Scroll the date strip or tap the month to navigate
+                {t('emptyRangeHint')}
               </div>
             </div>
           ) : (
@@ -982,7 +981,7 @@ export default function TechSchedule() {
                       fontSize: 14, fontWeight: 700,
                       color: isToday ? 'var(--accent)' : (isTomorrow ? 'var(--text-primary)' : 'var(--text-secondary)'),
                     }}>
-                      {formatDateHeader(dateStr, todayStr, tomorrowStr)}
+                      {formatDateHeader(dateStr, todayStr, tomorrowStr, t)}
                     </div>
                     {appts.map(appt => <ApptRow key={appt.id} appt={appt} navigate={navigate} />)}
                   </div>
@@ -1020,9 +1019,9 @@ export default function TechSchedule() {
             }}
           >
             <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Create new</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{t('createNew')}</div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                {new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {new Date(selectedDay + 'T00:00:00').toLocaleDateString(currentLocaleTag(), { weekday: 'short', month: 'short', day: 'numeric' })}
               </div>
             </div>
             <button
@@ -1043,8 +1042,8 @@ export default function TechSchedule() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               </span>
               <span style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Job appointment</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Linked to a job, with tasks &amp; crew</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{t('jobAppt')}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{t('jobApptSub')}</div>
               </span>
               <span style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>›</span>
             </button>
@@ -1066,8 +1065,8 @@ export default function TechSchedule() {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               </span>
               <span style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Event</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Meeting, PTO, training — no job needed</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{t('event')}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{t('eventSub')}</div>
               </span>
               <span style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>›</span>
             </button>

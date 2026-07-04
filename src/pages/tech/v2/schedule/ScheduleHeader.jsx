@@ -26,13 +26,11 @@
  * ════════════════════════════════════════════════
  */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import WeekStrip from './WeekStrip.jsx';
 
-const DIVISIONS = [
-  { key: 'all', label: 'All' },
-  { key: 'mitigation', label: 'Mitigation' },
-  { key: 'reconstruction', label: 'Reconstruction' },
-];
+// Type-filter options; labels translated at render via t(`div.${key}`).
+const DIVISIONS = [{ key: 'all' }, { key: 'mitigation' }, { key: 'reconstruction' }];
 
 function Chip({ active, onClick, children }) {
   return (
@@ -49,6 +47,7 @@ export default function ScheduleHeader({
   filterEmployee, filterDivision, onSetEmployee, onSetDivision, onToggleCrew, crewMembers, myId,
   selectedDay, today, apptDates, onSelectDay, onWeekChange, active,
 }) {
+  const { t } = useTranslation('schedule');
   const hasQuery = !!(searchQuery && searchQuery.trim());
   return (
     <div className="tv2-sched-header">
@@ -60,7 +59,7 @@ export default function ScheduleHeader({
         <div className="tv2-sched-header__actions">
           <button type="button"
             className={`tv2-icon-btn tv2-headicon${(hasQuery || showSearch) ? ' is-active' : ''}`}
-            onClick={onToggleSearch} aria-label="Search" aria-expanded={showSearch}>
+            onClick={onToggleSearch} aria-label={t('searchAria')} aria-expanded={showSearch}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -68,19 +67,19 @@ export default function ScheduleHeader({
           </button>
           <button type="button"
             className={`tv2-icon-btn tv2-headicon${hasActiveFilters ? ' is-active' : ''}`}
-            onClick={onToggleFilters} aria-label="Filters" aria-expanded={showFilters}>
+            onClick={onToggleFilters} aria-label={t('filtersAria')} aria-expanded={showFilters}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
             </svg>
             {hasActiveFilters && <span className="tv2-icon-btn__dot" />}
           </button>
-          <div className="tv2-segmented" role="tablist" aria-label="View">
+          <div className="tv2-segmented" role="tablist" aria-label={t('viewAria')}>
             <button type="button" role="tab" aria-selected={view === 'agenda'}
-              className={view === 'agenda' ? 'is-active' : ''} onClick={() => onViewChange('agenda')}>Agenda</button>
+              className={view === 'agenda' ? 'is-active' : ''} onClick={() => onViewChange('agenda')}>{t('tabAgenda')}</button>
             <button type="button" role="tab" aria-selected={view === 'day'}
-              className={view === 'day' ? 'is-active' : ''} onClick={() => onViewChange('day')}>Day</button>
+              className={view === 'day' ? 'is-active' : ''} onClick={() => onViewChange('day')}>{t('tabDay')}</button>
           </div>
-          <button type="button" className="tv2-icon-btn tv2-icon-btn--accent" onClick={onCreate} aria-label="Create appointment or event">
+          <button type="button" className="tv2-icon-btn tv2-icon-btn--accent" onClick={onCreate} aria-label={t('createAria')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
@@ -100,11 +99,11 @@ export default function ScheduleHeader({
               autoFocus
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search name, address, job #…"
-              aria-label="Search appointments"
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchAria')}
             />
             {searchQuery && (
-              <button type="button" className="tv2-search__clear" onClick={() => onSearchChange('')} aria-label="Clear search">
+              <button type="button" className="tv2-search__clear" onClick={() => onSearchChange('')} aria-label={t('clearSearchAria')}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -118,24 +117,24 @@ export default function ScheduleHeader({
       {showFilters && (
         <div className="tv2-filter-panel">
           <div className="tv2-filter-group">
-            <div className="tv2-filter-label">Type</div>
+            <div className="tv2-filter-label">{t('filterType')}</div>
             <div className="tv2-chip-row">
               {DIVISIONS.map((d) => (
-                <Chip key={d.key} active={filterDivision === d.key} onClick={() => onSetDivision(d.key)}>{d.label}</Chip>
+                <Chip key={d.key} active={filterDivision === d.key} onClick={() => onSetDivision(d.key)}>{t(`div.${d.key}`)}</Chip>
               ))}
             </div>
           </div>
           <div className="tv2-filter-group">
-            <div className="tv2-filter-label">Crew</div>
+            <div className="tv2-filter-label">{t('filterCrew')}</div>
             <div className="tv2-chip-row tv2-chip-row--scroll">
-              <Chip active={filterEmployee === 'me'} onClick={() => onSetEmployee('me')}>Me</Chip>
-              <Chip active={filterEmployee === 'all'} onClick={() => onSetEmployee('all')}>All</Chip>
+              <Chip active={filterEmployee === 'me'} onClick={() => onSetEmployee('me')}>{t('me')}</Chip>
+              <Chip active={filterEmployee === 'all'} onClick={() => onSetEmployee('all')}>{t('all')}</Chip>
               {crewMembers.map((c) => {
                 const isMe = c.id === myId;
                 const isSel = Array.isArray(filterEmployee) && filterEmployee.includes(c.id);
                 return (
                   <Chip key={c.id} active={isSel} onClick={() => onToggleCrew(c.id)}>
-                    {isMe ? `Me (${c.name})` : c.name}
+                    {isMe ? t('meWithName', { name: c.name }) : c.name}
                   </Chip>
                 );
               })}

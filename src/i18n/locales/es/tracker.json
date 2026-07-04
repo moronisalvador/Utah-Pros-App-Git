@@ -1,0 +1,30 @@
+{
+  "loading": "Cargando…",
+  "confirm": "Confirmar",
+  "status": {
+    "scheduled": "Programado",
+    "omw": "En camino",
+    "started": "Iniciado",
+    "paused": "En pausa · {{stamp}}",
+    "completed": "Completado"
+  },
+  "visitBadge": "Visita {{n}}",
+  "visitSummary": "Visita {{n}}:",
+  "travel": "Traslado",
+  "onSite": "En el sitio",
+  "travelLabel": "Traslado: {{value}}",
+  "onJobLabel": "En el trabajo: {{value}}",
+  "station": { "omw": "En camino", "start": "Iniciar", "finish": "Terminar" },
+  "pause": "Pausar",
+  "resume": "Reanudar",
+  "returnToJob": "Volver al trabajo",
+  "confirmReturn": "¿Confirmar regreso?",
+  "reasonForReturn": "Motivo del regreso",
+  "reasonPlaceholder": "p. ej. Trabajo adicional solicitado, monitoreo de seguimiento...",
+  "clockIn": "Marcar entrada",
+  "clockingIn": "Marcando…",
+  "cancel": "Cancelar",
+  "toastClockElsewhere": "Aún tienes la entrada marcada en otro trabajo — marca la salida allí primero.",
+  "toastClockedOutOf": "Salida registrada de {{job}} ({{elapsed}})",
+  "toastReturnFailed": "Error al volver: {{message}}"
+}

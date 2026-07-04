@@ -49,6 +49,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
@@ -56,6 +57,7 @@ import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from 
 
 export default function TechEditAppointment() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['apptForm', 'tech']);
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -106,7 +108,7 @@ export default function TechEditAppointment() {
         db.rpc('get_appointment_tasks', { p_appointment_id: id }),
         db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
       ]);
-      if (!detail) { toast('Appointment not found', 'error'); navigate(-1); return; }
+      if (!detail) { toast(t('toastNotFound'), 'error'); navigate(-1); return; }
 
       setAppt(detail);
       setEmployees(empList || []);
@@ -132,12 +134,12 @@ export default function TechEditAppointment() {
         const pool = await db.rpc('get_unassigned_tasks', { p_job_id: jobId });
         setTaskPool(Array.isArray(pool) ? pool : []);
       }
-    } catch (e) {
-      toast('Failed to load appointment', 'error');
+    } catch {
+      toast(t('toastLoadFailed'), 'error');
       navigate(-1);
     }
     setLoading(false);
-  }, [db, id, navigate]);
+  }, [db, id, navigate, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -167,7 +169,7 @@ export default function TechEditAppointment() {
   /* ── Task pool helpers ── */
   const allPoolTasks = useMemo(() => {
     const map = {};
-    for (const g of taskPool) for (const t of (g.tasks || [])) map[t.id] = { ...t, phase_name: g.phase_name, phase_color: g.phase_color };
+    for (const g of taskPool) for (const tk of (g.tasks || [])) map[tk.id] = { ...tk, phase_name: g.phase_name, phase_color: g.phase_color };
     return map;
   }, [taskPool]);
 
@@ -191,21 +193,21 @@ export default function TechEditAppointment() {
       setTaskPool(newPool);
       // Auto-select new task
       for (const g of newPool) {
-        const t = g.tasks?.find(t => t.title === newTaskTitle.trim() && !selectedNewTasks.includes(t.id));
-        if (t) { setSelectedNewTasks(prev => [...prev, t.id]); break; }
+        const tk = g.tasks?.find(x => x.title === newTaskTitle.trim() && !selectedNewTasks.includes(x.id));
+        if (tk) { setSelectedNewTasks(prev => [...prev, tk.id]); break; }
       }
       setNewTaskTitle('');
-    } catch { toast('Failed to create task', 'error'); }
+    } catch { toast(t('toastTaskFailed'), 'error'); }
   };
 
   /* ── Toggle current task completion ── */
   const toggleCurrentTask = async (task) => {
-    setCurrentTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
+    setCurrentTasks(prev => prev.map(ct => ct.id === task.id ? { ...ct, is_completed: !ct.is_completed } : ct));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.id, p_employee_id: employee.id });
     } catch {
-      toast('Failed to toggle task', 'error');
-      setCurrentTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
+      toast(t('toastToggleTaskFailed'), 'error');
+      setCurrentTasks(prev => prev.map(ct => ct.id === task.id ? { ...ct, is_completed: !ct.is_completed } : ct));
     }
   };
 
@@ -259,10 +261,10 @@ export default function TechEditAppointment() {
         });
       }
 
-      toast('Appointment updated');
+      toast(t('toastUpdated'));
       navigate(-1);
     } catch (err) {
-      toast('Failed to save: ' + (err.message || ''), 'error');
+      toast(t('toastUpdateFailed', { message: err.message || '' }), 'error');
     } finally {
       setSaving(false);
     }
@@ -280,10 +282,10 @@ export default function TechEditAppointment() {
     setDeleting(true);
     try {
       await db.rpc('delete_appointment', { p_appointment_id: id });
-      toast('Appointment deleted');
+      toast(t('toastDeleted'));
       navigate('/tech/schedule', { replace: true });
     } catch (err) {
-      toast('Failed to delete: ' + (err.message || ''), 'error');
+      toast(t('toastDeleteFailed', { message: err.message || '' }), 'error');
     }
     setDeleting(false);
   };
@@ -319,7 +321,7 @@ export default function TechEditAppointment() {
           </svg>
         </button>
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-          Edit Appointment
+          {t('editTitle')}
         </span>
       </div>
 
@@ -328,7 +330,7 @@ export default function TechEditAppointment() {
 
         {/* ═══ JOB (read-only) ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Job</div>
+          <div style={labelStyle}>{t('labelJob')}</div>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
             borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)',
@@ -336,10 +338,10 @@ export default function TechEditAppointment() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-                {job?.insured_name || 'Unknown'} <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}>#{job?.job_number}</span>
+                {job?.insured_name || t('tech:misc.unknown')} <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}>#{job?.job_number}</span>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                {[job?.address, job?.city].filter(Boolean).join(', ') || 'No address'}
+                {[job?.address, job?.city].filter(Boolean).join(', ') || t('noAddress')}
               </div>
             </div>
           </div>
@@ -347,7 +349,7 @@ export default function TechEditAppointment() {
 
         {/* ═══ DATE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Date <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDate')} <span style={{ color: '#ef4444' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => { const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() - 1); setDate(d.toISOString().split('T')[0]); }}
               style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 'var(--tech-radius-button)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
@@ -363,20 +365,20 @@ export default function TechEditAppointment() {
           {dayAppts.length > 0 && (
             <div style={{ marginTop: 10, borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
               <div style={{ padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)' }}>
-                {dayAppts.length} other appointment{dayAppts.length !== 1 ? 's' : ''} this day
+                {t('otherApptsCount', { count: dayAppts.length })}
               </div>
               {dayAppts.map(a => {
-                const t = a.time_start ? (() => { const [h, m] = a.time_start.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; })() : '';
+                const ts = a.time_start ? (() => { const [h, m] = a.time_start.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; })() : '';
                 const te = a.time_end ? (() => { const [h, m] = a.time_end.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; })() : '';
                 const crew = (a.appointment_crew || []).map(c => c.employees?.display_name || c.employees?.full_name || '').filter(Boolean).join(', ');
                 return (
                   <div key={a.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <div style={{ width: 58, flexShrink: 0, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1.3 }}>
-                      {t}{te ? <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-tertiary)' }}>– {te}</div> : null}
+                      {ts}{te ? <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-tertiary)' }}>– {te}</div> : null}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {a.jobs?.insured_name || a.title || 'Appointment'}
+                        {a.jobs?.insured_name || a.title || t('tech:misc.appointment')}
                       </div>
                       {crew && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{crew}</div>}
                     </div>
@@ -389,7 +391,7 @@ export default function TechEditAppointment() {
 
         {/* ═══ TIME ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Time</div>
+          <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={timeStart}
@@ -398,7 +400,7 @@ export default function TechEditAppointment() {
             >
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
-            <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>to</div>
+            <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
               value={timeEnd}
               onChange={e => setTimeEnd(e.target.value)}
@@ -418,7 +420,7 @@ export default function TechEditAppointment() {
               padding: 0, display: 'flex', alignItems: 'center', gap: 6, width: '100%',
             }}
           >
-            Crew ({selectedCrew.length})
+            {t('labelCrew', { count: selectedCrew.length })}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
               style={{ transform: showCrew ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
               <polyline points="6 9 12 15 18 9" />
@@ -437,7 +439,7 @@ export default function TechEditAppointment() {
                     color: c.role === 'lead' ? 'var(--accent)' : 'var(--text-secondary)',
                     border: `1px solid ${c.role === 'lead' ? 'var(--accent)' : 'var(--border-color)'}`,
                   }}>
-                    {emp?.full_name || 'Unknown'} {c.role === 'lead' ? '(Lead)' : ''}
+                    {emp?.full_name || t('tech:misc.unknown')} {c.role === 'lead' ? t('roleLeadParen') : ''}
                   </span>
                 );
               })}
@@ -481,7 +483,7 @@ export default function TechEditAppointment() {
                         background: crewEntry.role === 'lead' ? 'var(--accent)' : 'var(--bg-tertiary)',
                         color: crewEntry.role === 'lead' ? '#fff' : 'var(--text-secondary)',
                       }}>
-                        {crewEntry.role}
+                        {crewEntry.role === 'lead' ? t('roleLead') : t('roleTech')}
                       </span>
                     )}
                     <div style={{
@@ -507,7 +509,7 @@ export default function TechEditAppointment() {
         {totalCount > 0 && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Assigned Tasks</span>
+              <span>{t('labelAssignedTasks')}</span>
               <span style={{ fontSize: 12, fontWeight: 400, letterSpacing: 'normal', textTransform: 'none', color: 'var(--text-secondary)' }}>{doneCount}/{totalCount}</span>
             </div>
             <div className="tech-task-progress-bar" style={{ marginBottom: 8 }}>
@@ -538,7 +540,7 @@ export default function TechEditAppointment() {
               padding: 0, display: 'flex', alignItems: 'center', gap: 6, width: '100%',
             }}
           >
-            Add Tasks ({selectedNewTasks.length})
+            {t('labelAddTasks', { count: selectedNewTasks.length })}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
               style={{ transform: showTasks ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
               <polyline points="6 9 12 15 18 9" />
@@ -548,16 +550,16 @@ export default function TechEditAppointment() {
           {selectedNewTasks.length > 0 && !showTasks && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
               {selectedNewTasks.map(tid => {
-                const t = allPoolTasks[tid];
-                return t ? (
+                const tk = allPoolTasks[tid];
+                return tk ? (
                   <span key={tid} style={{
                     fontSize: 12, fontWeight: 600, padding: '4px 10px',
                     borderRadius: 'var(--radius-full)',
-                    background: t.phase_color ? `${t.phase_color}18` : 'var(--bg-tertiary)',
-                    color: t.phase_color || 'var(--text-secondary)',
-                    border: `1px solid ${t.phase_color || 'var(--border-color)'}`,
+                    background: tk.phase_color ? `${tk.phase_color}18` : 'var(--bg-tertiary)',
+                    color: tk.phase_color || 'var(--text-secondary)',
+                    border: `1px solid ${tk.phase_color || 'var(--border-color)'}`,
                   }}>
-                    {t.title}
+                    {tk.title}
                   </span>
                 ) : null;
               })}
@@ -568,7 +570,7 @@ export default function TechEditAppointment() {
             <div style={{ marginTop: 8 }}>
               {taskPool.length === 0 ? (
                 <div style={{ padding: 12, fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                  No unassigned tasks for this job
+                  {t('noUnassignedTasks')}
                 </div>
               ) : (
                 <div style={{ borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
@@ -627,7 +629,7 @@ export default function TechEditAppointment() {
                   type="text"
                   value={newTaskTitle}
                   onChange={e => setNewTaskTitle(e.target.value)}
-                  placeholder="Add a task..."
+                  placeholder={t('addTaskPlaceholder')}
                   style={{ ...inputStyle, flex: 1, height: 48 }}
                 />
                 <button
@@ -641,7 +643,7 @@ export default function TechEditAppointment() {
                     flexShrink: 0,
                   }}
                 >
-                  Add
+                  {t('add')}
                 </button>
               </div>
             </div>
@@ -650,11 +652,11 @@ export default function TechEditAppointment() {
 
         {/* ═══ NOTES ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Notes</div>
+          <div style={labelStyle}>{t('labelNotes')}</div>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            placeholder="Optional notes..."
+            placeholder={t('notesPlaceholder')}
             rows={3}
             style={{
               ...inputStyle, height: 'auto', padding: '12px 14px',
@@ -672,10 +674,10 @@ export default function TechEditAppointment() {
               <span style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                  Private
+                  {t('labelPrivate')}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
-                  Only admins, project managers, and assigned crew can see this.
+                  {t('privateHint')}
                 </div>
               </span>
             </label>
@@ -683,7 +685,7 @@ export default function TechEditAppointment() {
         ) : isPrivate && (
           <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 'var(--tech-radius-button)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>Private appointment</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>{t('privateBadge')}</span>
           </div>
         )}
 
@@ -704,7 +706,7 @@ export default function TechEditAppointment() {
               transition: 'background 0.15s, color 0.15s, border-color 0.15s',
             }}
           >
-            {deleting ? 'Deleting...' : confirmDelete ? 'Tap Again to Delete' : 'Delete Appointment'}
+            {deleting ? t('btnDeleting') : confirmDelete ? t('btnDeleteConfirm') : t('btnDelete')}
           </button>
         </div>
       </div>
@@ -727,7 +729,7 @@ export default function TechEditAppointment() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {saving ? 'Saving...' : 'Save Changes'}
+          {saving ? t('btnSaving') : t('btnSave')}
         </button>
       </div>
     </div>

@@ -37,17 +37,19 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
 import { normalizePhone } from '@/lib/phone';
 
 // ─── SECTION: Constants ──────────────
+// Labels are resolved at render via t('role.<value>'); emoji + value are static.
 const ROLES = [
-  { value: 'homeowner', emoji: '\u{1F3E0}', label: 'Homeowner' },
-  { value: 'tenant', emoji: '\u{1F6CF}\uFE0F', label: 'Tenant' },
-  { value: 'adjuster', emoji: '\u{1F4CB}', label: 'Adjuster' },
-  { value: 'other', emoji: '\u{1F464}', label: 'Other' },
+  { value: 'homeowner', emoji: '\u{1F3E0}' },
+  { value: 'tenant', emoji: '\u{1F6CF}\uFE0F' },
+  { value: 'adjuster', emoji: '\u{1F4CB}' },
+  { value: 'other', emoji: '\u{1F464}' },
 ];
 
 const inputStyle = {
@@ -64,6 +66,7 @@ const labelStyle = {
 
 export default function TechNewCustomer() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation('newCustomer');
   const navigate = useNavigate();
   const { db } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -84,7 +87,7 @@ export default function TechNewCustomer() {
     if (!canSave || saving) return;
     const phone = normalizePhone(form.phone);
     if (!phone) {
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Enter a valid 10-digit phone number', type: 'error' } }));
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: t('toastInvalidPhone'), type: 'error' } }));
       return;
     }
     setSaving(true);
@@ -111,11 +114,11 @@ export default function TechNewCustomer() {
       }
       const result = await db.insert('contacts', data);
       if (result?.length > 0) {
-        toast('Customer created');
+        toast(t('toastCreated'));
         window.dispatchEvent(new CustomEvent('upr:contact-created'));
         navigate(`/customers/${result[0].id}`, { replace: true });
       } else {
-        toast('Failed to create customer', 'error');
+        toast(t('toastCreateFailed'), 'error');
       }
     } catch (err) {
       const msg = err.message || '';
@@ -124,15 +127,15 @@ export default function TechNewCustomer() {
         try {
           const existing = await db.select('contacts', `phone=eq.${encodeURIComponent(phone)}&select=id,name&limit=1`);
           if (existing?.length > 0) {
-            toast(`Customer already exists: ${existing[0].name}`, 'success');
+            toast(t('toastAlreadyExists', { name: existing[0].name }), 'success');
             window.dispatchEvent(new CustomEvent('upr:contact-created'));
             navigate(`/customers/${existing[0].id}`, { replace: true });
             return;
           }
         } catch { /* fall through */ }
-        toast('A customer with this phone number already exists', 'error');
+        toast(t('toastDuplicatePhone'), 'error');
       } else {
-        toast('Failed to save customer. Please try again.', 'error');
+        toast(t('toastSaveFailed'), 'error');
       }
     } finally {
       setSaving(false);
@@ -161,7 +164,7 @@ export default function TechNewCustomer() {
           </svg>
         </button>
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-          New Customer
+          {t('title')}
         </span>
       </div>
 
@@ -171,7 +174,7 @@ export default function TechNewCustomer() {
         {/* Role pills */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>
-            Contact Type
+            {t('labelContactType')}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {ROLES.map(r => (
@@ -191,7 +194,7 @@ export default function TechNewCustomer() {
                 <span style={{
                   fontSize: 11, fontWeight: 600,
                   color: role === r.value ? 'var(--accent)' : 'var(--text-secondary)',
-                }}>{r.label}</span>
+                }}>{t('role.' + r.value)}</span>
               </button>
             ))}
           </div>
@@ -200,13 +203,13 @@ export default function TechNewCustomer() {
         {/* Name */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            Full Name <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelFullName')} <span style={{ color: '#ef4444' }}>*</span>
           </label>
           <input
             type="text"
             value={form.name}
             onChange={e => set('name', e.target.value)}
-            placeholder="John Smith"
+            placeholder={t('namePlaceholder')}
             autoFocus
             style={inputStyle}
           />
@@ -215,25 +218,25 @@ export default function TechNewCustomer() {
         {/* Phone */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            Phone <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelPhone')} <span style={{ color: '#ef4444' }}>*</span>
           </label>
           <input
             type="tel"
             value={form.phone}
             onChange={e => set('phone', e.target.value)}
-            placeholder="(801) 555-1234"
+            placeholder={t('phonePlaceholder')}
             style={inputStyle}
           />
         </div>
 
         {/* Email */}
         <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Email</label>
+          <label style={labelStyle}>{t('labelEmail')}</label>
           <input
             type="email"
             value={form.email}
             onChange={e => set('email', e.target.value)}
-            placeholder="john@email.com"
+            placeholder={t('emailPlaceholder')}
             style={inputStyle}
           />
         </div>
@@ -241,12 +244,12 @@ export default function TechNewCustomer() {
         {/* Adjuster: Company */}
         {isAdjuster && (
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Carrier / Company</label>
+            <label style={labelStyle}>{t('labelCarrier')}</label>
             <input
               type="text"
               value={form.company}
               onChange={e => set('company', e.target.value)}
-              placeholder="State Farm, Allstate, etc."
+              placeholder={t('carrierPlaceholder')}
               style={inputStyle}
             />
           </div>
@@ -256,14 +259,14 @@ export default function TechNewCustomer() {
         {isAddress && (
           <>
             <div style={{ ...labelStyle, marginBottom: 8, marginTop: 4 }}>
-              Billing Address
+              {t('labelBillingAddress')}
             </div>
             <div style={{ marginBottom: 12 }}>
               <AddressAutocomplete
                 value={form.billing_address}
                 onChange={v => set('billing_address', v)}
                 onSelect={p => setForm(prev => ({ ...prev, billing_address: p.address, billing_city: p.city, billing_state: p.state || prev.billing_state, billing_zip: p.zip }))}
-                placeholder="Street address"
+                placeholder={t('streetPlaceholder')}
                 style={inputStyle}
                 touchTarget
               />
@@ -273,21 +276,21 @@ export default function TechNewCustomer() {
                 type="text"
                 value={form.billing_city}
                 onChange={e => set('billing_city', e.target.value)}
-                placeholder="City"
+                placeholder={t('cityPlaceholder')}
                 style={{ ...inputStyle, flex: 2 }}
               />
               <input
                 type="text"
                 value={form.billing_state}
                 onChange={e => set('billing_state', e.target.value)}
-                placeholder="ST"
+                placeholder={t('statePlaceholder')}
                 style={{ ...inputStyle, flex: 0.6, padding: '0 10px', textAlign: 'center' }}
               />
               <input
                 type="text"
                 value={form.billing_zip}
                 onChange={e => set('billing_zip', e.target.value)}
-                placeholder="ZIP"
+                placeholder={t('zipPlaceholder')}
                 style={{ ...inputStyle, flex: 1, padding: '0 10px' }}
               />
             </div>
@@ -296,11 +299,11 @@ export default function TechNewCustomer() {
 
         {/* Notes */}
         <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Notes</label>
+          <label style={labelStyle}>{t('labelNotes')}</label>
           <textarea
             value={form.notes}
             onChange={e => set('notes', e.target.value)}
-            placeholder="Optional notes..."
+            placeholder={t('notesPlaceholder')}
             rows={3}
             style={{
               ...inputStyle, height: 'auto', padding: '12px 14px',
@@ -328,7 +331,7 @@ export default function TechNewCustomer() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {saving ? 'Saving...' : 'Save Customer'}
+          {saving ? t('btnSaving') : t('btnSave')}
         </button>
       </div>
     </div>

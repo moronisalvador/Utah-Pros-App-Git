@@ -23,17 +23,20 @@
  *     all-crew upcoming and showed crew names).
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { ApptListRow } from '@/components/tech/v2';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
 function dayHeading(ds) {
   const d = new Date(ds + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(currentLocaleTag(), { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
 /**
  * @param {{ upcoming: object[] }} props - my next 7 days (already scoped + sorted).
  */
 export default function ComingUp({ upcoming }) {
+  const { t } = useTranslation('dash');
   if (!upcoming || upcoming.length === 0) return null;
 
   const byDay = new Map();
@@ -45,7 +48,7 @@ export default function ComingUp({ upcoming }) {
 
   return (
     <div className="tv2-dash-comingup">
-      <div className="tv2-dash-section-title">Coming up</div>
+      <div className="tv2-dash-section-title">{t('comingUp')}</div>
       {days.map((ds) => (
         <div key={ds} className="tv2-dash-comingup__day">
           <div className="tv2-dash-comingup__dayhead">{dayHeading(ds)}</div>
