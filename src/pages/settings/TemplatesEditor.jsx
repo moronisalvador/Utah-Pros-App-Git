@@ -14,7 +14,7 @@
  *   Rendered by:  src/App.jsx (inside SettingsLayout)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom (useParams, useNavigate, useBlocker)
+ *   Packages:  react, react-router-dom (useParams, useNavigate)
  *   Internal:  @/contexts/AuthContext (db), ./templates/templateData,
  *              ./templates/TemplateEditor, @/components/TabLoading
  *   Data:      reads  → get_document_templates (RPC, own fetch on mount)
@@ -24,14 +24,17 @@
  * NOTES / GOTCHAS:
  *   - The editor used to be an inline panel inside Settings.jsx whose only
  *     unsaved-changes guard was the in-component "Documents" breadcrumb. As a
- *     real route it now ALSO installs a router-level guard (useBlocker) so
- *     clicking away via the hub rail / back button prompts too. A beforeunload
- *     handler covers full-page reloads.
+ *     real route it guards the Back exit with an inline confirm banner when
+ *     there are unsaved changes, plus a beforeunload handler for full-page
+ *     reloads / tab close. (Note: the app uses a plain BrowserRouter, so React
+ *     Router's useBlocker() is NOT available — it throws "must be used within a
+ *     data router"; that is why the Back button is guarded manually rather than
+ *     via a router-level blocker.)
  *   - An unknown :docType redirects back to the templates grid.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useBlocker } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import TabLoading from '@/components/TabLoading';
 import { DOC_TYPES, buildTemplateSections } from './templates/templateData';
@@ -48,6 +51,7 @@ export default function TemplatesEditor() {
   const [initialSections, setInitialSections] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [pendingLeave, setPendingLeave] = useState(false);
 
   // Own fetch on mount: pull the saved overrides, fall back to built-in defaults.
   useEffect(() => {
@@ -63,12 +67,6 @@ export default function TemplatesEditor() {
     return () => { cancelled = true; };
   }, [db, docType, docMeta, navigate]);
 
-  // Router-level unsaved-changes guard: block in-app navigations while dirty.
-  const blocker = useBlocker(useCallback(
-    ({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname,
-    [dirty],
-  ));
-
   // Full-page reload / tab close guard.
   useEffect(() => {
     if (!dirty) return;
@@ -77,18 +75,25 @@ export default function TemplatesEditor() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
-  const goBack = () => navigate('/settings/templates');
+  // In-app unsaved-changes guard for the Back exit. (The app uses a plain
+  // BrowserRouter, not a data router, so useBlocker() is unavailable — it throws
+  // "useBlocker must be used within a data router". We guard the Back button
+  // ourselves and show an inline confirm banner instead.)
+  const goBack = () => {
+    if (dirty) { setPendingLeave(true); return; }
+    navigate('/settings/templates');
+  };
 
   if (!docMeta) return null;
   if (loading || !initialSections) return <TabLoading />;
 
   return (
     <>
-      {blocker.state === 'blocked' && (
+      {pendingLeave && (
         <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--status-waiting-bg)', border: '1px solid #fde68a', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 'var(--text-sm)', color: '#92400e', flex: 1 }}>You have unsaved changes. Leave this document anyway?</span>
-          <button className="btn btn-sm" onClick={() => { setDirty(false); blocker.proceed(); }} style={{ background: 'var(--status-needs-response-bg)', color: 'var(--status-needs-response)', border: '1px solid #fecaca', fontSize: 12 }}>Discard &amp; leave</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => blocker.reset()} style={{ fontSize: 12 }}>Keep editing</button>
+          <button className="btn btn-sm" onClick={() => { setDirty(false); setPendingLeave(false); navigate('/settings/templates'); }} style={{ background: 'var(--status-needs-response-bg)', color: 'var(--status-needs-response)', border: '1px solid #fecaca', fontSize: 12 }}>Discard &amp; leave</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPendingLeave(false)} style={{ fontSize: 12 }}>Keep editing</button>
         </div>
       )}
       <TemplateEditor
