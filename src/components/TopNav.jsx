@@ -5,14 +5,14 @@
  *
  * WHAT THIS DOES (plain language):
  *   The horizontal navigation bar across the top of the desktop app (big screens
- *   only, ≥1280px). It shows the logo, the most-used destinations (Home, Inbox,
+ *   only, ≥1024px). It shows the logo, the most-used destinations (Home, Inbox,
  *   Schedule, Claims, Customers, My Money, Time), a search box, a "New" button,
  *   the notifications bell, a help link, a settings gear, and the user avatar. A hamburger
  *   button on the left opens a drawer with the less-used pages. On phones and
  *   iPads this bar is hidden and the old side menu + bottom bar are used instead.
  *
  * WHERE IT LIVES:
- *   Route:        n/a (rendered on every office page, ≥1280px)
+ *   Route:        n/a (rendered on every office page, ≥1024px)
  *   Rendered by:  src/components/Layout.jsx
  *
  * DEPENDS ON:
@@ -30,7 +30,7 @@
  *   - `onMenuClick` opens the OverflowDrawer; `onAction` opens create modals
  *     (handled by Layout.handleCreateAction).
  *   - Visibility is CSS-only: `.topnav { display:none }` until the
- *     @media (min-width:1280px) block shows it, so this never paints on mobile/iPad.
+ *     @media (min-width:1024px) block shows it, so this never paints on mobile/iPad.
  * ════════════════════════════════════════════════
  */
 import { NavLink } from 'react-router-dom';

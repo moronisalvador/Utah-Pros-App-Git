@@ -6354,13 +6354,26 @@ tr:hover td { background: var(--bg-secondary); }
 .overflow-drawer-link.active .nav-icon { opacity: 1; }
 .overflow-drawer-empty { padding: var(--space-4); font-size: var(--text-sm); color: var(--sidebar-text); }
 
-/* Settings hub — system pages share a left rail on desktop. Below 1280px the
-   wrapper is `display:contents` and the rail is hidden, so the wrapped page is
-   a direct child of .app-content exactly as before (no behavioral change). */
+/* Settings hub — settings pages share a grouped left rail on desktop. Below
+   1024px the wrapper is `display:contents` and the rail is hidden, so the wrapped
+   page is a direct child of .app-content; /settings then acts as the tappable
+   index (SettingsHome) and each sub-page shows a "← Settings" back link. */
 .settings-hub { display: contents; }
 .settings-hub-content { display: contents; }
 .settings-hub-rail { display: none; }
 .settings-hub-title { font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); padding: 0 var(--space-2) var(--space-3); }
+.settings-hub-home {
+  display: block; padding: 6px var(--space-3) var(--space-2);
+  font-size: var(--text-lg); font-weight: 700; color: var(--text-primary);
+  text-decoration: none; border-radius: var(--radius-md);
+}
+.settings-hub-home:hover { text-decoration: none; color: var(--accent); }
+.settings-hub-home.active { color: var(--accent); }
+.settings-hub-group { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-3); }
+.settings-hub-group-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-tertiary); padding: 0 var(--space-3) 4px;
+}
 .settings-hub-link {
   display: flex; align-items: center; gap: 10px;
   padding: 9px var(--space-3); border-radius: var(--radius-md);
@@ -6371,6 +6384,41 @@ tr:hover td { background: var(--bg-secondary); }
 .settings-hub-link.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
 .settings-hub-link .nav-icon { width: 17px; height: 17px; flex-shrink: 0; opacity: 0.8; }
 .settings-hub-link.active .nav-icon { opacity: 1; }
+
+/* Mobile back link — shown on sub-pages (<1024px) only; hidden on desktop where
+   the rail is present (rule in the min-width:1024px block below). */
+.settings-hub-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: var(--space-3) 0 var(--space-2); padding: 6px 10px;
+  font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary);
+  text-decoration: none; border-radius: var(--radius-md); background: var(--bg-secondary);
+}
+.settings-hub-back:hover { color: var(--accent); text-decoration: none; }
+
+/* SettingsHome — the grouped tappable index (also the mobile experience). */
+.settings-home { padding: var(--space-5) var(--space-6); max-width: 900px; margin: 0 auto; }
+.settings-home-header { margin-bottom: var(--space-4); }
+.settings-home-search { position: relative; margin-bottom: var(--space-5); }
+.settings-home-search .input { padding-left: 38px; height: 40px; }
+.settings-home-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
+.settings-home-group { margin-bottom: var(--space-5); }
+.settings-home-group-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: var(--space-2); flex-wrap: wrap; }
+.settings-home-group-title { font-size: var(--text-base); font-weight: 700; color: var(--text-primary); margin: 0; }
+.settings-home-group-sub { font-size: var(--text-xs); color: var(--text-tertiary); }
+.settings-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.settings-home-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border: 1px solid var(--border-light); border-radius: var(--radius-lg);
+  background: var(--bg-primary); text-decoration: none; transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.settings-home-card:hover { border-color: var(--accent); background: var(--bg-secondary); text-decoration: none; }
+.settings-home-card-icon { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius-md); background: var(--accent-light); color: var(--accent); }
+.settings-home-card-icon svg { width: 18px; height: 18px; }
+.settings-home-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.settings-home-card-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.settings-home-card-desc { font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.4; }
+.settings-home-card-chevron { color: var(--text-tertiary); flex-shrink: 0; }
+.settings-home-empty { padding: 40px 0; text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
 
 /* ── Desktop activation — the ONLY rules that reshape the shell ── */
 @media (min-width: 1024px) {
@@ -6385,7 +6433,7 @@ tr:hover td { background: var(--bg-secondary); }
   .conversations-layout,
   .jobs-page,
   .job-page { height: calc(100dvh - var(--topnav-h)); }
-  /* Settings hub becomes a two-column layout (rail + page) */
+  /* Settings hub becomes a two-column layout (grouped rail + page) */
   .settings-hub { display: flex; height: 100%; min-height: 0; }
   .settings-hub-rail {
     display: flex; flex-direction: column; width: 240px; flex-shrink: 0; gap: 2px;
@@ -6393,6 +6441,8 @@ tr:hover td { background: var(--bg-secondary); }
     padding: var(--space-4) var(--space-3); overflow-y: auto;
   }
   .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
+  /* The mobile back link is redundant when the rail is present. */
+  .settings-hub-back { display: none; }
 }
 
 /* ── Tablet tier (1024–1279px): the top bar is tighter here, so the global search
