@@ -620,6 +620,11 @@ tr:hover td { background: var(--bg-secondary); }
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes convSlideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
 
+/* ─── OMNI-INBOX RESERVED — Phase U (unified inbox UI) ─── */
+/* Phase U writes email-channel bubble/badge/composer styles ONLY inside this marker
+   (docs/omni-inbox-roadmap.md, ownership manifest §6). New classes are namespaced to
+   avoid touching existing .conv-* selectors; mobile rules use @media (max-width:768px). */
+
 /* ── Page transitions + loading skeletons (Collections / My Money).
    Reuses the convSlideIn/convSlideBack + ovwShimmer keyframes. See hooks/usePageTransition.js ── */
 .page-slide-fwd  { animation: convSlideIn 200ms ease both; }

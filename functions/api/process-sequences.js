@@ -180,9 +180,10 @@ async function resolveStepBodies(db, steps) {
   return steps.map((s) => (s.template_id && !s.body ? { ...s, body: map[s.template_id] || s.body } : s));
 }
 
-// Has the human engaged since they were enrolled? Reply = an inbound SMS;
-// conversion = a crm_lead_promoted event tied to this contact. Errors resolve to
-// "no signal" so a transient read never wrongly exits (or blocks) a send.
+// Has the human engaged since they were enrolled? Reply = an inbound SMS OR email
+// (omni-inbox, manifest §5 widen); conversion = a crm_lead_promoted event tied to this
+// contact. Errors resolve to "no signal" so a transient read never wrongly exits (or
+// blocks) a send.
 async function gatherExitSignals(db, enrollment) {
   const since = enrollment.enrolled_at;
   let hasReply = false;
@@ -190,7 +191,7 @@ async function gatherExitSignals(db, enrollment) {
   try {
     const replies = await db.select(
       'messages',
-      `sender_contact_id=eq.${enrollment.contact_id}&type=eq.sms_inbound&created_at=gt.${since}&select=id&limit=1`
+      `sender_contact_id=eq.${enrollment.contact_id}&type=in.(sms_inbound,email_inbound)&created_at=gt.${since}&select=id&limit=1`
     );
     hasReply = replies.length > 0;
   } catch { /* no signal */ }

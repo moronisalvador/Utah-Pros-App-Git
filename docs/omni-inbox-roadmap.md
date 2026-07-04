@@ -254,3 +254,34 @@ iMessage/Messenger/WhatsApp (data model built channel-generic for later); staff-
   behavior (threads already key on participant `contact_id`) and matches the owner's GHL
   vision; per-channel would fork a customer's existing SMS thread — the higher-risk deviation
   despite the tiny row count.
+
+## 10. Owner setup runbook (Cloudflare + Resend) — external gates
+
+*Shipped by Phase F; executed by the owner. These are the two external prerequisites the
+wave can't do itself. Nothing here is required to MERGE Phase F — they gate the live paths of
+later phases and the suppression feed.*
+
+**A. Resend bounce/complaint webhook — feeds the F suppression worker (`/api/resend-webhook`).**
+1. Resend dashboard → **Webhooks → Add Endpoint** → URL `https://utahpros.app/api/resend-webhook`
+   (and, if desired, the dev preview URL for testing). Subscribe to **`email.bounced`** and
+   **`email.complained`**.
+2. Copy the endpoint's **Signing Secret** (`whsec_…`) and set it as **`RESEND_WEBHOOK_SECRET`**
+   in **both** Cloudflare Pages env sets (Production `main` + Preview `dev`/branches), then
+   redeploy. Until it is set the worker returns **503 (fails closed)** — safe, just inert.
+3. Verify: Resend's "Send test event" should return 200; a `worker_runs` row `resend-webhook`
+   appears. A permanent bounce writes an `email_suppressions` row `reason='hard_bounce'`; a
+   complaint writes `reason='complaint'`.
+
+**B. Inbound email routing — gates Phase I's LIVE path (build against a simulated POST first).**
+1. Cloudflare **Email Routing → Settings → enable Subaddressing** (RFC 5233; preserves
+   `+token` in `message.to`).
+2. Add a custom address rule **`reply@utahpros.app` → the Email Worker** (Phase I's
+   `email-worker/`). With Subaddressing on, every `reply+<token>@utahpros.app` falls through to
+   this one rule with the token intact. **Do NOT** use a catch-all, and leave
+   `restoration@utahpros.app`'s existing human-forward rule untouched (no straddle).
+3. Set **`INBOUND_EMAIL_SECRET`** in **both** Cloudflare env sets — the shared bearer secret
+   the Email Worker uses to POST `/api/inbound-email`.
+
+**C. Flip the feature flag — after Phase U merges.** DevTools → Flags → `feature:email_inbox`.
+It ships **owner-only** (`enabled:false` + `dev_only_user_id`); opening it to staff is the
+owner's call once the UI is verified.
