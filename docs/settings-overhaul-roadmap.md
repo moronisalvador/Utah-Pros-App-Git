@@ -227,8 +227,8 @@ monoliths with physical splits transferring to P3/P4.
 > Owns `src/pages/settings/{Carriers,Referrals,Templates,Commissions,MyAccount}.jsx` (+
 > templates module pages), `functions/api/google-drive-callback.js` (retarget to
 > `/settings/my-account` — F's forwarder becomes a permanent shim), css §P4.
-- [ ] templates editor route: own fetch + router-level dirty guard; Reset gets a confirm
-- [ ] hex→token sweep; Commissions grid mobile reflow; consistent empty states
+- [x] templates editor route: own fetch + router-level dirty guard; Reset gets a confirm
+- [x] hex→token sweep; Commissions grid mobile reflow; consistent empty states
 
 **P5 — Feedback Inbox** (Sonnet · medium)
 > Owns `src/pages/settings/FeedbackInbox.jsx`, `functions/api/feedback-notify.js` (+ its
@@ -387,10 +387,10 @@ before opening its PR. Do not edit another session's block.
 - [x] PageAccess inline-grid soup → classes + mobile
 - [x] absorb the DevTools employee auth-link/invite capability into Team
 
-### P4 — Workspace + Personal polish (Session D)
-- [ ] templates editor route: own fetch + router-level dirty guard verified; Reset gets a confirm
-- [ ] hex→token sweep; Commissions grid mobile reflow; consistent empty states
-- [ ] google-drive-callback.js retargeted to `/settings/my-account?gdrive=` (F's forwarder becomes a shim)
+### P4 — Workspace + Personal polish (Session D) ✅ complete
+- [x] templates editor route: own fetch + router-level dirty guard verified; Reset gets a confirm
+- [x] hex→token sweep; Commissions grid mobile reflow; consistent empty states
+- [x] google-drive-callback.js retargeted to `/settings/my-account?gdrive=` (F's forwarder becomes a shim)
 
 ### P5 — Feedback Inbox (Session E)
 - [x] feedback-notify.js writes `/settings/feedback` (route change, not a test-green edit); test updated
