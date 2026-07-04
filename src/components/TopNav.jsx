@@ -88,9 +88,13 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <NavLink to="/help" className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
           <IconHelp style={{ width: 18, height: 18 }} />
         </NavLink>
-        <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
-          <IconSettings style={{ width: 18, height: 18 }} />
-        </NavLink>
+        {/* Gear matches the sidebar's canAccess('settings') gate and the AccessRoute on
+            /settings — it was the one ungated path into Settings (Phase 0, settings overhaul). */}
+        {canAccess('settings') && (
+          <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
+            <IconSettings style={{ width: 18, height: 18 }} />
+          </NavLink>
+        )}
         <UserMenu />
       </div>
     </header>

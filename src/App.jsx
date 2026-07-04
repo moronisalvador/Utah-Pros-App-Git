@@ -415,7 +415,10 @@ function WebRoutes() {
             on mobile/iPad SettingsLayout is a passthrough so each page renders
             exactly as before. Paths + per-route guards are unchanged. */}
         <Route element={<SettingsLayout />}>
-          <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
+          {/* AccessRoute matches the nav's canAccess('settings') gate — without it any
+              logged-in employee could direct-URL /settings and read/edit the Commissions
+              tab (payroll rates). Settings-overhaul Phase 0 (see docs/settings-overhaul-roadmap.md). */}
+          <Route path="settings" element={<AccessRoute navKey="settings"><ErrorBoundary section="Settings"><Settings /></ErrorBoundary></AccessRoute>} />
           <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
           <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
           <Route path="admin/demo-sheet-builder" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
