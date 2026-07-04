@@ -2193,7 +2193,40 @@ Polish-only, zero migrations, all four routes stay `AdminRoute`. Files: `src/pag
 - **NotificationDefaults.jsx** — untouched (thin wrapper around the F-owned, self-titled `NotificationDefaultsTab`; a design pass there would require editing a non-owned component).
 - **Tests** — `p3TeamAccess.test.jsx`: 12 cases over `nextDeleteConfirm` (arm/execute/re-arm), `employeeFormDirty` (clean/dirty/password/new-form/numeric-string), and `computeAccess` (role default / ON / OFF / missing).
 #### P4 — Workspace + Personal polish (Session D)
-_(Session D: describe templates dirty-guard verify, hex→token sweep, gdrive-callback retarget.)_
+Shipped 2026-07-04. `/settings/templates/:docType`'s own-mount-fetch + `useBlocker` router guard
+(built by F) traced end-to-end and confirmed correct — no changes needed there.
+
+**Blocked item (disclosed, not silently dropped):** Reset-to-defaults in
+`templates/TemplateEditor.jsx` still wipes drafts with a single click, no confirm. P4 first
+added an inline two-click confirm directly in that file, but `.claude/rules/settings-overhaul-
+wave-ownership.md` §1 freezes `templates/{templateData.jsx,TemplateEditor.jsx}` specifically
+(not the general shared-primitives clause, which allows a disclosed copy-in) — its wording for
+this module is narrower: "a needed change is an F-owner follow-up," full stop, no copy-in
+option offered. `settings-phase-reviewer` caught this on the close-out pass; the fix was
+reverted rather than shipped on a self-granted exception the manifest doesn't actually give.
+**Follow-up needed (F-owner or a future session with F's authority):** either add an
+`onReset`-confirm prop to `TemplateEditor.jsx` that P4 can wire up, or bless the copy-in
+explicitly. Filed here instead of quietly re-adding it.
+
+`google-drive-callback.js` now 302s to `/settings/my-account?gdrive=…` instead of
+`/settings?gdrive=…`; F's SettingsHome forwarder stays as a permanent shim for any old
+bookmarked link. Hex→token sweep (exact-value matches only, zero visual diff) across
+Templates/TemplatesEditor/Commissions/MyAccount: `#eff6ff→var(--accent-light)`,
+`#2563eb→var(--accent)`, `#1d4ed8→var(--accent-hover)`, `#fffbeb→var(--status-waiting-bg)`,
+`#fef2f2→var(--status-needs-response-bg)`, `#ef4444→var(--status-needs-response)`; plus a
+`fontSize` px→`var(--text-*)` pass for exact 11/13/14/16px matches (non-standard sizes like
+10/12/12.5/13.5 left as-is — no token exists for them, and rounding would be a visual change
+beyond "identical behavior"). Carriers/Referrals needed no sweep (LookupTable already clean).
+Commissions: replaced the fixed 5-column inline grid with `.commissions-header-row`/
+`.commissions-row` classes (P4 css marker) so `@media (max-width:768px)` can reflow to a
+3-column stack with mobile-only field labels (`.commissions-mlabel`) and full-width name/Save;
+bare `<div>No employees.</div>` empty state → `.lookup-empty` (shared class, consistent
+copy/wording with Carriers/Referrals). New test: `functions/api/google-drive-callback.test.js`
+(4 cases: connected/badstate/missing-code/upstream-error, all assert the new redirect target).
+Not added: interactive dirty-guard/click tests for the templates route — this repo's test
+convention is `renderToStaticMarkup` smoke tests with no jsdom/`@testing-library`/
+router-mocking infra, so the guard was verified by code trace instead of a new test harness;
+flagging honestly rather than forcing in inconsistent test infra.
 #### P5 — Feedback Inbox (Session E) — shipped 2026-07-04
 `feedback-notify.js` no longer mints the retired `/tech-feedback` URL: both the push-payload
 `data.route` and the `dispatchEvent(...).body.link` now write `/settings/feedback` (historical

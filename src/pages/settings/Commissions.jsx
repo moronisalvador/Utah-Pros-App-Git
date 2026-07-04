@@ -92,8 +92,8 @@ export default function Commissions() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
         <div>
-          <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Commissions</h2>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <h2 style={{ margin: '0 0 4px', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>Commissions</h2>
+          <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
             {earners} {earners === 1 ? 'person earns' : 'people earn'} commission · paid first payroll of the month, for everything sold the previous month
           </p>
         </div>
@@ -109,11 +109,10 @@ export default function Commissions() {
       </div>
 
       {/* Header row */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.1fr 1.2fr auto', gap: 12, alignItems: 'center',
+      <div className="commissions-header-row" style={{
         padding: '8px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
         border: '1px solid var(--border-color)', borderBottom: 'none',
-        fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase',
+        fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase',
       }}>
         <span>Employee</span><span>Role</span><span>Type</span><span>Rate</span><span />
       </div>
@@ -124,8 +123,7 @@ export default function Commissions() {
           const dirty = isDirty(e);
           const inactive = e.is_active === false;
           return (
-            <div key={e.id} style={{
-              display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.1fr 1.2fr auto', gap: 12, alignItems: 'center',
+            <div key={e.id} className="commissions-row" style={{
               padding: '9px 14px', background: 'var(--bg-primary)',
               borderBottom: i < visible.length - 1 ? '1px solid var(--border-light)' : 'none',
               opacity: inactive ? 0.55 : 1,
@@ -133,34 +131,43 @@ export default function Commissions() {
               <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
                 {e.full_name}{inactive ? ' (inactive)' : ''}
               </span>
-              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{ROLE_LABELS[e.role] || e.role || '—'}</span>
-              <select
-                value={d.type}
-                onChange={ev => setRow(e.id, { type: ev.target.value, value: ev.target.value === 'none' ? '' : d.value })}
-                style={{
-                  fontSize: 13, padding: '6px 8px', borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
-                }}
-              >
-                <option value="none">None</option>
-                <option value="percent">Percent %</option>
-                <option value="flat">Flat $</option>
-              </select>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {d.type === 'flat' && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>$</span>}
-                <input
-                  type="number" min="0" step="any" inputMode="decimal"
-                  disabled={d.type === 'none'}
-                  value={d.type === 'none' ? '' : d.value}
-                  placeholder={d.type === 'none' ? '—' : d.type === 'flat' ? '250' : '8'}
-                  onChange={ev => setRow(e.id, { value: ev.target.value })}
+              <div>
+                <span className="commissions-mlabel">Role</span>
+                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{ROLE_LABELS[e.role] || e.role || '—'}</span>
+              </div>
+              <div>
+                <span className="commissions-mlabel">Type</span>
+                <select
+                  value={d.type}
+                  onChange={ev => setRow(e.id, { type: ev.target.value, value: ev.target.value === 'none' ? '' : d.value })}
                   style={{
-                    width: 90, fontSize: 13, padding: '6px 8px', borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-color)', background: d.type === 'none' ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
+                    width: '100%', fontSize: 'var(--text-sm)', padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
                   }}
-                />
-                {d.type === 'percent' && <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>%</span>}
+                >
+                  <option value="none">None</option>
+                  <option value="percent">Percent %</option>
+                  <option value="flat">Flat $</option>
+                </select>
+              </div>
+              <div>
+                <span className="commissions-mlabel">Rate</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {d.type === 'flat' && <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>$</span>}
+                  <input
+                    type="number" min="0" step="any" inputMode="decimal"
+                    disabled={d.type === 'none'}
+                    value={d.type === 'none' ? '' : d.value}
+                    placeholder={d.type === 'none' ? '—' : d.type === 'flat' ? '250' : '8'}
+                    onChange={ev => setRow(e.id, { value: ev.target.value })}
+                    style={{
+                      width: 90, fontSize: 'var(--text-sm)', padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)', background: d.type === 'none' ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                  {d.type === 'percent' && <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>%</span>}
+                </div>
               </div>
               <button
                 className="btn btn-primary btn-sm"
@@ -174,7 +181,7 @@ export default function Commissions() {
           );
         })}
         {visible.length === 0 && (
-          <div style={{ padding: '20px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No employees.</div>
+          <div className="lookup-empty">No employees yet. They'll show up here once added under Team.</div>
         )}
       </div>
 

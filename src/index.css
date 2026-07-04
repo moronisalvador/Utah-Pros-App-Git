@@ -8972,6 +8972,31 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P4 (Workspace + Personal · Session D) ─── */
 
+.commissions-header-row,
+.commissions-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1.1fr 1.2fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.commissions-mlabel { display: none; }
+
+@media (max-width: 768px) {
+  .commissions-header-row { display: none; }
+  .commissions-row {
+    grid-template-columns: repeat(3, 1fr);
+    row-gap: 8px;
+  }
+  .commissions-row > span:first-child { grid-column: 1 / -1; }
+  .commissions-row > button { grid-column: 1 / -1; }
+  .commissions-mlabel {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    margin-bottom: 2px;
+  }
+}
+
 /* ─── SETTINGS OVERHAUL RESERVED — P5 (Feedback Inbox · Session E) ─── */
 
 /* Type/status badge tokens (moved off inline hex — same colors as before) */

@@ -163,7 +163,7 @@ function GoogleDriveIntegrationPanel({ db }) {
               onClick={disconnect}
               onBlur={() => setConfirmDisc(false)}
               style={{
-                background: confirmDisc ? '#fef2f2' : 'var(--bg-tertiary)',
+                background: confirmDisc ? 'var(--status-needs-response-bg)' : 'var(--bg-tertiary)',
                 color:      confirmDisc ? '#dc2626' : 'var(--text-secondary)',
                 border:     `1px solid ${confirmDisc ? '#fecaca' : 'var(--border-light)'}`,
               }}

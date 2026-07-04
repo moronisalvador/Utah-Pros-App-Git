@@ -85,9 +85,9 @@ export default function TemplatesEditor() {
   return (
     <>
       {blocker.state === 'blocked' && (
-        <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, color: '#92400e', flex: 1 }}>You have unsaved changes. Leave this document anyway?</span>
-          <button className="btn btn-sm" onClick={() => { setDirty(false); blocker.proceed(); }} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', fontSize: 12 }}>Discard &amp; leave</button>
+        <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--status-waiting-bg)', border: '1px solid #fde68a', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: '#92400e', flex: 1 }}>You have unsaved changes. Leave this document anyway?</span>
+          <button className="btn btn-sm" onClick={() => { setDirty(false); blocker.proceed(); }} style={{ background: 'var(--status-needs-response-bg)', color: 'var(--status-needs-response)', border: '1px solid #fecaca', fontSize: 12 }}>Discard &amp; leave</button>
           <button className="btn btn-ghost btn-sm" onClick={() => blocker.reset()} style={{ fontSize: 12 }}>Keep editing</button>
         </div>
       )}
