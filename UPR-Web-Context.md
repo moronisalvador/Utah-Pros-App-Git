@@ -2242,8 +2242,27 @@ the hex exactly); the "Update Status" buttons use the same classes for their act
 instead of inline `STATUS_BADGE[s].bg/color/border` lookups. Two-click purge, per-row draft
 notes, and the lightbox were left functionally untouched (only their badge markup call sites
 changed from inline style objects to `className`).
-#### P6 — Scope Sheets (Session G)
-_(Session G: describe `delete_demo_schema` wiring, two-click confirms, demoSchemaUtils extract.)_
+#### P6 — Scope Sheets (Session G) — shipped 2026-07-05
+`ScopeSheets.jsx` (`AdminDemoSheetBuilder`) safety + polish, no schema/RPC changes (Foundation
+shipped `delete_demo_schema` + `published_at`). **Deletion** now calls the SECURITY-DEFINER
+`delete_demo_schema(p_id)` RPC instead of the raw `db.delete('demo_sheet_schemas', …)`; the RPC's
+RAISE refusal (active / ever-published / sheet-referenced versions can't be deleted — protects the
+`.claude/rules/scope-sheet-rollback.md` runbook) is surfaced verbatim in a toast via a new
+`rpcErrorMessage()` helper that unwraps the PostgREST error JSON. **All three `window.confirm`**
+(version delete, remove section, remove job section) → inline two-click confirm with `onBlur`
+disarm; single-click **field removal** gained an arm state too, via a shared `ConfirmRemoveButton`
+(first click arms + fills red/swaps to ✓, blur disarms, second click removes). **Unsaved-changes
+guard** added on both version-switch (inline "Discard & switch / Keep editing" bar in the versions
+sidebar via `pendingSwitchId`) and the **Back** button (two-click "Discard changes & leave?"), both
+of which previously discarded edits silently. **Pure schema helpers extracted** into
+`src/lib/demoSchemaUtils.js` (`FIELD_TYPES`, `move`/`removeAt`/`replaceAt`, `twoClickNext`,
+`emptySection`/`emptyField`/`emptySchema`, `walkFields`, `validateSchemaShape`, `summarize`) with a
+23-case `demoSchemaUtils.test.js` — extracted from THIS page's internals only; `TechDemoSheet` /
+`DemoSheetRenderer` keep their own copies (tech surface out of P6 scope). Inline status hexes → new
+`--ss-*` tokens in `index.css` §P6 (mirrors P5's `--fb-*` approach); "best on desktop" notice under
+768px (the two-column editor is a deliberate desktop power tool — no phone layout). Publish confirm
+modal + draft→publish sequencing left **byte-identical** (runbook-critical). Documentation Standard
+header added to the substantially-edited `ScopeSheets.jsx`.
 #### P7-lite — DevTools dedup (Session H)
 Deleted exactly two tabs from `DevTools.jsx` (verified `/settings/integrations` and
 `/settings/team` fully cover both capabilities before removing): the **Integrations** tab

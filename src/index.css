@@ -9053,4 +9053,62 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P6 (Scope Sheets · Session G) ─── */
 
+/* Status tokens (moved off inline hex — same colors as before). Mirrors P5's
+   approach: map to the shared status tokens where one exists, keep the exact
+   badge hexes where the app has no semantic token for that hue. */
+:root {
+  --ss-danger: #dc2626;
+  --ss-success: #16a34a;
+  --ss-success-bg: #f0fdf4;
+  --ss-success-border: #bbf7d0;
+  --ss-warning: #d97706;
+  --ss-warning-bg: var(--status-waiting-bg);
+  --ss-warning-border: #fde68a;
+  --ss-info: var(--accent);
+  --ss-info-bg: var(--accent-light);
+  --ss-info-border: #bfdbfe;
+}
+
+/* Two-click armed state on the top-bar Back/Delete buttons (label already
+   flips in JS; this adds the danger tint so "click again" reads at a glance). */
+.ss-page .btn[data-armed="true"] {
+  background: var(--ss-warning-bg);
+  border-color: var(--ss-warning-border);
+  color: var(--ss-warning) !important;
+}
+
+/* Inline "you have unsaved changes" bar shown in the versions sidebar when the
+   user tries to switch away from a dirty draft. */
+.ss-switch-guard {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--ss-warning-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ss-switch-guard-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* "Best on desktop" notice — the two-column editor is a deliberate desktop
+   power tool, so we surface a heads-up on small screens rather than reflow. */
+.ss-desktop-notice { display: none; }
+@media (max-width: 768px) {
+  .ss-desktop-notice {
+    display: block;
+    margin-bottom: var(--space-4);
+    padding: 12px 14px;
+    border: 1px solid var(--ss-warning-border);
+    background: var(--ss-warning-bg);
+    color: var(--ss-warning);
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+}
+
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */

@@ -1,23 +1,63 @@
-// AdminDemoSheetBuilder — desktop admin tool to create / edit / publish
-// demo_sheet_schemas. Phase 3b: visual section/field tree editor (with a
-// JSON view toggle for power users), full add/remove/reorder, options
-// editing inline, recursive editors for `list` and `row` field types.
-//
-// Each saved sheet is FK'd to its schema_id (Phase 1), so editing /
-// publishing a new schema does NOT change how previously-saved sheets
-// render — they keep their snapshot.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: ScopeSheets.jsx  (AdminDemoSheetBuilder)
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The behind-the-scenes tool an admin uses to build and change the
+ *   "Scope Sheet" — the checklist of questions a field tech fills out on a job.
+ *   You add sections and fields, drag them into order, preview how a tech will
+ *   see it, then Publish to make that version the one new sheets use. Old,
+ *   already-filled sheets keep the exact version they were built with, so
+ *   changing this never rewrites past paperwork.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /settings/scope-sheets  (AccessRoute navKey "demo_sheet_builder")
+ *   Rendered by:  src/App.jsx (lazy-loaded)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/toast, @/lib/demoSchemaUtils,
+ *              @/components/demo-sheet/DemoSheetRenderer
+ *   Data:      reads  → demo_sheet_schemas (via list_demo_schemas /
+ *                        get_demo_schema RPCs)
+ *              writes → demo_sheet_schemas (via upsert_demo_schema /
+ *                        publish_demo_schema / delete_demo_schema RPCs)
+ *
+ * NOTES / GOTCHAS:
+ *   - Deletion goes through the SECURITY-DEFINER delete_demo_schema RPC, never a
+ *     raw table delete: it REFUSES any version that is active, was ever
+ *     published, or is referenced by a saved sheet (protects the 60-second
+ *     rollback runbook, .claude/rules/scope-sheet-rollback.md). The refusal
+ *     text is surfaced verbatim to the admin.
+ *   - Publishing must stay sequenced (seed as DRAFT → deploy understanding code
+ *     → publish) because ONE Supabase project backs dev + prod; see the runbook.
+ *     The publish confirm modal's semantics are intentionally left as-is.
+ *   - Pure shape helpers live in @/lib/demoSchemaUtils (unit-tested); the
+ *     tech-facing renderer keeps its own copies — do NOT re-point it here.
+ * ════════════════════════════════════════════════
+ */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import { RoomCard, JobSections, makeDefaultRoom, makeDefaultJobData, C as RC } from '@/components/demo-sheet/DemoSheetRenderer';
-
-// Allowed field types (kept in sync with TechDemoSheet's FieldRenderer).
-const FIELD_TYPES = [
-  'stepper', 'single-chip', 'multi-chip', 'text', 'textarea',
-  'checkbox', 'select', 'list', 'row', 'computed',
-];
+// Pure schema helpers live in demoSchemaUtils (unit-tested in isolation — P6).
+// The tech-facing renderer keeps its own copies; do NOT re-point it here.
+import {
+  FIELD_TYPES,
+  move,
+  removeAt,
+  replaceAt,
+  twoClickNext,
+  emptySection,
+  emptyField,
+  emptySchema,
+  walkFields,
+  validateSchemaShape,
+  summarize,
+} from '@/lib/demoSchemaUtils';
 
 const FIELD_TYPE_LABELS = {
   'stepper':     'Number stepper (+/-)',
@@ -32,115 +72,20 @@ const FIELD_TYPE_LABELS = {
   'computed':    'Computed (a × b)',
 };
 
-// ── Schema-mutation helpers ──────────────────────────────────────────────────
-function move(arr, from, to) {
-  if (to < 0 || to >= arr.length) return arr;
-  const next = arr.slice();
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
-}
-function removeAt(arr, i)        { return arr.slice(0, i).concat(arr.slice(i + 1)); }
-function replaceAt(arr, i, val)  { const next = arr.slice(); next[i] = val; return next; }
-
-function emptySection() {
-  return {
-    key: `section${Date.now()}`,
-    label: 'New section',
-    icon: '✨',
-    alwaysOn: true,
-    doneFlag: `section${Date.now()}Done`,
-    fields: [],
-  };
-}
-
-function emptyField(type = 'stepper') {
-  const base = { key: `field${Date.now()}`, label: 'New field', type };
-  switch (type) {
-    case 'stepper':     return { ...base, unit: '', step: 1, small: true };
-    case 'single-chip': return { ...base, options: ['Option A', 'Option B'], cols: 2 };
-    case 'multi-chip':  return { ...base, options: ['Option A', 'Option B'] };
-    case 'text':        return { ...base, placeholder: '' };
-    case 'textarea':    return { ...base, placeholder: '', rows: 3 };
-    case 'checkbox':    return base;
-    case 'select':      return { ...base, options: ['', 'Option A', 'Option B'] };
-    case 'list':        return { ...base, addLabel: 'Add item', itemLabel: 'Item', defaultItem: {}, itemFields: [] };
-    case 'row':         return { type: 'row', cols: 2, fields: [] };
-    case 'computed':    return { ...base, formula: { op: 'multiply', a: '', b: '' }, unit: '', summaryKey: '' };
-    default:            return base;
+// Pull the human-readable message out of a db.rpc() rejection. The REST client
+// wraps PostgREST errors as `RPC <fn>: <status> <json>`; RAISE messages (our
+// delete_demo_schema refusals) live in the JSON `message`. Falls back to the
+// raw text if anything about the shape is unexpected.
+function rpcErrorMessage(e, fallback = 'Something went wrong') {
+  const raw = e?.message || '';
+  const braceAt = raw.indexOf('{');
+  if (braceAt !== -1) {
+    try {
+      const parsed = JSON.parse(raw.slice(braceAt));
+      if (parsed?.message) return parsed.message;
+    } catch { /* not JSON — fall through */ }
   }
-}
-
-function walkFields(fields, fn, basePath = '') {
-  (fields || []).forEach((f, i) => {
-    const path = `${basePath}[${i}]${f.key ? `:${f.key}` : (f.type === 'row' ? ':row' : '')}`;
-    fn(f, path);
-    if (f.type === 'row')  walkFields(f.fields, fn, path);
-    if (f.type === 'list') walkFields(f.itemFields || [], fn, path + '.itemFields');
-  });
-}
-
-function validateSchemaShape(def) {
-  const errors = [];
-  if (!def || typeof def !== 'object') return ['Definition must be an object'];
-  if (!Array.isArray(def.roomPresets)) errors.push('roomPresets must be an array of strings');
-  if (!Array.isArray(def.sections))    errors.push('sections must be an array');
-
-  // Validates one section (used for both per-room `sections` and job-level
-  // `jobSections`). `group` is the array name used in error prefixes.
-  const validateSection = (s, i, group) => {
-    if (!s.key)   errors.push(`${group}[${i}]: missing "key"`);
-    if (!s.label) errors.push(`${group}[${i}]: missing "label"`);
-    if (!s.alwaysOn && !s.gateField) {
-      errors.push(`${group}[${i}] (${s.key || 'unnamed'}): must have alwaysOn=true or a gateField`);
-    }
-    if (s.alwaysOn && !s.doneFlag) {
-      errors.push(`${group}[${i}] (${s.key || 'unnamed'}): alwaysOn=true requires a doneFlag`);
-    }
-    if (!Array.isArray(s.fields)) errors.push(`${group}[${i}] (${s.key || 'unnamed'}): fields must be an array`);
-    walkFields(s.fields || [], (f, path) => {
-      if (f.type === 'row') {
-        if (!Array.isArray(f.fields)) errors.push(`${group}${path}: row must have a "fields" array`);
-        if (typeof f.cols !== 'number') errors.push(`${group}${path}: row missing numeric "cols"`);
-        return;
-      }
-      if (!f.key) errors.push(`${group}${path}: missing "key"`);
-      if (!f.type) errors.push(`${group}${path}: missing "type"`);
-      else if (!FIELD_TYPES.includes(f.type)) errors.push(`${group}${path}: unknown type "${f.type}"`);
-      if (f.type === 'list' && !Array.isArray(f.itemFields)) {
-        errors.push(`${group}${path}: list field needs "itemFields"`);
-      }
-      if (f.type === 'computed') {
-        if (!f.formula || !f.formula.a || !f.formula.b) {
-          errors.push(`${group}${path}: computed field needs formula.a and formula.b (sibling field keys)`);
-        }
-      }
-    });
-  };
-
-  (def.sections || []).forEach((s, i) => validateSection(s, i, 'sections'));
-
-  // jobSections is OPTIONAL (v1 schemas don't have it). Only validate when present.
-  if (def.jobSections !== undefined) {
-    if (!Array.isArray(def.jobSections)) errors.push('jobSections must be an array');
-    else (def.jobSections).forEach((s, i) => validateSection(s, i, 'jobSections'));
-  }
-  return errors;
-}
-
-function summarize(def) {
-  const sections = def?.sections || [];
-  let fieldCount = 0;
-  sections.forEach(s => walkFields(s.fields || [], () => { fieldCount++; }));
-  return {
-    sectionCount: sections.length,
-    fieldCount,
-    roomPresets: (def?.roomPresets || []).length,
-  };
-}
-
-function emptySchema() {
-  return { version: 1, name: 'New schema', roomPresets: [], sections: [] };
+  return raw || fallback;
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -163,6 +108,15 @@ export default function AdminDemoSheetBuilder() {
   const [jsonText, setJsonText] = useState('');
   const [jsonParseError, setJsonParseError] = useState(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
+  // Two-click delete arm (Rule 2 — no window.confirm). Holds the version id
+  // that is currently armed, or null.
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  // Unsaved-changes guards. `pendingSwitchId` = a version the user tried to
+  // open while the current one has unsaved edits (holds it until they discard
+  // or cancel). `confirmBack` arms the Back button the same way.
+  const [pendingSwitchId, setPendingSwitchId] = useState(null);
+  const [confirmBack, setConfirmBack] = useState(false);
 
   const loadVersions = useCallback(async () => {
     setLoading(true);
@@ -183,8 +137,11 @@ export default function AdminDemoSheetBuilder() {
 
   useEffect(() => { loadVersions(); }, [loadVersions]);
 
-  // Load full schema when selection changes.
+  // Load full schema when selection changes. Any armed confirm state is stale
+  // once we're looking at a different version, so clear it here.
   useEffect(() => {
+    setConfirmDeleteId(null);
+    setConfirmBack(false);
     if (!selectedId) {
       setName(''); setNotes(''); setParsedDef(null); setOriginalSerialized(''); setJsonText('');
       return;
@@ -235,6 +192,10 @@ export default function AdminDemoSheetBuilder() {
   );
 
   const dirty = jsonText !== originalSerialized;
+  // A saved editor can't discard anything — drop any armed Back / pending switch.
+  useEffect(() => {
+    if (!dirty) { setConfirmBack(false); setPendingSwitchId(null); }
+  }, [dirty]);
   const summary = parsedDef ? summarize(parsedDef) : null;
   const selected = versions.find(v => v.id === selectedId) || null;
   // Access is permission-based, not hardcoded to admin: admins pass via canAccess,
@@ -308,17 +269,51 @@ export default function AdminDemoSheetBuilder() {
     }
   };
 
+  // Two-click delete through F's safe delete_demo_schema RPC (never a raw
+  // table delete). First click arms; second click commits. The RPC RAISEs on
+  // any active / ever-published / sheet-referenced version — we surface that
+  // exact refusal so the tech understands why it was blocked.
   const handleDelete = async () => {
     if (!canEdit || !selected || isActive) return;
-    if (!window.confirm(`Delete v${selected.version} — ${selected.name}? This is permanent.`)) return;
+    const { commit, nextArmed } = twoClickNext(confirmDeleteId, selected.id);
+    if (!commit) { setConfirmDeleteId(nextArmed); return; }
+    setConfirmDeleteId(null);
+    setDeleting(true);
     try {
-      await db.delete?.('demo_sheet_schemas', `id=eq.${selected.id}`);
-      toast('Schema deleted');
+      await db.rpc('delete_demo_schema', { p_id: selected.id });
+      toast('Draft deleted', 'success');
       setSelectedId(null);
       await loadVersions();
     } catch (e) {
-      toast('Delete failed: ' + (e.message || 'unknown'), 'error');
+      // e.g. "Cannot delete a previously-published Scope Sheet version (v3) —
+      // published versions are retained for rollback…"
+      toast(rpcErrorMessage(e, 'Delete failed'), 'error');
+    } finally {
+      setDeleting(false);
     }
+  };
+
+  // Version switch guarded on unsaved edits. If the current draft is dirty,
+  // hold the requested id in pendingSwitchId and show an inline discard/cancel
+  // bar rather than silently blowing away the edits (or using window.confirm).
+  const attemptSelect = (id) => {
+    if (id === selectedId) return;
+    setConfirmDeleteId(null);
+    if (dirty) { setPendingSwitchId(id); return; }
+    setSelectedId(id);
+  };
+  const discardAndSwitch = () => {
+    const id = pendingSwitchId;
+    setPendingSwitchId(null);
+    setSelectedId(id);
+  };
+
+  // Back is guarded the same way: a dirty editor arms Back once (inline label
+  // flip + onBlur disarm) before it actually navigates away.
+  const handleBack = () => {
+    if (!dirty) { navigate(-1); return; }
+    if (!confirmBack) { setConfirmBack(true); return; }
+    navigate(-1);
   };
 
   if (!canEdit) {
@@ -333,7 +328,7 @@ export default function AdminDemoSheetBuilder() {
   }
 
   return (
-    <div style={{ padding: 'var(--space-4)', maxWidth: 1400, margin: '0 auto' }}>
+    <div className="ss-page" style={{ padding: 'var(--space-4)', maxWidth: 1400, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
         <div>
@@ -349,7 +344,21 @@ export default function AdminDemoSheetBuilder() {
             doesn't reshape past sheets.
           </div>
         </div>
-        <button onClick={() => navigate(-1)} className="btn btn-secondary btn-sm">← Back</button>
+        <button
+          onClick={handleBack}
+          onBlur={() => setConfirmBack(false)}
+          className="btn btn-secondary btn-sm"
+          data-armed={confirmBack || undefined}
+          title={dirty ? 'You have unsaved changes' : 'Back'}
+        >
+          {confirmBack ? 'Discard changes & leave?' : '← Back'}
+        </button>
+      </div>
+
+      {/* This is a deliberate two-column desktop power tool — no phone layout. */}
+      <div className="ss-desktop-notice">
+        The Scope Sheet Builder is best used on a desktop or tablet — the
+        two-column editor is built for a wide screen.
       </div>
 
       {loading ? (
@@ -360,9 +369,12 @@ export default function AdminDemoSheetBuilder() {
           <VersionsSidebar
             versions={versions}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={attemptSelect}
             onNewDraft={handleNewDraft}
             saving={saving}
+            pendingSwitchId={pendingSwitchId}
+            onDiscardSwitch={discardAndSwitch}
+            onCancelSwitch={() => setPendingSwitchId(null)}
           />
 
           {/* Right: editor */}
@@ -389,8 +401,16 @@ export default function AdminDemoSheetBuilder() {
                       </button>
                     )}
                     {!isActive && (
-                      <button onClick={handleDelete} className="btn btn-secondary btn-sm" style={{ color: '#dc2626' }} title="Delete this draft">
-                        Delete
+                      <button
+                        onClick={handleDelete}
+                        onBlur={() => setConfirmDeleteId(null)}
+                        disabled={deleting}
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: 'var(--ss-danger)', minWidth: 90 }}
+                        data-armed={confirmDeleteId === selected.id || undefined}
+                        title="Delete this draft (only never-published drafts can be deleted)"
+                      >
+                        {deleting ? 'Deleting…' : (confirmDeleteId === selected.id ? 'Confirm delete' : 'Delete')}
                       </button>
                     )}
                   </div>
@@ -400,7 +420,7 @@ export default function AdminDemoSheetBuilder() {
                 <div style={{ display: 'flex', gap: 16, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-light)', fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center' }}>
                   <div>
                     <strong style={{ color: 'var(--text-primary)' }}>v{selected.version}</strong>
-                    {isActive && <span style={{ marginLeft: 6, color: '#16a34a', fontWeight: 600 }}>· active</span>}
+                    {isActive && <span style={{ marginLeft: 6, color: 'var(--ss-success)', fontWeight: 600 }}>· active</span>}
                   </div>
                   {summary && (
                     <>
@@ -410,10 +430,10 @@ export default function AdminDemoSheetBuilder() {
                     </>
                   )}
                   <div>{selected.sheet_count || 0} saved sheets</div>
-                  {dirty && <div style={{ color: '#d97706', fontWeight: 600 }}>unsaved changes</div>}
-                  {jsonParseError && <div style={{ color: '#dc2626', fontWeight: 600 }}>JSON error</div>}
+                  {dirty && <div style={{ color: 'var(--ss-warning)', fontWeight: 600 }}>unsaved changes</div>}
+                  {jsonParseError && <div style={{ color: 'var(--ss-danger)', fontWeight: 600 }}>JSON error</div>}
                   {!jsonParseError && validationErrors.length > 0 && (
-                    <div style={{ color: '#d97706', fontWeight: 600 }}>{validationErrors.length} validation issue{validationErrors.length === 1 ? '' : 's'}</div>
+                    <div style={{ color: 'var(--ss-warning)', fontWeight: 600 }}>{validationErrors.length} validation issue{validationErrors.length === 1 ? '' : 's'}</div>
                   )}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                     <ViewModeButton active={viewMode === 'visual'} onClick={() => setViewMode('visual')}>Visual</ViewModeButton>
@@ -436,16 +456,16 @@ export default function AdminDemoSheetBuilder() {
               {/* Validation panel */}
               {(jsonParseError || validationErrors.length > 0) && (
                 <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-3)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#dc2626', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ss-danger)', marginBottom: 8 }}>
                     Issues
                   </div>
                   {jsonParseError && (
-                    <div style={{ fontSize: 12, color: '#dc2626', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, color: 'var(--ss-danger)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>
                       JSON parse error: {jsonParseError}
                     </div>
                   )}
                   {validationErrors.map((err, i) => (
-                    <div key={i} style={{ fontSize: 12, color: '#d97706', marginBottom: 4 }}>• {err}</div>
+                    <div key={i} style={{ fontSize: 12, color: 'var(--ss-warning)', marginBottom: 4 }}>• {err}</div>
                   ))}
                 </div>
               )}
@@ -478,13 +498,28 @@ export default function AdminDemoSheetBuilder() {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function VersionsSidebar({ versions, selectedId, onSelect, onNewDraft, saving }) {
+function VersionsSidebar({ versions, selectedId, onSelect, onNewDraft, saving, pendingSwitchId, onDiscardSwitch, onCancelSwitch }) {
+  const pending = pendingSwitchId ? versions.find(v => v.id === pendingSwitchId) : null;
   return (
     <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', position: 'sticky', top: 16 }}>
       <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Versions</div>
         <button onClick={onNewDraft} disabled={saving} className="btn btn-primary btn-sm" style={{ padding: '4px 10px', fontSize: 12 }}>+ New</button>
       </div>
+
+      {/* Unsaved-changes guard: switching away from a dirty draft asks first. */}
+      {pending && (
+        <div className="ss-switch-guard">
+          <div className="ss-switch-guard-text">
+            Unsaved changes will be lost if you open <strong>v{pending.version} · {pending.name}</strong>.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onCancelSwitch} className="btn btn-secondary btn-sm">Keep editing</button>
+            <button onClick={onDiscardSwitch} className="btn btn-secondary btn-sm" style={{ color: 'var(--ss-danger)' }}>Discard &amp; switch</button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
         {versions.map(v => {
           const active = selectedId === v.id;
@@ -502,7 +537,7 @@ function VersionsSidebar({ versions, selectedId, onSelect, onNewDraft, saving })
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>v{v.version} · {v.name}</span>
                 {v.is_active && (
-                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>ACTIVE</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 999, background: 'var(--ss-success-bg)', color: 'var(--ss-success)', border: '1px solid var(--ss-success-border)' }}>ACTIVE</span>
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
@@ -526,7 +561,7 @@ function ViewModeButton({ active, onClick, children }) {
         padding: '4px 10px', fontSize: 12, fontWeight: 600,
         borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-sans)',
         background: active ? 'var(--accent)' : 'transparent',
-        color: active ? '#fff' : 'var(--text-secondary)',
+        color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
         border: `1px solid ${active ? 'var(--accent)' : 'var(--border-color)'}`,
       }}
     >
@@ -585,11 +620,7 @@ function VisualEditor({ def, onChange }) {
               onChange={next => updateJobSections(replaceAt(def.jobSections, i, next))}
               onMoveUp={i > 0 ? () => updateJobSections(move(def.jobSections, i, i - 1)) : null}
               onMoveDown={i < def.jobSections.length - 1 ? () => updateJobSections(move(def.jobSections, i, i + 1)) : null}
-              onRemove={() => {
-                if (window.confirm(`Remove job section "${sec.label}"?`)) {
-                  updateJobSections(removeAt(def.jobSections, i));
-                }
-              }}
+              onRemove={() => updateJobSections(removeAt(def.jobSections, i))}
             />
           ))}
           {(!def.jobSections || def.jobSections.length === 0) && (
@@ -615,11 +646,7 @@ function VisualEditor({ def, onChange }) {
               onChange={next => updateSections(replaceAt(def.sections, i, next))}
               onMoveUp={i > 0 ? () => updateSections(move(def.sections, i, i - 1)) : null}
               onMoveDown={i < def.sections.length - 1 ? () => updateSections(move(def.sections, i, i + 1)) : null}
-              onRemove={() => {
-                if (window.confirm(`Remove section "${sec.label}"?`)) {
-                  updateSections(removeAt(def.sections, i));
-                }
-              }}
+              onRemove={() => updateSections(removeAt(def.sections, i))}
             />
           ))}
           {(!def.sections || def.sections.length === 0) && (
@@ -687,9 +714,9 @@ function SectionCard({ section, onChange, onMoveUp, onMoveDown, onRemove }) {
           <code style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{section.key}</code>
           <span style={{
             fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-            background: section.alwaysOn ? '#eff6ff' : '#fffbeb',
-            color: section.alwaysOn ? '#2563eb' : '#d97706',
-            border: `1px solid ${section.alwaysOn ? '#bfdbfe' : '#fde68a'}`,
+            background: section.alwaysOn ? 'var(--ss-info-bg)' : 'var(--ss-warning-bg)',
+            color: section.alwaysOn ? 'var(--ss-info)' : 'var(--ss-warning)',
+            border: `1px solid ${section.alwaysOn ? 'var(--ss-info-border)' : 'var(--ss-warning-border)'}`,
           }}>
             {section.alwaysOn ? 'Always on' : `Gated · ${section.gateField || '?'}`}
           </span>
@@ -697,7 +724,7 @@ function SectionCard({ section, onChange, onMoveUp, onMoveDown, onRemove }) {
         </button>
         <RowButton disabled={!onMoveUp} onClick={onMoveUp} title="Move up">↑</RowButton>
         <RowButton disabled={!onMoveDown} onClick={onMoveDown} title="Move down">↓</RowButton>
-        <RowButton onClick={onRemove} title="Remove section" style={{ color: '#dc2626' }}>🗑</RowButton>
+        <ConfirmRemoveButton onRemove={onRemove} title="Remove section">🗑</ConfirmRemoveButton>
         <span style={{ fontSize: 12, color: 'var(--text-tertiary)', width: 20, textAlign: 'center' }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
@@ -757,9 +784,9 @@ function SectionCard({ section, onChange, onMoveUp, onMoveDown, onRemove }) {
   );
 }
 
-function RowButton({ children, disabled, onClick, title, style }) {
+function RowButton({ children, disabled, onClick, onBlur, title, style }) {
   return (
-    <button onClick={onClick} disabled={disabled} title={title}
+    <button onClick={onClick} onBlur={onBlur} disabled={disabled} title={title}
       style={{
         background: 'transparent', border: '1px solid var(--border-color)',
         borderRadius: 6, color: 'var(--text-secondary)',
@@ -771,6 +798,25 @@ function RowButton({ children, disabled, onClick, title, style }) {
     >
       {children}
     </button>
+  );
+}
+
+// Two-click icon-button for destructive removals (Rule 2 — no window.confirm).
+// First click arms (fills red + swaps to ✓); clicking away (onBlur) disarms;
+// the second click runs onRemove. Used for section + field removal.
+function ConfirmRemoveButton({ onRemove, title, children }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <RowButton
+      onClick={() => { if (!armed) { setArmed(true); return; } setArmed(false); onRemove(); }}
+      onBlur={() => setArmed(false)}
+      title={armed ? 'Click again to confirm' : title}
+      style={armed
+        ? { color: 'var(--accent-text)', background: 'var(--ss-danger)', borderColor: 'var(--ss-danger)' }
+        : { color: 'var(--ss-danger)' }}
+    >
+      {armed ? '✓' : children}
+    </RowButton>
   );
 }
 
@@ -832,7 +878,7 @@ function FieldCard({ field, onChange, onMoveUp, onMoveDown, onRemove }) {
         </button>
         <RowButton disabled={!onMoveUp} onClick={onMoveUp} title="Move up">↑</RowButton>
         <RowButton disabled={!onMoveDown} onClick={onMoveDown} title="Move down">↓</RowButton>
-        <RowButton onClick={onRemove} title="Remove field" style={{ color: '#dc2626' }}>×</RowButton>
+        <ConfirmRemoveButton onRemove={onRemove} title="Remove field">×</ConfirmRemoveButton>
         <span style={{ fontSize: 12, color: 'var(--text-tertiary)', width: 20, textAlign: 'center' }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
@@ -1091,7 +1137,7 @@ function ShowWhenEditor({ field, onChange }) {
     <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <FieldLabel>Show only when…</FieldLabel>
-        <button onClick={clear} style={{ background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</button>
+        <button onClick={clear} style={{ background: 'transparent', border: 'none', color: 'var(--ss-danger)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
         <input className="input" placeholder="Field key" value={sw?.field || ''} onChange={e => set({ field: e.target.value })} />
@@ -1141,7 +1187,7 @@ function UnitWhenEditor({ field, onChange }) {
     <div style={{ marginTop: 8, padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <FieldLabel>Conditional unit / label</FieldLabel>
-        <button onClick={clear} style={{ background: 'transparent', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</button>
+        <button onClick={clear} style={{ background: 'transparent', border: 'none', color: 'var(--ss-danger)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input className="input" placeholder="When field key" value={uw.field || ''} onChange={e => set({ field: e.target.value })} />
@@ -1172,7 +1218,7 @@ function OptionsEditor({ options, onChange }) {
             <input className="input" value={opt} onChange={e => onChange(replaceAt(options, i, e.target.value))} style={{ flex: 1 }} />
             <RowButton disabled={i === 0} onClick={() => onChange(move(options, i, i - 1))} title="Move up">↑</RowButton>
             <RowButton disabled={i === options.length - 1} onClick={() => onChange(move(options, i, i + 1))} title="Move down">↓</RowButton>
-            <RowButton onClick={() => onChange(removeAt(options, i))} title="Remove" style={{ color: '#dc2626' }}>×</RowButton>
+            <RowButton onClick={() => onChange(removeAt(options, i))} title="Remove" style={{ color: 'var(--ss-danger)' }}>×</RowButton>
           </div>
         ))}
       </div>
@@ -1203,7 +1249,7 @@ function DefaultItemEditor({ value, onChange }) {
       <textarea value={text} onChange={e => apply(e.target.value)} spellCheck={false}
         style={{ width: '100%', minHeight: 80, padding: 8, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.4, border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)', color: 'var(--text-primary)', boxSizing: 'border-box', resize: 'vertical' }}
       />
-      {error && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>{error}</div>}
+      {error && <div style={{ fontSize: 11, color: 'var(--ss-danger)', marginTop: 4 }}>{error}</div>}
     </>
   );
 }

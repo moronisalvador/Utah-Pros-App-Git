@@ -241,13 +241,13 @@ monoliths with physical splits transferring to P3/P4.
       test-green edit)
 - [x] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
 
-**P6 — Scope Sheets** (Opus · medium — publish blast radius is production-wide)
+**P6 — Scope Sheets** (Opus · medium — publish blast radius is production-wide) — shipped 2026-07-05
 > Owns `src/pages/settings/ScopeSheets.jsx`, new `src/lib/demoSchemaUtils.js`, css §P6.
-- [ ] `window.confirm` ×3 → inline two-click; field-removal gets an arm state
-- [ ] raw `db.delete` → `delete_demo_schema` RPC (F's safe version); "published versions
+- [x] `window.confirm` ×3 → inline two-click; field-removal gets an arm state
+- [x] raw `db.delete` → `delete_demo_schema` RPC (F's safe version); "published versions
       can't be deleted" surfaced in UI
-- [ ] unsaved-changes guard on version-switch/back; "best on desktop" notice <768px
-- [ ] demoSchemaUtils extracted from page internals ONLY (TechDemoSheet/DemoSheetRenderer
+- [x] unsaved-changes guard on version-switch/back; "best on desktop" notice <768px
+- [x] demoSchemaUtils extracted from page internals ONLY (TechDemoSheet/DemoSheetRenderer
       needs → stop and flag, tech surface out of scope)
 
 **P7-lite — DevTools dedup** (Sonnet · medium; **serial: launch after BOTH P2 and P3 merge**)
@@ -402,11 +402,11 @@ before opening its PR. Do not edit another session's block.
 - [x] feedback-notify.js writes `/settings/feedback` (route change, not a test-green edit); test updated
 - [x] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
 
-### P6 — Scope Sheets (Session G)
-- [ ] `window.confirm` ×3 → inline two-click; field-removal arm state
-- [ ] raw `db.delete` → `delete_demo_schema` RPC (F's safe version); refusal surfaced in UI
-- [ ] unsaved-changes guard on version-switch/back; "best on desktop" notice <768px
-- [ ] demoSchemaUtils extracted (page internals only)
+### P6 — Scope Sheets (Session G) — shipped 2026-07-05
+- [x] `window.confirm` ×3 → inline two-click; field-removal arm state
+- [x] raw `db.delete` → `delete_demo_schema` RPC (F's safe version); refusal surfaced in UI
+- [x] unsaved-changes guard on version-switch/back; "best on desktop" notice <768px
+- [x] demoSchemaUtils extracted (page internals only)
 
 ### P7-lite — DevTools dedup (Session H, after P2+P3 merge)
 - [x] delete the Integrations tab (+ its `?qbo=` handling) — verify /settings/integrations covers it first
