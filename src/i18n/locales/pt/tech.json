@@ -62,6 +62,34 @@
     "unknown": "Desconhecido",
     "appointment": "Agendamento"
   },
+  "crewPrefix": "Equipe: {{names}}",
+  "actionBar": {
+    "call": "Ligar",
+    "navigate": "Navegar",
+    "message": "Mensagem",
+    "documents": "Documentos"
+  },
+  "nowNext": {
+    "onMyWay": "A CAMINHO",
+    "working": "TRABALHANDO",
+    "paused": "PAUSADO",
+    "today": "HOJE",
+    "next": "PRÓXIMO"
+  },
+  "hero": {
+    "moreActions": "Mais ações"
+  },
+  "photos": {
+    "more": "mais",
+    "photoAlt": "Foto",
+    "noteFallback": "Nota",
+    "photoCount_one": "{{count}} foto",
+    "photoCount_other": "{{count}} fotos",
+    "noteCount_one": "{{count}} nota",
+    "noteCount_other": "{{count}} notas",
+    "moreNotes_one": "+{{count}} nota a mais",
+    "moreNotes_other": "+{{count}} notas a mais"
+  },
   "toast": {
     "photoTooLarge": "A foto é muito grande (máx. 10 MB)",
     "onlyImages": "Somente arquivos de imagem são permitidos",
