@@ -107,7 +107,7 @@ Visual/component patterns (buttons, badges, cards, layouts, two-click delete) li
 
 ```jsx
 const [loading, setLoading] = useState(true);
-if (loading) return <TabLoading />;  // defined in DevTools.jsx
+if (loading) return <TabLoading />;  // shared: import from '@/components/TabLoading' (DevTools keeps a local copy)
 
 const load = useCallback(async () => {
   setLoading(true);

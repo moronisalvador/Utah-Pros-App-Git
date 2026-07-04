@@ -182,16 +182,16 @@ supervisor fixture · templates-editor mount fetch) → `npm run test` + `build`
 mobile home) → UPR-Web-Context.md → reconcile THIS doc's Phase F checklist both directions →
 push, PR into `dev` ready-to-merge, **stop** (owner merges; no babysitting).
 
-- [ ] F1 migration applied + refusal test green
-- [ ] F2 shared modules extracted with tests
-- [ ] F3 Settings.jsx dissolved (6 sub-pages live)
-- [ ] F4 Admin.jsx split (4 sub-pages live)
-- [ ] F5 git-mvs done
-- [ ] F6 SettingsHome + hub v2 + breakpoint comments fixed
-- [ ] F7 routes/redirects/nav + GC3-GC8
-- [ ] F8 markers + doc pre-seeding
-- [ ] F9 manifest + Schedule-B re-point + doc sweep
-- [ ] Reviewer gauntlet + visual + honest checklist reconciliation
+- [x] F1 migration applied + refusal test green
+- [x] F2 shared modules extracted with tests
+- [x] F3 Settings.jsx dissolved (6 sub-pages live)
+- [x] F4 Admin.jsx split (4 sub-pages live)
+- [x] F5 git-mvs done
+- [x] F6 SettingsHome + hub v2 + breakpoint comments fixed
+- [x] F7 routes/redirects/nav + GC3-GC8
+- [x] F8 markers + doc pre-seeding
+- [x] F9 manifest + Schedule-B re-point + doc sweep
+- [x] Reviewer gauntlet + visual + honest checklist reconciliation (migration-safety-checker + upr-pattern-checker clean; settings-phase-reviewer run; visual verified desktop/1024-1279/mobile; `npm test` 631 passed, build + changed-file eslint clean — only navItems.jsx's pre-existing react-refresh warnings remain)
 
 **Scope:** owns every file named in steps 1-9; wave sessions own everything else. Fallback
 (disclosed, non-failing): sub-routes may ship as thin tab-prop wrappers around the untouched
@@ -352,5 +352,56 @@ during the wave go through P7-lite's owner.
   exposure was still live → shipped same day.
 
 ---
-*Wave checklist blocks (pre-seeded by F, one per session, edit only your own):* to be added
-by Phase F in step 8.
+
+## Wave checklist blocks (pre-seeded by Phase F — edit ONLY your own block)
+
+Each Wave-1 session ticks its own block below and reconciles it honestly (both directions)
+before opening its PR. Do not edit another session's block.
+
+### Phase F — Foundation (Session F) ✅ complete
+- [x] F1 migration applied + refusal test green (`delete_demo_schema`; published_at column)
+- [x] F2 shared modules extracted with tests (navKeys, owner, TabLoading, settings primitives, templates module)
+- [x] F3 Settings.jsx dissolved (6 sub-pages live)
+- [x] F4 Admin.jsx split (4 sub-pages live)
+- [x] F5 git-mvs done (Payments/Integrations/FeedbackInbox/ScopeSheets)
+- [x] F6 SettingsHome + hub v2 + breakpoint comments fixed (1024, not 1280)
+- [x] F7 routes/redirects/nav + GC3-GC8 (5 permanent redirects, /help unwrapped)
+- [x] F8 markers + doc pre-seeding (7 CSS markers, UPR-Web-Context sub-headers, these blocks)
+- [x] F9 manifest + Schedule-B re-point + doc sweep
+- [x] Reviewer gauntlet + visual + honest checklist reconciliation
+
+### P1 — Payments (Session A)
+- [ ] useBillingSettings hook: revert-on-error (kills the optimistic-write drift)
+- [ ] two-click confirm on Instant Payout
+- [ ] canEditBilling in-component block preserved verbatim
+- [ ] classes/tokens replace inline soup; mobile pass; header/section-card patterns
+
+### P2 — Integrations (Session B)
+- [ ] QBO connect/sync card rebuilt beside GitHub card (behavior-identical)
+- [ ] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` (atomic round-trip)
+- [ ] de-CRM the classes (or bless them — one decision); "API Keys" label retired
+
+### P3 — Team & Access (Session C)
+- [ ] employee hard-delete modal → inline two-click (Rule 2)
+- [ ] EmployeeModal unsaved-changes guard
+- [ ] PageAccess inline-grid soup → classes + mobile
+- [ ] absorb the DevTools employee auth-link/invite capability into Team
+
+### P4 — Workspace + Personal polish (Session D)
+- [ ] templates editor route: own fetch + router-level dirty guard verified; Reset gets a confirm
+- [ ] hex→token sweep; Commissions grid mobile reflow; consistent empty states
+- [ ] google-drive-callback.js retargeted to `/settings/my-account?gdrive=` (F's forwarder becomes a shim)
+
+### P5 — Feedback Inbox (Session E)
+- [ ] feedback-notify.js writes `/settings/feedback` (route change, not a test-green edit); test updated
+- [ ] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
+
+### P6 — Scope Sheets (Session G)
+- [ ] `window.confirm` ×3 → inline two-click; field-removal arm state
+- [ ] raw `db.delete` → `delete_demo_schema` RPC (F's safe version); refusal surfaced in UI
+- [ ] unsaved-changes guard on version-switch/back; "best on desktop" notice <768px
+- [ ] demoSchemaUtils extracted (page internals only)
+
+### P7-lite — DevTools dedup (Session H, after P2+P3 merge)
+- [ ] delete the Integrations tab (+ its `?qbo=` handling) — verify /settings/integrations covers it first
+- [ ] delete the Employees tab — verify /settings/team covers it first

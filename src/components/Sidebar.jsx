@@ -2,10 +2,12 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
 import { IconLogout } from './Icons';
-import { NAV_ITEMS, IconPlus, IconHelp, IconDevTools, IconHomebuilding, IconFeedback, IconRoadmap } from '@/lib/navItems';
+import { NAV_ITEMS, isItemVisible, IconPlus, IconHelp, IconDevTools, IconHomebuilding, IconFeedback, IconRoadmap } from '@/lib/navItems';
+import { isMoroni as isMoroniOwner } from '@/lib/owner';
 
 export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled, logout } = useAuth();
+  const navCtx = { canAccess, isFeatureEnabled, employee, isMoroni: isMoroniOwner(employee) };
 
   const initials = employee?.full_name
     ? employee.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
@@ -16,7 +18,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
     onAction?.(key);
   };
 
-  const isMoroni = employee?.email === 'moroni@utah-pros.com';
+  const isMoroni = isMoroniOwner(employee);
 
   return (
     <aside className={`sidebar${isOpen ? ' sidebar-open' : ''}`}>
@@ -51,16 +53,9 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
             );
           }
 
-          // Admin-only override (skip canAccess check for admins)
-          if (item.adminOnly) {
-            if (employee?.role !== 'admin') return null;
-          } else if (!canAccess(item.key)) {
-            // Role-based nav permission check
-            return null;
-          }
-
-          // Feature flag check — hides item when flag is disabled
-          if (item.featureFlag && !isFeatureEnabled(item.featureFlag)) return null;
+          // GC7 — single source of truth for nav visibility (adminOnly / canAccess
+          // / featureFlag AND the settings-hub any-visible-child rule + hideForRoles).
+          if (!isItemVisible(item, navCtx)) return null;
 
           return (
             <NavLink

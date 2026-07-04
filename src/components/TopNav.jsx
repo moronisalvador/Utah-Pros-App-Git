@@ -5,14 +5,14 @@
  *
  * WHAT THIS DOES (plain language):
  *   The horizontal navigation bar across the top of the desktop app (big screens
- *   only, ≥1280px). It shows the logo, the most-used destinations (Home, Inbox,
+ *   only, ≥1024px). It shows the logo, the most-used destinations (Home, Inbox,
  *   Schedule, Claims, Customers, My Money, Time), a search box, a "New" button,
  *   the notifications bell, a help link, a settings gear, and the user avatar. A hamburger
  *   button on the left opens a drawer with the less-used pages. On phones and
  *   iPads this bar is hidden and the old side menu + bottom bar are used instead.
  *
  * WHERE IT LIVES:
- *   Route:        n/a (rendered on every office page, ≥1280px)
+ *   Route:        n/a (rendered on every office page, ≥1024px)
  *   Rendered by:  src/components/Layout.jsx
  *
  * DEPENDS ON:
@@ -30,7 +30,7 @@
  *   - `onMenuClick` opens the OverflowDrawer; `onAction` opens create modals
  *     (handled by Layout.handleCreateAction).
  *   - Visibility is CSS-only: `.topnav { display:none }` until the
- *     @media (min-width:1280px) block shows it, so this never paints on mobile/iPad.
+ *     @media (min-width:1024px) block shows it, so this never paints on mobile/iPad.
  * ════════════════════════════════════════════════
  */
 import { NavLink } from 'react-router-dom';
@@ -39,7 +39,8 @@ import NotificationBell from '@/components/NotificationBell';
 import NewMenu from '@/components/NewMenu';
 import UserMenu from '@/components/UserMenu';
 import GlobalSearch from '@/components/GlobalSearch';
-import { PRIMARY_ITEMS, isItemVisible, IconHelp } from '@/lib/navItems';
+import { PRIMARY_ITEMS, isItemVisible, IconHelp, anySettingsChildVisible } from '@/lib/navItems';
+import { isMoroni as isMoroniOwner } from '@/lib/owner';
 import { IconSettings } from '@/components/Icons';
 
 function IconMenu(p) {
@@ -52,7 +53,7 @@ function IconMenu(p) {
 
 export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBell = true }) {
   const { employee, canAccess, isFeatureEnabled } = useAuth();
-  const isMoroni = employee?.email === 'moroni@utah-pros.com';
+  const isMoroni = isMoroniOwner(employee);
   const ctx = { canAccess, isFeatureEnabled, employee, isMoroni };
 
   return (
@@ -88,9 +89,10 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <NavLink to="/help" className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
           <IconHelp style={{ width: 18, height: 18 }} />
         </NavLink>
-        {/* Gear matches the sidebar's canAccess('settings') gate and the AccessRoute on
-            /settings — it was the one ungated path into Settings (Phase 0, settings overhaul). */}
-        {canAccess('settings') && (
+        {/* Gear → settings hub. Matches the Settings nav entry's any-visible-child
+            gate (GC3/GC8): shown when the user can reach at least one settings page.
+            crm_partner is excluded (Layout's choke point locks them to /crm/* + /help). */}
+        {employee?.role !== 'crm_partner' && anySettingsChildVisible(ctx) && (
           <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
             <IconSettings style={{ width: 18, height: 18 }} />
           </NavLink>
