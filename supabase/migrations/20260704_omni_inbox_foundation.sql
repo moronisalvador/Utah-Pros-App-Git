@@ -186,7 +186,13 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.record_email_suppression(text, text, text) TO anon, authenticated;
+-- SECURITY: this RPC is only ever called by resend-webhook.js via the SERVICE ROLE
+-- client (which bypasses grants). It permanently marks an address as hard-suppressed
+-- and never downgrades — so we do NOT expose it to anon/authenticated: a holder of the
+-- public anon key could otherwise DoS our ability to email any real customer. Lock to
+-- service_role only.
+REVOKE ALL ON FUNCTION public.record_email_suppression(text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_email_suppression(text, text, text) TO service_role;
 
 -- ═══ 8. omni_verify_foundation() → jsonb — self-cleaning migration self-test ════
 -- Proves, against the live schema, that every OLD + NEW messages.type/channel value
