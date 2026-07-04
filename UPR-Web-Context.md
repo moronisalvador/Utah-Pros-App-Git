@@ -1721,7 +1721,7 @@ setup is finished.
 
 **On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
 
-**UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill.
+**UI:** `/settings/integrations` (admin-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill. (P7-lite, 2026-07-04: the DevTools → Integrations tab this was ported from has been deleted.)
 
 **Environments / domains (IMPORTANT):**
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
@@ -2245,7 +2245,16 @@ changed from inline style objects to `className`).
 #### P6 — Scope Sheets (Session G)
 _(Session G: describe `delete_demo_schema` wiring, two-click confirms, demoSchemaUtils extract.)_
 #### P7-lite — DevTools dedup (Session H)
-_(Session H: describe the two DevTools tab deletions here.)_
+Deleted exactly two tabs from `DevTools.jsx` (verified `/settings/integrations` and
+`/settings/team` fully cover both capabilities before removing): the **Integrations** tab
+(QBO connect/preview/backfill + its `?qbo=connected|error|badstate` return-param handling —
+`/settings/integrations`'s QuickBooks card is a behavior-identical port using the same RPCs
+and workers, and `quickbooks-callback.js` already redirects to `/settings/integrations`, not
+`/dev-tools`) and the **Employees** tab (auth-link audit + invite — absorbed into
+`/settings/team` as a summary strip + per-row Login badge/action). Removed their `TABS` and
+`TAB_COMPONENTS` entries and the now-dead `IconSend`/`IconLink` icon helpers; every other tab
+(Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced) is untouched. DevTools is
+now 7 tabs.
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar
@@ -2316,7 +2325,7 @@ connection management, documented in its own sections above — shipped after th
 | 6B | Table inspector (15 tables, row count, recent rows) | ✅ Done |
 | 6C | `bust_postgrest_cache()` RPC + button | ✅ Done |
 
-**All DevTools phases complete.** 9 tabs: Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.
+**All DevTools phases complete.** 7 tabs as of P7-lite (2026-07-04): Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced — Employees and Integrations were deleted (moved to `/settings/team` and `/settings/integrations`).
 
 **Backfill tab** (Apr 18 2026) — 6-month Encircle historical importer UI.
 - Date-range + `date_field` (`date_of_loss` | `created_at`) picker
