@@ -480,7 +480,7 @@ export default function VisitContext({ appt, job, address, rooms, onCreateRoom, 
                       onClick={() => handleRemoveEquipment(e.id)}
                       onBlur={() => setConfirmRemoveEquipId(null)}
                       style={{
-                        minHeight: 36, minWidth: 48, padding: '6px 10px', fontSize: 12, fontWeight: 700,
+                        minHeight: 'var(--tech-min-tap, 48px)', minWidth: 48, padding: '6px 10px', fontSize: 12, fontWeight: 700,
                         border: `1px solid ${isConfirming ? 'var(--status-paused-border)' : 'var(--border-light)'}`,
                         borderRadius: 8,
                         background: isConfirming ? 'var(--status-paused-bg)' : 'var(--bg-tertiary)',
