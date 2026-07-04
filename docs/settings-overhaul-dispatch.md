@@ -293,3 +293,97 @@ push -u, ready-to-merge PR into dev, STOP.
 - Help.jsx per-guide split (preserve the `#guide/section` hash contract verbatim —
   HelpLink consumers depend on it).
 - Owner data fix: 5/20 employees have NULL email (blocks their email notification channel).
+
+---
+
+## Wave 2 — Connections consolidation & credential management (serial tails on Wave 1)
+
+Launch each only after its prerequisite Wave-1 phase has MERGED (so it rebases onto merged
+code, never in-flight). Full spec: `docs/settings-overhaul-roadmap.md` → "Wave 2 amendment".
+
+```
+[Session I — Wave 2 · P8 Connections hub]
+Branch: session-assigned (illustrative: settings/p8-connections), cut from origin/dev
+Model: Opus 4.8 · Effort: Medium
+Launch after: Session B's (P2 Integrations) PR merged into dev
+
+You are building Settings Overhaul P8 — the Connections hub; one phase only. Read scope:
+CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2 amendment (P8 block + live inventory
+table); the ownership manifest. You own exclusively src/pages/settings/Integrations.jsx and
+your reserved index.css §P8 marker. ZERO CRM-file edits (src/pages/crm/** is out of scope),
+zero migrations. Goal: every company-wide connection is discoverable and managed from this
+ONE page (an employee acting on intuition searches Settings → Integrations and finds
+everything). Build: (1) full management cards for GitHub + QuickBooks (already on the page
+from P2) + Deepgram (already app-managed in integration_credentials — read by
+transcribe-call.js; add a connect/status card following the GitHub pattern); (2) read-only
+status + cross-link cards, each calling get_integration_status and linking out — 'CRM
+Channels' (CallRail/Google Ads/Meta Ads → /crm/integrations), 'Stripe' (→ /settings/payments),
+'Google Drive & Calendar' (per-user, → /settings/my-account); (3) surface the
+feature:twilio_live dry-run flag state as a status line on a Twilio card (management of the
+Twilio secret itself is P9); (4) keep the page AdminRoute (role-restricted); design-system
+cards + tokens; mobile pass. Do NOT move Stripe/Google out of their money/personal homes —
+cross-link only. Close-out: npm run test + build + eslint (changed files); upr-pattern-checker
++ settings-phase-reviewer clean; visual check desktop+mobile; UPR-Web-Context.md sub-header +
+your roadmap checklist block; push -u, ready-to-merge PR into dev, STOP.
+```
+
+```
+[Session J — Wave 2 · P9 Credential management]  (security-weighted)
+Branch: session-assigned (illustrative: settings/p9-credentials), cut from origin/dev
+Model: Opus 4.8 · Effort: High
+Launch after: Session I's (P8) PR merged into dev — AND resolve the omni-inbox coordination
+  fork below before touching functions/lib/{twilio,email}.js
+
+You are building Settings Overhaul P9 — credential management; one phase only, security-
+critical (it moves live payment/SMS/email secrets from Cloudflare env into the app database).
+Read scope: CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2 amendment (P9 block, live
+inventory, security foundation, architecture caveat, and the P9⇄omni-inbox coordination
+note); the ownership manifest; BILLING-CONTEXT.md (Stripe). You own exclusively
+src/pages/settings/Integrations.jsx (credential cards), new functions/lib/credentials.js, your
+migration + tests, and index.css §P9. COORDINATION GATE: functions/lib/twilio.js and email.js
+are omni-inbox-frozen — do NOT start until either omni-inbox Foundation has merged (preferred)
+or the owner has cleared the one-line additive swap; functions/lib/stripe.js is unconstrained.
+VERIFIED SECURITY FOUNDATION: integration_credentials is RLS-enabled with ZERO policies
+(deny-all to anon/authenticated; only service-role reads it) — your #1 job is to PRESERVE
+that posture, never regress it. Build riskiest-first: (1) migration — add
+integration_credentials rows for stripe/twilio/resend exactly like GitHub (service-role only;
+committed test that anon/authenticated CANNOT SELECT the table), config rows for non-secret
+bits (Twilio phone/messaging SID); (2) functions/lib/credentials.js resolveCredential(env, db,
+provider) → DB-first, env-fallback (nothing breaks mid-cutover; env stays a backup), short
+in-memory cache; (3) ONE additive line in functions/lib/{stripe,twilio,email}.js swapping the
+env read for the resolver (env fallback retained — additive, behavior-identical when the DB
+row is absent); (4) admin-only paste-key cards (Twilio, Resend, Stripe) on the Connections
+page — connected is a BOOLEAN, the secret is NEVER returned to the browser (test-first), two-
+click disconnect. Named test-first targets: RLS-cannot-read test, never-echo-secret test,
+resolver DB-first/env-fallback test. Do NOT touch the OAuth app-registration client IDs
+(QBO/Google) — those stay env by design (see the architecture caveat). Close-out: npm run test
++ build + eslint; migration-safety-checker + upr-pattern-checker + settings-phase-reviewer
+(weight secret-handling) clean; UPR-Web-Context.md sub-header + roadmap checklist block;
+push -u, ready-to-merge PR into dev, STOP. Owner must remove the Cloudflare env secrets only
+AFTER verifying the DB-backed path works on dev (env fallback makes the cutover safe).
+```
+
+```
+[Session K — Wave 2 · P10 Reference Data merge]
+Branch: session-assigned (illustrative: settings/p10-reference-data), cut from origin/dev
+Model: Sonnet 5 · Effort: Medium
+Launch after: Session D's (P4 Workspace polish) PR merged into dev
+
+You are building Settings Overhaul P10 — merge Carriers + Referrals into one Reference Data
+page; one phase only. Read scope: CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2
+amendment (P10 block); the ownership manifest. You own: new
+src/pages/settings/ReferenceData.jsx (replacing Carriers.jsx + Referrals.jsx),
+src/App.jsx (the two carriers/referrals route lines + one redirect — the ONE sanctioned
+post-wave App.jsx edit, keep it to those lines), src/lib/navItems.jsx (collapse the two rail
+entries into one 'Reference Data' entry), index.css §P10. Zero migrations. Rationale: Carriers
+and Referrals are structurally identical flat LookupTable lists — one page with two stacked
+sections, not two nav slots. Build: (1) ReferenceData.jsx renders both LookupTable sections
+(carriers + referrals) using the same shared component + RPCs they use today, behavior-
+identical; (2) permanent redirects /settings/carriers + /settings/referrals →
+/settings/reference-data (add to settingsRedirects.js pattern or inline, matching F's
+approach); (3) one grouped nav entry; keep the AccessRoute('settings') gate. Do NOT touch
+Templates or Commissions (they stay separate — draft/publish and payroll, not flat lookups).
+Close-out: npm run test + build + eslint; upr-pattern-checker + settings-phase-reviewer clean;
+visual check desktop+mobile; UPR-Web-Context.md sub-header + roadmap checklist block; push -u,
+ready-to-merge PR into dev, STOP.
+```

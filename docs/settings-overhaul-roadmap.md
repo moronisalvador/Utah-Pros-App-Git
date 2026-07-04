@@ -405,3 +405,115 @@ before opening its PR. Do not edit another session's block.
 ### P7-lite — DevTools dedup (Session H, after P2+P3 merge)
 - [ ] delete the Integrations tab (+ its `?qbo=` handling) — verify /settings/integrations covers it first
 - [ ] delete the Employees tab — verify /settings/team covers it first
+
+---
+
+# Wave 2 amendment — Connections consolidation & credential management (v2 · 2026-07-05)
+
+**Owner decisions (2026-07-05):** every company-wide connection lives on ONE page
+(`/settings/integrations` → "Connections"), managed from the app rather than Cloudflare env
+vars; the page is role-restricted (already `AdminRoute`); credential management is built to
+the money-tier rigor because it moves live payment/SMS/email secrets into the app database.
+Rationale on record: env-var-only secrets are a maintenance pain and a **resale blocker** — a
+company licensing the platform must connect everything from the software.
+
+These phases **layer on top of the in-flight Wave-1 wave** — they do NOT edit any P1–P6
+dispatch block or owned file mid-flight. Each is **serial after** the Wave-1 phase whose file
+it extends (so it rebases onto merged, not in-flight, code).
+
+## Live inventory (verified 2026-07-05 — not from memory)
+
+| Connection | Secret type | Storage today | After Wave 2 |
+|---|---|---|---|
+| GitHub | PAT | `integration_credentials` (app-managed) ✅ | full card on Connections (from P2) |
+| QuickBooks | OAuth tokens | `integration_credentials` ✅ | full card (from P2) |
+| Deepgram | API key | `integration_credentials` ✅ (read by transcribe-call.js, callrail-webhook.js) | management card — **no migration needed** |
+| CallRail / Google Ads / Meta Ads | key / OAuth | `integration_credentials`, but UI lives in `src/pages/crm/CrmIntegrations.jsx` | **read-only status + cross-link card** → `/crm/integrations` (no CRM-file edit — CRM dir is out of scope) |
+| Stripe | secret key | **Cloudflare env `STRIPE_SECRET_KEY`** (`functions/lib/stripe.js:13,43`) | moved to `integration_credentials` (P9) + status card linking to Payments |
+| Twilio | Account SID / Auth Token / Messaging SID / phone | **Cloudflare env** (`functions/lib/twilio.js:48-62`) | moved to DB (P9) + admin card |
+| Resend | API key | **Cloudflare env `RESEND_API_KEY`** (`functions/lib/email.js:126`) | moved to DB (P9) + admin card |
+| Google Drive/Calendar | per-user OAuth | `user_google_accounts` / `google_calendar_links` (per-user) | **stays personal** (My Account) + status link on Connections — NOT a company connection |
+
+**Security foundation (verified live):** `integration_credentials` is RLS-enabled with **zero
+policies** = deny-all to anon/authenticated; only service-role workers read it, the browser
+cannot `SELECT` a secret. Storing Stripe/Twilio/Resend keys there is safe **provided that
+posture is preserved** (this is P9's #1 acceptance criterion — unlike the `USING(true)` tables
+PR #224 flags, this one is already correct).
+
+**Architecture caveat on record (the honest limit of "everything from the app"):** two secret
+tiers exist. (a) **Per-tenant account secrets** — the keys a customer rotates (Stripe secret,
+Twilio token, Resend key, Deepgram, GitHub PAT, the QBO/Google *connection* tokens). These
+ALL become app-managed after P9 — the resale win. (b) **OAuth app registrations** — the
+software's OWN identity with a platform (QBO/Google *client ID+secret*, CallRail/Meta app
+creds). A company running its own instance registers its own developer apps **once** at
+install; no in-app UI removes that one-time step (the platform vendors require it out-of-band).
+P9 delivers (a) fully and does not pretend to deliver (b).
+
+## Phases (Wave 2 — serial tails on Wave 1)
+
+### P8 — Connections hub (Session I)
+> **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Opus · medium
+> **Prerequisite:** P2 (Integrations) merged — P8 extends the page P2 built.
+> **Owns:** `src/pages/settings/Integrations.jsx`, css §P8. **Zero CRM edits, zero migrations.**
+- [ ] one page hosts ALL company connections: full cards for GitHub + QuickBooks (P2's) +
+      Deepgram (already app-managed — add a management card)
+- [ ] read-only status + cross-link cards (each reads `get_integration_status`, links out):
+      "CRM Channels" (CallRail/Google Ads/Meta Ads → `/crm/integrations`), "Stripe" (→
+      `/settings/payments`), "Google Drive & Calendar" (per-user → `/settings/my-account`)
+- [ ] surface the `feature:twilio_live` dry-run state (today buried in DevTools → Flags) as a
+      status line on the Twilio card
+- [ ] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass
+
+### P9 — Credential management (Session J) — **security-weighted, Opus · high**
+> **Branch:** session-assigned · cut from `origin/dev` · **Prerequisite:** P8 merged.
+> **Owns:** `src/pages/settings/Integrations.jsx` (credential cards), new
+> `functions/lib/credentials.js` (resolver), its migration + tests, css §P9.
+> **Cross-initiative gate — see coordination note below** (edits omni-inbox-frozen libs).
+- [ ] migration: add `integration_credentials` rows for stripe/twilio/resend following the
+      GitHub pattern EXACTLY (service-role only; **preserve the zero-policy RLS posture** —
+      test that anon/authenticated cannot SELECT); config rows for non-secret bits
+      (Twilio phone number, messaging SID)
+- [ ] `functions/lib/credentials.js`: `resolveCredential(env, db, provider)` → **DB-first,
+      env-fallback** (nothing breaks during the cutover; env stays as backup until the owner
+      removes it) — with a short in-memory cache to avoid a DB read per send
+- [ ] one-line swap in `functions/lib/{stripe,twilio,email}.js` to call the resolver instead
+      of reading `env.*` directly (additive; env fallback retained)
+- [ ] admin-only paste-key cards on the Connections page (Twilio, Resend, Stripe) — status is
+      a boolean `connected` only; **the secret is NEVER returned to the browser** (test-first);
+      two-click disconnect
+- [ ] test-first named targets: RLS-posture test (browser cannot read the table), never-echo
+      test (status RPC returns no token), resolver DB-first/env-fallback test
+- [ ] `settings-phase-reviewer` (weight the secret-handling paths) + `upr-pattern-checker` +
+      `migration-safety-checker`
+
+### P10 — Reference Data merge (Session K)
+> **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Sonnet · medium
+> **Prerequisite:** P4 (Workspace polish) merged — P10 merges the pages P4 polished.
+> **Owns:** `src/pages/settings/{Carriers,Referrals}.jsx` → one new
+> `src/pages/settings/ReferenceData.jsx`, `App.jsx` (2 route lines + 1 redirect — the ONE
+> sanctioned post-wave App.jsx seam), `src/lib/navItems.jsx` (collapse two rail entries to
+> one), css §P10.
+- [ ] Carriers + Referrals become two stacked `LookupTable` sections on one "Reference Data"
+      page (`/settings/reference-data`) — they are structurally identical flat lookups, not
+      settings that each deserve a nav slot
+- [ ] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/reference-data`
+- [ ] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
+
+## Cross-initiative coordination note (P9 ⇄ omni-inbox)
+`functions/lib/twilio.js` and `functions/lib/email.js` are **frozen import-only by the
+omni-inbox manifest** (§1). Both initiatives are currently pending/unstarted. P9's edits to
+those two libs are **one additive line each** (swap the env read for the resolver, env
+fallback retained), which minimizes the seam — but it is still an edit to an omni-frozen file.
+**Owner decision (fork):** either (a) sequence P9 to launch **after omni-inbox Foundation
+merges** (omni-F does its own additive `email.js` edit; P9 layers on top), or (b) coordinate
+the one-line swaps as a disclosed additive with whoever runs omni-F. Recommendation: (a) —
+omni-F is a hard dependency for the inbox work anyway, and waiting removes all doubt.
+`functions/lib/stripe.js` is frozen by nobody — its swap is unconstrained.
+
+## Dependency graph (Wave 2 tail)
+```
+P2 ✅merge ──▶ P8 ──▶ P9 ─(gated on omni-inbox F, or coordinated)─▶ (secrets app-managed)
+P4 ✅merge ──▶ P10
+```
+Merge preference within Wave 2: P8 → P9, P10 independent. All serial-after-a-Wave-1-merge, so
+none can collide with the in-flight wave.
