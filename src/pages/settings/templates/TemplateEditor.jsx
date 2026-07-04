@@ -147,7 +147,7 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
           {sections.map((sec, idx) => {
             const divMeta = sec.division ? DIVISION_META[sec.division] : null;
             return (
-              <SectionEditor key={idx} idx={idx} divMeta={divMeta} heading={sec.heading} body={sec.body}
+              <SectionEditor key={idx} divMeta={divMeta} heading={sec.heading} body={sec.body}
                 onHeadingChange={v => update(idx, 'heading', v)}
                 onBodyChange={v => update(idx, 'body', v)}
                 onFocus={(el, field) => { lastFocused.current = { el, idx, field }; }}
@@ -213,7 +213,7 @@ function RichTextArea({ value, onChange, onFocus, isLong }) {
 }
 
 /* ═══ SECTION EDITOR ═══ */
-function SectionEditor({ idx, divMeta, heading, body, onHeadingChange, onBodyChange, onFocus, isLong }) {
+function SectionEditor({ divMeta, heading, body, onHeadingChange, onBodyChange, onFocus, isLong }) {
   const [expanded, setExpanded] = useState(true);
   return (
     <div style={{ marginBottom: 12, border: '1px solid var(--border-light)', borderRadius: 8, overflow: 'hidden' }}>

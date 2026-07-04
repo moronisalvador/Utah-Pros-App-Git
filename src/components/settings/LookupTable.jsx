@@ -61,7 +61,7 @@ export default function LookupTable({ title, subtitle, items, onSave, onDelete, 
   const handleKeyDown = (e) => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } if (e.key === 'Escape') cancelEdit(); };
   const set           = (key, val) => setEditForm(prev => ({ ...prev, [key]: val }));
 
-  const RowCells = () => columns.map(col => (
+  const renderRowCells = () => columns.map(col => (
     <div key={col.key} className="lookup-cell" style={{ flex: col.flex || 1 }}>
       {col.type === 'select'
         ? <select className="input lookup-input" value={editForm[col.key] || ''} onChange={e => set(col.key, e.target.value)} style={{ cursor: 'pointer' }}>{col.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
@@ -87,7 +87,7 @@ export default function LookupTable({ title, subtitle, items, onSave, onDelete, 
         </div>
         {editingId === 'new' && (
           <>
-            <div className="lookup-row lookup-row-editing"><RowCells /><div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}><button className="lookup-action-btn save" onClick={handleSave} disabled={saving}><IconCheck style={{ width: 14, height: 14 }} /></button><button className="lookup-action-btn cancel" onClick={cancelEdit}><IconX style={{ width: 14, height: 14 }} /></button></div></div>
+            <div className="lookup-row lookup-row-editing">{renderRowCells()}<div className="lookup-cell lookup-cell-actions" style={{ width: 80 }}><button className="lookup-action-btn save" onClick={handleSave} disabled={saving}><IconCheck style={{ width: 14, height: 14 }} /></button><button className="lookup-action-btn cancel" onClick={cancelEdit}><IconX style={{ width: 14, height: 14 }} /></button></div></div>
             {validationError && <div style={{ padding: '6px 12px', fontSize: 12, color: '#ef4444', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>{validationError}</div>}
           </>
         )}
@@ -95,7 +95,7 @@ export default function LookupTable({ title, subtitle, items, onSave, onDelete, 
           ? <div className="lookup-empty">{search ? `No results for "${search}"` : 'No items yet. Click "Add" to create one.'}</div>
           : filtered.map(item => editingId === item.id ? (
             <>
-              <div key={item.id} className="lookup-row lookup-row-editing"><RowCells /><div className="lookup-cell lookup-cell-actions" style={{ width:80 }}><button className="lookup-action-btn save" onClick={handleSave} disabled={saving}><IconCheck style={{ width: 14, height: 14 }} /></button><button className="lookup-action-btn cancel" onClick={cancelEdit}><IconX style={{ width: 14, height: 14 }} /></button></div></div>
+              <div key={item.id} className="lookup-row lookup-row-editing">{renderRowCells()}<div className="lookup-cell lookup-cell-actions" style={{ width:80 }}><button className="lookup-action-btn save" onClick={handleSave} disabled={saving}><IconCheck style={{ width: 14, height: 14 }} /></button><button className="lookup-action-btn cancel" onClick={cancelEdit}><IconX style={{ width: 14, height: 14 }} /></button></div></div>
               {validationError && <div style={{ padding: '6px 12px', fontSize: 12, color: '#ef4444', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>{validationError}</div>}
             </>
           ) : (
