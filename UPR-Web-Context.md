@@ -38,7 +38,7 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
-- **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper
+- **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper. Omni-inbox (Jul 4 2026) adds `functions/lib/email-threading.js` (reply-token address build/parse, XSS-safe inbound HTML sanitizer, In-Reply-To/References headers) and `functions/lib/conversation-email.js` (`sendConversationEmail` — reason-aware suppression gate before Resend, reply-only/channel-locked). Bounce/complaint feedback → `functions/api/resend-webhook.js`.
 - **SMS:** Twilio (pending go-live — ID verification blocked)
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
@@ -266,6 +266,10 @@ functions/
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
     process-scheduled.js          — Cron: process scheduled SMS messages (60s)
+    resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
+                                    HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
+                                    fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
+                                    email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
@@ -480,18 +484,34 @@ dispatch_board_jobs     — View: jobs for dispatch board
 
 ### Messaging & Conversations
 ```
-conversations           — SMS conversation threads
-messages                — Individual SMS/MMS messages
-conversation_participants
+conversations           — conversation threads. Omni-inbox (Jul 4 2026) adds email_reply_token
+                          (UNIQUE, >=128-bit random, backfilled) — the sole authoritative email-reply
+                          correlator (reply+<token>@utahpros.app → this conversation)
+messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) additive: direction
+                          ('inbound'|'outbound'|'note', backfilled from type); channel now DEFAULT 'sms'
+                          + CHECK widened to sms|mms|rcs|email; type CHECK widened to add email_inbound|
+                          email_outbound; nullable email cols: email_message_id (UNIQUE partial),
+                          in_reply_to, email_references, email_from, email_to, subject, email_html,
+                          sender_email
+conversation_participants — Omni-inbox adds nullable `email` (email participants)
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
+email_suppressions      — do-not-email list. Omni-inbox widens reason CHECK: adds hard_bounce|complaint|
+                          global (kept legacy unsubscribed|bounced|complained|manual). Fed by unsubscribe
+                          clicks + the Resend bounce/complaint webhook (resend-webhook.js)
+email_inbound_events    — Omni-inbox (Jul 4 2026): email-event idempotency ledger (message_key UNIQUE).
+                          RLS on, authenticated-only policy; anon reaches it only via claim_inbound_email
 campaigns               — SMS/marketing campaigns
 campaign_recipients     — Recipients per campaign
 notification_queue      — Queued notifications
 ```
+**Omni-inbox Foundation (Phase F, Jul 4 2026):** adds inbound+outbound EMAIL to the SMS-only
+conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
+`.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
+Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
 ### Documents & Esign
 ```
@@ -781,6 +801,22 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 ```
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
 get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+```
+
+### Omni-inbox — email (Foundation, Jul 4 2026)
+```
+claim_inbound_email(p_message_key TEXT) → boolean — SECURITY DEFINER, GRANT anon+authenticated.
+                                  Email-event idempotency: TRUE on first claim of a key, FALSE on
+                                  every duplicate (blank key → FALSE). Backs inbound-email dedup
+                                  (Phase I) + the resend-webhook svix-id dedup (key 'resend:<id>').
+record_email_suppression(p_email TEXT, p_reason TEXT, p_source TEXT DEFAULT NULL) → email_suppressions
+                                  — SECURITY DEFINER, Foundation-internal (resend-webhook only).
+                                  Upserts one row per address (UNIQUE lower(email)) with reason
+                                  precedence — never downgrades a hard suppression to 'unsubscribed'.
+omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test: proves the messages
+                                  type/channel CHECK widen accepts all old+new values, rejects bogus,
+                                  and claim idempotency. Backs supabase/tests/omni_messages_check_widen.
+                                  Creates+deletes its own throwaway rows (leaves nothing).
 ```
 
 ### Workers & Dev

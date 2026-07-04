@@ -37,6 +37,7 @@ import {
   evaluateExit,
   advanceEnrollment,
   planStepOutcome,
+  processEnrollment,
   HOLD_RETRY_HOURS,
 } from './process-sequences.js';
 
@@ -172,5 +173,40 @@ describe('worker contracts', () => {
   });
   it('treats a promoted lead as the conversion signal', () => {
     expect(CONVERSION_EVENT_TYPES).toContain('crm_lead_promoted');
+  });
+});
+
+// ─── Omni-inbox: reply detection widened to include email (manifest §5) ────────
+describe('gatherExitSignals reply detection (via processEnrollment)', () => {
+  // A fake db that records the messages query and returns one reply row for it.
+  function fakeDb(messageRows) {
+    const captured = { messageQuery: null };
+    return {
+      captured,
+      select: async (table, query) => {
+        if (table === 'messages') { captured.messageQuery = query; return messageRows; }
+        return []; // system_events conversion check → no signal
+      },
+      update: async () => null,
+      insert: async () => null,
+    };
+  }
+  const enrollment = { id: 'e1', sequence_id: 's1', contact_id: 'c1', enrolled_at: iso(NOW), current_step: 0 };
+  const ctx = (db) => ({
+    db, now: NOW, send: async () => ({ ok: true }),
+    sequences: { s1: { id: 's1', org_id: 'o1', exit_on_reply: true, exit_on_conversion: true } },
+    steps: { s1: [{ step_order: 1, channel: 'sms', body: 'x' }] },
+  });
+
+  it('queries messages for BOTH sms_inbound and email_inbound', async () => {
+    const db = fakeDb([]);
+    await processEnrollment(ctx(db), enrollment);
+    expect(db.captured.messageQuery).toContain('type=in.(sms_inbound,email_inbound)');
+  });
+
+  it('an inbound EMAIL reply exits the drip (reason: reply)', async () => {
+    const db = fakeDb([{ id: 'm1' }]); // reply present
+    const outcome = await processEnrollment(ctx(db), enrollment);
+    expect(outcome).toBe('exited');
   });
 });

@@ -1,0 +1,209 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: email-threading.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The plumbing that lets an email reply land back in the right conversation
+ *   and show up threaded. Four small, pure helpers:
+ *     1. Build the special reply address we put on outgoing email — it carries a
+ *        secret token that says which conversation the reply belongs to.
+ *     2. Read that token back out of the "To" address when a reply arrives.
+ *     3. Scrub incoming email HTML so a malicious message can't run code or
+ *        smuggle in a dangerous link before we ever show it on screen.
+ *     4. Build the two email headers ("In-Reply-To"/"References") that make mail
+ *        apps visually group a reply under the message it answers.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (server-side helper, not a page)
+ *
+ * DEPENDS ON:
+ *   Packages:  none — pure functions, no I/O (runs in Cloudflare Workers)
+ *   Internal:  imported by functions/lib/conversation-email.js (outbound),
+ *              functions/api/inbound-email.js (Phase I, inbound), the Email Worker
+ *   Data:      reads → none · writes → none
+ *
+ * EXPORTS:
+ *   buildReplyAddress(token) -> "reply+<token>@utahpros.app"
+ *   parseReplyToken(toAddress) -> token string | null
+ *   sanitizeInboundHtml(html) -> safe HTML string
+ *   buildThreadHeaders({ inReplyTo, references }) -> headers object (maybe empty)
+ *
+ * NOTES / GOTCHAS:
+ *   - The reply TOKEN is the sole authoritative thread correlator (Resend does not
+ *     return the outbound RFC Message-ID, so we cannot correlate on that). The token
+ *     is unspoofable; the sender email is NOT trusted for threading.
+ *   - REPLY_DOMAIN is utahpros.app — the SAME domain email is sent From, and the
+ *     domain the owner points reply@ -> the Email Worker at, with Subaddressing on so
+ *     reply+<token>@ preserves the token in message.to.
+ *   - sanitizeInboundHtml is a conservative regex sanitizer (Workers have no DOM):
+ *     it DROPS script/style/iframe/etc. wholesale, strips every on* handler and all
+ *     inline style/href/src that isn't an http(s)/mailto/tel link. Defense-in-depth —
+ *     Phase U also renders it inside a locked-down surface.
+ * ════════════════════════════════════════════════
+ */
+
+// The reply/subaddress domain. Same domain email is sent From (see email.js) and the
+// domain the owner routes reply@ -> Email Worker with Subaddressing enabled.
+export const REPLY_DOMAIN = 'utahpros.app';
+const REPLY_LOCAL = 'reply';
+
+// ─── SECTION: Reply address <-> token ──────────────
+
+/**
+ * Build the plus-addressed reply address that carries the conversation token.
+ * @param {string} token  conversations.email_reply_token
+ * @returns {string} e.g. "reply+ab12...@utahpros.app"
+ */
+export function buildReplyAddress(token) {
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    throw new Error('buildReplyAddress: token is required');
+  }
+  return `${REPLY_LOCAL}+${token.trim()}@${REPLY_DOMAIN}`;
+}
+
+/**
+ * Extract the conversation token from an inbound "To" address. Accepts a bare
+ * address or a "Display Name <addr>" form. Case-insensitive on the local part and
+ * domain; the token itself is returned verbatim (case preserved). Returns null if
+ * the address is not a reply+<token>@<REPLY_DOMAIN> subaddress.
+ * @param {string} toAddress
+ * @returns {string|null}
+ */
+export function parseReplyToken(toAddress) {
+  if (!toAddress || typeof toAddress !== 'string') return null;
+
+  // Pull the address out of an optional "Name <addr>" wrapper, else use as-is.
+  const angle = toAddress.match(/<([^>]+)>/);
+  const raw = (angle ? angle[1] : toAddress).trim();
+
+  const at = raw.lastIndexOf('@');
+  if (at === -1) return null;
+  const local = raw.slice(0, at);
+  const domain = raw.slice(at + 1).trim().toLowerCase();
+  if (domain !== REPLY_DOMAIN) return null;
+
+  // local must be "reply+<token>" (case-insensitive on the "reply" part).
+  const plus = local.indexOf('+');
+  if (plus === -1) return null;
+  if (local.slice(0, plus).toLowerCase() !== REPLY_LOCAL) return null;
+
+  const token = local.slice(plus + 1).trim();
+  return token || null;
+}
+
+// ─── SECTION: Inbound HTML sanitizer ──────────────
+
+// Elements removed WITH their contents (they can execute or exfiltrate).
+const BLOCK_ELEMENTS_WITH_CONTENT = [
+  'script', 'style', 'iframe', 'object', 'embed', 'applet', 'noscript',
+  'template', 'svg', 'math', 'form', 'link', 'meta', 'base', 'title', 'head',
+];
+// Bare/void tags removed (leave any following text) — the paired list above covers most.
+const STRIP_TAGS_ONLY = ['link', 'meta', 'base'];
+
+const SAFE_URL_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:'];
+
+// Does a URL attribute value point somewhere safe? Relative URLs are rejected
+// (an inbound email has no trusted base) and only the whitelisted schemes pass.
+function isSafeUrl(value) {
+  const v = String(value || '').trim();
+  if (!v) return false;
+  // Strip whitespace AND every control char (code point <= 0x20) that could hide a
+  // scheme like a tab- or NUL-obfuscated "javascript:". A codepoint filter (not a
+  // regex) catches every control char without tripping the no-control-regex lint.
+  let collapsed = '';
+  for (const ch of v) if (ch.charCodeAt(0) > 0x20) collapsed += ch;
+  collapsed = collapsed.toLowerCase();
+  if (collapsed.startsWith('#')) return true;                // in-page anchor, harmless
+  const scheme = collapsed.match(/^([a-z][a-z0-9+.-]*:)/);
+  if (!scheme) return false;                                 // scheme-relative/relative → reject
+  return SAFE_URL_SCHEMES.includes(scheme[1]);
+}
+
+/**
+ * Scrub inbound email HTML so it is safe to store and render. Conservative and
+ * regex-based (Workers have no DOMParser): removes dangerous elements wholesale,
+ * strips every event-handler attribute, drops all inline styles, and removes any
+ * href/src that is not an http(s)/mailto/tel link. Returns a string ('' for junk).
+ * @param {string} html
+ * @returns {string}
+ */
+export function sanitizeInboundHtml(html) {
+  if (!html || typeof html !== 'string') return '';
+  let out = html;
+
+  // 1. Strip HTML comments (can hide conditional/script payloads).
+  out = out.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 2. Remove dangerous elements together with their content.
+  for (const tag of BLOCK_ELEMENTS_WITH_CONTENT) {
+    const paired = new RegExp(`<${tag}\\b[\\s\\S]*?</${tag}\\s*>`, 'gi');
+    out = out.replace(paired, '');
+    // Also kill an unclosed/self-closing opener of the same tag.
+    const opener = new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+    out = out.replace(opener, '');
+  }
+  for (const tag of STRIP_TAGS_ONLY) {
+    out = out.replace(new RegExp(`</?${tag}\\b[^>]*>`, 'gi'), '');
+  }
+
+  // 3. Strip inline event handlers: on*="..." / on*='...' / on*=bare.
+  out = out.replace(/\son[a-z0-9_-]+\s*=\s*"(?:[^"]*)"/gi, '');
+  out = out.replace(/\son[a-z0-9_-]+\s*=\s*'(?:[^']*)'/gi, '');
+  out = out.replace(/\son[a-z0-9_-]+\s*=\s*[^\s>]+/gi, '');
+
+  // 4. Drop ALL inline style attributes (CSS can carry url(javascript:)/expression()).
+  out = out.replace(/\sstyle\s*=\s*"(?:[^"]*)"/gi, '');
+  out = out.replace(/\sstyle\s*=\s*'(?:[^']*)'/gi, '');
+  out = out.replace(/\sstyle\s*=\s*[^\s>]+/gi, '');
+
+  // 5. Neutralize URL-bearing attributes whose value isn't a whitelisted scheme.
+  //    href / src / xlink:href / srcset / poster / background / formaction.
+  const urlAttr = /\s(href|src|xlink:href|srcset|poster|background|formaction|action|data)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+  out = out.replace(urlAttr, (match, attr, _q, dq, sq, bare) => {
+    const val = dq ?? sq ?? bare ?? '';
+    return isSafeUrl(val) ? match : '';
+  });
+
+  return out;
+}
+
+// ─── SECTION: Thread headers ──────────────
+
+// Wrap a single Message-ID in angle brackets if it isn't already.
+function wrapAngle(id) {
+  const v = String(id || '').trim();
+  if (!v) return null;
+  if (v.startsWith('<') && v.endsWith('>')) return v;
+  return `<${v.replace(/^<|>$/g, '')}>`;
+}
+
+// Normalize a References value (may be a space-separated chain) into angle-bracketed ids.
+function wrapReferences(refs) {
+  const v = String(refs || '').trim();
+  if (!v) return null;
+  return v
+    .split(/\s+/)
+    .map(wrapAngle)
+    .filter(Boolean)
+    .join(' ') || null;
+}
+
+/**
+ * Build the In-Reply-To / References headers for a threaded reply. Both are optional;
+ * an empty object means "no threading headers" (a fresh outbound email). References
+ * falls back to In-Reply-To when not supplied (standard client behavior).
+ * @param {object} opts
+ * @param {string} [opts.inReplyTo]   the Message-ID being replied to
+ * @param {string} [opts.references]  existing References chain (space-separated ids)
+ * @returns {object} e.g. { 'In-Reply-To': '<id>', 'References': '<id>' }
+ */
+export function buildThreadHeaders({ inReplyTo, references } = {}) {
+  const headers = {};
+  const ir = wrapAngle(inReplyTo);
+  if (ir) headers['In-Reply-To'] = ir;
+  const ref = wrapReferences(references) || ir;
+  if (ref) headers['References'] = ref;
+  return headers;
+}
