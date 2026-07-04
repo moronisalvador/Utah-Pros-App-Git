@@ -38,7 +38,7 @@
  *     nav page, just set `featureFlag` on its navItems entry and it self-registers.
  * ════════════════════════════════════════════════
  */
-import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS, SYSTEM_ITEMS } from '@/lib/navItems';
+import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS } from '@/lib/navItems';
 
 // ─── SECTION: Helpers ───
 const VALID_CATEGORIES = ['page', 'tool', 'feature'];
@@ -129,7 +129,7 @@ const EXPLICIT_FLAGS = [
 // so adding a flag-gated page needs zero extra bookkeeping here.
 function navDerivedFlags() {
   const byKey = new Map();
-  for (const item of [...NAV_ITEMS, ...PRIMARY_ITEMS, ...OVERFLOW_ITEMS, ...SYSTEM_ITEMS]) {
+  for (const item of [...NAV_ITEMS, ...PRIMARY_ITEMS, ...OVERFLOW_ITEMS]) {
     const key = item?.featureFlag;
     if (!key || byKey.has(key)) continue;
     byKey.set(key, { key, label: item.label || key, description: `Controls the ${item.label || key} page.` });

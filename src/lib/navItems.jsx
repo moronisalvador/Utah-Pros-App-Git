@@ -26,7 +26,7 @@
  * NOTES / GOTCHAS:
  *   - NAV_ITEMS is the EXACT legacy list the mobile/iPad Sidebar renders — keep
  *     its contents and order identical so that experience never changes.
- *   - The desktop groupings (PRIMARY_ITEMS / OVERFLOW_ITEMS / SYSTEM_ITEMS) are
+ *   - The desktop groupings (PRIMARY_ITEMS / OVERFLOW_ITEMS) are
  *     a re-slicing of the SAME pages for the ≥1024px top-nav shell, plus
  *     Marketing (which is intentionally NOT in NAV_ITEMS so the mobile sidebar
  *     is unchanged).
@@ -148,20 +148,12 @@ export const OVERFLOW_ITEMS = [
   { key: 'roadmap',            label: 'Roadmap',            path: '/roadmap',            icon: IconRoadmap,    always: true, hideForRoles: ['crm_partner'] },
 ];
 
-// SYSTEM: the Settings hub left rail. admin_panel uses canAccess (matches legacy
-// sidebar — the route itself is AdminRoute-gated); help is always visible;
-// dev_tools is Moroni-only.
-export const SYSTEM_ITEMS = [
-  { key: 'settings',           label: 'Settings',            path: '/settings',                 icon: IconSettings },
-  { key: 'admin_panel',        label: 'Admin',               path: '/admin',                    icon: IconAdmin,    end: true },
-  { key: 'demo_sheet_builder', label: 'Scope Sheet Builder', path: '/admin/demo-sheet-builder', icon: IconAdmin },
-  { key: 'admin_integrations', label: 'API Keys',            path: '/admin/integrations',       icon: IconAdmin,    adminOnly: true },
-  { key: 'tech_feedback',      label: 'Tech Feedback',       path: '/tech-feedback',            icon: IconFeedback },
-  // always: true — every employee can send feedback (see OVERFLOW_ITEMS note,
-  // incl. why crm_partner is excluded).
-  { key: 'feedback',           label: 'Send Feedback',       path: '/feedback',                 icon: IconFeedback, always: true, hideForRoles: ['crm_partner'] },
-  { key: 'dev_tools',          label: 'Dev Tools',           path: '/dev-tools',                icon: IconDevTools, moroniOnly: true },
-];
+// SYSTEM_ITEMS removed by Settings Overhaul Phase F: the settings hub rail no
+// longer renders a flat SYSTEM list — SettingsLayout + SettingsHome read the
+// grouped SETTINGS_GROUPS above, and the old individual paths (/admin,
+// /admin/integrations, /tech-feedback, /admin/demo-sheet-builder) are retired +
+// permanently redirected (src/lib/settingsRedirects.js). GC4/GC5 are realized by
+// the single settingsHub NAV_ITEMS entry + the adminOnly gates in SETTINGS_GROUPS.
 
 // ─── SECTION: Settings hub — grouped index (SettingsHome + SettingsLayout rail) ───
 // The Settings area's information architecture: tappable groups → routed
