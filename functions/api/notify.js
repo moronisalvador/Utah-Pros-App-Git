@@ -40,6 +40,9 @@
  *     subscriptions. Email skips + reports a NULL address. None of these throw.
  *   - Bell rows are per-recipient (recipient_id set) so each person's feed + read
  *     state is their own — unlike the legacy global feed.
+ *   - Bare trigger payloads (appointment.* / estimate.accepted pass only an id)
+ *     are enriched here into a clean title/body/deep-link before fan-out so the
+ *     bell/push/email read nicely — see enrichAppointmentBody/enrichEstimateBody.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
@@ -259,6 +262,42 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
 }
 
 /**
+ * Turn a bare `{ estimate_id }` trigger payload into a clean title + body +
+ * deep link. Best-effort — returns the body unchanged on any lookup miss or
+ * when a title is already set; never throws. Reads estimates + contacts.
+ */
+export async function enrichEstimateBody(db, body = {}) {
+  if (!body.estimate_id || body.title) return body;
+  let est = null;
+  try {
+    const rows = await db.select('estimates', `id=eq.${body.estimate_id}&select=estimate_number,amount,approved_amount,contact_id,job_id`);
+    est = rows?.[0] || null;
+  } catch { est = null; }
+  if (!est) return body;
+  let client = '';
+  if (est.contact_id) {
+    try {
+      const c = await db.select('contacts', `id=eq.${est.contact_id}&select=name`);
+      client = (c?.[0]?.name && String(c[0].name).trim()) || '';
+    } catch { client = ''; }
+  }
+  const amt = Number(est.approved_amount ?? est.amount);
+  const money = Number.isFinite(amt) && amt > 0
+    ? `$${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '';
+  const num = est.estimate_number ? String(est.estimate_number).trim() : '';
+  return {
+    ...body,
+    title: num ? `Estimate ${num} accepted` : 'Estimate accepted',
+    body: [money, client].filter(Boolean).join(' · ') || body.body || '',
+    link: body.link || `/estimates/${body.estimate_id}`,
+    entity_type: body.entity_type || 'estimate',
+    entity_id: body.entity_id || body.estimate_id,
+    job_id: body.job_id ?? est.job_id ?? null,
+  };
+}
+
+/**
  * The reusable dispatch core (no HTTP auth) — resolves the catalog type, the
  * audience, then fans out per recipient. Imported in-process by feedback-notify
  * and wrapped with auth by handleNotify. Returns a summary; never throws for a
@@ -279,6 +318,8 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
   // bell, push, and email all read cleanly (not just the catalog label).
   if (typeKey.startsWith('appointment.')) {
     body = await enrichAppointmentBody(db, typeKey, body);
+  } else if (typeKey === 'estimate.accepted') {
+    body = await enrichEstimateBody(db, body);
   }
 
   const recipientIds = await resolveAudience(db, typeKey, body);
