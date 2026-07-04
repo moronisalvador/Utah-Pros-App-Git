@@ -182,16 +182,16 @@ supervisor fixture · templates-editor mount fetch) → `npm run test` + `build`
 mobile home) → UPR-Web-Context.md → reconcile THIS doc's Phase F checklist both directions →
 push, PR into `dev` ready-to-merge, **stop** (owner merges; no babysitting).
 
-- [ ] F1 migration applied + refusal test green
-- [ ] F2 shared modules extracted with tests
-- [ ] F3 Settings.jsx dissolved (6 sub-pages live)
-- [ ] F4 Admin.jsx split (4 sub-pages live)
-- [ ] F5 git-mvs done
-- [ ] F6 SettingsHome + hub v2 + breakpoint comments fixed
-- [ ] F7 routes/redirects/nav + GC3-GC8
-- [ ] F8 markers + doc pre-seeding
-- [ ] F9 manifest + Schedule-B re-point + doc sweep
-- [ ] Reviewer gauntlet + visual + honest checklist reconciliation
+- [x] F1 migration applied + refusal test green
+- [x] F2 shared modules extracted with tests
+- [x] F3 Settings.jsx dissolved (6 sub-pages live)
+- [x] F4 Admin.jsx split (4 sub-pages live)
+- [x] F5 git-mvs done
+- [x] F6 SettingsHome + hub v2 + breakpoint comments fixed
+- [x] F7 routes/redirects/nav + GC3-GC8
+- [x] F8 markers + doc pre-seeding
+- [x] F9 manifest + Schedule-B re-point + doc sweep
+- [x] Reviewer gauntlet + visual + honest checklist reconciliation (migration-safety-checker + upr-pattern-checker clean; settings-phase-reviewer run; visual verified desktop/1024-1279/mobile; `npm test` 631 passed, build + changed-file eslint clean — only navItems.jsx's pre-existing react-refresh warnings remain)
 
 **Scope:** owns every file named in steps 1-9; wave sessions own everything else. Fallback
 (disclosed, non-failing): sub-routes may ship as thin tab-prop wrappers around the untouched
