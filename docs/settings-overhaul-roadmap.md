@@ -227,7 +227,10 @@ monoliths with physical splits transferring to P3/P4.
 > Owns `src/pages/settings/{Carriers,Referrals,Templates,Commissions,MyAccount}.jsx` (+
 > templates module pages), `functions/api/google-drive-callback.js` (retarget to
 > `/settings/my-account` — F's forwarder becomes a permanent shim), css §P4.
-- [x] templates editor route: own fetch + router-level dirty guard; Reset gets a confirm
+- [x] templates editor route: own fetch + router-level dirty guard verified (F's, no change needed)
+- [ ] Reset gets a confirm — **blocked**: `TemplateEditor.jsx` is manifest-frozen with no
+      copy-in escape hatch for this module (F-owner follow-up only); see UPR-Web-Context.md P4
+      sub-header
 - [x] hex→token sweep; Commissions grid mobile reflow; consistent empty states
 
 **P5 — Feedback Inbox** (Sonnet · medium)
@@ -387,8 +390,11 @@ before opening its PR. Do not edit another session's block.
 - [x] PageAccess inline-grid soup → classes + mobile
 - [x] absorb the DevTools employee auth-link/invite capability into Team
 
-### P4 — Workspace + Personal polish (Session D) ✅ complete
-- [x] templates editor route: own fetch + router-level dirty guard verified; Reset gets a confirm
+### P4 — Workspace + Personal polish (Session D) — mostly complete, one item blocked
+- [x] templates editor route: own fetch + router-level dirty guard verified (F's, no change needed)
+- [ ] Reset gets a confirm — **blocked on an F-owner follow-up** (manifest freezes
+      `TemplateEditor.jsx` with no copy-in option for this module; a self-granted exception was
+      shipped then reverted on the reviewer pass — see UPR-Web-Context.md P4 sub-header)
 - [x] hex→token sweep; Commissions grid mobile reflow; consistent empty states
 - [x] google-drive-callback.js retargeted to `/settings/my-account?gdrive=` (F's forwarder becomes a shim)
 
