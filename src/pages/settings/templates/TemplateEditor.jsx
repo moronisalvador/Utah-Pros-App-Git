@@ -25,6 +25,10 @@
  *     breadcrumb "Documents" button; the ROUTE wrapper adds a router-level
  *     unsaved-changes guard via onDirtyChange (dirty is lifted to the parent).
  *   - Feedback via toasts (CLAUDE.md rule 2), no alert()/confirm().
+ *   - Reset-to-defaults uses the same inline two-click confirm as the delete
+ *     pattern (CLAUDE.md rule 2) — added in Settings Overhaul P4 (this module
+ *     has exactly one in-wave consumer, the P4 Templates pages, so the change
+ *     was made directly here rather than a copy-in; see P4's close-out notes).
  * ════════════════════════════════════════════════
  */
 import { useState, useRef, useEffect } from 'react';
@@ -48,6 +52,7 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
   const [saving,      setSaving]      = useState(false);
   const [preview,     setPreview]     = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const lastFocused = useRef(null);
 
   // Lift dirty state so the route wrapper can install a router-level guard.
@@ -81,7 +86,12 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
     finally { setSaving(false); }
   };
 
-  const handleReset = () => { setSections((DEFAULT_TEMPLATES[docType] || []).map(d => ({ ...d }))); setDirty(true); };
+  const handleReset = () => {
+    if (!confirmReset) { setConfirmReset(true); return; }
+    setConfirmReset(false);
+    setSections((DEFAULT_TEMPLATES[docType] || []).map(d => ({ ...d })));
+    setDirty(true);
+  };
   const handleBack  = () => { if (dirty) { setConfirmBack(true); return; } onBack(); };
   const isLong = docType !== 'coc';
 
@@ -97,7 +107,20 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
           {dirty && <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>● Unsaved</span>}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-ghost btn-sm" onClick={handleReset} style={{ gap: 4 }} title="Reset to built-in defaults"><IconRefresh style={{ width: 12, height: 12 }} /> Reset</button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleReset}
+            onBlur={() => setConfirmReset(false)}
+            style={{
+              gap: 4,
+              background: confirmReset ? 'var(--status-needs-response-bg)' : undefined,
+              color: confirmReset ? 'var(--status-needs-response)' : undefined,
+              border: confirmReset ? '1px solid #fecaca' : undefined,
+            }}
+            title="Reset to built-in defaults"
+          >
+            <IconRefresh style={{ width: 12, height: 12 }} /> {confirmReset ? 'Confirm reset?' : 'Reset'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setPreview(p => !p)} style={{ gap: 4 }}>
             {preview ? <><IconEyeOff style={{ width: 14, height: 14 }} /> Edit</> : <><IconEye style={{ width: 14, height: 14 }} /> Preview</>}
           </button>
