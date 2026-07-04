@@ -46,6 +46,31 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup, pickConfiguredKey } from '../lib/forms.js';
+import { dispatchEvent } from './notify.js';
+
+// ── lead.new notification hook (Notification Center, Session B) ──
+// Additive + fire-and-forget: announces a genuinely-new web-form lead to admins.
+// The RPC is idempotent on the submission token, so the caller only invokes this
+// when the pre-existence check saw no prior lead for this token — a resubmit /
+// retry with the same token never re-fires. INERT until the catalog type is on.
+export async function notifyNewLeadFromForm({ db, env, lead, formName, dispatchImpl = dispatchEvent }) {
+  try {
+    if (!lead || lead.spam_flag) return;
+    await dispatchImpl({
+      db, env,
+      typeKey: 'lead.new',
+      body: {
+        title: 'New lead',
+        body: `Web form submission${formName ? ` · ${formName}` : ''}.`,
+        link: '/leads',
+        entity_type: 'inbound_lead',
+        entity_id: lead.id || null,
+        payload: { source_type: 'form', callrail_id: lead.callrail_id || null },
+        data: { route: '/leads', lead_id: lead.id || null },
+      },
+    });
+  } catch { /* fire-and-forget — a notify failure never breaks form intake */ }
+}
 
 const RATE_LIMIT_MAX = 10;          // max submissions per IP per window
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -183,8 +208,17 @@ export async function onRequestPost(context) {
     (typeof body.submission_token === 'string' && body.submission_token.trim()) ||
     crypto.randomUUID();
 
+  // Newness pre-check: the lead is NEW iff no inbound_lead already carries this
+  // submission's callrail_id ('form:<token>'). A resubmit with the same token
+  // finds the row and will NOT re-fire lead.new. Default to "existing" on error.
+  let leadExisted = true;
   try {
-    await db.rpc('upsert_lead_from_form', {
+    const [row] = await db.select('inbound_leads', `callrail_id=eq.${encodeURIComponent('form:' + submissionToken)}&select=id&limit=1`);
+    leadExisted = !!row;
+  } catch { leadExisted = true; }
+
+  try {
+    const lead = await db.rpc('upsert_lead_from_form', {
       p_form_id: form.id,
       p_submission_token: submissionToken,
       p_data: data,
@@ -194,6 +228,12 @@ export async function onRequestPost(context) {
       p_user_agent: userAgent,
       p_org_id: form.org_id,
     });
+
+    // Notify admins on a genuinely-new submission only (idempotent by the pre-check).
+    if (!leadExisted) {
+      const leadRow = Array.isArray(lead) ? lead[0] : lead;
+      context.waitUntil(notifyNewLeadFromForm({ db, env, lead: leadRow, formName: schema?.name || null }));
+    }
 
     await db.insert('worker_runs', {
       worker_name: 'form-submit',

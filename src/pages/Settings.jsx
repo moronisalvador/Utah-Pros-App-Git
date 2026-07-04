@@ -5,6 +5,8 @@ import {
   isPushSupported, getVapidPublicKey, pushPermission,
   getExistingSubscription, enablePush, disablePush,
 } from '@/lib/webPushClient';
+import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatrix';
+import PushDevicesList from '@/components/settings/PushDevicesList';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error'   } }));
 const okToast  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -389,7 +391,7 @@ function CommissionsPanel({ db }) {
    preferences matrix arrives in later phases (C fills it out). No modals; inline
    two-click confirm for turn-off; feedback via toasts (CLAUDE.md rule 2). */
 function NotificationsPanel({ db }) {
-  const { isFeatureEnabled } = useAuth();
+  const { isFeatureEnabled, employee } = useAuth();
   const flagOn    = isFeatureEnabled('feature:web_push');
   const supported = isPushSupported();
 
@@ -446,8 +448,8 @@ function NotificationsPanel({ db }) {
       <div style={{ marginBottom: 'var(--space-5)' }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Notifications</h2>
         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-          Get push notifications on this device — even when the app is closed.
-          More notification options are coming; for now you can turn device push on or off.
+          Turn device push on or off below, then choose how you want to hear about
+          each kind of notification.
         </p>
       </div>
 
@@ -529,6 +531,21 @@ function NotificationsPanel({ db }) {
           browser/OS settings, then reload this page.
         </p>
       )}
+
+      {/* Registered devices (this device is removable with a two-click confirm). */}
+      <PushDevicesList db={db} employeeId={employee?.id} />
+
+      {/* Per-type × channel preferences matrix (LIVE types only, from the resolver). */}
+      <div className="notif-prefs-section">
+        <div className="notif-prefs-section-head">
+          <h3 className="notif-prefs-section-title">Notify me about…</h3>
+          <p className="notif-prefs-section-sub">
+            Choose a channel per notification. The bell is always in the app; push
+            needs a device turned on above; email goes to your work address.
+          </p>
+        </div>
+        <NotificationPrefsMatrix db={db} employeeId={employee?.id} variant="office" />
+      </div>
     </div>
   );
 }

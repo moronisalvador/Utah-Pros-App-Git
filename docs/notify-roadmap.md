@@ -275,28 +275,52 @@ hash/label only). *(`upsert_push_subscription`/`delete_push_subscription` ship r
 > **Branch:** harness-assigned, cut from `origin/dev`. **Prerequisite:** F2 merged. Model:
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: hook tests per event (injected fakes): emit fires with correct
+> - [x] Test-first, now green: hook tests per event (injected fakes): emit fires with correct
 >       type/payload; **payment-webhook hooks are fire-and-forget (a notify failure never
 >       throws into the payment path)**; callrail idempotency (re-delivery/upsert does not
 >       re-fire); backfill never fires; google-calendar dedupe (prefs-off employee gets no
->       legacy email; no double email when both paths on).
-> - [ ] Acceptance: hooks live in twilio-webhook (`message.inbound`),
+>       legacy email; no double email when both paths on). Files: `twilio-webhook.test.js`,
+>       `lead-notify.test.js`, `qbo-payment-sync.test.js`, `submit-esign.test.js`,
+>       `google-calendar.test.js`.
+> - [x] Acceptance: hooks live in twilio-webhook (`message.inbound`),
 >       `functions/lib/qbo-payment-sync.js` + stripe-webhook + qbo-charge (`payment.received`),
->       callrail-webhook + form-submit (`lead.new`), submit-esign rewired; appointment trigger
->       verified E2E and its types enabled; each shipped type flipped enabled with its seed.
-> - [ ] Decision forks resolved AND recorded here: payments worker-hooks vs INSERT-trigger
->       (trigger needs a retroactive-import guard; a trigger choice is flagged back as a
->       separate reviewed migration — B ships zero schema); estimate code-site hooks vs
->       status-trigger (same rule); `create_manual_lead` in/out of `lead.new`; noisy channels
->       default-silent until C/D land.
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema**; frozen files untouched;
->       `upr-pattern-checker` clean.
-> - [ ] `UPR-Web-Context.md` — **Session B** sub-header only. Reconcile checkboxes; delete
->       test rows; push; PR into `dev` as a handoff.
+>       callrail-webhook + form-submit (`lead.new`), submit-esign rewired; **the four code-hook
+>       types flipped `enabled=true` with their F2 seeds** (`message.inbound`, `payment.received`,
+>       `lead.new`, `esign.signed` — via MCP; effective-prefs resolution confirmed live for an admin).
+> - [~] **appointment.assigned/updated/canceled: NOT enabled here — deferred to the `dev → main`
+>       release.** Their triggers (created live by F2) POST to
+>       `notify_worker_url = https://utahpros.app/api/notify` (**prod**), where `notify.js` is not
+>       yet deployed (it's on `dev`, not `main`) — enabling now would fire prod triggers into a 404
+>       and can't be E2E-verified without a live preview, which a headless pre-merge session cannot
+>       do. **Activation runbook** (owner, at the prod release, after confirming `/api/notify` is
+>       live on prod + a real crew-add lands a notification on the branch preview): run
+>       `UPDATE public.notification_types SET enabled=true WHERE type_key IN ('appointment.assigned','appointment.updated','appointment.canceled');`
+> - [x] Decision forks resolved AND recorded (full write-up in `UPR-Web-Context.md` → Session B):
+>       **payments = worker-hooks** (chosen; a payments-INSERT trigger would also cover frontend/MCP
+>       inserts but needs a retroactive-import guard and IS schema — flagged as a possible future
+>       reviewed migration, not shipped; coverage gap = manual frontend / MCP-import payments don't
+>       notify, accepted); **estimate.accepted = not wired by B** (its origins are outside B's 8-file
+>       ownership and a trigger is schema; direction = code-site hooks as a follow-up; type stays
+>       disabled); **`create_manual_lead` = OUT** of `lead.new`; **noisy channels default-silent** —
+>       kept F2's seeds (push opt-in; email only on curated `payment.received`).
+> - [x] `npm run test` (527 passed / 85 skipped; the 1 pre-existing `techQuery.test.js` failure —
+>       missing `@tanstack/react-query` in this env — is on the base, unrelated) + `build` + eslint
+>       (zero new errors) pass; **zero schema migrations**; frozen files untouched;
+>       `upr-pattern-checker` clean (PASS — advisory-only: doc-header guideline on 4 pre-existing
+>       files; sync-await vs waitUntil, safe since every helper swallows its own errors).
+> - [x] `UPR-Web-Context.md` — **Session B** sub-header filled. Checkboxes reconciled. No test rows
+>       created (the 4 type-enable flips are the persistent deliverable, not test data; appointment.*
+>       left disabled). Pushed; PR into `dev` as a handoff.
 
 Scope: owns `functions/api/{twilio-webhook,stripe-webhook,qbo-charge,callrail-webhook,form-submit,submit-esign}.js`,
 `functions/lib/{qbo-payment-sync,google-calendar}.js` (additive hooks + the `emailKind`
 dedupe seam only), hook tests. No schema, no UI, no CSS.
+
+**Type-enable state after Session B** (shared prod DB — one Supabase for dev+main):
+`feedback.submitted` (F1/F2), `message.inbound`, `payment.received`, `lead.new`, `esign.signed`
+= **enabled**; `appointment.assigned|updated|canceled` = **disabled** (activation runbook above);
+`estimate.accepted`, `timesheet.change_requested|change_reviewed`, `clock.abandoned` = **disabled**
+(no B hook — later phases / follow-ups).
 
 ## Session C — My-prefs UI (desktop + tech)
 
@@ -304,20 +328,30 @@ dedupe seam only), hook tests. No schema, no UI, no CSS.
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md` +
 > `.claude/rules/tech-mobile-ux.md` + `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: stub-fill migration tests (my-pref upsert round-trip; locked
+> - [x] Test-first, now green: stub-fill migration tests (my-pref upsert round-trip; locked
 >       row rejected; `get_my_push_subscriptions` never returns p256dh/auth/endpoint secrets).
-> - [ ] Acceptance: NotificationsPanel complete (types×channels for MY role from the resolver,
->       locked rows disabled with a lock hint, device list + remove w/ real unsubscribe,
->       "Enable push on this device"); the tech prefs matrix (≥48px targets, same matrix,
->       tech-visible types only) rendered **inside the shipped `/tech/settings` hub's
->       `NotificationsSection.jsx`** (NOT a new `/tech/notifications` page — see the F2
->       amendment); iOS-not-installed state shows InstallBanner-pattern
->       "Share → Add to Home Screen" guidance; desktop permission flow.
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema beyond its own body-only stub
->       fills**; frozen files untouched (sw.js, main.jsx, webPushClient.js, App.jsx…).
-> - [ ] Visual: tech page at 390px + Settings panel on the branch preview.
-> - [ ] `UPR-Web-Context.md` — **Session C** sub-header only; its index.css reserved section
->       only. Reconcile; delete test rows; push; PR into `dev` as a handoff.
+>       `supabase/tests/notify_c_my_prefs.test.js` (integration — self-skips without creds like
+>       the other notify suites; committed failing first, then verified live via MCP: round-trip,
+>       lock rejection P0001, hash-only shape).
+> - [x] Acceptance: NotificationsPanel complete (types×channels from the resolver via
+>       `get_my_notification_prefs`, locked rows disabled with a 🔒 hint, device list + two-click
+>       remove w/ real unsubscribe for the current device, "Enable push on this device"); the tech
+>       prefs matrix (≥48px targets, same shared `NotificationPrefsMatrix`, tech-visible categories
+>       only) rendered **inside the shipped `/tech/settings` hub's `NotificationsSection.jsx`** (no
+>       new `/tech/notifications` page); iOS-not-installed state shows the standalone-check
+>       "Share → Add to Home Screen" guidance; desktop permission flow via the existing enable row.
+> - [x] `npm run test` (518 pass / 88 skip) + `build` (clean) + eslint (no new errors — the 3
+>       pre-existing `LookupTable` react-hooks errors in Settings.jsx are untouched) pass; **zero
+>       schema beyond its own body-only stub fills**; frozen files untouched (sw.js, main.jsx,
+>       webPushClient.js, App.jsx…); `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [~] Visual: tech page at 390px + Settings panel — **deferred to the Cloudflare branch preview**
+>       the PR generates (this environment has no Supabase creds, so the authenticated app can't
+>       render locally — same as F2). Build passes; new UI is checkbox-grid + device-list markup
+>       styled with tokens in the Session C css marker.
+> - [x] `UPR-Web-Context.md` — filled the **Session C** sub-header only; wrote its index.css
+>       reserved section only. Reconciled these checkboxes; deleted all test rows/subscriptions
+>       (sentinel types cascade-cleaned; 0 leftover verified via MCP); push; PR into `dev` as a
+>       handoff.
 
 Scope: owns `src/components/tech/settings/NotificationsSection.jsx` (fills the tech prefs matrix
 into the shipped `/tech/settings` hub — the enable-push row already exists there from P1) and the
@@ -330,18 +364,25 @@ office `Settings.jsx` NotificationsPanel content, its C-stub body fills, its ind
 > **Opus · medium**. **Read scope:** this block + ownership matrix + `CLAUDE.md` +
 > `UPR-Design-System.md`.
 > **Close-out checklist:**
-> - [ ] Test-first, now green: stub-fill tests (role-default upsert; per-employee override +
->       delete; lock flips propagate through `get_effective_notification_prefs` — asserted via
->       the F2 resolver, not re-implemented).
-> - [ ] Acceptance: Admin.jsx "Notifications" tab — role × type × channel matrix
->       (PermissionsTab pattern, auto-save toggles), per-employee tri-state overrides
->       (PageAccessTab pattern: default/override/effective + clear), `user_customizable` lock
->       per role×type; admin-only (AdminRoute precedent — in-component role check).
-> - [ ] `npm run test` + `build` + eslint pass; **zero schema beyond its own body-only stub
->       fills**; frozen files untouched; `upr-pattern-checker` clean.
-> - [ ] Visual: Admin tab on the branch preview.
-> - [ ] `UPR-Web-Context.md` — **Session D** sub-header only; its index.css reserved section
->       only. Reconcile; delete test rows; push; PR into `dev` as a handoff.
+> - [x] Test-first, now green: stub-fill tests (`supabase/tests/notify_d_admin_defaults.test.js` —
+>       role-default upsert incl. NULL-lock-leaves-unchanged; per-employee override set + delete;
+>       lock flip asserted THROUGH `get_effective_notification_prefs`, not re-implemented).
+>       Committed failing first. Self-skips without creds like the other notify suites; its three
+>       assertions were verified live against the shared Supabase via MCP this session.
+> - [x] Acceptance: Admin.jsx "Notifications" tab — role × type × channel matrix (auto-save
+>       toggles), per-employee tri-state overrides (default/override/effective + per-cell clear +
+>       two-click clear-all), `user_customizable` lock per role×type (writes all 3 channels in
+>       sync; hint that locked rows leave the user's self-service matrix); admin-only (in-component
+>       role check on Admin.jsx, behind AdminRoute). Five frozen stubs filled body-only.
+> - [x] `npm run test` (518 passed / 88 skipped) + `build` + eslint pass (new file lint-clean; no
+>       new errors in Admin.jsx); **zero schema beyond its own body-only stub fills**; frozen files
+>       untouched; `migration-safety-checker` + `upr-pattern-checker` clean.
+> - [~] Visual: Admin tab — **deferred to the Cloudflare branch preview** the PR generates: this
+>       environment has no Supabase creds, so the authenticated admin app can't render locally.
+>       Build passes; the RPCs were exercised live via MCP.
+> - [x] `UPR-Web-Context.md` — filled the **Session D** sub-header; index.css writes only inside
+>       the reserved Session D marker. Reconciled these checkboxes; sentinel test rows deleted;
+>       push; PR into `dev` as a handoff.
 
 Scope: owns `src/pages/Admin.jsx` (new tab), new admin matrix component file(s), its D-stub
 body fills, its index.css section.

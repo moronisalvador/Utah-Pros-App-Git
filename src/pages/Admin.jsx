@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient, getAuthHeader } from '@/lib/realtime';
 import PullToRefresh from '@/components/PullToRefresh';
+import NotificationDefaultsTab from '@/components/admin/NotificationDefaultsTab';
 
 // ── Nav keys for permissions matrix (must match Sidebar.jsx) ──
 const NAV_KEYS = [
@@ -96,11 +97,18 @@ export default function Admin() {
         >
           Page Access
         </button>
+        <button
+          className={`admin-tab${activeTab === 'notifications' ? ' active' : ''}`}
+          onClick={() => setActiveTab('notifications')}
+        >
+          Notifications
+        </button>
       </div>
 
       {activeTab === 'employees' && <EmployeesTab />}
       {activeTab === 'permissions' && <PermissionsTab />}
       {activeTab === 'page_access' && <PageAccessTab />}
+      {activeTab === 'notifications' && <NotificationDefaultsTab />}
     </div>
   );
 }

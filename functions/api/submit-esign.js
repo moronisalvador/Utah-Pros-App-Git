@@ -8,9 +8,37 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { sendEmail } from '../lib/email.js';
+import { supabase } from '../lib/supabase.js';
+import { dispatchEvent } from './notify.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── esign.signed notification hook (Notification Center, Session B) ──
+// Additive + fire-and-forget: replaces the old global create_notification
+// ('esign_signed') bell with a per-recipient, prefs-driven esign.signed event
+// (audience = admins, resolved inside notify.js). INERT until the catalog type is
+// enabled; a notify failure never fails a signing (the document is already stored).
+export async function notifyEsignSigned({ db, env, job, docLabel, docType, signerName, jobDocumentId, dispatchImpl = dispatchEvent }) {
+  try {
+    const propertyStr = [job?.address, job?.city, job?.state].filter(Boolean).join(', ') || 'Unknown property';
+    const title = `${signerName} signed the ${docLabel}`;
+    const body  = [job?.job_number ? `Job ${job.job_number}` : null, propertyStr].filter(Boolean).join(' · ');
+    await dispatchImpl({
+      db, env,
+      typeKey: 'esign.signed',
+      body: {
+        title, body,
+        link:        `/jobs/${job?.id}`,
+        entity_type: 'job',
+        entity_id:   job?.id || null,
+        job_id:      job?.id || null,
+        payload:     { doc_type: docType, signer_name: signerName, job_document_id: jobDocumentId || null },
+        data:        { route: `/jobs/${job?.id}` },
+      },
+    });
+  } catch (e) { console.error('esign.signed dispatch failed:', e?.message); }
+}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -184,26 +212,20 @@ export async function onRequestPost(context) {
     // Non-fatal — don't throw if email fails, the document is already signed and stored
 
     // ── 7. Notify the office that the client signed ──
-    //   (a) in-app notification → sidebar bell + live toast (create_notification RPC),
+    //   (a) esign.signed notification → per-recipient bell + push + email via the
+    //       shared prefs-driven dispatcher (Notification Center, Session B rewire —
+    //       replaces the old global create_notification('esign_signed') bell call),
     //   (b) job activity-timeline entry (system-authored job_note),
     //   (c) internal email to restoration@utah-pros.com with the signed PDF.
     // All best-effort and non-fatal — the document is already signed and stored.
     const propertyStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'Unknown property';
     const jobUrl      = `${SITE_URL}/jobs/${job.id}`;
     const signedDate  = signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    const notifyTitle = `${signer_name} signed the ${docLabel}`;
-    const notifyBody  = [job.job_number ? `Job ${job.job_number}` : null, propertyStr].filter(Boolean).join(' · ');
 
-    await rpc('create_notification', {
-      p_type:        'esign_signed',
-      p_title:       notifyTitle,
-      p_body:        notifyBody,
-      p_link:        `/jobs/${job.id}`,
-      p_entity_type: 'job',
-      p_entity_id:   job.id,
-      p_job_id:      job.id,
-      p_payload:     { doc_type: signReq.doc_type, signer_name, job_document_id: result.job_document_id },
-    }).catch(e => console.error('create_notification failed:', e.message));
+    await notifyEsignSigned({
+      db: supabase(env), env, job, docLabel,
+      docType: signReq.doc_type, signerName: signer_name, jobDocumentId: result.job_document_id,
+    });
 
     await fetch(`${SUPABASE_URL}/rest/v1/job_notes`, {
       method: 'POST', headers: sbHeaders,
