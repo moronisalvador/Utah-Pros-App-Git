@@ -112,8 +112,6 @@ const CrmAutomations = lazyRetry(() => import('@/pages/crm/CrmAutomations'));
 const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
 
 // Tech pages (field_tech role)
-const TechDash = lazyRetry(() => import('@/pages/tech/TechDash'));
-const TechSchedule = lazyRetry(() => import('@/pages/tech/TechSchedule'));
 const TechSettings = lazyRetry(() => import('@/pages/tech/TechSettings'));
 const TechTasks = lazyRetry(() => import('@/pages/tech/TechTasks'));
 const TechClaims = lazyRetry(() => import('@/pages/tech/TechClaims'));
@@ -215,28 +213,17 @@ function PageLoader() {
   );
 }
 
-// Tech Mobile v2 component-level swaps. When the v2 flag is on, the PERSISTENT
-// pane in TechLayout renders the screen (kept alive across navigation), so the
-// route yields null here; when off, the legacy page renders in the <Outlet/>.
-// Flag rows are seeded enabled:false + dev-only, so only the owner sees v2 during
-// the wave — every other tech gets the legacy page, byte-identical.
-function TechDashSwap() {
-  const { isFeatureEnabled } = useAuth();
-  if (isFeatureEnabled('page:tech_dash_v2')) return null;
-  return <ErrorBoundary section="TechDash"><TechDash /></ErrorBoundary>;
-}
-function TechScheduleSwap() {
-  const { isFeatureEnabled } = useAuth();
-  if (isFeatureEnabled('page:tech_sched_v2')) return null;
-  return <ErrorBoundary section="TechSchedule"><TechSchedule /></ErrorBoundary>;
-}
+// Tech Mobile v2 cutover complete (Phase C): the legacy TechDash/TechSchedule
+// pages are gone, so /tech and /tech/schedule render nothing in the <Outlet/> —
+// the PERSISTENT v2 panes in TechLayout (always mounted; the flags stay on for
+// everyone) cover the screen at those paths instead.
 
 // Shared tech routes — used by both native and web trees
 function TechRoutes() {
   return (
     <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
-      <Route path="tech" element={<TechDashSwap />} />
-      <Route path="tech/schedule" element={<TechScheduleSwap />} />
+      <Route path="tech" element={null} />
+      <Route path="tech/schedule" element={null} />
       <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
