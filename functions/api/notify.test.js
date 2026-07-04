@@ -21,7 +21,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { resolveAudience, dispatchEvent, handleNotify } from './notify.js';
+import { resolveAudience, dispatchEvent, handleNotify, formatApptWhen, enrichAppointmentBody, enrichEstimateBody } from './notify.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 
@@ -31,7 +31,8 @@ const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 function makeDb(opts = {}) {
   const {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
-    emailByEmp = {}, crewByAppt = {}, webhookSecret = null,
+    emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
+    contactsById = {}, webhookSecret = null,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -63,6 +64,18 @@ function makeDb(opts = {}) {
       if (table === 'push_subscriptions') {
         const m = /employee_id=eq\.([^&]+)/.exec(query);
         return (m && subsByEmp[m[1]]) || [];
+      }
+      if (table === 'appointments') {
+        const m = /id=eq\.([^&]+)/.exec(query);
+        return (m && apptsById[m[1]]) ? [apptsById[m[1]]] : [];
+      }
+      if (table === 'estimates') {
+        const m = /id=eq\.([^&]+)/.exec(query);
+        return (m && estimatesById[m[1]]) ? [estimatesById[m[1]]] : [];
+      }
+      if (table === 'contacts') {
+        const m = /id=eq\.([^&]+)/.exec(query);
+        return (m && contactsById[m[1]]) ? [contactsById[m[1]]] : [];
       }
       if (table === 'integration_config') {
         if (query.includes('notify_webhook_secret')) return webhookSecret ? [{ value: webhookSecret }] : [];
@@ -211,6 +224,92 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(emails[0].to).toBe('admin@utahpros.com');
     expect(emails[0].from).toMatch(/Notifications <restoration@utahpros\.app>/);
     expect(out.results[0].email).toBe('sent');
+  });
+});
+
+describe('formatApptWhen', () => {
+  it('formats a date + time range as "Wkd, Mon D · h:mm AM – h:mm PM"', () => {
+    expect(formatApptWhen('2026-07-04', '09:00:00', '11:00:00')).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+  });
+  it('handles a start with no end (single time)', () => {
+    expect(formatApptWhen('2026-07-04', '14:30:00', null)).toBe('Sat, Jul 4 · 2:30 PM');
+  });
+  it('is off-by-one safe (date anchored at UTC noon)', () => {
+    // A date-only value must render as that same calendar day, not the day before.
+    expect(formatApptWhen('2026-01-01', '00:00:00', null)).toBe('Thu, Jan 1 · 12:00 AM');
+  });
+  it('date only, no times', () => {
+    expect(formatApptWhen('2026-07-04', null, null)).toBe('Sat, Jul 4');
+  });
+});
+
+describe('enrichAppointmentBody', () => {
+  it('builds a clean title + body + deep link from a bare appointment_id', async () => {
+    const db = makeDb({ apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } } });
+    const out = await enrichAppointmentBody(db, 'appointment.assigned', { appointment_id: 'ap-1' });
+    expect(out.title).toBe('New appointment · Water Mitigation');
+    expect(out.body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+    expect(out.link).toBe('/tech/appointment/ap-1');
+    expect(out.entity_type).toBe('appointment');
+    expect(out.entity_id).toBe('ap-1');
+  });
+  it('uses the verb alone when the appointment has no title', async () => {
+    const db = makeDb({ apptsById: { 'ap-2': { title: null, date: '2026-07-04', time_start: '08:00:00', time_end: null } } });
+    const out = await enrichAppointmentBody(db, 'appointment.canceled', { appointment_id: 'ap-2' });
+    expect(out.title).toBe('Appointment canceled');
+    expect(out.body).toBe('Sat, Jul 4 · 8:00 AM');
+  });
+  it('leaves a caller-supplied title untouched', async () => {
+    const db = makeDb({ apptsById: { 'ap-1': { title: 'X', date: '2026-07-04', time_start: '09:00:00' } } });
+    const body = { appointment_id: 'ap-1', title: 'Already set' };
+    expect(await enrichAppointmentBody(db, 'appointment.updated', body)).toBe(body);
+  });
+  it('returns the body unchanged when the appointment is not found (never throws)', async () => {
+    const db = makeDb({ apptsById: {} });
+    const body = { appointment_id: 'missing' };
+    expect(await enrichAppointmentBody(db, 'appointment.assigned', body)).toBe(body);
+  });
+});
+
+describe('dispatchEvent — appointment enrichment end-to-end', () => {
+  it('the bell row carries the enriched date/time title + body', async () => {
+    const db = makeDb({
+      types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
+      apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
+      prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
+    });
+    const out = await dispatchEvent({ db, env: ENV, typeKey: 'appointment.assigned', body: { appointment_id: 'ap-1', employee_id: 'emp-9' } });
+    expect(out.recipients).toBe(1);
+    const bell = db.rpcCalls.find(c => c.fn === 'create_notification');
+    expect(bell.params.p_title).toBe('New appointment · Water Mitigation');
+    expect(bell.params.p_body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+    expect(bell.params.p_link).toBe('/tech/appointment/ap-1');
+  });
+});
+
+describe('enrichEstimateBody', () => {
+  it('builds "Estimate {num} accepted" + amount · client + deep link', async () => {
+    const db = makeDb({
+      estimatesById: { 'e-1': { estimate_number: 'EST-1042', amount: 2500, approved_amount: null, contact_id: 'c-1', job_id: 'j-1' } },
+      contactsById: { 'c-1': { name: 'Jane Homeowner' } },
+    });
+    const out = await enrichEstimateBody(db, { estimate_id: 'e-1' });
+    expect(out.title).toBe('Estimate EST-1042 accepted');
+    expect(out.body).toBe('$2,500.00 · Jane Homeowner');
+    expect(out.link).toBe('/estimates/e-1');
+    expect(out.entity_type).toBe('estimate');
+    expect(out.job_id).toBe('j-1');
+  });
+  it('prefers approved_amount and tolerates a missing contact', async () => {
+    const db = makeDb({ estimatesById: { 'e-2': { estimate_number: null, amount: 100, approved_amount: 3200.5, contact_id: null, job_id: null } } });
+    const out = await enrichEstimateBody(db, { estimate_id: 'e-2' });
+    expect(out.title).toBe('Estimate accepted');
+    expect(out.body).toBe('$3,200.50');
+  });
+  it('returns the body unchanged when the estimate is not found', async () => {
+    const db = makeDb({ estimatesById: {} });
+    const body = { estimate_id: 'missing' };
+    expect(await enrichEstimateBody(db, body)).toBe(body);
   });
 });
 
