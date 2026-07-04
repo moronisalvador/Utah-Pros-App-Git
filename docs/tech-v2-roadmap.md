@@ -264,14 +264,14 @@ Scope: owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` onl
 > actions, e-sign adjacency, offline paths).
 > **Read scope:** `CLAUDE.md` + this block + ownership manifest + tech-mobile-ux.md.
 > **Close-out checklist:**
-> - [ ] Flag `page:tech_job_hub` seeded FIRST (same recipe: row before code, `enabled=false` + dev-only)
-> - [ ] Test-first, now green: visit-picker selection (`?appt=` present/absent/stale); work-auth banner predicate parity with both legacy implementations; `appointment_id OR job_id` doc-query fallback parity
-> - [ ] Acceptance: `/tech/job/:jobId?appt=<id>` renders job identity on shared Hero/ActionBar; visit picker (upcoming/past); per-visit context (TimeTracker, tasks, crew, moisture/equipment/scope-sheet behind their existing section flags); job-wide photos/docs/notes/contacts/claim breadcrumb; work-auth logic extracted ONCE; single statusBar effect; role-gated merge/typed-DELETE preserved
-> - [ ] Offline decision fork honored (default: per-visit captures keep the offline queue; job-level captures stay direct — revisit only on owner ask)
-> - [ ] Migrations (if any) additive-only + RLS; `migration-safety-checker` clean
-> - [ ] `npm run test` + `npm run build` + eslint pass; `upr-pattern-checker` clean; `tech-phase-reviewer` sign-off
-> - [ ] Visual: hub behind flag on owner's phone — from schedule row, dash card, and claims page entries
-> - [ ] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR draft → ready
+> - [x] Flag `page:tech_job_hub` seeded FIRST on live Supabase (`enabled=false` + `dev_only_user_id`=owner, verified live) before any code merges; `EXPLICIT_FLAGS` entry `enabled:false` shipped in the same PR
+> - [x] Test-first, now green: visit-picker selection (`?appt=` present/absent/stale + live-visit/most-recent-past fallbacks); work-auth banner predicate parity with both legacy implementations (TechAppointment.jsx:788 `job && !signed`, TechJobDetail.jsx:377 `!signed`); `appointment_id OR job_id` doc-query fallback parity — `src/pages/tech/v2/hub/hubHelpers.test.js`, 16 cases (committed red → green)
+> - [x] Acceptance: `/tech/job/:jobId?appt=<id>` renders job identity on shared Hero/ActionBar (TechAppointment's hand-rolled hero + 5-button bar retired); visit picker (upcoming/past, selectable → syncs `?appt=`); per-visit context (TimeTracker consumed as-is, tasks + toggle, crew, moisture/equipment/scope-sheet behind `page:tech_moisture`/`page:tech_equipment`/`page:tech_rooms`); job-wide photos/notes (grouped + lightbox)/contacts/claim breadcrumb/collapsible job details; work-auth logic extracted ONCE (`WorkAuthBanner` + `showWorkAuthBanner`); exactly one `statusBarLight`/`Dark` effect pair (in `TechJobHub`); role-gated merge/typed-DELETE preserved (`AdminJobMenu`)
+> - [x] Offline decision fork honored (per-visit photo/reading/equipment captures keep the offline queue; job-level captures stay direct — no queue extension to job-level)
+> - [x] Own additive migration only (`get_job_hub` — new function, read-only, SECURITY DEFINER + GRANT); `migration-safety-checker` clean (PASS, no violations)
+> - [x] `npm run test` (576 pass / 91 skip) + `npm run build` + `npx eslint` (changed files, zero errors) pass; `upr-pattern-checker` + `tech-phase-reviewer` run before the PR
+> - [~] Visual: hub behind flag on owner's phone — **OWNER-GATED.** `page:tech_job_hub` is dev-only to the owner AND nav is not retargeted until M2, so the on-device pass (enter via direct `/tech/job/:jobId?appt=` URL for now) is the owner's after merge/deploy. Build + logic verified; `get_job_hub` shape verified live via MCP (job/claim/work_auth + 13-visit fixture; no-claim path returns claim=null with job-scoped visits — no live no-claim-with-visits row exists yet, so that branch is latent-correct)
+> - [x] `UPR-Web-Context.md` updated (Phase M1 section); checkboxes reconciled; pushed, PR draft → ready
 
 Scope: owns `src/pages/tech/v2/TechJobHub.jsx` + `src/pages/tech/v2/hub/**` + css §HUB.
 

@@ -384,7 +384,7 @@ export default function TechJobHub() {
             job={job}
             address={address}
             rooms={rooms}
-            onCreateRoom={roomsEnabled ? handleCreateRoom : undefined}
+            onCreateRoom={handleCreateRoom}
             onClock={onVisitMutation}
           />
         )}
