@@ -190,6 +190,74 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
   return result;
 }
 
+// ─── SECTION: Body enrichment (nice titles/bodies for bare trigger payloads) ───
+
+/**
+ * Format a Denver wall-clock appointment for a notification line.
+ * `appointments.date` is a DATE and `time_start`/`time_end` are TIME WITHOUT
+ * TIME ZONE — i.e. already local wall-clock — so there is NO timezone
+ * conversion, only formatting. The date is anchored at UTC noon so the Intl
+ * calendar date matches the stored day regardless of the runtime's zone (no
+ * off-by-one). Returns e.g. "Fri, Jul 4 · 9:00 AM – 11:00 AM".
+ */
+export function formatApptWhen(dateStr, startStr, endStr) {
+  let datePart = '';
+  if (dateStr) {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    if (!Number.isNaN(d.getTime())) {
+      datePart = new Intl.DateTimeFormat('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+      }).format(d);
+    }
+  }
+  const t = (s) => {
+    if (!s) return '';
+    const [hh, mm] = String(s).split(':');
+    let h = parseInt(hh, 10);
+    if (Number.isNaN(h)) return '';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h %= 12; if (h === 0) h = 12;
+    return `${h}:${mm ?? '00'} ${ampm}`;
+  };
+  const start = t(startStr);
+  const end = t(endStr);
+  const timePart = start && end ? `${start} – ${end}` : start;
+  return [datePart, timePart].filter(Boolean).join(' · ');
+}
+
+const APPT_VERB = {
+  'appointment.assigned': 'New appointment',
+  'appointment.updated': 'Appointment updated',
+  'appointment.canceled': 'Appointment canceled',
+};
+
+/**
+ * Turn a bare `{ appointment_id }` trigger payload into a clean title + body +
+ * deep link (the DB triggers pass only ids). Best-effort: on any lookup failure
+ * — or when the caller already supplied a title — the original body is returned
+ * unchanged, so the catalog label still shows and this never throws.
+ */
+export async function enrichAppointmentBody(db, typeKey, body = {}) {
+  if (!body.appointment_id || body.title) return body;
+  let appt = null;
+  try {
+    const rows = await db.select('appointments', `id=eq.${body.appointment_id}&select=title,date,time_start,time_end`);
+    appt = rows?.[0] || null;
+  } catch { appt = null; }
+  if (!appt) return body;
+  const what = (appt.title && String(appt.title).trim()) || '';
+  const verb = APPT_VERB[typeKey] || 'Appointment';
+  const when = formatApptWhen(appt.date, appt.time_start, appt.time_end);
+  return {
+    ...body,
+    title: what ? `${verb} · ${what}` : verb,
+    body: when || body.body || '',
+    link: body.link || `/tech/appointment/${body.appointment_id}`,
+    entity_type: body.entity_type || 'appointment',
+    entity_id: body.entity_id || body.appointment_id,
+  };
+}
+
 /**
  * The reusable dispatch core (no HTTP auth) — resolves the catalog type, the
  * audience, then fans out per recipient. Imported in-process by feedback-notify
@@ -206,6 +274,12 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
   } catch { type = null; }
   if (!type) return { skipped: true, reason: 'unknown_type', type_key: typeKey, recipients: 0, results: [] };
   if (!type.enabled) return { skipped: true, reason: 'type_disabled', type_key: typeKey, recipients: 0, results: [] };
+
+  // Enrich bare trigger payloads with a human-readable title/body/link so the
+  // bell, push, and email all read cleanly (not just the catalog label).
+  if (typeKey.startsWith('appointment.')) {
+    body = await enrichAppointmentBody(db, typeKey, body);
+  }
 
   const recipientIds = await resolveAudience(db, typeKey, body);
 
