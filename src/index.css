@@ -8473,7 +8473,9 @@ tr:hover td { background: var(--bg-secondary); }
   gap: var(--space-4);
   align-items: start;
 }
-.settings-int-card { padding: 0; overflow: hidden; }
+/* min-width:0 defeats the grid-item min-content floor so the card shrinks to
+   the column on mobile instead of overflowing the viewport. */
+.settings-int-card { padding: 0; overflow: hidden; min-width: 0; }
 .settings-int-head {
   display: flex;
   align-items: center;
@@ -8483,6 +8485,9 @@ tr:hover td { background: var(--bg-secondary); }
   border-bottom: 1px solid var(--border-light);
 }
 .settings-int-provider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* Let the text column shrink so the nowrap sub-line ellipsizes instead of
+   pushing the status pill off-screen on narrow cards / mobile. */
+.settings-int-provider > div { min-width: 0; }
 .settings-int-badge {
   width: 40px;
   height: 40px;
@@ -8576,16 +8581,17 @@ tr:hover td { background: var(--bg-secondary); }
 .settings-int-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings-int-note {
   padding: 12px 14px;
-  background: #eff6ff;
+  background: var(--accent-light);
   border: 1px solid #bfdbfe;
   border-radius: var(--radius-md);
   font-size: 12px;
-  color: #1e40af;
+  color: var(--accent);
   line-height: 1.5;
 }
 .settings-int-note code {
   font-family: var(--font-mono);
   font-size: 11px;
+  word-break: break-word;
 }
 /* Dry-run preview */
 .settings-int-preview { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }

@@ -210,10 +210,10 @@ monoliths with physical splits transferring to P3/P4.
 **P2 — Integrations** (Opus · medium)
 > Owns `src/pages/settings/Integrations.jsx`, `functions/api/quickbooks-callback.js` (+
 > `quickbooks-connect.js` if the redirect lives there), css §P2.
-- [ ] QBO connect/sync card rebuilt beside GitHub card (from DevTools tab, behavior-identical)
-- [ ] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` — **worker +
+- [x] QBO connect/sync card rebuilt beside GitHub card (from DevTools tab, behavior-identical)
+- [x] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` — **worker +
       page land in the SAME PR** (atomic round-trip)
-- [ ] de-CRM the classes (or bless them — one decision, applied consistently); "API Keys" label retired
+- [x] de-CRM the classes (or bless them — one decision, applied consistently); "API Keys" label retired
 
 **P3 — Team & Access** (Opus · medium) — **shipped**
 > Owns `src/pages/settings/{Team,Roles,PageAccess,NotificationDefaults}.jsx`, css §P3.
@@ -377,9 +377,9 @@ before opening its PR. Do not edit another session's block.
 - [ ] classes/tokens replace inline soup; mobile pass; header/section-card patterns
 
 ### P2 — Integrations (Session B)
-- [ ] QBO connect/sync card rebuilt beside GitHub card (behavior-identical)
-- [ ] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` (atomic round-trip)
-- [ ] de-CRM the classes (or bless them — one decision); "API Keys" label retired
+- [x] QBO connect/sync card rebuilt beside GitHub card (behavior-identical)
+- [x] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` (atomic round-trip)
+- [x] de-CRM the classes (chose to de-CRM — design-system `.card/.btn/.input` + `settings-int-*`); "API Keys" label retired
 
 ### P3 — Team & Access (Session C) — shipped
 - [x] employee hard-delete modal → inline two-click (Rule 2)

@@ -2155,7 +2155,21 @@ merge).
 #### P1 — Payments (Session A)
 _(Session A: describe useBillingSettings hook, two-click payout, token/mobile pass here.)_
 #### P2 — Integrations (Session B)
-_(Session B: describe the QBO card rebuild + worker `?qbo=` retarget here.)_
+`/settings/integrations` (`src/pages/settings/Integrations.jsx`, AdminRoute) now hosts two
+sibling provider cards: the existing **GitHub** card and a new **QuickBooks Online** card ported
+behavior-identically out of the retired DevTools → Integrations tab. The QBO card reads
+`get_integration_status({p_provider:'quickbooks'})` + `get_qbo_sync_stats()` (RPCs, unchanged),
+connects/reconnects via `GET /api/quickbooks-connect`, and previews/back-fills customer sync via
+`POST /api/qbo-sync-customer` (`{backfill,dry_run,limit}`) — synced/pending/errored stat boxes,
+SANDBOX badge, dry-run preview list all preserved. **Worker retarget (atomic, same PR):**
+`functions/api/quickbooks-callback.js` now 302-redirects to `/settings/integrations?qbo=…`
+(was `/dev-tools?qbo=`) via the exported pure `buildReturnLocation()` / `QBO_RETURN_PATH`; the
+page consumes it through the exported pure `qboReturnToast()`. Both halves are unit-tested
+(`functions/api/quickbooks-callback.test.js`, `src/pages/settings/Integrations.test.jsx`).
+Page **de-CRM'd**: dropped the `crm-*` classes for design-system `.card/.btn/.input` + new
+`settings-int-*` polish (index.css §P2, desktop+mobile grid); "API Keys" title retired →
+"Integrations". GitHub two-click disconnect preserved. (DevTools' own Integrations tab is left
+in place for Session H / P7-lite to delete once this and P3 land.)
 #### P3 — Team & Access (Session C) — shipped
 Polish-only, zero migrations, all four routes stay `AdminRoute`. Files: `src/pages/settings/{Team,Roles,PageAccess,NotificationDefaults}.jsx` + `index.css` §P3 marker + `src/pages/settings/p3TeamAccess.test.jsx` (new).
 - **Team.jsx** — employee hard-delete converted from the confirmation modal to the inline two-click confirm (Rule 2): the Delete button arms → "Confirm delete" → executes, disarms on `onBlur`/row-switch. The **EmployeeModal unsaved-changes guard**: overlay-click / ✕ / Cancel now arm a two-click "Discard unsaved changes?" bar in the footer when the form is dirty (was silently discarding). The **DevTools › Employees auth-link audit + invite** is absorbed as a top-of-page summary strip (total / can-log-in / no-login) + a per-row Login badge + a "Set up login"/"Invite" action — behaviour-identical against `get_all_employees` + `/api/admin-users` (Team's existing working PATCH-then-`resetPasswordForEmail` invite is kept; the broken DevTools `action:'invite'` POST is not carried over). Page feedback moved to `upr:toast`. **Session H may now delete the DevTools Employees tab.**
