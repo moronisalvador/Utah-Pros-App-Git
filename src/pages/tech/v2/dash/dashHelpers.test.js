@@ -35,6 +35,14 @@ import { fmtHours, hoursBreakdown, toPickShape, selectHero, splitToday } from '.
 
 const ME = 'emp-1';
 
+// A UTC date string (YYYY-MM-DD) offset from today, matching the basis
+// pickNowNext uses (`new Date().toISOString().split('T')[0]`). Keeps the
+// "soonest upcoming" fixtures below in the future on every calendar day
+// instead of hardcoding dates that eventually become "today"/past.
+function daysFromToday(n) {
+  return new Date(Date.now() + n * 86400000).toISOString().split('T')[0];
+}
+
 // A get_tech_dashboard-shaped appointment (appointment_crew, jobs nested).
 function appt(over = {}) {
   return {
@@ -133,8 +141,8 @@ describe('selectHero — combines today + upcoming, returns the raw appt', () =>
     const payload = {
       appointments: [appt({ id: 'done', status: 'completed' })],
       upcoming: [
-        appt({ id: 'far', date: '2026-07-06', time_start: '08:00:00', status: 'scheduled' }),
-        appt({ id: 'soon', date: '2026-07-04', time_start: '08:00:00', status: 'scheduled' }),
+        appt({ id: 'far', date: daysFromToday(4), time_start: '08:00:00', status: 'scheduled' }),
+        appt({ id: 'soon', date: daysFromToday(2), time_start: '08:00:00', status: 'scheduled' }),
       ],
     };
     const r = selectHero(payload, ME);
