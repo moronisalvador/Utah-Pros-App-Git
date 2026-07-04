@@ -378,6 +378,15 @@ maps. This dashboard keeps its own scoped palette (above).
   it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
   read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
   `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+  - **Sale DATING (which month a sold job counts in) differs by consumer — intentional:**
+    - **Card `get_jobs_closed`** dates a sale by **`COALESCE(claims.created_at, jobs.created_at)`** — the
+      **claim-created date** (migration `20260704_get_jobs_closed_claim_date_basis.sql`, owner decision
+      2026-07-04). Rationale: a spring loss back-entered as a June job record shouldn't count as a June sale.
+      Claim-less jobs (estimate→job flow) fall back to `jobs.created_at`. `is_real_job` still gates the *set*;
+      this only re-DATES. Verified: June 2026 10 → 7 (three earlier-claim jobs moved to May/Apr/Mar).
+    - **`get_commissions`** still dates by **`jobs.created_at`** (unchanged) — claim-date dating would drag a
+      sold job's commission into an already-closed prior payroll period. Card = when-sold reporting view;
+      commissions = when-the-job-entered-the-system. Aligning them is a separate money-sensitive decision.
 - **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
   month, for everything sold the **previous month**), built on `is_real_job`.
   - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
