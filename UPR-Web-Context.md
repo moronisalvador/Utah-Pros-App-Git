@@ -1492,6 +1492,43 @@ per `docs/tech-v2-roadmap.md`).
   credentials in this container — nothing renders); owner-gated post-deploy pass, same
   convention as Sessions S/D.
 
+### Phase M1 — Job Hub (Jul 4 2026)
+
+Merges the two legacy detail screens (`TechAppointment.jsx` + `TechJobDetail.jsx`) into ONE
+job-rooted surface at **`/tech/job/:jobId?appt=<id>`**, behind `page:tech_job_hub` (seeded
+`enabled=false` + `dev_only_user_id`=owner on live Supabase; `EXPLICIT_FLAGS` entry
+`enabled:false`). Owner-only during M1. **Nav is NOT retargeted** — `apptHref()`/`jobHref()`/
+`HUB_ENABLED` stay pointed at the legacy pages until M2; the hub is reachable by its route
+(the flag redirects everyone else to `/`). Owns `src/pages/tech/v2/TechJobHub.jsx` +
+`src/pages/tech/v2/hub/**` + CSS in the `TECH-V2: HUB` marker.
+
+- **New RPC (own additive migration `20260704_tech_v2_m1_get_job_hub.sql`):**
+  `get_job_hub(p_job_id uuid) → jsonb` **(NEW)** — one round trip: `{ job (full row), claim
+  {id, claim_number} | null, work_auth_signed boolean, appointments [...] }`. Appointments are
+  scoped by `a.job_id` (NOT via the claim), so a job with no claim still lists its visits —
+  the per-row shape is byte-identical to `get_claim_appointments`. SECURITY DEFINER + GRANT to
+  anon, authenticated; read-only; additive (touches no live function/table).
+- **Structure:** shared `Hero` + `ActionBar` carry job identity (TechAppointment's hand-rolled
+  hero + 5-button bar retired). `VisitPicker` groups the job's appointments Upcoming/Past and
+  selects one → syncs `?appt=`. `VisitContext` (per selected visit): `TimeTracker` consumed
+  as-is, tasks + toggle (`get_appointment_tasks`/`toggle_appointment_task`), crew, Scope Sheet
+  entry, and moisture/equipment behind their EXISTING flags (`page:tech_moisture`,
+  `page:tech_equipment`, `page:tech_rooms`). Job-wide: `JobPhotos` (grouped gallery + Lightbox
+  + notes), `ClaimBreadcrumb`, collapsible `JobDetailsPanel`, `AdminJobMenu` (role-gated merge +
+  typed-DELETE soft delete). Work-auth logic extracted ONCE (`WorkAuthBanner` + `showWorkAuthBanner`).
+  Exactly ONE `statusBarLight`/`Dark` effect pair (in `TechJobHub`).
+- **Selected-visit detail** via `get_appointment_detail(selectedId)`; **job-wide docs** via
+  `job_documents` (`buildDocsQuery` preserves the legacy `or=(appointment_id,job_id)` fallback
+  shape). Mutations invalidate the shared dash/schedule caches via `invalidateTech`.
+- **Offline fork (owner default):** a photo capture *in a visit context* (a visit selected)
+  keeps the offline queue and tags the appointment; a *job-level* capture (no visit) uploads
+  directly. Readings/equipment (always per-visit) keep the queue. Notes always insert directly.
+- **Pure logic** in `hub/hubHelpers.js` (`selectVisitId` visit-picker, `showWorkAuthBanner`
+  predicate parity with both legacy pages, `buildDocsQuery` doc-fallback parity) with 16
+  committed vitest cases (`hub/hubHelpers.test.js`, TEST fixtures only). `npm test`/`build`/`eslint`
+  green. M2 will flip `HUB_ENABLED`, add the `/tech/appointment/:id` resolver redirect, and
+  delete the two legacy pages.
+
 ---
 
 ## Cloudflare Workers — Environment Variables

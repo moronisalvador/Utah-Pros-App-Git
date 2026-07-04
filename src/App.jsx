@@ -119,6 +119,7 @@ const TechClaimDetail = lazyRetry(() => import('@/pages/tech/TechClaimDetail'));
 const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
 const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
 const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
+const TechJobHub = lazyRetry(() => import('@/pages/tech/v2/TechJobHub'));
 const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
 const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
@@ -230,6 +231,10 @@ function TechRoutes() {
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
+      {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub, owner-only
+          during M1); nav still points at the legacy pages until M2 flips
+          HUB_ENABLED. When the flag is off, FeatureRoute redirects to /. */}
+      <Route path="tech/job/:jobId" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechJobHub"><TechJobHub /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
