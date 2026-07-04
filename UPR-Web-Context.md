@@ -2152,8 +2152,23 @@ access change.
 merge).
 
 ### Wave sub-headers (pre-seeded by Phase F — each session fills ONLY its own)
-#### P1 — Payments (Session A)
-_(Session A: describe useBillingSettings hook, two-click payout, token/mobile pass here.)_
+#### P1 — Payments (Session A) — shipped 2026-07-04
+- **`src/lib/useBillingSettings.js` (new):** hook wrapping `get_billing_settings`/`set_billing_setting`.
+  Exposes `{ settings, setSettings, save, on, loading, reload }`. Its pure `makeBillingSave` factory
+  (exported, DOM-free, unit-tested in `useBillingSettings.test.js`) snapshots the prior value, writes
+  optimistically, and **reverts only the touched key on RPC failure** — killing the old page's
+  optimistic-write drift (a failed save used to leave the UI showing an unsaved value). `setSettings`
+  is exposed raw for the two server-side paths that persist through OTHER endpoints (email-2FA payout
+  destinations via `/api/billing-2fa`, Stripe probe via `/api/stripe-accounts`) and must NOT round-trip
+  through `set_billing_setting`.
+- **`settings/Payments.jsx` rebuilt:** all setting saves route through the hook; inline px/hex soup →
+  `pay-*` classes + design tokens (`src/index.css` §P1 reserved marker); `SettingsPageHeader`; 44px
+  touch targets + `@media(max-width:768px)` stack pass. **Two-click confirm on "Pay out now"** (Stripe
+  instant payout) — arm → `Confirm payout?` → confirm, `onBlur` disarms; one tap no longer moves money.
+  The in-component `canEditBilling(employee.role)` block (the page's ONLY barrier) and the email-2FA
+  payout-destination flow semantics are preserved verbatim. Never calls `/api/qbo-invoice`.
+- **`Collections.jsx`:** payment-settings gear link retargeted `/payments/settings` → `/settings/payments`
+  (F's permanent redirect still covers old bookmarks).
 #### P2 — Integrations (Session B)
 _(Session B: describe the QBO card rebuild + worker `?qbo=` retarget here.)_
 #### P3 — Team & Access (Session C) — shipped

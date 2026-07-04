@@ -202,10 +202,10 @@ monoliths with physical splits transferring to P3/P4.
 **P1 — Payments** (Opus · high — real money)
 > Owns `src/pages/settings/Payments.jsx`, new `src/lib/useBillingSettings.js`,
 > `src/pages/Collections.jsx` (gear link retarget), css §P1.
-- [ ] useBillingSettings hook: revert-on-error (kills the optimistic-write drift)
-- [ ] **two-click confirm on Instant Payout** (one-click Stripe payout today — Rule-2 spirit)
-- [ ] canEditBilling in-component block preserved verbatim (it is the page's only barrier)
-- [ ] classes/tokens replace inline soup; mobile pass; header/section-card patterns
+- [x] useBillingSettings hook: revert-on-error (kills the optimistic-write drift)
+- [x] **two-click confirm on Instant Payout** (one-click Stripe payout today — Rule-2 spirit)
+- [x] canEditBilling in-component block preserved verbatim (it is the page's only barrier)
+- [x] classes/tokens replace inline soup; mobile pass; header/section-card patterns
 
 **P2 — Integrations** (Opus · medium)
 > Owns `src/pages/settings/Integrations.jsx`, `functions/api/quickbooks-callback.js` (+
@@ -370,11 +370,11 @@ before opening its PR. Do not edit another session's block.
 - [x] F9 manifest + Schedule-B re-point + doc sweep
 - [x] Reviewer gauntlet + visual + honest checklist reconciliation
 
-### P1 — Payments (Session A)
-- [ ] useBillingSettings hook: revert-on-error (kills the optimistic-write drift)
-- [ ] two-click confirm on Instant Payout
-- [ ] canEditBilling in-component block preserved verbatim
-- [ ] classes/tokens replace inline soup; mobile pass; header/section-card patterns
+### P1 — Payments (Session A) — shipped 2026-07-04
+- [x] useBillingSettings hook: revert-on-error (kills the optimistic-write drift) — pure `makeBillingSave` factory, test-first (`useBillingSettings.test.js`, 4 tests: revert-on-failure, success, optimistic-before-resolve, concurrent-key-safety)
+- [x] two-click confirm on Instant Payout — arm → `Confirm payout?` → confirm, `onBlur` disarms
+- [x] canEditBilling in-component block preserved verbatim (page's only barrier)
+- [x] classes/tokens replace inline soup; mobile pass; header/section-card patterns — §P1 `pay-*` classes, `SettingsPageHeader`, 44px targets, `@media(max-width:768px)`; zero hardcoded hex in Payments.jsx
 
 ### P2 — Integrations (Session B)
 - [ ] QBO connect/sync card rebuilt beside GitHub card (behavior-identical)
