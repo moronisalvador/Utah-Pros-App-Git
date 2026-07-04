@@ -146,7 +146,9 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.claim_inbound_email(text) TO anon, authenticated;
+-- service_role (the worker caller) is explicit for replay-safety, though Supabase's
+-- default privileges also grant it EXECUTE on public functions.
+GRANT EXECUTE ON FUNCTION public.claim_inbound_email(text) TO anon, authenticated, service_role;
 
 -- ═══ 7. record_email_suppression(p_email, p_reason, p_source) (see deviation #2) ═
 -- Upserts one suppression row per address (UNIQUE lower(email)), NEVER downgrading a
@@ -278,7 +280,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.omni_verify_foundation() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.omni_verify_foundation() TO anon, authenticated, service_role;
 
 -- ═══ 9. feature:email_inbox flag — dev-only for the owner until U ships ═════════
 INSERT INTO public.feature_flags (key, enabled, dev_only_user_id, category, label, description, updated_at)
