@@ -8469,6 +8469,52 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P5 (Feedback Inbox · Session E) ─── */
 
+/* Type/status badge tokens (moved off inline hex — same colors as before) */
+:root {
+  --fb-badge-bug-bg: var(--status-needs-response-bg);
+  --fb-badge-bug-color: #dc2626;
+  --fb-badge-bug-border: #fecaca;
+  --fb-badge-feature-bg: var(--accent-light);
+  --fb-badge-feature-color: var(--accent);
+  --fb-badge-feature-border: #bfdbfe;
+  --fb-badge-new-bg: var(--status-waiting-bg);
+  --fb-badge-new-color: #d97706;
+  --fb-badge-new-border: #fde68a;
+  --fb-badge-reviewed-bg: var(--accent-light);
+  --fb-badge-reviewed-color: var(--accent);
+  --fb-badge-reviewed-border: #bfdbfe;
+  --fb-badge-resolved-bg: #f0fdf4;
+  --fb-badge-resolved-color: #16a34a;
+  --fb-badge-resolved-border: #bbf7d0;
+  --fb-badge-dismissed-bg: var(--bg-secondary);
+  --fb-badge-dismissed-color: var(--text-tertiary);
+  --fb-badge-dismissed-border: var(--border-color);
+}
+
+.fb-badge {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: var(--radius-full); border: 1px solid; white-space: nowrap;
+}
+.fb-badge-bug       { background: var(--fb-badge-bug-bg); color: var(--fb-badge-bug-color); border-color: var(--fb-badge-bug-border); }
+.fb-badge-feature   { background: var(--fb-badge-feature-bg); color: var(--fb-badge-feature-color); border-color: var(--fb-badge-feature-border); }
+.fb-badge-new       { background: var(--fb-badge-new-bg); color: var(--fb-badge-new-color); border-color: var(--fb-badge-new-border); }
+.fb-badge-reviewed  { background: var(--fb-badge-reviewed-bg); color: var(--fb-badge-reviewed-color); border-color: var(--fb-badge-reviewed-border); }
+.fb-badge-resolved  { background: var(--fb-badge-resolved-bg); color: var(--fb-badge-resolved-color); border-color: var(--fb-badge-resolved-border); }
+.fb-badge-dismissed { background: var(--fb-badge-dismissed-bg); color: var(--fb-badge-dismissed-color); border-color: var(--fb-badge-dismissed-border); }
+
+/* Status-change buttons (Update Status panel) — same badge tokens when active */
+.fb-status-btn {
+  height: 30px; padding: 0 12px; border-radius: var(--radius-full);
+  font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font-sans);
+  border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-secondary);
+}
+@media (max-width: 768px) {
+  .admin-feedback-header { display: none !important; }
+  .fb-row { grid-template-columns: auto 1fr auto !important; gap: 8px; }
+  .fb-hide-mobile { display: none !important; }
+  .fb-detail-grid { grid-template-columns: 1fr !important; }
+}
+
 /* ─── SETTINGS OVERHAUL RESERVED — P6 (Scope Sheets · Session G) ─── */
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */

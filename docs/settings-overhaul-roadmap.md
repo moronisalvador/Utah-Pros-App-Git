@@ -233,10 +233,10 @@ monoliths with physical splits transferring to P3/P4.
 **P5 — Feedback Inbox** (Sonnet · medium)
 > Owns `src/pages/settings/FeedbackInbox.jsx`, `functions/api/feedback-notify.js` (+ its
 > test), css §P5.
-- [ ] worker stops minting `/tech-feedback` into push payloads + durable `notifications.link`
+- [x] worker stops minting `/tech-feedback` into push payloads + durable `notifications.link`
       rows (writes `/settings/feedback`); test updated to the new route (route change, not a
       test-green edit)
-- [ ] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
+- [x] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
 
 **P6 — Scope Sheets** (Opus · medium — publish blast radius is production-wide)
 > Owns `src/pages/settings/ScopeSheets.jsx`, new `src/lib/demoSchemaUtils.js`, css §P6.
@@ -393,8 +393,8 @@ before opening its PR. Do not edit another session's block.
 - [ ] google-drive-callback.js retargeted to `/settings/my-account?gdrive=` (F's forwarder becomes a shim)
 
 ### P5 — Feedback Inbox (Session E)
-- [ ] feedback-notify.js writes `/settings/feedback` (route change, not a test-green edit); test updated
-- [ ] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
+- [x] feedback-notify.js writes `/settings/feedback` (route change, not a test-green edit); test updated
+- [x] inline `<style>` block → index.css §P5; label "Feedback Inbox"; badge-hex → tokens
 
 ### P6 — Scope Sheets (Session G)
 - [ ] `window.confirm` ×3 → inline two-click; field-removal arm state

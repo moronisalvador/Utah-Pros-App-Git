@@ -2160,8 +2160,21 @@ _(Session B: describe the QBO card rebuild + worker `?qbo=` retarget here.)_
 _(Session C: describe two-click delete, EmployeeModal guard, PageAccess mobile, invite absorption.)_
 #### P4 — Workspace + Personal polish (Session D)
 _(Session D: describe templates dirty-guard verify, hex→token sweep, gdrive-callback retarget.)_
-#### P5 — Feedback Inbox (Session E)
-_(Session E: describe the `/settings/feedback` route change in feedback-notify.js + style move.)_
+#### P5 — Feedback Inbox (Session E) — shipped 2026-07-04
+`feedback-notify.js` no longer mints the retired `/tech-feedback` URL: both the push-payload
+`data.route` and the `dispatchEvent(...).body.link` now write `/settings/feedback` (historical
+`notifications.link` rows still resolve via `SETTINGS_REDIRECTS`'s permanent `tech-feedback` →
+`/settings/feedback` entry). `feedback-notify.test.js` updated to assert the new route/link.
+`FeedbackInbox.jsx`: component-local `<style>` (mobile grid collapse) moved into `index.css`
+§P5; H1 label → "Feedback Inbox" (matches the `navItems.jsx` `feedback_inbox` entry); the stale
+file header (`FILE: AdminFeedback.jsx`, `Route: /tech-feedback`) corrected to match the actual
+filename/route. `TYPE_BADGE`/`STATUS_BADGE` inline hex maps replaced with `fb-badge-*` classes
+backed by new `--fb-badge-*` CSS custom properties in §P5 (same colors, reuses `--accent`/
+`--accent-light`/`--bg-secondary`/`--text-tertiary`/`--border-color` where they already matched
+the hex exactly); the "Update Status" buttons use the same classes for their active state
+instead of inline `STATUS_BADGE[s].bg/color/border` lookups. Two-click purge, per-row draft
+notes, and the lightbox were left functionally untouched (only their badge markup call sites
+changed from inline style objects to `className`).
 #### P6 — Scope Sheets (Session G)
 _(Session G: describe `delete_demo_schema` wiring, two-click confirms, demoSchemaUtils extract.)_
 #### P7-lite — DevTools dedup (Session H)

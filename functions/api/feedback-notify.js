@@ -64,7 +64,7 @@ export function buildPushPayload(feedback, submitterName) {
   return {
     title: isBug ? 'New bug report' : 'New improvement idea',
     body: `${who}: ${feedback?.title || ''}`.trim(),
-    data: { feedback_id: feedback?.id, route: '/tech-feedback' },
+    data: { feedback_id: feedback?.id, route: '/settings/feedback' },
   };
 }
 
@@ -129,7 +129,7 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
       body: {
         title: payload.title,
         body: payload.body,
-        link: '/tech-feedback',
+        link: '/settings/feedback',
         entity_type: 'tech_feedback',
         entity_id: feedbackId,
         payload: { feedback_type: feedback.type, source: feedback.source ?? null },
