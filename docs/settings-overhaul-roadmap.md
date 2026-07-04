@@ -409,8 +409,8 @@ before opening its PR. Do not edit another session's block.
 - [ ] demoSchemaUtils extracted (page internals only)
 
 ### P7-lite — DevTools dedup (Session H, after P2+P3 merge)
-- [ ] delete the Integrations tab (+ its `?qbo=` handling) — verify /settings/integrations covers it first
-- [ ] delete the Employees tab — verify /settings/team covers it first
+- [x] delete the Integrations tab (+ its `?qbo=` handling) — verify /settings/integrations covers it first
+- [x] delete the Employees tab — verify /settings/team covers it first
 
 ---
 
