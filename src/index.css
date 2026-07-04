@@ -8535,6 +8535,188 @@ tr:hover td { background: var(--bg-secondary); }
 }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P2 (Integrations · Session B) ─── */
+/* De-CRM'd Integrations page: built on design-system .card/.btn/.input; the
+   settings-int-* classes below are the page-specific polish (provider cards,
+   status pills, sync stat boxes, dry-run preview). Status colors use the
+   design-system badge triplets (UPR-Design-System.md → Status Color Palette). */
+.settings-int-page { max-width: 1100px; }
+.settings-int-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+/* min-width:0 defeats the grid-item min-content floor so the card shrinks to
+   the column on mobile instead of overflowing the viewport. */
+.settings-int-card { padding: 0; overflow: hidden; min-width: 0; }
+.settings-int-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-light);
+}
+.settings-int-provider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* Let the text column shrink so the nowrap sub-line ellipsizes instead of
+   pushing the status pill off-screen on narrow cards / mobile. */
+.settings-int-provider > div { min-width: 0; }
+.settings-int-badge {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  color: #fff;
+  text-transform: uppercase;
+}
+.settings-int-badge--github { background: #1f2328; }
+.settings-int-badge--qb { background: #2ca01c; }
+.settings-int-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-int-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-int-sandbox {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+.settings-int-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-light);
+}
+.settings-int-pill--on {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+.settings-int-body { padding: 16px 18px; display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-int-row { display: flex; gap: 8px; }
+.settings-int-row .input { flex: 1; }
+.settings-int-meta { margin: 0; font-size: 12px; color: var(--text-tertiary); }
+.settings-int-disconnect {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.settings-int-disconnect--armed {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+/* QuickBooks sync stats */
+.settings-int-stats { display: flex; gap: 10px; }
+.settings-int-stat {
+  flex: 1;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+}
+.settings-int-stat-value { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.settings-int-stat-value--ok { color: #16a34a; }
+.settings-int-stat-value--warn { color: #d97706; }
+.settings-int-stat-value--err { color: #dc2626; }
+.settings-int-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+.settings-int-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings-int-note {
+  padding: 12px 14px;
+  background: var(--accent-light);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.5;
+}
+.settings-int-note code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-word;
+}
+/* Dry-run preview */
+.settings-int-preview { border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
+.settings-int-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+}
+.settings-int-preview-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.settings-int-preview-dismiss {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.settings-int-preview-list { max-height: 260px; overflow-y: auto; }
+.settings-int-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.settings-int-preview-name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-int-t-ok { color: #16a34a; }
+.settings-int-t-warn { color: #d97706; }
+.settings-int-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+.settings-int-tag--ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.settings-int-tag--warn { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.settings-int-tag--err { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+
+@media (max-width: 768px) {
+  .settings-int-grid { grid-template-columns: 1fr; }
+}
 
 /* ─── SETTINGS OVERHAUL RESERVED — P3 (Team & Access · Session C) ─── */
 
