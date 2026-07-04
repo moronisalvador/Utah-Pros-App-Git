@@ -29,19 +29,19 @@
  *     server-side in that integration file.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { pickNowNext } from '@/components/tech/NowNextTile';
 import { fmtHours, hoursBreakdown, toPickShape, selectHero, splitToday } from './dashHelpers.js';
 
 const ME = 'emp-1';
 
-// A UTC date string (YYYY-MM-DD) offset from today, matching the basis
-// pickNowNext uses (`new Date().toISOString().split('T')[0]`). Keeps the
-// "soonest upcoming" fixtures below in the future on every calendar day
-// instead of hardcoding dates that eventually become "today"/past.
-function daysFromToday(n) {
-  return new Date(Date.now() + n * 86400000).toISOString().split('T')[0];
-}
+// Freeze the clock: pickNowNext derives "today" from new Date(), and the
+// fixtures below are written against 2026-07-03 (default appt date + the
+// upcoming 07-04/07-06 dates). Without this the "falls through to upcoming"
+// case flakes the day the real date reaches an appt's hardcoded date. Only
+// Date is faked, so setTimeout/etc. are untouched.
+beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-07-03T12:00:00Z')); });
+afterAll(() => { vi.useRealTimers(); });
 
 // A get_tech_dashboard-shaped appointment (appointment_crew, jobs nested).
 function appt(over = {}) {
@@ -141,8 +141,8 @@ describe('selectHero — combines today + upcoming, returns the raw appt', () =>
     const payload = {
       appointments: [appt({ id: 'done', status: 'completed' })],
       upcoming: [
-        appt({ id: 'far', date: daysFromToday(4), time_start: '08:00:00', status: 'scheduled' }),
-        appt({ id: 'soon', date: daysFromToday(2), time_start: '08:00:00', status: 'scheduled' }),
+        appt({ id: 'far', date: '2026-07-06', time_start: '08:00:00', status: 'scheduled' }),
+        appt({ id: 'soon', date: '2026-07-04', time_start: '08:00:00', status: 'scheduled' }),
       ],
     };
     const r = selectHero(payload, ME);

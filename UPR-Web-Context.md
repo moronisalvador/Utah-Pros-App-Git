@@ -4930,6 +4930,39 @@ helper + recorded-only idempotency), `submit-esign.test.js` (esign.signed), `goo
 (prefs-off suppression + no-double-email). Full suite green; every hook proven to swallow a dispatcher
 error without throwing into its business path.
 
+### Follow-ups (2026-07-04) — all 12 types live + nicer copy
+After the `dev → main` release, all remaining types were **enabled** (`notification_types` now 12/12
+`enabled=true`) and the 4 that had no emitter were wired. Supersedes the "deferred / not wired by B"
+notes above.
+- **Appointment copy enrichment (`functions/api/notify.js`).** The appointment triggers pass only
+  `{ appointment_id }`, so pushes read a bare "Appointment assigned". `dispatchEvent` now enriches
+  `appointment.*` (and `estimate.accepted`) into a clean title + body + deep link before fan-out —
+  e.g. **"New appointment · Water Mitigation"** / **"Sat, Jul 4 · 9:00 AM – 11:00 AM"** →
+  `/tech/appointment/:id`. Helpers `formatApptWhen` / `enrichAppointmentBody` / `enrichEstimateBody`
+  (unit-tested, 27 in `notify.test.js`). `appointments.date/time_start/time_end` are wall-clock, so no
+  tz conversion; the date is anchored at UTC-noon to stay off-by-one-safe. (iOS's "from UPR DEV" line is
+  the cached PWA name of the dev install — OS attribution, not our payload; prod shows "UPR".)
+- **`estimate.accepted`** — new DB trigger `trg_estimate_accepted_notify` (`20260704_notify_estimate_accepted.sql`)
+  AFTER INSERT OR UPDATE OF status ON estimates, fires on a real transition to `status='approved'`
+  (catches the "Convert to invoice" RPC **and** out-of-band writes). Body enriched in the worker
+  (estimate number + amount + client). Audience admins.
+- **`timesheet.change_requested` / `timesheet.change_reviewed`** (`20260704_notify_timesheet_events.sql`)
+  — body-only `CREATE OR REPLACE` of `submit_time_entry_change_request` / `review_time_entry_change_request`
+  (signatures unchanged), swapping the legacy catalog-less `create_notification` broadcast for
+  `notify_emit(<catalog type>, …)`. Requested → admins; reviewed → the requester (via `body.employee_id`);
+  the old approved/rejected split folds into one `timesheet.change_reviewed` with the decision in payload.
+  All other logic (validation, `admin_upsert_time_entry`, `system_events` audit) byte-for-byte preserved.
+- **`clock.abandoned`** (`20260704_notify_clock_abandoned_scan.sql`) — new SECURITY DEFINER
+  `scan_abandoned_clocks(p_now, p_threshold_minutes=600)` + **pg_cron** `upr_scan_abandoned_clocks`
+  (`*/30 * * * *`). Flags an OPEN live entry (`clock_out IS NULL AND travel_start IS NOT NULL`) whose
+  `travel_start` is ≥10h ago (matches `FORGOT_CLOCKOUT_MIN`). Dedup = a `system_events('clock.abandoned',
+  'job_time_entry', entry_id)` marker written **before** emit → at most once per entry, ever; does NOT
+  close the entry (soft warning). Internal-only: `REVOKE ALL … FROM PUBLIC, anon, authenticated` (PUBLIC
+  is the load-bearing revoke). Audience admins, bell-only.
+- **Emitter status:** appointment.* + estimate.accepted + timesheet.* + clock.abandoned + the 5 Session-B/
+  feedback types = **all 12 now have a live emitter**. `migration-safety-checker` + `upr-pattern-checker`
+  clean (after fixing the PUBLIC-revoke gap they caught).
+
 ### Session C (my-prefs UI) — shipped (2026-07-03)
 Self-service notification preferences on both the office **Settings → Notifications** panel and
 the field-tech **/tech/settings** hub, plus a device manager. Ships **zero schema** — only
