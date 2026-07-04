@@ -34,7 +34,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import TabLoading from '@/components/TabLoading';
-import { DOC_TYPES, DEFAULT_TEMPLATES } from './templates/templateData';
+import { DOC_TYPES, buildTemplateSections } from './templates/templateData';
 import TemplateEditor from './templates/TemplateEditor';
 
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -57,19 +57,7 @@ export default function TemplatesEditor() {
       setLoading(true);
       try {
         const rows = await db.rpc('get_document_templates').catch(() => []);
-        const map = {};
-        for (const row of rows || []) {
-          map[`${row.doc_type}::${row.division || '_'}`] = { heading: row.heading, body: row.body, sort_order: row.sort_order };
-        }
-        const getTemplate = (division) => {
-          const saved = map[`${docType}::${division || '_'}`];
-          if (saved) return saved;
-          const def = (DEFAULT_TEMPLATES[docType] || []).find(t => t.division === division);
-          return def ? { heading: def.heading, body: def.body, sort_order: def.sort_order } : { heading: '', body: '', sort_order: 0 };
-        };
-        const defs = DEFAULT_TEMPLATES[docType] || [];
-        const initial = defs.map(def => ({ division: def.division, sort_order: def.sort_order, ...getTemplate(def.division) }));
-        if (!cancelled) setInitialSections(initial);
+        if (!cancelled) setInitialSections(buildTemplateSections(rows, docType));
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };

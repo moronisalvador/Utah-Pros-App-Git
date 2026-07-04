@@ -141,6 +141,25 @@ I confirm the additional scope has been explained to me in full, that I understa
 
 export const DOC_TYPE_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order' };
 
+/**
+ * Merge saved document_templates rows over the built-in defaults for one doc type
+ * → the editor's initial sections. Pure (no I/O) so the editor's mount-fetch logic
+ * is unit-testable. `rows` is the raw get_document_templates result (array).
+ */
+export function buildTemplateSections(rows, docType) {
+  const map = {};
+  for (const row of rows || []) {
+    map[`${row.doc_type}::${row.division || '_'}`] = { heading: row.heading, body: row.body, sort_order: row.sort_order };
+  }
+  const getTemplate = (division) => {
+    const saved = map[`${docType}::${division || '_'}`];
+    if (saved) return saved;
+    const def = (DEFAULT_TEMPLATES[docType] || []).find(t => t.division === division);
+    return def ? { heading: def.heading, body: def.body, sort_order: def.sort_order } : { heading: '', body: '', sort_order: 0 };
+  };
+  return (DEFAULT_TEMPLATES[docType] || []).map(def => ({ division: def.division, sort_order: def.sort_order, ...getTemplate(def.division) }));
+}
+
 /* ═══ MARKDOWN RENDERER — handles ## Heading, **bold**, empty lines ═══ */
 export function renderMarkdown(text) {
   if (!text) return null;
