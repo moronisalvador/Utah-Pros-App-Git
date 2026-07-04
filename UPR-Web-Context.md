@@ -1241,7 +1241,7 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 **`react-i18next` + `i18next`** (v17 / v26).
 - **Engine init:** `src/i18n/index.js` — bundles the locale JSON (static imports, synchronous init so
   `t()` works on first render → `react.useSuspense:false`), `fallbackLng:'en'`, `supportedLngs:['en','pt','es']`,
-  namespaces `['common','nav','more','settings','tech','tasks','dash','schedule','claims','appointment','tracker','job','claimDetail']`,
+  namespaces `['common','nav','more','settings','tech','tasks','dash','schedule','claims','appointment','tracker','job','claimDetail','apptForm','newCustomer','newEvent','newJob']`,
   `interpolation.escapeValue:false`. **`fallbackLng:'en'`
   is what makes the phased rollout safe — a missing pt/es key renders the English source, never a blank.**
 - **Prefs helper:** `src/i18n/langPrefs.js` (pure, React-free, testable) — `LANG_STORAGE_KEY='upr_lang_pref'`,
@@ -1274,9 +1274,13 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
   `NowNextTile`, `PhotosGroup` pull cross-screen strings (`crewPrefix`/`actionBar`/`nowNext`/`hero`/`photos`, pluralized
   counts) from the `tech` ns. Interpolation/plurals handled throughout (greeting name, appointment/task/job/room counts,
   away-jobsite + overtime banners, "Clocked out of {job} ({elapsed})", `<Trans>` for the typed-DELETE bold spans).
-  **Still English (safe via fallback):** the field sheets (demo/readings/equipment/OOP — several owner-flag-gated), the
-  create/edit sheets (`TechNew*`/`TechEdit*`), help prose (`techHelpContent.jsx`), and the shared office+tech
-  `NotificationBell` chrome — the next batches.
+  The **create/edit forms** are done too: `TechNewAppointment` + `TechEditAppointment` (shared `apptForm`),
+  `TechNewCustomer` (`newCustomer`), `TechNewEvent` (`newEvent`), `TechNewJob` (`newJob`). Their type/division
+  pills resolve labels from the namespace (or shared `tech:apptType`/`division`); `syncClaimToEncircle` (a
+  module-level helper in `TechNewJob`) uses the `i18n` instance directly since it can't call the hook.
+  **Still English (safe via fallback):** the field sheets (demo/readings/equipment/OOP — several owner-flag-gated),
+  help prose (`techHelpContent.jsx`), the shared `TIME_OPTIONS` AM/PM time picker (`techFormConstants.js`), and
+  the shared office+tech `NotificationBell` chrome — the next batches.
 - **PT/ES are Claude drafts pending a native-speaker review pass** (industry terms like Claims→Sinistros/Reclamos).
 - **Tests:** `src/i18n/langPrefs.test.js` (pure helpers), `src/i18n/i18n.test.js` (t()/interpolation/fallback/
   **parity across every namespace**), `src/lib/techDateUtils.test.js` (locale-aware helpers),
