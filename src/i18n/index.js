@@ -47,6 +47,7 @@ import enAppointment from './locales/en/appointment.json';
 import enTracker from './locales/en/tracker.json';
 import enJob from './locales/en/job.json';
 import enClaimDetail from './locales/en/claimDetail.json';
+import enApptForm from './locales/en/apptForm.json';
 
 import ptCommon from './locales/pt/common.json';
 import ptNav from './locales/pt/nav.json';
@@ -61,6 +62,7 @@ import ptAppointment from './locales/pt/appointment.json';
 import ptTracker from './locales/pt/tracker.json';
 import ptJob from './locales/pt/job.json';
 import ptClaimDetail from './locales/pt/claimDetail.json';
+import ptApptForm from './locales/pt/apptForm.json';
 
 import esCommon from './locales/es/common.json';
 import esNav from './locales/es/nav.json';
@@ -75,14 +77,15 @@ import esAppointment from './locales/es/appointment.json';
 import esTracker from './locales/es/tracker.json';
 import esJob from './locales/es/job.json';
 import esClaimDetail from './locales/es/claimDetail.json';
+import esApptForm from './locales/es/apptForm.json';
 
 /** Every translation namespace (one file per screen area). Keep in sync with resources. */
-export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule', 'claims', 'appointment', 'tracker', 'job', 'claimDetail'];
+export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule', 'claims', 'appointment', 'tracker', 'job', 'claimDetail', 'apptForm'];
 
 export const resources = {
-  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash, schedule: enSchedule, claims: enClaims, appointment: enAppointment, tracker: enTracker, job: enJob, claimDetail: enClaimDetail },
-  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash, schedule: ptSchedule, claims: ptClaims, appointment: ptAppointment, tracker: ptTracker, job: ptJob, claimDetail: ptClaimDetail },
-  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash, schedule: esSchedule, claims: esClaims, appointment: esAppointment, tracker: esTracker, job: esJob, claimDetail: esClaimDetail },
+  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash, schedule: enSchedule, claims: enClaims, appointment: enAppointment, tracker: enTracker, job: enJob, claimDetail: enClaimDetail, apptForm: enApptForm },
+  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash, schedule: ptSchedule, claims: ptClaims, appointment: ptAppointment, tracker: ptTracker, job: ptJob, claimDetail: ptClaimDetail, apptForm: ptApptForm },
+  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash, schedule: esSchedule, claims: esClaims, appointment: esAppointment, tracker: esTracker, job: esJob, claimDetail: esClaimDetail, apptForm: esApptForm },
 };
 
 i18n.use(initReactI18next).init({
