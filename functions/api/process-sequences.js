@@ -351,11 +351,28 @@ export async function scheduled(event, env) {
   console.log('process-sequences cron:', JSON.stringify(result));
 }
 
+// A server-side scheduler (Supabase pg_cron + pg_net) authenticates with this
+// header instead of a user session — same shape as weekly-crm-digest's
+// crm_digest_secret. Needed because Cloudflare PAGES projects expose no Cron
+// Trigger UI; the schedule lives in pg_cron and calls this worker over HTTPS.
+async function checkCronSecret(request, db) {
+  const provided = request.headers.get('x-webhook-secret');
+  if (!provided) return false;
+  try {
+    const [row] = await db.select('integration_config', 'key=eq.cron_worker_secret&select=value&limit=1');
+    return !!row?.value && row.value === provided;
+  } catch {
+    return false;
+  }
+}
+
 async function runAuthenticated(context) {
   const { request, env } = context;
   const db = supabase(env);
+  // Either a logged-in employee (manual trigger) or the scheduler secret.
   const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const authorized = employee || await checkCronSecret(request, db);
+  if (!authorized) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
   const result = await processSequences(db, env);
   return jsonResponse(result, result.ok ? 200 : 500, request, env);
 }

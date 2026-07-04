@@ -4467,98 +4467,6 @@ tr:hover td { background: var(--bg-secondary); }
   color: var(--text-secondary);
 }
 
-/* Dash greeting */
-.tech-dash-greeting {
-  margin-bottom: var(--space-4);
-}
-.tech-dash-date {
-  font-size: var(--tech-text-label);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 2px;
-}
-.tech-dash-name {
-  font-size: var(--tech-text-hero);
-  font-weight: 800;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-.tech-dash-summary {
-  font-size: var(--tech-text-body);
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-.tech-dash-greeting-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(248, 249, 251, 0.9);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-light);
-  flex-shrink: 0;
-}
-
-/* Appointment cards */
-.tech-appt-card {
-  background: var(--bg-primary);
-  border-radius: var(--tech-radius-card);
-  box-shadow: var(--tech-shadow-card);
-  border: 1px solid var(--border-light);
-  padding: 16px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.1s;
-  -webkit-touch-callout: none;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.tech-appt-card:active {
-  transform: scale(0.98);
-  box-shadow: var(--tech-shadow-card-active);
-}
-.tech-appt-card:focus { outline: none; }
-
-.tech-appt-time {
-  font-size: var(--tech-text-label);
-  font-weight: 600;
-  color: var(--text-tertiary);
-  margin-bottom: 2px;
-}
-
-.tech-appt-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: var(--space-2);
-}
-
-.tech-appt-address {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--accent-light);
-  border-radius: var(--radius-md);
-  color: var(--accent);
-  font-size: var(--tech-text-body);
-  font-weight: 500;
-  text-decoration: none;
-  margin-bottom: var(--space-3);
-  cursor: pointer;
-  border: none;
-  width: 100%;
-  text-align: left;
-  font-family: var(--font-sans);
-  touch-action: manipulation;
-}
-.tech-appt-address:active { opacity: 0.7; }
-
 /* Task progress bar */
 .tech-task-progress-bar {
   width: 100%;
@@ -4573,23 +4481,6 @@ tr:hover td { background: var(--bg-secondary); }
   background: #16a34a;
   border-radius: 2px;
   transition: width 0.3s ease;
-}
-
-.tech-tasks-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border-light);
-  padding: 10px 0 0;
-  margin-top: var(--space-3);
-  cursor: pointer;
-  font-family: var(--font-sans);
-  font-size: var(--tech-text-body);
-  font-weight: 600;
-  color: var(--text-secondary);
 }
 
 .tech-task-row {
@@ -4634,14 +4525,6 @@ tr:hover td { background: var(--bg-secondary); }
   text-decoration: line-through;
   color: var(--text-tertiary);
   opacity: 0.5;
-}
-
-.tech-appt-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-light);
 }
 
 /* Time tracker */
@@ -4712,132 +4595,6 @@ tr:hover td { background: var(--bg-secondary); }
   transform: scale(0.97);
 }
 
-/* Status left border */
-.tech-appt-card[data-status="scheduled"]   { border-left: 4px solid #3b82f6; }
-.tech-appt-card[data-status="confirmed"]   { border-left: 4px solid #3b82f6; }
-.tech-appt-card[data-status="en_route"]    { border-left: 4px solid #f59e0b; }
-.tech-appt-card[data-status="in_progress"] { border-left: 4px solid #10b981; }
-.tech-appt-card[data-status="paused"]      { border-left: 4px solid #ef4444; }
-.tech-appt-card[data-status="completed"]   { border-left: 4px solid #d1d5db; }
-
-/* Skeleton shimmer loading */
-@keyframes tech-skeleton-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
-}
-
-.tech-skeleton-card {
-  background: var(--bg-primary);
-  border-radius: var(--tech-radius-card);
-  box-shadow: var(--tech-shadow-card);
-  border: 1px solid var(--border-light);
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.tech-skeleton-line {
-  background: linear-gradient(90deg, var(--bg-tertiary) 25%, #e8eaed 37%, var(--bg-tertiary) 63%);
-  background-size: 200px 100%;
-  animation: tech-skeleton-shimmer 1.4s ease-in-out infinite;
-  border-radius: var(--radius-sm);
-  height: 12px;
-  margin-bottom: 10px;
-}
-
-.tech-skeleton-line.short { width: 40%; }
-.tech-skeleton-line.medium { width: 65%; }
-.tech-skeleton-line.long { width: 90%; }
-.tech-skeleton-line.tall { height: 16px; }
-
-/* Future appointment timeline */
-.tech-future-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0;
-  min-height: var(--tech-row-height);
-  padding: 10px 0;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-.tech-future-row:active { opacity: 0.7; }
-
-.tech-future-time-col {
-  width: 60px;
-  flex-shrink: 0;
-  text-align: right;
-  padding-right: 12px;
-}
-.tech-future-time {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.tech-future-line {
-  width: 2px;
-  align-self: stretch;
-  background: var(--border-color);
-  flex-shrink: 0;
-  margin-right: 12px;
-  border-radius: 1px;
-}
-
-.tech-future-content {
-  flex: 1;
-  min-width: 0;
-}
-.tech-future-title {
-  font-size: var(--tech-text-body);
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.tech-future-address {
-  font-size: 13px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Quick actions row */
-.tech-quick-actions {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  padding: 20px 0 8px;
-}
-.tech-quick-action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  text-decoration: none;
-}
-.tech-quick-action-btn:active { opacity: 0.6; }
-.tech-quick-action-icon {
-  width: var(--tech-min-tap);
-  height: var(--tech-min-tap);
-  border-radius: 50%;
-  background: var(--bg-primary);
-  box-shadow: var(--tech-shadow-card);
-  border: 1px solid var(--border-light);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tech-quick-action-label {
-  font-size: 11px;
-  font-weight: 600;
-}
-
 /* Mobile task checkboxes */
 @media (max-width: 768px) {
   .tech-task-row {
@@ -4879,35 +4636,19 @@ tr:hover td { background: var(--bg-secondary); }
     overscroll-behavior-y: contain;
   }
 
-  .tech-nav-tab:focus,
-  .tech-appt-card:focus {
+  .tech-nav-tab:focus {
     outline: none;
   }
 
   .tech-nav,
-  .tech-appt-card,
   .tech-tracker {
     -webkit-user-select: none;
     user-select: none;
   }
 
   .tech-nav-tab,
-  .tech-appt-card,
   .tech-task-row {
     -webkit-tap-highlight-color: transparent;
-  }
-
-  /* Sticky header on TechDash */
-  .tech-page-header-sticky {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: rgba(248, 249, 251, 0.9);
-    padding: var(--space-3) var(--space-4);
-    margin: 0 calc(-1 * var(--space-4));
-    border-bottom: 1px solid var(--border-light);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
   }
 
   /* Sticky section headers in TechAppointment */
@@ -4981,33 +4722,6 @@ tr:hover td { background: var(--bg-secondary); }
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-/* Jump-to-today FAB */
-.tech-jump-today-fab {
-  position: fixed;
-  bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 16px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 10px 24px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: var(--font-sans);
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: var(--shadow-md);
-  touch-action: manipulation;
-}
-
-/* Schedule row division stripes */
-.tech-schedule-row[data-division="water"]          { border-left: 4px solid #3b82f6; }
-.tech-schedule-row[data-division="mold"]           { border-left: 4px solid #ec4899; }
-.tech-schedule-row[data-division="reconstruction"] { border-left: 4px solid #f59e0b; }
-.tech-schedule-row[data-division="fire"]           { border-left: 4px solid #ef4444; }
-.tech-schedule-row[data-division="contents"]       { border-left: 4px solid #10b981; }
-
 /* Task checkbox pop animation */
 @keyframes tech-check-pop {
   0%   { transform: scale(1); }
@@ -5055,19 +4769,6 @@ tr:hover td { background: var(--bg-secondary); }
   .tech-layout .toast-container {
     bottom: calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px) + 8px);
   }
-}
-
-/* Tech active press state for all interactive rows */
-.tech-schedule-row:active,
-.tech-future-row:active,
-.tech-quick-action-btn:active {
-  opacity: 0.6;
-}
-
-/* Tech FAB animation */
-@keyframes techFabIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.9); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
