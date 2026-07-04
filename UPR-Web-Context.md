@@ -2023,6 +2023,76 @@ A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar o
 - **Settings Overhaul (plan of record, 2026-07-04):** the entire Settings/System area is being restructured per `docs/settings-overhaul-roadmap.md` + `docs/settings-overhaul-dispatch.md` — grouped hub with routed sub-pages under `/settings/*`, SettingsHome index (the mobile experience), Admin/Settings monolith dissolution, PaymentSettings/API Keys/Feedback Inbox/Scope Sheet Builder relocations with permanent redirects. **Phase 0 shipped 2026-07-04 (`82ca87d`):** `/settings` route wrapped in `AccessRoute('settings')` + TopNav gear gated `canAccess('settings')` — closes the live payroll exposure (any employee could URL-reach the Commissions tab and read/write commission rates; nav already denied it). Wave sessions launch from the dispatch doc; ownership manifest `.claude/rules/settings-overhaul-wave-ownership.md` is committed by its Phase F. New reviewer agent: `settings-phase-reviewer`.
 - **Bell single-mount:** `Layout` gates the one `NotificationBell` by `matchMedia('(min-width:1024px)')` (TopNav on desktop/iPad-landscape, Sidebar header otherwise) so there are never two live notification subscriptions (no duplicate toasts). `NotificationBell` gained an optional `align` prop ('left'|'right').
 
+## Settings Overhaul — Phase F Foundation (Jul 4 2026)
+Structural, behavior-identical reorganization of the entire Settings area into a grouped hub
+with routed sub-pages. Full plan: `docs/settings-overhaul-roadmap.md`; file/RPC ownership:
+`.claude/rules/settings-overhaul-wave-ownership.md`.
+
+**Routes (all under `SettingsLayout`, inside the main `Layout`):** `/settings` (SettingsHome
+index — GC3 any-visible-child gate) · Workspace: `/settings/{carriers,referrals,templates,
+templates/:docType,commissions,payments,scope-sheets}` · Team: `/settings/{team,roles,
+page-access,notification-defaults,feedback}` · Connections: `/settings/integrations` ·
+Personal: `/settings/{my-account,notifications}` (GC8 — every employee) · Owner: `/dev-tools`.
+`/help` unwrapped from the hub shell. **Permanent redirects** (`src/lib/settingsRedirects.js`):
+`/admin→/settings/team`, `/admin/integrations→/settings/integrations`,
+`/admin/demo-sheet-builder→/settings/scope-sheets`, `/tech-feedback→/settings/feedback`,
+`/payments/settings→/settings/payments`.
+
+**Monoliths dissolved:** `Settings.jsx` (1224 lines) → `src/pages/settings/{Carriers,Referrals,
+Templates,TemplatesEditor,Commissions,MyAccount,Notifications}.jsx` + `templates/{templateData.jsx,
+TemplateEditor.jsx}`. `Admin.jsx` (1297 lines) → `src/pages/settings/{Team,Roles,PageAccess,
+NotificationDefaults}.jsx`. git-mv'd content-identical: `PaymentSettings→settings/Payments`,
+`admin/AdminIntegrations→settings/Integrations`, `AdminFeedback→settings/FeedbackInbox`,
+`AdminDemoSheetBuilder→settings/ScopeSheets`.
+
+**Shared modules (new):** `src/lib/navKeys.js` (NAV_KEYS/PAGE_ACCESS_KEYS/ROLES/roleLabel —
+ends Admin.jsx duplicate registry), `src/lib/owner.js` (`isMoroni()` — replaced 5 hardcoded
+`moroni@utah-pros.com` checks in App/Sidebar/TopNav/OverflowDrawer/SettingsLayout),
+`src/components/TabLoading.jsx` (exported; DevTools keeps its local copy),
+`src/components/settings/{SettingsPageHeader,SettingsSection,LookupTable}.jsx`. `navItems.jsx`
+gained `SETTINGS_GROUPS` + `isSettingsItemVisible()` + `anySettingsChildVisible()` (the hub IA,
+read by SettingsHome + SettingsLayout rail) and settings-hub icons; NAV_ITEMS System section is
+now one `settingsHub` Settings entry (GC5, hideForRoles:['crm_partner']); Sidebar migrated to
+`isItemVisible()` (GC7).
+
+**Nav shell:** SettingsLayout v2 = grouped rail ≥1024px / mobile home-back (`← Settings`) <1024px.
+Real breakpoint is **1024px** (stale "1280" comments fixed). TopNav gear now shows on
+`anySettingsChildVisible` (GC3/GC8), crm_partner excluded.
+
+**Migration (`20260704_settings_f_demo_schema_delete.sql`):** drift-captured the live
+`demo_sheet_schemas` RPC family (`get_active_demo_schema`, `get_demo_schema`, `list_demo_schemas`,
+`upsert_demo_schema`, `publish_demo_schema`) into schema-as-code; added `demo_sheet_schemas.
+published_at` (nullable) so an ever-published version is permanently detectable; `publish_demo_schema`
+now stamps it. New `delete_demo_schema(p_id) → boolean` RAISEs on active / ever-published /
+sheet-referenced versions (protects `.claude/rules/scope-sheet-rollback.md`). Consumed by P6.
+
+**Gates (GC3-GC8):** GC3 SettingsHome any-visible-child · GC4/GC5 System→single Settings entry
+(Team/FeedbackInbox adminOnly via SETTINGS_GROUPS) · GC6 Payments nav visible to canEditBilling
+roles (page self-guards) · GC7 Sidebar `isItemVisible()` · GC8 (owner-approved) Personal group
+(`/settings/my-account`, `/settings/notifications`) visible to every employee. No other effective-
+access change.
+
+**Tests:** `supabase/tests/settings_f_demo_schema_delete.test.js` (refusal),
+`src/components/settings/settingsPrimitives.render.test.jsx`, `src/lib/settingsNav.test.js`
+(any-visible-child incl. override-only supervisor fixture + the 5 redirects + templates section
+merge).
+
+### Wave sub-headers (pre-seeded by Phase F — each session fills ONLY its own)
+#### P1 — Payments (Session A)
+_(Session A: describe useBillingSettings hook, two-click payout, token/mobile pass here.)_
+#### P2 — Integrations (Session B)
+_(Session B: describe the QBO card rebuild + worker `?qbo=` retarget here.)_
+#### P3 — Team & Access (Session C)
+_(Session C: describe two-click delete, EmployeeModal guard, PageAccess mobile, invite absorption.)_
+#### P4 — Workspace + Personal polish (Session D)
+_(Session D: describe templates dirty-guard verify, hex→token sweep, gdrive-callback retarget.)_
+#### P5 — Feedback Inbox (Session E)
+_(Session E: describe the `/settings/feedback` route change in feedback-notify.js + style move.)_
+#### P6 — Scope Sheets (Session G)
+_(Session G: describe `delete_demo_schema` wiring, two-click confirms, demoSchemaUtils extract.)_
+#### P7-lite — DevTools dedup (Session H)
+_(Session H: describe the two DevTools tab deletions here.)_
+
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar
 - **Sidebar:** slides in from left via `sidebar-open` class

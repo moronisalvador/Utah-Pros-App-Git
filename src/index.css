@@ -8445,3 +8445,25 @@ tr:hover td { background: var(--bg-secondary); }
   .notify-def-th-ch,
   .notify-def-th-lock { width: 52px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SETTINGS OVERHAUL — reserved per-phase CSS sections (pre-seeded by Phase F).
+   Each Wave-1 session writes ONLY inside its own marker below; never edit
+   another phase's block or Foundation's settings-hub styles above. Mobile-only
+   rules use @media (max-width: 768px). See docs/settings-overhaul-roadmap.md +
+   .claude/rules/settings-overhaul-wave-ownership.md.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P1 (Payments · Session A) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P2 (Integrations · Session B) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P3 (Team & Access · Session C) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P4 (Workspace + Personal · Session D) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P5 (Feedback Inbox · Session E) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P6 (Scope Sheets · Session G) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
