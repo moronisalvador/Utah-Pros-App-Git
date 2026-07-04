@@ -364,26 +364,34 @@ AFTER verifying the DB-backed path works on dev (env fallback makes the cutover 
 ```
 
 ```
-[Session K — Wave 2 · P10 Reference Data merge]
-Branch: session-assigned (illustrative: settings/p10-reference-data), cut from origin/dev
+[Session K — Wave 2 · P10 Lists & Values hub]
+Branch: session-assigned (illustrative: settings/p10-lists-values), cut from origin/dev
 Model: Sonnet 5 · Effort: Medium
-Launch after: Session D's (P4 Workspace polish) PR merged into dev
+Launch after: Session D's (P4 Workspace polish) PR merged into dev (already merged 2026-07-05)
 
-You are building Settings Overhaul P10 — merge Carriers + Referrals into one Reference Data
-page; one phase only. Read scope: CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2
-amendment (P10 block); the ownership manifest. You own: new
-src/pages/settings/ReferenceData.jsx (replacing Carriers.jsx + Referrals.jsx),
-src/App.jsx (the two carriers/referrals route lines + one redirect — the ONE sanctioned
-post-wave App.jsx edit, keep it to those lines), src/lib/navItems.jsx (collapse the two rail
-entries into one 'Reference Data' entry), index.css §P10. Zero migrations. Rationale: Carriers
-and Referrals are structurally identical flat LookupTable lists — one page with two stacked
-sections, not two nav slots. Build: (1) ReferenceData.jsx renders both LookupTable sections
-(carriers + referrals) using the same shared component + RPCs they use today, behavior-
-identical; (2) permanent redirects /settings/carriers + /settings/referrals →
-/settings/reference-data (add to settingsRedirects.js pattern or inline, matching F's
-approach); (3) one grouped nav entry; keep the AccessRoute('settings') gate. Do NOT touch
-Templates or Commissions (they stay separate — draft/publish and payroll, not flat lookups).
-Close-out: npm run test + build + eslint; upr-pattern-checker + settings-phase-reviewer clean;
-visual check desktop+mobile; UPR-Web-Context.md sub-header + roadmap checklist block; push -u,
-ready-to-merge PR into dev, STOP.
+You are building Settings Overhaul P10 — the Lists & Values hub; one phase only. Read scope:
+CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2 amendment (P10 block + the "Future edges"
+section that bounds your scope); the ownership manifest. You own: new
+src/pages/settings/ListsAndValues.jsx (replacing Carriers.jsx + Referrals.jsx), new
+src/lib/managedLists.js (registry), src/App.jsx (the carriers/referrals route lines +
+redirects — the ONE sanctioned post-wave App.jsx edit, keep it to those lines),
+src/lib/navItems.jsx (collapse the two rail entries into one 'Lists & Values' entry),
+index.css §P10. Zero migrations. INTENT (owner, from a ServiceLifter reference): a single home
+for the option-lists that populate the app's dropdowns, built so future lists drop in without a
+new page. This is NOT a ServiceLifter clone — do NOT build a dynamic custom-fields engine
+(UPR has fixed schemas; out of scope forever). Verified live: the only editable dropdown lists
+today are insurance_carriers + referral_sources (both already LookupTables); divisions/loss-
+categories are hardcoded enums and merge tokens are hardcoded in templates — those are
+recorded Future Edges, explicitly NOT in your scope. Build: (1) src/lib/managedLists.js — a
+tiny registry array [{ key, label, columns, getRpc, upsertRpc, deleteRpc }] with the carriers
+and referrals entries (their existing column configs + RPCs, verbatim from the current
+Carriers.jsx/Referrals.jsx); (2) ListsAndValues.jsx renders the registry as a stack of labelled
+LookupTable sections (shared component, behavior-identical to today), page title 'Lists &
+Values'; (3) permanent redirects /settings/carriers + /settings/referrals → /settings/lists
+(match F's settingsRedirects.js pattern); (4) one grouped nav entry; keep AccessRoute('settings').
+Do NOT touch Templates or Commissions (separate — draft/publish + payroll, not flat lookups),
+and do NOT build editable enums or a merge-values table (Future Edges). Close-out: npm run test
++ build + eslint; upr-pattern-checker + settings-phase-reviewer clean; visual check
+desktop+mobile; UPR-Web-Context.md sub-header + roadmap checklist block; push -u, ready-to-merge
+PR into dev, STOP.
 ```

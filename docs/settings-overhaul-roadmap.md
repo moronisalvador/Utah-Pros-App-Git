@@ -492,18 +492,37 @@ P9 delivers (a) fully and does not pretend to deliver (b).
 - [ ] `settings-phase-reviewer` (weight the secret-handling paths) + `upr-pattern-checker` +
       `migration-safety-checker`
 
-### P10 — Reference Data merge (Session K)
+### P10 — Lists & Values hub (Session K) — owner-approved 2026-07-05
 > **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Sonnet · medium
-> **Prerequisite:** P4 (Workspace polish) merged — P10 merges the pages P4 polished.
+> **Prerequisite:** P4 (Workspace polish) merged ✅ (done 2026-07-05) — P10 merges the pages
+> P4 polished; launchable now.
 > **Owns:** `src/pages/settings/{Carriers,Referrals}.jsx` → one new
-> `src/pages/settings/ReferenceData.jsx`, `App.jsx` (2 route lines + 1 redirect — the ONE
-> sanctioned post-wave App.jsx seam), `src/lib/navItems.jsx` (collapse two rail entries to
-> one), css §P10.
-- [ ] Carriers + Referrals become two stacked `LookupTable` sections on one "Reference Data"
-      page (`/settings/reference-data`) — they are structurally identical flat lookups, not
-      settings that each deserve a nav slot
-- [ ] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/reference-data`
+> `src/pages/settings/ListsAndValues.jsx` + a small `src/lib/managedLists.js` registry,
+> `App.jsx` (2 route lines + redirects — the ONE sanctioned post-wave App.jsx seam),
+> `src/lib/navItems.jsx` (collapse two rail entries to one), css §P10.
+
+**Intent (owner, from the ServiceLifter "Custom Fields / Custom Values" reference):** a single
+place to manage the option-lists that populate the app's dropdowns, built so **future lists
+drop in without a new page**. It is NOT a ServiceLifter clone — UPR has fixed schemas, so no
+dynamic custom-*fields* engine (that adds arbitrary columns to objects; out of scope forever).
+Verified live inventory (2026-07-05): the only genuinely-editable dropdown lists today are
+`insurance_carriers` (29 rows) + `referral_sources` (49 rows), both already `LookupTable`s.
+Divisions / loss categories / referral categories are **hardcoded code enums**, and merge
+tokens live **hardcoded** in the templates module — neither is user-editable data (see future
+edges). CRM's lists (pipeline stages, tags) stay CRM-owned.
+
+- [ ] one `/settings/lists` page ("Lists & Values") renders a **registry-driven** stack of
+      managed-list sections — Carriers + Referrals as the first two, each the existing
+      `LookupTable` + its existing RPCs, behavior-identical
+- [ ] `src/lib/managedLists.js`: a tiny registry `[{ key, label, columns, getRpc, upsertRpc,
+      deleteRpc }]` so adding a future list = one entry, not a new page/route (the extensibility
+      the owner asked for — build the pattern, don't over-populate it)
+- [ ] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/lists`
+      (via the F redirect pattern); one grouped "Lists & Values" nav entry; keep
+      `AccessRoute('settings')`
 - [ ] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
+- [ ] do NOT build editable enums or a merge-values table here — those are future edges below
+      (recording them keeps P10 small and honest)
 
 ## Cross-initiative coordination note (P9 ⇄ omni-inbox)
 `functions/lib/twilio.js` and `functions/lib/email.js` are **frozen import-only by the
@@ -523,3 +542,21 @@ P4 ✅merge ──▶ P10
 ```
 Merge preference within Wave 2: P8 → P9, P10 independent. All serial-after-a-Wave-1-merge, so
 none can collide with the in-flight wave.
+
+## Future edges (recorded, NOT scheduled — real features, not settings polish)
+These surfaced from the ServiceLifter "Custom Fields / Custom Values" reference (2026-07-05).
+P10 builds the extensible hub shell; these two would each slot in later as a new registry
+section, but each is its own feature with real scope — parked deliberately, owner un-asked to
+fund them yet:
+1. **Editable enums → managed lists** (divisions, loss categories, referral categories). Today
+   these are hardcoded code enums (`DIVISION_OPTIONS`, `REF_CATEGORIES`) and/or a Postgres
+   `job_division` ENUM. Making them user-editable means an enum→lookup-table migration + updating
+   every consumer (Jobs/JobPage/Schedule/CRM colour+icon maps, etc.) — a cross-cutting change,
+   not a hub add. Slots into P10's registry once the data exists.
+2. **Managed Custom Values / merge tokens** (the true ServiceLifter "Custom Values" analog —
+   e.g. `business_name`). UPR's merge tokens are hardcoded in the templates module
+   (`templates/templateData.jsx`), with no user-editable table. This needs a new
+   `custom_values`-style table + wiring the template/message render path to resolve tokens from
+   it. A genuine feature; slots into the hub as a "Values" section when built.
+CRM settings absorption into this IA (pipeline stages, tags) stays a separate future edge
+(post-CRM-wave), unchanged.
