@@ -29,11 +29,19 @@
  *     server-side in that integration file.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { pickNowNext } from '@/components/tech/NowNextTile';
 import { fmtHours, hoursBreakdown, toPickShape, selectHero, splitToday } from './dashHelpers.js';
 
 const ME = 'emp-1';
+
+// Freeze the clock: pickNowNext derives "today" from new Date(), and the
+// fixtures below are written against 2026-07-03 (default appt date + the
+// upcoming 07-04/07-06 dates). Without this the "falls through to upcoming"
+// case flakes the day the real date reaches an appt's hardcoded date. Only
+// Date is faked, so setTimeout/etc. are untouched.
+beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-07-03T12:00:00Z')); });
+afterAll(() => { vi.useRealTimers(); });
 
 // A get_tech_dashboard-shaped appointment (appointment_crew, jobs nested).
 function appt(over = {}) {
