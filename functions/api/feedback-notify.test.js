@@ -83,7 +83,7 @@ describe('buildPushPayload', () => {
     const p = buildPushPayload({ id: 'fb-1', type: 'bug', title: 'App crashes' }, 'Jane Tech');
     expect(p.title).toBe('New bug report');
     expect(p.body).toBe('Jane Tech: App crashes');
-    expect(p.data).toEqual({ feedback_id: 'fb-1', route: '/tech-feedback' });
+    expect(p.data).toEqual({ feedback_id: 'fb-1', route: '/settings/feedback' });
   });
   it('titles a feature/improvement idea', () => {
     const p = buildPushPayload({ id: 'fb-2', type: 'feature', title: 'Dark mode' }, 'Bob');
@@ -131,7 +131,7 @@ describe('handleFeedbackNotify — delegates to the dispatcher', () => {
     expect(captured.body.exclude_employee_id).toBe('tech-1');
     expect(captured.body.title).toBe('New bug report');
     expect(captured.body.body).toBe('Jane Tech: Photos wont save');
-    expect(captured.body.link).toBe('/tech-feedback');
+    expect(captured.body.link).toBe('/settings/feedback');
   });
 
   it('still succeeds (200) even if the dispatcher throws — fire-and-forget', async () => {
