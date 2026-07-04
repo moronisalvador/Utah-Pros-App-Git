@@ -5711,6 +5711,153 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* ─── TECH-V2: HUB (Phase M1 — job hub) ───────────────────────────────────── */
 
+/* Section block — a padded, top-bordered group (job details, tasks, moisture…). */
+.tv2-hub-section {
+  padding: var(--space-4);
+  border-top: 1px solid var(--border-light);
+}
+
+/* Work-authorization warning strip (danger tokens, dark-mode aware). */
+.tv2-hub-wa-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px var(--space-4);
+  background: var(--status-paused-bg);
+  border-top: 1px solid var(--status-paused-border);
+  border-bottom: 1px solid var(--status-paused-border);
+  border-left: none;
+  border-right: none;
+  color: var(--status-paused-color);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-wa-banner__body { flex: 1; min-width: 0; }
+.tv2-hub-wa-banner__title { display: block; font-size: 13px; font-weight: 700; color: var(--status-paused-color); }
+.tv2-hub-wa-banner__sub { display: block; font-size: 12px; margin-top: 1px; color: var(--status-paused-color); opacity: 0.85; }
+
+/* Scope-sheet / tool row. */
+.tv2-hub-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tech-min-tap, 48px);
+  padding: 12px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-tool-row__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* Visit picker. */
+.tv2-hub-visit-sublabel {
+  padding: 12px 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.tv2-hub-visit {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 40px 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  min-height: 72px;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-visit.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  background: var(--accent-light);
+}
+.tv2-hub-visit__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.tv2-hub-visit__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+}
+.tv2-hub-visit__status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.tv2-hub-visit__meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tv2-hub-visit__badge {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tv2-hub-visit-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  min-height: var(--tech-min-tap, 48px);
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ═══════════════════════════════════════════════════
    Doc Checklist — Job Page Tab
    ═══════════════════════════════════════════════════ */
