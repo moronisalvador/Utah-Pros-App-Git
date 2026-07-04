@@ -231,9 +231,11 @@ function TechRoutes() {
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
-      {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub, owner-only
-          during M1); nav still points at the legacy pages until M2 flips
-          HUB_ENABLED. When the flag is off, FeatureRoute redirects to /. */}
+      {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
+          (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is
+          on for (AuthContext → setHubNav); everyone else keeps legacy links, so
+          they never reach here. This FeatureRoute still guards direct-URL access
+          (a flag-off visitor is bounced to /). M2 opens the flag to all techs. */}
       <Route path="tech/job/:jobId" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechJobHub"><TechJobHub /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />

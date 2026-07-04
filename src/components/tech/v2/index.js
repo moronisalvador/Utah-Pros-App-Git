@@ -17,4 +17,4 @@ export { default as ApptListRow } from './ApptListRow.jsx';
 export { default as TechV2Page } from './TechV2Page.jsx';
 export { default as TechPane } from './TechPane.jsx';
 export { SkeletonBlock, SkeletonRow, SkeletonList } from './skeletons.jsx';
-export { apptHref, jobHref, HUB_ENABLED } from './nav.js';
+export { apptHref, jobHref, setHubNav, isHubNav } from './nav.js';
