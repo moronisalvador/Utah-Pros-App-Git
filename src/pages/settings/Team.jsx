@@ -6,7 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   The "Team" settings screen — the staff directory. Add a new employee, edit
  *   someone's details/role/pay, send them a welcome (login) email, deactivate or
- *   reactivate them, and permanently delete inactive accounts. Loads everyone and
+ *   reactivate them, and permanently delete inactive accounts. It also shows an
+ *   auth-link audit (who can actually log in) at the top. Loads everyone and
  *   saves changes through the admin-users worker.
  *
  * WHERE IT LIVES:
@@ -16,7 +17,8 @@
  * DEPENDS ON:
  *   Packages:  react, (implicit) crypto.randomUUID
  *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (realtimeClient,
- *              getAuthHeader), @/components/PullToRefresh, @/lib/navKeys (ROLES,
+ *              getAuthHeader), @/components/PullToRefresh,
+ *              @/components/settings/SettingsPageHeader, @/lib/navKeys (ROLES,
  *              roleLabel)
  *   Data:      reads  → get_all_employees (RPC; falls back to select employees)
  *              writes → employees + Supabase Auth accounts (via /api/admin-users:
@@ -24,33 +26,69 @@
  *              welcome email via supabase auth resetPasswordForEmail)
  *
  * NOTES / GOTCHAS:
- *   - Behavior-identical extraction of the old Admin.jsx "Employees" tab (Settings
- *     Overhaul Phase F). The route is AdminRoute-gated, so the old in-component
- *     admin guard was dropped. EmployeeModal travels with this page.
- *   - Hard-delete still uses a confirmation modal here (Rule-2 two-click inline
- *     conversion is P3's job — flagged, not done in Foundation).
+ *   - P3 polish (Settings Overhaul): hard-delete uses the inline two-click
+ *     confirm (Rule 2 — the old modal is gone); the editor guards against
+ *     silently discarding unsaved edits on overlay-click/✕; and the auth-link
+ *     audit (formerly DevTools › Employees) is absorbed here as a summary strip.
+ *   - `nextDeleteConfirm` / `employeeFormDirty` are pure and exported so the
+ *     armed/disarm + dirty logic is unit-tested (test-first, Rule 2).
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient, getAuthHeader } from '@/lib/realtime';
 import PullToRefresh from '@/components/PullToRefresh';
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
 import { ROLES, roleLabel } from '@/lib/navKeys';
+
+// ─── SECTION: Helpers ───
+const toast = (message, type = 'success') =>
+  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+
+// Two-click delete arm/execute. First click on an unarmed row arms it; a second
+// click on the SAME row executes (and disarms); a click on a different row
+// re-arms there. Pure so the armed/disarm behavior is unit-tested (Rule 2).
+// eslint-disable-next-line react-refresh/only-export-components
+export function nextDeleteConfirm(current, id) {
+  if (current !== id) return { armed: id, execute: false };
+  return { armed: null, execute: true };
+}
+
+// Has the employee editor been touched? Compares the form against the original
+// row (or the blank defaults for a brand-new employee). Numbers/strings compare
+// loosely so a numeric rate re-typed as its own string isn't a false-dirty.
+// eslint-disable-next-line react-refresh/only-export-components
+export function employeeFormDirty(form, employee) {
+  const orig = {
+    full_name: employee?.full_name || '',
+    display_name: employee?.display_name || '',
+    email: employee?.email || '',
+    phone: employee?.phone || '',
+    role: employee?.role || 'field_tech',
+    hourly_rate: employee?.hourly_rate ?? '',
+    overtime_rate: employee?.overtime_rate ?? '',
+    is_external: employee?.is_external ?? false,
+  };
+  const keys = ['full_name', 'display_name', 'email', 'phone', 'role', 'hourly_rate', 'overtime_rate', 'is_external'];
+  for (const k of keys) {
+    if (String(form[k] ?? '') !== String(orig[k] ?? '')) return true;
+  }
+  return !!form.password;
+}
 
 export default function Team() {
   const { db } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [showInactive, setShowInactive] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // armed employee id
   const [actionLoading, setActionLoading] = useState(null);
 
+  // ─── SECTION: Data fetching ───
   const loadEmployees = useCallback(async () => {
     try {
-      setError(null);
       const data = await db.rpc('get_all_employees');
       setEmployees(data || []);
     } catch (err) {
@@ -60,7 +98,7 @@ export default function Team() {
         const data = await db.select('employees', 'order=full_name.asc');
         setEmployees(data || []);
       } catch {
-        setError('Failed to load employees');
+        toast('Failed to load employees', 'error');
       }
     } finally {
       setLoading(false);
@@ -69,6 +107,7 @@ export default function Team() {
 
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
+  // ─── SECTION: Event handlers ───
   const handleToggleActive = async (emp) => {
     setActionLoading(emp.id);
     try {
@@ -81,13 +120,18 @@ export default function Team() {
       if (!res.ok) throw new Error(data.error || 'Failed to update');
       await loadEmployees();
     } catch (err) {
-      setError(err.message);
+      toast(err.message, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
+  // Inline two-click hard delete (Rule 2). First click arms the row; second
+  // click on the armed row runs the delete.
   const handleHardDelete = async (emp) => {
+    const { armed, execute } = nextDeleteConfirm(confirmDelete, emp.id);
+    setConfirmDelete(armed);
+    if (!execute) return;
     setActionLoading(emp.id);
     try {
       const res = await fetch('/api/admin-users', {
@@ -97,20 +141,17 @@ export default function Team() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete');
-      setConfirmDelete(null);
       await loadEmployees();
+      toast(`${emp.full_name} deleted`);
     } catch (err) {
-      setError(err.message);
+      toast(err.message, 'error');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const [inviteMsg, setInviteMsg] = useState(null); // { type: 'success'|'error', text }
-
   const handleSendInvite = async (emp) => {
     setActionLoading(`invite-${emp.id}`);
-    setInviteMsg(null);
     try {
       // If no auth account, create one first with a random temp password
       if (!emp.auth_user_id) {
@@ -130,10 +171,10 @@ export default function Team() {
       });
       if (resetErr) throw resetErr;
 
-      setInviteMsg({ type: 'success', text: `Welcome email sent to ${emp.email}` });
+      toast(`Welcome email sent to ${emp.email}`);
       await loadEmployees(); // Refresh to show updated auth_user_id
     } catch (err) {
-      setInviteMsg({ type: 'error', text: err.message });
+      toast(err.message, 'error');
     } finally {
       setActionLoading(null);
     }
@@ -142,41 +183,43 @@ export default function Team() {
   const filtered = showInactive ? employees : employees.filter(e => e.is_active !== false);
   const activeCount = employees.filter(e => e.is_active !== false).length;
   const inactiveCount = employees.filter(e => e.is_active === false).length;
+  const linkedCount = employees.filter(e => e.auth_user_id).length;
+  const unlinkedCount = employees.filter(e => !e.auth_user_id).length;
 
+  // ─── SECTION: Render ───
   return (
     <PullToRefresh onRefresh={loadEmployees}>
       <div className="admin-section">
-        {/* Header bar */}
-        <div className="admin-section-header">
-          <div className="admin-section-header-left">
-            <span className="admin-count">{activeCount} active</span>
-            {inactiveCount > 0 && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowInactive(!showInactive)}
-                style={{ marginLeft: 8 }}
-              >
-                {showInactive ? 'Hide' : 'Show'} {inactiveCount} inactive
-              </button>
-            )}
-          </div>
-          <button className="btn btn-primary" onClick={() => { setEditingEmployee(null); setShowModal(true); }}>
-            + Add Employee
-          </button>
-        </div>
+        <SettingsPageHeader
+          title="Team"
+          subtitle={loading ? undefined : `${activeCount} active${inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}`}
+          actions={
+            <button className="btn btn-primary" onClick={() => { setEditingEmployee(null); setShowModal(true); }}>
+              + Add Employee
+            </button>
+          }
+        />
 
-        {error && (
-          <div className="admin-error">
-            {error}
-            <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>✕</button>
-          </div>
-        )}
-
-        {inviteMsg && (
-          <div className={`admin-${inviteMsg.type === 'success' ? 'success' : 'error'}-banner`}>
-            {inviteMsg.text}
-            <button className="btn btn-ghost btn-sm" onClick={() => setInviteMsg(null)}>✕</button>
-          </div>
+        {!loading && (
+          <>
+            {/* Auth-link audit (absorbed from DevTools › Employees) */}
+            <div className="team-audit">
+              <span className="team-audit-pill">
+                <span className="team-audit-num">{employees.length}</span> total
+              </span>
+              <span className="team-audit-pill team-audit-pill--ok">
+                <span className="team-audit-num">{linkedCount}</span> can log in
+              </span>
+              <span className={`team-audit-pill${unlinkedCount > 0 ? ' team-audit-pill--warn' : ''}`}>
+                <span className="team-audit-num">{unlinkedCount}</span> no login
+              </span>
+              {inactiveCount > 0 && (
+                <button className="team-audit-toggle" onClick={() => setShowInactive(!showInactive)}>
+                  {showInactive ? 'Hide' : 'Show'} {inactiveCount} inactive
+                </button>
+              )}
+            </div>
+          </>
         )}
 
         {loading ? (
@@ -194,6 +237,7 @@ export default function Team() {
                     <th>Phone</th>
                     <th className="admin-th-num">Hourly</th>
                     <th className="admin-th-num">OT Rate</th>
+                    <th>Login</th>
                     <th>Status</th>
                     <th className="admin-th-actions">Actions</th>
                   </tr>
@@ -220,6 +264,11 @@ export default function Team() {
                       <td className="admin-td-num">{emp.hourly_rate ? `$${Number(emp.hourly_rate).toFixed(2)}` : '—'}</td>
                       <td className="admin-td-num">{emp.overtime_rate ? `$${Number(emp.overtime_rate).toFixed(2)}` : '—'}</td>
                       <td>
+                        <span className={`team-auth-badge ${emp.auth_user_id ? 'linked' : 'none'}`}>
+                          {emp.auth_user_id ? 'Linked' : 'None'}
+                        </span>
+                      </td>
+                      <td>
                         <span className={`admin-status-pill ${emp.is_active === false ? 'inactive' : 'active'}`}>
                           {emp.is_active === false ? 'Inactive' : 'Active'}
                         </span>
@@ -238,10 +287,10 @@ export default function Team() {
                             className="admin-action-btn"
                             onClick={() => handleSendInvite(emp)}
                             disabled={actionLoading === `invite-${emp.id}`}
-                            title="Send welcome / password reset email"
+                            title={emp.auth_user_id ? 'Resend welcome / password reset email' : 'Create login + send welcome email'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                            {actionLoading === `invite-${emp.id}` ? 'Sending…' : 'Invite'}
+                            {actionLoading === `invite-${emp.id}` ? 'Sending…' : emp.auth_user_id ? 'Invite' : 'Set up login'}
                           </button>
                         )}
                         <button
@@ -258,19 +307,21 @@ export default function Team() {
                         </button>
                         {emp.is_active === false && (
                           <button
-                            className="admin-action-btn admin-action-btn-danger"
-                            onClick={() => setConfirmDelete(emp)}
+                            className={`admin-action-btn admin-action-btn-danger${confirmDelete === emp.id ? ' armed' : ''}`}
+                            onClick={() => handleHardDelete(emp)}
+                            onBlur={() => setConfirmDelete(prev => (prev === emp.id ? null : prev))}
+                            disabled={actionLoading === emp.id}
                             title="Permanently delete"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            Delete
+                            {actionLoading === emp.id ? 'Deleting…' : confirmDelete === emp.id ? 'Confirm delete' : 'Delete'}
                           </button>
                         )}
                       </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: 'var(--space-6)' }}>No employees found</td></tr>
+                    <tr><td colSpan={9} className="team-empty-cell">No employees found</td></tr>
                   )}
                 </tbody>
               </table>
@@ -293,6 +344,9 @@ export default function Team() {
                   <div className="admin-emp-card-details">
                     {emp.phone && <span>📞 {emp.phone}</span>}
                     {emp.hourly_rate && <span>💰 ${Number(emp.hourly_rate).toFixed(2)}/hr</span>}
+                    <span className={`team-auth-badge ${emp.auth_user_id ? 'linked' : 'none'}`}>
+                      {emp.auth_user_id ? 'Login linked' : 'No login'}
+                    </span>
                     <span className={`admin-status-pill ${emp.is_active === false ? 'inactive' : 'active'}`}>
                       {emp.is_active === false ? 'Inactive' : 'Active'}
                     </span>
@@ -307,7 +361,7 @@ export default function Team() {
                         onClick={() => handleSendInvite(emp)}
                         disabled={actionLoading === `invite-${emp.id}`}
                       >
-                        {actionLoading === `invite-${emp.id}` ? 'Sending…' : 'Send Invite'}
+                        {actionLoading === `invite-${emp.id}` ? 'Sending…' : emp.auth_user_id ? 'Send Invite' : 'Set up login'}
                       </button>
                     )}
                     <button
@@ -318,22 +372,29 @@ export default function Team() {
                       {emp.is_active === false ? 'Reactivate' : 'Deactivate'}
                     </button>
                     {emp.is_active === false && (
-                      <button className="btn btn-ghost btn-sm admin-btn-danger" onClick={() => setConfirmDelete(emp)}>
-                        Delete
+                      <button
+                        className={`btn btn-ghost btn-sm admin-btn-danger${confirmDelete === emp.id ? ' armed' : ''}`}
+                        onClick={() => handleHardDelete(emp)}
+                        onBlur={() => setConfirmDelete(prev => (prev === emp.id ? null : prev))}
+                        disabled={actionLoading === emp.id}
+                      >
+                        {actionLoading === emp.id ? 'Deleting…' : confirmDelete === emp.id ? 'Confirm delete' : 'Delete'}
                       </button>
                     )}
                   </div>
                 </div>
               ))}
+              {filtered.length === 0 && (
+                <div className="pa-empty">No employees found</div>
+              )}
             </div>
           </>
         )}
 
         {/* Auth status note */}
-        {employees.some(e => !e.auth_user_id) && (
+        {!loading && unlinkedCount > 0 && (
           <div className="admin-info-banner">
-            ⚠️ {employees.filter(e => !e.auth_user_id).length} employee(s) have no linked auth account.
-            Edit them to set a password and create their login.
+            ⚠️ {unlinkedCount} employee(s) have no linked login account. Use “Set up login” to create one and email them a welcome link.
           </div>
         )}
       </div>
@@ -345,36 +406,6 @@ export default function Team() {
           onClose={() => { setShowModal(false); setEditingEmployee(null); }}
           onSaved={() => { setShowModal(false); setEditingEmployee(null); loadEmployees(); }}
         />
-      )}
-
-      {/* Delete Confirmation */}
-      {confirmDelete && (
-        <div className="admin-modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="admin-modal admin-modal-sm" onClick={e => e.stopPropagation()}>
-            <div className="admin-modal-header">
-              <h3>Permanently Delete Employee</h3>
-            </div>
-            <div className="admin-modal-body">
-              <p style={{ marginBottom: 'var(--space-3)' }}>
-                This will <strong>permanently delete</strong> <strong>{confirmDelete.full_name}</strong> and their
-                Supabase Auth account. This cannot be undone.
-              </p>
-              <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
-                Any jobs, time entries, or messages linked to this employee will lose their association.
-              </p>
-            </div>
-            <div className="admin-modal-footer">
-              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button
-                className="btn admin-btn-danger-fill"
-                onClick={() => handleHardDelete(confirmDelete)}
-                disabled={actionLoading === confirmDelete.id}
-              >
-                {actionLoading === confirmDelete.id ? 'Deleting…' : 'Delete Permanently'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </PullToRefresh>
   );
@@ -389,6 +420,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
   const [error, setError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [sendInvite, setSendInvite] = useState(!isEdit); // Default: invite for new
+  const [confirmDiscard, setConfirmDiscard] = useState(false); // unsaved-changes guard
 
   const [form, setForm] = useState({
     full_name: employee?.full_name || '',
@@ -402,7 +434,15 @@ function EmployeeModal({ employee, onClose, onSaved }) {
     password: '',
   });
 
-  const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const set = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); setConfirmDiscard(false); };
+  const dirty = employeeFormDirty(form, employee);
+
+  // Guarded close: if there are unsaved edits, arm a two-click discard confirm
+  // instead of silently throwing the edits away (Rule 2 — no modal/confirm()).
+  const requestClose = () => {
+    if (dirty && !confirmDiscard) { setConfirmDiscard(true); return; }
+    onClose();
+  };
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -463,6 +503,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         }
       }
 
+      toast(isEdit ? 'Employee updated' : 'Employee created');
       onSaved();
     } catch (err) {
       setError(err.message);
@@ -472,11 +513,11 @@ function EmployeeModal({ employee, onClose, onSaved }) {
   };
 
   return (
-    <div className="admin-modal-overlay" onClick={onClose}>
+    <div className="admin-modal-overlay" onClick={requestClose}>
       <div className="admin-modal" onClick={e => e.stopPropagation()}>
         <div className="admin-modal-header">
           <h3>{isEdit ? 'Edit Employee' : 'Add Employee'}</h3>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <button className="btn btn-ghost btn-sm" onClick={requestClose} aria-label="Close">✕</button>
         </div>
 
         <div className="admin-modal-body">
@@ -484,7 +525,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
 
           {isEdit && !employee.auth_user_id && (
             <div className="admin-info-banner" style={{ marginBottom: 'var(--space-4)' }}>
-              ⚠️ No auth account linked. Set a password below to create login access.
+              ⚠️ No login account linked. Set a password below to create login access.
             </div>
           )}
 
@@ -596,7 +637,7 @@ function EmployeeModal({ employee, onClose, onSaved }) {
                       <input
                         type="checkbox"
                         checked={sendInvite}
-                        onChange={e => setSendInvite(e.target.checked)}
+                        onChange={e => { setSendInvite(e.target.checked); setConfirmDiscard(false); }}
                       />
                       <span>Send welcome email</span>
                     </label>
@@ -668,14 +709,24 @@ function EmployeeModal({ employee, onClose, onSaved }) {
         </div>
 
         <div className="admin-modal-footer">
-          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSubmit}
-            disabled={saving || !form.full_name.trim() || !form.email.trim() || !form.role.trim() || (!isEdit && !sendInvite && !form.password)}
-          >
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : sendInvite ? 'Create & Send Invite' : 'Create Employee'}
-          </button>
+          {confirmDiscard ? (
+            <div className="team-discard-bar">
+              <span className="team-discard-msg">Discard unsaved changes?</span>
+              <button className="btn btn-secondary" onClick={() => setConfirmDiscard(false)}>Keep editing</button>
+              <button className="btn admin-btn-danger-fill" onClick={onClose}>Discard</button>
+            </div>
+          ) : (
+            <>
+              <button className="btn btn-secondary" onClick={requestClose} disabled={saving}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={saving || !form.full_name.trim() || !form.email.trim() || !form.role.trim() || (!isEdit && !sendInvite && !form.password)}
+              >
+                {saving ? 'Saving…' : isEdit ? 'Save Changes' : sendInvite ? 'Create & Send Invite' : 'Create Employee'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

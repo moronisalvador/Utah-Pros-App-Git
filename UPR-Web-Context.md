@@ -2156,8 +2156,13 @@ merge).
 _(Session A: describe useBillingSettings hook, two-click payout, token/mobile pass here.)_
 #### P2 — Integrations (Session B)
 _(Session B: describe the QBO card rebuild + worker `?qbo=` retarget here.)_
-#### P3 — Team & Access (Session C)
-_(Session C: describe two-click delete, EmployeeModal guard, PageAccess mobile, invite absorption.)_
+#### P3 — Team & Access (Session C) — shipped
+Polish-only, zero migrations, all four routes stay `AdminRoute`. Files: `src/pages/settings/{Team,Roles,PageAccess,NotificationDefaults}.jsx` + `index.css` §P3 marker + `src/pages/settings/p3TeamAccess.test.jsx` (new).
+- **Team.jsx** — employee hard-delete converted from the confirmation modal to the inline two-click confirm (Rule 2): the Delete button arms → "Confirm delete" → executes, disarms on `onBlur`/row-switch. The **EmployeeModal unsaved-changes guard**: overlay-click / ✕ / Cancel now arm a two-click "Discard unsaved changes?" bar in the footer when the form is dirty (was silently discarding). The **DevTools › Employees auth-link audit + invite** is absorbed as a top-of-page summary strip (total / can-log-in / no-login) + a per-row Login badge + a "Set up login"/"Invite" action — behaviour-identical against `get_all_employees` + `/api/admin-users` (Team's existing working PATCH-then-`resetPasswordForEmail` invite is kept; the broken DevTools `action:'invite'` POST is not carried over). Page feedback moved to `upr:toast`. **Session H may now delete the DevTools Employees tab.**
+- **PageAccess.jsx** — the crushed inline fixed grid (`1fr 80px 120px 100px 40px`) replaced with `.pa-*` grid classes + a <768px stacked-card pass (labelled rows via `data-label` `::before`); the override control is now a tri-state switch (dashed = follows role default, green = override ON, red = override OFF) with ≥44px tap targets on the toggle and the clear (×) button. `computeAccess()` pure resolver extracted + unit-tested; data behaviour unchanged.
+- **Roles.jsx** — design-system pass: shared `SettingsPageHeader`; matrix/toggle logic unchanged.
+- **NotificationDefaults.jsx** — untouched (thin wrapper around the F-owned, self-titled `NotificationDefaultsTab`; a design pass there would require editing a non-owned component).
+- **Tests** — `p3TeamAccess.test.jsx`: 12 cases over `nextDeleteConfirm` (arm/execute/re-arm), `employeeFormDirty` (clean/dirty/password/new-form/numeric-string), and `computeAccess` (role default / ON / OFF / missing).
 #### P4 — Workspace + Personal polish (Session D)
 _(Session D: describe templates dirty-guard verify, hex→token sweep, gdrive-callback retarget.)_
 #### P5 — Feedback Inbox (Session E) — shipped 2026-07-04

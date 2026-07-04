@@ -27,6 +27,7 @@
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
 import { NAV_KEYS, ROLES, roleLabel } from '@/lib/navKeys';
 
 export default function Roles() {
@@ -132,11 +133,10 @@ export default function Roles() {
 
   return (
     <div className="admin-section">
-      <div className="admin-section-header">
-        <div className="admin-section-header-left">
-          <span className="admin-count">{roles.length} roles × {NAV_KEYS.length} pages</span>
-        </div>
-      </div>
+      <SettingsPageHeader
+        title="Roles & Permissions"
+        subtitle={`${roles.length} roles × ${NAV_KEYS.length} pages · toggles save instantly`}
+      />
 
       {error && (
         <div className="admin-error">
