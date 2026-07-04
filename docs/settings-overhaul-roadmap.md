@@ -215,13 +215,13 @@ monoliths with physical splits transferring to P3/P4.
       page land in the SAME PR** (atomic round-trip)
 - [ ] de-CRM the classes (or bless them — one decision, applied consistently); "API Keys" label retired
 
-**P3 — Team & Access** (Opus · medium)
+**P3 — Team & Access** (Opus · medium) — **shipped**
 > Owns `src/pages/settings/{Team,Roles,PageAccess,NotificationDefaults}.jsx`, css §P3.
 > Consumes `src/lib/navKeys.js` (its pages ONLY — rewiring other consumers is an F-owner follow-up).
-- [ ] employee hard-delete modal → inline two-click (Rule 2)
-- [ ] EmployeeModal unsaved-changes guard (overlay-click silently discards today)
-- [ ] PageAccess inline-grid soup → classes + mobile (fixed 340px grid crushes phones)
-- [ ] absorb the DevTools employee auth-link/invite capability into Team
+- [x] employee hard-delete modal → inline two-click (Rule 2)
+- [x] EmployeeModal unsaved-changes guard (overlay-click silently discards today)
+- [x] PageAccess inline-grid soup → classes + mobile (fixed 340px grid crushes phones)
+- [x] absorb the DevTools employee auth-link/invite capability into Team
 
 **P4 — Workspace + Personal polish** (Sonnet · medium)
 > Owns `src/pages/settings/{Carriers,Referrals,Templates,Commissions,MyAccount}.jsx` (+
@@ -381,11 +381,11 @@ before opening its PR. Do not edit another session's block.
 - [ ] worker 302 retargeted `/dev-tools?qbo=` → `/settings/integrations?qbo=` (atomic round-trip)
 - [ ] de-CRM the classes (or bless them — one decision); "API Keys" label retired
 
-### P3 — Team & Access (Session C)
-- [ ] employee hard-delete modal → inline two-click (Rule 2)
-- [ ] EmployeeModal unsaved-changes guard
-- [ ] PageAccess inline-grid soup → classes + mobile
-- [ ] absorb the DevTools employee auth-link/invite capability into Team
+### P3 — Team & Access (Session C) — shipped
+- [x] employee hard-delete modal → inline two-click (Rule 2)
+- [x] EmployeeModal unsaved-changes guard
+- [x] PageAccess inline-grid soup → classes + mobile
+- [x] absorb the DevTools employee auth-link/invite capability into Team
 
 ### P4 — Workspace + Personal polish (Session D)
 - [ ] templates editor route: own fetch + router-level dirty guard verified; Reset gets a confirm
