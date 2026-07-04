@@ -1,0 +1,21 @@
+{
+  "title": "Novo evento",
+  "labelTitle": "Título",
+  "titlePlaceholder": "Reunião BNI, folga, treinamento...",
+  "labelDate": "Data",
+  "labelTime": "Horário",
+  "timeError": "O horário de término deve ser após o início",
+  "labelNotes": "Notas",
+  "optional": "(opcional)",
+  "notesPlaceholder": "Detalhes adicionais...",
+  "labelPrivate": "Privado",
+  "privateHint": "Apenas administradores, gerentes de projeto e a equipe atribuída verão este evento.",
+  "labelAssignedTo": "Atribuído a",
+  "companyWideHint": "deixe vazio para toda a empresa",
+  "searchEmployeesPlaceholder": "Buscar funcionários...",
+  "leadBadge": "LÍDER",
+  "btnCreate": "Criar evento",
+  "btnCreating": "Criando...",
+  "toastCreated": "Evento criado",
+  "toastCreateFailed": "Falha ao criar o evento: {{message}}"
+}

@@ -1,0 +1,33 @@
+{
+  "title": "Novo cliente",
+  "labelContactType": "Tipo de contato",
+  "role": {
+    "homeowner": "Proprietário",
+    "tenant": "Inquilino",
+    "adjuster": "Regulador",
+    "other": "Outro"
+  },
+  "labelFullName": "Nome completo",
+  "namePlaceholder": "João Silva",
+  "labelPhone": "Telefone",
+  "phonePlaceholder": "(801) 555-1234",
+  "labelEmail": "E-mail",
+  "emailPlaceholder": "joao@email.com",
+  "labelCarrier": "Seguradora / Empresa",
+  "carrierPlaceholder": "State Farm, Allstate, etc.",
+  "labelBillingAddress": "Endereço de cobrança",
+  "streetPlaceholder": "Endereço",
+  "cityPlaceholder": "Cidade",
+  "statePlaceholder": "ST",
+  "zipPlaceholder": "ZIP",
+  "labelNotes": "Notas",
+  "notesPlaceholder": "Notas opcionais...",
+  "btnSave": "Salvar cliente",
+  "btnSaving": "Salvando...",
+  "toastInvalidPhone": "Digite um telefone válido de 10 dígitos",
+  "toastCreated": "Cliente criado",
+  "toastCreateFailed": "Falha ao criar o cliente",
+  "toastAlreadyExists": "Cliente já existe: {{name}}",
+  "toastDuplicatePhone": "Já existe um cliente com este telefone",
+  "toastSaveFailed": "Falha ao salvar o cliente. Tente novamente."
+}
