@@ -18,8 +18,9 @@
  *                  TechLayout shell)
  *
  * DEPENDS ON:
- *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
+ *   Packages:  react, react-router-dom, react-i18next
+ *   Internal:  @/contexts/AuthContext, @/lib/techDateUtils (relativeTime,
+ *              currentLocaleTag), @/components/PullToRefresh,
  *              @/components/tech/TimeTracker, @/components/tech/PhotoNoteSheet,
  *              @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet,
@@ -67,9 +68,11 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
 import PullToRefresh from '@/components/PullToRefresh';
-import TimeTracker, { formatTimeStr } from '@/components/tech/TimeTracker';
+import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import TechHelpButton from '@/components/tech/TechHelpButton';
 import ReadingEntrySheet from '@/components/tech/ReadingEntrySheet';
@@ -77,7 +80,7 @@ import EquipmentPlacementSheet from '@/components/tech/EquipmentPlacementSheet';
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { EQUIPMENT_LABELS } from '@/components/tech/EquipmentPlacementSheet';
 import GenerateReportButton from '@/components/tech/GenerateReportButton';
-import { APPT_STATUS_COLORS as STATUS_COLORS, DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
+import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
@@ -86,22 +89,9 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
-// ─── SECTION: Helpers ──────────────
-function relativeTime(isoStr) {
-  if (!isoStr) return '';
-  const diff = Date.now() - new Date(isoStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
-}
-
 export default function TechAppointment() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['appointment', 'tech']);
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
@@ -163,11 +153,11 @@ export default function TechAppointment() {
       } else {
         setWorkAuthSigned(true); // no parent job (e.g. private appt) → no alert
       }
-    } catch (e) {
-      toast('Failed to load appointment', 'error');
+    } catch {
+      toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
-  }, [db, id]);
+  }, [db, id, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -178,8 +168,8 @@ export default function TechAppointment() {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.id, p_employee_id: employee.id });
-    } catch (e) {
-      toast('Failed to toggle task', 'error');
+    } catch {
+      toast(t('toastToggleFailed'), 'error');
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !t.is_completed } : t));
     } finally {
       togglingRef.current.delete(task.id);
@@ -193,8 +183,8 @@ export default function TechAppointment() {
 
   const uploadPhotoFile = async (file) => {
     if (!file || !appt?.jobs) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
     const job = appt.jobs;
 
     // ── Offline-queue path (gated by offline:queue flag) ─────────────────
@@ -228,10 +218,10 @@ export default function TechAppointment() {
         });
         impact('light');
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast('Photo queued — will upload when online', 'success');
+          toast(t('tech:toast.photoQueued'), 'success');
         }
       } catch (err) {
-        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
+        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
       }
       return;
     }
@@ -263,7 +253,7 @@ export default function TechAppointment() {
       if (photoToastTimer.current) clearTimeout(photoToastTimer.current);
       photoToastTimer.current = setTimeout(() => setPhotoToast(null), 4000);
     } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
       setUploading(false);
     }
@@ -297,7 +287,7 @@ export default function TechAppointment() {
         const file = await takeNativePhoto();
         if (file) await uploadPhotoFile(file);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       fileRef.current?.click();
@@ -418,9 +408,9 @@ export default function TechAppointment() {
     if (offlineQueueEnabled) {
       await enqueue({ type: 'reading.insert', clientId, payload: queuePayload });
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        toast('Reading queued — will upload when online', 'success');
+        toast(t('toastReadingQueued'), 'success');
       } else {
-        toast('Reading saved');
+        toast(t('toastReadingSaved'));
       }
     } else {
       await db.rpc('insert_reading', {
@@ -439,7 +429,7 @@ export default function TechAppointment() {
         p_notes:        queuePayload.notes,
         p_client_id:    clientId,
       });
-      toast('Reading saved');
+      toast(t('toastReadingSaved'));
       loadHydro();
     }
   };
@@ -459,9 +449,9 @@ export default function TechAppointment() {
     if (offlineQueueEnabled) {
       await enqueue({ type: 'equipment.place', clientId, payload: queuePayload });
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        toast('Placement queued — will upload when online', 'success');
+        toast(t('toastPlacementQueued'), 'success');
       } else {
-        toast('Equipment placed');
+        toast(t('toastEquipmentPlaced'));
       }
     } else {
       await db.rpc('place_equipment', {
@@ -474,7 +464,7 @@ export default function TechAppointment() {
         p_client_id:      clientId,
         p_notes:          null,
       });
-      toast('Equipment placed');
+      toast(t('toastEquipmentPlaced'));
       loadHydro();
     }
   };
@@ -493,14 +483,14 @@ export default function TechAppointment() {
           clientId: (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`,
           payload: { equipmentId, removedBy: employee?.id || null, jobId: jobIdForRooms },
         });
-        toast('Equipment marked for removal');
+        toast(t('toastEquipmentMarkedRemoval'));
       } else {
         await db.rpc('remove_equipment', { p_equipment_id: equipmentId, p_removed_by: employee?.id || null });
-        toast('Equipment removed');
+        toast(t('toastEquipmentRemoved'));
         loadHydro();
       }
     } catch (err) {
-      toast('Remove failed: ' + (err?.message || 'unknown'), 'error');
+      toast(t('toastRemoveFailed', { message: err?.message || 'unknown' }), 'error');
     }
   };
 
@@ -532,12 +522,12 @@ export default function TechAppointment() {
         p_description: noteText.trim(),
         p_appointment_id: id,
       });
-      toast('Note saved');
+      toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteOpen(false);
       load();
     } catch (err) {
-      toast('Failed to save note: ' + err.message, 'error');
+      toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     }
     setSavingNote(false);
   };
@@ -559,7 +549,7 @@ export default function TechAppointment() {
     return (
       <div className="tech-page">
         <div className="empty-state" style={{ marginTop: 60 }}>
-          <div className="empty-state-text">Appointment not found</div>
+          <div className="empty-state-text">{t('notFound')}</div>
         </div>
       </div>
     );
@@ -568,7 +558,6 @@ export default function TechAppointment() {
   const job = appt.jobs;
   const crew = appt.appointment_crew || [];
   const address = job ? [job.address, job.city].filter(Boolean).join(', ') : '';
-  const sc = STATUS_COLORS[appt.status] || STATUS_COLORS.scheduled;
   const doneCount = tasks.filter(t => t.is_completed).length;
   const totalCount = tasks.length;
   const progressPct = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
@@ -612,7 +601,7 @@ export default function TechAppointment() {
                 background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)',
               }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                Private
+                {t('private')}
               </span>
             )}
             <span style={{
@@ -620,7 +609,7 @@ export default function TechAppointment() {
               borderRadius: 'var(--radius-full)',
               background: '#fff', color: divPillColor,
             }}>
-              {(appt.status || 'scheduled').replace(/_/g, ' ')}
+              {t(`tech:apptStatus.${appt.status || 'scheduled'}`, { defaultValue: (appt.status || 'scheduled').replace(/_/g, ' ') })}
             </span>
           </div>
         </div>
@@ -628,7 +617,7 @@ export default function TechAppointment() {
         {/* Hero content */}
         <div style={{ padding: '4px var(--space-5) 20px' }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4, lineHeight: 1.3 }}>
-            {appt.title || 'Appointment'}
+            {appt.title || t('tech:misc.appointment')}
           </div>
           {job && (
             <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>
@@ -653,7 +642,7 @@ export default function TechAppointment() {
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/></svg>
-                View job
+                {t('viewJob')}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
               {job.claim_id && (
@@ -668,7 +657,7 @@ export default function TechAppointment() {
                   }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
-                  View claim
+                  {t('viewClaim')}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
               )}
@@ -696,7 +685,7 @@ export default function TechAppointment() {
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>Navigate</span>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.navigate')}</span>
           </button>
         )}
 
@@ -713,7 +702,7 @@ export default function TechAppointment() {
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>Call</span>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.call')}</span>
           </a>
         )}
 
@@ -730,7 +719,7 @@ export default function TechAppointment() {
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.message')}</span>
           </a>
         ) : (
           <button
@@ -744,7 +733,7 @@ export default function TechAppointment() {
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>Message</span>
+            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.message')}</span>
           </button>
         )}
 
@@ -763,7 +752,7 @@ export default function TechAppointment() {
           }}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          <span style={{ fontSize: 10, fontWeight: 600 }}>{uploading ? 'Uploading...' : 'Photo'}</span>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>{uploading ? t('action.uploading') : t('action.photo')}</span>
         </button>
 
         {/* Edit */}
@@ -778,7 +767,7 @@ export default function TechAppointment() {
           }}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          <span style={{ fontSize: 10, fontWeight: 600 }}>Edit</span>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.edit')}</span>
         </button>
       </div>
 
@@ -802,8 +791,8 @@ export default function TechAppointment() {
             <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>No signed Work Authorization</div>
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>Tap to collect the customer&apos;s signature</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{t('compliance.title')}</div>
+            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>{t('compliance.sub')}</div>
           </div>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
@@ -822,7 +811,7 @@ export default function TechAppointment() {
         {/* Crew section */}
         {crew.length > 0 && (
           <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-            <div className="tech-section-header-sticky">Crew</div>
+            <div className="tech-section-header-sticky">{t('crew')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {crew.map(c => {
                 const emp = c.employees;
@@ -840,7 +829,7 @@ export default function TechAppointment() {
                       {initials}
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', flex: 1 }}>
-                      {emp?.display_name || emp?.full_name || 'Unknown'}
+                      {emp?.display_name || emp?.full_name || t('tech:misc.unknown')}
                     </span>
                     {isLead && (
                       <span style={{
@@ -848,7 +837,7 @@ export default function TechAppointment() {
                         borderRadius: 'var(--radius-full)',
                         background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a',
                       }}>
-                        Lead
+                        {t('lead')}
                       </span>
                     )}
                   </div>
@@ -860,7 +849,7 @@ export default function TechAppointment() {
 
         {/* ── Scope Sheet entry — opens the standalone scope-sheet tool ───── */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
-          <div className="tech-section-header-sticky" style={{ marginBottom: 8 }}>Tools</div>
+          <div className="tech-section-header-sticky" style={{ marginBottom: 8 }}>{t('tools')}</div>
           <button
             onClick={() => {
               const params = new URLSearchParams();
@@ -895,10 +884,10 @@ export default function TechAppointment() {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Scope Sheet
+                {t('scopeSheet')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                Capture scope of work room-by-room and email it
+                {t('scopeSheetSub')}
               </div>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -910,10 +899,10 @@ export default function TechAppointment() {
         {/* Tasks section */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Tasks {totalCount > 0 && <span style={{ fontSize: 12, fontWeight: 400, letterSpacing: 'normal', textTransform: 'none', color: 'var(--text-secondary)' }}>{doneCount}/{totalCount}</span>}</span>
+            <span>{t('tasks')} {totalCount > 0 && <span style={{ fontSize: 12, fontWeight: 400, letterSpacing: 'normal', textTransform: 'none', color: 'var(--text-secondary)' }}>{doneCount}/{totalCount}</span>}</span>
             <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/tech/appointment/${id}/edit?section=tasks`)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Tasks
+              {t('addTasks')}
             </button>
           </div>
 
@@ -925,7 +914,7 @@ export default function TechAppointment() {
           )}
 
           {totalCount === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No tasks assigned</div>
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>{t('noTasks')}</div>
           ) : (
             tasks.map(task => (
               <div key={task.id} className="tech-task-row" onClick={() => toggleTask(task)}
@@ -946,10 +935,10 @@ export default function TechAppointment() {
           <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
             <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                Moisture
+                {t('moisture')}
                 {readings.length > 0 && (
                   <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', letterSpacing: 'normal', textTransform: 'none' }}>
-                    {readings.length} reading{readings.length === 1 ? '' : 's'}
+                    {t('readingsCount', { count: readings.length })}
                   </span>
                 )}
                 {stalledCount > 0 && (
@@ -959,7 +948,7 @@ export default function TechAppointment() {
                     background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
                     letterSpacing: 'normal', textTransform: 'none',
                   }}>
-                    {stalledCount} stalled
+                    {t('stalledCount', { count: stalledCount })}
                   </span>
                 )}
               </span>
@@ -969,13 +958,13 @@ export default function TechAppointment() {
                 style={{ display: 'flex', alignItems: 'center', gap: 4 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Reading
+                {t('addReading')}
               </button>
             </div>
 
             {readings.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
-                No readings yet. Log MC, RH, and temp to start a drying log.
+                {t('noReadings')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1003,10 +992,10 @@ export default function TechAppointment() {
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
                           {MATERIAL_LABELS[r.material] || r.material}
-                          {!r.is_affected && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-tertiary)', marginLeft: 6 }}>(unaffected)</span>}
+                          {!r.is_affected && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-tertiary)', marginLeft: 6 }}>{t('unaffected')}</span>}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                          {r.room_name || 'Untagged'}
+                          {r.room_name || t('untagged')}
                           {r.location_description ? ` · ${r.location_description}` : ''}
                           {` · ${relativeTime(r.taken_at)}`}
                         </div>
@@ -1021,7 +1010,7 @@ export default function TechAppointment() {
                         )}
                         {goal != null && (
                           <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                            goal {goal}%
+                            {t('goal', { goal })}
                           </div>
                         )}
                       </div>
@@ -1031,7 +1020,7 @@ export default function TechAppointment() {
                           padding: '2px 6px', borderRadius: 'var(--radius-full)',
                           background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
                         }}>
-                          STALLED
+                          {t('stalled')}
                         </span>
                       )}
                     </div>
@@ -1039,7 +1028,7 @@ export default function TechAppointment() {
                 })}
                 {readings.length > 12 && (
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingTop: 4 }}>
-                    +{readings.length - 12} older reading{readings.length - 12 === 1 ? '' : 's'}
+                    {t('olderReadings', { count: readings.length - 12 })}
                   </div>
                 )}
               </div>
@@ -1052,10 +1041,10 @@ export default function TechAppointment() {
           <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
             <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>
-                Equipment
+                {t('equipment')}
                 {equipment.length > 0 && (
                   <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', letterSpacing: 'normal', textTransform: 'none', marginLeft: 6 }}>
-                    {equipment.length} on-site
+                    {t('onSite', { count: equipment.length })}
                   </span>
                 )}
               </span>
@@ -1065,13 +1054,13 @@ export default function TechAppointment() {
                 style={{ display: 'flex', alignItems: 'center', gap: 4 }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Place
+                {t('place')}
               </button>
             </div>
 
             {equipment.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>
-                No equipment on-site. Place dehus, air movers, or AFDs to start tracking days on-site.
+                {t('noEquipment')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1100,8 +1089,8 @@ export default function TechAppointment() {
                           {e.nickname || EQUIPMENT_LABELS[e.equipment_type] || e.equipment_type}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                          {e.room_name || 'Untagged'}
-                          {` · Day ${(e.days_onsite || 0) + 1}`}
+                          {e.room_name || t('untagged')}
+                          {` · ${t('day', { day: (e.days_onsite || 0) + 1 })}`}
                         </div>
                       </div>
                       <button
@@ -1119,7 +1108,7 @@ export default function TechAppointment() {
                           fontFamily: 'var(--font-sans)',
                         }}
                       >
-                        {isConfirming ? 'Confirm' : 'Remove'}
+                        {isConfirming ? t('confirm') : t('remove')}
                       </button>
                     </div>
                   );
@@ -1161,16 +1150,16 @@ export default function TechAppointment() {
         {/* Photo gallery — 2 columns */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Photos</span>
+            <span>{t('photos')}</span>
             <button className="btn btn-secondary btn-sm" onClick={openPhotoCapture} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              Add Photo
+              {t('addPhoto')}
             </button>
           </div>
           {photos.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No photos yet</div>
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>{t('noPhotos')}</div>
           ) : (
-            groupPhotosByDate(photos).map(group => (
+            groupPhotosByDate(photos, t).map(group => (
               <div key={group.label} style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 6 }}>
                   {group.label}
@@ -1257,11 +1246,11 @@ export default function TechAppointment() {
         {/* Notes section */}
         <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
           <div className="tech-section-header-sticky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Notes</span>
+            <span>{t('notes')}</span>
             {!noteOpen && (
               <button className="btn btn-secondary btn-sm" onClick={() => setNoteOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Note
+                {t('addNote')}
               </button>
             )}
           </div>
@@ -1272,23 +1261,23 @@ export default function TechAppointment() {
                 className="input textarea"
                 value={noteText}
                 onChange={e => setNoteText(e.target.value)}
-                placeholder="Type a note..."
+                placeholder={t('notePlaceholder')}
                 rows={3}
                 style={{ fontSize: 16, marginBottom: 8, width: '100%', minHeight: 100 }}
               />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary btn-sm" onClick={saveNote} disabled={savingNote || !noteText.trim()}>
-                  {savingNote ? 'Saving...' : 'Save'}
+                  {savingNote ? t('saving') : t('save')}
                 </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => { setNoteOpen(false); setNoteText(''); }}>
-                  Cancel
+                  {t('cancel')}
                 </button>
               </div>
             </div>
           )}
 
           {notes.length === 0 && !noteOpen && (
-            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>No notes yet</div>
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '8px 0' }}>{t('noNotes')}</div>
           )}
           {notes.map(n => (
             <div key={n.id} style={{
@@ -1308,7 +1297,7 @@ export default function TechAppointment() {
         {appt.notes && (
           <div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border-light)' }}>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 8 }}>
-              Appointment Notes
+              {t('apptNotes')}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{appt.notes}</div>
           </div>
@@ -1336,7 +1325,7 @@ export default function TechAppointment() {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           animation: 'tech-fade-in 0.15s ease-out',
         }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>Photo saved ✓</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>{t('tech:toast.photoSaved')}</span>
           <button
             onClick={openPhotoNoteSheet}
             style={{
@@ -1346,7 +1335,7 @@ export default function TechAppointment() {
               touchAction: 'manipulation',
             }}
           >
-            Add note
+            {t('addNoteLink')}
           </button>
         </div>
       )}
@@ -1357,11 +1346,12 @@ export default function TechAppointment() {
 /* ── Helpers ── */
 
 // ─── SECTION: Helpers ──────────────
-function groupPhotosByDate(photos) {
+function groupPhotosByDate(photos, t) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
+  const tag = currentLocaleTag();
 
   const groups = {};
   photos.forEach(p => {
@@ -1378,13 +1368,13 @@ function groupPhotosByDate(photos) {
       const d = g.date;
       let label;
       if (d.getTime() === today.getTime()) {
-        label = 'Today';
+        label = t('tech:date.today');
       } else if (d.getTime() === yesterday.getTime()) {
-        label = 'Yesterday';
+        label = t('tech:date.yesterday');
       } else if (today.getTime() - d.getTime() < 7 * 86400000) {
-        label = d.toLocaleDateString('en-US', { weekday: 'long' });
+        label = d.toLocaleDateString(tag, { weekday: 'long' });
       } else {
-        label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        label = d.toLocaleDateString(tag, { month: 'short', day: 'numeric', year: 'numeric' });
       }
       return { label, items: g.items };
     });

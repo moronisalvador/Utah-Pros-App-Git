@@ -35,12 +35,14 @@
  *     passing isSingleJob.
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { DIV_BORDER_COLORS } from '@/pages/tech/techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { fileUrl } from '@/lib/techDateUtils';
 
 // ─── SECTION: Render ──────────────
 export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
+  const { t } = useTranslation('tech');
   if (photos.length === 0 && notes.length === 0) return null;
   const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
   const maxPreview = 3;
@@ -60,11 +62,11 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
             {job.job_number}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>
-            · {job.division}
+            · {job.division ? t('division.' + job.division, { defaultValue: job.division }) : ''}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
-            {photos.length} photo{photos.length !== 1 ? 's' : ''}
-            {notes.length > 0 && ` · ${notes.length} note${notes.length !== 1 ? 's' : ''}`}
+            {t('photos.photoCount', { count: photos.length })}
+            {notes.length > 0 && ` · ${t('photos.noteCount', { count: notes.length })}`}
           </span>
           {photos.length > 0 && onSeeAllForJob && (
             <button
@@ -76,7 +78,7 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              See all →
+              {t('btn.seeAll')}
             </button>
           )}
         </div>
@@ -96,7 +98,7 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
             >
               <img
                 src={fileUrl(db, p.file_path)}
-                alt={p.name || 'Photo'}
+                alt={p.name || t('photos.photoAlt')}
                 loading="lazy"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 onError={e => { e.target.style.display = 'none'; }}
@@ -116,7 +118,7 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
               }}
             >
               <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>+{remaining}</span>
-              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>more</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)' }}>{t('photos.more')}</span>
             </button>
           ) : (
             Array.from({ length: Math.max(0, 4 - visible.length) }).map((_, i) => (
@@ -134,12 +136,12 @@ export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpe
               background: 'var(--bg-secondary)', border: '1px solid var(--border-light)',
               fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.4,
             }}>
-              {n.description || n.name || 'Note'}
+              {n.description || n.name || t('photos.noteFallback')}
             </div>
           ))}
           {notes.length > 3 && (
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-              +{notes.length - 3} more note{notes.length - 3 !== 1 ? 's' : ''}
+              {t('photos.moreNotes', { count: notes.length - 3 })}
             </div>
           )}
         </div>

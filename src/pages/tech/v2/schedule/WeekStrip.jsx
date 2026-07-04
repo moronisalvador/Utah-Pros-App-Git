@@ -32,8 +32,8 @@
 import React, { useRef, useState, useLayoutEffect, useCallback, useEffect } from 'react';
 import { selection as hapticSelection } from '@/lib/nativeHaptics';
 import { startOfWeekStr, weekDaysStr, addDaysStr, monthKeyOf, parseLocal } from './scheduleSelectors.js';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
-const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const INITIAL_RADIUS = 12; // weeks each side at mount
 const EXTEND = 12; // weeks added when nearing an edge
 const EDGE = 3; // extend when within this many weeks of an end
@@ -143,7 +143,7 @@ export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, 
       {weeks.map((weekStart) => (
         <div key={weekStart} className="tv2-weekstrip__page">
           {weekDaysStr(weekStart).map((d) => {
-            const dow = parseLocal(d).getDay();
+            const pd = parseLocal(d);
             const isSel = d === selectedDay;
             const isToday = d === today;
             const dayNum = Number(d.slice(8, 10));
@@ -154,7 +154,7 @@ export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, 
                 className={`tv2-weekstrip__day${isSel ? ' is-selected' : ''}${isToday ? ' is-today' : ''}`}
                 onClick={() => onSelectDay(d)}
               >
-                <span className="tv2-weekstrip__dow">{DOW[dow]}</span>
+                <span className="tv2-weekstrip__dow">{pd.toLocaleDateString(currentLocaleTag(), { weekday: 'narrow' })}</span>
                 <span className="tv2-weekstrip__num">{dayNum}</span>
                 <span className={`tv2-weekstrip__dot${apptDates.has(d) ? ' has-appt' : ''}`} aria-hidden="true" />
               </button>

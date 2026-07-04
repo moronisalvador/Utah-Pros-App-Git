@@ -32,17 +32,13 @@
  */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { apptHref } from '@/components/tech/v2/nav.js';
 import { fmtHours } from './dashHelpers.js';
-
-function fmtClock(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':');
-  const hour = Number(h);
-  return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
-}
+import { formatTime } from '@/lib/techDateUtils';
 
 function CompletedRow({ appt, employee, db }) {
+  const { t } = useTranslation(['dash', 'tech']);
   const navigate = useNavigate();
   const [totals, setTotals] = useState(null); // { travel, onSite, total } in hours
 
@@ -65,8 +61,8 @@ function CompletedRow({ appt, employee, db }) {
     return () => { cancelled = true; };
   }, [db, appt.id, employee.id]);
 
-  const time = fmtClock(appt.time_start);
-  const label = appt.jobs?.insured_name || appt.title || 'Appointment';
+  const time = formatTime(appt.time_start);
+  const label = appt.jobs?.insured_name || appt.title || t('tech:misc.appointment');
 
   return (
     <button type="button" className="tv2-dash-completed-row" onClick={() => navigate(apptHref(appt.id, appt.job_id))}>
@@ -77,11 +73,11 @@ function CompletedRow({ appt, employee, db }) {
       </span>
       {totals && (
         <span className="tv2-dash-completed-row__breakdown">
-          <span>Travel {fmtHours(totals.travel)}</span>
+          <span>{t('hours.travel')} {fmtHours(totals.travel)}</span>
           <span>·</span>
-          <span>On-site {fmtHours(totals.onSite)}</span>
+          <span>{t('hours.onSite')} {fmtHours(totals.onSite)}</span>
           <span>·</span>
-          <strong>Total {fmtHours(totals.total)}</strong>
+          <strong>{t('hours.total')} {fmtHours(totals.total)}</strong>
         </span>
       )}
     </button>
@@ -92,10 +88,11 @@ function CompletedRow({ appt, employee, db }) {
  * @param {{ completed: object[], employee: object, db: object }} props
  */
 export default function CompletedRows({ completed, employee, db }) {
+  const { t } = useTranslation('dash');
   if (!completed || completed.length === 0) return null;
   return (
     <div className="tv2-dash-completed">
-      <div className="tv2-dash-section-title">Completed today</div>
+      <div className="tv2-dash-section-title">{t('completedToday')}</div>
       {completed.map((a) => (
         <CompletedRow key={a.id} appt={a} employee={employee} db={db} />
       ))}

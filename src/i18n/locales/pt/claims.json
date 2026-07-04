@@ -1,0 +1,13 @@
+{
+  "title": "Sinistros",
+  "total": "{{count}} no total",
+  "scopeMine": "Meus sinistros",
+  "scopeAll": "Todos os sinistros",
+  "searchPlaceholder": "Buscar sinistros...",
+  "noMatch": "Nenhum sinistro corresponde a '{{query}}'",
+  "noneFound": "Nenhum sinistro encontrado",
+  "clearSearch": "Limpar busca",
+  "jobsCount_one": "{{count}} trabalho",
+  "jobsCount_other": "{{count}} trabalhos",
+  "toastLoadFailed": "Falha ao carregar os sinistros"
+}

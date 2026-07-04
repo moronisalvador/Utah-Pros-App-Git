@@ -36,6 +36,7 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
@@ -43,6 +44,7 @@ import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormCon
 
 export default function TechNewEvent() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation('newEvent');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
@@ -109,10 +111,10 @@ export default function TechNewEvent() {
         });
       }
 
-      toast('Event created');
+      toast(t('toastCreated'));
       navigate(-1);
     } catch (err) {
-      toast('Failed to create event: ' + (err.message || ''), 'error');
+      toast(t('toastCreateFailed', { message: err.message || '' }), 'error');
     } finally {
       setSaving(false);
     }
@@ -150,7 +152,7 @@ export default function TechNewEvent() {
           </svg>
         </button>
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span aria-hidden>📅</span> New Event
+          <span aria-hidden>📅</span> {t('title')}
         </span>
       </div>
 
@@ -159,12 +161,12 @@ export default function TechNewEvent() {
 
         {/* Title */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Title <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelTitle')} <span style={{ color: '#ef4444' }}>*</span></div>
           <input
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="BNI Meeting, PTO, Team training..."
+            placeholder={t('titlePlaceholder')}
             autoFocus
             style={inputStyle}
           />
@@ -172,13 +174,13 @@ export default function TechNewEvent() {
 
         {/* Date */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Date <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDate')} <span style={{ color: '#ef4444' }}>*</span></div>
           <DatePicker value={date} onChange={setDate} />
         </div>
 
         {/* Time */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Time</div>
+          <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={timeStart}
@@ -197,7 +199,7 @@ export default function TechNewEvent() {
           </div>
           {timeInvalid && (
             <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6, fontWeight: 500 }}>
-              End time must be after start time
+              {t('timeError')}
             </div>
           )}
         </div>
@@ -205,12 +207,12 @@ export default function TechNewEvent() {
         {/* Notes */}
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>
-            Notes <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
+            {t('labelNotes')} <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('optional')}</span>
           </div>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            placeholder="Additional details..."
+            placeholder={t('notesPlaceholder')}
             style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }}
           />
         </div>
@@ -224,10 +226,10 @@ export default function TechNewEvent() {
               <span style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                  Private
+                  {t('labelPrivate')}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
-                  Only admins, project managers, and assigned crew will see this event.
+                  {t('privateHint')}
                 </div>
               </span>
             </label>
@@ -238,7 +240,7 @@ export default function TechNewEvent() {
         <div style={{ marginBottom: 20 }}>
           <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>
-              Assigned to
+              {t('labelAssignedTo')}
               {selectedCrew.length > 0 && (
                 <span style={{
                   marginLeft: 8, fontSize: 12, fontWeight: 600, padding: '1px 7px',
@@ -248,7 +250,7 @@ export default function TechNewEvent() {
             </span>
             {selectedCrew.length === 0 && (
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                leave empty for company-wide
+                {t('companyWideHint')}
               </span>
             )}
           </div>
@@ -256,7 +258,7 @@ export default function TechNewEvent() {
             type="text"
             value={crewSearch}
             onChange={e => setCrewSearch(e.target.value)}
-            placeholder="Search employees..."
+            placeholder={t('searchEmployeesPlaceholder')}
             style={{ ...inputStyle, marginBottom: 8 }}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -292,7 +294,7 @@ export default function TechNewEvent() {
                     <span style={{
                       fontSize: 9, fontWeight: 700, padding: '0 5px', borderRadius: 3,
                       background: '#fffbeb', color: '#92400e',
-                    }}>LEAD</span>
+                    }}>{t('leadBadge')}</span>
                   )}
                 </button>
               );
@@ -319,7 +321,7 @@ export default function TechNewEvent() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {saving ? 'Creating...' : 'Create event'}
+          {saving ? t('btnCreating') : t('btnCreate')}
         </button>
       </div>
     </div>

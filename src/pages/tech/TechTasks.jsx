@@ -16,7 +16,7 @@
  *                  shell)
  *
  * DEPENDS ON:
- *   Packages:  react
+ *   Packages:  react, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/PullToRefresh,
  *              @/lib/toast, @/lib/nativeHaptics
  *   Data:      All access goes through the db client from useAuth (RPC only).
@@ -37,16 +37,15 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { toast } from '@/lib/toast';
 import { impact } from '@/lib/nativeHaptics';
 
 // ─── SECTION: Constants ──────────────
-const TABS = [
-  { key: 'today', label: 'Today' },
-  { key: 'all', label: 'All' },
-];
+// Tab labels are translated at render via t(`tab.${key}`); `key` is the stable id.
+const TABS = ['today', 'all'];
 
 // ─── SECTION: Helpers ──────────────
 /* ── Completion Ring SVG ── */
@@ -84,6 +83,7 @@ function CompletionRing({ done, total }) {
 /* ── Swipeable Task Row ── */
 
 function SwipeTaskRow({ task, onToggle }) {
+  const { t } = useTranslation('tasks');
   const [swipeX, setSwipeX] = useState(0);
   const startX = useRef(null);
   const [recentlyDone, setRecentlyDone] = useState(false);
@@ -122,7 +122,7 @@ function SwipeTaskRow({ task, onToggle }) {
       {swipeX > 0 && (
         <div className="tech-task-swipe-bg">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-          <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, marginLeft: 4 }}>Done</span>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, marginLeft: 4 }}>{t('done')}</span>
         </div>
       )}
       <div
@@ -159,6 +159,7 @@ function SwipeTaskRow({ task, onToggle }) {
 
 export default function TechTasks() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation('tasks');
   const { employee, db } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -173,11 +174,11 @@ export default function TechTasks() {
     try {
       const result = await db.rpc('get_assigned_tasks', { p_employee_id: employee.id });
       setTasks(result || []);
-    } catch (e) {
-      toast('Failed to load tasks', 'error');
+    } catch {
+      toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
-  }, [db, employee.id]);
+  }, [db, employee.id, t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -188,9 +189,9 @@ export default function TechTasks() {
     setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     try {
       await db.rpc('toggle_appointment_task', { p_task_id: task.task_id, p_employee_id: employee.id });
-      toast('Task updated');
-    } catch (e) {
-      toast('Failed to toggle task', 'error');
+      toast(t('toastUpdated'));
+    } catch {
+      toast(t('toastToggleFailed'), 'error');
       setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, is_complete: !t.is_complete } : t));
     } finally {
       togglingRef.current.delete(task.task_id);
@@ -232,27 +233,27 @@ export default function TechTasks() {
     <div className="tech-page" style={{ padding: 0 }}>
       <div style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
         <div className="tech-page-header" style={{ marginBottom: 12 }}>
-          <div className="tech-page-title">Tasks</div>
+          <div className="tech-page-title">{t('title')}</div>
         </div>
 
         {/* Pill tabs */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 'var(--space-4)' }}>
-          {TABS.map(t => (
+          {TABS.map(key => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              key={key}
+              onClick={() => setTab(key)}
               style={{
                 padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
-                fontSize: 14, fontWeight: tab === t.key ? 600 : 400, cursor: 'pointer',
+                fontSize: 14, fontWeight: tab === key ? 600 : 400, cursor: 'pointer',
                 height: 48,
-                background: tab === t.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-                color: tab === t.key ? '#fff' : 'var(--text-secondary)',
-                borderColor: tab === t.key ? 'var(--accent)' : 'var(--border-color)',
+                background: tab === key ? 'var(--accent)' : 'var(--bg-tertiary)',
+                color: tab === key ? '#fff' : 'var(--text-secondary)',
+                borderColor: tab === key ? 'var(--accent)' : 'var(--border-color)',
                 fontFamily: 'var(--font-sans)', touchAction: 'manipulation',
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {t.label}
+              {t(`tab.${key}`)}
             </button>
           ))}
         </div>
@@ -267,7 +268,7 @@ export default function TechTasks() {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search tasks, jobs, clients..."
+            placeholder={t('searchPlaceholder')}
             style={{
               width: '100%', height: 44, paddingLeft: 36, paddingRight: searchQuery ? 32 : 12,
               fontSize: 16, borderRadius: 'var(--tech-radius-button)',
@@ -301,9 +302,9 @@ export default function TechTasks() {
             <CompletionRing done={doneCount} total={totalCount} />
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-                {doneCount} of {totalCount} done
+                {t('summaryDone', { done: doneCount, total: totalCount })}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>today's tasks</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('todaysTasks')}</div>
             </div>
           </div>
         )}
@@ -318,7 +319,7 @@ export default function TechTasks() {
               </svg>
             </div>
             <div className="empty-state-text">
-              {tab === 'today' ? 'No tasks for today' : 'No tasks assigned'}
+              {tab === 'today' ? t('emptyToday') : t('emptyAll')}
             </div>
             {tab === 'today' && (
               <div className="empty-state-sub">
@@ -326,7 +327,7 @@ export default function TechTasks() {
                   onClick={() => setTab('all')}
                   style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)', fontWeight: 600 }}
                 >
-                  View all tasks
+                  {t('viewAll')}
                 </button>
               </div>
             )}
@@ -355,7 +356,7 @@ export default function TechTasks() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                        {group.job_number || 'Job'}
+                        {group.job_number || t('jobFallback')}
                       </span>
                       {group.insured_name && (
                         <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>

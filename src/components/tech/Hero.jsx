@@ -35,6 +35,7 @@
  *   - The address line opens the maps app via openMap().
  * ════════════════════════════════════════════════
  */
+import { useTranslation } from 'react-i18next';
 import { DIV_GRADIENTS } from '@/pages/tech/techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { openMap } from '@/lib/techDateUtils';
@@ -42,8 +43,9 @@ import { openMap } from '@/lib/techDateUtils';
 // ─── SECTION: Render ──────────────
 export default function Hero({
   division, eyebrow, topLabel, title, address, statusText, statusColors,
-  meta = [], onBack, backLabel = 'Back', showMenu, onMenu,
+  meta = [], onBack, backLabel, showMenu, onMenu,
 }) {
+  const { t } = useTranslation('tech');
   const gradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
   const pillColor = statusColors?.color || '#2563eb';
 
@@ -56,7 +58,7 @@ export default function Hero({
       }}>
         <button
           onClick={onBack}
-          aria-label={backLabel}
+          aria-label={backLabel || t('btn.back')}
           style={{
             background: 'none', border: 'none', color: '#fff',
             cursor: 'pointer', padding: '4px 8px', display: 'flex', alignItems: 'center',
@@ -82,7 +84,7 @@ export default function Hero({
           {showMenu && (
             <button
               onClick={onMenu}
-              aria-label="More actions"
+              aria-label={t('hero.moreActions')}
               style={{
                 background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
                 cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -142,7 +144,7 @@ export default function Hero({
           lineHeight: 1.2, marginBottom: 6,
           maxWidth: 'calc(100% - 96px)',
         }}>
-          {title || 'Unknown'}
+          {title || t('misc.unknown')}
         </div>
 
         {address && (

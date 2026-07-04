@@ -36,6 +36,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import StalledWidget from '@/components/tech/StalledWidget';
 import { apptHref } from '@/components/tech/v2/nav.js';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
@@ -59,6 +60,7 @@ function denverHour() {
  *           onResolved?: () => void }} props
  */
 export default function AttentionStrip({ employee, db, active = true, openEntry, onResolved }) {
+  const { t } = useTranslation(['dash', 'tech']);
   const navigate = useNavigate();
   const [away, setAway] = useState(null);
   const [awayActing, setAwayActing] = useState(false);
@@ -80,13 +82,13 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
       if (!Number.isFinite(meters) || meters < AWAY_THRESHOLD_M) { setAway(null); return; }
       setAway({
         appointment_id: act.appointment_id,
-        title: act.title || 'Active appointment',
+        title: act.title || t('activeApptFallback'),
         address: [act.address, act.city].filter(Boolean).join(', '),
         status: act.status,
         distance: Math.round(meters),
       });
     } catch { /* silent — the nudge is additive, never blocks the dashboard */ }
-  }, [db, employee.id]);
+  }, [db, employee.id, t]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -127,11 +129,11 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
       notify('success');
       if (onResolved) onResolved();
     } catch (e) {
-      toast('Action failed: ' + e.message, 'error');
+      toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
     } finally {
       setAwayActing(false);
     }
-  }, [away, awayConfirmFinish, db, employee.id, onResolved]);
+  }, [away, awayConfirmFinish, db, employee.id, onResolved, t]);
 
   // ── 5 PM "still clocked in" nudge (reads openEntry from the payload) ──
   const finishOpenClock = useCallback(async () => {
@@ -140,12 +142,12 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
     try {
       await db.rpc('clock_finish_entry', { p_entry_id: openEntry.id, p_employee_id: employee.id });
       notify('success');
-      toast('Clocked out', 'success');
+      toast(t('toastClockedOut'), 'success');
       if (onResolved) onResolved();
     } catch (e) {
-      toast('Could not clock out: ' + e.message, 'error');
+      toast(t('toastClockOutFailed', { message: e.message }), 'error');
     }
-  }, [openEntry, db, employee.id, navigate, onResolved]);
+  }, [openEntry, db, employee.id, navigate, onResolved, t]);
 
   const showOvertime = openEntry && openEntry.clock_out == null && denverHour() >= 17;
 
@@ -160,20 +162,23 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><line x1="12" y1="7" x2="12" y2="13" /><circle cx="12" cy="16" r="1" />
             </svg>
             <div className="tv2-dash-banner__text">
-              <div className="tv2-dash-banner__title">You're ~{away.distance}m from the jobsite</div>
+              <div className="tv2-dash-banner__title">{t('away.distance', { distance: away.distance })}</div>
               <div className="tv2-dash-banner__body">
-                {away.title}{away.address ? ` · ${away.address}` : ''} is still {away.status === 'paused' ? 'paused' : 'running'}. Pause it or mark it finished.
+                {t('away.body', {
+                  place: `${away.title}${away.address ? ` · ${away.address}` : ''}`,
+                  state: away.status === 'paused' ? t('away.statePaused') : t('away.stateRunning'),
+                })}
               </div>
             </div>
           </div>
           <div className="tv2-dash-banner__actions">
             {away.status !== 'paused' && (
               <button type="button" className="tv2-dash-banner__btn" disabled={awayActing} onClick={() => resolveAway('pause')} onBlur={() => setAwayConfirmFinish(false)}>
-                Pause
+                {t('away.pause')}
               </button>
             )}
             <button type="button" className="tv2-dash-banner__btn tv2-dash-banner__btn--primary" disabled={awayActing} onClick={() => resolveAway('finish')} onBlur={() => setAwayConfirmFinish(false)}>
-              {awayConfirmFinish ? 'Tap again to Finish' : 'Finish'}
+              {awayConfirmFinish ? t('away.finishConfirm') : t('away.finish')}
             </button>
           </div>
         </div>
@@ -186,12 +191,12 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
               <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
             </svg>
             <div className="tv2-dash-banner__text">
-              <div className="tv2-dash-banner__title">You're still clocked in</div>
-              <div className="tv2-dash-banner__body">It's past 5 PM and a job is still running. Finish it before you head home — otherwise it auto-closes at midnight.</div>
+              <div className="tv2-dash-banner__title">{t('overtime.title')}</div>
+              <div className="tv2-dash-banner__body">{t('overtime.body')}</div>
             </div>
           </div>
           <button type="button" className="tv2-dash-banner__btn tv2-dash-banner__btn--alert tv2-dash-banner__btn--full" onClick={finishOpenClock}>
-            {openEntry.appointment_id ? 'Finish my day' : 'Clock out now'}
+            {openEntry.appointment_id ? t('overtime.finishDay') : t('overtime.clockOutNow')}
           </button>
         </div>
       )}

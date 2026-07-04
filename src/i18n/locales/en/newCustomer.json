@@ -1,0 +1,33 @@
+{
+  "title": "New Customer",
+  "labelContactType": "Contact Type",
+  "role": {
+    "homeowner": "Homeowner",
+    "tenant": "Tenant",
+    "adjuster": "Adjuster",
+    "other": "Other"
+  },
+  "labelFullName": "Full Name",
+  "namePlaceholder": "John Smith",
+  "labelPhone": "Phone",
+  "phonePlaceholder": "(801) 555-1234",
+  "labelEmail": "Email",
+  "emailPlaceholder": "john@email.com",
+  "labelCarrier": "Carrier / Company",
+  "carrierPlaceholder": "State Farm, Allstate, etc.",
+  "labelBillingAddress": "Billing Address",
+  "streetPlaceholder": "Street address",
+  "cityPlaceholder": "City",
+  "statePlaceholder": "ST",
+  "zipPlaceholder": "ZIP",
+  "labelNotes": "Notes",
+  "notesPlaceholder": "Optional notes...",
+  "btnSave": "Save Customer",
+  "btnSaving": "Saving...",
+  "toastInvalidPhone": "Enter a valid 10-digit phone number",
+  "toastCreated": "Customer created",
+  "toastCreateFailed": "Failed to create customer",
+  "toastAlreadyExists": "Customer already exists: {{name}}",
+  "toastDuplicatePhone": "A customer with this phone number already exists",
+  "toastSaveFailed": "Failed to save customer. Please try again."
+}

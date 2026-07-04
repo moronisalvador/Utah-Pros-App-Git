@@ -1,0 +1,107 @@
+{
+  "date": {
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "yesterday": "Yesterday",
+    "justNow": "just now",
+    "minsAgo_one": "{{count}}m ago",
+    "minsAgo_other": "{{count}}m ago",
+    "hrsAgo_one": "{{count}}h ago",
+    "hrsAgo_other": "{{count}}h ago",
+    "daysAgo_one": "{{count}}d ago",
+    "daysAgo_other": "{{count}}d ago"
+  },
+  "apptStatus": {
+    "scheduled": "scheduled",
+    "confirmed": "confirmed",
+    "en_route": "en route",
+    "in_progress": "in progress",
+    "paused": "paused",
+    "completed": "completed",
+    "cancelled": "cancelled"
+  },
+  "claimStatus": {
+    "open": "open",
+    "active": "active",
+    "closed": "closed",
+    "pending": "pending"
+  },
+  "division": {
+    "water": "Water",
+    "mold": "Mold",
+    "reconstruction": "Reconstruction",
+    "remodeling": "Remodeling",
+    "fire": "Fire",
+    "contents": "Contents"
+  },
+  "apptType": {
+    "monitoring": "Monitoring",
+    "mitigation": "Mitigation",
+    "inspection": "Inspection",
+    "reconstruction": "Recon",
+    "estimate": "Estimate",
+    "mold_remediation": "Mold Remed.",
+    "other": "Other"
+  },
+  "btn": {
+    "back": "Back",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "addPhoto": "Add Photo",
+    "addNote": "Add Note",
+    "uploading": "Uploading…",
+    "seeAll": "See all →",
+    "saveNote": "Save note",
+    "notePlaceholder": "What do you want to note?"
+  },
+  "misc": {
+    "unknown": "Unknown",
+    "appointment": "Appointment"
+  },
+  "crewPrefix": "Crew: {{names}}",
+  "actionBar": {
+    "call": "Call",
+    "navigate": "Navigate",
+    "message": "Message",
+    "documents": "Documents"
+  },
+  "nowNext": {
+    "onMyWay": "ON MY WAY",
+    "working": "WORKING",
+    "paused": "PAUSED",
+    "today": "TODAY",
+    "next": "NEXT"
+  },
+  "hero": {
+    "moreActions": "More actions"
+  },
+  "photos": {
+    "more": "more",
+    "photoAlt": "Photo",
+    "noteFallback": "Note",
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos",
+    "noteCount_one": "{{count}} note",
+    "noteCount_other": "{{count}} notes",
+    "moreNotes_one": "+{{count}} more note",
+    "moreNotes_other": "+{{count}} more notes"
+  },
+  "toast": {
+    "photoTooLarge": "Photo is too large (max 10 MB)",
+    "onlyImages": "Only image files are allowed",
+    "photoQueued": "Photo queued — will upload when online",
+    "photoUploading": "Photo uploading…",
+    "photoUploaded": "Photo uploaded",
+    "photoSaved": "Photo saved ✓",
+    "photoUploadFailed": "Photo upload failed: {{message}}",
+    "photoQueueFailed": "Failed to queue photo: {{message}}",
+    "cameraError": "Camera error: {{message}}",
+    "noteSaved": "Note saved",
+    "noteSaveFailed": "Failed to save note: {{message}}",
+    "actionFailed": "Action failed: {{message}}"
+  }
+}

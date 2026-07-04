@@ -40,6 +40,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
@@ -54,6 +55,7 @@ function addOneHour(hhmm) {
 
 export default function TechNewAppointment() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['apptForm', 'tech']);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
@@ -165,7 +167,7 @@ export default function TechNewAppointment() {
   /* ── Task helpers ── */
   const allTasks = useMemo(() => {
     const map = {};
-    for (const g of taskPool) for (const t of (g.tasks || [])) map[t.id] = { ...t, phase_name: g.phase_name, phase_color: g.phase_color };
+    for (const g of taskPool) for (const tk of (g.tasks || [])) map[tk.id] = { ...tk, phase_name: g.phase_name, phase_color: g.phase_color };
     return map;
   }, [taskPool]);
 
@@ -192,7 +194,7 @@ export default function TechNewAppointment() {
         if (t) { setSelectedTasks(prev => [...prev, t.id]); break; }
       }
       setNewTaskTitle('');
-    } catch { toast('Failed to create task', 'error'); }
+    } catch { toast(t('toastTaskFailed'), 'error'); }
   };
 
   /* ── Crew helpers ── */
@@ -248,10 +250,10 @@ export default function TechNewAppointment() {
         });
       }
 
-      toast('Appointment created');
+      toast(t('toastCreated'));
       navigate(-1);
     } catch (err) {
-      toast('Failed to create appointment: ' + (err.message || ''), 'error');
+      toast(t('toastCreateFailed', { message: err.message || '' }), 'error');
     } finally {
       setSaving(false);
     }
@@ -279,7 +281,7 @@ export default function TechNewAppointment() {
           </svg>
         </button>
         <span style={{ fontSize: 'var(--tech-text-heading)', fontWeight: 700, color: 'var(--text-primary)' }}>
-          New Appointment
+          {t('newTitle')}
         </span>
       </div>
 
@@ -288,7 +290,7 @@ export default function TechNewAppointment() {
 
         {/* ═══ JOB SEARCH ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Job <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelJob')} <span style={{ color: '#ef4444' }}>*</span></div>
 
           {!job ? (
             <div ref={jobSearchRef} style={{ position: 'relative' }}>
@@ -301,7 +303,7 @@ export default function TechNewAppointment() {
                   type="text"
                   value={jobSearch}
                   onChange={onJobSearch}
-                  placeholder="Search by job # or client name..."
+                  placeholder={t('jobSearchPlaceholder')}
                   autoFocus
                   style={{ ...inputStyle, paddingLeft: 40 }}
                 />
@@ -321,7 +323,7 @@ export default function TechNewAppointment() {
                 }}>
                   {jobResults.length === 0 ? (
                     <div style={{ padding: 16, textAlign: 'center', fontSize: 14, color: 'var(--text-tertiary)' }}>
-                      No jobs found
+                      {t('noJobsFound')}
                     </div>
                   ) : (
                     jobResults.map(j => (
@@ -337,10 +339,10 @@ export default function TechNewAppointment() {
                       >
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {j.insured_name || 'Unknown'} <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>#{j.job_number}</span>
+                            {j.insured_name || t('tech:misc.unknown')} <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>#{j.job_number}</span>
                           </div>
                           <div style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {[j.address, j.city].filter(Boolean).join(', ') || 'No address'}
+                            {[j.address, j.city].filter(Boolean).join(', ') || t('noAddress')}
                           </div>
                         </div>
                         {j.division && (
@@ -349,7 +351,7 @@ export default function TechNewAppointment() {
                             borderRadius: 'var(--radius-full)',
                             background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
                           }}>
-                            {j.division}
+                            {t('tech:division.' + j.division, { defaultValue: j.division })}
                           </span>
                         )}
                       </button>
@@ -366,7 +368,7 @@ export default function TechNewAppointment() {
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {job.insured_name || 'Unknown'} <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}>#{job.job_number}</span>
+                  {job.insured_name || t('tech:misc.unknown')} <span style={{ fontWeight: 500, color: 'var(--text-tertiary)' }}>#{job.job_number}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
                   {[job.address, job.city].filter(Boolean).join(', ')}
@@ -390,13 +392,13 @@ export default function TechNewAppointment() {
 
         {/* ═══ DATE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Date <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDate')} <span style={{ color: '#ef4444' }}>*</span></div>
           <DatePicker value={date} onChange={setDate} />
         </div>
 
         {/* ═══ TIME ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Time</div>
+          <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={timeStart}
@@ -405,7 +407,7 @@ export default function TechNewAppointment() {
             >
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
-            <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>to</div>
+            <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
               value={timeEnd}
               onChange={e => { setEndEdited(true); setTimeEnd(e.target.value); }}
@@ -418,22 +420,22 @@ export default function TechNewAppointment() {
 
         {/* ═══ TYPE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Type</div>
+          <div style={labelStyle}>{t('labelType')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {MOBILE_TYPES.map(t => (
+            {MOBILE_TYPES.map(mt => (
               <button
-                key={t.value}
-                onClick={() => setType(t.value)}
+                key={mt.value}
+                onClick={() => setType(mt.value)}
                 style={{
                   height: 48, padding: '0 14px', borderRadius: 'var(--tech-radius-button)',
-                  border: type === t.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
-                  background: type === t.value ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  border: type === mt.value ? '2px solid var(--accent)' : '2px solid var(--border-color)',
+                  background: type === mt.value ? 'var(--accent-light)' : 'var(--bg-primary)',
                   fontSize: 13, fontWeight: 600,
-                  color: type === t.value ? 'var(--accent)' : 'var(--text-secondary)',
+                  color: type === mt.value ? 'var(--accent)' : 'var(--text-secondary)',
                   cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
                 }}
               >
-                {t.label}
+                {t('tech:apptType.' + mt.value, { defaultValue: mt.label })}
               </button>
             ))}
           </div>
@@ -448,7 +450,7 @@ export default function TechNewAppointment() {
               padding: 0, display: 'flex', alignItems: 'center', gap: 6, width: '100%',
             }}
           >
-            Crew ({selectedCrew.length})
+            {t('labelCrew', { count: selectedCrew.length })}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
               style={{ transform: showCrew ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
               <polyline points="6 9 12 15 18 9" />
@@ -468,7 +470,7 @@ export default function TechNewAppointment() {
                     color: c.role === 'lead' ? 'var(--accent)' : 'var(--text-secondary)',
                     border: `1px solid ${c.role === 'lead' ? 'var(--accent)' : 'var(--border-color)'}`,
                   }}>
-                    {emp?.full_name || 'Unknown'} {c.role === 'lead' ? '(Lead)' : ''}
+                    {emp?.full_name || t('tech:misc.unknown')} {c.role === 'lead' ? t('roleLeadParen') : ''}
                   </span>
                 );
               })}
@@ -513,7 +515,7 @@ export default function TechNewAppointment() {
                         background: crewEntry.role === 'lead' ? 'var(--accent)' : 'var(--bg-tertiary)',
                         color: crewEntry.role === 'lead' ? '#fff' : 'var(--text-secondary)',
                       }}>
-                        {crewEntry.role}
+                        {crewEntry.role === 'lead' ? t('roleLead') : t('roleTech')}
                       </span>
                     )}
                     {/* Checkbox */}
@@ -546,7 +548,7 @@ export default function TechNewAppointment() {
                 padding: 0, display: 'flex', alignItems: 'center', gap: 6, width: '100%',
               }}
             >
-              Tasks ({selectedTasks.length})
+              {t('labelTasks', { count: selectedTasks.length })}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
                 style={{ transform: showTasks ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
                 <polyline points="6 9 12 15 18 9" />
@@ -557,16 +559,16 @@ export default function TechNewAppointment() {
             {selectedTasks.length > 0 && !showTasks && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                 {selectedTasks.map(id => {
-                  const t = allTasks[id];
-                  return t ? (
+                  const tk = allTasks[id];
+                  return tk ? (
                     <span key={id} style={{
                       fontSize: 12, fontWeight: 600, padding: '4px 10px',
                       borderRadius: 'var(--radius-full)',
-                      background: t.phase_color ? `${t.phase_color}18` : 'var(--bg-tertiary)',
-                      color: t.phase_color || 'var(--text-secondary)',
-                      border: `1px solid ${t.phase_color || 'var(--border-color)'}`,
+                      background: tk.phase_color ? `${tk.phase_color}18` : 'var(--bg-tertiary)',
+                      color: tk.phase_color || 'var(--text-secondary)',
+                      border: `1px solid ${tk.phase_color || 'var(--border-color)'}`,
                     }}>
-                      {t.title}
+                      {tk.title}
                     </span>
                   ) : null;
                 })}
@@ -578,7 +580,7 @@ export default function TechNewAppointment() {
               <div style={{ marginTop: 8 }}>
                 {taskPool.length === 0 ? (
                   <div style={{ padding: 12, fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                    No unassigned tasks for this job
+                    {t('noUnassignedTasks')}
                   </div>
                 ) : (
                   <div style={{ borderRadius: 'var(--tech-radius-card)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
@@ -637,7 +639,7 @@ export default function TechNewAppointment() {
                     type="text"
                     value={newTaskTitle}
                     onChange={e => setNewTaskTitle(e.target.value)}
-                    placeholder="Add a task..."
+                    placeholder={t('addTaskPlaceholder')}
                     style={{ ...inputStyle, flex: 1, height: 48 }}
                   />
                   <button
@@ -651,7 +653,7 @@ export default function TechNewAppointment() {
                       flexShrink: 0,
                     }}
                   >
-                    Add
+                    {t('add')}
                   </button>
                 </div>
               </div>
@@ -661,11 +663,11 @@ export default function TechNewAppointment() {
 
         {/* ═══ NOTES ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>Notes</div>
+          <div style={labelStyle}>{t('labelNotes')}</div>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            placeholder="Optional notes..."
+            placeholder={t('notesPlaceholder')}
             rows={3}
             style={{
               ...inputStyle, height: 'auto', padding: '12px 14px',
@@ -683,10 +685,10 @@ export default function TechNewAppointment() {
               <span style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                  Private
+                  {t('labelPrivate')}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
-                  Only admins, project managers, and assigned crew will see this.
+                  {t('privateHint')}
                 </div>
               </span>
             </label>
@@ -712,7 +714,7 @@ export default function TechNewAppointment() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {saving ? 'Creating...' : 'Create Appointment'}
+          {saving ? t('btnCreating') : t('btnCreate')}
         </button>
       </div>
     </div>

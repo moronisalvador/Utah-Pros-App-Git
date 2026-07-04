@@ -1,0 +1,30 @@
+{
+  "loading": "Loading…",
+  "confirm": "Confirm",
+  "status": {
+    "scheduled": "Scheduled",
+    "omw": "On my way",
+    "started": "Started",
+    "paused": "Paused · {{stamp}}",
+    "completed": "Completed"
+  },
+  "visitBadge": "Visit {{n}}",
+  "visitSummary": "Visit {{n}}:",
+  "travel": "Travel",
+  "onSite": "On-site",
+  "travelLabel": "Travel: {{value}}",
+  "onJobLabel": "On job: {{value}}",
+  "station": { "omw": "On my way", "start": "Start", "finish": "Finish" },
+  "pause": "Pause",
+  "resume": "Resume",
+  "returnToJob": "Return to Job",
+  "confirmReturn": "Confirm Return?",
+  "reasonForReturn": "Reason for return",
+  "reasonPlaceholder": "e.g. Additional work requested, Follow-up monitoring...",
+  "clockIn": "Clock In",
+  "clockingIn": "Clocking In…",
+  "cancel": "Cancel",
+  "toastClockElsewhere": "You're still clocked in on another job — clock out there first.",
+  "toastClockedOutOf": "Clocked out of {{job}} ({{elapsed}})",
+  "toastReturnFailed": "Return failed: {{message}}"
+}

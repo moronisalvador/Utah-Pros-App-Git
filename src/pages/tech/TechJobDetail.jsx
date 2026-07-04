@@ -55,6 +55,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, DIV_BORDER_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
@@ -69,12 +70,14 @@ import Lightbox from '@/components/tech/Lightbox';
 import DetailRow from '@/components/tech/DetailRow';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
-import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
   if (!dateStr) return '';
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // T12:00:00 guards against a date-only string being read as UTC midnight and
+  // slipping to the prior day in Denver; locale tag follows the active language.
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function titleCase(s) {
@@ -83,8 +86,9 @@ function titleCase(s) {
 }
 
 function AppointmentCard({ appt, onOpen }) {
+  const { t } = useTranslation(['job', 'tech']);
   const sc = APPT_STATUS_COLORS[appt.status] || APPT_STATUS_COLORS.scheduled;
-  const title = appt.title || titleCase(appt.type || 'Appointment');
+  const title = appt.title || (appt.type ? titleCase(appt.type) : t('apptFallback'));
   const crewNames = (appt.crew || [])
     .map(c => (c.full_name || '').split(' ')[0])
     .filter(Boolean).join(', ');
@@ -113,15 +117,15 @@ function AppointmentCard({ appt, onOpen }) {
           background: sc.bg, color: sc.color, border: `1px solid ${sc.border}`,
           textTransform: 'capitalize', whiteSpace: 'nowrap',
         }}>
-          {(appt.status || 'scheduled').replace(/_/g, ' ')}
+          {t('tech:apptStatus.' + (appt.status || 'scheduled'), { defaultValue: (appt.status || 'scheduled').replace(/_/g, ' ') })}
         </span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
           {relativeDate(appt.date)}{time ? ` · ${time}` : ''}
         </span>
-        {crewNames && <><span>·</span><span>Crew: {crewNames}</span></>}
-        {appt.task_total > 0 && <><span>·</span><span>{appt.task_completed}/{appt.task_total} tasks</span></>}
+        {crewNames && <><span>·</span><span>{t('crewPrefix', { names: crewNames })}</span></>}
+        {appt.task_total > 0 && <><span>·</span><span>{t('tasksCount', { done: appt.task_completed, total: appt.task_total })}</span></>}
       </div>
       <span style={{
         position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
@@ -137,6 +141,7 @@ function AppointmentCard({ appt, onOpen }) {
 
 export default function TechJobDetail() {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['job', 'tech']);
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { db, employee } = useAuth();
@@ -179,7 +184,7 @@ export default function TechJobDetail() {
       const rows = await db.select('jobs', `id=eq.${jobId}&select=*`);
       const j = rows?.[0];
       if (!j) {
-        setLoadError('Job not found');
+        setLoadError(t('notFound'));
         return;
       }
       setJob(j);
@@ -204,20 +209,20 @@ export default function TechJobDetail() {
       setDocs(docList || []);
       setWorkAuthSigned((workAuth || []).length > 0);
     } catch (e) {
-      setLoadError(e.message || 'Failed to load job');
-      toast('Failed to load job', 'error');
+      setLoadError(e.message || t('toastLoadFailed'));
+      toast(t('toastLoadFailed'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [db, jobId]);
+  }, [db, jobId, t]);
 
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Event handlers ──────────────
   const uploadPhoto = useCallback(async (file) => {
     if (!file || !jobId) return;
-    if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
-    if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
+    if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
     setUploading(true);
     try {
       const ts = Date.now();
@@ -238,14 +243,14 @@ export default function TechJobDetail() {
         p_appointment_id: null,
       });
       impact('light');
-      toast('Photo uploaded');
+      toast(t('tech:toast.photoUploaded'));
       load();
     } catch (err) {
-      toast('Photo upload failed: ' + err.message, 'error');
+      toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, jobId, load]);
+  }, [db, employee?.id, jobId, load, t]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];
@@ -260,7 +265,7 @@ export default function TechJobDetail() {
         const file = await takeNativePhoto();
         if (file) await uploadPhoto(file);
       } catch (err) {
-        if (!isUserCancelled(err)) toast('Camera error: ' + err.message, 'error');
+        if (!isUserCancelled(err)) toast(t('tech:toast.cameraError', { message: err.message }), 'error');
       }
     } else {
       fileRef.current?.click();
@@ -274,11 +279,11 @@ export default function TechJobDetail() {
         status: 'deleted',
         updated_by: employee?.id || null,
       });
-      toast(`Job ${job?.job_number || ''} archived`);
+      toast(t('toastJobArchived', { jobNumber: job?.job_number || '' }));
       // Return to the parent claim
       navigate(claim ? `/tech/claims/${claim.id}` : '/tech/claims', { replace: true });
     } catch (err) {
-      toast('Failed to delete job: ' + err.message, 'error');
+      toast(t('toastDeleteFailed', { message: err.message }), 'error');
     } finally {
       setDeleting(false);
     }
@@ -298,12 +303,12 @@ export default function TechJobDetail() {
         p_description: noteText.trim(),
         p_appointment_id: null,
       });
-      toast('Note saved');
+      toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteOpen(false);
       load();
     } catch (err) {
-      toast('Failed to save note: ' + err.message, 'error');
+      toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {
       setSavingNote(false);
     }
@@ -322,14 +327,14 @@ export default function TechJobDetail() {
           justifyContent: 'center', padding: '48px 24px', textAlign: 'center',
         }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
-            {loadError || 'Job not found'}
+            {loadError || t('notFound')}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20 }}>
-            This job may have been removed or is unavailable.
+            {t('notFoundSub')}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(-1)}>Back</button>
-            <button className="btn btn-primary" onClick={load}>Retry</button>
+            <button className="btn btn-secondary" onClick={() => navigate(-1)}>{t('back')}</button>
+            <button className="btn btn-primary" onClick={load}>{t('retry')}</button>
           </div>
         </div>
       </div>
@@ -337,16 +342,17 @@ export default function TechJobDetail() {
   }
 
   const division = job.division || 'water';
-  const title = contact?.name || job.insured_name || 'Unknown';
+  const title = contact?.name || job.insured_name || t('tech:misc.unknown');
   const phone = contact?.phone || job.client_phone || null;
   const address = [job.address, job.city, job.state].filter(Boolean).join(', ');
   const phaseLabel = titleCase(job.phase || 'New');
   const divPill = DIV_PILL_COLORS[division] || DIV_PILL_COLORS.water;
+  const divisionLabel = job.division ? t('tech:division.' + job.division, { defaultValue: titleCase(job.division) }) : '';
 
   const metaPieces = [];
-  if (job.date_of_loss) metaPieces.push(`Loss: ${formatLossDate(job.date_of_loss)}`);
-  if (job.division) metaPieces.push(titleCase(job.division));
-  if (job.status && job.status !== 'active') metaPieces.push(`Status: ${titleCase(job.status)}`);
+  if (job.date_of_loss) metaPieces.push(t('lossPrefix', { date: formatLossDate(job.date_of_loss) }));
+  if (divisionLabel) metaPieces.push(divisionLabel);
+  if (job.status && job.status !== 'active') metaPieces.push(t('statusPrefix', { status: titleCase(job.status) }));
 
   const isAdmin = employee?.role === 'admin' || employee?.role === 'manager';
 
@@ -354,7 +360,7 @@ export default function TechJobDetail() {
     <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
       <Hero
         division={division}
-        eyebrow="Job"
+        eyebrow={t('eyebrow')}
         topLabel={job.job_number}
         title={title}
         address={address}
@@ -362,7 +368,7 @@ export default function TechJobDetail() {
         statusColors={{ color: divPill.color }}
         meta={metaPieces}
         onBack={() => (claim ? navigate(`/tech/claims/${claim.id}`) : navigate(-1))}
-        backLabel={claim ? 'Back to claim' : 'Back'}
+        backLabel={claim ? t('backToClaim') : t('back')}
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
@@ -391,8 +397,8 @@ export default function TechJobDetail() {
             <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>No signed Work Authorization</div>
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>Tap to collect the customer&apos;s signature</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{t('complianceTitle')}</div>
+            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>{t('complianceSub')}</div>
           </div>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
@@ -430,7 +436,7 @@ export default function TechJobDetail() {
                 textTransform: 'uppercase', letterSpacing: '0.12em',
                 lineHeight: 1.2,
               }}>
-                Part of claim
+                {t('partOfClaim')}
               </div>
               <div style={{
                 fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)',
@@ -440,7 +446,7 @@ export default function TechJobDetail() {
               </div>
             </div>
             <span style={{ fontSize: 12, color: pill.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
-              View →
+              {t('viewArrow')}
             </span>
           </button>
         );
@@ -460,7 +466,7 @@ export default function TechJobDetail() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <span>Job details</span>
+          <span>{t('detailsToggle')}</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: detailsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
             <polyline points="6 9 12 15 18 9" />
           </svg>
@@ -472,19 +478,19 @@ export default function TechJobDetail() {
             borderRadius: 12, background: 'var(--bg-primary)',
             border: '1px solid var(--border-color)',
           }}>
-            <DetailRow label="Address" value={address || null} />
-            <DetailRow label="Phase" value={phaseLabel} />
-            <DetailRow label="Status" value={titleCase(job.status || 'active')} />
-            <DetailRow label="Division" value={titleCase(job.division)} />
-            <DetailRow label="Date of loss" value={formatLossDate(job.date_of_loss)} />
-            <DetailRow label="Type of loss" value={job.type_of_loss ? titleCase(job.type_of_loss) : null} />
-            <DetailRow label="Carrier" value={job.insurance_company || 'Out of pocket'} />
-            <DetailRow label="Policy #" value={job.policy_number} mono />
-            <DetailRow label="Claim #" value={job.claim_number} mono />
+            <DetailRow label={t('detail.address')} value={address || null} />
+            <DetailRow label={t('detail.phase')} value={phaseLabel} />
+            <DetailRow label={t('detail.status')} value={titleCase(job.status || 'active')} />
+            <DetailRow label={t('detail.division')} value={divisionLabel || null} />
+            <DetailRow label={t('detail.dateOfLoss')} value={formatLossDate(job.date_of_loss)} />
+            <DetailRow label={t('detail.typeOfLoss')} value={job.type_of_loss ? titleCase(job.type_of_loss) : null} />
+            <DetailRow label={t('detail.carrier')} value={job.insurance_company || t('outOfPocket')} />
+            <DetailRow label={t('detail.policyNum')} value={job.policy_number} mono />
+            <DetailRow label={t('detail.claimNum')} value={job.claim_number} mono />
             {isAdmin && typeof job.deductible === 'number' && (
-              <DetailRow label="Deductible" value={`$${Number(job.deductible).toFixed(2)}`} />
+              <DetailRow label={t('detail.deductible')} value={`$${Number(job.deductible).toFixed(2)}`} />
             )}
-            {job.ar_notes && <DetailRow label="Notes" value={job.ar_notes} multiline />}
+            {job.ar_notes && <DetailRow label={t('detail.notes')} value={job.ar_notes} multiline />}
 
             {(contact || job.insured_name) && (
               <>
@@ -493,11 +499,11 @@ export default function TechJobDetail() {
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                   marginTop: 14, marginBottom: 6,
                 }}>
-                  Insured / Homeowner
+                  {t('detail.insured')}
                 </div>
-                <DetailRow label="Name" value={contact?.name || job.insured_name} />
-                <DetailRow label="Phone" value={contact?.phone || job.client_phone} href={(contact?.phone || job.client_phone) ? `tel:${contact?.phone || job.client_phone}` : null} />
-                <DetailRow label="Email" value={contact?.email || job.client_email} href={(contact?.email || job.client_email) ? `mailto:${contact?.email || job.client_email}` : null} />
+                <DetailRow label={t('detail.name')} value={contact?.name || job.insured_name} />
+                <DetailRow label={t('detail.phone')} value={contact?.phone || job.client_phone} href={(contact?.phone || job.client_phone) ? `tel:${contact?.phone || job.client_phone}` : null} />
+                <DetailRow label={t('detail.email')} value={contact?.email || job.client_email} href={(contact?.email || job.client_email) ? `mailto:${contact?.email || job.client_email}` : null} />
               </>
             )}
 
@@ -508,11 +514,11 @@ export default function TechJobDetail() {
                   textTransform: 'uppercase', letterSpacing: '0.06em',
                   marginTop: 14, marginBottom: 6,
                 }}>
-                  Adjuster
+                  {t('detail.adjuster')}
                 </div>
-                <DetailRow label="Name" value={job.adjuster_name} />
-                <DetailRow label="Phone" value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
-                <DetailRow label="Email" value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
+                <DetailRow label={t('detail.name')} value={job.adjuster_name} />
+                <DetailRow label={t('detail.phone')} value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
+                <DetailRow label={t('detail.email')} value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
               </>
             )}
           </div>
@@ -563,21 +569,21 @@ export default function TechJobDetail() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Schedule appointment
+            {t('scheduleAppointment')}
           </button>
         );
 
         if (appointments.length === 0) {
           return (
             <>
-              <div style={sectionLabel}>Appointments</div>
+              <div style={sectionLabel}>{t('appointments')}</div>
               <div style={{
                 margin: '8px var(--space-4) 0', padding: '16px',
                 borderRadius: 12, background: 'var(--bg-secondary)',
                 border: '1px dashed var(--border-color)',
                 fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center',
               }}>
-                No appointments scheduled for this job yet.
+                {t('noAppointments')}
               </div>
               {scheduleBtn}
             </>
@@ -586,12 +592,12 @@ export default function TechJobDetail() {
 
         return (
           <>
-            <div style={sectionLabel}>Appointments ({appointments.length})</div>
-            {upcoming.length > 0 && <div style={subLabel}>Upcoming</div>}
+            <div style={sectionLabel}>{t('appointmentsCount', { count: appointments.length })}</div>
+            {upcoming.length > 0 && <div style={subLabel}>{t('upcoming')}</div>}
             {upcoming.map(a => (
               <AppointmentCard key={a.id} appt={a} onOpen={() => navigate(`/tech/appointment/${a.id}`)} />
             ))}
-            {past.length > 0 && <div style={subLabel}>Past</div>}
+            {past.length > 0 && <div style={subLabel}>{t('past')}</div>}
             {past.map(a => (
               <AppointmentCard key={a.id} appt={a} onOpen={() => navigate(`/tech/appointment/${a.id}`)} />
             ))}
@@ -616,7 +622,7 @@ export default function TechJobDetail() {
                 fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)',
                 textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
-                Photos & Notes{hasAny ? ` (${photos.length + notes.length})` : ''}
+                {hasAny ? t('photosNotesCount', { count: photos.length + notes.length }) : t('photosNotes')}
               </div>
               {photos.length > 0 && (
                 <button
@@ -628,7 +634,7 @@ export default function TechJobDetail() {
                     WebkitTapHighlightColor: 'transparent',
                   }}
                 >
-                  See all →
+                  {t('seeAll')}
                 </button>
               )}
             </div>
@@ -644,7 +650,7 @@ export default function TechJobDetail() {
               />
             ) : (
               <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '6px 0 4px' }}>
-                No photos or notes yet.
+                {t('noPhotosNotes')}
               </div>
             )}
 
@@ -658,7 +664,7 @@ export default function TechJobDetail() {
                   className="input textarea"
                   value={noteText}
                   onChange={e => setNoteText(e.target.value)}
-                  placeholder="What do you want to note?"
+                  placeholder={t('notePlaceholder')}
                   rows={3}
                   autoFocus
                   style={{ width: '100%', fontSize: 15, fontFamily: 'var(--font-sans)', boxSizing: 'border-box' }}
@@ -673,7 +679,7 @@ export default function TechJobDetail() {
                       fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
                     }}
                   >
-                    Cancel
+                    {t('cancel')}
                   </button>
                   <button
                     onClick={saveNote}
@@ -688,7 +694,7 @@ export default function TechJobDetail() {
                       opacity: savingNote ? 0.7 : 1,
                     }}
                   >
-                    {savingNote ? 'Saving…' : 'Save note'}
+                    {savingNote ? t('saving') : t('saveNote')}
                   </button>
                 </div>
               </div>
@@ -710,7 +716,7 @@ export default function TechJobDetail() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
                 </svg>
-                {uploading ? 'Uploading…' : 'Add Photo'}
+                {uploading ? t('uploading') : t('addPhoto')}
               </button>
               <button
                 onClick={() => { setNoteOpen(true); setNoteText(''); }}
@@ -729,7 +735,7 @@ export default function TechJobDetail() {
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                 </svg>
-                Add Note
+                {t('addNote')}
               </button>
             </div>
           </div>
@@ -796,7 +802,7 @@ export default function TechJobDetail() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="7 17 17 7" /><polyline points="7 7 17 17" /><circle cx="12" cy="12" r="10" />
               </svg>
-              Merge job
+              {t('mergeJob')}
             </button>
             <button
               onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
@@ -813,7 +819,7 @@ export default function TechJobDetail() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
               </svg>
-              Delete job
+              {t('deleteJob')}
             </button>
             <button
               onClick={() => setMenuOpen(false)}
@@ -824,7 +830,7 @@ export default function TechJobDetail() {
                 fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
               }}
             >
-              Cancel
+              {t('cancel')}
             </button>
           </div>
         </div>
@@ -857,12 +863,21 @@ export default function TechJobDetail() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>Delete Job</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>{t('deleteTitle')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
-              This will archive <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{job.job_number}</strong>. It can be restored later but will be hidden from all views.
+              <Trans
+                t={t}
+                i18nKey="deleteArchiveNote"
+                values={{ jobNumber: job.job_number }}
+                components={{ b: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }} /> }}
+              />
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              Type <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>DELETE</strong> to confirm:
+              <Trans
+                t={t}
+                i18nKey="deleteTypeConfirm"
+                components={{ b: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }} /> }}
+              />
             </div>
             <input
               type="text"
@@ -889,7 +904,7 @@ export default function TechJobDetail() {
                   fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-sans)',
                 }}
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 onClick={handleSoftDelete}
@@ -904,7 +919,7 @@ export default function TechJobDetail() {
                   opacity: deleting ? 0.7 : 1,
                 }}
               >
-                {deleting ? 'Deleting…' : 'Delete Job'}
+                {deleting ? t('deleting') : t('deleteTitle')}
               </button>
             </div>
           </div>

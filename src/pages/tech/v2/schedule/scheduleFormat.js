@@ -26,6 +26,7 @@
  *     row's accent and a timeline block tint match the chip exactly.
  * ════════════════════════════════════════════════
  */
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
 // status → the '--status-<token>-*' trio (matches StatusChip.jsx). Unknown/absent
 // statuses fall back to 'scheduled'.
@@ -56,13 +57,13 @@ export function minutesOfDay(t) {
   return h * 60 + (m || 0);
 }
 
-/** 'HH:MM[:SS]' → '2:30 PM'. Empty for null/all-day. */
+/** 'HH:MM[:SS]' → '2:30 PM' (en) / '14:30' (pt/es). Empty for null/all-day. */
 export function fmtTime(t) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const d = new Date();
+  d.setHours(h, m || 0, 0, 0);
+  return d.toLocaleTimeString(currentLocaleTag(), { hour: 'numeric', minute: '2-digit' });
 }
 
 /**

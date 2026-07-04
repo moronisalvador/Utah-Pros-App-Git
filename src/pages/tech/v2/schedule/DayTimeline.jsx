@@ -29,8 +29,10 @@
  */
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { apptHref } from '@/components/tech/v2';
 import { minutesOfDay, fmtTime, fmtTimeRange, statusVar, isEvent, divisionMeta } from './scheduleFormat.js';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 import CrewAvatars from './CrewAvatars.jsx';
 
 const HOUR_PX = 80; // taller rows so a 30-min block fits its slot without spilling
@@ -97,6 +99,7 @@ function packLanes(timed) {
  * @param {{ appts: object[], selectedDay: string, today: string, active: boolean }} props
  */
 export default function DayTimeline({ appts, selectedDay, today, active }) {
+  const { t } = useTranslation(['schedule', 'tech']);
   const navigate = useNavigate();
   const [now, setNow] = useState(nowMinutes);
   const isToday = selectedDay === today;
@@ -114,10 +117,10 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
   }, [active, isToday, selectedDay]);
 
   const { timed, untimed } = useMemo(() => {
-    const t = [];
-    const u = [];
-    for (const a of appts) (a.time_start ? t : u).push(a);
-    return { timed: t, untimed: u };
+    const tm = [];
+    const um = [];
+    for (const a of appts) (a.time_start ? tm : um).push(a);
+    return { timed: tm, untimed: um };
   }, [appts]);
 
   const placed = useMemo(() => packLanes(timed), [timed]);
@@ -180,7 +183,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
     <div className="tv2-timeline" ref={rootRef}>
       {untimed.length > 0 && (
         <div className="tv2-timeline__allday">
-          <span className="tv2-timeline__allday-label">All day</span>
+          <span className="tv2-timeline__allday-label">{t('allDay')}</span>
           <div className="tv2-timeline__allday-items">
             {untimed.map((a) => (
               <button
@@ -190,7 +193,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
                 style={{ borderLeftColor: a.color || statusVar(a.status, 'color') }}
                 onClick={() => navigate(apptHref(a.id, a.job_id))}
               >
-                {a.jobs?.insured_name || a.title || (isEvent(a) ? 'Event' : 'Appointment')}
+                {a.jobs?.insured_name || a.title || (isEvent(a) ? t('event') : t('tech:misc.appointment'))}
               </button>
             ))}
           </div>
@@ -201,7 +204,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
         {hours.map((h) => (
           <div key={h} className="tv2-timeline__hour" style={{ top: (h - startHour) * HOUR_PX }}>
             <span className="tv2-timeline__hour-label">
-              {h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : h === 24 ? '' : `${h - 12} PM`}
+              {h === 24 ? '' : new Date(2000, 0, 1, h).toLocaleTimeString(currentLocaleTag(), { hour: 'numeric' })}
             </span>
             <span className="tv2-timeline__hour-line" />
           </div>
@@ -214,7 +217,11 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
           const div = appt.jobs?.division ? divisionMeta(appt.jobs.division) : null;
           const crew = appt.appointment_crew || [];
           const city = appt.jobs?.city;
-          const meta = [fmtTimeRange(appt.time_start, appt.time_end), div && div.label, city].filter(Boolean).join(' · ');
+          const meta = [
+            fmtTimeRange(appt.time_start, appt.time_end),
+            div && t(`tech:division.${appt.jobs.division}`, { defaultValue: div.label }),
+            city,
+          ].filter(Boolean).join(' · ');
           return (
             <button
               key={appt.id}
@@ -233,7 +240,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
             >
               <span className="tv2-timeline__block-title">
                 {appt.is_milestone && '◆ '}
-                {appt.jobs?.insured_name || appt.title || (isEvent(appt) ? 'Event' : 'Appointment')}
+                {appt.jobs?.insured_name || appt.title || (isEvent(appt) ? t('event') : t('tech:misc.appointment'))}
               </span>
               {crew.length > 0 && <CrewAvatars crew={crew} size={18} />}
               <span className="tv2-timeline__block-time">{meta}</span>
@@ -242,7 +249,7 @@ export default function DayTimeline({ appts, selectedDay, today, active }) {
         })}
 
         {showNow && (
-          <div className="tv2-timeline__now" style={{ top: nowTop }} aria-label={`Now ${fmtTime(`${Math.floor(now / 60)}:${now % 60}`)}`}>
+          <div className="tv2-timeline__now" style={{ top: nowTop }} aria-label={t('nowAria', { time: fmtTime(`${Math.floor(now / 60)}:${now % 60}`) })}>
             <span className="tv2-timeline__now-label">{fmtTime(`${Math.floor(now / 60)}:${String(now % 60).padStart(2, '0')}`)}</span>
             <span className="tv2-timeline__now-dot" />
             <span className="tv2-timeline__now-line" />

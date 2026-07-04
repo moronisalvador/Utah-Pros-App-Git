@@ -41,34 +41,37 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
 import { getCurrentCoords } from '@/lib/nativeGeolocation';
 import { impact, notify } from '@/lib/nativeHaptics';
 import { runOmwPrecheck, jobLabel, fmtElapsed } from '@/lib/clockPrecheck';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 import ClockSupersedeSheet from '@/components/tech/ClockSupersedeSheet';
 
 // ─── SECTION: Helpers ──────────────
 export function fmtTime(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString(currentLocaleTag(), { hour: 'numeric', minute: '2-digit' });
 }
 
 export function formatTimeStr(timeStr) {
   if (!timeStr) return '';
   const [h, m] = timeStr.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const d = new Date();
+  d.setHours(h, m || 0, 0, 0);
+  return d.toLocaleTimeString(currentLocaleTag(), { hour: 'numeric', minute: '2-digit' });
 }
 
 function fmtStamp(iso) {
   // "8:44 AM" for today, "Apr 15 · 8:44 AM" for other days
   if (!iso) return '';
   const d = new Date(iso);
-  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const tag = currentLocaleTag();
+  const t = d.toLocaleTimeString(tag, { hour: 'numeric', minute: '2-digit' });
   const sameDay = d.toDateString() === new Date().toDateString();
   if (sameDay) return t;
-  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${t}`;
+  return `${d.toLocaleDateString(tag, { month: 'short', day: 'numeric' })} · ${t}`;
 }
 
 function fmtMinutes(min) {
@@ -112,6 +115,7 @@ const IconStop = ({ color }) => (
 
 // ── Station: one column of the three-station row ────────
 function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled, onClick, onBlur }) {
+  const { t } = useTranslation('tracker');
   const isCompleted = !!timestamp && !active;
   const iconColor = active ? '#fff' : isCompleted ? 'var(--text-tertiary)' : 'var(--text-tertiary)';
   const circleBg = active
@@ -136,7 +140,7 @@ function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled
         fontSize: 12, fontWeight: 700, color: labelColor,
         textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center',
       }}>
-        {confirm ? 'Confirm' : label}
+        {confirm ? t('confirm') : label}
       </div>
       {timestamp && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', textAlign: 'center' }}>
@@ -173,15 +177,16 @@ function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled
 
 // ── Visit summary line (for multi-visit history) ────────
 function VisitSummary({ n, travelMin, onsiteMin }) {
+  const { t } = useTranslation('tracker');
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
       fontSize: 12, color: 'var(--text-secondary)',
       padding: '4px 0',
     }}>
-      <span style={{ fontWeight: 700, color: 'var(--status-completed-color)' }}>Visit {n}:</span>
-      {travelMin != null && <span>Travel {fmtMinutes(travelMin)}</span>}
-      <span>· On-site {fmtMinutes(onsiteMin)}</span>
+      <span style={{ fontWeight: 700, color: 'var(--status-completed-color)' }}>{t('visitSummary', { n })}</span>
+      {travelMin != null && <span>{t('travel')} {fmtMinutes(travelMin)}</span>}
+      <span>· {t('onSite')} {fmtMinutes(onsiteMin)}</span>
     </div>
   );
 }
@@ -191,6 +196,7 @@ function VisitSummary({ n, travelMin, onsiteMin }) {
 // ══════════════════════════════════════════════════════════
 export default function TimeTracker({ appt, employee, db, onUpdate }) {
   // ─── SECTION: State & hooks ──────────────
+  const { t } = useTranslation(['tracker', 'tech']);
   const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -265,9 +271,9 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       if (action === 'omw' && String(e.message || '').includes('OPEN_ENTRY_EXISTS')) {
         const pc = await runOmwPrecheck(db, appt.id, employee.id);
         if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
-        else toast("You're still clocked in on another job — clock out there first.", 'error');
+        else toast(t('toastClockElsewhere'), 'error');
       } else {
-        toast('Action failed: ' + e.message, 'error');
+        toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
       }
     }
     setActing(false);
@@ -295,7 +301,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
     setSupersede(null);
     const ok = await performClock('omw');
     if (ok && open) {
-      toast(`Clocked out of ${jobLabel(open)} (${fmtElapsed(open.elapsed_minutes)})`, 'success');
+      toast(t('toastClockedOutOf', { job: jobLabel(open), elapsed: fmtElapsed(open.elapsed_minutes) }), 'success');
     }
   };
 
@@ -348,7 +354,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       await loadEntries();
       if (onUpdate) onUpdate();
     } catch (e) {
-      toast('Return failed: ' + e.message, 'error');
+      toast(t('toastReturnFailed', { message: e.message }), 'error');
     }
     setReturningJob(false);
   };
@@ -356,18 +362,18 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   if (loading) {
     return (
       <div className="tech-tracker" style={{ background: 'var(--bg-secondary)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
-        Loading...
+        {t('loading')}
       </div>
     );
   }
 
   // Status label + color
   const STATUS_LABEL = {
-    scheduled: { text: 'Scheduled',  color: 'var(--text-secondary)' },
-    omw:       { text: 'On my way',  color: 'var(--status-enroute-color)' },
-    on_site:   { text: 'Started',    color: 'var(--status-working-color)' },
-    paused:    { text: `Paused · ${fmtStamp(currentEntry?.paused_at)}`, color: 'var(--status-paused-color)' },
-    completed: { text: 'Completed',  color: 'var(--status-completed-color)' },
+    scheduled: { text: t('status.scheduled'), color: 'var(--text-secondary)' },
+    omw:       { text: t('status.omw'),       color: 'var(--status-enroute-color)' },
+    on_site:   { text: t('status.started'),   color: 'var(--status-working-color)' },
+    paused:    { text: t('status.paused', { stamp: fmtStamp(currentEntry?.paused_at) }), color: 'var(--status-paused-color)' },
+    completed: { text: t('status.completed'), color: 'var(--status-completed-color)' },
   }[status];
 
   // Background tint by status
@@ -381,10 +387,10 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
 
   // Between-step labels (only shown after the right side of the interval is reached)
   const travelLabel = currentEntry?.travel_minutes != null && (currentEntry?.clock_in || currentEntry?.clock_out)
-    ? `Travel: ${fmtMinutes(Number(currentEntry.travel_minutes))}`
+    ? t('travelLabel', { value: fmtMinutes(Number(currentEntry.travel_minutes)) })
     : null;
   const onJobLabel = currentEntry?.clock_out && currentEntry?.hours != null
-    ? `On job: ${fmtHoursDecimal(currentEntry.hours)}`
+    ? t('onJobLabel', { value: fmtHoursDecimal(currentEntry.hours) })
     : null;
 
   // Tappability
@@ -402,7 +408,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
           textTransform: 'uppercase', letterSpacing: '0.04em',
         }}>
           {STATUS_LABEL.text}
-          {visitNumber && ` · Visit ${visitNumber}`}
+          {visitNumber && ` · ${t('visitBadge', { n: visitNumber })}`}
         </span>
       </div>
 
@@ -420,7 +426,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginTop: priorVisits.length ? 8 : 0 }}>
         <Station
           icon={(c) => <IconTruck color={c} />}
-          label="On my way"
+          label={t('station.omw')}
           timestamp={currentEntry?.travel_start}
           belowLabel={travelLabel}
           active={omwActive}
@@ -429,7 +435,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         />
         <Station
           icon={(c) => <IconPlay color={c} />}
-          label="Start"
+          label={t('station.start')}
           timestamp={currentEntry?.clock_in}
           belowLabel={onJobLabel}
           active={startActive}
@@ -438,7 +444,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         />
         <Station
           icon={(c) => <IconStop color={c} />}
-          label="Finish"
+          label={t('station.finish')}
           timestamp={currentEntry?.clock_out}
           active={finishActive}
           confirm={confirmFinish}
@@ -467,7 +473,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             border: `1.5px solid ${status === 'paused' ? '#bbf7d0' : 'var(--border-color)'}`,
           }}
         >
-          {status === 'on_site' ? 'Pause' : 'Resume'}
+          {status === 'on_site' ? t('pause') : t('resume')}
         </button>
       )}
 
@@ -488,7 +494,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             transition: 'background 0.15s, color 0.15s, border-color 0.15s',
           }}
         >
-          {confirmReturn ? 'Confirm Return?' : 'Return to Job'}
+          {confirmReturn ? t('confirmReturn') : t('returnToJob')}
         </button>
       )}
 
@@ -496,13 +502,13 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       {returnOpen && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-light)' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-            Reason for return
+            {t('reasonForReturn')}
           </div>
           <input
             className="input"
             value={returnReason}
             onChange={e => setReturnReason(e.target.value)}
-            placeholder="e.g. Additional work requested, Follow-up monitoring..."
+            placeholder={t('reasonPlaceholder')}
             autoFocus
             style={{ fontSize: 16, marginBottom: 10, width: '100%' }}
           />
@@ -513,7 +519,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
               disabled={returningJob}
               style={{ background: '#b45309', color: '#fff', flex: 1 }}
             >
-              {returningJob ? 'Clocking In...' : 'Clock In'}
+              {returningJob ? t('clockingIn') : t('clockIn')}
             </button>
             <button
               className="tech-tracker-btn-secondary"
@@ -523,7 +529,7 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
                 border: '1.5px solid var(--border-color)', flex: 1,
               }}
             >
-              Cancel
+              {t('cancel')}
             </button>
           </div>
         </div>
