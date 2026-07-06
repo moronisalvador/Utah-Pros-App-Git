@@ -6268,6 +6268,13 @@ tr:hover td { background: var(--bg-secondary); }
    per-claim A/R panel (SharedClaimUI) and are intentionally left untouched.
    ═══════════════════════════════════════════════════ */
 .coll-page { max-width: 1320px; margin: 0 auto; padding: 24px 28px 60px; color: #101828; }
+/* Ultra-wide: give the builder + A/R tables more room so they aren't a narrow 1320px
+   island on big monitors (owner request, 2026-07 — coworker on a 34" ultrawide at macOS
+   "More Space" found the invoice builder cramped). Laptops/standard screens (<1600px)
+   are untouched. Numbers are a starting point — tune by eye on dev. */
+@media (min-width: 1600px) { .coll-page { max-width: 1520px; } }
+@media (min-width: 2100px) { .coll-page { max-width: 1680px; } }
+@media (min-width: 2560px) { .coll-page { max-width: 1800px; } }
 
 /* Header */
 .coll-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
