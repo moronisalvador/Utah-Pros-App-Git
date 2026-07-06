@@ -264,18 +264,29 @@ Scope: owns `src/pages/tech/v2/TechDashV2.jsx` + `src/pages/tech/v2/dash/**` onl
 > actions, e-sign adjacency, offline paths).
 > **Read scope:** `CLAUDE.md` + this block + ownership manifest + tech-mobile-ux.md.
 > **Close-out checklist:**
-> - [ ] Flag `page:tech_job_hub` seeded FIRST (same recipe: row before code, `enabled=false` + dev-only)
-> - [ ] Test-first, now green: visit-picker selection (`?appt=` present/absent/stale); work-auth banner predicate parity with both legacy implementations; `appointment_id OR job_id` doc-query fallback parity
-> - [ ] Acceptance: `/tech/job/:jobId?appt=<id>` renders job identity on shared Hero/ActionBar; visit picker (upcoming/past); per-visit context (TimeTracker, tasks, crew, moisture/equipment/scope-sheet behind their existing section flags); job-wide photos/docs/notes/contacts/claim breadcrumb; work-auth logic extracted ONCE; single statusBar effect; role-gated merge/typed-DELETE preserved
-> - [ ] Offline decision fork honored (default: per-visit captures keep the offline queue; job-level captures stay direct — revisit only on owner ask)
-> - [ ] Migrations (if any) additive-only + RLS; `migration-safety-checker` clean
-> - [ ] `npm run test` + `npm run build` + eslint pass; `upr-pattern-checker` clean; `tech-phase-reviewer` sign-off
-> - [ ] Visual: hub behind flag on owner's phone — from schedule row, dash card, and claims page entries
-> - [ ] `UPR-Web-Context.md` updated; checkboxes reconciled; pushed, PR draft → ready
+> - [x] Flag `page:tech_job_hub` seeded FIRST on live Supabase (`enabled=false` + `dev_only_user_id`=owner, verified live) before any code merges; `EXPLICIT_FLAGS` entry `enabled:false` shipped in the same PR
+> - [x] Test-first, now green: visit-picker selection (`?appt=` present/absent/stale + live-visit/most-recent-past fallbacks); work-auth banner predicate parity with both legacy implementations (TechAppointment.jsx:788 `job && !signed`, TechJobDetail.jsx:377 `!signed`); `appointment_id OR job_id` doc-query fallback parity — `src/pages/tech/v2/hub/hubHelpers.test.js`, 16 cases (committed red → green)
+> - [x] Acceptance: `/tech/job/:jobId?appt=<id>` renders job identity on shared Hero/ActionBar (TechAppointment's hand-rolled hero + 5-button bar retired); visit picker (upcoming/past, selectable → syncs `?appt=`); per-visit context (TimeTracker consumed as-is, tasks + toggle, crew, moisture/equipment/scope-sheet behind `page:tech_moisture`/`page:tech_equipment`/`page:tech_rooms`); job-wide photos/notes (grouped + lightbox)/contacts/claim breadcrumb/collapsible job details; work-auth logic extracted ONCE (`WorkAuthBanner` + `showWorkAuthBanner`); exactly one `statusBarLight`/`Dark` effect pair (in `TechJobHub`); role-gated merge/typed-DELETE preserved (`AdminJobMenu`)
+> - [x] Offline decision fork honored (per-visit photo/reading/equipment captures keep the offline queue; job-level captures stay direct — no queue extension to job-level)
+> - [x] Own additive migration only (`get_job_hub` — new function, read-only, SECURITY DEFINER + GRANT); `migration-safety-checker` clean (PASS, no violations)
+> - [x] `npm run test` (576 pass / 91 skip) + `npm run build` + `npx eslint` (changed files, zero errors) pass; `upr-pattern-checker` + `tech-phase-reviewer` run before the PR
+> - [~] Visual: hub behind flag on owner's phone — **OWNER-GATED.** `page:tech_job_hub` is dev-only to the owner AND nav is not retargeted until M2, so the on-device pass (enter via direct `/tech/job/:jobId?appt=` URL for now) is the owner's after merge/deploy. Build + logic verified; `get_job_hub` shape verified live via MCP (job/claim/work_auth + 13-visit fixture; no-claim path returns claim=null with job-scoped visits — no live no-claim-with-visits row exists yet, so that branch is latent-correct)
+> - [x] `UPR-Web-Context.md` updated (Phase M1 section); checkboxes reconciled; pushed, PR draft → ready
 
 Scope: owns `src/pages/tech/v2/TechJobHub.jsx` + `src/pages/tech/v2/hub/**` + css §HUB.
 
+> ⚠️ **OUTCOME (2026-07-04): shipped + merged (#307), functionally complete — owner REJECTED
+> the UX** ("it simply added one page to the other"). Root cause: coequal stacked sections,
+> no field-first hierarchy — the checkboxes above stay honest (the work was real and
+> verified) but the surface is **superseded by the "Job Hub v2 (redesign)" section below**.
+> M1's modules were inventoried reuse-vs-throwaway; the keepers are listed in the v2 section.
+> Flag `page:tech_job_hub` reverted to `enabled=false, dev_only_user_id=null` pending v2.
+
 ### Phase M2 — Merge cutover
+
+> ⚠️ **SUPERSEDED (2026-07-04) by Phase H3** in the "Job Hub v2 (redesign)" section below —
+> do not dispatch from this block. Kept for history; its checklist items were absorbed and
+> extended (job-less private-appointment resolver, i18n namespace cleanup) into H3.
 
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** M1 baked on the
 > owner's phone. **Model: Opus · medium** (mechanical retarget, but deep-link correctness matters).
@@ -379,3 +390,214 @@ RPCs — the CRM-v3 body-only exception isn't even needed).
    **"Merge first"** rejected outright: the Job Hub is the highest-blast-radius surface
    (clock writes, e-sign) and would ship with the least v2 hardening, while the daily-pain
    pages waited behind it; the nav-helper rule caps the double-build cost it worried about.
+
+---
+
+# Job Hub v2 — "the visit is the screen" (redesign; supersedes M1's surface + M2's plan)
+
+**Plan of record 2026-07-04.** M1 (#307) was a faithful merge of the two legacy pages — and
+that was exactly the problem: a filing cabinet with every drawer open. v2 is a
+designed-from-scratch, field-first command surface. **Challenge pass complete** (6 read-only
+agents: capability-parity, design-skeptic, component-contract, data-layer, disjointness,
+scope — ALL verdicts MODIFIED, none REFUTED; fold-ins are baked into the blocks below and
+summarized in the v2 challenge report at the end of this section).
+
+## Binding design principles
+
+1. **The visit is the screen.** The selected visit's state drives what is BIG.
+2. **State modulates EMPHASIS, never ACCESS.** Checklist, tools, notes, photos stay
+   reachable in every state; the stage reorders, it never hides.
+3. **Whose clock (challenge blocker, resolved):** stage state = the VIEWING tech's OWN
+   entry state on the selected visit, from the new read-only `useVisitClock` hook.
+   Non-crew viewer → read-only stage (no clock actions). Viewer clocked into a DIFFERENT
+   appointment → banner "You're clocked into {job} — Go there"; captures still tag the
+   SELECTED visit (explicit, never silently misattributed).
+4. **Thumb zone:** capture/comms actions live in a docked bottom bar, not the header.
+5. **Snap-first preserved verbatim** (tech-mobile-ux law): photo saves instantly; the
+   4s "Photo saved · Add note" toast opens `PhotoNoteSheet` (note + room tag + create-room).
+6. **One confirm idiom:** two-tap red with 3s auto-cancel everywhere; typed-DELETE only
+   for the admin job-archive.
+7. **Status owns color** (`--status-*` trios); division = 4px left accent edge + small
+   pill in details. No division-gradient banner.
+8. **i18n from day one** (EN/PT/ES; the pages being replaced are fully translated — an
+   English-only hub is a regression for Portuguese-speaking techs). New `hub` namespace +
+   reuse of the `tech` namespace; parity test covers it.
+
+## Layout spec (Z1–Z4)
+
+**Z1 — Compact fixed header (~80px).** Back (claim-aware: `claim ? /tech/claims/:id :
+-1`), `job_number` + `StatusChip` (selected visit's appointment status), customer name,
+tappable address (`openMap`), **work-auth pill always visible** — quiet gray "Signed ✓" or
+red "⚠ Get signature" → `/tech/jobs/:id/documents` with `state:{startEsign:'work_auth'}`
+(predicate = `showWorkAuthBanner`, reused) — `is_private` lock badge, `TechHelpButton`
+(timer topic), admin kebab (`AdminJobMenu` logic: merge + typed-DELETE archive; admin/
+manager only). Note: the Z1 chip (appointment status) and the Z2 stage (your own clock)
+CAN differ by design — the stage carries a "Your clock" label so it never reads as a lie.
+
+**Z2 — The Stage** (state from `useVisitClock(db, appointmentId, employeeId)` — a NEW
+hub-owned, unit-tested read-only hook, **disclosed copy-in** of TimeTracker's entry
+derivation (TimeTracker.jsx:213-241 semantics: scheduled → omw → on_site → paused →
+completed, multi-entry/Visit-N aware). TimeTracker itself is consumed AS-IS for ALL
+actions and receives the `get_appointment_detail` object exactly as legacy (NEVER the hub
+appointment row — crew shapes differ and `appt.jobs` is absent; challenge-confirmed).
+- **ARRIVING** (scheduled/en_route): purpose card — title, type chip, time window,
+  **office notes (`appt.notes`, read-only — gate codes live here)**; crew avatars + amber
+  Lead badge; checklist as expandable preview (toggle ENABLED); TimeTracker (owns
+  OMW/Start, GPS, supersede precheck + `ClockSupersedeSheet`).
+- **WORKING** (in_progress/paused): **StageClock** — a NEW display-only component (big
+  live elapsed, `--tech-text-timer` 40px, reads `useVisitClock`; TimeTracker sits beneath
+  it unchanged — challenge finding: no live timer display exists in current code, so we
+  build the display, not rework the machine). Then the **checklist as the work surface**:
+  56px rows, one-tap `toggle_appointment_task` (optimistic + revert), progress bar,
+  **inline add-task** (the existing task-create RPC TechEditAppointment uses, tagged to
+  the selected appointment) + the `…/edit?section=tasks` escape hatch, empty state. Then
+  tools **WITH their read views** (challenge blocker — entry sheets alone lose the logs):
+  · **Moisture log** (`page:tech_moisture`): rows MC-vs-`drying_goal_pct` color rule
+    (green ≤ goal / amber ≤ +2 / red), STALLED badges, latest-per-(room,material) stalled
+    count in the header, `slice(0,12)` + "+N older", "(unaffected)" tag, empty state,
+    Add Reading → `ReadingEntrySheet` (parent supplies rooms + equipmentList and owns the
+    save: offline `reading.insert` queue when `offline:queue` on, else `insert_reading`).
+  · **Equipment list** (`page:tech_equipment`): nickname/type, room, **Day N**
+    (`days_onsite+1` — drives drying-rental billing), "N on-site" badge, inline two-tap
+    Remove (`remove_equipment` / offline `equipment.remove`), Place →
+    `EquipmentPlacementSheet` (offline `equipment.place`), empty state.
+  · **Scope Sheet row** → `/tech/tools/demo-sheet?...` exactly as legacy.
+- **WRAPPED** (completed/all entries closed): travel/on-site/total breakdown (never a
+  bare number), Return-to-Job (TimeTracker's flow incl. reason note), next-visit-on-this-
+  job card (tap = switch visit), checklist + tools still reachable (equipment demob
+  happens on later visits). Cancelled visit → WRAPPED-gray, no clock actions.
+- Office-notes block visible in ALL states. Stale-clock hint: open entry ≥10h
+  (FORGOT_CLOCKOUT_MIN parity) → amber chip on StageClock.
+
+**Z3 — Docked capture bar** (fixed above the 64px `.tech-nav`; formula
+`bottom: calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom)))` — CSS
+precedents index.css:5349/5606/5695; page gets matching scroll padding; the bar HIDES
+while any inline input has focus — iOS keyboard hazard, challenge finding). Buttons:
+**giant Photo** (native camera; offline fork exactly as legacy: visit-selected + flag on →
+IndexedDB blob + `photo.upload` queue item; else direct storage POST + `insert_job_document`
+tagged `p_appointment_id`; then the snap-first toast → `PhotoNoteSheet`), Call (`tel:`,
+disabled when no phone), Navigate (`openMap`, disabled when no address), Message (`sms:`,
+disabled when no phone), overflow (Documents → `/tech/jobs/:id/documents`, Edit visit →
+`/tech/appointment/:id/edit`). ONE adaptive bar replaces both divergent legacy bars.
+
+**Z4 — Below the fold** (order is deliberate — reference before gallery):
+1. **Visits** — select-in-place switcher (upcoming/past via hubHelpers, syncs `?appt=`
+   `replace:true`; `selectVisitId` reused AS-IS incl. live-mine → today-mine → soonest →
+   most-recent-past ladder), "Schedule appointment" CTA + dashed empty state →
+   `/tech/new-appointment?jobId=`.
+2. **Job & Claim** (collapsible, ABOVE photos — the adjuster-call flow must not scroll
+   past a gallery): all `contacts[]` (tel:/mailto:), carrier/policy/adjuster fields,
+   deductible (admin-only), claim breadcrumb card → `/tech/claims/:id`, full legacy
+   field list from `JobDetailsPanel`.
+3. **Photos & Notes** (unified — ONE notes model = `job_documents` note rows): selected
+   visit's first, then job-wide, grouped by day; capped ~12 + "See all" →
+   `/tech/jobs/:id/photos`; tap → `Lightbox`, with an "Add note / room" action inside it
+   opening `PhotoNoteSheet`; inline add-note; `sync:item-done` listeners —
+   `photo.upload` (keyed to job) → docs reload + `invalidateTech('photo')`;
+   `reading.insert`/`equipment.place`/`equipment.remove` (keyed to job) → hydro reload.
+4. **GenerateReportButton** (self-gated `page:water_loss_report`, as-is).
+Error states: not-found/load-error screen with Back + Retry (TJD parity, not TA's dead end).
+
+## Data layer (H1's migration — additive only)
+
+- **`get_job_hub` v2:** add `contacts[]` (the `get_job_contacts` shape) — and NOTHING
+  else: adjuster/policy/deductible/date_of_loss/insurance_company already ride on `job.*`
+  via `to_jsonb(j.*)` (challenge-verified live; the planned `claim_detail{}` block was cut
+  as redundant). Old keys byte-identical; committed backward-compat test. Live def vs
+  committed migration differ by comments only — REPLACE is safe.
+- **Drift-capture `get_job_contacts`** verbatim via `pg_get_functiondef` (it exists in NO
+  migration file today — same drift class Phase F fixed for 13 other RPCs).
+- **`techQuery.js` amendment (AUTHORIZED, see manifest addendum):** add the 7th kind
+  `hub(jobId)` → `['tech','hub',jobId]`; extend `MUTATION_INVALIDATIONS` so
+  clock/task/photo/room/doc/appointment each ALSO invalidate `hub`; update
+  `techQuery.test.js` in the SAME commit (the kinds list is asserted there). The hub page
+  uses React Query (cache-first paint + idb persister) — NOT M1's local `useState`.
+  (Challenge correction on record: the `room` kind already exists in
+  `MUTATION_INVALIDATIONS` — the earlier "missing room entry" premise was wrong; the real
+  fix is wiring the hub's reading/equipment saves through `invalidateTech` at all.)
+- RLS note (challenge): folding contacts into the SECURITY DEFINER job RPC creates no NEW
+  exposure class but rides the existing systemic definer posture — tracked in the parked
+  security audit (#224), not this initiative.
+
+## Phases
+
+### Phase H1 — Stage & Dock (the experience core)
+> **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** this plan merged.
+> **Model: Opus · high.** Read scope: CLAUDE.md + this v2 section + the manifest addendum
+> + tech-mobile-ux.md.
+> **Close-out checklist:**
+> - [ ] Migration: `get_job_hub` v2 (+`contacts[]`, backward-compat test) + `get_job_contacts` drift-capture; `migration-safety-checker` clean
+> - [ ] `techQuery.js` hub-kind amendment + `techQuery.test.js` updated in the same commit
+> - [ ] `useVisitClock` (disclosed copy-in, unit-tested: all 5 states, multi-entry, non-crew) + `StageClock` (live elapsed + stale-clock hint)
+> - [ ] Z1 header per spec (work-auth pill, lock badge, kebab, StatusChip)
+> - [ ] Z2 all three states per spec — checklist all-states + inline add-task; moisture log + equipment list READ VIEWS with offline forks; office notes all states; crew; non-crew read-only; clocked-elsewhere banner
+> - [ ] Z3 docked bar per spec (snap-first toast → PhotoNoteSheet; keyboard hide; disabled-state handling)
+> - [ ] Z4 as FUNCTIONAL MINIMUM: visits switcher works (needed to exercise states); Job&Claim/photos as compact stubs (H2 completes them)
+> - [ ] i18n-ready: every string through `t()` (`hub` + `tech` namespaces), EN complete, PT/ES keys present (draft ok), parity test extended
+> - [ ] Tests named first, then green: useVisitClock derivation; stage-state for non-crew/clocked-elsewhere; RPC backward-compat; checklist optimistic-revert; dock safe-area formula present
+> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `tech-phase-reviewer` (grades against THIS block); UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff — owner/orchestrator merges)
+
+### Phase H2 — Below-fold & polish
+> **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** H1 merged.
+> **Model: Opus · high** (design polish IS the deliverable). Same read scope as H1.
+> **Close-out checklist:**
+> - [ ] Z4 complete per spec (visits/Job&Claim/photos&notes/report; order binding; caps + See all; Lightbox→PhotoNoteSheet; sync listeners)
+> - [ ] Admin kebab flows complete (merge, typed-DELETE archive)
+> - [ ] Error/not-found/retry states; cancelled-visit rendering; empty states everywhere
+> - [ ] Obsolete M1 modules deleted (whatever H1/H2 replaced: JobPhotos/VisitContext/VisitPicker/JobDetailsPanel/ClaimBreadcrumb as applicable); keepers retained (hubHelpers+tests, WorkAuthBanner logic)
+> - [ ] PT/ES translation sweep to real quality (not machine-stub); parity test green
+> - [ ] Visual polish pass against the v2 Dashboard/Schedule design language; css only in §HUB, `tv2-*` classes
+> - [ ] Full close-out gauntlet (as H1) + PR to `dev` ready
+> - [ ] **OWNER GATE opens here:** owner bakes the hub on their phone (flag stays owner-only) — H3 must not dispatch until the owner signs off in writing
+
+### Phase H3 — Cutover (supersedes M2)
+> **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** owner bake
+> sign-off on H2. **Model: Opus · medium.**
+> **Close-out checklist:**
+> - [ ] Flag `page:tech_job_hub` → enabled for all techs (owner flips or explicitly authorizes in the dispatch)
+> - [ ] `/tech/appointment/:id` → resolver: job → redirect to hub `?appt=`; **`job_id` NULL (private/job-less appts — challenge blocker) → render slim JoblessVisit surface** (TimeTracker + checklist + office notes, reusing H1 pieces) — payroll clocks must never lose their surface
+> - [ ] Retargets: TimeTracker's hardcoded supersede "Go to job" link → `apptHref` (ONE authorized line in the frozen file, disclosed); re-grep `/tech/appointment/` + `/tech/jobs/` stragglers (resolver makes most optional); re-verify zero worker deep links
+> - [ ] Delete `TechAppointment.jsx` + `TechJobDetail.jsx`, their routes, dead css; delete orphaned i18n namespaces (`appointment` 62 keys, `job` 60 keys × 3 locales) + their 6 static imports in `src/i18n/index.js`
+> - [ ] Full close-out gauntlet + **two-direction checkbox reconciliation across the WHOLE tech-v2 roadmap** (final phase)
+
+**Dependency graph:** `plan merged → H1 → H2 → (owner bake, written) → H3`. Strictly
+serial — same files, one design author. Revert: flag-off until H3; `git revert` after.
+
+## What resisted parallelism (honest ledger, v2)
+
+Everything, deliberately. Design coherence demands one author per surface — splitting the
+page across parallel sessions is precisely what produced the M1 stack. The H1/H2 split is
+SEQUENTIAL same-owner protection of the stage's design budget (scope-skeptic's firm call:
+one session ≈ 1.5-1.8× the largest measured single-session output, and history shows the
+stage would be what gets squeezed). Rules bent: ONE — the techQuery key-freeze amendment,
+written into the manifest addendum with rationale (the S/D wave that froze it is complete;
+no parallel consumer exists).
+
+## v2 challenge report (6 agents, 2026-07-04 — what changed)
+
+1. **Parity (MODIFIED, 2 blockers):** job-less private appointments would lose their only
+   surface at cutover → H3's resolver renders a slim JoblessVisit view; equipment
+   list/Day-N/two-tap-remove (billing-critical) restored to Z2; moisture LOG view,
+   offline forks for readings/equipment + sync listeners, crew display, office-notes
+   all-states, checklist all-states + add-task write path, snap-first toast flow, i18n —
+   all folded in.
+2. **Design skeptic (MODIFIED — the axis SURVIVES):** clock-state confirmed as the right
+   ordering axis (universal, billing-critical, matches the dash); "whose clock" defined
+   (per-tech; non-crew read-only; clocked-elsewhere banner + attribution guard); the 40px
+   timer didn't exist → StageClock built as a display over `useVisitClock`;
+   emphasis-not-access adopted; keyboard/docked-bar hazard handled; Job&Claim moved above
+   the gallery.
+3. **Component contracts (MODIFIED):** TimeTracker gets `get_appointment_detail` object
+   only (hub-row crew shape differs — silent-data-loss trap); sheets need parent-supplied
+   rooms/equipmentList + parent-owned saves; docked bar CSS-feasible with 3 cited
+   precedents; sheets' overlay model compatible; PhotoNoteSheet camelCase prop + rooms
+   null-vs-[] semantics preserved.
+4. **Data layer (largely CONFIRMED):** additive keys break no consumer; `claim_detail{}`
+   CUT (fields already on `job.*` — verified live); `room` kind already existed (premise
+   corrected); `techQuery.test.js` must ride the same commit; RLS finding routed to #224.
+5. **Disjointness (CONFIRMED on files):** Phase C merged + fully disjoint; hub modules
+   have zero outside consumers; i18n is the real coupling → i18n-from-day-one binding;
+   H3 owns namespace cleanup; manifest amendment required (and now written).
+6. **Scope (MODIFIED — firm split adopted):** one session rejected as the wrong bet;
+   H1/H2 sequential split protects the stage; inline add-task derisked (RPC exists);
+   migration confirmed small.

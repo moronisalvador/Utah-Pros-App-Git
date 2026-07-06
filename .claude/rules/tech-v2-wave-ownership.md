@@ -110,3 +110,35 @@ existing `.tech-*` selector. v2 styles are new `tv2-*` classes. Mobile-only rule
 Integration tests self-skip without creds (like the CRM suites) and use dedicated fixture
 IDs — **never assert on live row counts**. D's clock-test writes appear in S's month window
 on the shared DB, so both sessions key assertions to their own fixture ids.
+
+---
+
+## 7. Job Hub v2 addendum (2026-07-04) — Sessions H1/H2/H3 (redesign of the rejected M1 surface)
+
+Committed by the Job Hub v2 plan of record (`docs/tech-v2-roadmap.md` → "Job Hub v2"
+section — the authoritative spec). M1 shipped (#307) and the owner rejected the UX; the
+v2 phases replace its surface at the same route/flag. §§1–6 stay binding except as
+amended here. **Strictly serial: H1 → H2 → owner bake (written sign-off) → H3.** No
+parallel session runs against these files.
+
+| Session | Phase | Owns exclusively (edit only these) | Schema/RPC |
+|---|---|---|---|
+| H1 | Stage & Dock | `src/pages/tech/v2/TechJobHub.jsx`, `src/pages/tech/v2/hub/**`, css §HUB, **`src/lib/techQuery.js` + `src/lib/techQuery.test.js` (the one authorized frozen-file amendment — see below)**, its one migration, `src/i18n/locales/*/hub.json` (new) | additive: `get_job_hub` v2 (+`contacts[]` only) + `get_job_contacts` drift-capture |
+| H2 | Below-fold & polish | `src/pages/tech/v2/TechJobHub.jsx`, `src/pages/tech/v2/hub/**`, css §HUB, `src/i18n/locales/*/hub.json` | none |
+| H3 | Cutover | `/tech/appointment/:id` resolver (App.jsx route line + resolver component), legacy `TechAppointment.jsx` + `TechJobDetail.jsx` deletions + routes + dead css, orphaned i18n namespace deletions (`appointment`, `job` ×3 locales + 6 imports in `src/i18n/index.js`), **ONE authorized line in `TimeTracker.jsx`** (supersede "Go to job" link → `apptHref`, disclosed in the PR) | none |
+
+**Rule amendments (transparency):**
+- **techQuery key freeze.** §1/§3 froze the six kinds for the S∥D wave ("never add a key —
+  add-a-key is an F-owner change"). That wave is complete and no parallel consumer exists;
+  H1 is authorized to add the seventh kind `hub(jobId)` + extend `MUTATION_INVALIDATIONS`
+  (clock/task/photo/room/doc/appointment also invalidate `hub`) + update
+  `techQuery.test.js` in the same commit. After H1 the registry is frozen again.
+- **TimeTracker stays frozen** for H1/H2 (consume as-is; it receives the
+  `get_appointment_detail` object, never the hub row). `useVisitClock` is a **disclosed
+  copy-in** of its entry derivation into `hub/` per §1's sanctioned fallback — NOT an edit.
+  H3 gets exactly one disclosed line (the supersede link retarget).
+- **nav.js untouched by all three phases** — the per-user runtime hub switch
+  (`setHubNav` from `page:tech_job_hub`, shipped 2026-07-04 on dev) already handles the
+  retarget; cutover is the FLAG opening, not a code flip.
+- Everything else in §1's frozen list stays frozen. M1's `hub/**` modules belong to H1/H2
+  to rework or delete (zero outside consumers, challenge-verified).

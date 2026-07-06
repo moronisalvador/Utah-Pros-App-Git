@@ -78,7 +78,7 @@ sync (that earlier plan was dropped). This is how Housecall Pro / Albiware work.
 
 **Safeguards:** `feature:billing` flag, `canEditBilling` (admin+manager), two-click confirms.
 
-**Payment Settings** (`/payments/settings`, from Collections ⚙): accept card/ACH, default terms, card surcharge %, **QBO fee-account mapping** (Stripe clearing + Merchant Fees, via "Load accounts from QuickBooks"); Stripe connect status + Instant-Payout button present but **inert until Stripe keys exist**. Persisted via `get_billing_settings`/`set_billing_setting` (whitelisted).
+**Payment Settings** (`/settings/payments`, from Collections ⚙): accept card/ACH, default terms, card surcharge %, **QBO fee-account mapping** (Stripe clearing + Merchant Fees, via "Load accounts from QuickBooks"); Stripe connect status + Instant-Payout button present but **inert until Stripe keys exist**. Persisted via `get_billing_settings`/`set_billing_setting` (whitelisted).
 
 **Employee docs:** in-app **Help** page (`/help`), `UPR-Invoicing-Financials-Employee-Guide.md`, downloadable `public/UPR-Invoicing-Financials-Guide.pdf` (regen via `scripts/build-invoicing-guide-pdf.py`). ⚠️ These describe the *pre-builder* flow ("Save amount / Push") — **update them** to the line-item builder + dedicated editor when convenient.
 
@@ -148,7 +148,7 @@ Webhooks → Add endpoint**:
 - an **Expense**-type account "**Merchant Fees**",
 - confirm your real **checking/bank** account exists (payout destination).
 
-**5 — Map them in UPR** → `/payments/settings` (admin/manager): click **Load accounts
+**5 — Map them in UPR** → `/settings/payments` (admin/manager): click **Load accounts
 from QuickBooks** and pick **Stripe clearing account**, **Merchant fees expense account**,
 and **Deposit bank account**. Then click **Load from Stripe** and pick the **standard
 payout checking account** + **instant-payout debit card**. (Connection flips to
@@ -209,7 +209,7 @@ skipped on its echo webhook (its `qbo_payment_id` already exists on a UPR paymen
 
 ## 5. Reference map
 
-**Routes:** `/collections` (hub) · `/collections/:claimId` (claim A/R workspace) · `/invoices/:invoiceId` (editor) · `/payments/settings` · `/help` · claim page Billing section · customer Financial tab.
+**Routes:** `/collections` (hub) · `/collections/:claimId` (claim A/R workspace) · `/invoices/:invoiceId` (editor) · `/settings/payments` · `/help` · claim page Billing section · customer Financial tab.
 **Frontend:** `src/components/ClaimBilling.jsx` (A/R panel + payments; opens editor) · `src/components/NewInvoiceModal.jsx` (+ New invoice job picker) · `src/pages/InvoiceEditor.jsx` (+ pay-by-link) · `src/pages/Collections.jsx` (hub shell + global + New invoice) · `src/components/collections/ARDashboard.jsx` · `src/components/collections/PaymentsLedger.jsx` · `src/pages/ClaimCollectionPage.jsx` (workspace) · `src/pages/PaymentSettings.jsx` (+ Stripe payout dest + Instant Payout) · `src/pages/CustomerPage.jsx` (header + New invoice) · `src/pages/Help.jsx` · gate helper `src/lib/claimUtils.js` (`canEditBilling`, `BILLING_EDIT_ROLES`, `getBalances`, `withJobFinancials`).
 **Workers (`functions/api/`):** `qbo-invoice` (create/update/delete invoice, itemized) · `qbo-payment` (create/delete payment) · `qbo-query` (read-only SELECT passthrough) · `qbo-sync-customer` · `quickbooks-connect`/`-callback` · **`stripe-webhook`** (payment_intent.succeeded → payment+fee; payout.paid → transfer) · **`stripe-pay-link`** · **`stripe-payout`** · **`stripe-accounts`** · **`billing-2fa`** (email-code gate for payout destinations). Libs: `functions/lib/quickbooks.js`, **`functions/lib/stripe.js`**.
 **RPCs:** `create_invoice_for_job` · `get_job_financials` · `get_ar_invoices` · `get_payments_ledger` · `get_billing_settings` / `set_billing_setting` · **`claim_stripe_event`** (webhook idempotency) · `get_claim_detail` · `get_customer_detail` · `search_contacts_for_job` (picker). **Triggers:** `recompute_invoice_from_lines` (lines→invoice total) · `update_invoice_paid` (payments→invoice/job) · invoices→jobs A/R sync.

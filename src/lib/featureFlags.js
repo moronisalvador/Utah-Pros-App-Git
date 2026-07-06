@@ -38,7 +38,7 @@
  *     nav page, just set `featureFlag` on its navItems entry and it self-registers.
  * ════════════════════════════════════════════════
  */
-import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS, SYSTEM_ITEMS } from '@/lib/navItems';
+import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS } from '@/lib/navItems';
 
 // ─── SECTION: Helpers ───
 const VALID_CATEGORIES = ['page', 'tool', 'feature'];
@@ -87,6 +87,17 @@ const EXPLICIT_FLAGS = [
     description: 'Rebuilt field-tech schedule/calendar. Owner-only during the Tech Mobile v2 wave; legacy schedule shows for everyone else.',
     enabled: false,
   },
+  // ── Tech Mobile v2 — Phase M1 (Job Hub) ──────────────────────────────────────
+  // enabled:false is LOAD-BEARING (same reason as the two flags above). The live
+  // row is seeded enabled:false + dev_only_user_id (owner) so the merged Job Hub
+  // at /tech/job/:jobId?appt= is owner-only during M1; every other tech keeps the
+  // legacy TechAppointment + TechJobDetail pages (nav still points at them until M2).
+  {
+    key: 'page:tech_job_hub',
+    label: 'Tech Job Hub',
+    description: 'Merged job + appointment field surface (Job Hub) at /tech/job/:jobId?appt=. Owner-only during Tech Mobile v2 M1; legacy appointment/job detail pages show for everyone else.',
+    enabled: false,
+  },
   // ── CRM per-screen rollout sub-flags (Phase 6b) ──────────────────────────────
   // One switch per CRM screen. These are the rollout kill-switches CrmLayout ANDs
   // with each employee's page access (canAccess('crm_<screen>')): a screen shows
@@ -118,7 +129,7 @@ const EXPLICIT_FLAGS = [
 // so adding a flag-gated page needs zero extra bookkeeping here.
 function navDerivedFlags() {
   const byKey = new Map();
-  for (const item of [...NAV_ITEMS, ...PRIMARY_ITEMS, ...OVERFLOW_ITEMS, ...SYSTEM_ITEMS]) {
+  for (const item of [...NAV_ITEMS, ...PRIMARY_ITEMS, ...OVERFLOW_ITEMS]) {
     const key = item?.featureFlag;
     if (!key || byKey.has(key)) continue;
     byKey.set(key, { key, label: item.label || key, description: `Controls the ${item.label || key} page.` });

@@ -1,6 +1,6 @@
 /**
  * ════════════════════════════════════════════════
- * FILE: AdminFeedback.jsx
+ * FILE: FeedbackInbox.jsx
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
@@ -13,7 +13,8 @@
  *   once — with a two-click confirm, since deleting stored files can't be undone.
  *
  * WHERE IT LIVES:
- *   Route:        /tech-feedback  (AdminRoute — owner/admin only)
+ *   Route:        /settings/feedback  (AdminRoute — owner/admin only; the old
+ *                  /tech-feedback URL permanently redirects here)
  *   Rendered by:  src/App.jsx
  *
  * DEPENDS ON:
@@ -46,15 +47,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { stripBucketPrefix, formatBytes, isVideo } from '@/lib/mediaCompress';
 
 const TYPE_BADGE = {
-  bug:     { bg: '#fef2f2', color: '#dc2626', border: '#fecaca', label: 'Bug' },
-  feature: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe', label: 'Improvement' },
+  bug:     { cls: 'fb-badge-bug', label: 'Bug' },
+  feature: { cls: 'fb-badge-feature', label: 'Improvement' },
 };
 
 const STATUS_BADGE = {
-  new:       { bg: '#fffbeb', color: '#d97706', border: '#fde68a', label: 'New' },
-  reviewed:  { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe', label: 'Reviewed' },
-  resolved:  { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0', label: 'Resolved' },
-  dismissed: { bg: '#f8f9fb', color: '#8b929e', border: '#e2e5e9', label: 'Dismissed' },
+  new:       { cls: 'fb-badge-new', label: 'New' },
+  reviewed:  { cls: 'fb-badge-reviewed', label: 'Reviewed' },
+  resolved:  { cls: 'fb-badge-resolved', label: 'Resolved' },
+  dismissed: { cls: 'fb-badge-dismissed', label: 'Dismissed' },
 };
 
 const SOURCE_LABEL = { desktop: 'Desktop', tech: 'Tech app' };
@@ -63,16 +64,7 @@ const VIDEO_EXT = /\.(mp4|mov|webm|m4v|avi|mkv)$/i;
 
 function Badge({ map, value }) {
   const s = map[value] || map.new;
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 600, padding: '2px 8px',
-      borderRadius: 'var(--radius-full)',
-      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
-      whiteSpace: 'nowrap',
-    }}>
-      {s.label}
-    </span>
-  );
+  return <span className={`fb-badge ${s.cls}`}>{s.label}</span>;
 }
 
 function timeAgo(dateStr) {
@@ -278,7 +270,7 @@ export default function AdminFeedback() {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-            Feedback
+            Feedback Inbox
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>
             Bug reports and improvement ideas from the team
@@ -324,7 +316,7 @@ export default function AdminFeedback() {
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--radius-full)',
               background: filter === f.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-              color: filter === f.key ? '#fff' : 'var(--text-tertiary)',
+              color: filter === f.key ? 'var(--accent-text)' : 'var(--text-tertiary)',
             }}>
               {f.count}
             </span>
@@ -352,7 +344,7 @@ export default function AdminFeedback() {
         </select>
 
         {counts.new > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#d97706', marginLeft: 'auto' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--fb-badge-new-color)', marginLeft: 'auto' }}>
             {counts.new} new
           </span>
         )}
@@ -534,14 +526,8 @@ export default function AdminFeedback() {
                               key={s}
                               disabled={updating === item.id}
                               onClick={(e) => { e.stopPropagation(); handleStatusChange(item, s); }}
-                              style={{
-                                height: 30, padding: '0 12px', borderRadius: 'var(--radius-full)',
-                                fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)',
-                                border: `1px solid ${item.status === s ? STATUS_BADGE[s].border : 'var(--border-color)'}`,
-                                background: item.status === s ? STATUS_BADGE[s].bg : 'var(--bg-primary)',
-                                color: item.status === s ? STATUS_BADGE[s].color : 'var(--text-secondary)',
-                                opacity: updating === item.id ? 0.5 : 1,
-                              }}
+                              className={`fb-status-btn ${item.status === s ? STATUS_BADGE[s].cls : ''}`}
+                              style={{ opacity: updating === item.id ? 0.5 : 1 }}
                             >
                               {STATUS_BADGE[s].label}
                             </button>
@@ -606,15 +592,6 @@ export default function AdminFeedback() {
           />
         </div>
       )}
-
-      <style>{`
-        @media (max-width: 768px) {
-          .admin-feedback-header { display: none !important; }
-          .fb-row { grid-template-columns: auto 1fr auto !important; gap: 8px; }
-          .fb-hide-mobile { display: none !important; }
-          .fb-detail-grid { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
     </div>
   );
 }

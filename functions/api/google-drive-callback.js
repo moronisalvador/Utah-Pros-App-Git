@@ -19,7 +19,7 @@
  *
  * NOTES / GOTCHAS:
  *   - No onRequestOptions: this is a navigation, not a fetch, so it answers with
- *     302 redirects to /settings?gdrive=<status>.
+ *     302 redirects to /settings/my-account?gdrive=<status>.
  *   - gdrive_oauth_user holds the EMPLOYEE id (set by the connect worker), so no
  *     extra auth_user_id → employee lookup is needed here.
  * ════════════════════════════════════════════════
@@ -37,7 +37,7 @@ function redirect(env, status, msg) {
   const base = appBaseFrom(env);
   const qs = new URLSearchParams({ gdrive: status });
   if (msg) qs.set('msg', msg.slice(0, 200));
-  return new Response(null, { status: 302, headers: { Location: `${base}/settings?${qs.toString()}` } });
+  return new Response(null, { status: 302, headers: { Location: `${base}/settings/my-account?${qs.toString()}` } });
 }
 
 export async function onRequestGet(context) {

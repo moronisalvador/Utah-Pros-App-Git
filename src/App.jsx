@@ -18,6 +18,9 @@ import {
 } from '@/lib/nativeBiometric';
 import { realtimeClient } from '@/lib/realtime';
 import { shouldReloadForStaleChunk, buildResetUrl } from '@/lib/staleChunkReload';
+import { anySettingsChildVisible } from '@/lib/navItems';
+import { isMoroni } from '@/lib/owner';
+import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 
 // Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
 // small (esp. the native tech app, which never loads admin/desktop pages).
@@ -71,8 +74,20 @@ const Schedule = lazyRetry(() => import('@/pages/Schedule'));
 const ScheduleTemplates = lazyRetry(() => import('@/pages/ScheduleTemplates'));
 const TimeTracking = lazyRetry(() => import('@/pages/TimeTracking'));
 const Marketing = lazyRetry(() => import('@/pages/Marketing'));
-const Admin = lazyRetry(() => import('@/pages/Admin'));
-const Settings = lazyRetry(() => import('@/pages/Settings'));
+// Settings hub — index + sub-pages (Settings Overhaul Phase F; Settings.jsx +
+// Admin.jsx dissolved into these routed pages)
+const SettingsHome = lazyRetry(() => import('@/pages/settings/SettingsHome'));
+const Carriers = lazyRetry(() => import('@/pages/settings/Carriers'));
+const Referrals = lazyRetry(() => import('@/pages/settings/Referrals'));
+const Templates = lazyRetry(() => import('@/pages/settings/Templates'));
+const TemplatesEditor = lazyRetry(() => import('@/pages/settings/TemplatesEditor'));
+const Commissions = lazyRetry(() => import('@/pages/settings/Commissions'));
+const MyAccount = lazyRetry(() => import('@/pages/settings/MyAccount'));
+const NotificationsSettings = lazyRetry(() => import('@/pages/settings/Notifications'));
+const Team = lazyRetry(() => import('@/pages/settings/Team'));
+const Roles = lazyRetry(() => import('@/pages/settings/Roles'));
+const PageAccess = lazyRetry(() => import('@/pages/settings/PageAccess'));
+const NotificationDefaults = lazyRetry(() => import('@/pages/settings/NotificationDefaults'));
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
@@ -82,16 +97,16 @@ const Status = lazyRetry(() => import('@/pages/Status'));
 const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
-const AdminFeedback = lazyRetry(() => import('@/pages/AdminFeedback'));
+const AdminFeedback = lazyRetry(() => import('@/pages/settings/FeedbackInbox'));
 const Feedback = lazyRetry(() => import('@/pages/Feedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
-const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/AdminDemoSheetBuilder'));
-const AdminIntegrations = lazyRetry(() => import('@/pages/admin/AdminIntegrations'));
+const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/settings/ScopeSheets'));
+const AdminIntegrations = lazyRetry(() => import('@/pages/settings/Integrations'));
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
 const Help = lazyRetry(() => import('@/pages/Help'));
 const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
 const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
-const PaymentSettings = lazyRetry(() => import('@/pages/PaymentSettings'));
+const PaymentSettings = lazyRetry(() => import('@/pages/settings/Payments'));
 const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
 const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
 const CrmLayout = lazyRetry(() => import('@/components/CrmLayout'));
@@ -119,6 +134,7 @@ const TechClaimDetail = lazyRetry(() => import('@/pages/tech/TechClaimDetail'));
 const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
 const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
 const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
+const TechJobHub = lazyRetry(() => import('@/pages/tech/v2/TechJobHub'));
 const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
 const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
 const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
@@ -159,7 +175,7 @@ function FeatureRoute({ flag, children }) {
 // Even other admins can't access this via direct URL
 function DevRoute({ children }) {
   const { employee } = useAuth();
-  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  if (!isMoroni(employee)) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -167,7 +183,19 @@ function DevRoute({ children }) {
 // surfaces that even other admins can't reach via direct URL.
 function MoroniRoute({ children }) {
   const { employee } = useAuth();
-  if (employee?.email !== 'moroni@utah-pros.com') return <Navigate to="/" replace />;
+  if (!isMoroni(employee)) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Settings hub index (/settings) — GC3: reachable when ANY child settings page
+// is visible to the user (keeps the override-only supervisor's path alive and,
+// per GC8, every employee sees at least their Personal group). The individual
+// sub-routes keep their own per-page guards.
+function SettingsIndexRoute({ children }) {
+  const { employee, canAccess } = useAuth();
+  if (!employee) return <Navigate to="/" replace />;
+  const ctx = { canAccess, employee, isMoroni: isMoroni(employee) };
+  if (!anySettingsChildVisible(ctx)) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -230,6 +258,12 @@ function TechRoutes() {
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
+      {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
+          (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is
+          on for (AuthContext → setHubNav); everyone else keeps legacy links, so
+          they never reach here. This FeatureRoute still guards direct-URL access
+          (a flag-off visitor is bounced to /). M2 opens the flag to all techs. */}
+      <Route path="tech/job/:jobId" element={<FeatureRoute flag="page:tech_job_hub"><ErrorBoundary section="TechJobHub"><TechJobHub /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId/photos" element={<ErrorBoundary section="TechJobAlbum"><TechJobAlbum /></ErrorBoundary>} />
       <Route path="tech/jobs/:jobId/documents" element={<ErrorBoundary section="TechJobDocuments"><TechJobDocuments /></ErrorBoundary>} />
       <Route path="tech/appointment/:id/edit" element={<ErrorBoundary section="TechEditAppointment"><TechEditAppointment /></ErrorBoundary>} />
@@ -327,7 +361,6 @@ function WebRoutes() {
         <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
         <Route path="invoices/:invoiceId" element={<ErrorBoundary section="Invoice"><InvoiceEditor /></ErrorBoundary>} />
-        <Route path="payments/settings" element={<ErrorBoundary section="Payment Settings"><PaymentSettings /></ErrorBoundary>} />
 
         {/* Feature-flagged pages — Sidebar hides the link AND direct URL redirects to / */}
         <Route path="leads" element={
@@ -406,19 +439,55 @@ function WebRoutes() {
           </FeatureRoute>
         } />
 
-        {/* Settings hub — system pages share a left sub-nav on desktop (≥1280px);
-            on mobile/iPad SettingsLayout is a passthrough so each page renders
-            exactly as before. Paths + per-route guards are unchanged. */}
+        {/* Help — unwrapped from the settings hub shell (it's a knowledge surface,
+            not a settings page). Renders directly inside the main Layout. */}
+        <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
+
+        {/* Settings hub — grouped left rail on desktop (≥1024px); on mobile/iPad
+            SettingsLayout hides the rail and /settings is the tappable index
+            (SettingsHome). Settings Overhaul Phase F: Settings.jsx + Admin.jsx
+            dissolved into the routed sub-pages below. GC gates per the roadmap. */}
         <Route element={<SettingsLayout />}>
-          <Route path="settings" element={<ErrorBoundary section="Settings"><Settings /></ErrorBoundary>} />
-          <Route path="help" element={<ErrorBoundary section="Help"><Help /></ErrorBoundary>} />
-          <Route path="admin" element={<AdminRoute><ErrorBoundary section="Admin"><Admin /></ErrorBoundary></AdminRoute>} />
-          <Route path="admin/demo-sheet-builder" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="AdminDemoSheetBuilder"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
-          <Route path="admin/integrations" element={<AdminRoute><ErrorBoundary section="AdminIntegrations"><AdminIntegrations /></ErrorBoundary></AdminRoute>} />
-          <Route path="tech-feedback" element={<AdminRoute><ErrorBoundary section="AdminFeedback"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
-          {/* Dev Tools — Moroni only, not role-based */}
+          {/* Index — GC3 any-visible-child gate. */}
+          <Route path="settings" element={<SettingsIndexRoute><ErrorBoundary section="Settings"><SettingsHome /></ErrorBoundary></SettingsIndexRoute>} />
+
+          {/* Workspace — Carriers/Referrals/Templates/Commissions gate on
+              canAccess('settings') (the old /settings gate, incl. payroll rates);
+              Scope Sheets on demo_sheet_builder; Payments self-guards in-component
+              (canEditBilling) exactly as the retired /payments/settings did. */}
+          <Route path="settings/carriers" element={<AccessRoute navKey="settings"><ErrorBoundary section="Carriers"><Carriers /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/referrals" element={<AccessRoute navKey="settings"><ErrorBoundary section="Referrals"><Referrals /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/templates" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates"><Templates /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/templates/:docType" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates Editor"><TemplatesEditor /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/commissions" element={<AccessRoute navKey="settings"><ErrorBoundary section="Commissions"><Commissions /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/payments" element={<ErrorBoundary section="Payment Settings"><PaymentSettings /></ErrorBoundary>} />
+          <Route path="settings/scope-sheets" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="Scope Sheets"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
+
+          {/* Team & access — all AdminRoute (unchanged effective access). */}
+          <Route path="settings/team" element={<AdminRoute><ErrorBoundary section="Team"><Team /></ErrorBoundary></AdminRoute>} />
+          <Route path="settings/roles" element={<AdminRoute><ErrorBoundary section="Roles"><Roles /></ErrorBoundary></AdminRoute>} />
+          <Route path="settings/page-access" element={<AdminRoute><ErrorBoundary section="Page Access"><PageAccess /></ErrorBoundary></AdminRoute>} />
+          <Route path="settings/notification-defaults" element={<AdminRoute><ErrorBoundary section="Notification Defaults"><NotificationDefaults /></ErrorBoundary></AdminRoute>} />
+          <Route path="settings/feedback" element={<AdminRoute><ErrorBoundary section="Feedback Inbox"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
+
+          {/* Connections. */}
+          <Route path="settings/integrations" element={<AdminRoute><ErrorBoundary section="Integrations"><AdminIntegrations /></ErrorBoundary></AdminRoute>} />
+
+          {/* Personal — GC8 (owner-approved): visible to every employee, no route gate. */}
+          <Route path="settings/my-account" element={<ErrorBoundary section="My Account"><MyAccount /></ErrorBoundary>} />
+          <Route path="settings/notifications" element={<ErrorBoundary section="Notifications"><NotificationsSettings /></ErrorBoundary>} />
+
+          {/* Owner — Dev Tools (Moroni only, not role-based). */}
           <Route path="dev-tools" element={<DevRoute><ErrorBoundary section="DevTools"><DevTools /></ErrorBoundary></DevRoute>} />
         </Route>
+
+        {/* Permanent redirects — retired routes → new settings IA. Mounted OUTSIDE
+            SettingsLayout so they don't flash the hub shell. notifications.link
+            rows already store /tech-feedback, so these stay permanent
+            (src/lib/settingsRedirects.js). */}
+        {SETTINGS_REDIRECTS.map(r => (
+          <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
+        ))}
       </Route>
 
       <Route path="*" element={<NotFound />} />

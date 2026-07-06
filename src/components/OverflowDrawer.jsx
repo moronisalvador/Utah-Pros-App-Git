@@ -30,6 +30,7 @@ import { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { OVERFLOW_ITEMS, isItemVisible } from '@/lib/navItems';
+import { isMoroni as isMoroniOwner } from '@/lib/owner';
 
 function IconX(p) {
   return (
@@ -41,7 +42,7 @@ function IconX(p) {
 
 export default function OverflowDrawer({ open, onClose }) {
   const { employee, canAccess, isFeatureEnabled } = useAuth();
-  const isMoroni = employee?.email === 'moroni@utah-pros.com';
+  const isMoroni = isMoroniOwner(employee);
   const ctx = { canAccess, isFeatureEnabled, employee, isMoroni };
 
   useEffect(() => {

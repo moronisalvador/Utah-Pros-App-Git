@@ -111,7 +111,7 @@ export default function Collections() {
         </div>
         <div className="coll-actions">
           {canEdit && (
-            <GhostButton leftIcon={<span style={{ color: '#98a2b3' }} aria-hidden="true">⚙</span>} onClick={() => navigate('/payments/settings')}>
+            <GhostButton leftIcon={<span style={{ color: '#98a2b3' }} aria-hidden="true">⚙</span>} onClick={() => navigate('/settings/payments')}>
               Payment settings
             </GhostButton>
           )}

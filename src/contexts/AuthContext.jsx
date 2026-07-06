@@ -4,6 +4,7 @@ import { createSupabaseClient, db } from '@/lib/supabase';
 import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotifications';
 import { setBiometricEnabled } from '@/lib/nativeBiometric';
 import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
+import { setHubNav } from '@/components/tech/v2/nav';
 
 const AuthContext = createContext(null);
 
@@ -112,9 +113,17 @@ export function AuthProvider({ children }) {
       // push service worker. One-load lag is accepted. Mirror the SAME
       // enabled/dev-only logic isFeatureEnabled uses so the SW matches the UI.
       writeWebPushMirror(flagMap['feature:web_push'], emp);
+      // Mirror the viewer's page:tech_job_hub result into the v2 nav helpers so
+      // apptHref/jobHref repoint to the Job Hub ONLY for users the flag is on for
+      // (owner today). Same enabled/dev-only resolution as isFeatureEnabled; a
+      // missing row → false → legacy pages (safe default). Flip the flag off to
+      // revert instantly. NB: not the fail-open case — the row is seeded.
+      const hubFlag = flagMap['page:tech_job_hub'];
+      setHubNav(!!hubFlag && (hubFlag.enabled || (emp && hubFlag.dev_only_user_id === emp.id)));
     } catch (err) {
       console.error('Feature flags load error:', err);
       setFeatureFlags({}); // Fail open — no flags = everything unrestricted
+      setHubNav(false);    // …but never repoint tech nav to the hub on a flag-load error
     }
   };
 

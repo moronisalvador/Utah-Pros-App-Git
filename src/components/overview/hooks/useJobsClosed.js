@@ -14,8 +14,11 @@
  *   A job is "real / sold" when a Work Authorization or Reconstruction Agreement is
  *   signed, a QBO invoice is created, or its estimate is approved — captured by the
  *   jobs.is_real_job flag (20260627_real_job_classification.sql, also used by billing).
- *   The sale date is jobs.real_job_marked_at (when it became real). get_jobs_closed
- *   returns one row per real job since a floor date; this file counts them per period.
+ *   The sale date is the CLAIM's created date (COALESCE(claims.created_at,
+ *   jobs.created_at) — 20260704_get_jobs_closed_claim_date_basis.sql), so a loss
+ *   entered late counts in the month the claim was created, not the month the job
+ *   record was made. get_jobs_closed returns one row per real job since a floor
+ *   date; this file counts them per period.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (hook)
@@ -83,7 +86,8 @@ export function useJobsClosed(period = 'MTD') {
     const now = Date.now();
     const floor = new Date(now - 400 * DAY).toISOString().slice(0, 10);
     // Count REAL (sold) jobs — jobs.is_real_job set by signed work-auth / QBO invoice /
-    // approved estimate (20260627_real_job_classification.sql). Dated by real_job_marked_at.
+    // approved estimate (20260627_real_job_classification.sql). Dated by the claim's
+    // created date (COALESCE(claims.created_at, jobs.created_at)).
     const rows = await db.rpc('get_jobs_closed', { p_floor: floor });
     const times = (rows || []).map(r => r.sale_date && new Date(r.sale_date).getTime()).filter(Boolean);
 

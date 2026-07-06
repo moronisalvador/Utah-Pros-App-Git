@@ -38,7 +38,7 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
-- **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper
+- **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper. Omni-inbox (Jul 4 2026) adds `functions/lib/email-threading.js` (reply-token address build/parse, XSS-safe inbound HTML sanitizer, In-Reply-To/References headers) and `functions/lib/conversation-email.js` (`sendConversationEmail` — reason-aware suppression gate before Resend, reply-only/channel-locked). Bounce/complaint feedback → `functions/api/resend-webhook.js`.
 - **SMS:** Twilio (pending go-live — ID verification blocked)
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
@@ -183,16 +183,22 @@ src/
     EncircleImport.jsx            — Selective Encircle claim import with division selection (feature-flagged: page:encircle_import, route: /import/encircle)
     OOPPricing.jsx                — Out-of-Pocket Pricing Calculator (Apr 20 2026). Route /tools/oop-pricing. Feature-flagged tool:oop_pricing (dev-only → Moroni). 2-column desktop / stacked mobile layout: LEFT inputs (job type pill, customer, labor, 5 equipment rows count×days, materials+fees, mold add-ons when job_type=mold, notes) / RIGHT sticky breakdown (customer-facing line items + big QUOTE TOTAL) + internal margin panel (hidden via .oop-no-print). Margin color tiers: green ≥20%, amber 10–20%, red <10% (with "Recommend decline or reprice" banner). Supports ?jobId=X prefill (reads jobs table → sets jobType from division + insured_name + address + shows linked chip) and ?quoteId=X rehydrate (loads via get_oop_quote). Browser print omits input column + sidebar + internal margin via @media print rules in index.css. Pricing math + form hydration extracted to src/lib/oopPricing.js (shared with TechOOPPricing.jsx).
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
-    Settings.jsx                  — Document template editor + lookup tables (carriers, referral sources)
-    Help.jsx                      — In-app Help & Guides centre (route /help, reached from the TopNav ? button + Sidebar; wrapped by SettingsLayout). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
+    Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
+                                    src/pages/settings/* routed sub-pages (see the "Settings Overhaul
+                                    — Phase F Foundation" section below for the full route map).
+    settings/                     — SettingsHome (index) + Carriers/Referrals/Templates/TemplatesEditor/
+                                    Commissions/MyAccount/Notifications (from Settings.jsx) + Team/Roles/
+                                    PageAccess/NotificationDefaults (from Admin.jsx) + Payments/Integrations/
+                                    FeedbackInbox/ScopeSheets (git-mv'd) + templates/{templateData.jsx,TemplateEditor.jsx}
+    Help.jsx                      — In-app Help & Guides centre (route /help — now UNWRAPPED from the settings hub, renders directly in Layout; reached from the TopNav ? button + Sidebar). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
     Legal.jsx                     — Public /terms + /privacy pages (required by Intuit's QBO production profile)
-    AdminFeedback.jsx             — Tech feedback inbox (route /tech-feedback, admin-only)
-    AdminDemoSheetBuilder.jsx     — Scope-sheet schema builder (route /admin/demo-sheet-builder)
-    admin/AdminIntegrations.jsx   — Admin "API Keys" page (route /admin/integrations, admin-only): paste the GitHub token (+ default repo) that the UPR MCP reads; extensible to more providers. Uses the github-connect worker.
+    settings/FeedbackInbox.jsx    — Feedback inbox (route /settings/feedback, admin-only; was /tech-feedback → permanent redirect)
+    settings/ScopeSheets.jsx      — Scope-sheet schema builder (route /settings/scope-sheets; was /admin/demo-sheet-builder → redirect)
+    settings/Integrations.jsx     — "Integrations" page (route /settings/integrations, admin-only; was /admin/integrations → redirect): paste the GitHub token (+ default repo) that the UPR MCP reads; extensible to more providers. Uses the github-connect worker.
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
-    PaymentSettings.jsx           — Stripe pay-link + payout settings (route /payments/settings)
+    settings/Payments.jsx         — Stripe pay-link + payout settings (route /settings/payments; was /payments/settings → redirect)
   pages/tech/
     TechDash.jsx / TechSchedule.jsx — DELETED (Tech Mobile v2 Phase C, Jul 4 2026 cutover). Both
       v2 flags (page:tech_dash_v2, page:tech_sched_v2) baked and went live for all techs, so the
@@ -266,6 +272,10 @@ functions/
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
     process-scheduled.js          — Cron: process scheduled SMS messages (60s)
+    resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
+                                    HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
+                                    fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
+                                    email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS with TCPA compliance + DND guard
@@ -381,6 +391,15 @@ maps. This dashboard keeps its own scoped palette (above).
   it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
   read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
   `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+  - **Sale DATING (which month a sold job counts in) differs by consumer — intentional:**
+    - **Card `get_jobs_closed`** dates a sale by **`COALESCE(claims.created_at, jobs.created_at)`** — the
+      **claim-created date** (migration `20260704_get_jobs_closed_claim_date_basis.sql`, owner decision
+      2026-07-04). Rationale: a spring loss back-entered as a June job record shouldn't count as a June sale.
+      Claim-less jobs (estimate→job flow) fall back to `jobs.created_at`. `is_real_job` still gates the *set*;
+      this only re-DATES. Verified: June 2026 10 → 7 (three earlier-claim jobs moved to May/Apr/Mar).
+    - **`get_commissions`** still dates by **`jobs.created_at`** (unchanged) — claim-date dating would drag a
+      sold job's commission into an already-closed prior payroll period. Card = when-sold reporting view;
+      commissions = when-the-job-entered-the-system. Aligning them is a separate money-sensitive decision.
 - **Commission foundation (lean v1) — DONE:** the base for paying sales commissions (first payroll of each
   month, for everything sold the **previous month**), built on `is_real_job`.
   - **Salesperson = derived** per job (no manual override): the signed work-auth/recon `sign_requests.sent_by`,
@@ -471,18 +490,34 @@ dispatch_board_jobs     — View: jobs for dispatch board
 
 ### Messaging & Conversations
 ```
-conversations           — SMS conversation threads
-messages                — Individual SMS/MMS messages
-conversation_participants
+conversations           — conversation threads. Omni-inbox (Jul 4 2026) adds email_reply_token
+                          (UNIQUE, >=128-bit random, backfilled) — the sole authoritative email-reply
+                          correlator (reply+<token>@utahpros.app → this conversation)
+messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) additive: direction
+                          ('inbound'|'outbound'|'note', backfilled from type); channel now DEFAULT 'sms'
+                          + CHECK widened to sms|mms|rcs|email; type CHECK widened to add email_inbound|
+                          email_outbound; nullable email cols: email_message_id (UNIQUE partial),
+                          in_reply_to, email_references, email_from, email_to, subject, email_html,
+                          sender_email
+conversation_participants — Omni-inbox adds nullable `email` (email participants)
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
+email_suppressions      — do-not-email list. Omni-inbox widens reason CHECK: adds hard_bounce|complaint|
+                          global (kept legacy unsubscribed|bounced|complained|manual). Fed by unsubscribe
+                          clicks + the Resend bounce/complaint webhook (resend-webhook.js)
+email_inbound_events    — Omni-inbox (Jul 4 2026): email-event idempotency ledger (message_key UNIQUE).
+                          RLS on, authenticated-only policy; anon reaches it only via claim_inbound_email
 campaigns               — SMS/marketing campaigns
 campaign_recipients     — Recipients per campaign
 notification_queue      — Queued notifications
 ```
+**Omni-inbox Foundation (Phase F, Jul 4 2026):** adds inbound+outbound EMAIL to the SMS-only
+conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
+`.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
+Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
 ### Documents & Esign
 ```
@@ -772,6 +807,22 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 ```
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
 get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+```
+
+### Omni-inbox — email (Foundation, Jul 4 2026)
+```
+claim_inbound_email(p_message_key TEXT) → boolean — SECURITY DEFINER, GRANT anon+authenticated.
+                                  Email-event idempotency: TRUE on first claim of a key, FALSE on
+                                  every duplicate (blank key → FALSE). Backs inbound-email dedup
+                                  (Phase I) + the resend-webhook svix-id dedup (key 'resend:<id>').
+record_email_suppression(p_email TEXT, p_reason TEXT, p_source TEXT DEFAULT NULL) → email_suppressions
+                                  — SECURITY DEFINER, Foundation-internal (resend-webhook only).
+                                  Upserts one row per address (UNIQUE lower(email)) with reason
+                                  precedence — never downgrades a hard suppression to 'unsubscribed'.
+omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test: proves the messages
+                                  type/channel CHECK widen accepts all old+new values, rejects bogus,
+                                  and claim idempotency. Backs supabase/tests/omni_messages_check_widen.
+                                  Creates+deletes its own throwaway rows (leaves nothing).
 ```
 
 ### Workers & Dev
@@ -1492,6 +1543,69 @@ per `docs/tech-v2-roadmap.md`).
   credentials in this container — nothing renders); owner-gated post-deploy pass, same
   convention as Sessions S/D.
 
+### Phase M1 — Job Hub (Jul 4 2026)
+
+Merges the two legacy detail screens (`TechAppointment.jsx` + `TechJobDetail.jsx`) into ONE
+job-rooted surface at **`/tech/job/:jobId?appt=<id>`**, behind `page:tech_job_hub` (seeded
+`enabled=false` + `dev_only_user_id`=owner on live Supabase; `EXPLICIT_FLAGS` entry
+`enabled:false`). Owner-only during M1. **Nav is NOT retargeted** — `apptHref()`/`jobHref()`/
+`HUB_ENABLED` stay pointed at the legacy pages until M2; the hub is reachable by its route
+(the flag redirects everyone else to `/`). Owns `src/pages/tech/v2/TechJobHub.jsx` +
+`src/pages/tech/v2/hub/**` + CSS in the `TECH-V2: HUB` marker.
+
+- **New RPC (own additive migration `20260704_tech_v2_m1_get_job_hub.sql`):**
+  `get_job_hub(p_job_id uuid) → jsonb` **(NEW)** — one round trip: `{ job (full row), claim
+  {id, claim_number} | null, work_auth_signed boolean, appointments [...] }`. Appointments are
+  scoped by `a.job_id` (NOT via the claim), so a job with no claim still lists its visits —
+  the per-row shape is byte-identical to `get_claim_appointments`. SECURITY DEFINER + GRANT to
+  anon, authenticated; read-only; additive (touches no live function/table).
+- **Structure:** shared `Hero` + `ActionBar` carry job identity (TechAppointment's hand-rolled
+  hero + 5-button bar retired). `VisitPicker` groups the job's appointments Upcoming/Past and
+  selects one → syncs `?appt=`. `VisitContext` (per selected visit): `TimeTracker` consumed
+  as-is, tasks + toggle (`get_appointment_tasks`/`toggle_appointment_task`), crew, Scope Sheet
+  entry, and moisture/equipment behind their EXISTING flags (`page:tech_moisture`,
+  `page:tech_equipment`, `page:tech_rooms`). Job-wide: `JobPhotos` (grouped gallery + Lightbox
+  + notes), `ClaimBreadcrumb`, collapsible `JobDetailsPanel`, `AdminJobMenu` (role-gated merge +
+  typed-DELETE soft delete). Work-auth logic extracted ONCE (`WorkAuthBanner` + `showWorkAuthBanner`).
+  Exactly ONE `statusBarLight`/`Dark` effect pair (in `TechJobHub`).
+- **Selected-visit detail** via `get_appointment_detail(selectedId)`; **job-wide docs** via
+  `job_documents` (`buildDocsQuery` preserves the legacy `or=(appointment_id,job_id)` fallback
+  shape). Mutations invalidate the shared dash/schedule caches via `invalidateTech`.
+- **Offline fork (owner default):** a photo capture *in a visit context* (a visit selected)
+  keeps the offline queue and tags the appointment; a *job-level* capture (no visit) uploads
+  directly. Readings/equipment (always per-visit) keep the queue. Notes always insert directly.
+- **Pure logic** in `hub/hubHelpers.js` (`selectVisitId` visit-picker, `showWorkAuthBanner`
+  predicate parity with both legacy pages, `buildDocsQuery` doc-fallback parity) with 16
+  committed vitest cases (`hub/hubHelpers.test.js`, TEST fixtures only). `npm test`/`build`/`eslint`
+  green. M2 will flip `HUB_ENABLED`, add the `/tech/appointment/:id` resolver redirect, and
+  delete the two legacy pages.
+
+> ⚠️ **UPDATE (Jul 4 2026): M1 was rejected by the owner** ("it just stacked one page onto the
+> other") and its surface is **superseded by "Job Hub v2"** (below). M1's flag was reverted to
+> `enabled=false, dev_only_user_id=null`. M1's shared-component reuse (`Hero`/`ActionBar`/
+> `TimeTracker`/`PhotoNoteSheet`/sheets) and pure `hubHelpers` survive; the stacked page shell +
+> hand-rolled section lists are being replaced.
+
+### Job Hub v2 — "the visit is the screen" (plan of record Jul 4 2026, docs-only)
+
+Ground-up redesign replacing M1's surface at the same route/flag. Instead of stacking every
+section, the **selected visit's clock state** drives what's prominent (ARRIVING / WORKING /
+WRAPPED), everything stays reachable in every state, and capture/comms live in a docked
+thumb-zone bar. **6-agent adversarial challenge pass complete** (all MODIFIED, none REFUTED —
+fixed 2 parity blockers incl. job-less private appointments + the equipment/Day-N billing list).
+Full spec + Z1–Z4 layout + challenge report: `docs/tech-v2-roadmap.md` → "Job Hub v2" section.
+Cold-session prompts: `docs/tech-v2-dispatch.md` → H1/H2/H3. Ownership + the one authorized
+`techQuery` amendment: `.claude/rules/tech-v2-wave-ownership.md` §7.
+- **Phases (strictly serial):** H1 Stage & Dock (Opus·high — migration `get_job_hub` v2 adds
+  `contacts[]` only + `get_job_contacts` drift-capture; `useVisitClock` hook + `StageClock`;
+  Z1/Z2/Z3; i18n from day one) → H2 Below-fold & polish (Opus·high) → **owner bake (written
+  sign-off)** → H3 Cutover (Opus·medium — flag to all techs; `/tech/appointment/:id` resolver
+  incl. a **slim job-less-appointment surface** so private-appt payroll clocks keep a home;
+  delete the two legacy pages + orphaned `appointment`/`job` i18n namespaces).
+- **Nav retarget already shipped** (Jul 4): the per-user runtime `setHubNav`/`isHubNav` switch
+  in `src/components/tech/v2/nav.js` (mirrored from `page:tech_job_hub` by `AuthContext`) replaced
+  the static `HUB_ENABLED` const — so cutover is the flag opening, not a code flip.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
@@ -1607,7 +1721,7 @@ setup is finished.
 
 **On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
 
-**UI:** DevTools → Integrations tab (Moroni-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill.
+**UI:** `/settings/integrations` (admin-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill. (P7-lite, 2026-07-04: the DevTools → Integrations tab this was ported from has been deleted.)
 
 **Environments / domains (IMPORTANT):**
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
@@ -1932,7 +2046,7 @@ ACH to `'eft'`, which violates the `payments_payment_method_check` — now `'ach
 **Status:** S3 + S4 built; builds/lints clean; both migrations applied & verified
 (columns, RLS-locked ledgers, idempotency true→false, trigger nets refunds). **Activation
 pending owner Stripe setup** (keys + QBO "Stripe Clearing"/"Merchant Fees"/deposit-bank
-accounts mapped on `/payments/settings` + webhook endpoint registered →
+accounts mapped on `/settings/payments` + webhook endpoint registered →
 `STRIPE_WEBHOOK_SECRET`, subscribing `payment_intent.succeeded`, `payout.paid`,
 `charge.refunded`, `charge.dispute.created`). Then a live test on dev. See
 `QBO-BILLING-STATUS.md` §4 for the exact click-path.
@@ -1956,7 +2070,7 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 - UPR DB: `upr_select`, `upr_rpc` (any of the ~150 RPCs — **mutating fns gated**: names not starting get_/list_/search_/preview_/count_/fetch_ require `confirm`), `upr_schema` (tables + functions), `upr_describe` (a table's columns / an RPC's params), `upr_search` (cross-entity find: contacts/jobs/claims), `upr_insert`, `upr_update`, `upr_delete` (filter required).
 - **Encircle + Resend (undocumented until this audit — ~22 tools total, `upr-mcp/src/encircle.js` + `resend.js`):** mirrors the Encircle and Resend REST APIs (claims/rooms/notes/media/assignments for Encircle; domains/emails for Resend) the same way the QBO tools mirror QuickBooks — see those source files for the exact tool list rather than duplicating it here.
 - **CallRail + Deepgram, Stripe, Twilio, Google Ads, Meta Ads, GitHub (added Jul 2026 — 32 tools, `upr-mcp/src/{callrail,stripe,twilio,googleads,metaads,github}.js`):** each module follows the same generic-power-tool + named-conveniences pattern; reads run immediately, writes preview unless `confirm:true`. Credential model splits two ways — **reuse a stored token** (CallRail=`callrail`, Deepgram=`deepgram`, Google Ads=`google_ads`, Meta Ads=`meta_ads` rows in `integration_credentials`; no worker secret for the token) vs. **static worker secret** (`STRIPE_SECRET_KEY`; `TWILIO_ACCOUNT_SID`+`TWILIO_AUTH_TOKEN`; the ad apps also need their `*_CLIENT_ID/SECRET`/`*_APP_ID/SECRET` + account-id secrets). A tool returns a clear "not configured"/"not connected" error until its credential is present. See the source files for the exact tool list. Highlights: `callrail_list_calls`/`callrail_transcribe`, `stripe_get_balance`/`stripe_create_payout`, `twilio_send_sms`, `google_ads_campaign_spend`, `meta_ads_insights`.
-- **GitHub — DB-managed token + full write lifecycle (Jul 2026, `upr-mcp/src/github.js`):** the PAT is now read from `integration_credentials` (provider=`github`) first — set on the **admin API-keys page** (`/admin/integrations`) via the `github-connect` worker — with an env `GITHUB_TOKEN` fallback; default repo from `integration_config.github_default_repo` → `GITHUB_DEFAULT_REPO`. Tools cover the full PR/commit lifecycle: reads (`github_list_prs`, `github_get_pr`, `github_get_file`, `github_list_commits`, `github_get_commit`, `github_list_branches`, `github_search_code`) and guarded writes (`github_merge_pr`, `github_create_pr`, `github_update_pr`, `github_create_branch`, `github_commit_file`, `github_add_comment`, `github_create_issue`) + generic `github_get`/`github_request`. A Worker has no git binary, so "push/pull" = the Contents/Git-data API. PAT scopes: Contents R/W, Pull requests R/W, Issues R/W.
+- **GitHub — DB-managed token + full write lifecycle (Jul 2026, `upr-mcp/src/github.js`):** the PAT is now read from `integration_credentials` (provider=`github`) first — set on the **admin Integrations page** (`/settings/integrations`, was `/admin/integrations`) via the `github-connect` worker — with an env `GITHUB_TOKEN` fallback; default repo from `integration_config.github_default_repo` → `GITHUB_DEFAULT_REPO`. Tools cover the full PR/commit lifecycle: reads (`github_list_prs`, `github_get_pr`, `github_get_file`, `github_list_commits`, `github_get_commit`, `github_list_branches`, `github_search_code`) and guarded writes (`github_merge_pr`, `github_create_pr`, `github_update_pr`, `github_create_branch`, `github_commit_file`, `github_add_comment`, `github_create_issue`) + generic `github_get`/`github_request`. A Worker has no git binary, so "push/pull" = the Contents/Git-data API. PAT scopes: Contents R/W, Pull requests R/W, Issues R/W.
 
 **New table:** `upr_mcp_audit` (see Logging & Monitoring). **New RPC:** `get_upr_mcp_audit(p_limit)`.
 **Files:** `upr-mcp/{wrangler.toml, package.json, package-lock.json, src/index.js, auth.js, mcp.js, qbo.js, encircle.js, resend.js, callrail.js, stripe.js, twilio.js, googleads.js, metaads.js, github.js, supabase.js, tools.js, audit.js}`; migration `supabase/migrations/20260622_upr_mcp_audit.sql`.
@@ -1968,13 +2082,198 @@ Standalone Cloudflare **Worker** (`upr-mcp/`, NOT part of the Pages app) exposin
 A HousecallPro-style **top horizontal nav** replaces the dark vertical sidebar on **desktop and iPad-landscape widths (≥1024px)**. Phones (≤768px) and narrow tablets / iPad portrait (769–1023px) keep the dark `Sidebar` slide-over + mobile bottom bar. (Breakpoint was originally ≥1280px — lowered to **1024px on Jun 25 2026** so regular iPads in landscape get the top nav too; the prior state is preserved on branch `backup/pre-ipad-nav-breakpoint`.) The `/tech/*` field-tech app is untouched.
 
 - **CSS-only shell:** both `<Sidebar>` and `<TopNav>` are always in the DOM; a single `@media (min-width:1024px)` block (end of `index.css`) hides `.sidebar`, shows `.topnav`, flips `.app-layout` to `flex-direction:column`, sets `--topnav-h:56px` (0 elsewhere so mobile math is unchanged), and height-corrects the three full-viewport pages (`.conversations-layout`, `.jobs-page`, `.job-page` → `calc(100dvh - var(--topnav-h))`). The `@media (max-width:768px)` block is byte-for-byte untouched. A companion `@media (min-width:1024px) and (max-width:1279px)` block collapses the `GlobalSearch` box to its icon (expands on focus) so all 7 primary links fit at narrower iPad widths; ≥1280px keeps the full inline 340px search.
-- **Single source of truth:** `src/lib/navItems.jsx` — `NAV_ITEMS` (legacy sidebar list, unchanged) + `PRIMARY_ITEMS`/`OVERFLOW_ITEMS`/`SYSTEM_ITEMS` + `isItemVisible(item, {canAccess,isFeatureEnabled,employee,isMoroni})` (mirrors legacy gating: adminOnly → role; moroniOnly → email; `always` skips canAccess (Help); else canAccess(key); then featureFlag).
-- **Top bar (`TopNav.jsx`):** logo · primary links [Home `/`, Inbox `/conversations` (unread badge), Schedule, Claims, Customers, My Money `/collections` (`page:collections`), Time `/time-tracking` (`page:time_tracking`)] · `GlobalSearch` · `NewMenu` · `NotificationBell` · Help link (`/help`) · settings gear (`/settings`) · `UserMenu`. **Home/Inbox/My Money/Time are LABEL renames only** — routes + nav_keys unchanged.
+- **Single source of truth:** `src/lib/navItems.jsx` — `NAV_ITEMS` (legacy sidebar list, unchanged) + `PRIMARY_ITEMS`/`OVERFLOW_ITEMS` + `SETTINGS_GROUPS` (settings-hub IA, read by SettingsHome + SettingsLayout) + `isItemVisible(item, {canAccess,isFeatureEnabled,employee,isMoroni})` (mirrors legacy gating: adminOnly → role; moroniOnly → email; `always` skips canAccess (Help); `settingsHub` → anySettingsChildVisible; else canAccess(key); then featureFlag).
+- **Top bar (`TopNav.jsx`):** logo · primary links [Home `/`, Inbox `/conversations` (unread badge), Schedule, Claims, Customers, My Money `/collections` (`page:collections`), Time `/time-tracking` (`page:time_tracking`)] · `GlobalSearch` · `NewMenu` · `NotificationBell` · Help link (`/help`) · settings gear (`/settings`, gated `canAccess('settings')` since 2026-07-04) · `UserMenu`. **Home/Inbox/My Money/Time are LABEL renames only** — routes + nav_keys unchanged.
 - **Overflow drawer (`OverflowDrawer.jsx`):** hamburger-opened left slide-over (dark) — Jobs, Production, Schedule Templates, Encircle Import, OOP Pricing, Leads, Marketing.
 - **New menu (`NewMenu.jsx`):** New Job (→ existing job+claim creator `CreateJobModal`; label renamed from "New Claim" 2026-07), New Estimate (global `NewEstimateModal`, gated on `page:estimates` — hidden until the flag is on, in lockstep with the Estimates nav links), New Customer (`AddContactModal`), New Invoice (global `NewInvoiceModal`) — all via `Layout.handleCreateAction`.
 - **User menu (`UserMenu.jsx`):** avatar dropdown — admin-only Tech View + Sign Out.
-- **Settings hub (`SettingsLayout.jsx`):** pathless route wrapping the SYSTEM pages (`/settings`, `/help`, `/admin`, `/admin/demo-sheet-builder`, `/tech-feedback`, `/dev-tools`). Desktop shows a left sub-rail (`SYSTEM_ITEMS`, gated via `isItemVisible`): Settings · Admin · Scope Sheet Builder · Tech Feedback · Dev Tools. **Help & Guides is reached from the top-bar Help icon (`/help`), not the rail** — the page still renders inside the hub layout. Below 1024px it's `display:contents` (passthrough — pages render exactly as before). Paths + AdminRoute/DevRoute guards unchanged. `Settings.jsx` keeps its own internal Carriers/Referrals/Templates sub-nav inside its content.
+- **Settings hub (`SettingsLayout.jsx`) — rebuilt by Settings Overhaul Phase F (2026-07-04):**
+  pathless route wrapping the `/settings/*` sub-page tree + `/dev-tools` (see the "Settings Overhaul
+  — Phase F Foundation" section above for the full route map, gates, and dissolved monoliths).
+  Desktop (≥1024px) shows a **grouped** left rail (Workspace/Team/Connections/Personal/Owner) read
+  from `SETTINGS_GROUPS` + `isSettingsItemVisible`; below 1024px the rail is hidden and `/settings`
+  is the tappable index (`SettingsHome`), each sub-page showing a "← Settings" back link. `/help` is
+  now UNWRAPPED from the hub (renders directly in Layout). (The old flat `SYSTEM_ITEMS` array was deleted — `SETTINGS_GROUPS` replaces it; `featureFlags.js` no longer iterates it.)
+- **Settings Overhaul (plan of record, 2026-07-04):** the entire Settings/System area is being restructured per `docs/settings-overhaul-roadmap.md` + `docs/settings-overhaul-dispatch.md` — grouped hub with routed sub-pages under `/settings/*`, SettingsHome index (the mobile experience), Admin/Settings monolith dissolution, PaymentSettings/API Keys/Feedback Inbox/Scope Sheet Builder relocations with permanent redirects. **Phase 0 shipped 2026-07-04 (`82ca87d`):** `/settings` route wrapped in `AccessRoute('settings')` + TopNav gear gated `canAccess('settings')` — closes the live payroll exposure (any employee could URL-reach the Commissions tab and read/write commission rates; nav already denied it). Wave sessions launch from the dispatch doc; ownership manifest `.claude/rules/settings-overhaul-wave-ownership.md` is committed by its Phase F. New reviewer agent: `settings-phase-reviewer`.
 - **Bell single-mount:** `Layout` gates the one `NotificationBell` by `matchMedia('(min-width:1024px)')` (TopNav on desktop/iPad-landscape, Sidebar header otherwise) so there are never two live notification subscriptions (no duplicate toasts). `NotificationBell` gained an optional `align` prop ('left'|'right').
+
+## Settings Overhaul — Phase F Foundation (Jul 4 2026)
+Structural, behavior-identical reorganization of the entire Settings area into a grouped hub
+with routed sub-pages. Full plan: `docs/settings-overhaul-roadmap.md`; file/RPC ownership:
+`.claude/rules/settings-overhaul-wave-ownership.md`.
+
+**Routes (all under `SettingsLayout`, inside the main `Layout`):** `/settings` (SettingsHome
+index — GC3 any-visible-child gate) · Workspace: `/settings/{carriers,referrals,templates,
+templates/:docType,commissions,payments,scope-sheets}` · Team: `/settings/{team,roles,
+page-access,notification-defaults,feedback}` · Connections: `/settings/integrations` ·
+Personal: `/settings/{my-account,notifications}` (GC8 — every employee) · Owner: `/dev-tools`.
+`/help` unwrapped from the hub shell. **Permanent redirects** (`src/lib/settingsRedirects.js`):
+`/admin→/settings/team`, `/admin/integrations→/settings/integrations`,
+`/admin/demo-sheet-builder→/settings/scope-sheets`, `/tech-feedback→/settings/feedback`,
+`/payments/settings→/settings/payments`.
+
+**Monoliths dissolved:** `Settings.jsx` (1224 lines) → `src/pages/settings/{Carriers,Referrals,
+Templates,TemplatesEditor,Commissions,MyAccount,Notifications}.jsx` + `templates/{templateData.jsx,
+TemplateEditor.jsx}`. `Admin.jsx` (1297 lines) → `src/pages/settings/{Team,Roles,PageAccess,
+NotificationDefaults}.jsx`. git-mv'd content-identical: `PaymentSettings→settings/Payments`,
+`admin/AdminIntegrations→settings/Integrations`, `AdminFeedback→settings/FeedbackInbox`,
+`AdminDemoSheetBuilder→settings/ScopeSheets`.
+
+**Shared modules (new):** `src/lib/navKeys.js` (NAV_KEYS/PAGE_ACCESS_KEYS/ROLES/roleLabel —
+ends Admin.jsx duplicate registry), `src/lib/owner.js` (`isMoroni()` — replaced 5 hardcoded
+`moroni@utah-pros.com` checks in App/Sidebar/TopNav/OverflowDrawer/SettingsLayout),
+`src/components/TabLoading.jsx` (exported; DevTools keeps its local copy),
+`src/components/settings/{SettingsPageHeader,SettingsSection,LookupTable}.jsx`. `navItems.jsx`
+gained `SETTINGS_GROUPS` + `isSettingsItemVisible()` + `anySettingsChildVisible()` (the hub IA,
+read by SettingsHome + SettingsLayout rail) and settings-hub icons; NAV_ITEMS System section is
+now one `settingsHub` Settings entry (GC5, hideForRoles:['crm_partner']); Sidebar migrated to
+`isItemVisible()` (GC7).
+
+**Nav shell:** SettingsLayout v2 = grouped rail ≥1024px / mobile home-back (`← Settings`) <1024px.
+Real breakpoint is **1024px** (stale "1280" comments fixed). TopNav gear now shows on
+`anySettingsChildVisible` (GC3/GC8), crm_partner excluded.
+
+**Migration (`20260704_settings_f_demo_schema_delete.sql`):** drift-captured the live
+`demo_sheet_schemas` RPC family (`get_active_demo_schema`, `get_demo_schema`, `list_demo_schemas`,
+`upsert_demo_schema`, `publish_demo_schema`) into schema-as-code; added `demo_sheet_schemas.
+published_at` (nullable) so an ever-published version is permanently detectable; `publish_demo_schema`
+now stamps it. New `delete_demo_schema(p_id) → boolean` RAISEs on active / ever-published /
+sheet-referenced versions (protects `.claude/rules/scope-sheet-rollback.md`). Consumed by P6.
+
+**Gates (GC3-GC8):** GC3 SettingsHome any-visible-child · GC4/GC5 System→single Settings entry
+(Team/FeedbackInbox adminOnly via SETTINGS_GROUPS) · GC6 Payments nav visible to canEditBilling
+roles (page self-guards) · GC7 Sidebar `isItemVisible()` · GC8 (owner-approved) Personal group
+(`/settings/my-account`, `/settings/notifications`) visible to every employee. No other effective-
+access change.
+
+**Tests:** `supabase/tests/settings_f_demo_schema_delete.test.js` (refusal),
+`src/components/settings/settingsPrimitives.render.test.jsx`, `src/lib/settingsNav.test.js`
+(any-visible-child incl. override-only supervisor fixture + the 5 redirects + templates section
+merge).
+
+### Wave sub-headers (pre-seeded by Phase F — each session fills ONLY its own)
+#### P1 — Payments (Session A) — shipped 2026-07-04
+- **`src/lib/useBillingSettings.js` (new):** hook wrapping `get_billing_settings`/`set_billing_setting`.
+  Exposes `{ settings, setSettings, save, on, loading, reload }`. Its pure `makeBillingSave` factory
+  (exported, DOM-free, unit-tested in `useBillingSettings.test.js`) snapshots the prior value, writes
+  optimistically, and **reverts only the touched key on RPC failure** — killing the old page's
+  optimistic-write drift (a failed save used to leave the UI showing an unsaved value). `setSettings`
+  is exposed raw for the two server-side paths that persist through OTHER endpoints (email-2FA payout
+  destinations via `/api/billing-2fa`, Stripe probe via `/api/stripe-accounts`) and must NOT round-trip
+  through `set_billing_setting`.
+- **`settings/Payments.jsx` rebuilt:** all setting saves route through the hook; inline px/hex soup →
+  `pay-*` classes + design tokens (`src/index.css` §P1 reserved marker); `SettingsPageHeader`; 44px
+  touch targets + `@media(max-width:768px)` stack pass. **Two-click confirm on "Pay out now"** (Stripe
+  instant payout) — arm → `Confirm payout?` → confirm, `onBlur` disarms; one tap no longer moves money.
+  The in-component `canEditBilling(employee.role)` block (the page's ONLY barrier) and the email-2FA
+  payout-destination flow semantics are preserved verbatim. Never calls `/api/qbo-invoice`.
+- **`Collections.jsx`:** payment-settings gear link retargeted `/payments/settings` → `/settings/payments`
+  (F's permanent redirect still covers old bookmarks).
+#### P2 — Integrations (Session B)
+`/settings/integrations` (`src/pages/settings/Integrations.jsx`, AdminRoute) now hosts two
+sibling provider cards: the existing **GitHub** card and a new **QuickBooks Online** card ported
+behavior-identically out of the retired DevTools → Integrations tab. The QBO card reads
+`get_integration_status({p_provider:'quickbooks'})` + `get_qbo_sync_stats()` (RPCs, unchanged),
+connects/reconnects via `GET /api/quickbooks-connect`, and previews/back-fills customer sync via
+`POST /api/qbo-sync-customer` (`{backfill,dry_run,limit}`) — synced/pending/errored stat boxes,
+SANDBOX badge, dry-run preview list all preserved. **Worker retarget (atomic, same PR):**
+`functions/api/quickbooks-callback.js` now 302-redirects to `/settings/integrations?qbo=…`
+(was `/dev-tools?qbo=`) via the exported pure `buildReturnLocation()` / `QBO_RETURN_PATH`; the
+page consumes it through the exported pure `qboReturnToast()`. Both halves are unit-tested
+(`functions/api/quickbooks-callback.test.js`, `src/pages/settings/Integrations.test.jsx`).
+Page **de-CRM'd**: dropped the `crm-*` classes for design-system `.card/.btn/.input` + new
+`settings-int-*` polish (index.css §P2, desktop+mobile grid); "API Keys" title retired →
+"Integrations". GitHub two-click disconnect preserved. (DevTools' own Integrations tab is left
+in place for Session H / P7-lite to delete once this and P3 land.)
+#### P3 — Team & Access (Session C) — shipped
+Polish-only, zero migrations, all four routes stay `AdminRoute`. Files: `src/pages/settings/{Team,Roles,PageAccess,NotificationDefaults}.jsx` + `index.css` §P3 marker + `src/pages/settings/p3TeamAccess.test.jsx` (new).
+- **Team.jsx** — employee hard-delete converted from the confirmation modal to the inline two-click confirm (Rule 2): the Delete button arms → "Confirm delete" → executes, disarms on `onBlur`/row-switch. The **EmployeeModal unsaved-changes guard**: overlay-click / ✕ / Cancel now arm a two-click "Discard unsaved changes?" bar in the footer when the form is dirty (was silently discarding). The **DevTools › Employees auth-link audit + invite** is absorbed as a top-of-page summary strip (total / can-log-in / no-login) + a per-row Login badge + a "Set up login"/"Invite" action — behaviour-identical against `get_all_employees` + `/api/admin-users` (Team's existing working PATCH-then-`resetPasswordForEmail` invite is kept; the broken DevTools `action:'invite'` POST is not carried over). Page feedback moved to `upr:toast`. **Session H may now delete the DevTools Employees tab.**
+- **PageAccess.jsx** — the crushed inline fixed grid (`1fr 80px 120px 100px 40px`) replaced with `.pa-*` grid classes + a <768px stacked-card pass (labelled rows via `data-label` `::before`); the override control is now a tri-state switch (dashed = follows role default, green = override ON, red = override OFF) with ≥44px tap targets on the toggle and the clear (×) button. `computeAccess()` pure resolver extracted + unit-tested; data behaviour unchanged.
+- **Roles.jsx** — design-system pass: shared `SettingsPageHeader`; matrix/toggle logic unchanged.
+- **NotificationDefaults.jsx** — untouched (thin wrapper around the F-owned, self-titled `NotificationDefaultsTab`; a design pass there would require editing a non-owned component).
+- **Tests** — `p3TeamAccess.test.jsx`: 12 cases over `nextDeleteConfirm` (arm/execute/re-arm), `employeeFormDirty` (clean/dirty/password/new-form/numeric-string), and `computeAccess` (role default / ON / OFF / missing).
+#### P4 — Workspace + Personal polish (Session D)
+Shipped 2026-07-04. `/settings/templates/:docType`'s own-mount-fetch + `useBlocker` router guard
+(built by F) traced end-to-end and confirmed correct — no changes needed there.
+
+**Blocked item (disclosed, not silently dropped):** Reset-to-defaults in
+`templates/TemplateEditor.jsx` still wipes drafts with a single click, no confirm. P4 first
+added an inline two-click confirm directly in that file, but `.claude/rules/settings-overhaul-
+wave-ownership.md` §1 freezes `templates/{templateData.jsx,TemplateEditor.jsx}` specifically
+(not the general shared-primitives clause, which allows a disclosed copy-in) — its wording for
+this module is narrower: "a needed change is an F-owner follow-up," full stop, no copy-in
+option offered. `settings-phase-reviewer` caught this on the close-out pass; the fix was
+reverted rather than shipped on a self-granted exception the manifest doesn't actually give.
+**Follow-up needed (F-owner or a future session with F's authority):** either add an
+`onReset`-confirm prop to `TemplateEditor.jsx` that P4 can wire up, or bless the copy-in
+explicitly. Filed here instead of quietly re-adding it.
+
+`google-drive-callback.js` now 302s to `/settings/my-account?gdrive=…` instead of
+`/settings?gdrive=…`; F's SettingsHome forwarder stays as a permanent shim for any old
+bookmarked link. Hex→token sweep (exact-value matches only, zero visual diff) across
+Templates/TemplatesEditor/Commissions/MyAccount: `#eff6ff→var(--accent-light)`,
+`#2563eb→var(--accent)`, `#1d4ed8→var(--accent-hover)`, `#fffbeb→var(--status-waiting-bg)`,
+`#fef2f2→var(--status-needs-response-bg)`, `#ef4444→var(--status-needs-response)`; plus a
+`fontSize` px→`var(--text-*)` pass for exact 11/13/14/16px matches (non-standard sizes like
+10/12/12.5/13.5 left as-is — no token exists for them, and rounding would be a visual change
+beyond "identical behavior"). Carriers/Referrals needed no sweep (LookupTable already clean).
+Commissions: replaced the fixed 5-column inline grid with `.commissions-header-row`/
+`.commissions-row` classes (P4 css marker) so `@media (max-width:768px)` can reflow to a
+3-column stack with mobile-only field labels (`.commissions-mlabel`) and full-width name/Save;
+bare `<div>No employees.</div>` empty state → `.lookup-empty` (shared class, consistent
+copy/wording with Carriers/Referrals). New test: `functions/api/google-drive-callback.test.js`
+(4 cases: connected/badstate/missing-code/upstream-error, all assert the new redirect target).
+Not added: interactive dirty-guard/click tests for the templates route — this repo's test
+convention is `renderToStaticMarkup` smoke tests with no jsdom/`@testing-library`/
+router-mocking infra, so the guard was verified by code trace instead of a new test harness;
+flagging honestly rather than forcing in inconsistent test infra.
+#### P5 — Feedback Inbox (Session E) — shipped 2026-07-04
+`feedback-notify.js` no longer mints the retired `/tech-feedback` URL: both the push-payload
+`data.route` and the `dispatchEvent(...).body.link` now write `/settings/feedback` (historical
+`notifications.link` rows still resolve via `SETTINGS_REDIRECTS`'s permanent `tech-feedback` →
+`/settings/feedback` entry). `feedback-notify.test.js` updated to assert the new route/link.
+`FeedbackInbox.jsx`: component-local `<style>` (mobile grid collapse) moved into `index.css`
+§P5; H1 label → "Feedback Inbox" (matches the `navItems.jsx` `feedback_inbox` entry); the stale
+file header (`FILE: AdminFeedback.jsx`, `Route: /tech-feedback`) corrected to match the actual
+filename/route. `TYPE_BADGE`/`STATUS_BADGE` inline hex maps replaced with `fb-badge-*` classes
+backed by new `--fb-badge-*` CSS custom properties in §P5 (same colors, reuses `--accent`/
+`--accent-light`/`--bg-secondary`/`--text-tertiary`/`--border-color` where they already matched
+the hex exactly); the "Update Status" buttons use the same classes for their active state
+instead of inline `STATUS_BADGE[s].bg/color/border` lookups. Two-click purge, per-row draft
+notes, and the lightbox were left functionally untouched (only their badge markup call sites
+changed from inline style objects to `className`).
+#### P6 — Scope Sheets (Session G) — shipped 2026-07-05
+`ScopeSheets.jsx` (`AdminDemoSheetBuilder`) safety + polish, no schema/RPC changes (Foundation
+shipped `delete_demo_schema` + `published_at`). **Deletion** now calls the SECURITY-DEFINER
+`delete_demo_schema(p_id)` RPC instead of the raw `db.delete('demo_sheet_schemas', …)`; the RPC's
+RAISE refusal (active / ever-published / sheet-referenced versions can't be deleted — protects the
+`.claude/rules/scope-sheet-rollback.md` runbook) is surfaced verbatim in a toast via a new
+`rpcErrorMessage()` helper that unwraps the PostgREST error JSON. **All three `window.confirm`**
+(version delete, remove section, remove job section) → inline two-click confirm with `onBlur`
+disarm; single-click **field removal** gained an arm state too, via a shared `ConfirmRemoveButton`
+(first click arms + fills red/swaps to ✓, blur disarms, second click removes). **Unsaved-changes
+guard** added on both version-switch (inline "Discard & switch / Keep editing" bar in the versions
+sidebar via `pendingSwitchId`) and the **Back** button (two-click "Discard changes & leave?"), both
+of which previously discarded edits silently. **Pure schema helpers extracted** into
+`src/lib/demoSchemaUtils.js` (`FIELD_TYPES`, `move`/`removeAt`/`replaceAt`, `twoClickNext`,
+`emptySection`/`emptyField`/`emptySchema`, `walkFields`, `validateSchemaShape`, `summarize`) with a
+23-case `demoSchemaUtils.test.js` — extracted from THIS page's internals only; `TechDemoSheet` /
+`DemoSheetRenderer` keep their own copies (tech surface out of P6 scope). Inline status hexes → new
+`--ss-*` tokens in `index.css` §P6 (mirrors P5's `--fb-*` approach); "best on desktop" notice under
+768px (the two-column editor is a deliberate desktop power tool — no phone layout). Publish confirm
+modal + draft→publish sequencing left **byte-identical** (runbook-critical). Documentation Standard
+header added to the substantially-edited `ScopeSheets.jsx`.
+#### P7-lite — DevTools dedup (Session H)
+Deleted exactly two tabs from `DevTools.jsx` (verified `/settings/integrations` and
+`/settings/team` fully cover both capabilities before removing): the **Integrations** tab
+(QBO connect/preview/backfill + its `?qbo=connected|error|badstate` return-param handling —
+`/settings/integrations`'s QuickBooks card is a behavior-identical port using the same RPCs
+and workers, and `quickbooks-callback.js` already redirects to `/settings/integrations`, not
+`/dev-tools`) and the **Employees** tab (auth-link audit + invite — absorbed into
+`/settings/team` as a summary strip + per-row Login badge/action). Removed their `TABS` and
+`TAB_COMPONENTS` entries and the now-dead `IconSend`/`IconLink` icon helpers; every other tab
+(Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced) is untouched. DevTools is
+now 7 tabs.
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar
@@ -2045,7 +2344,7 @@ connection management, documented in its own sections above — shipped after th
 | 6B | Table inspector (15 tables, row count, recent rows) | ✅ Done |
 | 6C | `bust_postgrest_cache()` RPC + button | ✅ Done |
 
-**All DevTools phases complete.** 9 tabs: Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.
+**All DevTools phases complete.** 7 tabs as of P7-lite (2026-07-04): Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced — Employees and Integrations were deleted (moved to `/settings/team` and `/settings/integrations`).
 
 **Backfill tab** (Apr 18 2026) — 6-month Encircle historical importer UI.
 - Date-range + `date_field` (`date_of_loss` | `created_at`) picker
@@ -4497,7 +4796,7 @@ adversarial review, fixed pre-merge).
 
 **Desktop surface:** `src/pages/Feedback.jsx` at `/feedback` (Layout shell, ungated —
 every employee), submits `p_source:'desktop'` + `p_attachments` as a REAL array (never
-JSON.stringify). Nav: OVERFLOW_ITEMS + SYSTEM_ITEMS entries with `always: true` +
+JSON.stringify). Nav: OVERFLOW_ITEMS entries with `always: true` +
 `hideForRoles: ['crm_partner']` (isItemVisible gained the generic `hideForRoles` check —
 crm_partner is locked to /crm/*+/help by Layout's choke point, so the link would dead-end
 for them). The legacy mobile Sidebar link is hardcoded after the NAV_ITEMS loop like Help
@@ -4526,7 +4825,10 @@ Service-key client (`supabase(env)`) loads the feedback row + submitter `full_na
 (`employees?role=eq.admin`). Two channels:
 1. **In-app bell** — `create_notification` RPC (`p_type:'feedback'`, link `/tech-feedback`,
    entity `tech_feedback`/id). Works today; the notifications feed is **global** (no recipient
-   column) so every employee sees the notice — accepted + disclosed per the roadmap.
+   column) so every employee sees the notice — accepted + disclosed per the roadmap. NOTE
+   (Settings Overhaul Phase F): `/tech-feedback` now permanently redirects to `/settings/feedback`,
+   so existing/new bell links keep working; Settings-Overhaul P5 retargets this worker to write
+   `/settings/feedback` directly.
 2. **Per-admin push** — one same-origin `POST /api/send-push` per admin **excluding the
    submitter**, forwarding the caller's `Authorization` header, title `New bug report` /
    `New improvement idea`, body `{submitter}: {title}`, data `{feedback_id, route:'/tech-feedback'}`.

@@ -113,7 +113,7 @@ say **deactivated/dormant** (not removed) rather than this session silently rewr
 | E3 | Schedule-from-JobPage | MISSING | JobPage Schedule tab: "N tasks still need to be scheduled" + "Open dispatch board" only; never queries appointments |
 | E4 | Booking-modal ingredients | HAVE ~80% (Challenge-CONFIRMED) | CreateJobModal: contact typeahead (`search_contacts_for_job`) + AddContactModal quick-add w/ duplicate-phone recovery + claim new/existing (`p_existing_claim_id`) + division + AddressAutocomplete + CarrierSelect; `create_job_with_contact` live functiondef = tracked migration (no drift), returns `{job, contact, claim_id, claim_number}`, phase `job_received`; CreateAppointmentModal: crew chips (lead-first), ad-hoc tasks (`add_adhoc_job_task` + `assign_tasks_to_appointment`), notify toggle, direct inserts; **imported only by Schedule.jsx**, prop contract JobPage-compatible |
 | E5 | Month-view parity | PARTIAL | No create affordance (day click jumps to Day view), no drag-reschedule, omits events (F1), chips lack `_jobId` enrichment. **Challenge-MODIFIED:** live `get_dispatch_board` appointment JSON carries no `job_id` — parity fix is frontend `_jobId` stamping from the parent job row (as the other views already do); no RPC change |
-| E6 | Templates/Gantt | DEAD | E2 row of status table. **Challenge-MODIFIED:** removal surface is larger than the discovery map — `navItems.jsx` has TWO entries (:76 NAV_ITEMS, :116 OVERFLOW_ITEMS) plus an `Admin.jsx:971` page-access registry row |
+| E6 | Templates/Gantt | DEAD | E2 row of status table. **Challenge-MODIFIED:** removal surface is larger than the discovery map — `navItems.jsx` has TWO `schedule_templates` entries (NAV_ITEMS + OVERFLOW_ITEMS; line numbers shifted after Settings Overhaul Phase F) plus the `schedule_templates` page-access registry row, which now lives in **`src/lib/navKeys.js` (PAGE_ACCESS_KEYS)** — Admin.jsx was dissolved by Settings Overhaul Phase F (2026-07-04) |
 | E7 | Appointment-write side effects | HAVE (live in prod, Challenge-CONFIRMED) | `trg_appointments_calendar_sync` fires on **INSERT**; worker emails the client 'confirmed' on first sync when `job.client_email` && `appt.notify_client` (column DEFAULT true) && ≥1 connected Google writer (live count = 1). **Crew members get real 'assigned' emails + Google Calendar events on create.** Governs every phase's test protocol |
 | E8 | lead_source plumbing | PARTIAL | `jobs.lead_source` (text) exists live, is NULL on all 236 jobs, has zero writers anywhere — picker options are spec'd fresh; write via post-insert `db.update` (a `CREATE OR REPLACE` param-add would mint an overload — the `clock_appointment_action` PGRST203 incident class) |
 | E9 | viewMode-axis removal safety | HAVE (Challenge-CONFIRMED) | `upr_schedule_view`/`upr_schedule_span` read only by Schedule.jsx; CalendarView/JobPanel independent; mobile only ever saw Calendar (toggle CSS-hidden); removal also fixes F3's mobile trap |
@@ -219,7 +219,8 @@ for future revival. Supersedes the earlier "removal/delete" wording throughout t
 > - [ ] **iPhone defaults to Calendar** (guaranteed — Calendar is the only view; the page keeps its
 >       Day span on phones); **desktop unchanged — Calendar + Week default** (verify on dev).
 > - [ ] **Templates/Wizard deactivated (hidden, files retained):** both navItems entries + the
->       `Admin.jsx` page-access row removed; the "Generate schedule" entry points in JobPage +
+>       `schedule_templates` page-access row (now in `src/lib/navKeys.js` PAGE_ACCESS_KEYS, since
+>       Settings Overhaul Phase F dissolved Admin.jsx) removed; the "Generate schedule" entry points in JobPage +
 >       JobPanel removed. **ScheduleTemplates.jsx, ScheduleWizard.jsx, the `/schedule/templates`
 >       route, tables, and RPCs stay dormant** (revivable — the future-Gantt groundwork).
 > - [ ] **Kept intact (over-deletion guard):** `placementMode` / `handlePlacementClick` /
@@ -245,8 +246,9 @@ for future revival. Supersedes the earlier "removal/delete" wording throughout t
 >       then stop.
 
 Scope: Schedule.jsx (view-toggle deactivation + viewMode sanitize — span options untouched),
-`src/lib/navItems.jsx` (remove both Templates entries), `src/pages/Admin.jsx` (remove the
-page-access row), JobPage.jsx + JobPanel.jsx (remove the "Generate schedule" entry points, add the
+`src/lib/navItems.jsx` (remove both Templates entries), `src/lib/navKeys.js` (remove the
+`schedule_templates` page-access row — moved here from the now-dissolved Admin.jsx by Settings
+Overhaul Phase F), JobPage.jsx + JobPanel.jsx (remove the "Generate schedule" entry points, add the
 reverse-path button), optional EditAppointmentModal.jsx (dead clone-visit block), index.css (inside
 the Phase-2 marker), new `src/components/schedule/MonthView.jsx`. **NOT edited/deleted:**
 ScheduleTemplates.jsx, ScheduleWizard.jsx (kept dormant); App.jsx route (leaving the
@@ -334,7 +336,7 @@ an ordering edge.
 | Session | Owns exclusively (edit only these) | New files it creates |
 |---|---|---|
 | A | `src/pages/Schedule.jsx` (picker/render wiring), `src/components/CreateJobModal.jsx` (shared-component swap), `src/index.css` (3 reserved markers) | `src/components/schedule/BookingModal.jsx`, shared client/claim component (e.g. `src/components/ClientClaimPicker.jsx`) |
-| B | `src/pages/Schedule.jsx`, `src/pages/JobPage.jsx`, `src/components/JobPanel.jsx`, `src/App.jsx` (`/schedule/templates` region only), `src/lib/navItems.jsx`, `src/pages/Admin.jsx` (one row), `src/components/EditAppointmentModal.jsx`, `src/index.css` (own marker); DELETES `ScheduleTemplates.jsx`, `ScheduleWizard.jsx` | `src/components/schedule/MonthView.jsx` (verbatim extraction) |
+| B | `src/pages/Schedule.jsx`, `src/pages/JobPage.jsx`, `src/components/JobPanel.jsx`, `src/App.jsx` (`/schedule/templates` region only), `src/lib/navItems.jsx`, `src/lib/navKeys.js` (one page-access row — moved here from the now-dissolved Admin.jsx by Settings Overhaul Phase F), `src/components/EditAppointmentModal.jsx`, `src/index.css` (own marker); DELETES `ScheduleTemplates.jsx`, `ScheduleWizard.jsx` | `src/components/schedule/MonthView.jsx` (verbatim extraction) |
 | C | `src/components/schedule/MonthView.jsx`, `src/pages/Schedule.jsx`, `src/components/CalendarView.jsx` (shared drop helpers only), `src/index.css` (own marker) | — |
 
 **Frozen for every session (contracts, not files):** `appointments`/`appointment_crew` table shape,
