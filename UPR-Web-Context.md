@@ -5434,3 +5434,45 @@ only); added a triage queue for unmatched inbound + a bounce/complaint webhook; 
 Cloudflare subaddressing (base `reply@` rule + toggle, no catch-all) and Resend Svix signing.
 Reviewer agents reused (no new agent): `migration-safety-checker`, `consent-path-auditor`,
 `upr-pattern-checker`.
+
+---
+
+## Admin Mobile — plan of record committed (Jul 7 2026 — docs/seed/agent only, no feature code)
+
+**Goal.** Bring core admin capability into the **field-tech PWA** (`/tech/*`, `TechLayout`),
+reached from `TechMore.jsx`, gated to `employee.role === 'admin'` behind the dark flag
+**`page:admin_mobile`** (seeded `enabled:false` + owner `dev_only_user_id`
+`d1d37f3c-…d2da`). Screens: admin **Dashboard**, **Collections/AR**, **Invoice view + send +
+record-payment**, **Estimate view + send** (+ deferred create/build), **Lead Center** (leads +
+call-recording playback + transcripts). Owner decisions (2026-07-07): shell = the tech PWA (not
+the office `Layout`, not a third shell); "receive payment" = **record a payment received** only
+(Stripe pay-link / QBO card-charge stay unwired, out of scope); admins-only, dark-launched.
+
+**Key finding — this is a FRONTEND-only initiative: ZERO new schema, ZERO new RPCs.** Live
+verification confirmed all 17 dashboard/billing/lead RPCs exist and `payments` / `inbound_leads`
+carry every needed column. Two constraints promoted to tested acceptance criteria: **F-1** the
+mobile record-payment must insert only the safe column set and never the trigger-owned
+`amount_paid`/`status`/`paid_at` (no `record_payment` RPC exists — it's `db.insert('payments')`
++ `/api/qbo-payment`, idempotent, non-fatal on QBO-sync failure); **F-2** the financial
+dashboard RPCs are NOT server-gated, so the mobile UI must reproduce
+`canAccess('overview_financials')` (skip render AND fetch) or it leaks financials.
+
+**Structure.** Wave 0 = **Phase F (Foundation)** — the flag entry, `AdminMobileRoute` guard, a
+**single** delegating `src/App.jsx` line → a F-owned `AdminMobileRoutes.jsx` subrouter (shrinks
+the shared-seam edit to one line to dodge the in-flight Job Hub v2 H3 cutover), the `TechMore`
+admin group, `src/components/admin-mobile/**` shared primitives + icon set + `.am-*` CSS, stub
+pages, six `index.css` markers, and the ownership manifest. Wave 1 (all parallel after F, merge
+preference **P2 → P3 → P4a → P1 → P4b → P5**): P1 Dashboard, P2 Collections/AR, P3
+Invoice+record-payment (Opus·high, money), P4a Estimate view+send, P4b Estimate create+build
+(deferrable, heaviest), P5 Lead Center. Every phase owns one page + one
+`components/admin-mobile/<area>/**` subfolder + one css marker — proven pairwise-disjoint.
+
+**Challenge pass.** Refute-first re-verification confirmed 4 of 5 verdicts and **MODIFIED** the
+estimate one (create is a thin RPC shell, but the line-item builder is a large separate surface →
+split into P4a/P4b). Disjointness proof: all 10 pairs disjoint; pinned icons to `admin-mobile/**`
+(not the frozen `Icons.jsx`/`crmIcons.jsx`), pre-scaffolded css markers, flagged call-only money
+seams. Counter-ordering flipped "Dashboard first" to **Collections-lists first** (cleanest shell
+validation; money early per owner priority; lists give P3/P4a their entry points). Reviewer:
+**new `admin-mobile-phase-reviewer`** agent (money/gate-weighted) + reused `upr-pattern-checker`.
+Full detail in `docs/admin-mobile-roadmap.md`; launch blocks in `docs/admin-mobile-dispatch.md`;
+ownership in `.claude/rules/admin-mobile-wave-ownership.md`.
