@@ -541,14 +541,14 @@ Error states: not-found/load-error screen with Back + Retry (TJD parity, not TA'
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** H1 merged.
 > **Model: Opus · high** (design polish IS the deliverable). Same read scope as H1.
 > **Close-out checklist:**
-> - [ ] Z4 complete per spec (visits/Job&Claim/photos&notes/report; order binding; caps + See all; Lightbox→PhotoNoteSheet; sync listeners)
-> - [ ] Admin kebab flows complete (merge, typed-DELETE archive)
-> - [ ] Error/not-found/retry states; cancelled-visit rendering; empty states everywhere
-> - [ ] Obsolete M1 modules deleted (whatever H1/H2 replaced: JobPhotos/VisitContext/VisitPicker/JobDetailsPanel/ClaimBreadcrumb as applicable); keepers retained (hubHelpers+tests, WorkAuthBanner logic)
-> - [ ] PT/ES translation sweep to real quality (not machine-stub); parity test green
-> - [ ] Visual polish pass against the v2 Dashboard/Schedule design language; css only in §HUB, `tv2-*` classes
-> - [ ] Full close-out gauntlet (as H1) + PR to `dev` ready
-> - [ ] **OWNER GATE opens here:** owner bakes the hub on their phone (flag stays owner-only) — H3 must not dispatch until the owner signs off in writing
+> - [x] Z4 complete per spec (visits/Job&Claim/photos&notes/report; order binding; caps + See all; Lightbox→PhotoNoteSheet; sync listeners) — `HubBelowFold` composes: visits switcher → `JobClaimSection.jsx` (new) → `PhotosNotes.jsx` (new) → `GenerateReportButton`; photos selected-visit-first then job-wide, grouped by day, cap 12 + See all; Lightbox "Add note/room" sibling-overlay → PhotoNoteSheet; `sync:item-done` photo.upload listener keyed to job
+> - [x] Admin kebab flows complete (merge, typed-DELETE archive) — `AdminJobMenu` (H1-built), verified; the only typed-confirm on the surface
+> - [x] Error/not-found/retry states; cancelled-visit rendering; empty states everywhere — error screen (H1) with Back+Retry; cancelled → WRAPPED-gray no-clock (H1 `HubStage`); every Z4 zone has an empty state
+> - [x] Obsolete M1 modules deleted (JobPhotos/VisitContext/VisitPicker/JobDetailsPanel/ClaimBreadcrumb); keepers retained (hubHelpers+tests, `showWorkAuthBanner` predicate = WorkAuthBanner logic; AdminJobMenu)
+> - [x] PT/ES translation sweep to real quality (not machine-stub); parity test green — new `jobClaim.*`/`photos.*` keys EN/PT/ES; `src/i18n/i18n.test.js` green
+> - [x] Visual polish pass against the v2 Dashboard/Schedule design language; css only in §HUB, `tv2-*` classes — new `tv2-hub-*` classes inside the §HUB marker; two hex→token fixes (`--text-inverse`/`--accent-text`) per pattern-checker
+> - [x] Full close-out gauntlet (as H1) + PR to `dev` ready — `npm test` 764 pass / `build` clean / `eslint` clean (changed files); `upr-pattern-checker` + `tech-phase-reviewer` run; flag `page:tech_job_hub` stays OFF; `nav.js` untouched
+> - [ ] **OWNER GATE opens here:** owner bakes the hub on their phone (flag stays owner-only) — H3 must not dispatch until the owner signs off in writing *(owner-gated — left open by design; opens after this PR merges)*
 
 ### Phase H3 — Cutover (supersedes M2)
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** owner bake

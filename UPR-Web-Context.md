@@ -2018,6 +2018,33 @@ the idb persister), not M1's local `useState`.
   `WorkAuthBanner`/`ClaimBreadcrumb`) are now unused — H2 deletes them; `hubHelpers`+`AdminJobMenu`
   retained.
 
+#### Phase H2 — Below-fold & polish (SHIPPED Jul 7 2026; flag still OFF)
+
+Completed Z4 and polished the whole surface. No schema/RPC changes (H2 ships zero migrations);
+`page:tech_job_hub` stays owner-only OFF and `nav.js` is untouched. Stacked on H1 (H1 had not yet
+merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or merge this after it).
+- **Z4 in binding order** (`HubBelowFold.jsx` now just composes): **Visits switcher** (kept from
+  H1) → **`JobClaimSection.jsx`** (new — collapsible Job & Claim, ABOVE photos: every `contacts[]`
+  person with one-tap `tel:`/`mailto:`, division pill, carrier/policy/claim, adjuster block,
+  deductible admin-only, claim breadcrumb → `/tech/claims/:id`; full legacy `JobDetailsPanel`
+  field set) → **`PhotosNotes.jsx`** (new) → `GenerateReportButton` (self-gated, as-is).
+- **`PhotosNotes.jsx`:** job-wide `job_documents` via `buildDocsQuery({jobId})`, cached under the
+  `['tech','hub',jobId]` prefix (so `photo`/`doc` invalidation repaints it). Photos **selected-visit-
+  first then job-wide**, grouped by day, capped 12 + "See all"/"+N more" → `/tech/jobs/:id/photos`.
+  Tap → shared `Lightbox` with an **"Add note / room"** sibling-overlay button (Lightbox is a frozen
+  shared component with no slot) → `PhotoNoteSheet` (note + room-tag + create-room). Inline add-note
+  (`insert_job_document` category `note`, tagged to the selected visit). `sync:item-done`
+  `photo.upload` listener (keyed to job) refreshes the gallery on offline-photo sync.
+- **Admin kebab** (`AdminJobMenu`, H1-built, verified): merge + typed-`DELETE` archive — the ONLY
+  typed-confirm on the surface.
+- **Deleted M1 modules:** `JobPhotos`, `JobDetailsPanel`, `VisitContext`, `VisitPicker`,
+  `ClaimBreadcrumb`, `WorkAuthBanner`. Retained: `hubHelpers`(+test, incl. the `showWorkAuthBanner`
+  predicate), `AdminJobMenu`, and all H1 `Hub*`/`StageClock`/`useVisitClock` modules.
+- **i18n:** new `hub.jobClaim.*` + `hub.photos.*` keys (EN/PT/ES real-quality, parity-tested);
+  removed the H1 "coming soon" stub keys. **CSS:** appended inside the §HUB marker (`tv2-hub-*`
+  only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
+  (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
+
 ---
 
 ## Admin Mobile — Phase F Foundation (Jul 7 2026)
