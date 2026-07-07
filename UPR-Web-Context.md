@@ -186,17 +186,27 @@ src/
     Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
                                     src/pages/settings/* routed sub-pages (see the "Settings Overhaul
                                     — Phase F Foundation" section below for the full route map).
-    settings/                     — SettingsHome (index) + Carriers/Referrals/Templates/TemplatesEditor/
+    settings/                     — SettingsHome (index) + ListsAndValues/Templates/TemplatesEditor/
                                     Commissions/MyAccount/Notifications (from Settings.jsx) + Team/Roles/
                                     PageAccess/NotificationDefaults (from Admin.jsx) + Payments/Integrations/
                                     FeedbackInbox/ScopeSheets (git-mv'd) + templates/{templateData.jsx,TemplateEditor.jsx}
+                                    ListsAndValues.jsx (route /settings/lists, Settings Overhaul P10, Jul 7 2026)
+                                    replaced the standalone Carriers.jsx + Referrals.jsx pages — both old
+                                    routes permanently redirect to /settings/lists. It renders a
+                                    registry-driven stack of LookupTable sections read from
+                                    src/lib/managedLists.js ([{ key, title, columns, getRpc, upsertRpc,
+                                    deleteRpc, toUpsertParams }]) — carriers + referrals are the first two
+                                    entries, behavior-identical to the old pages. A future managed list is
+                                    one registry entry, not a new page. The two SETTINGS_GROUPS rail
+                                    entries collapsed into one "Lists & Values" entry (src/lib/navItems.jsx,
+                                    IconListValues).
     Help.jsx                      — In-app Help & Guides centre (route /help — now UNWRAPPED from the settings hub, renders directly in Layout; reached from the TopNav ? button + Sidebar). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
     Legal.jsx                     — Public /terms + /privacy pages (required by Intuit's QBO production profile)
     settings/FeedbackInbox.jsx    — Feedback inbox (route /settings/feedback, admin-only; was /tech-feedback → permanent redirect)
     settings/ScopeSheets.jsx      — Scope-sheet schema builder (route /settings/scope-sheets; was /admin/demo-sheet-builder → redirect)
-    settings/Integrations.jsx     — "Integrations" page (route /settings/integrations, admin-only; was /admin/integrations → redirect): paste the GitHub token (+ default repo) that the UPR MCP reads; extensible to more providers. Uses the github-connect worker.
+    settings/Integrations.jsx     — "Connections" hub (route /settings/integrations, admin-only; was /admin/integrations → redirect). Managed-here cards: GitHub (github-connect), QuickBooks (quickbooks-connect), Deepgram (deepgram-connect). Managed-elsewhere status + cross-link cards: CRM Channels → /crm/integrations, Stripe → /settings/payments, Google Drive & Calendar (per-user) → /settings/my-account, Twilio (feature:twilio_live send-mode). See Settings Overhaul → P8.
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     settings/Payments.jsx         — Stripe pay-link + payout settings (route /settings/payments; was /payments/settings → redirect)
   pages/tech/
@@ -2567,6 +2577,27 @@ and workers, and `quickbooks-callback.js` already redirects to `/settings/integr
 `TAB_COMPONENTS` entries and the now-dead `IconSend`/`IconLink` icon helpers; every other tab
 (Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced) is untouched. DevTools is
 now 7 tabs.
+
+#### P8 — Connections hub (Session I · Wave 2)
+Turned the P2 Integrations page (`/settings/integrations`, still `AdminRoute`) into the ONE
+place every company-wide connection is discoverable — retitled **"Connections"**. Two groups:
+- **Managed here** (full connect/status/disconnect cards): GitHub + QuickBooks (from P2) +
+  **Deepgram** (new). Deepgram is a pasted API key stored in `integration_credentials`
+  (provider=`deepgram`, read by `transcribe-call.js` / `callrail-webhook.js`); the card follows
+  the GitHub pattern and is backed by a **new worker `functions/api/deepgram-connect.js`**
+  (GET/POST/DELETE, `requireAdmin` role gate, validates the key against Deepgram
+  `/v1/projects` — 401 rejected, other errors tolerated; two-click disconnect). *(Worker is a
+  new additive file — outside the "Integrations.jsx + css" ownership line but required for the
+  Deepgram card to write to the RLS-locked table; disclosed in the PR.)*
+- **Managed elsewhere** (read-only status + cross-link, never moves the connection): **CRM
+  Channels** (CallRail/Google Ads/Meta Ads via `get_integration_status` per provider →
+  `/crm/integrations`), **Stripe** (`get_integration_status('stripe')` → `/settings/payments`),
+  **Google Drive & Calendar** (per-user `user_google_accounts` — intentionally NO company pill,
+  cross-links to `/settings/my-account`), and **Twilio SMS** (status-only: surfaces the
+  `feature:twilio_live` flag as Live vs Dry-run; secret management is P9's job).
+CSS: new `index.css` §P8 marker (reuses the §P2 `.settings-int-*` vocabulary; adds group
+headings, four provider badges, the amber dry-run pill, and the status-list/cross-link body).
+Zero migrations, zero CRM-file edits.
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar

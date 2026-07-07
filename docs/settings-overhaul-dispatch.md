@@ -305,34 +305,39 @@ code, never in-flight). Full spec: `docs/settings-overhaul-roadmap.md` → "Wave
 [Session I — Wave 2 · P8 Connections hub]
 Branch: session-assigned (illustrative: settings/p8-connections), cut from origin/dev
 Model: Opus 4.8 · Effort: Medium
-Launch after: Session B's (P2 Integrations) PR merged into dev
+Launch after: nothing — its prerequisite (P2 Integrations, PR #315) is MERGED; launch now.
 
 You are building Settings Overhaul P8 — the Connections hub; one phase only. Read scope:
 CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2 amendment (P8 block + live inventory
-table); the ownership manifest. You own exclusively src/pages/settings/Integrations.jsx and
-your reserved index.css §P8 marker. ZERO CRM-file edits (src/pages/crm/** is out of scope),
-zero migrations. Goal: every company-wide connection is discoverable and managed from this
-ONE page (an employee acting on intuition searches Settings → Integrations and finds
-everything). Build: (1) full management cards for GitHub + QuickBooks (already on the page
-from P2) + Deepgram (already app-managed in integration_credentials — read by
-transcribe-call.js; add a connect/status card following the GitHub pattern); (2) read-only
-status + cross-link cards, each calling get_integration_status and linking out — 'CRM
-Channels' (CallRail/Google Ads/Meta Ads → /crm/integrations), 'Stripe' (→ /settings/payments),
-'Google Drive & Calendar' (per-user, → /settings/my-account); (3) surface the
-feature:twilio_live dry-run flag state as a status line on a Twilio card (management of the
-Twilio secret itself is P9); (4) keep the page AdminRoute (role-restricted); design-system
-cards + tokens; mobile pass. Do NOT move Stripe/Google out of their money/personal homes —
-cross-link only. Close-out: npm run test + build + eslint (changed files); upr-pattern-checker
-+ settings-phase-reviewer clean; visual check desktop+mobile; UPR-Web-Context.md sub-header +
-your roadmap checklist block; push -u, ready-to-merge PR into dev, STOP.
+table); the ownership manifest. You own exclusively src/pages/settings/Integrations.jsx and a
+NEW reserved index.css marker you APPEND at the bottom (Foundation only pre-seeded P1–P7-lite
+markers; add '/* ─── SETTINGS OVERHAUL RESERVED — P8 (Connections · Session I) ─── */' below
+the existing markers and write only inside it). ZERO CRM-file edits (src/pages/crm/** is out
+of scope), zero migrations. ALREADY DONE — DO NOT REBUILD: P2 (#315) shipped full GitHub +
+QuickBooks management cards on this page using the .settings-int-* classes (GitHubCard,
+QuickBooksCard, the ?qbo= toast). Read them and MATCH their card pattern. Goal: make this the
+ONE page where every company-wide connection is discoverable (an employee acting on intuition
+searches Settings → Integrations and finds everything). Your build: (1) add a Deepgram
+management card (already app-managed in integration_credentials — read by transcribe-call.js
+/ callrail-webhook.js; follow the GitHubCard connect/status/disconnect pattern); (2) add
+read-only STATUS + cross-link cards, each calling get_integration_status and linking OUT (do
+not move those surfaces): 'CRM Channels' (CallRail/Google Ads/Meta Ads → /crm/integrations),
+'Stripe' (→ /settings/payments), 'Google Drive & Calendar' (per-user, → /settings/my-account);
+(3) add a Twilio card showing the feature:twilio_live dry-run flag state as a status line
+(managing the Twilio SECRET is P9's job — status only here); (4) keep the page AdminRoute
+(role-restricted); reuse the existing .settings-int-* classes, tokens, mobile pass. Do NOT
+move Stripe/Google/CRM out of their homes — cross-link only. Close-out: npm run test + build +
+eslint (changed files); upr-pattern-checker + settings-phase-reviewer clean; visual check
+desktop+mobile; UPR-Web-Context.md sub-header + your roadmap checklist block; push -u,
+ready-to-merge PR into dev, STOP.
 ```
 
 ```
 [Session J — Wave 2 · P9 Credential management]  (security-weighted)
 Branch: session-assigned (illustrative: settings/p9-credentials), cut from origin/dev
 Model: Opus 4.8 · Effort: High
-Launch after: Session I's (P8) PR merged into dev — AND resolve the omni-inbox coordination
-  fork below before touching functions/lib/{twilio,email}.js
+Launch after: Session I's (P8) PR merged into dev. (The omni-inbox coordination gate is now
+  SATISFIED — omni-inbox Foundation merged as #309; see below.)
 
 You are building Settings Overhaul P9 — credential management; one phase only, security-
 critical (it moves live payment/SMS/email secrets from Cloudflare env into the app database).
@@ -340,9 +345,13 @@ Read scope: CLAUDE.md; docs/settings-overhaul-roadmap.md Wave 2 amendment (P9 bl
 inventory, security foundation, architecture caveat, and the P9⇄omni-inbox coordination
 note); the ownership manifest; BILLING-CONTEXT.md (Stripe). You own exclusively
 src/pages/settings/Integrations.jsx (credential cards), new functions/lib/credentials.js, your
-migration + tests, and index.css §P9. COORDINATION GATE: functions/lib/twilio.js and email.js
-are omni-inbox-frozen — do NOT start until either omni-inbox Foundation has merged (preferred)
-or the owner has cleared the one-line additive swap; functions/lib/stripe.js is unconstrained.
+migration + tests, and a NEW reserved index.css marker you APPEND at the bottom
+('/* ─── SETTINGS OVERHAUL RESERVED — P9 (Credentials · Session J) ─── */' — Wave-2 markers
+were not pre-seeded; add it below the existing markers and write only inside it). COORDINATION
+GATE — NOW CLEAR: omni-inbox Foundation (#309) already merged, having made its own additive
+edit to functions/lib/email.js; no PENDING omni phase (I/O/U) edits functions/lib/twilio.js or
+email.js. So your ONE additive resolver line in each of twilio.js/email.js rebases cleanly on
+omni-F's version — proceed; functions/lib/stripe.js is unconstrained.
 VERIFIED SECURITY FOUNDATION: integration_credentials is RLS-enabled with ZERO policies
 (deny-all to anon/authenticated; only service-role reads it) — your #1 job is to PRESERVE
 that posture, never regress it. Build riskiest-first: (1) migration — add
@@ -375,8 +384,10 @@ section that bounds your scope); the ownership manifest. You own: new
 src/pages/settings/ListsAndValues.jsx (replacing Carriers.jsx + Referrals.jsx), new
 src/lib/managedLists.js (registry), src/App.jsx (the carriers/referrals route lines +
 redirects — the ONE sanctioned post-wave App.jsx edit, keep it to those lines),
-src/lib/navItems.jsx (collapse the two rail entries into one 'Lists & Values' entry),
-index.css §P10. Zero migrations. INTENT (owner, from a ServiceLifter reference): a single home
+src/lib/navItems.jsx (collapse the two rail entries into one 'Lists & Values' entry), and a
+NEW reserved index.css marker you APPEND at the bottom ('/* ─── SETTINGS OVERHAUL RESERVED —
+P10 (Lists & Values · Session K) ─── */' — Wave-2 markers were not pre-seeded; add it below
+the existing markers, write only inside it). Zero migrations. INTENT (owner, from a ServiceLifter reference): a single home
 for the option-lists that populate the app's dropdowns, built so future lists drop in without a
 new page. This is NOT a ServiceLifter clone — do NOT build a dynamic custom-fields engine
 (UPR has fixed schemas; out of scope forever). Verified live: the only editable dropdown lists

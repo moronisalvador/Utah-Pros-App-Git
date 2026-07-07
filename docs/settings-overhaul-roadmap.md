@@ -460,15 +460,21 @@ P9 delivers (a) fully and does not pretend to deliver (b).
 ### P8 — Connections hub (Session I)
 > **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Opus · medium
 > **Prerequisite:** P2 (Integrations) merged — P8 extends the page P2 built.
-> **Owns:** `src/pages/settings/Integrations.jsx`, css §P8. **Zero CRM edits, zero migrations.**
-- [ ] one page hosts ALL company connections: full cards for GitHub + QuickBooks (P2's) +
-      Deepgram (already app-managed — add a management card)
-- [ ] read-only status + cross-link cards (each reads `get_integration_status`, links out):
+> **Owns:** `src/pages/settings/Integrations.jsx`, css §P8, `functions/api/deepgram-connect.js`
+> (new additive worker — required for the Deepgram card to write the RLS-locked
+> `integration_credentials` table; same pattern as the live `github-connect.js`).
+> **Zero CRM edits, zero migrations.**
+- [x] one page hosts ALL company connections: full cards for GitHub + QuickBooks (P2's) +
+      Deepgram (already app-managed — added a management card backed by a new additive worker
+      `functions/api/deepgram-connect.js`, GitHub connect/status/disconnect pattern)
+- [x] read-only status + cross-link cards (each reads `get_integration_status`, links out):
       "CRM Channels" (CallRail/Google Ads/Meta Ads → `/crm/integrations`), "Stripe" (→
-      `/settings/payments`), "Google Drive & Calendar" (per-user → `/settings/my-account`)
-- [ ] surface the `feature:twilio_live` dry-run state (today buried in DevTools → Flags) as a
-      status line on the Twilio card
-- [ ] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass
+      `/settings/payments`). "Google Drive & Calendar" is a per-user cross-link → `/settings/my-account`
+      — intentionally NO company-wide `get_integration_status` pill (it's per-user
+      `user_google_accounts`, not an `integration_credentials` row; a company pill would misreport)
+- [x] surface the `feature:twilio_live` dry-run state (today buried in DevTools → Flags) as a
+      status line on the Twilio card (Live vs Dry-run pill; secret management deferred to P9)
+- [x] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass (css §P8)
 
 ### P9 — Credential management (Session J) — **security-weighted, Opus · high**
 > **Branch:** session-assigned · cut from `origin/dev` · **Prerequisite:** P8 merged.
@@ -511,17 +517,18 @@ Divisions / loss categories / referral categories are **hardcoded code enums**, 
 tokens live **hardcoded** in the templates module — neither is user-editable data (see future
 edges). CRM's lists (pipeline stages, tags) stay CRM-owned.
 
-- [ ] one `/settings/lists` page ("Lists & Values") renders a **registry-driven** stack of
+- [x] one `/settings/lists` page ("Lists & Values") renders a **registry-driven** stack of
       managed-list sections — Carriers + Referrals as the first two, each the existing
       `LookupTable` + its existing RPCs, behavior-identical
-- [ ] `src/lib/managedLists.js`: a tiny registry `[{ key, label, columns, getRpc, upsertRpc,
+- [x] `src/lib/managedLists.js`: a tiny registry `[{ key, label, columns, getRpc, upsertRpc,
       deleteRpc }]` so adding a future list = one entry, not a new page/route (the extensibility
       the owner asked for — build the pattern, don't over-populate it)
-- [ ] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/lists`
-      (via the F redirect pattern); one grouped "Lists & Values" nav entry; keep
-      `AccessRoute('settings')`
-- [ ] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
-- [ ] do NOT build editable enums or a merge-values table here — those are future edges below
+- [x] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/lists`
+      (as inline `App.jsx` routes, not `settingsRedirects.js` — that file is frozen
+      import-only by the wave-ownership manifest §1); one grouped "Lists & Values" nav
+      entry; keep `AccessRoute('settings')`
+- [x] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
+- [x] do NOT build editable enums or a merge-values table here — those are future edges below
       (recording them keeps P10 small and honest)
 
 ## Cross-initiative coordination note (P9 ⇄ omni-inbox)

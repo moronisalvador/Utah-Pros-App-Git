@@ -77,8 +77,7 @@ const Marketing = lazyRetry(() => import('@/pages/Marketing'));
 // Settings hub — index + sub-pages (Settings Overhaul Phase F; Settings.jsx +
 // Admin.jsx dissolved into these routed pages)
 const SettingsHome = lazyRetry(() => import('@/pages/settings/SettingsHome'));
-const Carriers = lazyRetry(() => import('@/pages/settings/Carriers'));
-const Referrals = lazyRetry(() => import('@/pages/settings/Referrals'));
+const ListsAndValues = lazyRetry(() => import('@/pages/settings/ListsAndValues'));
 const Templates = lazyRetry(() => import('@/pages/settings/Templates'));
 const TemplatesEditor = lazyRetry(() => import('@/pages/settings/TemplatesEditor'));
 const Commissions = lazyRetry(() => import('@/pages/settings/Commissions'));
@@ -456,12 +455,11 @@ function WebRoutes() {
           {/* Index — GC3 any-visible-child gate. */}
           <Route path="settings" element={<SettingsIndexRoute><ErrorBoundary section="Settings"><SettingsHome /></ErrorBoundary></SettingsIndexRoute>} />
 
-          {/* Workspace — Carriers/Referrals/Templates/Commissions gate on
+          {/* Workspace — Lists & Values/Templates/Commissions gate on
               canAccess('settings') (the old /settings gate, incl. payroll rates);
               Scope Sheets on demo_sheet_builder; Payments self-guards in-component
               (canEditBilling) exactly as the retired /payments/settings did. */}
-          <Route path="settings/carriers" element={<AccessRoute navKey="settings"><ErrorBoundary section="Carriers"><Carriers /></ErrorBoundary></AccessRoute>} />
-          <Route path="settings/referrals" element={<AccessRoute navKey="settings"><ErrorBoundary section="Referrals"><Referrals /></ErrorBoundary></AccessRoute>} />
+          <Route path="settings/lists" element={<AccessRoute navKey="settings"><ErrorBoundary section="Lists & Values"><ListsAndValues /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/templates" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates"><Templates /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/templates/:docType" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates Editor"><TemplatesEditor /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/commissions" element={<AccessRoute navKey="settings"><ErrorBoundary section="Commissions"><Commissions /></ErrorBoundary></AccessRoute>} />
@@ -493,6 +491,11 @@ function WebRoutes() {
         {SETTINGS_REDIRECTS.map(r => (
           <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
         ))}
+        {/* Carriers/Referrals collapsed into Lists & Values (Settings Overhaul
+            P10) — kept as inline routes rather than in settingsRedirects.js,
+            which the P10/wave manifest freezes to Foundation. */}
+        <Route path="settings/carriers" element={<Navigate to="/settings/lists" replace />} />
+        <Route path="settings/referrals" element={<Navigate to="/settings/lists" replace />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
