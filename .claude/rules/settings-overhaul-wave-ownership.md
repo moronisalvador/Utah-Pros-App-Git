@@ -94,3 +94,30 @@ Commit → `npm run test` + `npm run build` + `npx eslint` (changed files) → `
 → update `UPR-Web-Context.md` (your pre-seeded sub-header) + reconcile your roadmap checklist block
 (both directions) → push `-u` → open a **ready-to-merge** PR into `dev` → **STOP** (the owner merges;
 do not subscribe to / babysit / click-merge your PR).
+
+---
+
+## 8. Wave 2 addendum (2026-07-07) — P9 Credential management (Session J)
+
+Recorded so §1's frozen list stays truthful. This manifest predates the **Wave 2 amendment**
+(`docs/settings-overhaul-roadmap.md` → "Wave 2 amendment — Connections consolidation & credential
+management"), which authorizes P9 (Session J) as an owner-approved Wave-2 tail phase. §§1–7 stay
+binding except as amended here.
+
+| Session | Phase | Owns exclusively (edit only these) | Schema/RPC |
+|---|---|---|---|
+| J | P9 Credentials | `src/pages/settings/Integrations.jsx` (credential cards), new `functions/lib/credentials.js`, its migration + tests, **plus one additive resolver line each in `functions/lib/{stripe,twilio,email}.js`** (disclosed exception below), css §P9 (new marker at the bottom) | own migration: seeds `stripe/twilio/resend` rows in `integration_credentials` + `twilio_*` `integration_config` keys (NO secrets) + admin-gated SECURITY DEFINER RPCs `get_managed_credentials_status`, `set_integration_secret`, `set_twilio_config`, `disconnect_integration`, `p9_assert_admin`. **Zero RLS-policy change** — the deny-all posture is preserved. |
+
+**Amendments (transparency):**
+- **`functions/lib/*` exception.** §1 froze `functions/lib/*` "NOBODY edits in-wave" for the Wave-1
+  parallel wave. P9 is a serial Wave-2 tail (nothing else in flight touches these three libs) and the
+  Wave-2 amendment + its P9⇄omni-inbox coordination note authorize **one additive resolver line each**
+  in `stripe.js`/`twilio.js`/`email.js` (swap the `env.*` read for the DB-first resolver, env fallback
+  retained → behavior-identical when the DB row is absent). Omni-inbox Foundation (#309) merged first
+  (coordination fork (a)), so the twilio/email edits rebase cleanly on omni-F. `stripe.js` is frozen by
+  nobody.
+- **Migration.** §3 said "wave ships ZERO migrations" for the Wave-1 wave. The Wave-2 amendment grants
+  P9 its own additive migration (Rule 7 discipline; no `ALTER`/`DROP` of a live table; RLS posture
+  preserved). Audited by `migration-safety-checker`.
+- **index.css.** Session J appends a new `/* ─── SETTINGS OVERHAUL RESERVED — P9 (Credentials ·
+  Session J) ─── */` marker at the bottom (Wave-2 markers were not pre-seeded); writes only inside it.
