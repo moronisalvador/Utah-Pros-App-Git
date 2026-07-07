@@ -226,6 +226,7 @@ export default function AdminInvoiceDetail() {
               type="button"
               className={`am-inv-btn am-inv-btn--primary${confirmSend ? ' am-inv-btn--confirm' : ''}`}
               onClick={sendInvoice}
+              onBlur={() => setConfirmSend(false)}
               disabled={busy}
               title={contact?.email ? `Send to ${contact.email}` : 'No email on file — add one to the contact first'}
             >

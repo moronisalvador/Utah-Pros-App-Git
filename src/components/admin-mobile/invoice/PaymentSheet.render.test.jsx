@@ -1,9 +1,19 @@
 /**
- * Render smoke-test for the Admin Mobile record-payment sheet. Uses
- * renderToStaticMarkup (no jsdom — vitest runs in plain node here) to prove
- * the real component mounts with the balance pre-filled and its Save button
- * starting in the UN-armed state (the two-click confirm needs a second,
- * deliberate tap before any money is written).
+ * ════════════════════════════════════════════════
+ * FILE: PaymentSheet.render.test.jsx  (Admin Mobile — payment sheet smoke test)
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves the record-payment form actually draws on screen: the amount box
+ *   starts pre-filled with what's still owed, the choice buttons show up, and
+ *   the Save button starts UN-armed (a second, deliberate tap is required
+ *   before any money is written).
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest, react-dom (renderToStaticMarkup — no jsdom here)
+ *   Internal:  ./PaymentSheet
+ *   Data:      reads → none · writes → none
+ * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';

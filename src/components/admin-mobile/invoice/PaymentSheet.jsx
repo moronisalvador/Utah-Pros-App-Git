@@ -140,6 +140,7 @@ export default function PaymentSheet({ balance, busy, onSubmit, onCancel }) {
           type="button"
           className={`am-inv-btn am-inv-btn--primary${armed ? ' am-inv-btn--confirm' : ''}`}
           onClick={save}
+          onBlur={() => setArmed(false)}
           disabled={!canSave}
         >
           {busy ? 'Saving…' : armed ? `Confirm — record ${fmtMoney(amt)}` : 'Save payment'}
