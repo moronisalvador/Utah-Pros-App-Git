@@ -244,6 +244,24 @@ purely a reporting change); (b) the remaining review tiers — 5 probable, 2 nam
 (incl. A2Z), 3 no-UPR-job. Minor: new job `M-2606-003` (unpaid) shows `ar_status='open'` rather than
 `'invoiced'` until its first payment fires `update_invoice_paid` — cosmetic, self-corrects.
 
+### 6b. Line-item gap in the later batches — backfilled 2026-07-07
+
+The confident batch (§6a) imported classified line items, but the **later manual reconciliation
+imports** (Trevor Merrill, Dave Bevan, Paul Engman, the noon-timestamp batch, etc. → roughly
+`INV-000049`–`INV-000087`) inserted only the invoice **header + payment(s)** — no `invoice_line_items`.
+Result: **35 invoices carried a total but zero line detail**, surfacing as "amount due, no line items"
+on the 8 still-unpaid ones (the paid ones hid it behind a $0 balance) and as an empty grid / "$0 Total
+due" preview in `InvoiceEditor` (its subtotal is computed from lines; Save is also gated on
+`subtotal > 0`). AR and revenue were unaffected (both read the header `total`, per §3a/§3c). Fixed by
+pulling each invoice's lines from its QBO source and restoring them via
+`scripts/backfill-recon-invoice-lines.sql` — an idempotent, self-asserting, all-or-nothing backfill
+that preserves every header total to the cent (50 line rows across the 35; the 4 water/recon split
+pairs allocated by trade; the offsetting $1,005.63 INV-000080/INV-000081 pair kept its per-job
+grouping). This puts the per-service line data in place for the §5 revenue rewire. **Lesson for any
+remaining tiers:** import the *lines*, not just the header — a header-only invoice ties out in AR but
+looks empty everywhere line detail is shown, and `qbo-invoice.js`'s no-lines summary fallback masks it
+in QBO.
+
 ---
 
 ## 7. Conflict & coordination status (IMPORTANT)

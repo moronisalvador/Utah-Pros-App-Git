@@ -44,6 +44,12 @@
 
 ## OPEN — waiting on bookkeeper / Moroni (NOT mine to close)
 
+- **Duplicate `INV-000062`** (data-integrity flag found 2026-07-07): the invoice number
+  `INV-000062` is on TWO rows — the paid QBO-4291 import (`e9a29fea…`, $11,890.52) **and** a stray
+  `$0` draft on a different job (`5f690deb…`, job `18d4a913…`, 1 blank line, no QBO id). `invoice_number`
+  is not uniquely enforced (same failure class as the 6/30 claim-number collision). Decide whether to
+  delete/renumber the stray draft; consider a UNIQUE constraint on `invoices.invoice_number` +
+  drift-proof `generate_invoice_number()` (separate reviewed change — not done here).
 - Merge duplicate QBO customers **389 + 452** (Trevor Merrill).
 - Reassign Julia Grant's $76k (QBO inv **3250**) to **Nelson Chavez**.
 - Delete the 4 empty 6/18 Encircle dup claims — see corrected v2 sheet:
@@ -54,6 +60,22 @@
 
 ## DONE (for context — do not redo)
 
+- **Missing invoice line items backfilled (2026-07-07).** The reconciliation imports after the
+  "confident batch" (INV-000010–028) wrote invoice **headers + payments** but skipped the
+  **`invoice_line_items`** — leaving **35 invoices with a total but no line detail** (the 8 with an
+  open balance showed "amount due, no line items"; the rest were paid so their $0 balance hid it).
+  Root cause: header-only direct inserts (`create_invoice_for_job` never sets a total, so these came
+  from the manual imports), masked in QBO by `qbo-invoice.js`'s no-lines summary fallback. Fix: pulled
+  each invoice's real lines from its QBO source (`qbo_get Invoice`), classified each by QBO item
+  (mitigation/reconstruction/mold/testing/contents/discount per BILLING-AR §4), and restored **50 line
+  rows** across the 35 via `scripts/backfill-recon-invoice-lines.sql` — an idempotent, all-or-nothing
+  DO block that asserts each invoice's recomputed total equals its prior total to the cent, so **zero
+  AR/total/status movement** (verified: every total = Σ line_total; no invoice left lineless). The 4
+  water/recon **split** pairs were allocated by trade; the offsetting **$1,005.63** pair (INV-000080 /
+  INV-000081, both paid) kept its per-job grouping — the recon charge physically on QBO 4275 stays on
+  INV-000080 to preserve both paid headers. Per-service line data now exists for the future
+  `get_revenue_by_division` line-item rewire (BILLING-AR §5). *(Also surfaced the duplicate
+  `INV-000062` — see OPEN.)*
 - **Trevor Merrill** imported: 2 LOCKED split invoices (water $4,710.44 + recon $19,989.26 = QBO 3559, paid). Re-pointed Encircle → real 4236131; deleted dup claim CLM-2604-087.
 - **Dave Bevan** reconciled: combined QBO inv 4196 (water $5,385.26 + recon $4,112.54) + $1,000 deductible (3969) imported as LOCKED rows; created recon job R-2603-011; deleted junk "26-2" job. Remodel (4704) already correct.
 - **Remodeling reporting fix**: reclassified 4 remodel jobs `reconstruction→remodeling`; split Virginia Roundy remodel to R-2604-260; repointed her misrouted payment. Dashboard Remodeling now Revenue $31,828.66 / Payments $22,638.81 / Avg $6,365.73 (was $0).
