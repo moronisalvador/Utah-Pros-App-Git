@@ -511,17 +511,18 @@ Divisions / loss categories / referral categories are **hardcoded code enums**, 
 tokens live **hardcoded** in the templates module — neither is user-editable data (see future
 edges). CRM's lists (pipeline stages, tags) stay CRM-owned.
 
-- [ ] one `/settings/lists` page ("Lists & Values") renders a **registry-driven** stack of
+- [x] one `/settings/lists` page ("Lists & Values") renders a **registry-driven** stack of
       managed-list sections — Carriers + Referrals as the first two, each the existing
       `LookupTable` + its existing RPCs, behavior-identical
-- [ ] `src/lib/managedLists.js`: a tiny registry `[{ key, label, columns, getRpc, upsertRpc,
+- [x] `src/lib/managedLists.js`: a tiny registry `[{ key, label, columns, getRpc, upsertRpc,
       deleteRpc }]` so adding a future list = one entry, not a new page/route (the extensibility
       the owner asked for — build the pattern, don't over-populate it)
-- [ ] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/lists`
-      (via the F redirect pattern); one grouped "Lists & Values" nav entry; keep
-      `AccessRoute('settings')`
-- [ ] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
-- [ ] do NOT build editable enums or a merge-values table here — those are future edges below
+- [x] permanent redirects `/settings/carriers` + `/settings/referrals` → `/settings/lists`
+      (as inline `App.jsx` routes, not `settingsRedirects.js` — that file is frozen
+      import-only by the wave-ownership manifest §1); one grouped "Lists & Values" nav
+      entry; keep `AccessRoute('settings')`
+- [x] Templates + Commissions stay their own pages (draft/publish + payroll — not flat lookups)
+- [x] do NOT build editable enums or a merge-values table here — those are future edges below
       (recording them keeps P10 small and honest)
 
 ## Cross-initiative coordination note (P9 ⇄ omni-inbox)

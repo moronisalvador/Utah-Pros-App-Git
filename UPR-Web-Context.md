@@ -186,10 +186,20 @@ src/
     Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
                                     src/pages/settings/* routed sub-pages (see the "Settings Overhaul
                                     — Phase F Foundation" section below for the full route map).
-    settings/                     — SettingsHome (index) + Carriers/Referrals/Templates/TemplatesEditor/
+    settings/                     — SettingsHome (index) + ListsAndValues/Templates/TemplatesEditor/
                                     Commissions/MyAccount/Notifications (from Settings.jsx) + Team/Roles/
                                     PageAccess/NotificationDefaults (from Admin.jsx) + Payments/Integrations/
                                     FeedbackInbox/ScopeSheets (git-mv'd) + templates/{templateData.jsx,TemplateEditor.jsx}
+                                    ListsAndValues.jsx (route /settings/lists, Settings Overhaul P10, Jul 7 2026)
+                                    replaced the standalone Carriers.jsx + Referrals.jsx pages — both old
+                                    routes permanently redirect to /settings/lists. It renders a
+                                    registry-driven stack of LookupTable sections read from
+                                    src/lib/managedLists.js ([{ key, title, columns, getRpc, upsertRpc,
+                                    deleteRpc, toUpsertParams }]) — carriers + referrals are the first two
+                                    entries, behavior-identical to the old pages. A future managed list is
+                                    one registry entry, not a new page. The two SETTINGS_GROUPS rail
+                                    entries collapsed into one "Lists & Values" entry (src/lib/navItems.jsx,
+                                    IconListValues).
     Help.jsx                      — In-app Help & Guides centre (route /help — now UNWRAPPED from the settings hub, renders directly in Layout; reached from the TopNav ? button + Sidebar). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
     SignPage.jsx                  — Public esign page (no auth) — type or draw signature
     CreateJob.jsx                 — Full-page job creation flow
