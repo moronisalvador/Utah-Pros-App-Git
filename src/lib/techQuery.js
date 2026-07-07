@@ -23,6 +23,11 @@
  * NOTES / GOTCHAS:
  *   - FROZEN per docs/tech-v2-roadmap.md + .claude/rules/tech-v2-wave-ownership.md.
  *     Wave sessions (S, D, M1) import techKeys / invalidateTech and add NOTHING.
+ *     ONE authorized amendment (Job Hub v2, Phase H1): the seventh kind `hub`
+ *     (§7 of the ownership manifest) — every hub sub-resource caches under the
+ *     ['tech','hub',jobId] prefix, and every mutation also invalidates it so a
+ *     clock/task/photo/room/doc/appointment change repaints the open Job Hub.
+ *     After H1 the registry is frozen again.
  *   - Every key starts with the 'tech' root so invalidateTech can target a whole
  *     kind by its two-element prefix (['tech', kind]) regardless of the id suffix.
  *   - gcTime is 24h to match the persister's default maxAge — shorter gc would
@@ -33,8 +38,8 @@ import { QueryClient } from '@tanstack/react-query';
 
 const ROOT = 'tech';
 
-// The six cache kinds. Frozen — adding a seventh is an F-owner change, never a
-// wave-session edit.
+// The seven cache kinds. Frozen — the seventh (`hub`) was the single authorized
+// Phase H1 amendment; adding an eighth is an F-owner change, never a wave edit.
 export const TECH_QUERY_KINDS = Object.freeze({
   DASH: 'dash',                 // get_tech_dashboard(employeeId)
   SCHED_MONTH: 'sched-month',   // get_appointments_range for one month window
@@ -42,6 +47,7 @@ export const TECH_QUERY_KINDS = Object.freeze({
   TASKS: 'tasks',               // get_assigned_tasks(employeeId)
   ROOMS: 'rooms',               // moisture/room data for a job
   DOCS: 'docs',                 // job_documents for an appointment or job
+  HUB: 'hub',                   // Job Hub v2 frame + its sub-resources (per jobId)
 });
 
 /**
@@ -55,6 +61,7 @@ export const techKeys = Object.freeze({
   tasks: (employeeId) => [ROOT, TECH_QUERY_KINDS.TASKS, employeeId],
   rooms: (jobId) => [ROOT, TECH_QUERY_KINDS.ROOMS, jobId],
   docs: (scopeId) => [ROOT, TECH_QUERY_KINDS.DOCS, scopeId], // scopeId = appointment id or job id
+  hub: (jobId) => [ROOT, TECH_QUERY_KINDS.HUB, jobId], // Job Hub frame; sub-resources append to this key
 });
 
 const K = TECH_QUERY_KINDS;
@@ -73,14 +80,18 @@ const K = TECH_QUERY_KINDS;
  * - doc:          any other document/e-sign change — docs list only.
  * - room:         moisture/room reading or equipment change — rooms only.
  * - appointment:  create / edit / delete an appointment — schedule window + dash.
+ *
+ * Every mutation ALSO invalidates `hub` (Phase H1): the Job Hub frames a job's
+ * whole surface (visits, clock, tasks, photos, hydro), so any of these changes
+ * must repaint an open hub. It is a no-op when no hub query is cached.
  */
 export const MUTATION_INVALIDATIONS = Object.freeze({
-  clock: [K.DASH, K.ACTIVE_CLOCK, K.SCHED_MONTH],
-  task: [K.DASH, K.TASKS, K.SCHED_MONTH],
-  photo: [K.DASH, K.DOCS],
-  doc: [K.DOCS],
-  room: [K.ROOMS],
-  appointment: [K.SCHED_MONTH, K.DASH],
+  clock: [K.DASH, K.ACTIVE_CLOCK, K.SCHED_MONTH, K.HUB],
+  task: [K.DASH, K.TASKS, K.SCHED_MONTH, K.HUB],
+  photo: [K.DASH, K.DOCS, K.HUB],
+  doc: [K.DOCS, K.HUB],
+  room: [K.ROOMS, K.HUB],
+  appointment: [K.SCHED_MONTH, K.DASH, K.HUB],
 });
 
 /**

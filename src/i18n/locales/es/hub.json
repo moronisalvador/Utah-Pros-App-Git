@@ -1,0 +1,118 @@
+{
+  "header": {
+    "back": "Atrás",
+    "backToClaim": "Volver al reclamo",
+    "signed": "Firmado",
+    "getSignature": "Obtener firma",
+    "private": "Privado",
+    "menu": "Más opciones"
+  },
+  "clockStatus": {
+    "scheduled": "Programado",
+    "omw": "En camino",
+    "on_site": "Trabajando",
+    "paused": "Pausado",
+    "completed": "Terminado"
+  },
+  "stage": {
+    "yourClock": "Tu reloj",
+    "visitBadge": "Visita {{n}}",
+    "staleHint": "Aún en el reloj — ¿olvidaste marcar la salida?",
+    "thisVisit": "Esta visita",
+    "tools": "Herramientas",
+    "scopeSheet": "Hoja de Alcance",
+    "scopeSheetDesc": "Registra el alcance del trabajo sala por sala y envíalo por correo",
+    "tasks": "Tareas",
+    "addTask": "Agregar tarea",
+    "addTaskPlaceholder": "Nueva tarea…",
+    "noTasks": "Aún no hay tareas",
+    "editTasks": "Editar lista",
+    "moisture": "Humedad",
+    "addReading": "Agregar lectura",
+    "noReadings": "Aún no hay lecturas. Registra MC, HR y temperatura para iniciar el registro de secado.",
+    "readingsCount": "{{count}}",
+    "stalled": "{{count}} estancadas",
+    "stalledBadge": "ESTANCADA",
+    "unaffected": "(no afectado)",
+    "goal": "meta {{value}}%",
+    "untagged": "Sin sala",
+    "olderReadings": "+{{count}} más antiguas",
+    "equipment": "Equipo",
+    "place": "Colocar",
+    "noEquipment": "No hay equipo en el sitio. Coloca deshumidificadores, ventiladores o AFDs para empezar a contar los días en el sitio.",
+    "onSiteCount": "{{count}} en el sitio",
+    "day": "Día {{n}}",
+    "remove": "Quitar",
+    "confirm": "Confirmar",
+    "officeNotes": "Notas de oficina",
+    "crew": "Cuadrilla",
+    "lead": "Líder",
+    "readOnly": "Solo lectura — no estás en la cuadrilla de esta visita",
+    "cancelledVisit": "Esta visita fue cancelada",
+    "timeBreakdown": "Tiempo en esta visita",
+    "travel": "Traslado",
+    "onSiteLabel": "En sitio",
+    "total": "Total",
+    "nextVisit": "Próxima visita en este trabajo"
+  },
+  "banner": {
+    "clockedElsewhere": "Estás registrado en {{job}}",
+    "goThere": "Ir allí",
+    "anotherJob": "otro trabajo"
+  },
+  "dock": {
+    "photo": "Foto",
+    "uploading": "Subiendo…",
+    "more": "Más",
+    "editVisit": "Editar visita",
+    "addNote": "Agregar nota"
+  },
+  "below": {
+    "visits": "Visitas",
+    "upcoming": "Próximas",
+    "past": "Anteriores",
+    "viewing": "Viendo",
+    "crewLabel": "Cuadrilla: {{names}}",
+    "tasksLabel": "{{done}}/{{total}} tareas",
+    "scheduleAppt": "Programar visita",
+    "noVisits": "Aún no hay visitas programadas para este trabajo.",
+    "aVisit": "Visita",
+    "jobClaim": "Trabajo y Reclamo",
+    "h2tag": "Próximamente",
+    "viewClaim": "Ver reclamo {{number}}",
+    "photos": "Fotos y Notas",
+    "seeAllPhotos": "Ver todas las fotos y notas"
+  },
+  "common": {
+    "add": "Agregar",
+    "cancel": "Cancelar"
+  },
+  "states": {
+    "loadErrorTitle": "Trabajo no encontrado",
+    "loadErrorSub": "Este trabajo puede haber sido eliminado o no está disponible.",
+    "back": "Atrás",
+    "retry": "Reintentar",
+    "refreshFailed": "No se pudo actualizar",
+    "unknownCustomer": "Desconocido",
+    "visitUnavailable": "Esta visita no está disponible."
+  },
+  "time": {
+    "justNow": "justo ahora",
+    "minutesAgo": "hace {{n}}min",
+    "hoursAgo": "hace {{n}}h",
+    "yesterday": "ayer",
+    "daysAgo": "hace {{n}}d"
+  },
+  "toast": {
+    "taskFailed": "No se pudo actualizar la tarea",
+    "taskAdded": "Tarea agregada",
+    "taskAddFailed": "No se pudo agregar la tarea",
+    "readingSaved": "Lectura guardada",
+    "readingQueued": "Lectura en cola — se subirá cuando haya conexión",
+    "placed": "Equipo colocado",
+    "placementQueued": "Colocación en cola — se subirá cuando haya conexión",
+    "equipRemoved": "Equipo retirado",
+    "equipMarkedRemoval": "Equipo marcado para retiro",
+    "removeFailed": "Error al retirar: {{message}}"
+  }
+}

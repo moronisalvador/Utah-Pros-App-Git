@@ -526,16 +526,16 @@ Error states: not-found/load-error screen with Back + Retry (TJD parity, not TA'
 > **Model: Opus · high.** Read scope: CLAUDE.md + this v2 section + the manifest addendum
 > + tech-mobile-ux.md.
 > **Close-out checklist:**
-> - [ ] Migration: `get_job_hub` v2 (+`contacts[]`, backward-compat test) + `get_job_contacts` drift-capture; `migration-safety-checker` clean
-> - [ ] `techQuery.js` hub-kind amendment + `techQuery.test.js` updated in the same commit
-> - [ ] `useVisitClock` (disclosed copy-in, unit-tested: all 5 states, multi-entry, non-crew) + `StageClock` (live elapsed + stale-clock hint)
-> - [ ] Z1 header per spec (work-auth pill, lock badge, kebab, StatusChip)
-> - [ ] Z2 all three states per spec — checklist all-states + inline add-task; moisture log + equipment list READ VIEWS with offline forks; office notes all states; crew; non-crew read-only; clocked-elsewhere banner
-> - [ ] Z3 docked bar per spec (snap-first toast → PhotoNoteSheet; keyboard hide; disabled-state handling)
-> - [ ] Z4 as FUNCTIONAL MINIMUM: visits switcher works (needed to exercise states); Job&Claim/photos as compact stubs (H2 completes them)
-> - [ ] i18n-ready: every string through `t()` (`hub` + `tech` namespaces), EN complete, PT/ES keys present (draft ok), parity test extended
-> - [ ] Tests named first, then green: useVisitClock derivation; stage-state for non-crew/clocked-elsewhere; RPC backward-compat; checklist optimistic-revert; dock safe-area formula present
-> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `tech-phase-reviewer` (grades against THIS block); UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff — owner/orchestrator merges)
+> - [x] Migration: `get_job_hub` v2 (+`contacts[]`, backward-compat test) + `get_job_contacts` drift-capture; `migration-safety-checker` clean — `supabase/migrations/20260704_tech_v2_h1_job_hub_contacts.sql`, applied to the shared project; `contacts` delegates to `get_job_contacts(j.id)` (shape can't drift); v1 keys byte-identical (safety-checker verified vs the M1 migration)
+> - [x] `techQuery.js` hub-kind amendment + `techQuery.test.js` updated in the same commit — 7th kind `hub(jobId)`; every mutation also invalidates `hub`
+> - [x] `useVisitClock` (disclosed copy-in, unit-tested: all 5 states, multi-entry, non-crew) + `StageClock` (live elapsed + stale-clock hint) — pure `deriveVisitClock` mirrors TimeTracker.jsx:231-243; FORGOT_CLOCKOUT_MIN (10h) parity
+> - [x] Z1 header per spec (work-auth pill, lock badge, kebab, StatusChip) — `HubHeader.jsx`
+> - [x] Z2 all three states per spec — checklist all-states + inline add-task; moisture log + equipment list READ VIEWS with offline forks; office notes all states; crew; non-crew read-only; clocked-elsewhere banner — `HubStage/HubChecklist/HubTools`; TimeTracker consumed as-is with the `get_appointment_detail` object
+> - [x] Z3 docked bar per spec (snap-first toast → PhotoNoteSheet; keyboard hide; disabled-state handling) — `HubDock.jsx`
+> - [x] Z4 as FUNCTIONAL MINIMUM: visits switcher works (needed to exercise states); Job&Claim/photos as compact stubs (H2 completes them) — `HubBelowFold.jsx`
+> - [x] i18n-ready: every string through `t()` (`hub` + `tech` namespaces), EN complete, PT/ES keys present (draft ok), parity test extended — new `hub` namespace registered in `src/i18n/index.js`; parity green
+> - [x] Tests named first, then green: useVisitClock derivation; stage-state for non-crew/clocked-elsewhere; RPC backward-compat; checklist optimistic-revert; dock safe-area formula present — `useVisitClock.test.js`, `hubStageState.test.js`, `tech_v2_h1_job_hub.test.js`, `hubChecklistState.test.js`
+> - [x] `npm run test`+`build`+eslint; `upr-pattern-checker` + `tech-phase-reviewer` (grades against THIS block); UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff — owner/orchestrator merges) — 732 tests pass, build clean, eslint clean on changed files; flag `page:tech_job_hub` stays OFF; `nav.js` untouched
 
 ### Phase H2 — Below-fold & polish
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** H1 merged.
