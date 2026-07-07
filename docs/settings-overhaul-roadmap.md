@@ -470,27 +470,38 @@ P9 delivers (a) fully and does not pretend to deliver (b).
       status line on the Twilio card
 - [ ] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass
 
-### P9 — Credential management (Session J) — **security-weighted, Opus · high**
+### P9 — Credential management (Session J) — **security-weighted, Opus · high** — SHIPPED 2026-07-07
 > **Branch:** session-assigned · cut from `origin/dev` · **Prerequisite:** P8 merged.
 > **Owns:** `src/pages/settings/Integrations.jsx` (credential cards), new
 > `functions/lib/credentials.js` (resolver), its migration + tests, css §P9.
 > **Cross-initiative gate — see coordination note below** (edits omni-inbox-frozen libs).
-- [ ] migration: add `integration_credentials` rows for stripe/twilio/resend following the
-      GitHub pattern EXACTLY (service-role only; **preserve the zero-policy RLS posture** —
-      test that anon/authenticated cannot SELECT); config rows for non-secret bits
-      (Twilio phone number, messaging SID)
-- [ ] `functions/lib/credentials.js`: `resolveCredential(env, db, provider)` → **DB-first,
-      env-fallback** (nothing breaks during the cutover; env stays as backup until the owner
-      removes it) — with a short in-memory cache to avoid a DB read per send
-- [ ] one-line swap in `functions/lib/{stripe,twilio,email}.js` to call the resolver instead
-      of reading `env.*` directly (additive; env fallback retained)
-- [ ] admin-only paste-key cards on the Connections page (Twilio, Resend, Stripe) — status is
-      a boolean `connected` only; **the secret is NEVER returned to the browser** (test-first);
-      two-click disconnect
-- [ ] test-first named targets: RLS-posture test (browser cannot read the table), never-echo
-      test (status RPC returns no token), resolver DB-first/env-fallback test
-- [ ] `settings-phase-reviewer` (weight the secret-handling paths) + `upr-pattern-checker` +
-      `migration-safety-checker`
+> **Note (P8 gap):** P8 (Connections hub) had NOT merged into `dev` when this branch was cut —
+> dev's `Integrations.jsx` was still P2's GitHub+QuickBooks version. P9's three credential cards
+> were added additively on top (independent of P8's cross-link/Deepgram cards), so a trivial
+> merge reconcile with P8's cards is expected whenever P8 lands.
+- [x] migration `20260707_p9_credential_management.sql`: seeds `stripe`/`twilio`/`resend`
+      rows in `integration_credentials` (NO secrets committed) + the three `twilio_*`
+      `integration_config` keys; **zero-policy RLS posture PRESERVED** (no policy added;
+      verified live via MCP). Integration test asserts anon/authenticated cannot SELECT.
+- [x] `functions/lib/credentials.js`: `resolveCredential(env, db, provider)` → **DB-first,
+      env-fallback** (per field), 60s in-memory cache, never throws on a DB blip, skips the DB
+      when no `SUPABASE_URL`.
+- [x] one additive resolver line in `functions/lib/{stripe,twilio,email}.js` (env fallback
+      retained; behavior-identical when the DB row is absent — existing send tests still green).
+- [x] admin-only paste-key cards (Twilio, Resend, Stripe): `connected` boolean pill; **secret
+      NEVER returned to the browser** (status RPC returns booleans + public phone only); two-click
+      disconnect. Write RPCs admin-gated server-side via `auth.uid()`→`employees.role='admin'`.
+- [x] test-first named targets ALL met: RLS-posture test + never-echo test
+      (`supabase/tests/p9_credential_management.test.js`) + resolver DB-first/env-fallback test
+      (`functions/lib/credentials.test.js`). Admin round-trip (set→status-hides-token→disconnect)
+      verified live via MCP.
+- [x] `settings-phase-reviewer` (secret-handling weighted) + `upr-pattern-checker` +
+      `migration-safety-checker` run before the PR.
+- [ ] **Owner-gated cutover (NOT code — disclosed, not forgotten):** owner removes the Cloudflare
+      env secrets only AFTER verifying the DB path on dev (env fallback makes this safe). Stripe's
+      env can't be fully removed until the env-based `stripeConfigured(env)` pre-flight gate in the
+      4 Stripe workers + Twilio's `twilio-webhook.js` signature validation are migrated (out of
+      P9's owned files — the *send* path is DB-first now; noted as a follow-up).
 
 ### P10 — Lists & Values hub (Session K) — owner-approved 2026-07-05
 > **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Sonnet · medium

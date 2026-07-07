@@ -6,9 +6,15 @@
 // this file no-ops/throws cleanly when the secret key is absent, so the rest of the
 // app can ship before Stripe is configured.
 
+import { resolveCredential } from './credentials.js';
+
 const API_BASE = 'https://api.stripe.com/v1';
 const STRIPE_VERSION = '2024-06-20';
 
+// Cheap synchronous pre-flight used by the worker route guards. Env-only by design
+// (it must not do an async DB read); the actual secret used for a call is resolved
+// DB-first in stripeFetch(). During the P9 cutover the env var stays as a backup,
+// so this gate keeps working; see functions/lib/credentials.js.
 export function stripeConfigured(env) {
   return !!(env && env.STRIPE_SECRET_KEY);
 }
@@ -37,10 +43,11 @@ function toForm(obj, prefix = '', out = new URLSearchParams()) {
 // Core request. GET uses querystring; POST uses form-encoding. Throws a descriptive
 // Error (with .stripeCode / .status) on non-2xx, capturing Stripe's request-id for support.
 export async function stripeFetch(env, path, { method = 'GET', params, idempotencyKey } = {}) {
-  if (!stripeConfigured(env)) throw new Error('Stripe not configured');
+  const { secretKey } = await resolveCredential(env, null, 'stripe'); // DB-first, env fallback
+  if (!secretKey) throw new Error('Stripe not configured');
   let url = `${API_BASE}${path}`;
   const headers = {
-    'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+    'Authorization': `Bearer ${secretKey}`,
     'Stripe-Version': STRIPE_VERSION,
   };
   const init = { method, headers };

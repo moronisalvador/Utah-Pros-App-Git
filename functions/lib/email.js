@@ -45,6 +45,8 @@
  * ════════════════════════════════════════════════
  */
 
+import { resolveCredential } from './credentials.js';
+
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
 const DEFAULT_FROM     = 'Utah Pros Restoration <restoration@utahpros.app>';
@@ -86,7 +88,9 @@ function toAddressList(to) {
  * @returns {Promise<{ok:boolean,status:number,id:string|null,error:string|null}>}
  */
 export async function sendEmail(env, { to, subject, html, text, from, replyTo, attachments, headers } = {}) {
-  if (!env?.RESEND_API_KEY) {
+  // DB-first (integration_credentials), env fallback — see functions/lib/credentials.js
+  const { apiKey } = await resolveCredential(env, null, 'resend');
+  if (!apiKey) {
     return { ok: false, status: 0, id: null, error: 'RESEND_API_KEY missing' };
   }
 
@@ -123,7 +127,7 @@ export async function sendEmail(env, { to, subject, html, text, from, replyTo, a
     res = await fetch(RESEND_ENDPOINT, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type':  'application/json',
       },
       body: JSON.stringify(payload),

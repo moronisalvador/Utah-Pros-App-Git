@@ -2004,6 +2004,20 @@ setup is finished.
 
 **On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
 
+### Settings Overhaul P9 — Credential management (app-managed Stripe / Twilio / Resend keys)
+Migration `20260707_p9_credential_management.sql`. Moves the Stripe/Twilio/Resend secrets out of Cloudflare env into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables — an admin pastes/rotates them on **`/settings/integrations`** instead of editing env vars (resale win). **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
+- **Rows:** `integration_credentials` gains `stripe` / `twilio` / `resend` rows (`access_token` = the secret: Stripe secret key, Twilio auth token, Resend API key). `integration_config` gains `twilio_account_sid`, `twilio_messaging_service_sid`, `twilio_phone_number` (non-secret identifiers). OAuth *app-registration* client IDs (QBO/Google) deliberately stay env — see the roadmap architecture caveat.
+- **RPCs** (SECURITY DEFINER; writes admin-gated via `auth.uid()`→`employees.role='admin' AND is_active`; never return a token):
+  - `get_managed_credentials_status()` → SETOF json, one per provider: `{ provider, connected(bool), connected_at, updated_at, phone_number, has_account_sid, has_messaging_service }` (booleans + public phone only). GRANT `anon, authenticated`.
+  - `set_integration_secret(p_provider, p_secret)` — write the Stripe/Resend key or Twilio auth token. GRANT `authenticated`.
+  - `set_twilio_config(p_account_sid, p_messaging_service_sid, p_phone_number)` — NULL arg = leave unchanged, `''` = clear. GRANT `authenticated`.
+  - `disconnect_integration(p_provider)` — clears the secret (+ Twilio config). GRANT `authenticated`.
+  - `p9_assert_admin()` — shared admin guard used by the write RPCs.
+- **Resolver:** `functions/lib/credentials.js` — `resolveCredential(env, db, provider)` reads **DB-first, env-fallback** (per field), 60s in-memory cache, never throws on a DB blip, skips the DB entirely when no `SUPABASE_URL`. Shapes: stripe `{ secretKey }`, resend `{ apiKey }`, twilio `{ accountSid, authToken, messagingServiceSid, phoneNumber }`.
+- **Swaps (one additive line each, env fallback retained → behavior-identical when the DB row is absent):** `functions/lib/stripe.js` (`stripeFetch` uses the resolved key), `functions/lib/twilio.js` (`sendMessage`), `functions/lib/email.js` (`sendEmail`).
+- **Cutover:** owner removes the Cloudflare env secrets only AFTER verifying the DB path on dev. **Follow-up (out of P9's owned files):** the env-based `stripeConfigured(env)` pre-flight gate in the 4 Stripe workers and Twilio's `twilio-webhook.js` signature validation still read env — so Stripe/Twilio env can't be fully removed until those are migrated too (the *send* path is DB-first now).
+- **UI:** `src/pages/settings/Integrations.jsx` admin-only paste-key cards (Twilio/Resend/Stripe): `connected` boolean pill, write-only secret input, two-click disconnect (css §P9). Tests: `functions/lib/credentials.test.js` (resolver) + `supabase/tests/p9_credential_management.test.js` (RLS-cannot-read, never-echo, non-admin-cannot-write).
+
 **UI:** `/settings/integrations` (admin-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill. (P7-lite, 2026-07-04: the DevTools → Integrations tab this was ported from has been deleted.)
 
 **Environments / domains (IMPORTANT):**

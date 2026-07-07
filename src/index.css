@@ -10301,3 +10301,27 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P9 (Credentials · Session J) ─── */
+/* Managed credential cards (Twilio / Resend / Stripe). Built on the same
+   .settings-int-* card/pill/disconnect vocabulary as P2; these add only the
+   brand badges, the two-up SID grid, and the small helper note. Brand badge
+   hexes mirror the P2 precedent (.settings-int-badge--github/--qb) — a
+   deliberate exception to the tokens-only rule for provider logos. */
+.settings-cred-badge--twilio { background: #f22f46; }
+.settings-cred-badge--resend { background: #111827; }
+.settings-cred-badge--stripe { background: #635bff; }
+.settings-cred-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.settings-cred-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  margin: -2px 0 0;
+}
+@media (max-width: 768px) {
+  .settings-cred-grid { grid-template-columns: 1fr; }
+}

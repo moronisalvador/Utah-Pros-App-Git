@@ -5,11 +5,13 @@
  *
  * WHAT THIS DOES (plain language):
  *   The Settings → Integrations page. This is where an admin connects the
- *   outside services the platform talks to. There are two cards today: GitHub
- *   (paste an access key so the assistant can list, merge and comment on our
- *   code) and QuickBooks Online (connect our accounting so new customer
- *   contacts sync over, and back-fill existing ones). Keys are stored securely
- *   on the server and never shown back to the browser.
+ *   outside services the platform talks to. GitHub (paste an access key so the
+ *   assistant can list, merge and comment on our code), QuickBooks Online
+ *   (connect our accounting so new customer contacts sync over), and — added in
+ *   P9 — the Twilio (texting), Resend (email) and Stripe (card payments) keys,
+ *   which an admin can now paste here instead of editing server settings. Every
+ *   key is stored locked-down on the server and NEVER shown back to the browser;
+ *   the page only ever learns whether each service is connected (yes/no).
  *
  * WHERE IT LIVES:
  *   Route:        /settings/integrations   (admin-only — see AdminRoute in App.jsx)
@@ -23,17 +25,28 @@
  *   Data:      reads/writes → integration_credentials + integration_config, but
  *              only via workers (/api/github-connect, /api/quickbooks-connect,
  *              /api/qbo-sync-customer) and SECURITY DEFINER RPCs
- *              (get_integration_status, get_qbo_sync_stats) — the frontend never
- *              touches those RLS-locked tables directly.
+ *              (get_integration_status, get_qbo_sync_stats, and the P9 set —
+ *              get_managed_credentials_status, set_integration_secret,
+ *              set_twilio_config, disconnect_integration) — the frontend NEVER
+ *              touches those RLS-locked tables directly, and the secret is never
+ *              returned to it.
  *
  * NOTES / GOTCHAS:
  *   - After Intuit authorizes, /api/quickbooks-callback redirects the browser
  *     back HERE with ?qbo=connected|error|badstate (retargeted from the retired
  *     /dev-tools tab in the same PR). qboReturnToast() maps that param to a
  *     toast; the URL is then cleaned so a refresh doesn't re-fire it.
- *   - GitHub disconnect is an inline two-click confirm (no modal, no confirm()).
+ *   - Disconnect everywhere is an inline two-click confirm (no modal, no confirm()).
+ *   - P9 credential cards (Twilio/Resend/Stripe): status comes from
+ *     get_managed_credentials_status() (booleans + public bits only); writes go
+ *     through admin-gated RPCs (server re-checks admin via auth.uid(), so a direct
+ *     API call can't bypass this admin-only route). The pasted key is write-only —
+ *     the status RPC never returns it, so a connected card shows "Connected", not
+ *     the value. The server reads DB-first, env-fallback (functions/lib/
+ *     credentials.js), so keys stay live through the cutover.
  *   - De-CRM'd: this page uses design-system classes (.card / .btn / .input)
- *     plus .settings-int-* polish classes (index.css §P2), not the crm-* set.
+ *     plus .settings-int-* polish classes (index.css §P2) and .settings-cred-*
+ *     (index.css §P9), not the crm-* set.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
@@ -417,6 +430,278 @@ function QuickBooksCard() {
   );
 }
 
+// ─── Managed credential cards (P9) ──────────────
+// Turn a thrown db.rpc error into a short, human message. The admin gate raises
+// NOT_AUTHORIZED (PostgREST → 403); everything else is a generic retry.
+function credError(e) {
+  const m = e?.message || '';
+  if (m.includes('NOT_AUTHORIZED')) return 'admin only';
+  if (m.includes('EMPTY_SECRET')) return 'the key was empty';
+  if (m.includes('INVALID_PROVIDER')) return 'unknown provider';
+  return 'please try again';
+}
+
+// Generic single-secret card (Resend, Stripe). The secret is write-only: we show
+// "Connected" (a boolean from the status RPC), never the value. Paste replaces it.
+function SecretCard({ db, provider, name, badge, badgeClass, sub, keyLabel, keyPlaceholder, note, status, loading, reload }) {
+  const [secret, setSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const connected = !!status?.connected;
+
+  const save = async () => {
+    if (!secret.trim()) return;
+    setSaving(true);
+    try {
+      await db.rpc('set_integration_secret', { p_provider: provider, p_secret: secret.trim() });
+      ok(`${name} ${connected ? 'key replaced' : 'connected'}`);
+      setSecret('');
+      await reload();
+    } catch (e) { err(`Could not save: ${credError(e)}`); }
+    finally { setSaving(false); }
+  };
+
+  const disconnect = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setSaving(true);
+    try {
+      await db.rpc('disconnect_integration', { p_provider: provider });
+      ok(`${name} disconnected`);
+      setConfirming(false);
+      await reload();
+    } catch (e) { err(`Could not disconnect: ${credError(e)}`); }
+    finally { setSaving(false); }
+  };
+
+  // ─── SECTION: Render ──────────────
+  return (
+    <div className="card settings-int-card">
+      <div className="settings-int-head">
+        <div className="settings-int-provider">
+          <span className={`settings-int-badge ${badgeClass}`}>{badge}</span>
+          <div>
+            <div className="settings-int-name">{name}</div>
+            <div className="settings-int-sub">{sub}</div>
+          </div>
+        </div>
+        <span className={`settings-int-pill${connected ? ' settings-int-pill--on' : ''}`}>
+          {loading ? '…' : connected ? 'Connected' : 'Not connected'}
+        </span>
+      </div>
+
+      <div className="settings-int-body">
+        {connected && (
+          <p className="settings-int-meta">A key is saved and in use. Paste a new one to replace it.</p>
+        )}
+        <label className="label" htmlFor={`cred-${provider}`}>{keyLabel}</label>
+        <div className="settings-int-row">
+          <input
+            id={`cred-${provider}`}
+            className="input"
+            type="password"
+            autoComplete="off"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={keyPlaceholder}
+          />
+          <button className="btn btn-primary" onClick={save} disabled={saving || !secret.trim()}>
+            {saving ? 'Saving…' : connected ? 'Replace' : 'Connect'}
+          </button>
+        </div>
+        {note && <div className="settings-cred-note">{note}</div>}
+        {connected && (
+          <button
+            className={`btn btn-sm settings-int-disconnect${confirming ? ' settings-int-disconnect--armed' : ''}`}
+            onClick={disconnect}
+            onBlur={() => setConfirming(false)}
+            disabled={saving}
+          >
+            {confirming ? 'Confirm disconnect?' : 'Disconnect'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Twilio needs four fields: the auth token (the only SECRET) plus three non-secret
+// identifiers (Account SID, Messaging Service SID, phone number). The token is
+// write-only; the SIDs are shown as "configured ✓" booleans, the phone in full.
+function TwilioCard({ db, status, loading, reload }) {
+  const [authToken, setAuthToken] = useState('');
+  const [accountSid, setAccountSid] = useState('');
+  const [messagingSid, setMessagingSid] = useState('');
+  const [phone, setPhone] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const connected = !!status?.connected;
+
+  // Prefill the editable non-secret fields from status (phone is public; the SIDs
+  // are shown as booleans, so their inputs start blank and only overwrite when typed).
+  useEffect(() => { setPhone(status?.phone_number || ''); }, [status?.phone_number]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (authToken.trim()) {
+        await db.rpc('set_integration_secret', { p_provider: 'twilio', p_secret: authToken.trim() });
+      }
+      await db.rpc('set_twilio_config', {
+        // Only overwrite a SID when the admin typed one; blank leaves it unchanged
+        // by resending the current value (booleans mean we don't have the raw SID).
+        p_account_sid: accountSid.trim() || (status?.has_account_sid ? undefined : ''),
+        p_messaging_service_sid: messagingSid.trim() || (status?.has_messaging_service ? undefined : ''),
+        p_phone_number: phone.trim(),
+      });
+      ok('Twilio saved');
+      setAuthToken(''); setAccountSid(''); setMessagingSid('');
+      await reload();
+    } catch (e) { err(`Could not save: ${credError(e)}`); }
+    finally { setSaving(false); }
+  };
+
+  const disconnect = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setSaving(true);
+    try {
+      await db.rpc('disconnect_integration', { p_provider: 'twilio' });
+      ok('Twilio disconnected');
+      setConfirming(false);
+      await reload();
+    } catch (e) { err(`Could not disconnect: ${credError(e)}`); }
+    finally { setSaving(false); }
+  };
+
+  // ─── SECTION: Render ──────────────
+  return (
+    <div className="card settings-int-card">
+      <div className="settings-int-head">
+        <div className="settings-int-provider">
+          <span className="settings-int-badge settings-cred-badge--twilio">Tw</span>
+          <div>
+            <div className="settings-int-name">Twilio</div>
+            <div className="settings-int-sub">Text messaging (SMS / MMS)</div>
+          </div>
+        </div>
+        <span className={`settings-int-pill${connected ? ' settings-int-pill--on' : ''}`}>
+          {loading ? '…' : connected ? 'Connected' : 'Not connected'}
+        </span>
+      </div>
+
+      <div className="settings-int-body">
+        {connected && (
+          <p className="settings-int-meta">
+            Auth token saved · Account SID {status?.has_account_sid ? 'configured ✓' : 'not set'} ·
+            Messaging Service {status?.has_messaging_service ? 'configured ✓' : 'not set'}
+          </p>
+        )}
+        <label className="label" htmlFor="cred-twilio-token">Auth token {connected && '(paste to replace)'}</label>
+        <input
+          id="cred-twilio-token"
+          className="input"
+          type="password"
+          autoComplete="off"
+          value={authToken}
+          onChange={(e) => setAuthToken(e.target.value)}
+          placeholder={connected ? 'Paste a new auth token' : 'Twilio Auth Token'}
+        />
+        <div className="settings-cred-grid">
+          <div>
+            <label className="label" htmlFor="cred-twilio-account">Account SID</label>
+            <input
+              id="cred-twilio-account"
+              className="input"
+              type="text"
+              autoComplete="off"
+              value={accountSid}
+              onChange={(e) => setAccountSid(e.target.value)}
+              placeholder={status?.has_account_sid ? 'configured — type to replace' : 'ACxxxxxxxx'}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="cred-twilio-messaging">Messaging Service SID</label>
+            <input
+              id="cred-twilio-messaging"
+              className="input"
+              type="text"
+              autoComplete="off"
+              value={messagingSid}
+              onChange={(e) => setMessagingSid(e.target.value)}
+              placeholder={status?.has_messaging_service ? 'configured — type to replace' : 'MGxxxxxxxx (optional)'}
+            />
+          </div>
+        </div>
+        <label className="label" htmlFor="cred-twilio-phone">Sending phone number</label>
+        <input
+          id="cred-twilio-phone"
+          className="input"
+          type="text"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+1801…"
+        />
+        <div className="settings-cred-note">
+          Used only if no Messaging Service SID is set. The auth token is stored write-only and never shown again.
+        </div>
+        <div className="settings-int-row">
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {connected && (
+          <button
+            className={`btn btn-sm settings-int-disconnect${confirming ? ' settings-int-disconnect--armed' : ''}`}
+            onClick={disconnect}
+            onBlur={() => setConfirming(false)}
+            disabled={saving}
+          >
+            {confirming ? 'Confirm disconnect?' : 'Disconnect'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Loads the status for all three managed providers in one RPC and renders the cards.
+function CredentialCards() {
+  const { db } = useAuth();
+  const [byProvider, setByProvider] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_managed_credentials_status');
+      const map = {};
+      for (const r of (rows || [])) map[r.provider] = r;
+      setByProvider(map);
+    } catch { err('Failed to load credential status'); }
+    finally { setLoading(false); }
+  }, [db]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <>
+      <TwilioCard db={db} status={byProvider?.twilio} loading={loading} reload={load} />
+      <SecretCard
+        db={db} provider="resend" name="Resend" badge="Re" badgeClass="settings-cred-badge--resend"
+        sub="Transactional email (signing links, reports)"
+        keyLabel="API key" keyPlaceholder="re_…"
+        status={byProvider?.resend} loading={loading} reload={load}
+      />
+      <SecretCard
+        db={db} provider="stripe" name="Stripe" badge="St" badgeClass="settings-cred-badge--stripe"
+        sub="Card payments & instant payouts"
+        keyLabel="Secret key" keyPlaceholder="sk_…"
+        note="Stripe's webhook-signing secret stays a server setting; this key powers charges and payouts."
+        status={byProvider?.stripe} loading={loading} reload={load}
+      />
+    </>
+  );
+}
+
 // ─── Page ──────────────
 export default function Integrations() {
   return (
@@ -428,6 +713,7 @@ export default function Integrations() {
       <div className="settings-int-grid">
         <GitHubCard />
         <QuickBooksCard />
+        <CredentialCards />
       </div>
     </div>
   );
