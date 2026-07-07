@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { buildResetUrl } from '@/lib/staleChunkReload';
 
 /**
  * ErrorBoundary — catches render errors in any child tree.
@@ -53,7 +54,7 @@ export default class ErrorBoundary extends Component {
         }}>
           Something unexpected happened. Your data is safe — this is just a display error.
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           <button
             onClick={this.handleReset}
             style={{
@@ -64,6 +65,22 @@ export default class ErrorBoundary extends Component {
             }}
           >
             Try again
+          </button>
+          {/* Hard-recovery for a stale/poisoned build (common cause of this
+              screen, esp. in an installed PWA where there's no address bar to
+              reach /reset). buildResetUrl → /reset is served with
+              Clear-Site-Data:"cache", evicting the cached shell, then returns
+              here. Login is preserved ("cache" only). */}
+          <button
+            onClick={() => window.location.href = buildResetUrl(window.location.pathname + window.location.search)}
+            style={{
+              padding: '10px 20px', borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-color)', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+            }}
+          >
+            Clear cache &amp; reload
           </button>
           <button
             onClick={() => window.location.href = '/'}

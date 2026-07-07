@@ -33,6 +33,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isMoroni } from '@/lib/owner';
 import { SETTINGS_GROUPS, isSettingsItemVisible } from '@/lib/navItems';
+import { buildResetUrl } from '@/lib/staleChunkReload';
 
 function IconSearch(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);}
 function IconChevronRight(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polyline points="9 18 15 12 9 6"/></svg>);}
@@ -105,6 +106,26 @@ export default function SettingsHome() {
           </section>
         ))
       )}
+
+      {/* Trouble-loading recovery — reachable without an address bar (installed
+          PWA). /reset is served with Clear-Site-Data:"cache", so it clears the
+          cached app shell and reloads without logging you out. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap',
+        marginTop: 'var(--space-6)', paddingTop: 'var(--space-5)',
+        borderTop: '1px solid var(--border-light)',
+      }}>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', flex: 1, minWidth: 180 }}>
+          A page won’t load or looks out of date?
+        </span>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => { window.location.href = buildResetUrl('/settings'); }}
+        >
+          Clear cache &amp; reload
+        </button>
+      </div>
     </div>
   );
 }
