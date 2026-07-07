@@ -1,6 +1,8 @@
 // Twilio REST helper for Cloudflare Workers
 // No SDK — pure fetch() + Web Crypto API for signature validation
 
+import { resolveCredential } from './credentials.js';
+
 /**
  * Validate Twilio webhook signature using HMAC-SHA1
  * CRITICAL: Reject any webhook that fails validation — prevents spoofed inbound messages
@@ -45,9 +47,8 @@ export async function validateTwilioSignature(request, authToken, url) {
  * Twilio auto-upgrades to RCS when the recipient supports it (if RCS sender is registered)
  */
 export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) {
-  const accountSid = env.TWILIO_ACCOUNT_SID;
-  const authToken = env.TWILIO_AUTH_TOKEN;
-  const messagingServiceSid = env.TWILIO_MESSAGING_SERVICE_SID;
+  // DB-first (integration_credentials/config), env fallback — see functions/lib/credentials.js
+  const { accountSid, authToken, messagingServiceSid, phoneNumber } = await resolveCredential(env, null, 'twilio');
 
   const params = new URLSearchParams({
     To: to,
@@ -59,7 +60,7 @@ export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) 
     params.set('MessagingServiceSid', messagingServiceSid);
   } else {
     // Fallback to direct number
-    params.set('From', env.TWILIO_PHONE_NUMBER);
+    params.set('From', phoneNumber);
   }
 
   // MMS media
