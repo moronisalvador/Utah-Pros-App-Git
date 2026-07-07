@@ -1678,6 +1678,37 @@ is an empty stub.
   never trigger-owned `amount_paid`/`status`/`paid_at`); **F-2** (P1/P2 reproduce
   `canAccess('overview_financials')` — the financial RPCs are not server-gated).
 
+### Phase P2 — Collections / AR (mobile) (Jul 7 2026)
+
+`AdminCollections.jsx` filled from stub → mobile Collections at `/tech/admin/collections`. Up to
+four tabs via `AmTabs` (**AR aging · Invoices · Estimates · Payments**), each a mobile list of the
+same data as the desktop "My Money" page. **Read-only, zero new schema/RPCs.**
+- **RPCs consumed (call-only, POST rpc via `useAuth().db`):** `get_ar_invoices()` (AR + Invoices
+  tabs), `get_estimates()`, `get_payments_ledger({p_limit:1000})`, `get_payments_received({p_start,
+  p_end})` (AR "Collected (period)" stat).
+- **Financial gate (F-2):** AR aging + Payments ledger tabs are financial. When
+  `canAccess('overview_financials')` is false those two tabs are **filtered out of the tab bar** →
+  their components never mount → their RPCs are never fetched (skips render AND fetch). Invoices +
+  Estimates stay available to any admin. Default tab falls back to the first allowed tab.
+- **Period switch** (`PeriodSwitch`/`ADMIN_PERIODS` = mtd/last30/qtd/ytd; no "All" — mobile
+  simplification) shows only on AR + Invoices. On AR it scopes the Collected stat
+  (`get_payments_received`); on Invoices it filters the list by invoice date. AR aging/outstanding
+  are period-independent (snapshot — mirrors desktop).
+- **Deep-links** via Foundation's frozen `href` helper (`adminInvoiceHref`/`adminEstimateHref`);
+  rows land on `AdminInvoiceDetail`/`AdminEstimateDetail`. **Verification tail:** full landing
+  confirmed once P3/P4a fill those stubs — until then rows resolve to F's stubs (route smoke-tested
+  via the href-builder unit test).
+- **Owned files:** `src/pages/tech/admin/AdminCollections.jsx`;
+  `src/components/admin-mobile/collections/**` (`collFormat.js` pure math + row/href builders,
+  `collFormat.test.js`, `collUi.jsx`, `ArAgingTab.jsx`, `InvoicesTab.jsx`, `EstimatesTab.jsx`,
+  `PaymentsTab.jsx`); `src/index.css` §COLLECTIONS marker (`.am-coll-*`).
+- **AGING_BUCKETS** (current/1–30/31–60/61–90/90+) + `bucketKey` + formatters/status/period math are
+  **mirrored** (not imported) from desktop `collTokens.js` — the frozen `components/collections/**`
+  tree is read-to-mirror, never imported. Tests pin the buckets to the same boundaries so mobile
+  can't drift from desktop A/R.
+- **Tests:** `collFormat.test.js` — aging-bucket math (boundary cases + `summarizeAr` totals),
+  list-render row builders, and the href builder (asserts frozen route strings).
+
 ---
 
 ## Cloudflare Workers — Environment Variables

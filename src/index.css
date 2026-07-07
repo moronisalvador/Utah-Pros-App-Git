@@ -6266,6 +6266,95 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* ─── ADMIN-MOBILE: COLLECTIONS (Phase P2 — collections / AR) ──────────────── */
 
+/* Controls row: tab strip + (on AR/Invoices) the period switch. */
+.am-coll-controls {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-4);
+}
+.am-coll { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Headline stat cards (Outstanding · Overdue · Collected / Collected · Synced).
+   auto-fit fills the row whether there are 2 (Payments) or 3 (AR) cards. */
+.am-coll-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 768px) {
+  .am-coll-stats { gap: var(--space-2); }
+  .am-coll-stats .am-stat-value { font-size: var(--text-xl); }
+}
+
+/* Aging bands — tappable age buckets that filter the list. */
+.am-coll-aging { display: flex; flex-direction: column; gap: var(--space-2); }
+.am-coll-band {
+  position: relative; display: grid;
+  grid-template-columns: 1fr auto auto; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); min-height: 48px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: var(--font-sans); text-align: left; cursor: pointer; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.am-coll-band:disabled { cursor: default; opacity: 0.55; }
+.am-coll-band--active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.am-coll-band-label { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.am-coll-band-amt { font-size: var(--text-base); font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.am-coll-band-meta { font-size: var(--text-xs); color: var(--text-tertiary); min-width: 42px; text-align: right; }
+/* A faint fill bar showing the band's share of outstanding (sits behind the text). */
+.am-coll-band-bar {
+  position: absolute; left: 0; bottom: 0; height: 3px; max-width: 100%;
+  background: var(--accent); opacity: 0.5;
+}
+.am-coll-band--current .am-coll-band-bar { background: var(--status-resolved); }
+.am-coll-band--b30 .am-coll-band-bar { background: var(--text-tertiary); }
+.am-coll-band--b60 .am-coll-band-bar,
+.am-coll-band--b90 .am-coll-band-bar { background: var(--status-waiting); }
+.am-coll-band--b90p .am-coll-band-bar { background: var(--status-needs-response); }
+
+/* Search box. */
+.am-coll-search input {
+  width: 100%; min-height: 44px; padding: 0 var(--space-4);
+  border: 1px solid var(--border-color); border-radius: var(--radius-full);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans);
+}
+.am-coll-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+
+/* List + rows (AmListRow supplies the row frame; these style its trailing block). */
+.am-coll-list {
+  border: 1px solid var(--border-light); border-radius: var(--radius-lg);
+  overflow: hidden; background: var(--bg-primary);
+}
+.am-coll-trail { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.am-coll-amt { font-size: var(--text-base); font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.am-coll-age { font-size: var(--text-xs); font-weight: 600; color: var(--text-tertiary); }
+.am-coll-age--overdue { color: var(--status-needs-response); }
+
+/* Status chips — color carries the status at a glance. */
+.am-coll-chip {
+  display: inline-block; padding: 1px 8px; border-radius: var(--radius-full);
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.01em; white-space: nowrap;
+}
+.am-coll-chip--paid,
+.am-coll-chip--converted { background: var(--status-resolved-bg); color: var(--status-resolved); }
+.am-coll-chip--overdue,
+.am-coll-chip--error { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
+.am-coll-chip--partial { background: var(--status-waiting-bg); color: var(--status-waiting); }
+.am-coll-chip--sent { background: var(--status-active-bg); color: var(--accent); }
+.am-coll-chip--draft { background: var(--bg-tertiary); color: var(--text-tertiary); }
+
+/* Payment sync marker. */
+.am-coll-sync { font-size: var(--text-xs); font-weight: 700; color: var(--text-tertiary); }
+.am-coll-sync--ok { color: var(--status-resolved); }
+.am-coll-sync--err { color: var(--status-needs-response); }
+
+/* Empty state + footer summary. */
+.am-coll-empty {
+  padding: var(--space-8) var(--space-4); text-align: center;
+  border: 1px dashed var(--border-color); border-radius: var(--radius-lg); background: var(--bg-primary);
+}
+.am-coll-empty-title { font-size: var(--text-base); font-weight: 600; color: var(--text-secondary); }
+.am-coll-empty-sub { font-size: var(--text-sm); color: var(--text-tertiary); margin-top: var(--space-1); }
+.am-coll-foot { padding: var(--space-2) var(--space-1); font-size: var(--text-sm); color: var(--text-tertiary); text-align: center; }
+.am-coll-foot b { color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* ─── ADMIN-MOBILE: INVOICE (Phase P3 — invoice view + send + record payment) ─── */
 
 /* ─── ADMIN-MOBILE: ESTIMATE (Phases P4a view + P4b builder) ───────────────── */
