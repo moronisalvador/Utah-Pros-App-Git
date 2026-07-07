@@ -67,6 +67,7 @@ const JobPage = lazyRetry(() => import('@/pages/JobPage'));
 const ClaimsList = lazyRetry(() => import('@/pages/ClaimsList'));
 const ClaimPage = lazyRetry(() => import('@/pages/ClaimPage'));
 const Production = lazyRetry(() => import('@/pages/Production'));
+const Melds = lazyRetry(() => import('@/pages/Melds'));
 const Leads = lazyRetry(() => import('@/pages/Leads'));
 const Customers = lazyRetry(() => import('@/pages/Customers'));
 const CustomerPage = lazyRetry(() => import('@/pages/CustomerPage'));
@@ -352,6 +353,11 @@ function WebRoutes() {
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+
+        {/* Property Meld restoration melds — owner-only preview (no nav link yet) */}
+        <Route path="melds" element={
+          <MoroniRoute><ErrorBoundary section="Melds"><Melds /></ErrorBoundary></MoroniRoute>
+        } />
 
         {/* Homebuilding Entry Analysis — private to Moroni (side-nav link is Moroni-only too) */}
         <Route path="homebuilding" element={
