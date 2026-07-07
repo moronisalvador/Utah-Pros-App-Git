@@ -256,16 +256,19 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > `CLAUDE.md` + this block + `BILLING-CONTEXT.md` + the ownership manifest.
 
 **Close-out checklist**
-- [ ] `AdminEstimateDetail.jsx`: view an estimate (line items read-only), **send**
+- [x] `AdminEstimateDetail.jsx`: view an estimate (line items read-only), **send**
       (`POST /api/qbo-estimate { action:'send' }`), and **convert to invoice**
       (`convert_estimate_to_invoice` → `/api/qbo-invoice`, honoring the `needs_confirm`
       two-click return).
-- [ ] "Edit / add line items" and "New estimate" surface as links to P4b's route (frozen route
-      via F's href helper; verification tail after P4b merges — disclosed).
-- [ ] Named test: send action payload + convert `needs_confirm` handling.
-- [ ] `npm run test` + `build` green; eslint clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+- [x] "Edit / add line items" and "New estimate" surface as links to P4b's route (frozen route
+      via F's href helper; **verification tail after P4b merges** — the builder page isn't landed
+      yet, so the links target `adminEstimateEditorHref()`/`(id)` but can't be click-verified end
+      to end until P4b ships).
+- [x] Named test: send action payload + convert `needs_confirm` handling
+      (`src/components/admin-mobile/estimate/estimateActions.test.js`).
+- [x] `npm run test` + `build` green; eslint clean.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check.
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminEstimateDetail.jsx`,
 `src/components/admin-mobile/estimate/**` (the detail/view portion), css §ESTIMATE (view rules).
