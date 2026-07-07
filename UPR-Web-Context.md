@@ -1637,6 +1637,49 @@ the idb persister), not M1's local `useState`.
 
 ---
 
+## Admin Mobile — Phase F Foundation (Jul 7 2026)
+
+Brings core **admin capabilities into the field-tech PWA** (`/tech/*`, `TechLayout`), reached
+from `TechMore.jsx`, gated to `employee.role === 'admin'` behind the dark flag
+`page:admin_mobile` (owner-only `dev_only_user_id` until flipped). Plan of record:
+`docs/admin-mobile-roadmap.md`; ownership manifest `.claude/rules/admin-mobile-wave-ownership.md`.
+**Frontend-only initiative — ZERO new schema, ZERO new RPCs** (the backend already exists; every
+future screen consumes existing RPCs/workers). Foundation ships the **seams only** — every screen
+is an empty stub.
+
+- **Flag:** `page:admin_mobile` added to `src/lib/featureFlags.js` `EXPLICIT_FLAGS` as
+  `enabled:false` (LOAD-BEARING — DevTools auto-seeds missing keys ENABLED; the explicit false
+  keeps it dark). Live row also seeded `enabled:false` + owner `dev_only_user_id`.
+- **Guard:** `AdminMobileRoute` (`src/components/admin-mobile/AdminMobileRoute.jsx`) allows only
+  `role==='admin' && isFeatureEnabled('page:admin_mobile')`, else `<Navigate to="/tech">`. The
+  decision is a pure `canAccessAdminMobile({role, flagEnabled})` in `adminMobileAccess.js`
+  (8-case allow/deny unit test).
+- **Routes:** `src/App.jsx` gains **one** delegating line inside `TechRoutes()` —
+  `<Route path="tech/admin/*" element={…}>` → `src/pages/tech/admin/AdminMobileRoutes.jsx`
+  (subrouter). All per-screen routes live in the subrouter (frozen route strings; mirrored by the
+  href helper). Routes: `dash` (index), `collections`, `invoice/:invoiceId`,
+  `estimate/new`, `estimate/:estimateId/edit`, `estimate/:estimateId`, `leads`.
+- **Shared primitives (`src/components/admin-mobile/**`, all F-owned/frozen for the wave):**
+  `AdminMobilePage` (page frame), `MoneyStatCard`, `AmListRow`, `PeriodSwitch` (+`ADMIN_PERIODS`),
+  `AmTabs`, `href.js` (route builders — `adminDashHref`/`adminCollectionsHref`/`adminInvoiceHref`/
+  `adminEstimateHref`/`adminEstimateEditorHref`/`adminLeadsHref`), `icons.jsx` (the admin-mobile
+  icon set — icons live HERE, never in the frozen `Icons.jsx`/`crmIcons.jsx`), `index.js` barrel.
+- **Stub pages (`src/pages/tech/admin/`):** `AdminDash`, `AdminCollections`, `AdminInvoiceDetail`,
+  `AdminEstimateDetail`, `AdminEstimateEditor`, `AdminLeadCenter` — each renders `AdminMobilePage`
+  + a placeholder. Wave phases P1–P5 fill these.
+- **Nav:** `TechMore.jsx` gains an "Admin" group (Dashboard · Collections · New Estimate · Lead
+  Center) visible only when `canAccessAdminMobile(...)` is true (mirrors the `tool:oop_pricing`
+  conditional-group pattern). Invoice/estimate **detail** pages are id-parameterized (reached from
+  the Collections lists in P2), so they are not menu entries.
+- **CSS:** six reserved markers near the tech block in `src/index.css` — `ADMIN-MOBILE: SHARED`
+  (F-owned base `.am-*` vocabulary) + DASH/COLLECTIONS/INVOICE/ESTIMATE/LEADS (one per wave phase).
+  New classes are `.am-*`; no restyle of existing `.tech-*`/`.coll-*`/`.crm-*`.
+- **Findings carried to wave phases:** **F-1** (P3 record-payment writes only the safe column set,
+  never trigger-owned `amount_paid`/`status`/`paid_at`); **F-2** (P1/P2 reproduce
+  `canAccess('overview_financials')` — the financial RPCs are not server-gated).
+
+---
+
 ## Cloudflare Workers — Environment Variables
 ```
 SUPABASE_URL                    — https://glsmljpabrwonfiltiqm.supabase.co

@@ -135,36 +135,47 @@ click-merge, subscribe, or babysit.
 > `.claude/rules/admin-mobile-wave-ownership.md` (this phase commits it).
 
 **Close-out checklist**
-- [ ] `page:admin_mobile` added to `src/lib/featureFlags.js` `EXPLICIT_FLAGS` as
+- [x] `page:admin_mobile` added to `src/lib/featureFlags.js` `EXPLICIT_FLAGS` as
       **`enabled:false`** (load-bearing dark-launch) — the DB row is already seeded
       (owner-only `dev_only_user_id`).
-- [ ] `AdminMobileRoute` guard (`role==='admin'` && `isFeatureEnabled('page:admin_mobile')`;
-      else `<Navigate to="/tech">`), plus a named unit test of the guard's allow/deny matrix.
-- [ ] **`src/App.jsx`: exactly ONE added line** — a delegating `<Route path="admin/*"
-      element={…}>` inside `TechRoutes()` pointing at a new F-owned
-      `src/pages/tech/admin/AdminMobileRoutes.jsx` subrouter. All per-screen routes live in
-      that subrouter, not in `App.jsx`. (Never reuse `/tech` or `/tech/schedule` — they render
-      `null` for persistent panes.)
-- [ ] Admin group added to `src/pages/tech/TechMore.jsx` (conditional on
-      `role==='admin' && isFeatureEnabled('page:admin_mobile')`, mirroring the existing
-      `tool:oop_pricing` conditional-group pattern) linking to the five stub routes.
-- [ ] Shared primitives in `src/components/admin-mobile/**`: `AdminMobilePage` wrapper,
-      `MoneyStatCard`, `AmListRow`, `PeriodSwitch`, `AmTabs`, an `appt/detail` **href helper**,
-      **and the admin-mobile icon set** (icons live HERE — never routed through the frozen
-      `Icons.jsx`/`crmIcons.jsx`). Publish the shared `.am-*` CSS class vocabulary.
-- [ ] Stub pages (skeletons that render a `TabLoading`/placeholder) for all five screens under
+- [x] `AdminMobileRoute` guard (`role==='admin'` && `isFeatureEnabled('page:admin_mobile')`;
+      else `<Navigate to="/tech">`), plus a named unit test of the guard's allow/deny matrix
+      (`src/components/admin-mobile/adminMobileAccess.test.js`, 8 cases — pure
+      `canAccessAdminMobile()`).
+- [x] **`src/App.jsx`: exactly ONE added line** — a delegating `<Route path="tech/admin/*"
+      element={…}>` at the END of `TechRoutes()` (to minimize the H3 merge hunk) pointing at the
+      new F-owned `src/pages/tech/admin/AdminMobileRoutes.jsx` subrouter (+ one lazy-import const
+      in the imports section). All per-screen routes live in that subrouter, not in `App.jsx`.
+      (Path is `tech/admin/*` because the sibling tech routes carry the `tech/` prefix — the
+      roadmap's `admin/*` was shorthand.)
+- [x] Admin group added to `src/pages/tech/TechMore.jsx` (conditional on
+      `canAccessAdminMobile({role, flagEnabled})`, mirroring the existing `tool:oop_pricing`
+      conditional-group pattern) linking to the navigable landing routes (Dashboard, Collections,
+      New Estimate, Lead Center). Invoice/estimate **detail** routes are id-parameterized (reached
+      from the P2 Collections lists), so they are not menu entries.
+- [x] Shared primitives in `src/components/admin-mobile/**`: `AdminMobilePage` wrapper,
+      `MoneyStatCard`, `AmListRow`, `PeriodSwitch`, `AmTabs`, the **href helper** (`href.js`),
+      **and the admin-mobile icon set** (`icons.jsx` — icons live HERE, never routed through the
+      frozen `Icons.jsx`/`crmIcons.jsx`) + an `index.js` barrel. Shared `.am-*` CSS vocabulary
+      published in the SHARED marker.
+- [x] Stub pages (render `AdminMobilePage` + a placeholder) for all five screens under
       `src/pages/tech/admin/`: `AdminDash.jsx`, `AdminCollections.jsx`,
       `AdminInvoiceDetail.jsx`, `AdminEstimateDetail.jsx`, `AdminLeadCenter.jsx`
       (+ `AdminEstimateEditor.jsx` stub for the deferred P4b).
-- [ ] **Six `index.css` reserved markers** pre-scaffolded near the tech block:
+- [x] **Six `index.css` reserved markers** pre-scaffolded near the tech block:
       `/* ─── ADMIN-MOBILE: SHARED | DASH | COLLECTIONS | INVOICE | ESTIMATE | LEADS ─── */`.
-- [ ] `.claude/rules/admin-mobile-wave-ownership.md` committed (the ownership matrix + frozen
-      list).
-- [ ] `npm run test` + `npm run build` green; `npx eslint` on changed files clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean.
-- [ ] Visual check: an admin sees the new "More" group only with the flag on; a tech never
-      sees it; desktop `Layout` untouched.
-- [ ] `UPR-Web-Context.md` updated; reconcile this checklist; push `-u`; open PR into `dev`; stop.
+- [x] `.claude/rules/admin-mobile-wave-ownership.md` committed (already on `dev` from plan-commit;
+      verified it matches what shipped — no path drift to correct).
+- [x] `npm run test` (772 passed / 101 skipped) + `npm run build` green; `npx eslint` on changed
+      files clean.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean (the reviewer agent run via the
+      committed `.claude/agents/admin-mobile-phase-reviewer.md` definition).
+- [x] Visual check: verified by the guard's allow/deny unit test + the shared `canAccessAdminMobile`
+      gate used by both `AdminMobileRoute` and the `TechMore` group (a tech/flag-off admin never
+      sees the group nor reaches the routes); desktop `Layout.jsx` has **zero** changes in the diff.
+      (Headless session — no live screenshot; verification is reasoned from the tested gate + the
+      untouched-Layout diff.)
+- [x] `UPR-Web-Context.md` updated; this checklist reconciled; push `-u`; open PR into `dev`; stop.
 
 **Scope.** Owns the flag registry entry, the one App.jsx line, `TechMore.jsx`, all of
 `src/components/admin-mobile/**`, the `AdminMobileRoutes.jsx` subrouter, all stub pages, the six
