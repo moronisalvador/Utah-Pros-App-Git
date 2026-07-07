@@ -98,6 +98,20 @@ const EXPLICIT_FLAGS = [
     description: 'Merged job + appointment field surface (Job Hub) at /tech/job/:jobId?appt=. Owner-only during Tech Mobile v2 M1; legacy appointment/job detail pages show for everyone else.',
     enabled: false,
   },
+  // ── Admin Mobile — dark-launch flag (Phase F) ────────────────────────────────
+  // enabled:false is LOAD-BEARING (same reason as the tech-v2 flags above). The
+  // DevTools auto-seed creates any missing registry key ENABLED; without the
+  // explicit false this would seed ON and surface the admin screens inside the
+  // field-tech PWA for everyone. The live row is also seeded enabled:false +
+  // dev_only_user_id (owner) so the admin-mobile screens under /tech/admin/* stay
+  // owner-only until the owner flips the flag on in DevTools → Flags. The screens
+  // are additionally gated to employee.role === 'admin' (see AdminMobileRoute).
+  {
+    key: 'page:admin_mobile',
+    label: 'Admin Mobile',
+    description: 'Admin capabilities (dashboard, collections/AR, invoice + record-payment, estimates, lead center) inside the field-tech PWA, reached from "More". Admin-only; owner-only during the Admin Mobile rollout.',
+    enabled: false,
+  },
   // ── CRM per-screen rollout sub-flags (Phase 6b) ──────────────────────────────
   // One switch per CRM screen. These are the rollout kill-switches CrmLayout ANDs
   // with each employee's page access (canAccess('crm_<screen>')): a screen shows

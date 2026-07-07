@@ -148,6 +148,10 @@ const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
 const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
+// Admin Mobile (Phase F) — admin capabilities inside the tech PWA, gated by
+// AdminMobileRoute (role==='admin' + page:admin_mobile). All per-screen routes
+// live inside this subrouter; App.jsx delegates to it with a single line.
+const AdminMobileRoutes = lazyRetry(() => import('@/pages/tech/admin/AdminMobileRoutes'));
 
 // Native builds (iOS via Capacitor) render only /login + /tech/*.
 // Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
@@ -285,6 +289,7 @@ function TechRoutes() {
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
+      <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
     </Route>
   );
 }
