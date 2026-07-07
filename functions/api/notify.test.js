@@ -128,6 +128,15 @@ describe('resolveAudience', () => {
     const ids = await resolveAudience(db, 'appointment.updated', { appointment_id: 'ap-1' });
     expect(ids.sort()).toEqual(['c1', 'c2']);
   });
+
+  it('clock.abandoned → admins plus the affected tech from the payload', async () => {
+    const db = makeDb({ employees: [
+      { id: 'a1', role: 'admin' }, { id: 'a2', role: 'admin' },
+      { id: 't1', role: 'field_tech' },
+    ] });
+    const ids = await resolveAudience(db, 'clock.abandoned', { payload: { employee_id: 't1' } });
+    expect(ids.sort()).toEqual(['a1', 'a2', 't1']);
+  });
 });
 
 describe('dispatchEvent — channel gating by effective prefs', () => {

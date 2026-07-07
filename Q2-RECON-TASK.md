@@ -54,6 +54,19 @@
 
 ## DONE (for context — do not redo)
 
+- **Estimates verified + repaired on mobile PWA (2026-07-07).** Audited the admin-mobile
+  invoice/estimate/payment screens for the invoice fixes above. Findings: mobile **invoice view +
+  payment recording are solid** (money is header-authoritative; payment insert writes only whitelisted
+  columns, never the trigger-owned `amount_paid`/`status`/`paid_at`; QBO mirror synced-only + non-fatal;
+  double-submit guarded). But **estimates had the same import gap** — 34 of 37 imported estimates had a
+  header `amount` but **no line items**, and the estimate screens compute totals **from lines**, so they
+  showed **$0** and the 21 `submitted` couldn't convert. Fixes: (a) backfilled 57 line rows from each
+  estimate's QBO source (`scripts/backfill-recon-estimate-lines.sql`, self-asserting `amount` unchanged;
+  the −$562.50 deposit kept as a negative line); (b) hardened estimate numbering
+  (`supabase/migrations/20260707_harden_estimate_number_generation.sql`: `UNIQUE(estimate_number)` +
+  drift-proof `generate_estimate_number()` under an advisory lock — mirrors the invoice/claim fix; it
+  wasn't colliding because imports used plain QBO DocNumbers, a separate namespace from `EST-######`).
+  Verified: 0 lineless-with-amount, every estimate amount = line sum, next number `EST-001005`.
 - **Invoice-number generator hardened + duplicate resolved (2026-07-07).** A new July draft
   (job `W-2607-003`) had been handed `INV-000062` — already used by the reconciliation import —
   because `generate_invoice_number()` drew from `invoice_number_seq`, which the explicit-numbered

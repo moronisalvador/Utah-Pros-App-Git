@@ -65,7 +65,8 @@ const ROLE_AUDIENCE = {
   'esign.signed':               ['admin'],
   'feedback.submitted':         ['admin'],
   'timesheet.change_requested': ['admin'],
-  'clock.abandoned':            ['admin'],
+  // clock.abandoned is NOT here — it resolves to admins PLUS the affected tech
+  // (see resolveAudience), so the tech gets their own "forgot to clock out" nudge.
 };
 
 // ─── SECTION: Helpers ───
@@ -90,6 +91,16 @@ export async function resolveAudience(db, typeKey, body = {}) {
   }
   if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
     return [body.employee_id];
+  }
+  if (typeKey === 'clock.abandoned') {
+    // Admins (to follow up) PLUS the tech who left the clock running, so they get
+    // their own nudge to clock out. The scan carries the tech id in
+    // body.payload.employee_id; field_tech role defaults (push/email) are seeded.
+    let admins = [];
+    try { admins = await db.select('employees', `role=in.(admin)&select=id`); }
+    catch { admins = []; }
+    const tech = body.payload?.employee_id || body.employee_id || null;
+    return uniq([...(admins || []).map((e) => e.id), tech]);
   }
   if ((typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') && body.appointment_id) {
     let crew = [];

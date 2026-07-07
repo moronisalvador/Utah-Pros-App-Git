@@ -49,6 +49,10 @@ import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatr
 // the full catalog here — same as the office Settings page. (Visibility only;
 // notification_role_defaults still governs the defaults + which cells are locked.)
 const TECH_CATEGORIES = ['appointments', 'messaging'];
+// Plus a few individual types from otherwise-admin categories that DO reach the
+// employee themselves: the outcome of a timesheet-change request they filed, and
+// the "you may have forgotten to clock out" nudge for their own open clock.
+const TECH_EXTRA_TYPES = ['timesheet.change_reviewed', 'clock.abandoned'];
 
 export default function NotificationsSection() {
   // ─── State & hooks ──────────────
@@ -184,6 +188,7 @@ export default function NotificationsSection() {
         employeeId={employee?.id}
         variant="tech"
         categoryFilter={employee?.role === 'admin' ? null : TECH_CATEGORIES}
+        typeFilter={employee?.role === 'admin' ? null : TECH_EXTRA_TYPES}
         labels={{
           channelBell:  t('notifications.chBell'),
           channelPush:  t('notifications.chPush'),

@@ -64,6 +64,8 @@ export default function NotificationPrefsMatrix({
   employeeId,
   variant = 'office',          // 'office' | 'tech'
   categoryFilter = null,       // array of category keys to keep, or null = all
+  typeFilter = null,           // array of type_keys to ALSO keep (union with categoryFilter) — lets a
+                               // caller surface one type from an otherwise-hidden category
   labels = {},
 }) {
   const L = {
@@ -94,10 +96,12 @@ export default function NotificationPrefsMatrix({
   useEffect(() => { load(); }, [load]);
 
   const visibleRows = useMemo(() => {
-    if (!categoryFilter) return rows;
-    const keep = new Set(categoryFilter);
-    return rows.filter(r => keep.has(r.category));
-  }, [rows, categoryFilter]);
+    if (!categoryFilter && !typeFilter) return rows;
+    const cats = categoryFilter ? new Set(categoryFilter) : null;
+    const types = typeFilter ? new Set(typeFilter) : null;
+    // Keep a row if its category is allowed OR its specific type is allowed.
+    return rows.filter(r => (cats && cats.has(r.category)) || (types && types.has(r.type_key)));
+  }, [rows, categoryFilter, typeFilter]);
 
   const toggle = async (typeKey, channel, current) => {
     const key = `${typeKey}:${channel}`;
