@@ -114,6 +114,16 @@
     "today": "Today",
     "yesterday": "Yesterday"
   },
+  "admin": {
+    "mergeJob": "Merge job",
+    "deleteJob": "Delete job",
+    "deleteTitle": "Delete Job",
+    "archiveBody": "will be archived. It can be restored later but stays hidden from all views.",
+    "typeConfirm": "Type {{word}} to confirm:",
+    "deleting": "Deleting…",
+    "archived": "Job {{number}} archived",
+    "deleteFailed": "Couldn't delete job: {{message}}"
+  },
   "common": {
     "add": "Add",
     "cancel": "Cancel"

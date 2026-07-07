@@ -114,6 +114,16 @@
     "today": "Hoje",
     "yesterday": "Ontem"
   },
+  "admin": {
+    "mergeJob": "Mesclar trabalho",
+    "deleteJob": "Excluir trabalho",
+    "deleteTitle": "Excluir trabalho",
+    "archiveBody": "será arquivado. Pode ser restaurado depois, mas ficará oculto em todas as visualizações.",
+    "typeConfirm": "Digite {{word}} para confirmar:",
+    "deleting": "Excluindo…",
+    "archived": "Trabalho {{number}} arquivado",
+    "deleteFailed": "Não foi possível excluir o trabalho: {{message}}"
+  },
   "common": {
     "add": "Adicionar",
     "cancel": "Cancelar"

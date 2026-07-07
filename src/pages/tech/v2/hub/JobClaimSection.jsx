@@ -165,15 +165,12 @@ export default function JobClaimSection({ job, contacts = [], claim, isAdmin }) 
             <Row label={t('jobClaim.notes')} value={job.ar_notes} multiline />
           </div>
 
-          {/* Adjuster (legacy denormalized fields). */}
+          {/* Adjuster (legacy denormalized fields) — rendered as a contact card so
+              the tel:/mailto: targets meet the 48px touch-target law. */}
           {hasAdjuster && (
             <>
               <div className="tv2-hub-subhead">{t('jobClaim.adjusterHead')}</div>
-              <div className="tv2-hub-detaillist">
-                <Row label={t('jobClaim.name')} value={job.adjuster_name} />
-                <Row label={t('jobClaim.phone')} value={job.adjuster_phone} href={job.adjuster_phone ? `tel:${job.adjuster_phone}` : null} />
-                <Row label={t('jobClaim.email')} value={job.adjuster_email} href={job.adjuster_email ? `mailto:${job.adjuster_email}` : null} />
-              </div>
+              <ContactCard contact={{ name: job.adjuster_name, phone: job.adjuster_phone, email: job.adjuster_email }} t={t} />
             </>
           )}
         </div>
