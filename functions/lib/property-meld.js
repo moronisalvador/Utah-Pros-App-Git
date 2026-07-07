@@ -31,6 +31,7 @@
  *   parseMeldEmail({ from, subject, text }) → parsed meld object (see shape below)
  *   classifyMeldBusiness(parsed, accounts?) → 'restoration' | 'cleaning' | 'unknown'
  *   shouldIngestMeld(parsed, opts?)         → { ingest, business, event, needsReview }
+ *   meldToUpsertParams(parsed, opts?)       → params for the upsert_property_meld_meld RPC
  *   MELD_ACCOUNTS (default account→business map)
  *
  * NOTES / GOTCHAS:
@@ -222,6 +223,45 @@ export function classifyMeldBusiness(parsed, accounts = MELD_ACCOUNTS) {
   if (accounts.restoration.includes(id)) return 'restoration';
   if (accounts.cleaning.includes(id)) return 'cleaning';
   return 'unknown';
+}
+
+/**
+ * Map a parsed email to the argument object for the `upsert_property_meld_meld`
+ * RPC (the inbound-meld worker calls `db.rpc('upsert_property_meld_meld', …)`).
+ * Keys mirror the RPC's `p_*` parameters exactly.
+ *
+ * @param {object} parsed  output of parseMeldEmail()
+ * @param {object} [opts]
+ * @param {string} [opts.receivedAt]  ISO timestamp the email arrived
+ * @param {string} [opts.business]    override the classified business
+ */
+export function meldToUpsertParams(parsed, { receivedAt, business } = {}) {
+  const a = (parsed && parsed.address) || {};
+  return {
+    p_meld_number: parsed.meldNumber,
+    p_event: parsed.event,
+    p_vendor_account_id: parsed.vendorAccountId,
+    p_business: business || classifyMeldBusiness(parsed),
+    p_org_id: parsed.orgId,
+    p_meld_internal_id: parsed.meldId,
+    p_pm_brand: parsed.pmBrand,
+    p_is_emergency: !!parsed.isEmergency,
+    p_meld_type: parsed.meldType,
+    p_status: parsed.status,
+    p_due_date_text: parsed.dueDate,
+    p_appointment_window: parsed.appointmentWindow,
+    p_address_street: a.street || null,
+    p_address_unit: a.unit || null,
+    p_address_city_state_zip: a.cityStateZip || null,
+    p_address_full: a.full || null,
+    p_description: parsed.description,
+    p_description_clipped: !!parsed.descriptionTruncated,
+    p_message_from: parsed.messageFrom,
+    p_message_text: parsed.messageText,
+    p_thread_reply_address: parsed.threadReplyAddress,
+    p_portal_url: parsed.portalUrl,
+    p_received_at: receivedAt || null,
+  };
 }
 
 // Events that represent a real Meld we might track (vs. digests/noise).

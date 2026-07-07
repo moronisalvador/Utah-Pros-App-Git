@@ -17,24 +17,22 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/lib/meldsSeed (temporary preview data),
- *              @/contexts/AuthContext
- *   Data:      reads  → none yet (preview data; will move to
- *                        db.rpc('get_melds') once the table lands)
- *              writes → none
+ *   Internal:  @/contexts/AuthContext
+ *   Data:      reads  → get_property_meld_melds() RPC (property_meld_melds table)
+ *              writes → none (import-to-job is a later phase)
  *
  * NOTES / GOTCHAS:
- *   - PREVIEW BUILD: the list is static seed data (real Melds from the inbox).
- *     "Import to UPR job" is not wired yet — it toasts a not-ready message. Both
- *     are replaced when the inbound-meld worker + melds table ship.
- *   - Classification (restoration vs. cleaning) is done upstream by
- *     functions/lib/property-meld.js using the Property Meld vendor account id,
- *     never the job title.
+ *   - Rows come from the property_meld_melds table, populated by the inbound-
+ *     meld worker (and, for now, a small verified backfill). Classification
+ *     (restoration vs. cleaning) happens upstream in functions/lib/property-meld.js
+ *     by the Property Meld vendor account id — never the job title.
+ *   - Photos & the full inspection report are NOT in the email (portal-only);
+ *     "View in Property Meld" (portal_url) is how a tech reaches them.
+ *   - "Import to UPR job" is not wired yet — it toasts a not-ready message.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MELDS_SEED } from '@/lib/meldsSeed';
 
 // ─── SECTION: Helpers ──────────────
 
@@ -45,21 +43,40 @@ function toast(message, type = 'info') {
 // Amber for work still needing acceptance, blue once accepted/underway, gray otherwise.
 function statusColor(status) {
   const s = (status || '').toLowerCase();
-  if (s.includes('acceptance') || s.includes('availability')) return 'var(--warning, #d97706)';
-  if (s.includes('completion') || s.includes('progress') || s.includes('scheduled')) return 'var(--info, #2563eb)';
+  if (s.includes('acceptance') || s.includes('availability')) return 'var(--status-waiting)';
+  if (s.includes('completion') || s.includes('progress') || s.includes('scheduled')) return 'var(--status-active)';
   return 'var(--text-secondary)';
 }
 
 // ─── SECTION: Render ──────────────
 
 export default function Melds() {
-  useAuth(); // keeps the page inside the authenticated shell contract
-  const [melds] = useState(MELDS_SEED);
+  const { db } = useAuth();
+  const [melds, setMelds] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // ─── SECTION: Data fetching ──────────────
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const rows = await db.rpc('get_property_meld_melds', { p_include_closed: false });
+      setMelds(rows || []);
+    } catch (e) {
+      console.error('Melds load error:', e);
+      toast('Failed to load melds', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [db]);
+
+  useEffect(() => { load(); }, [load]);
 
   const openCount = useMemo(
     () => melds.filter((m) => /acceptance|availability/i.test(m.status || '')).length,
     [melds],
   );
+
+  if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
   return (
     <div className="page">
@@ -73,61 +90,48 @@ export default function Melds() {
         </div>
       </div>
 
-      {/* Preview banner — remove once the live feed replaces the seed data. */}
-      <div
-        className="card"
-        style={{
-          marginBottom: 16,
-          borderLeft: '3px solid var(--info, #2563eb)',
-          background: 'var(--surface-2, rgba(37,99,235,0.06))',
-        }}
-      >
-        <div className="card-body" style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-          Preview — these are real restoration melds pulled from your Property Meld emails.
-          Carpet-cleaning melds are filtered out. Live auto-updating and “Import to UPR job”
-          arrive once the email feed is connected.
-        </div>
-      </div>
-
       {melds.length === 0 ? (
         <div className="card">
           <div className="card-body">
             <div className="empty-state">
-              <p className="empty-state-title">No melds</p>
-              <p className="empty-state-text">Restoration melds from Property Meld will appear here.</p>
+              <p className="empty-state-title">No melds yet</p>
+              <p className="empty-state-text">
+                Restoration melds from Property Meld will appear here. Carpet-cleaning melds are filtered out.
+              </p>
             </div>
           </div>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           {melds.map((m) => (
-            <div key={m.meldNumber} className="card">
+            <div key={m.meld_number} className="card">
               <div className="card-body" style={{ display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: 16 }}>{m.meldType}</span>
-                    {m.isEmergency && (
+                    <span style={{ fontWeight: 600, fontSize: 16 }}>{m.meld_type}</span>
+                    {m.is_emergency && (
                       <span
                         className="badge"
-                        style={{ background: 'var(--danger, #dc2626)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 999 }}
+                        style={{ background: 'var(--status-needs-response)', color: 'var(--accent-text)', fontSize: 11, padding: '2px 8px', borderRadius: 999 }}
                       >
                         EMERGENCY
                       </span>
                     )}
                   </div>
                   <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--text-secondary)' }}>
-                    #{m.meldNumber}
+                    #{m.meld_number}
                   </span>
                 </div>
 
                 <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                  {[m.address.street, m.address.unit, m.address.cityStateZip].filter(Boolean).join(', ')}
+                  {m.address_full
+                    || [m.address_street, m.address_unit, m.address_city_state_zip].filter(Boolean).join(', ')}
                 </div>
 
                 {m.description && (
-                  <div style={{ fontSize: 14 }}>
+                  <div style={{ fontSize: 14, whiteSpace: 'pre-line' }}>
                     {m.description}
-                    {m.descriptionTruncated && (
+                    {m.description_clipped && (
                       <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}> … (full details in Property Meld)</span>
                     )}
                   </div>
@@ -135,26 +139,30 @@ export default function Melds() {
 
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
                   <span style={{ color: statusColor(m.status), fontWeight: 600 }}>{m.status}</span>
-                  {m.dueDate && <span style={{ color: 'var(--text-secondary)' }}>Due {m.dueDate}</span>}
-                  {m.appointmentWindow && m.appointmentWindow !== 'Not scheduled' && (
-                    <span style={{ color: 'var(--text-secondary)' }}>Appt: {m.appointmentWindow}</span>
+                  {m.due_date_text && m.due_date_text !== 'None provided' && (
+                    <span style={{ color: 'var(--text-secondary)' }}>Due {m.due_date_text}</span>
+                  )}
+                  {m.appointment_window && m.appointment_window !== 'Not scheduled' && (
+                    <span style={{ color: 'var(--text-secondary)' }}>Appt: {m.appointment_window}</span>
                   )}
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                  <a
-                    className="btn btn-secondary"
-                    href={m.portalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: 13 }}
-                  >
-                    View in Property Meld
-                  </a>
+                  {m.portal_url && (
+                    <a
+                      className="btn btn-secondary"
+                      href={m.portal_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 13 }}
+                    >
+                      View in Property Meld
+                    </a>
+                  )}
                   <button
                     className="btn btn-primary"
                     style={{ fontSize: 13 }}
-                    onClick={() => toast('Import to UPR job is coming next — once the melds table + email feed are connected.', 'info')}
+                    onClick={() => toast('Import to UPR job is coming next — the melds table is live; the import action is the next slice.', 'info')}
                   >
                     Import to UPR job
                   </button>

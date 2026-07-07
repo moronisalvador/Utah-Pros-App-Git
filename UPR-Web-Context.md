@@ -2719,6 +2719,37 @@ knowing before assuming they're interchangeable.
 
 ---
 
+## Property Meld — restoration meld intake (Jul 7 2026)
+We are a **vendor** in our property-manager client's Property Meld (no API for vendors), but we get
+an email for every "Meld" (work order). This feature reads those emails and surfaces the
+**restoration** ones in UPR. Carpet-cleaning Melds go to a *different business* and are excluded.
+
+- **Classification is by Property Meld vendor account id** (in the email URLs), NOT the job title —
+  titles mislead ("Carpet repair" came via cleaning; "Clean Mold Under Stairs" is restoration).
+  `83074` = Utah Pros Restoration (**ingest**); `51865` = Utah Pros Carpet Cleaning (**exclude**).
+  "A2Z Properties" and "Presidio Property Management" are the SAME company (a rebrand) — brand name
+  is ignored on purpose.
+- **Parser lib:** `functions/lib/property-meld.js` — `parseMeldEmail()` (assigned/canceled/message/
+  appointment/daily-summary), `classifyMeldBusiness()`, `shouldIngestMeld()`, `meldToUpsertParams()`.
+  Pure, no I/O; 28 unit tests from real inbox emails (`property-meld.test.js`).
+- **Table `property_meld_melds`** (RLS + policy at creation): one row per Meld, de-dup key
+  `meld_number` (UNIQUE — present in every email type; the internal numeric id is absent on cancels).
+  `state` ∈ open|canceled|imported|archived; `imported_job_id` → jobs(id) for the future import.
+- **RPCs:** `upsert_property_meld_meld(...)` (idempotent by meld_number; assign/message/cancel all
+  update the same row, later events never wipe earlier fields, cancel closes it, imported never
+  reverts) and `get_property_meld_melds(p_include_closed default false)` → SETOF json (emergencies
+  first, newest first). Both SECURITY DEFINER + GRANT to anon, authenticated.
+- **Page:** `/melds` (`src/pages/Melds.jsx`, owner-only via `MoroniRoute`, no nav link yet) — reads
+  `get_property_meld_melds`; cards show type/emergency badge/address/status/due + a Property Meld
+  deep link. **Email is lossy:** photos & inspection reports are portal-only, long descriptions
+  truncate ("See More") → `description_clipped`; the portal link is how a tech reaches the rest.
+- **Backfilled** 3 verified-real restoration melds (Reconstruction TFTBCQP, Mold check TH1BCY1,
+  EMERGENCY Active Flooding T3YA1KM — all account 83074).
+- **NOT built yet (next slices):** (1) live ingestion — a Gmail forward of `@msg.propertymeld.com`
+  → a Cloudflare Email Worker (`functions/api/inbound-meld.js`) calling `upsert_property_meld_meld`
+  (needs owner email-route setup); (2) "Import to UPR job" (stub toast today); (3) reply-to-thread
+  (each message email's UUID From address threads back into Property Meld).
+
 ## Known Pending Items
 (Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note
 appointment_id-OR-job_id fix are both done — and flagged 3 as unverified rather than asserted true.)

@@ -1,8 +1,31 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: property-meld.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves the Property Meld email reader works. It feeds real Property Meld
+ *   emails (copied straight from the owner's inbox) into the parser and checks
+ *   it pulls out the right pieces, tells restoration work apart from carpet
+ *   cleaning by the vendor account, and hands the right values to the database.
+ *
+ * DEPENDS ON:
+ *   Internal:  ./property-meld.js
+ *   Data:      reads → none · writes → none (pure unit tests)
+ *
+ * NOTES / GOTCHAS:
+ *   - Fixtures are VERBATIM real email bodies covering every notification type
+ *     (assigned / canceled / message) plus restoration / cleaning / ambiguous
+ *     classification cases. Keep them exact — the parser is regex-based.
+ * ════════════════════════════════════════════════
+ */
+
 import { describe, it, expect } from 'vitest';
 import {
   parseMeldEmail,
   classifyMeldBusiness,
   shouldIngestMeld,
+  meldToUpsertParams,
 } from './property-meld.js';
 
 /*
@@ -325,5 +348,37 @@ describe('shouldIngestMeld — only restoration flows into UPR', () => {
     p.vendorAccountId = '70000';
     const r = shouldIngestMeld(p);
     expect(r).toMatchObject({ ingest: false, business: 'unknown', needsReview: true });
+  });
+});
+
+describe('meldToUpsertParams — maps parsed email to the RPC arguments', () => {
+  it('maps an assignment to p_* params', () => {
+    const params = meldToUpsertParams(parseMeldEmail(RECON_ASSIGN), { receivedAt: '2026-04-15T00:12:49Z' });
+    expect(params).toMatchObject({
+      p_meld_number: 'TFTBCQP',
+      p_event: 'assigned',
+      p_vendor_account_id: '83074',
+      p_business: 'restoration',
+      p_meld_internal_id: '12533505',
+      p_meld_type: 'Reconstruction',
+      p_status: 'Pending vendor acceptance',
+      p_address_full: '145 1000 South - DWN, Unit DWN, Orem, UT 84058',
+      p_description: 'Restoration after flood',
+      p_description_clipped: false,
+      p_is_emergency: false,
+      p_received_at: '2026-04-15T00:12:49Z',
+    });
+  });
+
+  it('carries the message text + reply address for a message event', () => {
+    const params = meldToUpsertParams(parseMeldEmail(RECON_MESSAGE));
+    expect(params.p_event).toBe('message');
+    expect(params.p_message_from).toBe('Leuri Zibetti (Manager)');
+    expect(params.p_thread_reply_address).toBe('92cc7e85-d698-4dcd-a51a-f4f1b570fdfe@msg.propertymeld.com');
+  });
+
+  it('flags a clipped (truncated) description via p_description_clipped', () => {
+    const params = meldToUpsertParams(parseMeldEmail(CLEANING_ASSIGN));
+    expect(params.p_description_clipped).toBe(true);
   });
 });
