@@ -34,6 +34,15 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  canAccessAdminMobile,
+  ADMIN_MOBILE_FLAG,
+  adminDashHref,
+  adminCollectionsHref,
+  adminEstimateEditorHref,
+  adminLeadsHref,
+  AmIcons,
+} from '@/components/admin-mobile';
 
 // ─── SECTION: Helpers ──────────────
 /* ── Row icons ── */
@@ -233,7 +242,25 @@ export default function TechMore() {
     return () => { cancelled = true; };
   }, [db, employee?.id]);
 
+  // Admin group — visible ONLY to an admin with the page:admin_mobile flag on
+  // (dark-launched, owner-only until flipped). Mirrors the tool:oop_pricing
+  // conditional-group pattern; labels are plain English (admin-only surface).
+  const showAdmin = canAccessAdminMobile({
+    role: employee?.role,
+    flagEnabled: isFeatureEnabled(ADMIN_MOBILE_FLAG),
+  });
+
   const sections = [
+    ...(showAdmin ? [{
+      key: 'admin',
+      title: 'Admin',
+      items: [
+        { key: 'admin_dash', label: 'Dashboard', Icon: AmIcons.IconGauge, path: adminDashHref() },
+        { key: 'admin_collections', label: 'Collections', Icon: AmIcons.IconMoney, path: adminCollectionsHref() },
+        { key: 'admin_new_estimate', label: 'New Estimate', Icon: AmIcons.IconEstimate, path: adminEstimateEditorHref() },
+        { key: 'admin_leads', label: 'Lead Center', Icon: AmIcons.IconLeads, path: adminLeadsHref() },
+      ],
+    }] : []),
     {
       key: 'work',
       title: t('sectionWork'),

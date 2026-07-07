@@ -1,0 +1,118 @@
+{
+  "header": {
+    "back": "Back",
+    "backToClaim": "Back to claim",
+    "signed": "Signed",
+    "getSignature": "Get signature",
+    "private": "Private",
+    "menu": "More options"
+  },
+  "clockStatus": {
+    "scheduled": "Scheduled",
+    "omw": "On my way",
+    "on_site": "Working",
+    "paused": "Paused",
+    "completed": "Done"
+  },
+  "stage": {
+    "yourClock": "Your clock",
+    "visitBadge": "Visit {{n}}",
+    "staleHint": "Still on the clock — did you forget to clock out?",
+    "thisVisit": "This visit",
+    "tools": "Tools",
+    "scopeSheet": "Scope Sheet",
+    "scopeSheetDesc": "Capture scope of work room-by-room and email it",
+    "tasks": "Tasks",
+    "addTask": "Add task",
+    "addTaskPlaceholder": "New task…",
+    "noTasks": "No tasks yet",
+    "editTasks": "Edit list",
+    "moisture": "Moisture",
+    "addReading": "Add reading",
+    "noReadings": "No readings yet. Log MC, RH, and temp to start a drying log.",
+    "readingsCount": "{{count}}",
+    "stalled": "{{count}} stalled",
+    "stalledBadge": "STALLED",
+    "unaffected": "(unaffected)",
+    "goal": "goal {{value}}%",
+    "untagged": "Untagged",
+    "olderReadings": "+{{count}} older",
+    "equipment": "Equipment",
+    "place": "Place",
+    "noEquipment": "No equipment on-site. Place dehus, air movers, or AFDs to start tracking days on-site.",
+    "onSiteCount": "{{count}} on-site",
+    "day": "Day {{n}}",
+    "remove": "Remove",
+    "confirm": "Confirm",
+    "officeNotes": "Office notes",
+    "crew": "Crew",
+    "lead": "Lead",
+    "readOnly": "View only — you're not on this visit's crew",
+    "cancelledVisit": "This visit was cancelled",
+    "timeBreakdown": "Time on this visit",
+    "travel": "Travel",
+    "onSiteLabel": "On-site",
+    "total": "Total",
+    "nextVisit": "Next visit on this job"
+  },
+  "banner": {
+    "clockedElsewhere": "You're clocked into {{job}}",
+    "goThere": "Go there",
+    "anotherJob": "another job"
+  },
+  "dock": {
+    "photo": "Photo",
+    "uploading": "Uploading…",
+    "more": "More",
+    "editVisit": "Edit visit",
+    "addNote": "Add note"
+  },
+  "below": {
+    "visits": "Visits",
+    "upcoming": "Upcoming",
+    "past": "Past",
+    "viewing": "Viewing",
+    "crewLabel": "Crew: {{names}}",
+    "tasksLabel": "{{done}}/{{total}} tasks",
+    "scheduleAppt": "Schedule appointment",
+    "noVisits": "No appointments scheduled for this job yet.",
+    "aVisit": "Visit",
+    "jobClaim": "Job & Claim",
+    "h2tag": "Coming soon",
+    "viewClaim": "View claim {{number}}",
+    "photos": "Photos & Notes",
+    "seeAllPhotos": "See all photos & notes"
+  },
+  "common": {
+    "add": "Add",
+    "cancel": "Cancel"
+  },
+  "states": {
+    "loadErrorTitle": "Job not found",
+    "loadErrorSub": "This job may have been removed or is unavailable.",
+    "back": "Back",
+    "retry": "Retry",
+    "refreshFailed": "Couldn't refresh",
+    "unknownCustomer": "Unknown",
+    "visitUnavailable": "This visit is unavailable."
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{{n}}m ago",
+    "hoursAgo": "{{n}}h ago",
+    "yesterday": "yesterday",
+    "daysAgo": "{{n}}d ago"
+  },
+  "toast": {
+    "taskFailed": "Couldn't update task",
+    "taskAdded": "Task added",
+    "taskAddFailed": "Couldn't add task",
+    "readingSaved": "Reading saved",
+    "readingQueued": "Reading queued — will upload when online",
+    "placed": "Equipment placed",
+    "placementQueued": "Placement queued — will upload when online",
+    "equipRemoved": "Equipment removed",
+    "equipMarkedRemoval": "Equipment marked for removal",
+    "removeFailed": "Remove failed: {{message}}"
+  }
+}

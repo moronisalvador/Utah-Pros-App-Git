@@ -1606,6 +1606,289 @@ Cold-session prompts: `docs/tech-v2-dispatch.md` → H1/H2/H3. Ownership + the o
   in `src/components/tech/v2/nav.js` (mirrored from `page:tech_job_hub` by `AuthContext`) replaced
   the static `HUB_ENABLED` const — so cutover is the flag opening, not a code flip.
 
+#### Phase H1 — Stage & Dock (SHIPPED Jul 4 2026; flag still OFF)
+
+Replaced M1's guts at `/tech/job/:jobId?appt=` behind the unchanged `page:tech_job_hub` flag
+(owner-only; `nav.js` untouched). The surface now reads through **React Query** (cache-first via
+the idb persister), not M1's local `useState`.
+- **Migration `20260704_tech_v2_h1_job_hub_contacts.sql`:** drift-captures `get_job_contacts`
+  verbatim (it had zero migration coverage) + REPLACEs `get_job_hub` adding ONE key —
+  `contacts` (= `get_job_contacts(j.id)`, delegated so the shape can't drift). All v1 keys
+  byte-identical; backward-compat test `supabase/tests/tech_v2_h1_job_hub.test.js` (static +
+  self-skipping live).
+- **`techQuery.js` (authorized §7 amendment):** 7th kind `hub(jobId) → ['tech','hub',jobId]`;
+  every mutation (`clock/task/photo/room/doc/appointment`) also invalidates `hub`. All hub
+  sub-resources (visit detail, clock entries, readings, equipment, "clocked-elsewhere") cache
+  under the `['tech','hub',jobId]` prefix, so one hub-invalidation repaints the whole surface.
+- **`useVisitClock(db, apptId, employeeId, jobId)`** — new hub-owned, read-only hook; disclosed
+  copy-in of TimeTracker's entry derivation (`TimeTracker.jsx:231-243`): scheduled→omw→on_site→
+  paused→completed, multi-entry Visit-N, live elapsed from `travel_start`, stale hint at
+  FORGOT_CLOCKOUT_MIN (10h). Pure `deriveVisitClock` unit-tested. **TimeTracker NOT edited** and
+  receives the `get_appointment_detail` object (never the hub appt row — crew shape differs,
+  `.jobs` absent). `StageClock` is a new display-only 40px live timer.
+- **Files (all under `src/pages/tech/v2/hub/`):** `TechJobHub.jsx` (orchestrator), `HubHeader`
+  (Z1), `HubStage`+`HubChecklist`+`HubTools`+`StageClock` (Z2), `HubDock` (Z3), `HubBelowFold`
+  (Z4 — visits switcher live; Job&Claim/photos are compact stubs H2 completes), pure helpers
+  `useVisitClock`/`hubChecklistState`/`hubStageState` (+ tests). New i18n namespace `hub`
+  (EN/PT/ES, registered in `src/i18n/index.js`, parity-tested). CSS in the §HUB marker
+  (`tv2-hub-*`). M1's modules (`VisitContext`/`JobPhotos`/`JobDetailsPanel`/`VisitPicker`/
+  `WorkAuthBanner`/`ClaimBreadcrumb`) are now unused — H2 deletes them; `hubHelpers`+`AdminJobMenu`
+  retained.
+
+---
+
+## Admin Mobile — Phase F Foundation (Jul 7 2026)
+
+Brings core **admin capabilities into the field-tech PWA** (`/tech/*`, `TechLayout`), reached
+from `TechMore.jsx`, gated to `employee.role === 'admin'` behind the dark flag
+`page:admin_mobile` (owner-only `dev_only_user_id` until flipped). Plan of record:
+`docs/admin-mobile-roadmap.md`; ownership manifest `.claude/rules/admin-mobile-wave-ownership.md`.
+**Frontend-only initiative — ZERO new schema, ZERO new RPCs** (the backend already exists; every
+future screen consumes existing RPCs/workers). Foundation ships the **seams only** — every screen
+is an empty stub.
+
+- **Flag:** `page:admin_mobile` added to `src/lib/featureFlags.js` `EXPLICIT_FLAGS` as
+  `enabled:false` (LOAD-BEARING — DevTools auto-seeds missing keys ENABLED; the explicit false
+  keeps it dark). Live row also seeded `enabled:false` + owner `dev_only_user_id`.
+- **Guard:** `AdminMobileRoute` (`src/components/admin-mobile/AdminMobileRoute.jsx`) allows only
+  `role==='admin' && isFeatureEnabled('page:admin_mobile')`, else `<Navigate to="/tech">`. The
+  decision is a pure `canAccessAdminMobile({role, flagEnabled})` in `adminMobileAccess.js`
+  (8-case allow/deny unit test).
+- **Routes:** `src/App.jsx` gains **one** delegating line inside `TechRoutes()` —
+  `<Route path="tech/admin/*" element={…}>` → `src/pages/tech/admin/AdminMobileRoutes.jsx`
+  (subrouter). All per-screen routes live in the subrouter (frozen route strings; mirrored by the
+  href helper). Routes: `dash` (index), `collections`, `invoice/:invoiceId`,
+  `estimate/new`, `estimate/:estimateId/edit`, `estimate/:estimateId`, `leads`.
+- **Shared primitives (`src/components/admin-mobile/**`, all F-owned/frozen for the wave):**
+  `AdminMobilePage` (page frame), `MoneyStatCard`, `AmListRow`, `PeriodSwitch` (+`ADMIN_PERIODS`),
+  `AmTabs`, `href.js` (route builders — `adminDashHref`/`adminCollectionsHref`/`adminInvoiceHref`/
+  `adminEstimateHref`/`adminEstimateEditorHref`/`adminLeadsHref`), `icons.jsx` (the admin-mobile
+  icon set — icons live HERE, never in the frozen `Icons.jsx`/`crmIcons.jsx`), `index.js` barrel.
+- **Stub pages (`src/pages/tech/admin/`):** `AdminDash`, `AdminCollections`, `AdminInvoiceDetail`,
+  `AdminEstimateDetail`, `AdminEstimateEditor`, `AdminLeadCenter` — each renders `AdminMobilePage`
+  + a placeholder. Wave phases P1–P5 fill these.
+- **Nav:** `TechMore.jsx` gains an "Admin" group (Dashboard · Collections · New Estimate · Lead
+  Center) visible only when `canAccessAdminMobile(...)` is true (mirrors the `tool:oop_pricing`
+  conditional-group pattern). Invoice/estimate **detail** pages are id-parameterized (reached from
+  the Collections lists in P2), so they are not menu entries.
+- **CSS:** six reserved markers near the tech block in `src/index.css` — `ADMIN-MOBILE: SHARED`
+  (F-owned base `.am-*` vocabulary) + DASH/COLLECTIONS/INVOICE/ESTIMATE/LEADS (one per wave phase).
+  New classes are `.am-*`; no restyle of existing `.tech-*`/`.coll-*`/`.crm-*`.
+- **Findings carried to wave phases:** **F-1** (P3 record-payment writes only the safe column set,
+  never trigger-owned `amount_paid`/`status`/`paid_at`); **F-2** (P1/P2 reproduce
+  `canAccess('overview_financials')` — the financial RPCs are not server-gated).
+
+### Phase P2 — Collections / AR (mobile) (Jul 7 2026)
+
+`AdminCollections.jsx` filled from stub → mobile Collections at `/tech/admin/collections`. Up to
+four tabs via `AmTabs` (**AR aging · Invoices · Estimates · Payments**), each a mobile list of the
+same data as the desktop "My Money" page. **Read-only, zero new schema/RPCs.**
+- **RPCs consumed (call-only, POST rpc via `useAuth().db`):** `get_ar_invoices()` (AR + Invoices
+  tabs), `get_estimates()`, `get_payments_ledger({p_limit:1000})`, `get_payments_received({p_start,
+  p_end})` (AR "Collected (period)" stat).
+- **Financial gate (F-2):** AR aging + Payments ledger tabs are financial. When
+  `canAccess('overview_financials')` is false those two tabs are **filtered out of the tab bar** →
+  their components never mount → their RPCs are never fetched (skips render AND fetch). Invoices +
+  Estimates stay available to any admin. Default tab falls back to the first allowed tab.
+- **Period switch** (`PeriodSwitch`/`ADMIN_PERIODS` = mtd/last30/qtd/ytd; no "All" — mobile
+  simplification) shows only on AR + Invoices. On AR it scopes the Collected stat
+  (`get_payments_received`); on Invoices it filters the list by invoice date. AR aging/outstanding
+  are period-independent (snapshot — mirrors desktop).
+- **Deep-links** via Foundation's frozen `href` helper (`adminInvoiceHref`/`adminEstimateHref`);
+  rows land on `AdminInvoiceDetail`/`AdminEstimateDetail`. **Verification tail:** full landing
+  confirmed once P3/P4a fill those stubs — until then rows resolve to F's stubs (route smoke-tested
+  via the href-builder unit test).
+- **Owned files:** `src/pages/tech/admin/AdminCollections.jsx`;
+  `src/components/admin-mobile/collections/**` (`collFormat.js` pure math + row/href builders,
+  `collFormat.test.js`, `collUi.jsx`, `ArAgingTab.jsx`, `InvoicesTab.jsx`, `EstimatesTab.jsx`,
+  `PaymentsTab.jsx`); `src/index.css` §COLLECTIONS marker (`.am-coll-*`).
+- **AGING_BUCKETS** (current/1–30/31–60/61–90/90+) + `bucketKey` + formatters/status/period math are
+  **mirrored** (not imported) from desktop `collTokens.js` — the frozen `components/collections/**`
+  tree is read-to-mirror, never imported. Tests pin the buckets to the same boundaries so mobile
+  can't drift from desktop A/R.
+- **Tests:** `collFormat.test.js` — aging-bucket math (boundary cases + `summarizeAr` totals),
+  list-render row builders, and the href builder (asserts frozen route strings).
+
+### Phase P3 — Invoice view + send + record payment (Jul 7 2026)
+
+Fills the `AdminInvoiceDetail` stub (`/tech/admin/invoice/:invoiceId`). Zero migrations, zero
+new RPCs; everything call-only per the manifest.
+
+- **Screen (`src/pages/tech/admin/AdminInvoiceDetail.jsx`):** header (doc number, status chip,
+  bill-to, carrier/claim/job/due/sent/address), money summary (**Balance due** full-width, then
+  Invoiced/Collected 2-up via `MoneyStatCard`), read-only line items with subtotal/tax/total,
+  read-only payment history (payer · method · date · ref · QBO ✓), `qbo_sync_error` banner.
+  `inv.locked` hides both money actions; `feature:billing` off shows the desktop's flag message.
+- **Send:** shown ONLY when `qbo_invoice_id` exists (mobile never pushes an invoice to QBO —
+  the human Save→QBO gate stays on desktop). `POST /api/qbo-invoice { invoice_id, action:'send' }`
+  with Bearer; two-click confirm (arms → "Confirm send", disarms on blur); toast feedback.
+- **Record payment (finding F-1, test-first):**
+  `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
+  ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
+  payment_method, reference_number, recorded_by}` (never trigger-owned `amount_paid`/
+  `insurance_paid`/`homeowner_paid`/`status`/`paid_at`); in-flight closure latch guards
+  double-submit (no insert-level idempotency key exists); `POST /api/qbo-payment {payment_id}`
+  (Bearer) fired only when `qbo_invoice_id` present; failed QBO sync is NON-FATAL (row persists,
+  error toasted, never rolled back). 11 named tests in `recordPayment.test.js`.
+- **Balance math:** `src/components/admin-mobile/invoice/invoiceMath.js` —
+  `invoiceTotals()` = `(adjusted_total ?? total ?? live line total) − amount_paid` (desktop
+  `InvoiceEditor` calc, tested) + `invoiceStatusKind()` chip logic (mirrors
+  `collTokens.invoiceStatusKind`, replicated not imported — collections is frozen).
+- **Payment form:** `src/components/admin-mobile/invoice/PaymentSheet.jsx` — inline expandable
+  (no modal, tech-mobile-ux), balance pre-filled, payer/method chips, optional payer name +
+  reference, 48px targets, two-click confirm ("Confirm — record $X") that disarms on any edit
+  or blur. Parent runs the recorder; the sheet itself never touches `db`.
+- **CSS:** all inside the reserved `§ADMIN-MOBILE: INVOICE` marker (`.am-inv-*`; plus disclosed
+  descendant-scoped fit tweaks for the SHARED `.am-stat-card` inside `.am-inv-stats` only).
+- **Dev-login caveat:** `invoice_line_items` RLS grants `authenticated` only — the anon
+  dev-login client sees zero lines (same on desktop dev-login); real sessions render them.
+
+### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026)
+
+Fills the `AdminEstimateDetail` stub at `/tech/admin/estimate/:estimateId` with the read-only
+estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers +
+`convert_estimate_to_invoice` are call-only, per manifest §3).
+
+- **Page:** `src/pages/tech/admin/AdminEstimateDetail.jsx`. Loads `estimates` → `jobs` (via
+  `job_id`) → `claims` (via `job.claim_id`) → `contacts` (via `contact_id` or
+  `job.primary_contact_id`) → `estimate_line_items` (ordered `sort_order`, then `created_at`).
+  Line items are **read-only** here (editing is P4b).
+- **View modules (`src/components/admin-mobile/estimate/`, P4a-owned — distinct from P4b's
+  builder files):** `estimateActions.js` (pure `buildEstimateSendPayload` /
+  `interpretConvertResult` / `deriveEstimateView` + `estimateActions.test.js` — named test for
+  the send payload + convert `needs_confirm` handling), `EstimateHeader.jsx` (status pill +
+  doc number + prepared-for + field grid + address), `EstimateLines.jsx` (read-only rows +
+  totals).
+- **Send:** two-click confirm → pushes to QBO first if unsynced (`POST /api/qbo-estimate
+  { estimate_id }`), then `POST /api/qbo-estimate { action:'send' }` (worker defaults `send_to`
+  to the contact email; the payload includes `send_to` only when a non-empty email is passed).
+- **Convert:** `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
+  Convert button arms a two-click "append" (surfaces `existing_line_count`); on success →
+  `POST /api/qbo-invoice { invoice_id }` to link in QBO, then navigates to the admin-mobile
+  invoice detail via `adminInvoiceHref`.
+- **P4b links:** "Edit / add line items" → `adminEstimateEditorHref(estimateId)`; "New estimate"
+  → `adminEstimateEditorHref()`. The builder page (P4b) is not yet landed — **route-only
+  verification tail once P4b merges**.
+- **CSS:** `.am-est-*` classes inside the `ADMIN-MOBILE: ESTIMATE` marker (view rules, above any
+  P4b builder block); tokens only. Actions are ≥48px touch targets.
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
+
+### Admin Mobile — Phase P1: Admin dashboard (Jul 7 2026)
+
+Fills the `AdminDash` stub at `/tech/admin/dash` with the office Overview rebuilt as one tall,
+single-column, fixed-order stack of cards. **Zero schema/RPCs** — reuses the 11 existing Overview
+widget RPCs; each card fetches its own on mount (+ period change / Retry).
+
+- **Page:** `src/pages/tech/admin/AdminDash.jsx`. Reads `canAccess('overview_financials')`, maps
+  `visibleDashWidgets(canFin)` → card components, renders `PeriodSwitch` (MTD/Last 30/QTD/YTD).
+- **FINANCIAL GATE (finding F-2 — the binding P1 risk):** the money-card RPCs
+  (`get_revenue_by_division`, `get_payments_received`, `get_avg_ticket`, `get_ar_invoices`) are
+  NOT server-gated. The gate is reproduced as the desktop `enabled=false` pattern: the pure
+  decision `visibleDashWidgets(canFin)` in `dashPlan.js` DROPS the four financial cards when
+  `canFin !== true`, so they are never mounted → neither rendered NOR fetched. `plannedRpcs(false)`
+  contains none of `FINANCIAL_RPCS`. Named tests: `dash/dashPlan.test.js` (decision + fetch set,
+  both directions) and `dash/AdminDash.render.test.jsx` (renders the real page with a mocked
+  `canAccess`; asserts the money titles are absent and the `db.rpc` spy is untouched when access
+  is off, present when on).
+- **Modules (`src/components/admin-mobile/dash/`, all P1-owned):**
+  - `dashPlan.js` — `DASH_WIDGETS` (fixed order, `fin` flag, per-card `rpcs`), `FINANCIAL_RPCS`,
+    `visibleDashWidgets(canFin)`, `plannedRpcs(canFin)` — the single source of the F-2 gate.
+  - `dashFormat.js` — pure shapers MIRRORED from the desktop `overview/hooks/*` (never imported —
+    that tree is frozen): `periodBoundsISO` (mirror of `dashUtils.periodBounds`, 4 periods, no
+    'Prev mo'/'All'), `fmtK`/`fmtFull`, `computeDelta`, `shapeMoneySplit`/`shapeAvgTicket`/
+    `shapeOpenEstimates`+`donutGradient`/`shapeCollections`/`shapeJobsClosed`(+sparkline)/
+    `shapeActiveDrying`/`shapeActionItems`/`shapeEmployeeStatus` (uses `@/lib/clockTime`
+    `liveClockMinutes`)/`shapePipeline`, and the division-colour palette (data-viz, mirror of
+    `overview/tokens.js` DIV). `dash/dashFormat.test.js` pins the math to the desktop numbers.
+  - `useDashWidget.js` — per-card loader hook: async IIFE in an effect (no synchronous
+    setState-in-effect), `alive` stale-drop, `dbRef` synced in an effect, refetch on loader
+    change (period) + `reload()`.
+  - `DashCard.jsx` — card shell (title/suffix/LIVE badge/delta pill, loading shimmer, error+Retry,
+    footer) + `DeltaPill`/`DashFootLink` (frozen href helper)/`DashEmpty`.
+  - `FinancialCards.jsx` (Revenue, Payments via shared MoneySplitCard, AvgTicket, Collections),
+    `WorkCards.jsx` (JobsClosed+sparkline, JobsCompleted, OpenEstimates donut),
+    `OpsCards.jsx` (ActiveDrying, ActionRequired, EmployeeStatus [live], Pipeline).
+- **Deep-links:** money/estimate cards footer-link to the admin-mobile Collections screen via
+  `adminCollectionsHref()` (frozen href helper). Job-centric rows (drying/action/employee) have
+  no admin-mobile destination this wave → read-only (no hardcoded `/jobs` paths).
+- **Charts:** CSS/SVG only, no chart lib — stacked `.am-dash-splitbar`, `conic-gradient` donut,
+  inline `<svg>` sparkline, CSS bars. **CSS:** `.am-dash-*` classes inside the `ADMIN-MOBILE: DASH`
+  marker (tokens only; division/chart hues are inline data-viz fills). Adapts to the tech dark
+  theme (token-based); ≥44px controls.
+
+### Admin Mobile — Phase P4b: Estimate create + line-item builder (Jul 7 2026)
+
+Fills the `AdminEstimateEditor` stub at `/tech/admin/estimate/new` (create mode) and
+`/tech/admin/estimate/:estimateId/edit` (builder mode). **Zero schema/RPCs**
+(`create_estimate_for_contact` + `/api/qbo-query` are call-only, per manifest §3; line-item
+writes go straight to `estimate_line_items`).
+
+- **Page:** `src/pages/tech/admin/AdminEstimateEditor.jsx`. Create mode renders
+  `EstimateCreateForm`; on create it navigates (replace) into builder mode. Builder mode loads
+  `estimates` → `contacts` → `estimate_line_items` (seeding one blank line on a fresh,
+  never-synced draft, mirroring the desktop editor), and bounces a CONVERTED estimate back to
+  the P4a view. "Done — review & send" returns to `adminEstimateHref` — the builder
+  deliberately has **no QBO write path** (push/send/convert stay on P4a's screen; P4b's only
+  QBO call is the read-only `/api/qbo-query` item/class catalog, with the desktop's
+  Category-item filter).
+- **Builder modules (`src/components/admin-mobile/estimate/`, P4b-owned — distinct from P4a's
+  view files):** `estimateBuilder.js` (pure `buildCreateEstimatePayload` /
+  `CREATE_ESTIMATE_PARAMS` / `LINE_SAFE_COLUMNS` / `buildLineInsert` / `buildLineUpdate` /
+  `parseQboCatalog` / `computeTotals`) + `estimateBuilder.test.js` (the named P4b tests:
+  create-shell payload exact-keys; every line write excludes the GENERATED `line_total`),
+  `EstimateCreateForm.jsx` (contact search via `search_contacts_for_job`, inline new customer
+  via `AddContactModal` + `get_insurance_carriers` with duplicate-phone fallback, division/type
+  chips, `AddressAutocomplete` property address prefilled from billing, existing-estimates
+  dup guard, double-submit-latched Create), `LineItemCard.jsx` (editable card: item/class
+  pickers commit on select, description/qty/rate commit on blur, live amount, two-click remove
+  with onBlur disarm), `CatalogPicker.jsx` (inline expandable QBO item/class picker — no
+  modal), `builder.render.test.jsx` (static render smoke).
+- **Money math:** every `estimate_line_items` write is shaped by
+  `buildLineInsert`/`buildLineUpdate` — `line_total` is GENERATED and never written; the
+  `trg_estimate_lines_total` DB trigger rolls lines up into `estimates.subtotal/amount`, so the
+  builder never writes the `estimates` table at all.
+- **CSS:** `.am-estb-*` classes appended BELOW P4a's block inside the `ADMIN-MOBILE: ESTIMATE`
+  marker (P4a's lines untouched); tokens only; ≥48px touch targets throughout. Reuses P4a's
+  `.am-est-btn`/`.am-est-card`/totals classes without editing them.
+- **Not in v1:** line drag-reorder on mobile (gloved hands — lines keep creation order; desktop
+  `EstimateEditor` still reorders).
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate, matching P4a).
+
+### Admin Mobile — Phase P5: Lead Center (mobile) (Jul 7 2026)
+
+Fills the `AdminLeadCenter` stub at `/tech/admin/leads` with the mobile Lead Center — the
+inbound-lead list with call-recording playback and transcripts, mirroring the office
+`CrmCallLog`. **Zero schema/RPCs** (all reads/calls are existing RPCs + the recording proxy).
+
+- **Page:** `src/pages/tech/admin/AdminLeadCenter.jsx`. Loads leads via `get_inbound_leads`
+  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Status/spam filter
+  tabs (with per-tab count badges) + a name/number search; auto-refreshes every 20s while visible
+  and on focus. Status writes are **call-only** via `update_lead_status(p_lead_id, p_status)`,
+  optimistic with reload-on-failure. The CRM-owned REPLACEs `move_lead_to_stage` /
+  `get_contact_activity` are **not re-defined** here (manifest §3 #3).
+- **Modules (`src/components/admin-mobile/leads/`, P5-owned):**
+  - `leadFormat.js` — pure helpers: `STATUS_OPTIONS`, `STATUS_FILTER_TABS`, `statusLabel`,
+    `formatDuration`, `formatValue`, `fmtTime`, `isAwaitingRecording(lead, now)`,
+    `contactLabelFor`, `groupTurns`, and `filterLeads(leads, {status, search})` (the `'all'` tab
+    excludes spam; `'spam'` surfaces `lead_status==='spam'` OR `spam_flag`; else exact status).
+  - `LeadRow.jsx` — presentational card (no `useAuth`; db lifted to the page via `onStatusChange`
+    so it renders without an AuthContext and stays unit-testable). Plays recordings via
+    `GET /api/callrail-recording?lead_id=` with `getAuthHeader()` Bearer → validates
+    `Content-Type: audio/*` → `URL.createObjectURL`; blob URL revoked on unmount (an `<audio src>`
+    can't carry the header).
+  - `RecordingPlayer.jsx` + `TranscriptView.jsx` — **copied in** from `CrmCallLog.jsx` (frozen;
+    never edited), classes re-namespaced to `.am-audio-*` / `.am-transcript-*`. `TranscriptView`
+    renders `transcript_analysis` (summary/sentiment/topics/grouped speaker turns/entities) with a
+    flat-`transcription` fallback for older rows.
+  - `leads.render.test.jsx` — named test: lead-list (`LeadRow`) render + transcript-view render
+    from a fixture `transcript_analysis`, plus `filterLeads` status/spam/search coverage.
+- **CSS:** new `.am-lead-*` / `.am-audio-*` / `.am-transcript-*` / `.am-sentiment-*` /
+  `.am-topic-chip` classes inside the `ADMIN-MOBILE: LEADS` marker, tokens only. The copied CRM
+  visuals were re-namespaced to `.am-*` (not literal `.crm-*`) because the CRM tokens/selectors
+  are scoped to `.crm-shell` and the manifest §5 forbids restyling `.crm-*` in the tech shell.
+  Interactive controls are ≥44px touch targets.
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
+
 ---
 
 ## Cloudflare Workers — Environment Variables
@@ -5434,3 +5717,45 @@ only); added a triage queue for unmatched inbound + a bounce/complaint webhook; 
 Cloudflare subaddressing (base `reply@` rule + toggle, no catch-all) and Resend Svix signing.
 Reviewer agents reused (no new agent): `migration-safety-checker`, `consent-path-auditor`,
 `upr-pattern-checker`.
+
+---
+
+## Admin Mobile — plan of record committed (Jul 7 2026 — docs/seed/agent only, no feature code)
+
+**Goal.** Bring core admin capability into the **field-tech PWA** (`/tech/*`, `TechLayout`),
+reached from `TechMore.jsx`, gated to `employee.role === 'admin'` behind the dark flag
+**`page:admin_mobile`** (seeded `enabled:false` + owner `dev_only_user_id`
+`d1d37f3c-…d2da`). Screens: admin **Dashboard**, **Collections/AR**, **Invoice view + send +
+record-payment**, **Estimate view + send** (+ deferred create/build), **Lead Center** (leads +
+call-recording playback + transcripts). Owner decisions (2026-07-07): shell = the tech PWA (not
+the office `Layout`, not a third shell); "receive payment" = **record a payment received** only
+(Stripe pay-link / QBO card-charge stay unwired, out of scope); admins-only, dark-launched.
+
+**Key finding — this is a FRONTEND-only initiative: ZERO new schema, ZERO new RPCs.** Live
+verification confirmed all 17 dashboard/billing/lead RPCs exist and `payments` / `inbound_leads`
+carry every needed column. Two constraints promoted to tested acceptance criteria: **F-1** the
+mobile record-payment must insert only the safe column set and never the trigger-owned
+`amount_paid`/`status`/`paid_at` (no `record_payment` RPC exists — it's `db.insert('payments')`
++ `/api/qbo-payment`, idempotent, non-fatal on QBO-sync failure); **F-2** the financial
+dashboard RPCs are NOT server-gated, so the mobile UI must reproduce
+`canAccess('overview_financials')` (skip render AND fetch) or it leaks financials.
+
+**Structure.** Wave 0 = **Phase F (Foundation)** — the flag entry, `AdminMobileRoute` guard, a
+**single** delegating `src/App.jsx` line → a F-owned `AdminMobileRoutes.jsx` subrouter (shrinks
+the shared-seam edit to one line to dodge the in-flight Job Hub v2 H3 cutover), the `TechMore`
+admin group, `src/components/admin-mobile/**` shared primitives + icon set + `.am-*` CSS, stub
+pages, six `index.css` markers, and the ownership manifest. Wave 1 (all parallel after F, merge
+preference **P2 → P3 → P4a → P1 → P4b → P5**): P1 Dashboard, P2 Collections/AR, P3
+Invoice+record-payment (Opus·high, money), P4a Estimate view+send, P4b Estimate create+build
+(deferrable, heaviest), P5 Lead Center. Every phase owns one page + one
+`components/admin-mobile/<area>/**` subfolder + one css marker — proven pairwise-disjoint.
+
+**Challenge pass.** Refute-first re-verification confirmed 4 of 5 verdicts and **MODIFIED** the
+estimate one (create is a thin RPC shell, but the line-item builder is a large separate surface →
+split into P4a/P4b). Disjointness proof: all 10 pairs disjoint; pinned icons to `admin-mobile/**`
+(not the frozen `Icons.jsx`/`crmIcons.jsx`), pre-scaffolded css markers, flagged call-only money
+seams. Counter-ordering flipped "Dashboard first" to **Collections-lists first** (cleanest shell
+validation; money early per owner priority; lists give P3/P4a their entry points). Reviewer:
+**new `admin-mobile-phase-reviewer`** agent (money/gate-weighted) + reused `upr-pattern-checker`.
+Full detail in `docs/admin-mobile-roadmap.md`; launch blocks in `docs/admin-mobile-dispatch.md`;
+ownership in `.claude/rules/admin-mobile-wave-ownership.md`.
