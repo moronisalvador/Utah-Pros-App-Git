@@ -78,10 +78,41 @@
     "noVisits": "No appointments scheduled for this job yet.",
     "aVisit": "Visit",
     "jobClaim": "Job & Claim",
-    "h2tag": "Coming soon",
-    "viewClaim": "View claim {{number}}",
-    "photos": "Photos & Notes",
-    "seeAllPhotos": "See all photos & notes"
+    "photos": "Photos & Notes"
+  },
+  "jobClaim": {
+    "partOfClaim": "Part of claim",
+    "aClaim": "this claim",
+    "contactsHead": "Contacts",
+    "detailsHead": "Details",
+    "adjusterHead": "Adjuster",
+    "unnamedContact": "Contact",
+    "address": "Address",
+    "division": "Division",
+    "status": "Status",
+    "dateOfLoss": "Date of loss",
+    "typeOfLoss": "Type of loss",
+    "carrier": "Carrier",
+    "outOfPocket": "Out of pocket",
+    "policyNo": "Policy #",
+    "claimNo": "Claim #",
+    "deductible": "Deductible",
+    "notes": "Notes",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email"
+  },
+  "photos": {
+    "seeAll": "See all",
+    "noPhotos": "No photos yet",
+    "moreCount": "+{{count}} more photos",
+    "notePlaceholder": "What do you want to note?",
+    "saving": "Saving…",
+    "saveNote": "Save note",
+    "addNote": "Add note",
+    "addNoteRoom": "Add note / room",
+    "today": "Today",
+    "yesterday": "Yesterday"
   },
   "common": {
     "add": "Add",
@@ -113,6 +144,8 @@
     "placementQueued": "Placement queued — will upload when online",
     "equipRemoved": "Equipment removed",
     "equipMarkedRemoval": "Equipment marked for removal",
-    "removeFailed": "Remove failed: {{message}}"
+    "removeFailed": "Remove failed: {{message}}",
+    "noteSaved": "Note saved",
+    "noteSaveFailed": "Couldn't save note: {{message}}"
   }
 }

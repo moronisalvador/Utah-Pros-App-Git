@@ -78,10 +78,41 @@
     "noVisits": "Aún no hay visitas programadas para este trabajo.",
     "aVisit": "Visita",
     "jobClaim": "Trabajo y Reclamo",
-    "h2tag": "Próximamente",
-    "viewClaim": "Ver reclamo {{number}}",
-    "photos": "Fotos y Notas",
-    "seeAllPhotos": "Ver todas las fotos y notas"
+    "photos": "Fotos y Notas"
+  },
+  "jobClaim": {
+    "partOfClaim": "Parte del reclamo",
+    "aClaim": "este reclamo",
+    "contactsHead": "Contactos",
+    "detailsHead": "Detalles",
+    "adjusterHead": "Ajustador",
+    "unnamedContact": "Contacto",
+    "address": "Dirección",
+    "division": "División",
+    "status": "Estado",
+    "dateOfLoss": "Fecha del siniestro",
+    "typeOfLoss": "Tipo de siniestro",
+    "carrier": "Aseguradora",
+    "outOfPocket": "Pago de bolsillo",
+    "policyNo": "Póliza #",
+    "claimNo": "Reclamo #",
+    "deductible": "Deducible",
+    "notes": "Notas",
+    "name": "Nombre",
+    "phone": "Teléfono",
+    "email": "Correo"
+  },
+  "photos": {
+    "seeAll": "Ver todo",
+    "noPhotos": "Aún no hay fotos",
+    "moreCount": "+{{count}} fotos más",
+    "notePlaceholder": "¿Qué quieres anotar?",
+    "saving": "Guardando…",
+    "saveNote": "Guardar nota",
+    "addNote": "Agregar nota",
+    "addNoteRoom": "Agregar nota / sala",
+    "today": "Hoy",
+    "yesterday": "Ayer"
   },
   "common": {
     "add": "Agregar",
@@ -113,6 +144,8 @@
     "placementQueued": "Colocación en cola — se subirá cuando haya conexión",
     "equipRemoved": "Equipo retirado",
     "equipMarkedRemoval": "Equipo marcado para retiro",
-    "removeFailed": "Error al retirar: {{message}}"
+    "removeFailed": "Error al retirar: {{message}}",
+    "noteSaved": "Nota guardada",
+    "noteSaveFailed": "No se pudo guardar la nota: {{message}}"
   }
 }
