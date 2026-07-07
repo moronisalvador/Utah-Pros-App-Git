@@ -9728,7 +9728,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    settings-int-* classes below are the page-specific polish (provider cards,
    status pills, sync stat boxes, dry-run preview). Status colors use the
    design-system badge triplets (UPR-Design-System.md → Status Color Palette). */
-.settings-int-page { max-width: 1100px; }
+.settings-int-page { max-width: 1100px; padding: var(--space-5) var(--space-6); }
 .settings-int-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -10304,6 +10304,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P10 (Lists & Values · Session K) ─── */
 
+/* Page wrapper padding so the content clears the settings rail (matches the
+   settings-home / admin-section convention; the plain-wrapper pages lacked it and
+   sat flush against the rail on desktop). Structured pages (admin-page flex column,
+   ss-page two-column builder) handle their own edge spacing internally. */
+.lists-and-values,
+.settings-panel {
+  padding: var(--space-5) var(--space-6);
+}
 .lists-and-values-section {
   margin-top: var(--space-6);
 }
