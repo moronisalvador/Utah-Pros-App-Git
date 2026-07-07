@@ -206,7 +206,7 @@ src/
     Legal.jsx                     — Public /terms + /privacy pages (required by Intuit's QBO production profile)
     settings/FeedbackInbox.jsx    — Feedback inbox (route /settings/feedback, admin-only; was /tech-feedback → permanent redirect)
     settings/ScopeSheets.jsx      — Scope-sheet schema builder (route /settings/scope-sheets; was /admin/demo-sheet-builder → redirect)
-    settings/Integrations.jsx     — "Integrations" page (route /settings/integrations, admin-only; was /admin/integrations → redirect): paste the GitHub token (+ default repo) that the UPR MCP reads; extensible to more providers. Uses the github-connect worker.
+    settings/Integrations.jsx     — "Connections" hub (route /settings/integrations, admin-only; was /admin/integrations → redirect). Managed-here cards: GitHub (github-connect), QuickBooks (quickbooks-connect), Deepgram (deepgram-connect). Managed-elsewhere status + cross-link cards: CRM Channels → /crm/integrations, Stripe → /settings/payments, Google Drive & Calendar (per-user) → /settings/my-account, Twilio (feature:twilio_live send-mode). See Settings Overhaul → P8.
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     settings/Payments.jsx         — Stripe pay-link + payout settings (route /settings/payments; was /payments/settings → redirect)
   pages/tech/
@@ -2577,6 +2577,27 @@ and workers, and `quickbooks-callback.js` already redirects to `/settings/integr
 `TAB_COMPONENTS` entries and the now-dead `IconSend`/`IconLink` icon helpers; every other tab
 (Flags, Health, Workers, Backfill, Integrity, Messaging, Advanced) is untouched. DevTools is
 now 7 tabs.
+
+#### P8 — Connections hub (Session I · Wave 2)
+Turned the P2 Integrations page (`/settings/integrations`, still `AdminRoute`) into the ONE
+place every company-wide connection is discoverable — retitled **"Connections"**. Two groups:
+- **Managed here** (full connect/status/disconnect cards): GitHub + QuickBooks (from P2) +
+  **Deepgram** (new). Deepgram is a pasted API key stored in `integration_credentials`
+  (provider=`deepgram`, read by `transcribe-call.js` / `callrail-webhook.js`); the card follows
+  the GitHub pattern and is backed by a **new worker `functions/api/deepgram-connect.js`**
+  (GET/POST/DELETE, `requireAdmin` role gate, validates the key against Deepgram
+  `/v1/projects` — 401 rejected, other errors tolerated; two-click disconnect). *(Worker is a
+  new additive file — outside the "Integrations.jsx + css" ownership line but required for the
+  Deepgram card to write to the RLS-locked table; disclosed in the PR.)*
+- **Managed elsewhere** (read-only status + cross-link, never moves the connection): **CRM
+  Channels** (CallRail/Google Ads/Meta Ads via `get_integration_status` per provider →
+  `/crm/integrations`), **Stripe** (`get_integration_status('stripe')` → `/settings/payments`),
+  **Google Drive & Calendar** (per-user `user_google_accounts` — intentionally NO company pill,
+  cross-links to `/settings/my-account`), and **Twilio SMS** (status-only: surfaces the
+  `feature:twilio_live` flag as Live vs Dry-run; secret management is P9's job).
+CSS: new `index.css` §P8 marker (reuses the §P2 `.settings-int-*` vocabulary; adds group
+headings, four provider badges, the amber dry-run pill, and the status-list/cross-link body).
+Zero migrations, zero CRM-file edits.
 
 ## Mobile Layout
 - **Bottom bar:** 4 tabs (Dashboard, Messages, Jobs, Schedule) + More → opens sidebar
