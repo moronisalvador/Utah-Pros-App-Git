@@ -460,15 +460,21 @@ P9 delivers (a) fully and does not pretend to deliver (b).
 ### P8 — Connections hub (Session I)
 > **Branch:** session-assigned · cut from `origin/dev` · **Model · effort:** Opus · medium
 > **Prerequisite:** P2 (Integrations) merged — P8 extends the page P2 built.
-> **Owns:** `src/pages/settings/Integrations.jsx`, css §P8. **Zero CRM edits, zero migrations.**
-- [ ] one page hosts ALL company connections: full cards for GitHub + QuickBooks (P2's) +
-      Deepgram (already app-managed — add a management card)
-- [ ] read-only status + cross-link cards (each reads `get_integration_status`, links out):
+> **Owns:** `src/pages/settings/Integrations.jsx`, css §P8, `functions/api/deepgram-connect.js`
+> (new additive worker — required for the Deepgram card to write the RLS-locked
+> `integration_credentials` table; same pattern as the live `github-connect.js`).
+> **Zero CRM edits, zero migrations.**
+- [x] one page hosts ALL company connections: full cards for GitHub + QuickBooks (P2's) +
+      Deepgram (already app-managed — added a management card backed by a new additive worker
+      `functions/api/deepgram-connect.js`, GitHub connect/status/disconnect pattern)
+- [x] read-only status + cross-link cards (each reads `get_integration_status`, links out):
       "CRM Channels" (CallRail/Google Ads/Meta Ads → `/crm/integrations`), "Stripe" (→
-      `/settings/payments`), "Google Drive & Calendar" (per-user → `/settings/my-account`)
-- [ ] surface the `feature:twilio_live` dry-run state (today buried in DevTools → Flags) as a
-      status line on the Twilio card
-- [ ] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass
+      `/settings/payments`). "Google Drive & Calendar" is a per-user cross-link → `/settings/my-account`
+      — intentionally NO company-wide `get_integration_status` pill (it's per-user
+      `user_google_accounts`, not an `integration_credentials` row; a company pill would misreport)
+- [x] surface the `feature:twilio_live` dry-run state (today buried in DevTools → Flags) as a
+      status line on the Twilio card (Live vs Dry-run pill; secret management deferred to P9)
+- [x] page stays `AdminRoute` (role-restricted); design-system cards/tokens; mobile pass (css §P8)
 
 ### P9 — Credential management (Session J) — **security-weighted, Opus · high**
 > **Branch:** session-assigned · cut from `origin/dev` · **Prerequisite:** P8 merged.

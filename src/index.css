@@ -10301,3 +10301,73 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P8 (Connections · Session I) ─── */
+/* Extends the P2 Integrations page into the company-wide Connections hub. Reuses
+   the .settings-int-* vocabulary from §P2; the classes below add the group
+   headings, the new provider badges, the read-only "status + cross-link" card
+   body, and the Twilio dry-run pill. Status colors use the design-system status
+   tokens (--status-waiting / --status-resolved); only third-party brand-identity
+   badge colors (no token exists for "Stripe purple" etc.) stay literal, matching
+   the §P2 --github / --qb convention. */
+
+/* Section headings that split "managed here" from "managed elsewhere". */
+.settings-int-grouphead {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.settings-int-grouphead:first-of-type { margin-top: var(--space-4); }
+.settings-int-groupsub {
+  margin: -6px 0 var(--space-3);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* New provider badges (same 40px chip as §P2's --github / --qb). */
+.settings-int-badge--deepgram { background: #6d28d9; }
+.settings-int-badge--channels { background: #2563eb; }
+.settings-int-badge--stripe   { background: #635bff; }
+.settings-int-badge--google   { background: #4285f4; }
+.settings-int-badge--twilio   { background: #f22f46; }
+
+/* Amber "dry-run" variant of the §P2 status pill (design-system waiting token). */
+.settings-int-pill--warn {
+  background: var(--status-waiting-bg);
+  color: var(--status-waiting);
+  border-color: var(--status-waiting);
+}
+
+/* Read-only status list inside a cross-link card. */
+.settings-int-statuslist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-int-statusrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.settings-int-statusname { color: var(--text-primary); font-weight: 600; }
+.settings-int-statusval {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.settings-int-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+.settings-int-dot--on { background: var(--status-resolved); }
+.settings-int-crosslink { align-self: flex-start; text-decoration: none; }
