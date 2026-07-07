@@ -1854,6 +1854,41 @@ writes go straight to `estimate_line_items`).
   `EstimateEditor` still reorders).
 - **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate, matching P4a).
 
+### Admin Mobile — Phase P5: Lead Center (mobile) (Jul 7 2026)
+
+Fills the `AdminLeadCenter` stub at `/tech/admin/leads` with the mobile Lead Center — the
+inbound-lead list with call-recording playback and transcripts, mirroring the office
+`CrmCallLog`. **Zero schema/RPCs** (all reads/calls are existing RPCs + the recording proxy).
+
+- **Page:** `src/pages/tech/admin/AdminLeadCenter.jsx`. Loads leads via `get_inbound_leads`
+  (`p_limit:100`, a POST RPC that embeds `contact` and is never cache-stale). Status/spam filter
+  tabs (with per-tab count badges) + a name/number search; auto-refreshes every 20s while visible
+  and on focus. Status writes are **call-only** via `update_lead_status(p_lead_id, p_status)`,
+  optimistic with reload-on-failure. The CRM-owned REPLACEs `move_lead_to_stage` /
+  `get_contact_activity` are **not re-defined** here (manifest §3 #3).
+- **Modules (`src/components/admin-mobile/leads/`, P5-owned):**
+  - `leadFormat.js` — pure helpers: `STATUS_OPTIONS`, `STATUS_FILTER_TABS`, `statusLabel`,
+    `formatDuration`, `formatValue`, `fmtTime`, `isAwaitingRecording(lead, now)`,
+    `contactLabelFor`, `groupTurns`, and `filterLeads(leads, {status, search})` (the `'all'` tab
+    excludes spam; `'spam'` surfaces `lead_status==='spam'` OR `spam_flag`; else exact status).
+  - `LeadRow.jsx` — presentational card (no `useAuth`; db lifted to the page via `onStatusChange`
+    so it renders without an AuthContext and stays unit-testable). Plays recordings via
+    `GET /api/callrail-recording?lead_id=` with `getAuthHeader()` Bearer → validates
+    `Content-Type: audio/*` → `URL.createObjectURL`; blob URL revoked on unmount (an `<audio src>`
+    can't carry the header).
+  - `RecordingPlayer.jsx` + `TranscriptView.jsx` — **copied in** from `CrmCallLog.jsx` (frozen;
+    never edited), classes re-namespaced to `.am-audio-*` / `.am-transcript-*`. `TranscriptView`
+    renders `transcript_analysis` (summary/sentiment/topics/grouped speaker turns/entities) with a
+    flat-`transcription` fallback for older rows.
+  - `leads.render.test.jsx` — named test: lead-list (`LeadRow`) render + transcript-view render
+    from a fixture `transcript_analysis`, plus `filterLeads` status/spam/search coverage.
+- **CSS:** new `.am-lead-*` / `.am-audio-*` / `.am-transcript-*` / `.am-sentiment-*` /
+  `.am-topic-chip` classes inside the `ADMIN-MOBILE: LEADS` marker, tokens only. The copied CRM
+  visuals were re-namespaced to `.am-*` (not literal `.crm-*`) because the CRM tokens/selectors
+  are scoped to `.crm-shell` and the manifest §5 forbids restyling `.crm-*` in the tech shell.
+  Interactive controls are ≥44px touch targets.
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
+
 ---
 
 ## Cloudflare Workers — Environment Variables

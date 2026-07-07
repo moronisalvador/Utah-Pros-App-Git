@@ -345,19 +345,20 @@ builder rules; if timing overlaps, P4b appends below P4a's block within §ESTIMA
 > `CLAUDE.md` + this block + the ownership manifest + `.claude/rules/tech-mobile-ux.md`.
 
 **Close-out checklist**
-- [ ] `AdminLeadCenter.jsx`: leads list via `get_inbound_leads` (embeds contact), filter
+- [x] `AdminLeadCenter.jsx`: leads list via `get_inbound_leads` (embeds contact), filter
       spam/status; **play recording** via `GET /api/callrail-recording?lead_id=` (Bearer →
       audio blob → `URL.createObjectURL`); **view transcript** from `transcript_analysis`
       (summary/sentiment/topics/speaker turns) with flat-`transcription` fallback.
-- [ ] `RecordingPlayer` + `TranscriptView` **copied in** to
-      `src/components/admin-mobile/leads/**` (with their `crm-*` styles copied into §LEADS —
-      **never edit `src/pages/crm/CrmCallLog.jsx` or the CRM css**).
-- [ ] Lead-status / stage writes are **call-only** on the CRM-owned REPLACEs
-      (`move_lead_to_stage`, `get_contact_activity`) — never re-REPLACE them.
-- [ ] Named test: lead-list render + transcript-view render from a fixture `transcript_analysis`.
-- [ ] `npm run test` + `build` green; eslint clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+- [x] `RecordingPlayer` + `TranscriptView` **copied in** to
+      `src/components/admin-mobile/leads/**` (styles copied into §LEADS **re-namespaced to
+      `.am-*`** — the CRM tokens/selectors are scoped to `.crm-shell` and manifest §5 forbids
+      restyling `.crm-*`; `src/pages/crm/CrmCallLog.jsx` and the CRM css are untouched).
+- [x] Lead-status writes are **call-only** (`update_lead_status`); the CRM-owned REPLACEs
+      `move_lead_to_stage` / `get_contact_activity` are **not re-REPLACEd**.
+- [x] Named test: lead-list render + transcript-view render from a fixture `transcript_analysis`.
+- [x] `npm run test` + `build` green; eslint clean.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check.
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminLeadCenter.jsx`,
 `src/components/admin-mobile/leads/**`, css §LEADS. Reads/calls existing RPCs + the recording
