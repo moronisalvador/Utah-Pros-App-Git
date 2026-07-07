@@ -7628,6 +7628,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
     padding: var(--space-4) var(--space-3); overflow-y: auto;
   }
   .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
+  /* Cap the settings reading column so pages don't sprawl edge-to-edge on ultrawide
+     displays (the scroll container is flex:1 and would otherwise fill a 40" monitor).
+     Left-aligned — not centered — so the content stays anchored beside the rail. One
+     rule covers every settings page (admin-page, settings-page, ss-page, the Lists &
+     Values / Connections / Integrations wrappers) so new pages inherit it too. */
+  .settings-hub-content > *:not(.settings-hub-back) { max-width: 1100px; }
   /* The mobile back link is redundant when the rail is present. */
   .settings-hub-back { display: none; }
 }
