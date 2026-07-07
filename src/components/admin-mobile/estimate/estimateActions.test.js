@@ -10,9 +10,8 @@
  *   estimate into an invoice — especially the "that invoice already has lines,
  *   tap again to append" (needs_confirm) case that drives the two-click guard.
  *
- * WHERE IT LIVES:
- *   Route:        n/a (test file)
- *   Rendered by:  n/a — run via `npm test` (vitest)
+ * HOW TO RUN:
+ *   `npm test` (vitest) — pure functions, no DB or render.
  *
  * DEPENDS ON:
  *   Packages:  vitest

@@ -11,9 +11,8 @@
  *   case), and it works out the friendly status/total we show at the top. It's
  *   split out so it can be tested on its own without opening the screen.
  *
- * WHERE IT LIVES:
- *   Route:        n/a (a plain helper module)
- *   Rendered by:  n/a — imported by AdminEstimateDetail.jsx
+ * USED BY:
+ *   AdminEstimateDetail.jsx (the mobile estimate screen).
  *
  * DEPENDS ON:
  *   Packages:  none

@@ -6352,10 +6352,6 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-est-btn--link { background: transparent; color: var(--accent); border-color: var(--border-color); }
 .am-est-note { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--space-3); line-height: 1.4; }
 
-@media (max-width: 768px) {
-  .am-est-field-grid { grid-template-columns: 1fr 1fr; }
-}
-
 /* ─── ADMIN-MOBILE: LEADS (Phase P5 — lead center) ────────────────────────── */
 
 /* ═══════════════════════════════════════════════════

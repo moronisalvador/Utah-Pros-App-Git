@@ -1678,6 +1678,36 @@ is an empty stub.
   never trigger-owned `amount_paid`/`status`/`paid_at`); **F-2** (P1/P2 reproduce
   `canAccess('overview_financials')` — the financial RPCs are not server-gated).
 
+### Admin Mobile — Phase P4a: Estimate view + send + convert (Jul 7 2026)
+
+Fills the `AdminEstimateDetail` stub at `/tech/admin/estimate/:estimateId` with the read-only
+estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers +
+`convert_estimate_to_invoice` are call-only, per manifest §3).
+
+- **Page:** `src/pages/tech/admin/AdminEstimateDetail.jsx`. Loads `estimates` → `jobs` (via
+  `job_id`) → `claims` (via `job.claim_id`) → `contacts` (via `contact_id` or
+  `job.primary_contact_id`) → `estimate_line_items` (ordered `sort_order`, then `created_at`).
+  Line items are **read-only** here (editing is P4b).
+- **View modules (`src/components/admin-mobile/estimate/`, P4a-owned — distinct from P4b's
+  builder files):** `estimateActions.js` (pure `buildEstimateSendPayload` /
+  `interpretConvertResult` / `deriveEstimateView` + `estimateActions.test.js` — named test for
+  the send payload + convert `needs_confirm` handling), `EstimateHeader.jsx` (status pill +
+  doc number + prepared-for + field grid + address), `EstimateLines.jsx` (read-only rows +
+  totals).
+- **Send:** two-click confirm → pushes to QBO first if unsynced (`POST /api/qbo-estimate
+  { estimate_id }`), then `POST /api/qbo-estimate { action:'send' }` (worker defaults `send_to`
+  to the contact email; the payload includes `send_to` only when a non-empty email is passed).
+- **Convert:** `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
+  Convert button arms a two-click "append" (surfaces `existing_line_count`); on success →
+  `POST /api/qbo-invoice { invoice_id }` to link in QBO, then navigates to the admin-mobile
+  invoice detail via `adminInvoiceHref`.
+- **P4b links:** "Edit / add line items" → `adminEstimateEditorHref(estimateId)`; "New estimate"
+  → `adminEstimateEditorHref()`. The builder page (P4b) is not yet landed — **route-only
+  verification tail once P4b merges**.
+- **CSS:** `.am-est-*` classes inside the `ADMIN-MOBILE: ESTIMATE` marker (view rules, above any
+  P4b builder block); tokens only. Actions are ≥48px touch targets.
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
+
 ---
 
 ## Cloudflare Workers — Environment Variables
