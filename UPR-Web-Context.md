@@ -2099,7 +2099,15 @@ Edits gated by `canEditBilling` (admin + manager), same as invoices.
 - `estimates` extended with `contact_id`, `subtotal`, `expiration_date`, `converted_invoice_id`
   (FK invoices) + the `qbo_*` sync columns.
 - `recompute_estimate_from_lines()` trigger → rolls lines into `estimates.subtotal` + `amount`.
-- `generate_estimate_number()` → `EST-NNNNNN` (own sequence).
+  ⚠️ **Estimate screens are line-authoritative** (mobile `AdminEstimateDetail`/desktop `EstimateEditor`
+  compute the total from lines, NOT the header `amount`) — so an estimate with no line items shows **$0**
+  and can't Convert. (Invoice screens differ: they fall back to the header total.)
+- `generate_estimate_number()` → `EST-NNNNNN`. **Hardened 2026-07-07**
+  (`migrations/20260707_harden_estimate_number_generation.sql`): `UNIQUE(estimates.estimate_number)` +
+  drift-proof `max(EST-suffix)+1` under `pg_advisory_xact_lock` (sequence kept as a synced secondary
+  guard), mirroring the invoice/claim number fixes. Also 2026-07-07: the 34 reconciliation-imported
+  estimates (header `amount`, no lines → $0 on the line-authoritative screens) had their line items
+  backfilled from QBO — `scripts/backfill-recon-estimate-lines.sql`.
 - `create_estimate_for_contact(p_contact_id, p_intended_division, p_estimate_type DEFAULT 'initial',
   p_property_address/city/state/zip, p_created_by)` — makes an estimate from a CLIENT, no job.
   (Legacy `create_estimate_for_job` kept but deprecated/unused.)

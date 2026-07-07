@@ -284,6 +284,23 @@ Two follow-ups surfaced while verifying §6b:
    `qbo-invoice.js`'s no-lines fallback (a harmless safety net now that every invoice has lines and the
    app can't create a lineless-with-total one) — changing that money worker wasn't worth the risk.
 
+### 6d. Estimates — same gap, plus a display asymmetry (2026-07-07)
+
+Verifying the mobile PWA (`AdminInvoiceDetail`/`AdminEstimateDetail`/`AdminEstimateEditor`) surfaced
+that **estimates inherited the identical import gap**: 34 of 37 reconciliation-imported estimates had a
+header `amount` but no `estimate_line_items`. **Key asymmetry:** the invoice screens are
+*header-authoritative* (`adjusted_total ?? total ?? liveTotal`), so a lineless invoice still shows the
+right money — but the estimate screens (mobile detail via `deriveEstimateView`, desktop `EstimateEditor`,
+and `recompute_estimate_from_lines` which sets `amount = SUM(line_total)`) are *line-authoritative*, so a
+lineless estimate shows **$0** and the Convert action (gated `total > 0`) disappears. Fix: backfilled the
+57 lines from QBO (`scripts/backfill-recon-estimate-lines.sql`) with `amount` asserted unchanged.
+`estimate_line_items` has **no `category` column** (unlike `invoice_line_items`), so estimate lines carry
+`qbo_item_id/name` (+ class where QBO had one) only. Also hardened estimate numbering to match invoices
+(`20260707_harden_estimate_number_generation.sql`). **Mobile money paths confirmed safe:** payment
+recording (`recordPayment.js`) inserts only whitelisted `payments` columns, never trigger-owned totals,
+mirrors to QBO only when synced and non-fatally. Negative-amount discount lines render and sum correctly
+on every mobile screen (only a cosmetic `$-1,000` vs `-$1,000` formatting difference on the invoice card).
+
 ---
 
 ## 7. Conflict & coordination status (IMPORTANT)
