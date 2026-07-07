@@ -312,15 +312,18 @@ css §DASH. Reads existing RPCs only.
 > admin can build an estimate on desktop; the field-urgent path is view+send in P4a).
 
 **Close-out checklist**
-- [ ] `AdminEstimateEditor.jsx`: **create** (`create_estimate_for_contact` — contact-only, no
+- [x] `AdminEstimateEditor.jsx`: **create** (`create_estimate_for_contact` — contact-only, no
       job/claim dependency; reuse `search_contacts_for_job`, `get_insurance_carriers`,
       `AddContactModal`, `AddressAutocomplete`) and **edit line items** (writes
       `estimate_line_items`; `line_total` is GENERATED — never written; QBO item/class lookup
       via `/api/qbo-query`).
-- [ ] Named test: create-shell payload; line-item write excludes `line_total`.
-- [ ] `npm run test` + `build` green; eslint clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+- [x] Named test: create-shell payload; line-item write excludes `line_total`
+      (`src/components/admin-mobile/estimate/estimateBuilder.test.js`).
+- [x] `npm run test` + `build` green; eslint clean.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check (Playwright
+      screenshots of the create flow + builder at 390px & desktop — no `.env` in the session, so
+      via a fixture harness, not live Supabase).
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminEstimateEditor.jsx`, the create/builder modules
 under `src/components/admin-mobile/estimate/**` (distinct files from P4a's view modules), css

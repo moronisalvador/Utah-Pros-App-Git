@@ -1773,6 +1773,44 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
   P4b builder block); tokens only. Actions are ≥48px touch targets.
 - **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
 
+### Admin Mobile — Phase P4b: Estimate create + line-item builder (Jul 7 2026)
+
+Fills the `AdminEstimateEditor` stub at `/tech/admin/estimate/new` (create mode) and
+`/tech/admin/estimate/:estimateId/edit` (builder mode). **Zero schema/RPCs**
+(`create_estimate_for_contact` + `/api/qbo-query` are call-only, per manifest §3; line-item
+writes go straight to `estimate_line_items`).
+
+- **Page:** `src/pages/tech/admin/AdminEstimateEditor.jsx`. Create mode renders
+  `EstimateCreateForm`; on create it navigates (replace) into builder mode. Builder mode loads
+  `estimates` → `contacts` → `estimate_line_items` (seeding one blank line on a fresh,
+  never-synced draft, mirroring the desktop editor), and bounces a CONVERTED estimate back to
+  the P4a view. "Done — review & send" returns to `adminEstimateHref` — the builder
+  deliberately has **no QBO write path** (push/send/convert stay on P4a's screen; P4b's only
+  QBO call is the read-only `/api/qbo-query` item/class catalog, with the desktop's
+  Category-item filter).
+- **Builder modules (`src/components/admin-mobile/estimate/`, P4b-owned — distinct from P4a's
+  view files):** `estimateBuilder.js` (pure `buildCreateEstimatePayload` /
+  `CREATE_ESTIMATE_PARAMS` / `LINE_SAFE_COLUMNS` / `buildLineInsert` / `buildLineUpdate` /
+  `parseQboCatalog` / `computeTotals`) + `estimateBuilder.test.js` (the named P4b tests:
+  create-shell payload exact-keys; every line write excludes the GENERATED `line_total`),
+  `EstimateCreateForm.jsx` (contact search via `search_contacts_for_job`, inline new customer
+  via `AddContactModal` + `get_insurance_carriers` with duplicate-phone fallback, division/type
+  chips, `AddressAutocomplete` property address prefilled from billing, existing-estimates
+  dup guard, double-submit-latched Create), `LineItemCard.jsx` (editable card: item/class
+  pickers commit on select, description/qty/rate commit on blur, live amount, two-click remove
+  with onBlur disarm), `CatalogPicker.jsx` (inline expandable QBO item/class picker — no
+  modal), `builder.render.test.jsx` (static render smoke).
+- **Money math:** every `estimate_line_items` write is shaped by
+  `buildLineInsert`/`buildLineUpdate` — `line_total` is GENERATED and never written; the
+  `trg_estimate_lines_total` DB trigger rolls lines up into `estimates.subtotal/amount`, so the
+  builder never writes the `estimates` table at all.
+- **CSS:** `.am-estb-*` classes appended BELOW P4a's block inside the `ADMIN-MOBILE: ESTIMATE`
+  marker (P4a's lines untouched); tokens only; ≥48px touch targets throughout. Reuses P4a's
+  `.am-est-btn`/`.am-est-card`/totals classes without editing them.
+- **Not in v1:** line drag-reorder on mobile (gloved hands — lines keep creation order; desktop
+  `EstimateEditor` still reorders).
+- **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate, matching P4a).
+
 ---
 
 ## Cloudflare Workers — Environment Variables

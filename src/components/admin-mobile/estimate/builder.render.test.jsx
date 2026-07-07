@@ -14,6 +14,10 @@
  *   Packages:  vitest, react-dom (renderToStaticMarkup — no jsdom here)
  *   Internal:  ./EstimateCreateForm, ./LineItemCard, ./CatalogPicker
  *   Data:      reads → none · writes → none (db is stubbed)
+ *
+ * NOTES / GOTCHAS:
+ *   - Static render only (no jsdom): effects never run, so the stub db is never
+ *     actually called — these tests pin initial-state markup, not behavior.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
