@@ -44,12 +44,6 @@
 
 ## OPEN — waiting on bookkeeper / Moroni (NOT mine to close)
 
-- **Duplicate `INV-000062`** (data-integrity flag found 2026-07-07): the invoice number
-  `INV-000062` is on TWO rows — the paid QBO-4291 import (`e9a29fea…`, $11,890.52) **and** a stray
-  `$0` draft on a different job (`5f690deb…`, job `18d4a913…`, 1 blank line, no QBO id). `invoice_number`
-  is not uniquely enforced (same failure class as the 6/30 claim-number collision). Decide whether to
-  delete/renumber the stray draft; consider a UNIQUE constraint on `invoices.invoice_number` +
-  drift-proof `generate_invoice_number()` (separate reviewed change — not done here).
 - Merge duplicate QBO customers **389 + 452** (Trevor Merrill).
 - Reassign Julia Grant's $76k (QBO inv **3250**) to **Nelson Chavez**.
 - Delete the 4 empty 6/18 Encircle dup claims — see corrected v2 sheet:
@@ -60,6 +54,25 @@
 
 ## DONE (for context — do not redo)
 
+- **Invoice-number generator hardened + duplicate resolved (2026-07-07).** A new July draft
+  (job `W-2607-003`) had been handed `INV-000062` — already used by the reconciliation import —
+  because `generate_invoice_number()` drew from `invoice_number_seq`, which the explicit-numbered
+  backfills (INV-000049–087) never advanced (real max was 87; the sequence sat ~62, so the next ~25
+  new invoices would each collide). Same failure class as the 6/30 claim-number collision. Fix
+  (`supabase/migrations/20260707_harden_invoice_number_generation.sql`, mirrors the claim fix):
+  renumbered the stray draft → **INV-000088**; added **`UNIQUE(invoices.invoice_number)`**; rewrote
+  `generate_invoice_number()` to derive max-suffix+1 from real rows under an advisory lock (sequence
+  kept as a synced secondary guard). Verified: 0 duplicate numbers, next number now `INV-000089`.
+  (qbo_doc_number intentionally NOT made unique — split/deductible invoices legitimately reuse it.)
+- **4 confident-batch invoices had wrong line amounts — corrected (2026-07-07).** INV-000011,
+  INV-000029 (a recon+mit split of QBO 4309), INV-000036, INV-000037 had their **total** set
+  correctly to the QBO-billed amount but their **line** keyed at the wrong figure (gross estimate,
+  not approved), so `subtotal ≠ total`. Verified each against QuickBooks (`qbo_get`) and corrected the
+  line to the QBO-billed amount (11→7925.43, 29→3745.16, 36→3286.37, 37→795.00), adopting QBO's
+  descriptions. **Totals/balances/paid-status unchanged** (QBO has no separate discount line for these,
+  so the line was corrected, not offset with a negative line). Script:
+  `scripts/fix-recon-invoice-line-amounts.sql`. Re-runnable health check added:
+  `scripts/invoice-integrity-check.sql` (the #6 "final sweep" proof — all classes now 0).
 - **Missing invoice line items backfilled (2026-07-07).** The reconciliation imports after the
   "confident batch" (INV-000010–028) wrote invoice **headers + payments** but skipped the
   **`invoice_line_items`** — leaving **35 invoices with a total but no line detail** (the 8 with an
