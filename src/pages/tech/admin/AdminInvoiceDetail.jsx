@@ -208,9 +208,9 @@ export default function AdminInvoiceDetail() {
 
       {/* Money summary — Invoiced / Collected / Balance (desktop calc, F-1) */}
       <div className="am-inv-stats">
+        <MoneyStatCard label="Balance due" value={fmtMoney(balance)} />
         <MoneyStatCard label="Invoiced" value={fmtMoney(invoiced)} muted />
         <MoneyStatCard label="Collected" value={fmtMoney(collected)} muted />
-        <MoneyStatCard label="Balance" value={fmtMoney(balance)} />
       </div>
 
       {/* QBO sync error banner (stored by the workers, read-only here) */}

@@ -6300,8 +6300,15 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-inv-meta-label { color: var(--text-tertiary); flex-shrink: 0; }
 .am-inv-meta-value { color: var(--text-primary); font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 
-/* Money summary */
-.am-inv-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); margin-top: var(--space-4); }
+/* Money summary — Balance due leads full-width (the number the field admin
+   came for); Invoiced/Collected sit 2-up under it. The descendant rules are
+   scoped tweaks so the SHARED .am-stat-card never overflows on a phone with
+   five-figure amounts; Foundation's base styles are untouched. */
+.am-inv-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: var(--space-4); }
+.am-inv-stats > .am-stat-card:first-child { grid-column: 1 / -1; }
+.am-inv-stats .am-stat-card { min-width: 0; }
+.am-inv-stats .am-stat-card--muted .am-stat-value { font-size: var(--text-lg); }
+.am-inv-stats .am-stat-value { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 /* Banners + hints */
 .am-inv-banner {
