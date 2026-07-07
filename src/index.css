@@ -10301,3 +10301,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
+
+/* ─── SETTINGS OVERHAUL RESERVED — P10 (Lists & Values · Session K) ─── */
+
+.lists-and-values-section {
+  margin-top: var(--space-6);
+}
+.lists-and-values-section:first-of-type {
+  margin-top: var(--space-4);
+}

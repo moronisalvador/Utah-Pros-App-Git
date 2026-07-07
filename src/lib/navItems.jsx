@@ -72,6 +72,7 @@ export function IconKey(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="c
 export function IconBell(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>);}
 export function IconPlug(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v5"/></svg>);}
 export function IconDrive(p){return(<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M7.71 3.5 1.15 15l3.43 5.94 6.56-11.37L7.71 3.5zM22.85 15 16.29 3.5H9.43l6.56 11.5h6.86zM4.93 16.06 8.36 22h11.49l-3.43-5.94H4.93z"/></svg>);}
+export function IconListValues(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>);}
 
 // ─── SECTION: Legacy sidebar list (mobile + ≤1279px desktop — keep identical) ───
 // featureFlag: if set, this nav item is hidden when that flag is disabled.
@@ -167,8 +168,7 @@ export const OVERFLOW_ITEMS = [
 //   owner:true                              → Moroni only (Dev Tools)
 export const SETTINGS_GROUPS = [
   { group: 'Workspace', description: 'Company data and documents', items: [
-    { key: 'carriers',     label: 'Insurance Carriers', path: '/settings/carriers',     description: 'The master list of insurance companies.',            icon: IconShield,    access: 'settings' },
-    { key: 'referrals',    label: 'Referral Sources',   path: '/settings/referrals',    description: 'Where your leads come from.',                        icon: IconUsers,     access: 'settings' },
+    { key: 'lists',        label: 'Lists & Values',     path: '/settings/lists',        description: 'Insurance carriers, referral sources, and other option-lists.', icon: IconListValues, access: 'settings' },
     { key: 'templates',    label: 'Document Templates', path: '/settings/templates',    description: 'Work auth, direction to pay, and completion docs.',  icon: IconFileText,  access: 'settings' },
     { key: 'commissions',  label: 'Commissions',        path: '/settings/commissions',  description: 'Each salesperson’s commission rate.',                icon: IconPercent,   access: 'settings' },
     { key: 'payments',     label: 'Payments',           path: '/settings/payments',     description: 'Billing, Stripe, and payout settings.',              icon: IconCard,      billing: true },
