@@ -328,7 +328,7 @@ export default function AdminDemoSheetBuilder() {
   }
 
   return (
-    <div className="ss-page" style={{ padding: 'var(--space-4)', maxWidth: 1400, margin: '0 auto' }}>
+    <div className="ss-page" style={{ padding: 'var(--space-5) var(--space-6)' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
         <div>

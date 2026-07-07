@@ -89,7 +89,7 @@ export default function Commissions() {
   const earners = employees.filter(e => e.commission_percent != null || e.commission_flat != null).length;
 
   return (
-    <div>
+    <div className="settings-panel">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' }}>Commissions</h2>
