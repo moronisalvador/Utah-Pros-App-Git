@@ -226,17 +226,22 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > `.claude/rules/tech-mobile-ux.md`.
 
 **Close-out checklist**
-- [ ] `AdminInvoiceDetail.jsx`: view an invoice (line items read-only), **send** it
+- [x] `AdminInvoiceDetail.jsx`: view an invoice (line items read-only), **send** it
       (`POST /api/qbo-invoice { action:'send' }`), and **record a payment** per **F-1**.
-- [ ] **Test-first (named):** `record-payment` inserts only the safe column set; asserts it
+      (Send offered ONLY when `qbo_invoice_id` exists — mobile never pushes to QBO.)
+- [x] **Test-first (named):** `record-payment` inserts only the safe column set; asserts it
       does NOT write `amount_paid`/`status`/`paid_at`; double-submit guard; `/api/qbo-payment`
       fired only when `qbo_invoice_id` present; QBO-sync failure is non-fatal (row persists).
-- [ ] Balance shown = `adjusted_total ?? total − amount_paid` (reuse desktop calc).
-- [ ] Two-click confirm on the record-payment action (Rule 2 — no `confirm()`); toast feedback.
-- [ ] Never touches `src/pages/InvoiceEditor.jsx` or `functions/api/qbo-payment.js` (call-only).
-- [ ] `npm run test` + `build` green; eslint clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` (money-weighted) clean; visual check.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+      (11 named tests in `src/components/admin-mobile/invoice/recordPayment.test.js`.)
+- [x] Balance shown = `adjusted_total ?? total − amount_paid` (reuse desktop calc).
+      (`invoiceMath.js` + tests, incl. the live-line-total fallback tier.)
+- [x] Two-click confirm on the record-payment action (Rule 2 — no `confirm()`); toast feedback.
+      (Send is also two-click; both disarm on blur/edit.)
+- [x] Never touches `src/pages/InvoiceEditor.jsx` or `functions/api/qbo-payment.js` (call-only).
+- [x] `npm run test` + `build` green; eslint clean.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` (money-weighted) clean; visual check.
+      (Playwright pass, mobile 390px + desktop, on dev-login; reviewer verdict SHIP.)
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminInvoiceDetail.jsx`,
 `src/components/admin-mobile/invoice/**`, css §INVOICE. **Call-only** on the payments insert +

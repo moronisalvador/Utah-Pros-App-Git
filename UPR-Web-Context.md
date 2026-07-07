@@ -1709,6 +1709,40 @@ same data as the desktop "My Money" page. **Read-only, zero new schema/RPCs.**
 - **Tests:** `collFormat.test.js` — aging-bucket math (boundary cases + `summarizeAr` totals),
   list-render row builders, and the href builder (asserts frozen route strings).
 
+### Phase P3 — Invoice view + send + record payment (Jul 7 2026)
+
+Fills the `AdminInvoiceDetail` stub (`/tech/admin/invoice/:invoiceId`). Zero migrations, zero
+new RPCs; everything call-only per the manifest.
+
+- **Screen (`src/pages/tech/admin/AdminInvoiceDetail.jsx`):** header (doc number, status chip,
+  bill-to, carrier/claim/job/due/sent/address), money summary (**Balance due** full-width, then
+  Invoiced/Collected 2-up via `MoneyStatCard`), read-only line items with subtotal/tax/total,
+  read-only payment history (payer · method · date · ref · QBO ✓), `qbo_sync_error` banner.
+  `inv.locked` hides both money actions; `feature:billing` off shows the desktop's flag message.
+- **Send:** shown ONLY when `qbo_invoice_id` exists (mobile never pushes an invoice to QBO —
+  the human Save→QBO gate stays on desktop). `POST /api/qbo-invoice { invoice_id, action:'send' }`
+  with Bearer; two-click confirm (arms → "Confirm send", disarms on blur); toast feedback.
+- **Record payment (finding F-1, test-first):**
+  `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
+  ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
+  payment_method, reference_number, recorded_by}` (never trigger-owned `amount_paid`/
+  `insurance_paid`/`homeowner_paid`/`status`/`paid_at`); in-flight closure latch guards
+  double-submit (no insert-level idempotency key exists); `POST /api/qbo-payment {payment_id}`
+  (Bearer) fired only when `qbo_invoice_id` present; failed QBO sync is NON-FATAL (row persists,
+  error toasted, never rolled back). 11 named tests in `recordPayment.test.js`.
+- **Balance math:** `src/components/admin-mobile/invoice/invoiceMath.js` —
+  `invoiceTotals()` = `(adjusted_total ?? total ?? live line total) − amount_paid` (desktop
+  `InvoiceEditor` calc, tested) + `invoiceStatusKind()` chip logic (mirrors
+  `collTokens.invoiceStatusKind`, replicated not imported — collections is frozen).
+- **Payment form:** `src/components/admin-mobile/invoice/PaymentSheet.jsx` — inline expandable
+  (no modal, tech-mobile-ux), balance pre-filled, payer/method chips, optional payer name +
+  reference, 48px targets, two-click confirm ("Confirm — record $X") that disarms on any edit
+  or blur. Parent runs the recorder; the sheet itself never touches `db`.
+- **CSS:** all inside the reserved `§ADMIN-MOBILE: INVOICE` marker (`.am-inv-*`; plus disclosed
+  descendant-scoped fit tweaks for the SHARED `.am-stat-card` inside `.am-inv-stats` only).
+- **Dev-login caveat:** `invoice_line_items` RLS grants `authenticated` only — the anon
+  dev-login client sees zero lines (same on desktop dev-login); real sessions render them.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
