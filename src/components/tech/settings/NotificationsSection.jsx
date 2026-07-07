@@ -23,9 +23,10 @@
  *
  * NOTES / GOTCHAS:
  *   - Two cards: the device-push on/off, then the per-type × channel preferences
- *     matrix (notify Session C). The matrix reads LIVE types only via the resolver
- *     and is filtered to tech-visible categories (appointments, messaging) until
- *     Session D seeds per-role defaults.
+ *     matrix (notify Session C). The matrix reads LIVE types only via the resolver.
+ *     Admins see the full catalog (they're the audience for every category);
+ *     non-admin roles see only the appointment + messaging categories they can
+ *     actually receive.
  *   - iOS only exposes web push inside an installed (Home-Screen) PWA — the
  *     guidance box shows the Add-to-Home-Screen steps when that's the blocker.
  *   - Two-click confirm on "Turn off" (no confirm() dialog — house rule).
@@ -41,9 +42,12 @@ import {
 } from '@/lib/webPushClient';
 import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatrix';
 
-// Field techs are an audience only for these catalog categories. Until Session D
-// seeds per-role defaults (which will gate this precisely), we filter client-side
-// so a tech never sees admin-only types (billing, sales, admin).
+// Non-admin roles (field techs, office, supervisors) are the audience only for
+// the appointment + messaging categories; the admin / billing / sales categories
+// are Admin-audience types, so we keep those roles' matrix focused on what they
+// can actually receive. Admins ARE the audience for every category, so they see
+// the full catalog here — same as the office Settings page. (Visibility only;
+// notification_role_defaults still governs the defaults + which cells are locked.)
 const TECH_CATEGORIES = ['appointments', 'messaging'];
 
 export default function NotificationsSection() {
@@ -179,7 +183,7 @@ export default function NotificationsSection() {
         db={db}
         employeeId={employee?.id}
         variant="tech"
-        categoryFilter={TECH_CATEGORIES}
+        categoryFilter={employee?.role === 'admin' ? null : TECH_CATEGORIES}
         labels={{
           channelBell:  t('notifications.chBell'),
           channelPush:  t('notifications.chPush'),
