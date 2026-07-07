@@ -6544,6 +6544,163 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-est-btn--link { background: transparent; color: var(--accent); border-color: var(--border-color); }
 .am-est-note { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--space-3); line-height: 1.4; }
 
+/* P4b — builder rules (estimate create shell + line-item builder). Appended
+   below P4a's view block per the ownership manifest; never edits P4a's lines. */
+
+/* Create shell */
+.am-estb-create { display: flex; flex-direction: column; gap: var(--space-4); }
+.am-estb-input {
+  width: 100%; min-height: 48px; padding: var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans); box-sizing: border-box;
+}
+.am-estb-input:focus { outline: none; border-color: var(--accent); }
+.am-estb-addr-row { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.am-estb-input--state { flex: 0 0 72px; }
+.am-estb-input--zip { flex: 0 0 96px; }
+
+.am-estb-search-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.am-estb-results {
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); max-height: 280px; overflow-y: auto;
+}
+.am-estb-results-note { padding: var(--space-3); font-size: var(--text-sm); color: var(--text-tertiary); }
+.am-estb-result {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: none; border-bottom: 1px solid var(--border-light); background: none;
+  cursor: pointer; text-align: left; font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+.am-estb-result:last-child { border-bottom: none; }
+.am-estb-result-name { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.am-estb-result-meta { font-size: var(--text-xs); color: var(--text-tertiary); }
+.am-estb-newcust {
+  min-height: 48px; padding: var(--space-3); width: 100%;
+  border: 1px dashed var(--border-color); border-radius: var(--radius-lg);
+  background: transparent; color: var(--accent);
+  font-size: var(--text-sm); font-weight: 600; font-family: var(--font-sans); cursor: pointer;
+}
+.am-estb-contact-chip {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3); border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg); background: var(--bg-secondary);
+}
+.am-estb-contact-info { flex: 1; min-width: 0; }
+.am-estb-chg {
+  min-height: 48px; padding: 0 var(--space-3); border: none; background: none;
+  color: var(--accent); font-size: var(--text-sm); font-weight: 600;
+  font-family: var(--font-sans); cursor: pointer;
+}
+
+/* Chips (division · type · existing estimates) */
+.am-estb-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.am-estb-chip {
+  min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-secondary);
+  font-size: var(--text-sm); font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.am-estb-chip--on { font-weight: 700; }
+.am-estb-chip--accent { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.am-estb-chip--sold { background: var(--status-resolved-bg); border-color: var(--status-resolved); color: var(--status-resolved); }
+
+/* Shared field bits */
+.am-estb-field { min-width: 0; }
+.am-estb-field-label {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary); margin-bottom: var(--space-2);
+}
+.am-estb-optional { font-weight: 500; text-transform: none; }
+
+/* Line-item cards */
+.am-estb-line {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-4); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); background: var(--bg-primary);
+  margin-bottom: var(--space-3);
+}
+.am-estb-line-top { display: flex; align-items: center; justify-content: space-between; }
+.am-estb-line-n { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
+.am-estb-line-remove {
+  min-height: 48px; padding: 0 var(--space-3); border: none; background: none;
+  color: var(--text-tertiary); font-size: var(--text-sm); font-weight: 600;
+  font-family: var(--font-sans); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.am-estb-line-remove--confirm { color: var(--status-needs-response); font-weight: 700; }
+.am-estb-desc {
+  width: 100%; min-height: 56px; padding: var(--space-3); resize: vertical;
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans); box-sizing: border-box;
+}
+.am-estb-desc:focus { outline: none; border-color: var(--accent); }
+.am-estb-line-nums { display: flex; gap: var(--space-2); align-items: flex-end; }
+.am-estb-field--qty { flex: 0 0 84px; }
+.am-estb-field--rate { flex: 1; }
+.am-estb-num {
+  width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums; box-sizing: border-box;
+}
+.am-estb-num:focus { outline: none; border-color: var(--accent); }
+.am-estb-line-amt { flex: 1; min-width: 92px; text-align: right; }
+.am-estb-amt-val {
+  min-height: 48px; display: flex; align-items: center; justify-content: flex-end;
+  font-size: var(--text-base); font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* QBO item/class picker (inline expandable — no modal) */
+.am-estb-picker { position: relative; min-width: 0; }
+.am-estb-picker-label {
+  font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary); margin-bottom: var(--space-2);
+}
+.am-estb-picker-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; text-align: left;
+}
+.am-estb-picker-btn:disabled { opacity: 0.55; cursor: default; }
+.am-estb-picker-btn--empty .am-estb-picker-value { color: var(--text-tertiary); }
+.am-estb-picker-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-estb-picker-caret { color: var(--text-tertiary); flex-shrink: 0; }
+.am-estb-picker-drop {
+  margin-top: var(--space-2); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); background: var(--bg-primary); overflow: hidden;
+}
+.am-estb-picker-search {
+  width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: none; border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary); color: var(--text-primary);
+  font-size: var(--text-base); font-family: var(--font-sans); box-sizing: border-box;
+}
+.am-estb-picker-search:focus { outline: none; }
+.am-estb-picker-list { max-height: 240px; overflow-y: auto; }
+.am-estb-picker-opt {
+  display: block; width: 100%; min-height: 48px; padding: var(--space-2) var(--space-3);
+  border: none; border-bottom: 1px solid var(--border-light); background: none;
+  color: var(--text-primary); font-size: var(--text-sm); font-family: var(--font-sans);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.am-estb-picker-opt:last-child { border-bottom: none; }
+.am-estb-picker-opt--on { background: var(--accent-light); color: var(--accent); font-weight: 700; }
+.am-estb-picker-opt--clear { color: var(--text-tertiary); font-style: italic; }
+.am-estb-picker-empty { padding: var(--space-3); font-size: var(--text-sm); color: var(--text-tertiary); }
+
+/* Builder page bits */
+.am-estb-summary { padding: var(--space-3) var(--space-4); }
+.am-estb-banner--warn { background: var(--status-waiting-bg); color: var(--status-waiting); border: 1px solid var(--status-waiting); }
+.am-estb-add { margin-bottom: var(--space-4); }
+
 /* ─── ADMIN-MOBILE: LEADS (Phase P5 — lead center) ────────────────────────── */
 
 /* ═══════════════════════════════════════════════════
