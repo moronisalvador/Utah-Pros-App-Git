@@ -1773,6 +1773,49 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
   P4b builder block); tokens only. Actions are ≥48px touch targets.
 - **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
 
+### Admin Mobile — Phase P1: Admin dashboard (Jul 7 2026)
+
+Fills the `AdminDash` stub at `/tech/admin/dash` with the office Overview rebuilt as one tall,
+single-column, fixed-order stack of cards. **Zero schema/RPCs** — reuses the 11 existing Overview
+widget RPCs; each card fetches its own on mount (+ period change / Retry).
+
+- **Page:** `src/pages/tech/admin/AdminDash.jsx`. Reads `canAccess('overview_financials')`, maps
+  `visibleDashWidgets(canFin)` → card components, renders `PeriodSwitch` (MTD/Last 30/QTD/YTD).
+- **FINANCIAL GATE (finding F-2 — the binding P1 risk):** the money-card RPCs
+  (`get_revenue_by_division`, `get_payments_received`, `get_avg_ticket`, `get_ar_invoices`) are
+  NOT server-gated. The gate is reproduced as the desktop `enabled=false` pattern: the pure
+  decision `visibleDashWidgets(canFin)` in `dashPlan.js` DROPS the four financial cards when
+  `canFin !== true`, so they are never mounted → neither rendered NOR fetched. `plannedRpcs(false)`
+  contains none of `FINANCIAL_RPCS`. Named tests: `dash/dashPlan.test.js` (decision + fetch set,
+  both directions) and `dash/AdminDash.render.test.jsx` (renders the real page with a mocked
+  `canAccess`; asserts the money titles are absent and the `db.rpc` spy is untouched when access
+  is off, present when on).
+- **Modules (`src/components/admin-mobile/dash/`, all P1-owned):**
+  - `dashPlan.js` — `DASH_WIDGETS` (fixed order, `fin` flag, per-card `rpcs`), `FINANCIAL_RPCS`,
+    `visibleDashWidgets(canFin)`, `plannedRpcs(canFin)` — the single source of the F-2 gate.
+  - `dashFormat.js` — pure shapers MIRRORED from the desktop `overview/hooks/*` (never imported —
+    that tree is frozen): `periodBoundsISO` (mirror of `dashUtils.periodBounds`, 4 periods, no
+    'Prev mo'/'All'), `fmtK`/`fmtFull`, `computeDelta`, `shapeMoneySplit`/`shapeAvgTicket`/
+    `shapeOpenEstimates`+`donutGradient`/`shapeCollections`/`shapeJobsClosed`(+sparkline)/
+    `shapeActiveDrying`/`shapeActionItems`/`shapeEmployeeStatus` (uses `@/lib/clockTime`
+    `liveClockMinutes`)/`shapePipeline`, and the division-colour palette (data-viz, mirror of
+    `overview/tokens.js` DIV). `dash/dashFormat.test.js` pins the math to the desktop numbers.
+  - `useDashWidget.js` — per-card loader hook: async IIFE in an effect (no synchronous
+    setState-in-effect), `alive` stale-drop, `dbRef` synced in an effect, refetch on loader
+    change (period) + `reload()`.
+  - `DashCard.jsx` — card shell (title/suffix/LIVE badge/delta pill, loading shimmer, error+Retry,
+    footer) + `DeltaPill`/`DashFootLink` (frozen href helper)/`DashEmpty`.
+  - `FinancialCards.jsx` (Revenue, Payments via shared MoneySplitCard, AvgTicket, Collections),
+    `WorkCards.jsx` (JobsClosed+sparkline, JobsCompleted, OpenEstimates donut),
+    `OpsCards.jsx` (ActiveDrying, ActionRequired, EmployeeStatus [live], Pipeline).
+- **Deep-links:** money/estimate cards footer-link to the admin-mobile Collections screen via
+  `adminCollectionsHref()` (frozen href helper). Job-centric rows (drying/action/employee) have
+  no admin-mobile destination this wave → read-only (no hardcoded `/jobs` paths).
+- **Charts:** CSS/SVG only, no chart lib — stacked `.am-dash-splitbar`, `conic-gradient` donut,
+  inline `<svg>` sparkline, CSS bars. **CSS:** `.am-dash-*` classes inside the `ADMIN-MOBILE: DASH`
+  marker (tokens only; division/chart hues are inline data-viz fills). Adapts to the tech dark
+  theme (token-based); ≥44px controls.
+
 ---
 
 ## Cloudflare Workers — Environment Variables
