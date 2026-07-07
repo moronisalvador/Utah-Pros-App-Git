@@ -262,6 +262,28 @@ remaining tiers:** import the *lines*, not just the header — a header-only inv
 looks empty everywhere line detail is shown, and `qbo-invoice.js`'s no-lines summary fallback masks it
 in QBO.
 
+### 6c. Line-amount corrections + invoice-number hardening — 2026-07-07
+
+Two follow-ups surfaced while verifying §6b:
+
+1. **Wrong line amounts (4 invoices).** The earlier "confident batch" set some invoice **totals**
+   correctly (to the QBO-billed amount) but keyed the **line** at the gross estimate, so `subtotal ≠
+   total`: INV-000011 & INV-000029 (a recon+mit split of QBO 4309), INV-000036, INV-000037. Each was
+   verified against QuickBooks and the line corrected to the QBO-billed figure — **totals/balances
+   unchanged** (QBO carries no separate discount line for these, so the line is corrected, not offset
+   with a negative line; genuine discounts elsewhere ARE negative line items). Script:
+   `scripts/fix-recon-invoice-line-amounts.sql`.
+
+2. **Invoice-number collision (systemic).** `generate_invoice_number()` used `invoice_number_seq`,
+   which the explicit-numbered backfills never advanced, so the app began re-issuing used numbers (a
+   July draft got INV-000062). Hardened exactly like claim numbers: renumber the stray → INV-000088,
+   `UNIQUE(invoice_number)`, and a max-suffix+1 generator under an advisory lock
+   (`supabase/migrations/20260707_harden_invoice_number_generation.sql`). A re-runnable
+   `scripts/invoice-integrity-check.sql` now flags all three defect classes (lineless-with-amount,
+   total≠lines+tax, duplicate numbers) — the #6 "final sweep." **Deliberately left alone:**
+   `qbo-invoice.js`'s no-lines fallback (a harmless safety net now that every invoice has lines and the
+   app can't create a lineless-with-total one) — changing that money worker wasn't worth the risk.
+
 ---
 
 ## 7. Conflict & coordination status (IMPORTANT)
