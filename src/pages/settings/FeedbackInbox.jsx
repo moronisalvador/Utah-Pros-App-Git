@@ -265,7 +265,7 @@ export default function AdminFeedback() {
 
   // ─── SECTION: Render ──────────────
   return (
-    <div className="admin-page" style={{ padding: 'var(--space-6)' }}>
+    <div className="admin-page" style={{ padding: 'var(--space-5) var(--space-6)' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>

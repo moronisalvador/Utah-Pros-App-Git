@@ -127,7 +127,7 @@ function GoogleDriveIntegrationPanel({ db }) {
   const calConnected = cal?.connected;
 
   return (
-    <div>
+    <div className="settings-panel">
       <div style={{ marginBottom: 'var(--space-5)' }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Google</h2>
         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0' }}>

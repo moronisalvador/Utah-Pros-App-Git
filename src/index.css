@@ -7628,15 +7628,21 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
     padding: var(--space-4) var(--space-3); overflow-y: auto;
   }
   .settings-hub-content { display: block; flex: 1; min-width: 0; height: 100%; overflow-y: auto; }
-  /* Cap the settings reading column so pages don't sprawl edge-to-edge on ultrawide
-     displays (the scroll container is flex:1 and would otherwise fill a 40" monitor).
-     Left-aligned — not centered — so the content stays anchored beside the rail. One
-     rule covers every settings page (admin-page, settings-page, ss-page, the Lists &
-     Values / Connections / Integrations wrappers) so new pages inherit it too. */
-  .settings-hub-content > *:not(.settings-hub-back) { max-width: 1100px; }
+  /* Cap + center the settings reading column so pages don't sprawl edge-to-edge on
+     ultrawide displays (the scroll container is flex:1 and would otherwise fill a 40"
+     monitor). Mirrors the Collections/Invoice pages exactly (centered, 1320px base,
+     stepping up on big monitors — see .coll-page above). One rule covers every settings
+     page (admin-page, settings-page, ss-page, Lists & Values / Connections / Integrations
+     wrappers) so new pages inherit it too. Step-up breakpoints live just below. */
+  .settings-hub-content > *:not(.settings-hub-back) { max-width: 1320px; margin-left: auto; margin-right: auto; }
   /* The mobile back link is redundant when the rail is present. */
   .settings-hub-back { display: none; }
 }
+/* Ultra-wide step-ups for the settings column — same breakpoints/widths as .coll-page
+   so Settings, Collections and Invoice all behave identically past 1600px. */
+@media (min-width: 1600px) { .settings-hub-content > *:not(.settings-hub-back) { max-width: 1520px; } }
+@media (min-width: 2100px) { .settings-hub-content > *:not(.settings-hub-back) { max-width: 1680px; } }
+@media (min-width: 2560px) { .settings-hub-content > *:not(.settings-hub-back) { max-width: 1800px; } }
 
 /* ── Tablet tier (1024–1279px): the top bar is tighter here, so the global search
       is sized fluidly to the gap between the nav links and the right cluster — it
@@ -9402,7 +9408,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    marker — nobody else writes here. Role×type×channel matrix + per-employee
    tri-state override grid. Mobile-only rules use @media (max-width: 768px). */
 
-.notify-def { padding: var(--space-4); }
+.notify-def { padding: var(--space-5) var(--space-6); }
 
 .notify-def-intro { margin-bottom: var(--space-4); }
 .notify-def-title {
@@ -9655,7 +9661,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ─── SETTINGS OVERHAUL RESERVED — P1 (Payments · Session A) ─── */
-.pay-page { max-width: 760px; margin: 0 auto; padding: var(--space-5); padding-bottom: 80px; }
+/* Width cap + centering handled once on the shared .settings-hub-content column
+   (matches Collections/Invoice); this page owns only its inner padding, canonical
+   like every other settings page. */
+.pay-page { padding: var(--space-5) var(--space-6) 80px; }
 
 .pay-banner { border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); margin-bottom: var(--space-4); }
 .pay-banner--warn { background: var(--status-waiting-bg); border: 1px solid var(--status-waiting); color: var(--status-waiting); }
@@ -9734,7 +9743,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    settings-int-* classes below are the page-specific polish (provider cards,
    status pills, sync stat boxes, dry-run preview). Status colors use the
    design-system badge triplets (UPR-Design-System.md → Status Color Palette). */
-.settings-int-page { max-width: 1100px; padding: var(--space-5) var(--space-6); }
+/* Width cap + centering is handled once on the shared .settings-hub-content column
+   (matches Collections/Invoice); this page only owns its inner padding. */
+.settings-int-page { padding: var(--space-5) var(--space-6); }
 .settings-int-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -10007,7 +10018,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 /* ── Page Access: class-based grid replacing the crushed inline grid ── */
-.pa-page { padding: var(--space-4); }
+.pa-page { padding: var(--space-5) var(--space-6); }
 .pa-toolbar {
   display: flex;
   flex-wrap: wrap;
