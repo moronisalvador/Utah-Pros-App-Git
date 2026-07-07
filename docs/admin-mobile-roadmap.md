@@ -283,18 +283,24 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > **Read scope:** `CLAUDE.md` + this block + `UPR-Design-System.md` + the ownership manifest.
 
 **Close-out checklist**
-- [ ] `AdminDash.jsx`: single-column mobile dashboard reusing the existing widget RPCs
+- [x] `AdminDash.jsx`: single-column mobile dashboard reusing the existing widget RPCs
       (`get_revenue_by_division`, `get_payments_received`, `get_avg_ticket`,
       `get_open_estimates_summary`, `get_jobs_closed`, `get_jobs_completed`,
       `get_active_drying_jobs`, `get_ar_invoices`, `get_dashboard_action_items`,
       `get_tech_status_board`, `get_pipeline_summary`). Period switch (MTD/Last 30/QTD/YTD).
-      CSS/SVG charts (no chart lib).
-- [ ] **Test-first (named) for F-2:** financial widgets are neither rendered nor fetched when
+      CSS/SVG charts (no chart lib). *(11 cards in `dash/{FinancialCards,WorkCards,OpsCards}.jsx`;
+      period math `dashFormat.periodBoundsISO` mirrors desktop `dashUtils.periodBounds`.)*
+- [x] **Test-first (named) for F-2:** financial widgets are neither rendered nor fetched when
       `canAccess('overview_financials')` is false (assert the RPC is not called).
-- [ ] Fixed widget order (no drag/resize on mobile). Rows deep-link via href helper.
-- [ ] `npm run test` + `build` green; eslint clean.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` (gate-weighted) clean; visual check.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+      *(`dash/dashPlan.test.js` — `visibleDashWidgets`/`plannedRpcs` both directions;
+      `dash/AdminDash.render.test.jsx` — real page render + `db.rpc` spy stays untouched.)*
+- [x] Fixed widget order (no drag/resize on mobile). Rows deep-link via href helper.
+      *(order in `dashPlan.DASH_WIDGETS`; money/estimate cards footer-link via
+      `adminCollectionsHref()`; job rows have no admin-mobile route this wave → read-only.)*
+- [x] `npm run test` (840 pass / 101 skip) + `build` green; eslint clean (changed files).
+- [x] `upr-pattern-checker` clean; visual check light + dark (mobile). `admin-mobile-phase-reviewer`
+      (gate-weighted) run at close-out.
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminDash.jsx`, `src/components/admin-mobile/dash/**`,
 css §DASH. Reads existing RPCs only.
