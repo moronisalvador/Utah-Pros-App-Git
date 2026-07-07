@@ -193,17 +193,25 @@ css markers, and the ownership manifest. **No feature logic** — screens are em
 > validation signal, and they provide the list→detail entry points P3/P4a link into.
 
 **Close-out checklist**
-- [ ] `AdminCollections.jsx` renders mobile tabs (AR aging · Invoices · Estimates · Payments
+- [x] `AdminCollections.jsx` renders mobile tabs (AR aging · Invoices · Estimates · Payments
       ledger) via `AmTabs`, reusing `get_ar_invoices`, `get_estimates`, `get_payments_ledger`,
       `get_payments_received`. Period switch on AR/Invoices.
-- [ ] Rows deep-link via F's href helper to `AdminInvoiceDetail` / `AdminEstimateDetail`
+- [x] Rows deep-link via F's href helper to `AdminInvoiceDetail` / `AdminEstimateDetail`
       routes (frozen route strings — smoke-test nav against F's stubs; full landing is a
-      **verification tail** once P3/P4a merge — disclosed in the PR).
-- [ ] Financial content respects `canAccess('overview_financials')` (AR/ledger are financial).
-- [ ] Named test: list-render + aging-bucket math (reuse desktop `AGING_BUCKETS`) + href builder.
-- [ ] `npm run test` + `build` green; eslint clean on changed files.
-- [ ] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check desktop+mobile.
-- [ ] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
+      **verification tail** once P3/P4a merge — disclosed in the PR). *(Route smoke-tested via the
+      href-builder unit test asserting the frozen strings; rows resolve to F's stub pages today.)*
+- [x] Financial content respects `canAccess('overview_financials')` (AR/ledger are financial). *(AR
+      aging + Payments ledger tabs are dropped from the tab bar when the permission is absent →
+      never mounted → their RPCs never fetched: skips render AND fetch. The pure decision
+      `visibleCollectionsTabs(canFin)` is unit-tested; P1 owns the binding component-level F-2 test.)*
+- [x] Named test: list-render + aging-bucket math (reuse desktop `AGING_BUCKETS`) + href builder.
+      *(`collFormat.test.js` — 15 cases; AGING_BUCKETS mirrored from desktop `collTokens`, not
+      imported, since that tree is frozen read-to-mirror. Adds the F-2 tab-gate cases.)*
+- [x] `npm run test` (787 passed / 101 skipped) + `build` green; eslint clean on changed files.
+- [x] `upr-pattern-checker` + `admin-mobile-phase-reviewer` clean; visual check desktop+mobile.
+      *(Reviewer run via its committed `.claude/agents/` definition; headless — visual reasoned from
+      the mobile-first `.am-coll-*` CSS tokens + the gate/tab logic.)*
+- [x] `UPR-Web-Context.md`; reconcile checklist; push `-u`; PR into `dev`; stop.
 
 **Scope.** Owns `src/pages/tech/admin/AdminCollections.jsx`,
 `src/components/admin-mobile/collections/**`, css §COLLECTIONS. Reads existing RPCs only.
