@@ -1606,6 +1606,35 @@ Cold-session prompts: `docs/tech-v2-dispatch.md` → H1/H2/H3. Ownership + the o
   in `src/components/tech/v2/nav.js` (mirrored from `page:tech_job_hub` by `AuthContext`) replaced
   the static `HUB_ENABLED` const — so cutover is the flag opening, not a code flip.
 
+#### Phase H1 — Stage & Dock (SHIPPED Jul 4 2026; flag still OFF)
+
+Replaced M1's guts at `/tech/job/:jobId?appt=` behind the unchanged `page:tech_job_hub` flag
+(owner-only; `nav.js` untouched). The surface now reads through **React Query** (cache-first via
+the idb persister), not M1's local `useState`.
+- **Migration `20260704_tech_v2_h1_job_hub_contacts.sql`:** drift-captures `get_job_contacts`
+  verbatim (it had zero migration coverage) + REPLACEs `get_job_hub` adding ONE key —
+  `contacts` (= `get_job_contacts(j.id)`, delegated so the shape can't drift). All v1 keys
+  byte-identical; backward-compat test `supabase/tests/tech_v2_h1_job_hub.test.js` (static +
+  self-skipping live).
+- **`techQuery.js` (authorized §7 amendment):** 7th kind `hub(jobId) → ['tech','hub',jobId]`;
+  every mutation (`clock/task/photo/room/doc/appointment`) also invalidates `hub`. All hub
+  sub-resources (visit detail, clock entries, readings, equipment, "clocked-elsewhere") cache
+  under the `['tech','hub',jobId]` prefix, so one hub-invalidation repaints the whole surface.
+- **`useVisitClock(db, apptId, employeeId, jobId)`** — new hub-owned, read-only hook; disclosed
+  copy-in of TimeTracker's entry derivation (`TimeTracker.jsx:231-243`): scheduled→omw→on_site→
+  paused→completed, multi-entry Visit-N, live elapsed from `travel_start`, stale hint at
+  FORGOT_CLOCKOUT_MIN (10h). Pure `deriveVisitClock` unit-tested. **TimeTracker NOT edited** and
+  receives the `get_appointment_detail` object (never the hub appt row — crew shape differs,
+  `.jobs` absent). `StageClock` is a new display-only 40px live timer.
+- **Files (all under `src/pages/tech/v2/hub/`):** `TechJobHub.jsx` (orchestrator), `HubHeader`
+  (Z1), `HubStage`+`HubChecklist`+`HubTools`+`StageClock` (Z2), `HubDock` (Z3), `HubBelowFold`
+  (Z4 — visits switcher live; Job&Claim/photos are compact stubs H2 completes), pure helpers
+  `useVisitClock`/`hubChecklistState`/`hubStageState` (+ tests). New i18n namespace `hub`
+  (EN/PT/ES, registered in `src/i18n/index.js`, parity-tested). CSS in the §HUB marker
+  (`tv2-hub-*`). M1's modules (`VisitContext`/`JobPhotos`/`JobDetailsPanel`/`VisitPicker`/
+  `WorkAuthBanner`/`ClaimBreadcrumb`) are now unused — H2 deletes them; `hubHelpers`+`AdminJobMenu`
+  retained.
+
 ---
 
 ## Cloudflare Workers — Environment Variables

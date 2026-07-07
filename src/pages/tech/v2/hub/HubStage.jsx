@@ -40,6 +40,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import TimeTracker from '@/components/tech/TimeTracker';
 import { apptHref } from '@/components/tech/v2';
 import { useVisitClock } from './useVisitClock.js';
+import { isOnCrew, stageBucket, shouldShowElsewhere } from './hubStageState.js';
 import StageClock from './StageClock.jsx';
 import HubChecklist from './HubChecklist.jsx';
 import HubTools from './HubTools.jsx';
@@ -78,15 +79,13 @@ export default function HubStage({
   const clock = useVisitClock(db, apptId, employee?.id, jobId);
 
   const crew = visit?.appointment_crew || [];
-  const isCrew = crew.some((c) => c.employee_id === employee?.id);
+  const isCrew = isOnCrew(crew, employee?.id);
   const isCancelled = visit?.status === 'cancelled';
   const canClock = isCrew && !isCancelled;
+  const showElsewhere = shouldShowElsewhere(clockedElsewhere, apptId);
 
   // Stage bucket: cancelled → wrapped-gray; else from the viewer's own clock.
-  const stage = isCancelled ? 'wrapped'
-    : clock.status === 'on_site' || clock.status === 'paused' ? 'working'
-    : clock.status === 'completed' ? 'wrapped'
-    : 'arriving';
+  const stage = stageBucket(clock.status, isCancelled);
 
   const timeWindow = [visit?.time_start, visit?.time_end].filter(Boolean).join('–') || null;
   const typeLabel = titleCase(visit?.type);
@@ -100,7 +99,7 @@ export default function HubStage({
   return (
     <div className={`tv2-hub-stage tv2-hub-stage--${stage}`}>
       {/* Clocked-into-another-job banner (captures still tag THIS visit). */}
-      {clockedElsewhere && (
+      {showElsewhere && (
         <div className="tv2-hub-elsewhere">
           <span className="tv2-hub-elsewhere__text">
             {t('banner.clockedElsewhere', {
