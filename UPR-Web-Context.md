@@ -170,7 +170,22 @@ owner approval. It lives OUTSIDE `supabase/migrations/` so no `supabase db push`
 sweeps it (a `.STAGED.sql` suffix inside the dir would NOT be excluded — the CLI globs `*.sql`). Pre-apply
 guard: `supabase/tests/db_foundation_p2_purge_precheck.test.js`.
 
-### DB Foundation — Phase P3 anon closure (2026-07-08, staged RED — awaiting owner apply)
+### DB Foundation — Phase P3 anon closure (2026-07-08, ✅ APPLIED live 2026-07-08)
+
+**APPLIED + verified live** (owner-approved). As the anon role: `payments`/`invoices` now read **0 rows**
+(RLS-deny; anon table grants remain but no policy applies), `employees` still readable (login bootstrap,
+allowlisted). Anon-executable public functions dropped to exactly the **6 allowlist** RPCs. Realtime intact
+(`notifications` authenticated policy present). Applied as: `anon_policy_closure` verbatim; `anon_rpc_revoke`
+via an equivalent catalog-driven revoke (same reviewed intent — revoke PUBLIC+anon on all-but-6-allowlist;
+end state verified = 6). **TWO follow-ups still open:**
+- **`document_templates` temp anon-read bridge** (`20260708_dbf_p3_document_templates_anon_bridge.sql`) keeps
+  prod's old SignPage working. **DROP it after the `dev→main` release** ships the RPC-based SignPage to prod:
+  `DROP POLICY "temp anon read document_templates (until prod SignPage release)" ON public.document_templates;`
+- **P2 purge:** `message-attachments` is flipped **private** (applied), but its 21 orphaned objects are NOT
+  deleted — Supabase's `storage.protect_delete()` blocks SQL deletes; remove them via the Storage dashboard if
+  desired (harmless in a now-private bucket). The staged SQL DELETE cannot run and should be treated as a no-op.
+
+
 
 Closes the anonymous (`anon`) browser-role exposure (roadmap finding S1). The app runs as
 `authenticated` (real Supabase JWT — `AuthContext.jsx`); workers as `service_role`; so scoping
