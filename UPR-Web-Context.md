@@ -178,9 +178,10 @@ allowlisted). Anon-executable public functions dropped to exactly the **6 allowl
 (`notifications` authenticated policy present). Applied as: `anon_policy_closure` verbatim; `anon_rpc_revoke`
 via an equivalent catalog-driven revoke (same reviewed intent — revoke PUBLIC+anon on all-but-6-allowlist;
 end state verified = 6). **TWO follow-ups still open:**
-- **`document_templates` temp anon-read bridge** (`20260708_dbf_p3_document_templates_anon_bridge.sql`) keeps
-  prod's old SignPage working. **DROP it after the `dev→main` release** ships the RPC-based SignPage to prod:
-  `DROP POLICY "temp anon read document_templates (until prod SignPage release)" ON public.document_templates;`
+- **`document_templates` temp anon-read bridge** — ✅ **REMOVED 2026-07-08** (`20260708_dbf_p3_drop_document_templates_bridge.sql`)
+  after the `dev→main` release (#355) shipped the RPC-based SignPage to prod. **P3 anon closure is now 100% complete**
+  — `document_templates` is authenticated-only; verified live post-drop that signing still works via
+  `get_sign_document_templates` (anon RPC returns rows) while direct anon table read returns 0.
 - **P2 purge:** `message-attachments` is flipped **private** (applied), but its 21 orphaned objects are NOT
   deleted — Supabase's `storage.protect_delete()` blocks SQL deletes; remove them via the Storage dashboard if
   desired (harmless in a now-private bucket). The staged SQL DELETE cannot run and should be treated as a no-op.
