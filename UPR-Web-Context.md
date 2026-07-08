@@ -276,7 +276,14 @@ Docs + generator only — zero schema, zero `src/` page edits. Ships:
 
 ---
 
-### DB Foundation — Phase P4 data integrity (2026-07-08, YELLOW applied · RED staged)
+### DB Foundation — Phase P4 data integrity (2026-07-08, ✅ YELLOW + RED both APPLIED)
+
+**RED repair APPLIED + verified live 2026-07-08** (owner-approved "get everything done safely"): NULLed the
+non-canonical external IDs on 4 duplicate claims + 1 duplicate contact (canonical rows — claim 4018951,
+contact 531 — kept, verified), then added partial-UNIQUE on `claims.encircle_claim_id` +
+`contacts.qbo_customer_id` (0 dup groups remain) and dropped the superseded `claims_encircle_claim_id_idx`.
+Exact-inverse rollback in the migration headers. **Owner follow-up (NOT auto-touched):** invoice `4274` is a
+genuine QBO discrepancy (neither row nor their sum matches the QBO total) — needs a QuickBooks look.
 
 Constraints + pre-check data repair (roadmap findings 8/9). Full evidence:
 `docs/db-foundation-p4-orphan-report.md`. Avoids `crm_automations` (5-Ops owns an ALTER there);
