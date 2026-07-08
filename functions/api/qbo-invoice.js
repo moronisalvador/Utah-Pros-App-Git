@@ -18,6 +18,20 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, ensureQboCustomer } from '../lib/quickbooks.js';
 
+// Snap a money value to whole cents. QBO rejects line Amounts with more than 2
+// decimals ("...has more precision than allowed"), and a qty×unit_price fallback
+// (or an over-precise stored value) can carry sub-cent noise — so round before
+// pushing. Mirrors round2 in src/components/admin-mobile/invoice/invoiceMath.js.
+export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+// Amount pushed to QBO for one invoice line: the stored line_total when present,
+// else qty × unit_price — always snapped to cents.
+export const qboLineAmount = (li) =>
+  round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
+
+// No-lines fallback Amount: the billable (adjusted_total ?? total), snapped to cents.
+export const qboFallbackAmount = (inv) => round2(inv.adjusted_total ?? inv.total ?? 0);
+
 async function isAuthorized(request, env) {
   const secret = request.headers.get('x-webhook-secret');
   if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
@@ -135,7 +149,7 @@ export async function onRequestPost(context) {
     let lines;
     if (items.length) {
       lines = items.map(li => {
-        const amt = Number(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
+        const amt = qboLineAmount(li);
         const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
         const cls = li.qbo_class_id || divClassId;
         if (cls) detail.ClassRef = { value: String(cls) };
@@ -149,7 +163,7 @@ export async function onRequestPost(context) {
         };
       });
     } else {
-      const amount = Number(inv.adjusted_total ?? inv.total ?? 0);
+      const amount = qboFallbackAmount(inv);
       const detail = { ItemRef: { value: map.itemId } };
       if (divClassId) detail.ClassRef = { value: divClassId };
       lines = [{ DetailType: 'SalesItemLineDetail', Amount: amount, SalesItemLineDetail: detail }];
