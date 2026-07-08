@@ -61,6 +61,18 @@ describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay rea
     expect(progress.phases.length).toBeGreaterThan(0);
   });
 
+  // ── Surface: login + set-password (GoTrue /auth/v1 — separate from PostgREST grants) ──
+  it('login/set-password: the GoTrue auth endpoint stays reachable with the anon key', async () => {
+    // login (signInWithPassword) and set-password (updateUser/recovery) both run
+    // against Supabase GoTrue, which authenticates with the anon apikey and is
+    // UNAFFECTED by revoking anon's table/RPC grants. This proves the anon key
+    // still functions for auth after the closure.
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    });
+    expect(res.ok).toBe(true);
+  });
+
   // ── Surface: login / session bootstrap ──
   it('login bootstrap: get_feature_flags is anon-callable', async () => {
     const flags = await db.rpc('get_feature_flags');
