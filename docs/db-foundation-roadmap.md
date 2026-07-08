@@ -160,6 +160,7 @@ Scope: new views + timezone RPC bodies + docs. Deliberately NOT: new indexes (P5
 
 ### Phase P7 — Docs & onboarding
 > **Branch:** session-assigned. **Prerequisite:** none (docs only; regenerates last). Model: **Sonnet · medium**.
+> **✅ SHIPPED 2026-07-08.** All five close-out items delivered: `docs/database/how-the-data-model-works.md` + `glossary.md` + `adding-a-table-rpc-or-policy.md`; README refresh; `scripts/db-docs-gen.{sql,mjs}` (read-only catalog SELECT, no DDL/credentials) generating `docs/generated/{schema-overview,rpc-inventory}.md` from a live run (127 tables, 337 functions) with a regenerate-don't-edit banner; the SQL-migration-header addendum in `documentation-standard.md`. See `UPR-Web-Context.md`'s Phase P7 entry.
 > **Close-out:** plain-English "How the UPR data model works" guide (invoicing-guide style — one ASCII diagram, who-writes-what, links-not-copies into `UPR-Web-Context.md` with a header disclaiming schema authority per Rule 9); README refresh (point at CLAUDE.md/UPR-Web-Context, stop hand-listing pages); glossary; "how to safely add a table / RPC / policy" guides; `scripts/db-docs-gen` generator (reads live schema via a read-only path, emits `docs/generated/**` with a regenerate-don't-edit banner — framed as a drift-verification aid, never a second source of truth); SQL-migration-header addendum to `documentation-standard.md`.
 
 Scope: docs + generator only. Zero schema, zero `src/` page edits. F owns the baseline-snapshot dir;

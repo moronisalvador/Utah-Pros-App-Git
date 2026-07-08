@@ -83,3 +83,47 @@ self-explanatory lines (no `// set loading to true`).
 Coverage is partial by design — this only applies to new files and files substantially edited,
 not a backfill mandate. Last measured: ~105/191 files in `src/` (55%), ~15/58 in `functions/` (26%)
 have the header. Re-measure with `grep -rl "FILE:" src --include=*.jsx --include=*.js | wc -l`.
+
+## SQL migration header (addendum — DB-Foundation P7, 2026-07-08)
+
+Every file in `supabase/migrations/` gets this header instead of the JS/JSX one above — it
+formalizes the pattern DB-Foundation's Phase F/P1 migrations already established in practice.
+This satisfies `.claude/rules/database-standard.md` §6 (rollback script required); it does not
+replace that rule, it's the concrete format for meeting it.
+
+```sql
+-- ════════════════════════════════════════════════
+-- MIGRATION: [filename without .sql]
+-- Phase: [initiative + phase, e.g. "DB-Foundation P4", or "n/a" for a standalone migration]
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   [2-4 sentences, zero jargon — what changes, and why, as if the reader
+--    has never written SQL.]
+--
+-- ADDITIVE-ONLY / attribute-only / etc.:
+--   [One line stating the blast radius per database-standard.md §3 — e.g.
+--    "no table DROP/RENAME/ALTER COLUMN, no data change" — or explain the
+--    exception if this is a RED-tier reviewed change.]
+--
+-- ════════════════════════════════════════════════
+-- ROLLBACK:
+--   [The concrete undo — the prior CREATE OR REPLACE body for a function
+--    replace, the DROP TABLE/DROP POLICY/RESET for an additive object, or
+--    the re-GRANT for a revoke. A migration with no stated undo is a review
+--    failure per database-standard.md §6.]
+-- ════════════════════════════════════════════════
+```
+
+Field rules:
+
+- **WHAT THIS DOES**: same plain-English bar as the JS header — no jargon a non-developer wouldn't
+  follow. State the mechanism only if it matters to someone deciding whether this is safe to apply
+  (e.g. "this is an ATTRIBUTE change only, no function body changes").
+- **ADDITIVE-ONLY line**: always present, even when the answer is simply "yes, additive-only" — it's
+  the reviewer's first checkpoint, not something to infer from reading the DDL.
+- **ROLLBACK**: concrete and runnable, not "revert the migration." If undoing this migration is
+  genuinely destructive or infeasible, say so explicitly rather than omitting the section.
+- Deferred/out-of-scope items discovered while building the migration (e.g. an advisor finding that
+  turned out to need a separate RED-tier change) get their own `-- ── DEFERRED ── ` block — see
+  `20260708_dbf_p1_advisor_quick_wins.sql` for the precedent.
