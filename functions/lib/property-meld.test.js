@@ -301,6 +301,11 @@ describe('parseMeldEmail — message', () => {
   it('captures the per-meld reply-thread address', () => {
     expect(p.threadReplyAddress).toBe('92cc7e85-d698-4dcd-a51a-f4f1b570fdfe@msg.propertymeld.com');
   });
+
+  it('extracts the reply address from a "Display Name <addr>" From header', () => {
+    const withName = parseMeldEmail({ ...RECON_MESSAGE, from: 'Property Meld <92cc7e85-d698-4dcd-a51a-f4f1b570fdfe@msg.propertymeld.com>' });
+    expect(withName.threadReplyAddress).toBe('92cc7e85-d698-4dcd-a51a-f4f1b570fdfe@msg.propertymeld.com');
+  });
   it('handles the /meld/{id}/ URL variant and the open status set', () => {
     expect(p.meldId).toBe('12533505');
     expect(p.meldNumber).toBe('TFTBCQP');

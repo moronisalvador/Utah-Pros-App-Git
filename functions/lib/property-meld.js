@@ -72,6 +72,13 @@ function grab(s, re) {
   return m ? m[1].trim() : null;
 }
 
+/** Pull the bare address out of a "Display Name <addr@host>" From header. */
+function extractEmail(from) {
+  if (!from) return '';
+  const m = from.match(/<([^>]+)>/);
+  return (m ? m[1] : from).trim();
+}
+
 // Known Meld status phrases always begin with one of these capitalized words.
 // Used only as a boundary so we can split "TFTBCQPPending vendor acceptance"
 // (Meld number glued to status) — Meld numbers are [A-Z0-9] only, so a
@@ -158,8 +165,9 @@ export function parseMeldEmail({ from = '', subject = '', text = '' } = {}) {
   if (event === 'message') {
     messageFrom = grab(body, /^(.+?) sent a message\./m);
     messageText = grab(body, /sent a message\.\s*\n+\s*"([\s\S]*?)"/);
-    if (from && from.toLowerCase() !== NOREPLY && /^[0-9a-f-]{16,}@msg\.propertymeld\.com$/i.test(from.trim())) {
-      threadReplyAddress = from.trim();
+    const fromAddr = extractEmail(from).toLowerCase();
+    if (fromAddr && fromAddr !== NOREPLY && /^[0-9a-f-]{16,}@msg\.propertymeld\.com$/i.test(fromAddr)) {
+      threadReplyAddress = fromAddr;
     }
   }
 

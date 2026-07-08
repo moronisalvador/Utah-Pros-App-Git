@@ -2745,10 +2745,21 @@ an email for every "Meld" (work order). This feature reads those emails and surf
   truncate ("See More") → `description_clipped`; the portal link is how a tech reaches the rest.
 - **Backfilled** 3 verified-real restoration melds (Reconstruction TFTBCQP, Mold check TH1BCY1,
   EMERGENCY Active Flooding T3YA1KM — all account 83074).
-- **NOT built yet (next slices):** (1) live ingestion — a Gmail forward of `@msg.propertymeld.com`
-  → a Cloudflare Email Worker (`functions/api/inbound-meld.js`) calling `upsert_property_meld_meld`
-  (needs owner email-route setup); (2) "Import to UPR job" (stub toast today); (3) reply-to-thread
-  (each message email's UUID From address threads back into Property Meld).
+- **Live ingestion worker:** `POST /api/inbound-meld` (`functions/api/inbound-meld.js`) — a forwarder
+  sends Property Meld emails here; it parses, keeps restoration only, upserts idempotently, and on a
+  meld's FIRST assignment pushes the owner. **Auth:** shared secret header `x-meld-secret` =
+  `INBOUND_MELD_SECRET` (set in BOTH Cloudflare env sets). **Transport setup:**
+  `docs/property-meld-ingestion.md` (recommended: a Gmail Apps Script forwarding
+  `from:msg.propertymeld.com`; Cloudflare Email Routing is an alternative). Core is node-tested
+  (`inbound-meld.test.js`).
+- **Push notification:** `notification_types` row `meld.received` (enabled, push+bell default) —
+  the worker fires it to the owner (employee `moroni@utah-pros.com`) with a `/melds` deep link and a
+  🚨 title for emergencies, via the shared `dispatchEvent` (recipient_ids explicit).
+- **Nav:** `/melds` added to `OVERFLOW_ITEMS` in `navItems.jsx` as `moroniOnly` (owner-only, mirrors
+  Homebuilding) — matches the `MoroniRoute` guard on the route.
+- **NOT built yet (next slices):** (1) "Import to UPR job" (stub toast today — will write a real
+  `jobs` row); (2) reply-to-thread (each message email's UUID From address threads back into
+  Property Meld — `thread_reply_address` is already captured).
 
 ## Known Pending Items
 (Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note
