@@ -39,7 +39,8 @@
 --   - Does NOT flip the `job-files` bucket privacy flag (that is P8).
 --   - Does NOT flip the `message-attachments` privacy flag or delete its 21 orphaned
 --     objects — those are RED-tier and staged separately in
---     20260708_dbf_p2_message_attachments_purge.sql (awaits owner OK).
+--     supabase/migrations-staged/20260708_dbf_p2_message_attachments_purge.sql
+--     (out of the applied set; awaits owner OK).
 --   - Does NOT drop the job-files READ policies (`job_files_select`,
 --     `anon_read_job_files`) — public READ is preserved (database-standard.md §2).
 --

@@ -128,9 +128,11 @@ hole. Net effect on a logged-in tech: none. The offline photo dispatcher (`Beare
 is unaffected; only its anon-key fallback (expired/absent session) is now refused.
 
 **STAGED, awaiting owner OK (RED-tier — autonomy ledger):**
-`20260708_dbf_p2_message_attachments_purge.STAGED.sql` — flips `message-attachments` bucket to private
-(`public=false`) and deletes its 21 orphaned objects. Irreversible (delete) → held for owner approval; the
-`.STAGED.sql` suffix keeps it out of the applied set.
+`supabase/migrations-staged/20260708_dbf_p2_message_attachments_purge.sql` — flips `message-attachments`
+bucket to private (`public=false`) and deletes its 21 orphaned objects. Irreversible (delete) → held for
+owner approval. It lives OUTSIDE `supabase/migrations/` so no `supabase db push`/`reset` or MCP apply
+sweeps it (a `.STAGED.sql` suffix inside the dir would NOT be excluded — the CLI globs `*.sql`). Pre-apply
+guard: `supabase/tests/db_foundation_p2_purge_precheck.test.js`.
 
 ---
 

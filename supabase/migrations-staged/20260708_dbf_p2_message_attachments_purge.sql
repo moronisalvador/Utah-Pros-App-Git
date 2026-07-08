@@ -1,16 +1,21 @@
 -- ════════════════════════════════════════════════
 -- MIGRATION (STAGED — DO NOT APPLY WITHOUT OWNER OK):
---   20260708_dbf_p2_message_attachments_purge.STAGED.sql
+--   supabase/migrations-staged/20260708_dbf_p2_message_attachments_purge.sql
 -- DB-Foundation Phase P2 — RED-tier tail (autonomy ledger)
 -- ════════════════════════════════════════════════
 --
 -- ⛔ THIS MIGRATION IS STAGED, NOT APPLIED. ⛔
---   The `.STAGED.sql` suffix keeps it OUT of the applied-migration set. It contains
---   two RED-tier actions from the DB-Foundation autonomy ledger — a storage bucket
---   privacy flip and an irreversible data DELETE — which "stage the migration +
---   rollback + tests and wait for the owner's OK" (wave-ownership §7 / roadmap
---   "Autonomy ledger"). Rename to `20260708_dbf_p2_message_attachments_purge.sql`
---   and apply via Supabase MCP ONLY after the owner approves.
+--   It lives in `supabase/migrations-staged/`, OUTSIDE `supabase/migrations/`, so no
+--   Supabase tooling sweeps it — `supabase db push`/`reset` and the MCP flow only ever
+--   look at `supabase/migrations/*.sql`. (A `.STAGED.sql` suffix INSIDE the real
+--   migrations dir would NOT be excluded — the CLI globs `*.sql` — which is why this
+--   file was moved out of the dir entirely.) It contains two RED-tier actions from the
+--   DB-Foundation autonomy ledger — a storage bucket privacy flip and an irreversible
+--   data DELETE — which "stage the migration + rollback + tests and wait for the
+--   owner's OK" (wave-ownership §7 / roadmap "Autonomy ledger").
+--   To apply after owner approval: run this SQL via Supabase MCP `apply_migration`
+--   (or move the file into `supabase/migrations/`). Pre-apply guard test:
+--   supabase/tests/db_foundation_p2_purge_precheck.test.js.
 --
 -- WHAT THIS DOES (plain language, once approved):
 --   1. Flips the dead `message-attachments` bucket from public to PRIVATE
