@@ -249,6 +249,30 @@ idx_conversation_participants_contact_id  conversation_participants(contact_id) 
 --   definitions to build the exclusion list + a fresh idx_scan re-verify; RED-tier (owner OK). Ships as
 --   a separate revert-ready migration (CREATE statements in its header) once P6 lands.
 ```
+### DB Foundation — Phase P7 docs & onboarding (2026-07-08, shipped)
+
+Docs + generator only — zero schema, zero `src/` page edits. Ships:
+
+- `docs/database/how-the-data-model-works.md` — plain-English guide (invoicing-guide style: one
+  ASCII diagram, who-writes-what table) that **links into this file's own sections**, never copies
+  the schema (Rule 9). Carries a header disclaiming schema authority — this file wins on conflict.
+- `docs/database/glossary.md` — RLS/policy/anon/authenticated/SECURITY DEFINER/additive-only/etc.
+- `docs/database/adding-a-table-rpc-or-policy.md` — the practical, in-order checklist companion to
+  `database-standard.md` (the standing rules) and the `db-migration` skill (the guided build).
+- `README.md` refresh — points at `CLAUDE.md`/this file instead of hand-listing routes/pages (the
+  prior README's 10-route/page list was already stale before this phase).
+- `scripts/db-docs-gen.sql` (pure catalog SELECT — no DDL, no app-table reads, safe with a read-only
+  role) + `scripts/db-docs-gen.mjs` (transforms a snapshot file into markdown; the script itself
+  never holds DB credentials of any kind) → `docs/generated/schema-overview.md` +
+  `docs/generated/rpc-inventory.md`, each with a "regenerate, don't edit" banner. Framed as a
+  drift-verification aid (flags any table/function with an `anon` grant, for a quick glance against
+  `database-standard.md` §2's allowlist), never a second schema source. Distinct from Phase F's
+  `db/baseline/` (a frozen comparison snapshot `db-drift-check.mjs` diffs against) — this generator
+  never writes that directory; its own output is always "what does live look like right now."
+  Regenerated 2026-07-08 against the live catalog: 127 public tables, 337 public functions.
+- `.claude/rules/documentation-standard.md` — new "SQL migration header" addendum formalizing the
+  `MIGRATION:`/`Phase:`/`WHAT THIS DOES`/`ADDITIVE-ONLY`/`ROLLBACK` header pattern Phase F/P1's
+  migrations already established, satisfying `database-standard.md` §6's rollback requirement.
 
 ---
 
