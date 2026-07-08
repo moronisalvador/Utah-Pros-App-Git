@@ -13,8 +13,11 @@ esp. the CRM Phase Workflow + Rule 7 migration rules):
    each new table additive-only with `org_id UUID` (FK `crm_orgs`), `ENABLE ROW LEVEL
    SECURITY` + an explicit policy at creation, and a `UNIQUE` constraint on any external
    system ID for idempotent upserts. No `ALTER`/`DROP` of a live table.
-2. **RPCs:** `SECURITY DEFINER`, `GRANT EXECUTE TO anon, authenticated`; `get_*` readers +
-   upsert/update writers. Frontend writes go through `db.rpc()`, never direct PostgREST.
+2. **RPCs:** `SECURITY DEFINER`, `GRANT EXECUTE TO authenticated, service_role` (**not `anon`**
+   — least-privilege default per `.claude/rules/database-standard.md`; `anon` only for a
+   deliberately-public RPC via the §2 allowlist + a `-- public: <reason>` comment). Policies
+   scope `TO authenticated`. `get_*` readers + upsert/update writers. Frontend writes go through
+   `db.rpc()`, never direct PostgREST.
 3. **Route + nav:** a `/crm/<screen>` route wrapped in `<FeatureRoute flag="page:crm">`, a
    CRM sidebar entry, and an `IconXxx(p)` SVG following `src/lib/navItems.jsx`.
 4. **Failing test first:** a vitest unit test for pure JS helpers, or an integration test

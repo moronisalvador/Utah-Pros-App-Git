@@ -201,11 +201,15 @@ owner says go.** If plan mode is active, exit via the approval flow.
 
 ## Standing guardrails (bind every phase whose surface they touch — carry them into the blocks)
 
-- Additive-only migrations; RLS + explicit policy in the SAME migration as every
-  CREATE TABLE; `org_id` on domain parents (documented child/global-tracker
-  exceptions); UNIQUE on external-system IDs + ON CONFLICT upserts (namespaced
-  synthetic IDs like `'form:'||token` count); GRANT EXECUTE on SECURITY DEFINER RPCs
-  (worker-only exceptions commented); idempotent seeds.
+- Additive-only migrations; RLS + explicit policy (scoped `TO authenticated`, not `anon`)
+  in the SAME migration as every CREATE TABLE; `org_id` on domain parents (documented
+  child/global-tracker exceptions); UNIQUE on external-system IDs + ON CONFLICT upserts
+  (namespaced synthetic IDs like `'form:'||token` count); `GRANT EXECUTE ... TO
+  authenticated, service_role` on SECURITY DEFINER RPCs (**not `anon`** — least-privilege
+  default per `.claude/rules/database-standard.md`; `anon` only via its §2 public allowlist +
+  a `-- public: <reason>` comment; worker-only exceptions commented); rollback note on any
+  live-table/RPC change; no secret column readable by anon/authenticated; `timestamptz` +
+  `America/Denver` bucketing; idempotent seeds.
 - Consent gate structurally unbypassable (any phase that sends): automated/marketing
   sends only through `sendAutomatedMessage()`/`sendGatedEmail()`; no direct
   Twilio/Resend, no `skip_compliance` outside `send-message.js` itself; consent
