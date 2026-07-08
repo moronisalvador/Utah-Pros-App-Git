@@ -209,6 +209,50 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
 
 ---
 
+### DB Foundation — Phase P4 data integrity (2026-07-08, YELLOW applied · RED staged)
+
+Constraints + pre-check data repair (roadmap findings 8/9). Full evidence:
+`docs/db-foundation-p4-orphan-report.md`. Avoids `crm_automations` (5-Ops owns an ALTER there);
+apply-window serialized vs P3 (both strong-lock claims/contacts). Gate:
+`supabase/tests/db_foundation_p4_data_integrity.{sql,test.js}` (adaptive — green pre- and post-repair).
+
+**Headline:** the `invoices.qbo_invoice_id` (7) / `payments.qbo_payment_id` (5) "duplicates" are NOT
+dedup targets — the QBO document `TotalAmt` equals the SUM of the two UPR rows (one carrier
+invoice/payment split across two jobs = **combined billing**; both rows canonical, distinct `job_id`).
+Left unconstrained/unrepaired. `estimates.qbo_estimate_id` excluded for the same caution.
+`invoices.qbo_invoice_id=4274` is the one true anomaly (neither row nor sum matches QBO) → owner/QBO
+review, not auto-repaired. `jobs.encircle_claim_id` (67 groups) is legitimately many-jobs-per-claim
+(already `UNIQUE(encircle_claim_id, division)`).
+
+```
+-- APPLIED LIVE (YELLOW / additive):
+20260708_dbf_p4_missing_fks.sql            notifications.job_id → jobs(id) (ON DELETE SET NULL),
+                                              NOT VALID → VALIDATE, 0 orphans. Only genuine missing FK.
+20260708_dbf_p4_check_constraints.sql      job_time_entries hours/total_paused_minutes/travel_minutes
+                                              each (IS NULL OR >= 0), NOT VALID → VALIDATE. Protects
+                                              labor-cost math. (Other status/amount CHECKs already exist.)
+20260708_dbf_p4_external_id_unique_clean.sql  partial UNIQUE on forms.encircle_note_id +
+                                              google_calendar_links.google_event_id (dup-free 1:1 keys).
+                                              Most import keys already UNIQUE (callrail_id, encircle_media_id,
+                                              encircle_note_id (job_notes), encircle_room_id, twilio_sid,
+                                              stripe_charge_id) — prior migrations.
+
+-- STAGED, RED — owner-gated (apply via MCP after OK, NOT overlapping P3's window):
+20260708_dbf_p4_external_id_repair.sql     NULLs external-ID on 4 non-canonical claims + 1 stray contact
+                                              only (never money/status/canonical). Canonical determined
+                                              live: claims via Encircle contractor_identifier (all 4 →
+                                              the CLM-2606-* row); contact 531 → the row with the claim+email.
+                                              In-tx assertions; exact-inverse rollback in-file.
+20260708_dbf_p4_external_id_unique_repaired.sql  partial UNIQUE on claims.encircle_claim_id +
+                                              contacts.qbo_customer_id AFTER repair (ordering = safety
+                                              interlock); DROPs superseded plain claims_encircle_claim_id_idx.
+-- Owner follow-ups (out of P4's external-ID scope): merge same-claim pair 4077213; merge duplicate
+     contact 531 (fold correct +1 801 phone into canonical, delete stray); investigate invoice 4274;
+     investigate rooms.client_id (4 UUIDs matching no contacts/jobs/claims).
+```
+
+---
+
 ## Stack
 - **Frontend:** React 19 + Vite
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
