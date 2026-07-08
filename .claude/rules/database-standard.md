@@ -23,6 +23,11 @@ bundle.
 
 - **RPCs:** `SECURITY DEFINER` + `GRANT EXECUTE ... TO authenticated, service_role`. **Never `anon`**
   unless the function is in the public allowlist (§2).
+  - **Managed-Supabase function trap (verified in Phase F):** this project re-applies Postgres's
+    built-in `EXECUTE TO PUBLIC` to every new function at `ddl_command_end`, so the `ALTER DEFAULT
+    PRIVILEGES` revoke does **not** cover functions. Every new/replaced function migration must add an
+    explicit `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon;` immediately before its `GRANT` — the
+    `ALTER DEFAULT PRIVILEGES` backstop only reliably covers tables/sequences.
 - **Tables:** `ENABLE ROW LEVEL SECURITY` + an explicit policy scoped `TO authenticated`. The floor
   is `FOR ALL TO authenticated USING (true) WITH CHECK (true)`; tighten to an ownership/org predicate
   (`auth.uid()` → `employees` → assignment) wherever the data is per-user or per-org. `USING (true)`

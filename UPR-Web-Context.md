@@ -57,6 +57,49 @@ location change is P8's photo URLs public→signed, isolated as a serial tail). 
 report (2 draft claims refuted) live in the roadmap. Standing DB rules now in
 `.claude/rules/database-standard.md`.
 
+### DB Foundation — Phase F SHIPPED (2026-07-08, security/audit/drift hardening)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` + `db-foundation-phase-reviewer`)
+before landing; the review found + closed two live anon exposures F had reproduced from old drift (below).
+All applied + verified live on the shared Supabase.
+
+```
+-- New tables (RLS on, authenticated-read policy, anon revoked; SECURITY DEFINER triggers write them)
+claim_status_history(id, claim_id→claims, from_status, to_status, changed_at)
+invoice_status_history(id, invoice_id→invoices, from_status, to_status, changed_at)
+     — append-only audit of every claims/invoices status change; seeded a current-state baseline row
+       per existing parent (130 claims / 80 invoices). Fed by AFTER UPDATE OF status triggers that fire
+       ONLY WHEN (OLD.status IS DISTINCT FROM NEW.status) and are EXCEPTION-wrapped (can never roll back
+       the parent financial write).
+
+-- New RPCs (authenticated + service_role ONLY — never anon)
+mt_date(timestamptz) → date  — America/Denver calendar date of a moment. IMMUTABLE (index/generated safe).
+mt_today() → date            — today's Denver date. STABLE. Bucket days/weeks with these, never UTC.
+
+-- Security hardening
+set_billing_setting(p_key,p_value)  — NOW admin-gated (PERFORM p9_assert_admin() first stmt); was
+                                      anon-callable with no caller check. Signature frozen; anon revoked.
+                                      (canEditBilling's 'manager' string matches no live role → effective
+                                      behavior already admin-only, so no user regression.)
+ALTER DEFAULT PRIVILEGES            — REVOKE anon on new tables/sequences/functions. NOTE: managed Supabase
+                                      re-applies built-in EXECUTE-TO-PUBLIC on new functions at
+                                      ddl_command_end, so EVERY new function migration MUST also
+                                      `REVOKE EXECUTE ... FROM PUBLIC, anon` per-object (database-standard §1).
+Secret-store deny-all               — integration_credentials / integration_config / user_google_accounts
+                                      stay RLS-enabled with ZERO policies (deny anon AND authenticated).
+                                      Tripwire: supabase/tests/db_foundation_secret_exposure.{sql,test.js}.
+
+-- Drift reconciliation
+system_events, get_dashboard_stats  — drift-captured (re-derived from live catalog, idempotent).
+                                      Review follow-up (20260708_dbf_revoke_anon_dashboard_and_events):
+                                      revoked anon EXECUTE on get_dashboard_stats (KPI counts, no anon
+                                      caller) and dropped system_events' anon policies+grants entirely →
+                                      RLS-on deny-all (service-role workers + definer RPCs only; the
+                                      audit log is no longer world-readable). Baseline db/baseline/ +
+                                      scripts/db-drift-check.{sql,mjs} diff live vs repo (~73 tables /
+                                      ~101 functions predate schema-as-code — documented backlog).
+```
+
 ---
 
 ## Stack

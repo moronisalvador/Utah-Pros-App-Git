@@ -99,6 +99,7 @@ anon closure; realtime survives it (with `notifications_select` altered, not dro
 ## Phases
 
 ### Phase F — Foundation
+> **✅ SHIPPED 2026-07-08** (PR #346, reviewed via the full gauntlet). All six items applied + verified live. The review found and closed two live anon exposures F had reproduced from old drift — `get_dashboard_stats` EXECUTE and the `system_events` audit-log read/write — via follow-up `20260708_dbf_revoke_anon_dashboard_and_events.sql` (now RLS-on deny-all; no anon consumer existed). The `set_billing_setting` "manager regression" the reviewer flagged was verified a non-issue (no employee holds the `manager` role `canEditBilling` checks, so effective behavior was already admin-only). F branched from `main` and re-authored divergent copies of this roadmap / the manifest / `database-standard.md`; those were **discarded** for the authoritative `dev` versions, with F's genuine improvements (the managed-Supabase per-object function-revoke rule; the UPR-Web-Context Phase-F summary) folded in.
 > **Branch:** session-assigned (illustrative: `db-foundation/phase-f`) — cut off `dev`.
 > **Prerequisite:** none. Model: **Opus · high** (100% of shared security scaffolding + live-RPC touches on the one shared prod DB).
 > **Read scope:** this block + `CLAUDE.md` + `.claude/rules/database-standard.md` + `.claude/rules/db-foundation-wave-ownership.md`.
