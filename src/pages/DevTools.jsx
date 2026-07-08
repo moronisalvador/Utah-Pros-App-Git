@@ -38,6 +38,7 @@ const CATEGORY_COLOR = {
   page:    { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
   tool:    { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
   feature: { bg: '#faf5ff', color: '#7c3aed', border: '#ddd6fe' },
+  tech:    { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
 };
 
 /* ════════════════════════════════════════════════════
@@ -202,7 +203,7 @@ function FlagsTab() {
     (acc[f.category] = acc[f.category] || []).push(f);
     return acc;
   }, {});
-  const ORDER = ['page', 'tool', 'feature'];
+  const ORDER = ['page', 'tool', 'feature', 'tech'];
 
   if (loading) return <TabLoading />;
 
@@ -253,6 +254,7 @@ function FlagsTab() {
                 <option value="page">page</option>
                 <option value="tool">tool</option>
                 <option value="feature">feature</option>
+                <option value="tech">tech</option>
               </select>
             </div>
             <div>
