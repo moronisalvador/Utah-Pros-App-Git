@@ -36,9 +36,11 @@ const TABS = [
 
 const CATEGORY_COLOR = {
   page:    { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+  crm:     { bg: '#fff1f2', color: '#e11d48', border: '#fecdd3' },
+  tech:    { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
   tool:    { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
   feature: { bg: '#faf5ff', color: '#7c3aed', border: '#ddd6fe' },
-  tech:    { bg: '#fff7ed', color: '#ea580c', border: '#fed7aa' },
+  infra:   { bg: '#f8fafc', color: '#475569', border: '#cbd5e1' },
 };
 
 /* ════════════════════════════════════════════════════
@@ -203,7 +205,14 @@ function FlagsTab() {
     (acc[f.category] = acc[f.category] || []).push(f);
     return acc;
   }, {});
-  const ORDER = ['page', 'tool', 'feature', 'tech'];
+  // Preferred display order; any category NOT listed here still renders, appended
+  // alphabetically after these — so a stray/legacy category (e.g. a typo'd "pages"
+  // or a new "reports") can never silently hide its flags from this screen.
+  const PREFERRED = ['page', 'crm', 'tech', 'tool', 'feature', 'infra'];
+  const ORDER = [
+    ...PREFERRED,
+    ...Object.keys(grouped).filter(c => !PREFERRED.includes(c)).sort(),
+  ];
 
   if (loading) return <TabLoading />;
 
@@ -252,9 +261,11 @@ function FlagsTab() {
               <select style={inputStyle} value={newFlag.category}
                 onChange={e => setNewFlag(v => ({ ...v, category: e.target.value }))}>
                 <option value="page">page</option>
+                <option value="crm">crm</option>
+                <option value="tech">tech</option>
                 <option value="tool">tool</option>
                 <option value="feature">feature</option>
-                <option value="tech">tech</option>
+                <option value="infra">infra</option>
               </select>
             </div>
             <div>
