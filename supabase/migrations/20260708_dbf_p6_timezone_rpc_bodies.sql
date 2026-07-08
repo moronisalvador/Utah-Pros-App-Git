@@ -44,9 +44,26 @@
 --   intended Denver date shift. One shared Supabase — live in dev + prod on apply.
 --
 -- ROLLBACK: re-apply the prior bodies (CURRENT_DATE in place of public.mt_today()).
---   The exact pre-change definitions are captured in this PR's description
---   (pg_get_functiondef dump, 2026-07-08). Each is a CREATE OR REPLACE, so the
---   undo is symmetric.
+--   Each is a symmetric CREATE OR REPLACE. The 5 repo-tracked functions' prior
+--   bodies are recoverable from git history (get_assigned_tasks →
+--   20260703_tech_v2_phaseF_drift_capture.sql; get_my_appointments_today →
+--   20260703_tech_v2_phaseF_feed_upgrades.sql; get_call_volume/get_conversion_trend
+--   → 20260702_crm_phase9_intelligence_rpcs.sql; get_stalled_materials_for_employee
+--   → 20260418_get_stalled_for_employee.sql). The 3 that were NEVER in the repo are
+--   inlined below (drift-dumped live 2026-07-08) so this undo is self-contained:
+--
+--   -- add_custom_schedule_phase: revert the two COALESCE defaults
+--   --   COALESCE(p_target_start, public.mt_today())          → COALESCE(p_target_start, CURRENT_DATE)
+--   --   COALESCE(p_target_end, public.mt_today() + p_duration_days - 1)
+--   --                                                        → COALESCE(p_target_end, CURRENT_DATE + p_duration_days - 1)
+--   -- get_payroll_summary + get_timesheet_entries: revert the parameter DEFAULTs
+--   --   (date_trunc('week', (public.mt_today())::timestamptz))::date
+--   --                                                        → (date_trunc('week', (CURRENT_DATE)::timestamptz))::date
+--   --   ((date_trunc('week', (public.mt_today())::timestamptz) + '6 days'::interval))::date
+--   --                                                        → ((date_trunc('week', (CURRENT_DATE)::timestamptz) + '6 days'::interval))::date
+--   -- Everything else in all 8 bodies is byte-identical to this file — only the
+--   -- date source changes. A rollback re-runs each CREATE OR REPLACE with the
+--   -- swap reversed, then the same per-function REVOKE EXECUTE ... FROM PUBLIC.
 -- ═════════════════════════════════════════════════════════════════════════════
 
 -- ─── 1. add_custom_schedule_phase (schedule) ─────────────────────────────────
