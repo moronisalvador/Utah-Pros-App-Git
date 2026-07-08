@@ -11,7 +11,8 @@
  *   a service address. It's how the app stays in sync with Encircle.
  *
  * ENDPOINT:
- *   POST /api/sync-encircle  — runs the sync (unauthenticated)
+ *   POST /api/sync-encircle  — runs the sync (requires a Bearer token; verified
+ *                              against Supabase auth)
  *   GET  /api/sync-encircle  — same, for quick browser testing (requires a
  *                              Bearer token; verified against Supabase auth)
  *
@@ -33,8 +34,9 @@
  *     on_conflict MUST name both columns or PostgREST fails with 42P10.
  *   - division is hard-coded to 'reconstruction'.
  *   - Contact dedup is by phone only — email-only contacts can still duplicate.
- *   - POST is unauthenticated; only GET runs requireAuth. City/state/zip are
- *     parsed heuristically from Encircle's single full_address string.
+ *   - Both POST and GET run requireAuth (DB-Foundation P1 closed the prior
+ *     unauthenticated POST hole). City/state/zip are parsed heuristically from
+ *     Encircle's single full_address string.
  * ════════════════════════════════════════════════
  */
 
@@ -258,6 +260,8 @@ async function doSync(request, env) {
 }
 
 export async function onRequestPost(context) {
+  const auth = await requireAuth(context.request, context.env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     return await doSync(context.request, context.env);
   } catch (e) {
