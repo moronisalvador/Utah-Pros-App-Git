@@ -41,8 +41,12 @@
 import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS } from '@/lib/navItems';
 
 // ─── SECTION: Helpers ───
-const VALID_CATEGORIES = ['page', 'tool', 'feature'];
-// Infer the DevTools grouping from the key prefix (page:/tool:/feature:).
+// 'tech' is a grouping-only category for field-tech flags whose KEYS still use
+// the `page:` prefix (e.g. page:tech_moisture) — it can't be inferred from the
+// prefix, so those entries set `category: 'tech'` explicitly below.
+const VALID_CATEGORIES = ['page', 'tool', 'feature', 'tech'];
+// Infer the DevTools grouping from the key prefix (page:/tool:/feature:). Note
+// 'tech' is never inferred (no `tech:` keys exist) — it's set explicitly.
 const categoryFor = (key) => {
   const prefix = String(key).split(':')[0];
   return VALID_CATEGORIES.includes(prefix) ? prefix : 'feature';
@@ -96,6 +100,36 @@ const EXPLICIT_FLAGS = [
     key: 'page:tech_job_hub',
     label: 'Tech Job Hub',
     description: 'Merged job + appointment field surface (Job Hub) at /tech/job/:jobId?appt=. Owner-only during Tech Mobile v2 M1; legacy appointment/job detail pages show for everyone else.',
+    enabled: false,
+  },
+  // ── Technician field-tool flags (Hydro / Phase 2) ────────────────────────────
+  // The Moisture, Equipment, and Rooms sections in TechAppointment.jsx are each
+  // gated by one of these. Their KEYS keep the `page:` prefix (unchanged — they're
+  // read by isFeatureEnabled('page:tech_*') across the tech app and live in the DB),
+  // but they carry `category: 'tech'` so DevTools groups them under "Technician"
+  // instead of scattering them into the generic "page" list. enabled:false is
+  // LOAD-BEARING: the live rows are seeded enabled:false + dev_only_user_id (owner)
+  // so each section is owner-only until rolled out; without the explicit false a
+  // re-registration (if a row were ever deleted) would seed it ON for every tech.
+  {
+    key: 'page:tech_moisture',
+    label: 'Tech: Moisture Readings (Hydro)',
+    description: 'Moisture readings section on the tech appointment screen — log psychrometric/moisture readings per room. Owner-only during rollout.',
+    category: 'tech',
+    enabled: false,
+  },
+  {
+    key: 'page:tech_equipment',
+    label: 'Tech: Equipment Placements',
+    description: 'Equipment placement section on the tech appointment screen — place and pull drying equipment (air movers, dehus). Owner-only during rollout.',
+    category: 'tech',
+    enabled: false,
+  },
+  {
+    key: 'page:tech_rooms',
+    label: 'Tech: Rooms & Photo Organization',
+    description: 'Room tagging on the tech appointment screen — organize photos and readings by room. Owner-only during rollout.',
+    category: 'tech',
     enabled: false,
   },
   // ── Admin Mobile — dark-launch flag (Phase F) ────────────────────────────────
