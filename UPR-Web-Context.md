@@ -100,6 +100,38 @@ system_events, get_dashboard_stats  — drift-captured (re-derived from live cat
                                       ~101 functions predate schema-as-code — documented backlog).
 ```
 
+### DB Foundation — Phase P2 SHIPPED (2026-07-08, storage lockdown stage 1)
+
+Storage.objects **policies only** — zero public-schema change (P3's domain), zero frontend edits, zero
+bucket-privacy flip on `job-files` (P8's). Applied + verified live via MCP; migration
+`20260708_dbf_p2_storage_lockdown.sql`. Test: `supabase/tests/db_foundation_storage_lockdown.test.js`
+(expired/absent-JWT offline-replay upload refusal; self-skips without creds).
+
+```
+-- Final storage.objects policy state after P2 (verified live):
+job-files:
+  job_files_select                  SELECT  public   — KEPT (public photo/PDF READ; §2 allowlist until P8)
+  anon_read_job_files               SELECT  anon     — KEPT (same allowlist entry)
+  job_files_authenticated_insert    INSERT  authenticated — NEW (replaces the dropped PUBLIC write path)
+  job_files_authenticated_delete    DELETE  authenticated — NEW
+message-attachments:
+  (ZERO policies — dead bucket fully locked; 0 code consumers, 21 orphaned objects)
+```
+
+**Why the authenticated re-grant (important, not in the original roadmap prose):** the dropped write/delete
+policies on `job-files` were scoped to `anon` + PUBLIC — there was **no** `authenticated`-only policy, so the
+PUBLIC policy was silently carrying logged-in techs. A pure drop broke real uploads (verified live:
+authenticated INSERT → 42501). P2 therefore **replaces** the anon/public write/delete with
+`authenticated`-scoped write/delete (database-standard §1 least-privilege floor), restoring the exact prior
+authenticated capability (INSERT + DELETE; there was never an UPDATE policy) while removing the anon/public
+hole. Net effect on a logged-in tech: none. The offline photo dispatcher (`Bearer ${db.apiKey}` = user JWT)
+is unaffected; only its anon-key fallback (expired/absent session) is now refused.
+
+**STAGED, awaiting owner OK (RED-tier — autonomy ledger):**
+`20260708_dbf_p2_message_attachments_purge.STAGED.sql` — flips `message-attachments` bucket to private
+(`public=false`) and deletes its 21 orphaned objects. Irreversible (delete) → held for owner approval; the
+`.STAGED.sql` suffix keeps it out of the applied set.
+
 ---
 
 ## Stack
