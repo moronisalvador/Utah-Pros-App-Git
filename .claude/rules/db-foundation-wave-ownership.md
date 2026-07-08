@@ -15,6 +15,14 @@ rollback scripts + git-revert.
 
 ## 1. Frozen in-wave — NOBODY in this initiative edits these
 
+**⚠️ Plan-of-record docs (CONSUMED, never authored or rewritten by a wave session):**
+`docs/db-foundation-roadmap.md`, `docs/db-foundation-dispatch.md`, this manifest, and
+`.claude/rules/database-standard.md`, plus the reviewer agents (`db-foundation-phase-reviewer`,
+`anon-grant-auditor`). A session updates its OWN phase's checkboxes/status, nothing else in these files.
+**If they are not on disk, your base is wrong — re-sync from `dev` (do the dispatch doc's Base Preflight);
+do NOT recreate them.** (Phase F branched from `main`, never saw them, and re-authored divergent copies —
+that must not recur.)
+
 **In-flight from OTHER initiatives (do not touch until they merge — see §8 deferred-hardening):**
 - Job Hub v2 (H2 open PR #322, H3 pending): `src/pages/tech/v2/TechJobHub.jsx`,
   `src/pages/tech/v2/hub/**`, `src/App.jsx` tech routes, `src/pages/tech/TechAppointment.jsx`,

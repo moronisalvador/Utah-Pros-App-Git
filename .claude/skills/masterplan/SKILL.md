@@ -179,7 +179,15 @@ owner says go.** If plan mode is active, exit via the approval flow.
    click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off).
    No block may reference any conversation. Blocks that cite Foundation's artifact names
    note the manifest + phase block are authoritative if names drift. State per wave that
-   its sessions may launch simultaneously.
+   its sessions may launch simultaneously. **Base-preflight (mandatory in the dispatch
+   preamble):** the harness may start a session's container from `main` or a stale commit,
+   NOT the `dev` tip that carries the plan — so every session's FIRST action is to re-base
+   onto latest `dev` (`git fetch origin dev && git checkout -B "$(git branch --show-current)"
+   origin/dev`) and verify the plan-of-record files (roadmap, ownership manifest, any new
+   rules/agents) are on disk; **if missing, the base is wrong — STOP and re-sync, never
+   recreate them.** Plan docs are CONSUMED, never re-authored by a wave session. (A phase
+   that skips this branches from `main`, re-authors divergent plan copies, and can wipe the
+   wave plan — a real incident.)
 5. **Agents**: reuse `upr-pattern-checker`, `crm-phase-reviewer`,
    `migration-safety-checker`, `consent-path-auditor`. Create a new agent ONLY for a
    job recurring across 3+ phases (frontmatter name/description/tools/model;

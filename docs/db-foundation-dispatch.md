@@ -11,6 +11,29 @@ assigned branch cut from `origin/dev`, and opens a PR into `dev` as a handoff �
 autonomy policy in `docs/db-foundation-roadmap.md`) merges. Sessions never click-merge, subscribe to,
 or babysit their PR.
 
+**⚠️ BASE PREFLIGHT — every session's FIRST action, before any other work (binding on every block below).**
+The harness may start your container from `main` or a stale commit, NOT from the `dev` tip that carries
+this plan — this is exactly how Phase F went wrong (it branched from `main`, never saw the plan, and
+re-authored divergent copies of the roadmap/manifest/rulebook that would have wiped the Wave 1 plan). So
+re-base onto latest `dev` first, then verify the plan is present:
+
+```bash
+git fetch origin dev
+git checkout -B "$(git branch --show-current)" origin/dev   # move your assigned branch onto latest dev
+# Verify the plan of record exists — if ANY is missing, your base is wrong: STOP and re-sync, do not proceed:
+ls .claude/rules/database-standard.md \
+   .claude/rules/db-foundation-wave-ownership.md \
+   docs/db-foundation-roadmap.md \
+   .claude/agents/db-foundation-phase-reviewer.md \
+   .claude/agents/anon-grant-auditor.md
+```
+
+These plan documents (`database-standard.md`, this dispatch doc, the roadmap, the ownership manifest) and
+the reviewer agents are **CONSUMED, never created or rewritten by a wave session.** If they aren't on disk,
+you are on the wrong base — do not recreate them; re-sync from `dev`. `dev` also carries F's shipped
+migrations (`supabase/migrations/20260708_dbf_*.sql`) — drift-capture, `mt_*` helpers, history tables,
+default-privileges revoke; build on them, don't re-derive them.
+
 **Preconditions:**
 - ① Wave 1 launches only after **F is merged into `dev`** (it ships the default-privileges revoke,
   `mt_*` helpers, history tables, and the reviewer/gate scaffolding every wave phase depends on).
