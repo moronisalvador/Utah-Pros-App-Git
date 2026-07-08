@@ -100,6 +100,42 @@ system_events, get_dashboard_stats  — drift-captured (re-derived from live cat
                                       ~101 functions predate schema-as-code — documented backlog).
 ```
 
+### DB Foundation — Phase P1 SHIPPED (2026-07-08, advisor quick wins)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` +
+`db-foundation-phase-reviewer` — all pass). Applied + verified live on the shared Supabase.
+Migration `supabase/migrations/20260708_dbf_p1_advisor_quick_wins.sql` (attribute/index-only).
+
+```
+-- search_path pinned (attribute-only, behavior-preserving — no body change)
+25 functions            — ALTER FUNCTION ... SET search_path = public (7 SECURITY DEFINER +
+                          18 SECURITY INVOKER triggers/helpers). Clears the 25
+                          function_search_path_mutable advisors (verified 25 → 0 live). Each body
+                          references only public objects / pg_catalog built-ins / qualified
+                          auth.uid(), so a public-pinned path resolves identically.
+-- duplicate index dropped
+job_notes               — dropped idx_job_notes_job_id; kept the identical job_notes_job_idx
+                          (both were non-unique btree(job_id)). UNIQUE + PK untouched.
+-- worker auth hole closed
+sync-encircle.js        — POST now runs requireAuth (mirrors the GET). Was unauthenticated (anyone
+                          with the URL could trigger a bulk Encircle→jobs import). Sole caller is the
+                          authenticated DevTools trigger; no cron depends on it (4 net.http_post cron
+                          jobs target other endpoints). Test-first: functions/api/sync-encircle.test.js.
+
+-- DEFERRED (documented, NOT done — out of P1's additive/no-DROP scope)
+pg_net out of public    — ALTER EXTENSION pg_net SET SCHEMA extensions ERRORS live (pg_net is
+                          non-relocatable). Only fix is a destructive DROP/CREATE EXTENSION (drops
+                          net.http_request_queue + momentarily breaks the 4 net.* cron jobs) →
+                          separate reviewed RED-tier change. extension_in_public advisor stays at 1.
+leaked-password protect — Supabase Dashboard → Auth toggle (no SQL surface). Owner action pending;
+                          auth_leaked_password_protection advisor stays at 1.
+```
+
+> **Drift note:** F already snapshotted its baseline before P1 applied (F shipped first, ahead of
+> the original Wave-0 "P1-before-F-snapshot" ordering), so these 25 `SET search_path` attribute
+> changes will register as drift against F's baseline until the baseline is refreshed. Expected +
+> benign — the drift-check is a verification aid, not a gate.
+
 ---
 
 ## Stack
