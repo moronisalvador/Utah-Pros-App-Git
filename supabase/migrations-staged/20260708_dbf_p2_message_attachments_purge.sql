@@ -1,0 +1,55 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION (STAGED — DO NOT APPLY WITHOUT OWNER OK):
+--   supabase/migrations-staged/20260708_dbf_p2_message_attachments_purge.sql
+-- DB-Foundation Phase P2 — RED-tier tail (autonomy ledger)
+-- ════════════════════════════════════════════════
+--
+-- ⛔ THIS MIGRATION IS STAGED, NOT APPLIED. ⛔
+--   It lives in `supabase/migrations-staged/`, OUTSIDE `supabase/migrations/`, so no
+--   Supabase tooling sweeps it — `supabase db push`/`reset` and the MCP flow only ever
+--   look at `supabase/migrations/*.sql`. (A `.STAGED.sql` suffix INSIDE the real
+--   migrations dir would NOT be excluded — the CLI globs `*.sql` — which is why this
+--   file was moved out of the dir entirely.) It contains two RED-tier actions from the
+--   DB-Foundation autonomy ledger — a storage bucket privacy flip and an irreversible
+--   data DELETE — which "stage the migration + rollback + tests and wait for the
+--   owner's OK" (wave-ownership §7 / roadmap "Autonomy ledger").
+--   To apply after owner approval: run this SQL via Supabase MCP `apply_migration`
+--   (or move the file into `supabase/migrations/`). Pre-apply guard test:
+--   supabase/tests/db_foundation_p2_purge_precheck.test.js.
+--
+-- WHAT THIS DOES (plain language, once approved):
+--   1. Flips the dead `message-attachments` bucket from public to PRIVATE
+--      (buckets.public = false). Its 5 access policies were already dropped by
+--      20260708_dbf_p2_storage_lockdown.sql, so this just removes the last public
+--      READ path (public-bucket URLs stop resolving).
+--   2. Deletes the 21 orphaned objects that live in that bucket.
+--
+-- WHY IT IS SAFE:
+--   `message-attachments` has ZERO code consumers (full-schema scan / roadmap R1 —
+--   only docs mention the string). The 21 objects are orphaned (no DB row references
+--   them). Nothing in the app reads or writes this bucket. But the flip + delete are
+--   irreversible-in-practice (the delete cannot be undone; re-uploading would need
+--   the originals), which is exactly why the ledger classifies them RED.
+--
+-- PRE-APPLY CHECK (run first, expect count = 21, all unreferenced):
+--   SELECT count(*) FROM storage.objects WHERE bucket_id = 'message-attachments';
+--
+-- NOTE ON BACKING FILES:
+--   Deleting rows from storage.objects removes them from the API surface. To also
+--   reclaim the S3 backing blobs cleanly the owner may prefer the Storage API
+--   (dashboard "empty bucket" or a service-role delete). Either path leaves no
+--   app-visible object.
+--
+-- ROLLBACK:
+--   The privacy flip is reversible:
+--     UPDATE storage.buckets SET public = true WHERE id = 'message-attachments';
+--   The DELETE is NOT reversible (objects are gone). This is why it waits for the
+--   owner. Recommended: archive/export the 21 objects before applying, per the
+--   roadmap's "archive then delete" option.
+-- ════════════════════════════════════════════════
+
+-- 1. Bucket privacy flip (message-attachments → private).
+UPDATE storage.buckets SET public = false WHERE id = 'message-attachments';
+
+-- 2. Delete the 21 orphaned objects.
+DELETE FROM storage.objects WHERE bucket_id = 'message-attachments';

@@ -199,11 +199,11 @@ export default function SignPage() {
         setData(d);
         setStatus('ready');
         if (d.doc_type) {
-          fetch(
-            `${SUPABASE_URL}/rest/v1/document_templates?doc_type=eq.${encodeURIComponent(d.doc_type)}&order=sort_order.asc`,
-            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-          )
-            .then(r => r.json())
+          // Token-gated template read (DB-Foundation Phase P3 anon closure): the RPC
+          // resolves this request's doc_type from the signing token server-side and
+          // returns only that document type's sections — replacing the former direct
+          // anon read of the whole document_templates table.
+          rpc('get_sign_document_templates', { p_token: token })
             .then(rows => { if (Array.isArray(rows) && rows.length > 0) setTemplates(rows); })
             .catch(() => {});
         }

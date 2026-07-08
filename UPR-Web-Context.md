@@ -33,6 +33,373 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 ---
 
+## DB Foundation initiative — plan of record (planning session, 2026-07-08)
+
+A masterplan planning session produced the **DB Foundation** plan of record: `docs/db-foundation-roadmap.md`
++ `docs/db-foundation-dispatch.md` + `.claude/rules/db-foundation-wave-ownership.md`, plus the new standing
+rulebook `.claude/rules/database-standard.md`, three reviewer agents (`db-foundation-phase-reviewer`,
+`anon-grant-auditor`, and the amended `migration-safety-checker`), and least-privilege amendments to
+`CLAUDE.md` (Rule 7 + the PostgREST/RLS paragraph). **No schema shipped in the planning session** — the
+build phases (F, P1–P8, hotfix H0) run next, gated by the roadmap's GREEN/YELLOW/RED autonomy ledger.
+
+**Key live findings (verified against `glsmljpabrwonfiltiqm` 2026-07-08, not memory):** 198/220 public
+policies are `USING(true)` and 163 grant `anon` (incl. `payments`/`invoices`/`employees` write); ~329
+`SECURITY DEFINER` functions are anon-executable; both storage buckets are public with anon write/delete
+(`message-attachments` has 21 orphaned objects + zero code consumers); 290 live migrations vs 133 repo
+files (`system_events`, `get_dashboard_stats` live-only); live duplicate external-IDs
+(`invoices.qbo_invoice_id` 7 dup groups, etc.); 108 unindexed FKs; 25 mutable `search_path`. **Secrets:
+NO exposure** — every API key/OAuth token is in a deny-all RLS table (anon+auth read 0 rows), plaintext at
+rest (Vault empty). Two live fixes queued: `set_billing_setting` lacks an admin gate (anon-callable
+billing-config write), and Postgres default privileges auto-grant `anon` on every new object (Foundation
+ships `ALTER DEFAULT PRIVILEGES ... REVOKE ... FROM anon`). The initiative is additive/policy/index-only
+with a **frontend-contract freeze** — no column moves, no RPC signature/return-shape changes (the sole FE
+location change is P8's photo URLs public→signed, isolated as a serial tail). Full details + the challenge
+report (2 draft claims refuted) live in the roadmap. Standing DB rules now in
+`.claude/rules/database-standard.md`.
+
+### DB Foundation — Phase F SHIPPED (2026-07-08, security/audit/drift hardening)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` + `db-foundation-phase-reviewer`)
+before landing; the review found + closed two live anon exposures F had reproduced from old drift (below).
+All applied + verified live on the shared Supabase.
+
+```
+-- New tables (RLS on, authenticated-read policy, anon revoked; SECURITY DEFINER triggers write them)
+claim_status_history(id, claim_id→claims, from_status, to_status, changed_at)
+invoice_status_history(id, invoice_id→invoices, from_status, to_status, changed_at)
+     — append-only audit of every claims/invoices status change; seeded a current-state baseline row
+       per existing parent (130 claims / 80 invoices). Fed by AFTER UPDATE OF status triggers that fire
+       ONLY WHEN (OLD.status IS DISTINCT FROM NEW.status) and are EXCEPTION-wrapped (can never roll back
+       the parent financial write).
+
+-- New RPCs (authenticated + service_role ONLY — never anon)
+mt_date(timestamptz) → date  — America/Denver calendar date of a moment. IMMUTABLE (index/generated safe).
+mt_today() → date            — today's Denver date. STABLE. Bucket days/weeks with these, never UTC.
+
+-- Security hardening
+set_billing_setting(p_key,p_value)  — NOW admin-gated (PERFORM p9_assert_admin() first stmt); was
+                                      anon-callable with no caller check. Signature frozen; anon revoked.
+                                      (canEditBilling's 'manager' string matches no live role → effective
+                                      behavior already admin-only, so no user regression.)
+ALTER DEFAULT PRIVILEGES            — REVOKE anon on new tables/sequences/functions. NOTE: managed Supabase
+                                      re-applies built-in EXECUTE-TO-PUBLIC on new functions at
+                                      ddl_command_end, so EVERY new function migration MUST also
+                                      `REVOKE EXECUTE ... FROM PUBLIC, anon` per-object (database-standard §1).
+Secret-store deny-all               — integration_credentials / integration_config / user_google_accounts
+                                      stay RLS-enabled with ZERO policies (deny anon AND authenticated).
+                                      Tripwire: supabase/tests/db_foundation_secret_exposure.{sql,test.js}.
+
+-- Drift reconciliation
+system_events, get_dashboard_stats  — drift-captured (re-derived from live catalog, idempotent).
+                                      Review follow-up (20260708_dbf_revoke_anon_dashboard_and_events):
+                                      revoked anon EXECUTE on get_dashboard_stats (KPI counts, no anon
+                                      caller) and dropped system_events' anon policies+grants entirely →
+                                      RLS-on deny-all (service-role workers + definer RPCs only; the
+                                      audit log is no longer world-readable). Baseline db/baseline/ +
+                                      scripts/db-drift-check.{sql,mjs} diff live vs repo (~73 tables /
+                                      ~101 functions predate schema-as-code — documented backlog).
+```
+
+### DB Foundation — Phase P1 SHIPPED (2026-07-08, advisor quick wins)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` +
+`db-foundation-phase-reviewer` — all pass). Applied + verified live on the shared Supabase.
+Migration `supabase/migrations/20260708_dbf_p1_advisor_quick_wins.sql` (attribute/index-only).
+
+```
+-- search_path pinned (attribute-only, behavior-preserving — no body change)
+25 functions            — ALTER FUNCTION ... SET search_path = public (7 SECURITY DEFINER +
+                          18 SECURITY INVOKER triggers/helpers). Clears the 25
+                          function_search_path_mutable advisors (verified 25 → 0 live). Each body
+                          references only public objects / pg_catalog built-ins / qualified
+                          auth.uid(), so a public-pinned path resolves identically.
+-- duplicate index dropped
+job_notes               — dropped idx_job_notes_job_id; kept the identical job_notes_job_idx
+                          (both were non-unique btree(job_id)). UNIQUE + PK untouched.
+-- worker auth hole closed
+sync-encircle.js        — POST now runs requireAuth (mirrors the GET). Was unauthenticated (anyone
+                          with the URL could trigger a bulk Encircle→jobs import). Sole caller is the
+                          authenticated DevTools trigger; no cron depends on it (4 net.http_post cron
+                          jobs target other endpoints). Test-first: functions/api/sync-encircle.test.js.
+
+-- DEFERRED (documented, NOT done — out of P1's additive/no-DROP scope)
+pg_net out of public    — ALTER EXTENSION pg_net SET SCHEMA extensions ERRORS live (pg_net is
+                          non-relocatable). Only fix is a destructive DROP/CREATE EXTENSION (drops
+                          net.http_request_queue + momentarily breaks the 4 net.* cron jobs) →
+                          separate reviewed RED-tier change. extension_in_public advisor stays at 1.
+leaked-password protect — Supabase Dashboard → Auth toggle (no SQL surface). Owner action pending;
+                          auth_leaked_password_protection advisor stays at 1.
+```
+
+> **Drift note:** F already snapshotted its baseline before P1 applied (F shipped first, ahead of
+> the original Wave-0 "P1-before-F-snapshot" ordering), so these 25 `SET search_path` attribute
+> changes will register as drift against F's baseline until the baseline is refreshed. Expected +
+> benign — the drift-check is a verification aid, not a gate.
+
+### DB Foundation — Phase P2 SHIPPED (2026-07-08, storage lockdown stage 1)
+
+Storage.objects **policies only** — zero public-schema change (P3's domain), zero frontend edits, zero
+bucket-privacy flip on `job-files` (P8's). Applied + verified live via MCP; migration
+`20260708_dbf_p2_storage_lockdown.sql`. Test: `supabase/tests/db_foundation_storage_lockdown.test.js`
+(expired/absent-JWT offline-replay upload refusal; self-skips without creds).
+
+```
+-- Final storage.objects policy state after P2 (verified live):
+job-files:
+  job_files_select                  SELECT  public   — KEPT (public photo/PDF READ; §2 allowlist until P8)
+  anon_read_job_files               SELECT  anon     — KEPT (same allowlist entry)
+  job_files_authenticated_insert    INSERT  authenticated — NEW (replaces the dropped PUBLIC write path)
+  job_files_authenticated_delete    DELETE  authenticated — NEW
+message-attachments:
+  (ZERO policies — dead bucket fully locked; 0 code consumers, 21 orphaned objects)
+```
+
+**Why the authenticated re-grant (important, not in the original roadmap prose):** the dropped write/delete
+policies on `job-files` were scoped to `anon` + PUBLIC — there was **no** `authenticated`-only policy, so the
+PUBLIC policy was silently carrying logged-in techs. A pure drop broke real uploads (verified live:
+authenticated INSERT → 42501). P2 therefore **replaces** the anon/public write/delete with
+`authenticated`-scoped write/delete (database-standard §1 least-privilege floor), restoring the exact prior
+authenticated capability (INSERT + DELETE; there was never an UPDATE policy) while removing the anon/public
+hole. Net effect on a logged-in tech: none. The offline photo dispatcher (`Bearer ${db.apiKey}` = user JWT)
+is unaffected; only its anon-key fallback (expired/absent session) is now refused.
+
+**STAGED, awaiting owner OK (RED-tier — autonomy ledger):**
+`supabase/migrations-staged/20260708_dbf_p2_message_attachments_purge.sql` — flips `message-attachments`
+bucket to private (`public=false`) and deletes its 21 orphaned objects. Irreversible (delete) → held for
+owner approval. It lives OUTSIDE `supabase/migrations/` so no `supabase db push`/`reset` or MCP apply
+sweeps it (a `.STAGED.sql` suffix inside the dir would NOT be excluded — the CLI globs `*.sql`). Pre-apply
+guard: `supabase/tests/db_foundation_p2_purge_precheck.test.js`.
+
+### DB Foundation — Phase P3 anon closure (2026-07-08, ✅ APPLIED live 2026-07-08)
+
+**APPLIED + verified live** (owner-approved). As the anon role: `payments`/`invoices` now read **0 rows**
+(RLS-deny; anon table grants remain but no policy applies), `employees` still readable (login bootstrap,
+allowlisted). Anon-executable public functions dropped to exactly the **6 allowlist** RPCs. Realtime intact
+(`notifications` authenticated policy present). Applied as: `anon_policy_closure` verbatim; `anon_rpc_revoke`
+via an equivalent catalog-driven revoke (same reviewed intent — revoke PUBLIC+anon on all-but-6-allowlist;
+end state verified = 6). **TWO follow-ups still open:**
+- **`document_templates` temp anon-read bridge** (`20260708_dbf_p3_document_templates_anon_bridge.sql`) keeps
+  prod's old SignPage working. **DROP it after the `dev→main` release** ships the RPC-based SignPage to prod:
+  `DROP POLICY "temp anon read document_templates (until prod SignPage release)" ON public.document_templates;`
+- **P2 purge:** `message-attachments` is flipped **private** (applied), but its 21 orphaned objects are NOT
+  deleted — Supabase's `storage.protect_delete()` blocks SQL deletes; remove them via the Storage dashboard if
+  desired (harmless in a now-private bucket). The staged SQL DELETE cannot run and should be treated as a no-op.
+
+
+
+Closes the anonymous (`anon`) browser-role exposure (roadmap finding S1). The app runs as
+`authenticated` (real Supabase JWT — `AuthContext.jsx`); workers as `service_role`; so scoping
+public policies + RPC grants to those roles regresses nothing. Generated from the LIVE catalog
+(161 anon policies / 85 tables; 327 anon-executable functions), MINUS the `database-standard.md`
+§2 allowlist, MINUS the ownership-manifest §8 deferred-hardening tables.
+
+```
+-- Migration A — ADDITIVE, applied (code-first). 20260708_dbf_p3_sign_document_templates_rpc.sql
+get_sign_document_templates(p_token text) → SETOF document_templates  — SECURITY DEFINER, token-gated.
+     Replaces SignPage.jsx's direct anon read of the whole document_templates table: resolves the
+     doc_type from a valid sign_requests.token and returns only that type's sections (bogus token →
+     0 rows). anon EXECUTE kept (§2 allowlist: public e-sign). SignPage.jsx now calls this RPC.
+
+-- Migration B — RED, STAGED. 20260708_dbf_p3_anon_policy_closure.sql
+Recreates 126 public policies (66 tables) dropping anon → TO authenticated (USING/WITH CHECK
+     unchanged, incl. the `(NOT is_crm_partner(auth.uid()))` predicates). nav_permissions narrowed
+     (anon ALL → anon SELECT, for devLogin bootstrap). notifications_select ALTERed TO authenticated
+     (never dropped — realtime + reads depend on it). Idempotent (DROP POLICY IF EXISTS), alphabetical.
+
+-- Migration C — RED, STAGED. 20260708_dbf_p3_anon_rpc_revoke.sql
+REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants — anon ∈ PUBLIC;
+     revoking anon alone leaves the PUBLIC grant, per F's managed-Supabase note) + re-GRANT
+     authenticated, service_role (belt-and-suspenders). Rollback = re-GRANT anon (commented in-file).
+
+-- KEPT anon (§2 allowlist): RPCs get_feature_flags, get_employee_page_access, get_crm_build_progress,
+     upsert_lead_from_form, get_sign_request_by_token, get_sign_document_templates; table reads on
+     employees / feature_flags / employee_page_access / nav_permissions (login+devLogin bootstrap).
+-- DEFERRED (manifest §8 — anon LEFT until the owning in-flight phase merges): messages, conversations,
+     conversation_participants, email_campaigns/recipients/exclusions, email_suppressions (omni);
+     crm_automations, crm_automation_runs, jobs, job_phase_history (5-Ops); appointments, claims,
+     contacts (schedule); automation_settings (CRM 4b). 30 anon policies stay this phase.
+-- Gate: supabase/tests/db_foundation_p3_anon_closure.{sql,test.js} — asserts zero anon outside the
+     allowlist (∪ deferred) post-apply. Supersedes the unapplied hardening migration in PR #224.
+```
+
+### DB Foundation — Phase P5 covering indexes (2026-07-08, half 1 shipped; DROP half deferred)
+
+Postgres does **not** auto-index the referencing side of a foreign key, so FK joins/lookups and
+parent-DELETE integrity checks fall back to sequential scans. The live audit found **108** unindexed
+FKs. P5's covering-index half adds indexes to a deliberately **tight hot-path subset (7)** — the rest
+were excluded on principle, not overlooked:
+
+```
+-- APPLIED + VERIFIED LIVE (all indisvalid). 20260708_dbf_p5_fk_covering_indexes.sql (YELLOW, additive)
+idx_jobs_lead_tech_id                     jobs(lead_tech_id)               -- filter jobs by lead tech (dispatch/schedule)
+idx_invoices_estimate_id                  invoices(estimate_id)            -- estimate → invoice link (billing)
+idx_estimates_converted_invoice_id        estimates(converted_invoice_id)  -- estimate → converted invoice (billing)
+idx_job_documents_sign_request_id         job_documents(sign_request_id)   -- docs for an e-sign request (45k+ seq scans/table)
+idx_sign_requests_contact_id              sign_requests(contact_id)        -- sign requests for a contact (e-sign)
+idx_job_time_entries_continued_from       job_time_entries(continued_from) -- supersede/continuation clock chain (tech clock)
+idx_conversation_participants_contact_id  conversation_participants(contact_id) -- inbound SMS resolves conversation by participant contact_id
+
+-- EXCLUDED from the CREATE set (not hot-path):
+--   • employee audit FKs (created_by/updated_by/recorded_by/entered_by/approved_by/…) — never filtered,
+--     parent (employees) is deactivated not DELETEd → index only taxes writes.
+--   • zero-row flag-gated crm_*/form_*/sequence_* tables (page:crm closed) — no active read path yet.
+-- Touches NONE of P4's external-ID columns (all 7 are internal uuid FKs). Rollback = 7 DROP INDEX (in-file header).
+
+-- DEFERRED — DROP-unused/duplicate half. Blocked on P6 merge (no open PR yet): needs P6's view/RPC
+--   definitions to build the exclusion list + a fresh idx_scan re-verify; RED-tier (owner OK). Ships as
+--   a separate revert-ready migration (CREATE statements in its header) once P6 lands.
+```
+### DB Foundation — Phase P7 docs & onboarding (2026-07-08, shipped)
+
+Docs + generator only — zero schema, zero `src/` page edits. Ships:
+
+- `docs/database/how-the-data-model-works.md` — plain-English guide (invoicing-guide style: one
+  ASCII diagram, who-writes-what table) that **links into this file's own sections**, never copies
+  the schema (Rule 9). Carries a header disclaiming schema authority — this file wins on conflict.
+- `docs/database/glossary.md` — RLS/policy/anon/authenticated/SECURITY DEFINER/additive-only/etc.
+- `docs/database/adding-a-table-rpc-or-policy.md` — the practical, in-order checklist companion to
+  `database-standard.md` (the standing rules) and the `db-migration` skill (the guided build).
+- `README.md` refresh — points at `CLAUDE.md`/this file instead of hand-listing routes/pages (the
+  prior README's 10-route/page list was already stale before this phase).
+- `scripts/db-docs-gen.sql` (pure catalog SELECT — no DDL, no app-table reads, safe with a read-only
+  role) + `scripts/db-docs-gen.mjs` (transforms a snapshot file into markdown; the script itself
+  never holds DB credentials of any kind) → `docs/generated/schema-overview.md` +
+  `docs/generated/rpc-inventory.md`, each with a "regenerate, don't edit" banner. Framed as a
+  drift-verification aid (flags any table/function with an `anon` grant, for a quick glance against
+  `database-standard.md` §2's allowlist), never a second schema source. Distinct from Phase F's
+  `db/baseline/` (a frozen comparison snapshot `db-drift-check.mjs` diffs against) — this generator
+  never writes that directory; its own output is always "what does live look like right now."
+  Regenerated 2026-07-08 against the live catalog: 127 public tables, 337 public functions.
+- `.claude/rules/documentation-standard.md` — new "SQL migration header" addendum formalizing the
+  `MIGRATION:`/`Phase:`/`WHAT THIS DOES`/`ADDITIVE-ONLY`/`ROLLBACK` header pattern Phase F/P1's
+  migrations already established, satisfying `database-standard.md` §6's rollback requirement.
+
+---
+
+### DB Foundation — Phase P4 data integrity (2026-07-08, ✅ YELLOW + RED both APPLIED)
+
+**RED repair APPLIED + verified live 2026-07-08** (owner-approved "get everything done safely"): NULLed the
+non-canonical external IDs on 4 duplicate claims + 1 duplicate contact (canonical rows — claim 4018951,
+contact 531 — kept, verified), then added partial-UNIQUE on `claims.encircle_claim_id` +
+`contacts.qbo_customer_id` (0 dup groups remain) and dropped the superseded `claims_encircle_claim_id_idx`.
+Exact-inverse rollback in the migration headers. **Owner follow-up (NOT auto-touched):** invoice `4274` is a
+genuine QBO discrepancy (neither row nor their sum matches the QBO total) — needs a QuickBooks look.
+
+Constraints + pre-check data repair (roadmap findings 8/9). Full evidence:
+`docs/db-foundation-p4-orphan-report.md`. Avoids `crm_automations` (5-Ops owns an ALTER there);
+apply-window serialized vs P3 (both strong-lock claims/contacts). Gate:
+`supabase/tests/db_foundation_p4_data_integrity.{sql,test.js}` (adaptive — green pre- and post-repair).
+
+**Headline:** the `invoices.qbo_invoice_id` (7) / `payments.qbo_payment_id` (5) "duplicates" are NOT
+dedup targets — the QBO document `TotalAmt` equals the SUM of the two UPR rows (one carrier
+invoice/payment split across two jobs = **combined billing**; both rows canonical, distinct `job_id`).
+Left unconstrained/unrepaired. `estimates.qbo_estimate_id` excluded for the same caution.
+`invoices.qbo_invoice_id=4274` is the one true anomaly (neither row nor sum matches QBO) → owner/QBO
+review, not auto-repaired. `jobs.encircle_claim_id` (67 groups) is legitimately many-jobs-per-claim
+(already `UNIQUE(encircle_claim_id, division)`).
+
+```
+-- APPLIED LIVE (YELLOW / additive):
+20260708_dbf_p4_missing_fks.sql            notifications.job_id → jobs(id) (ON DELETE SET NULL),
+                                              NOT VALID → VALIDATE, 0 orphans. Only genuine missing FK.
+20260708_dbf_p4_check_constraints.sql      job_time_entries hours/total_paused_minutes/travel_minutes
+                                              each (IS NULL OR >= 0), NOT VALID → VALIDATE. Protects
+                                              labor-cost math. (Other status/amount CHECKs already exist.)
+20260708_dbf_p4_external_id_unique_clean.sql  partial UNIQUE on forms.encircle_note_id +
+                                              google_calendar_links.google_event_id (dup-free 1:1 keys).
+                                              Most import keys already UNIQUE (callrail_id, encircle_media_id,
+                                              encircle_note_id (job_notes), encircle_room_id, twilio_sid,
+                                              stripe_charge_id) — prior migrations.
+
+-- STAGED, RED — owner-gated (apply via MCP after OK, NOT overlapping P3's window):
+20260708_dbf_p4_external_id_repair.sql     NULLs external-ID on 4 non-canonical claims + 1 stray contact
+                                              only (never money/status/canonical). Canonical determined
+                                              live: claims via Encircle contractor_identifier (all 4 →
+                                              the CLM-2606-* row); contact 531 → the row with the claim+email.
+                                              In-tx assertions; exact-inverse rollback in-file.
+20260708_dbf_p4_external_id_unique_repaired.sql  partial UNIQUE on claims.encircle_claim_id +
+                                              contacts.qbo_customer_id AFTER repair (ordering = safety
+                                              interlock); DROPs superseded plain claims_encircle_claim_id_idx.
+-- Owner follow-ups (out of P4's external-ID scope): merge same-claim pair 4077213; merge duplicate
+     contact 531 (fold correct +1 801 phone into canonical, delete stray); investigate invoice 4274;
+     investigate rooms.client_id (4 UUIDs matching no contacts/jobs/claims).
+### DB Foundation — Phase P6 SHIPPED (2026-07-08, reporting foundation)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` +
+`db-foundation-phase-reviewer`). Applied + verified live on the shared Supabase. Two migrations,
+both additive/body-only — nothing the deployed frontend reads was renamed, dropped, or reshaped.
+
+```
+-- ① Reporting-views layer  (20260708_dbf_p6_reporting_views.sql) — the first TRACKED views (was 0).
+--    All WITH (security_invoker = true) → run as the QUERYING user (RLS on base tables applies, no
+--    owner-bypass); REVOKE ALL FROM PUBLIC, anon; GRANT SELECT TO authenticated, service_role only.
+--    Faithful 1:1 projections (no row filtering) + convenience columns future dashboards kept
+--    re-deriving. NO consumer yet — pure additive scaffolding. mt_date()/mt_today() supply MT days.
+rv_jobs         — one row per job: division/phase/status/source (text), value + cost columns, a rolled
+                  total_cost (labor+material+equipment+sub+other), created_day/converted_day (mt_date).
+rv_invoices     — AR projection: totals, balance_due, insurance/homeowner split, is_qbo_synced,
+                  created_day, days_outstanding = mt_today()−invoice_date when unpaid & balance>0.
+rv_payments     — amount, method, payer, stripe_fee, refunded_amount, created_day, is_qbo_synced.
+rv_leads        — source/medium/campaign, lead_status/score, is_answered_call / is_missed_call (call +
+                  duration_sec), spam_flag, occurred_day/created_day (mt_date of occurred_at∥created_at).
+rv_time_entries — hours, travel_minutes, rate, total_cost, computed_labor_cost =
+                  (travel_minutes/60 + hours)×rate (tech-mobile-ux model), created_day.
+    Guard: supabase/tests/db_foundation_p6_reporting_views.test.js — asserts anon is DENIED on each view.
+
+-- ② Timezone RPC body-replaces  (20260708_dbf_p6_timezone_rpc_bodies.sql) — one convention: MT (§7).
+--    Session TZ on this DB is UTC (no role/db override), so naive CURRENT_DATE returned the UTC day —
+--    wrong every evening for a Denver business. BODY-ONLY swap CURRENT_DATE → public.mt_today() in 8
+--    live RPCs; signatures + RETURNS shapes byte-identical (drift-dumped via pg_get_functiondef first —
+--    3 were never in the repo). CREATE OR REPLACE preserves each function's existing grants (anon kept —
+--    P3 owns anon closure, not P6); each also `REVOKE EXECUTE ... FROM PUBLIC` (managed-Supabase trap).
+    add_custom_schedule_phase · get_assigned_tasks* · get_call_volume† · get_conversion_trend† ·
+    get_my_appointments_today* · get_payroll_summary · get_stalled_materials_for_employee* ·
+    get_timesheet_entries.
+    † CRM Phase-9 frozen · * tech-v2 frozen → body-only replace under a DISCLOSED rule amendment
+      (manifest §3); their existing backward-compat tests (crm_phase9_intelligence.test.js,
+      tech_v2_feed_upgrades.test.js) assert RETURN SHAPE only and stay green.
+    Guard: supabase/tests/db_foundation_p6_timezone_rpcs.test.js — per-RPC return-shape guard.
+```
+
+**event_type registry (system-wide audit + lifecycle vocabulary).** Two complementary layers record
+"what happened / how did state move":
+
+```
+1) system_events — the general audit log (drift-captured by F; RLS-on deny-all, written by
+   SECURITY DEFINER RPCs / service-role workers via log_system_event). Columns: event_type,
+   entity_type, entity_id, actor_id, job_id, payload(jsonb), created_at.
+   • entity_type ∈ { claim, contact, crm_import_batch, crm_task, document, email_campaign,
+     email_suppression, form_definition, inbound_lead, job, job_time_entry, lead_attribution,
+     message, note, sign_request }.
+   • event_type naming: core domain events use dotted `domain.action`; CRM events use snake
+     `crm_*`. Current registry (extend deliberately — keep the prefix convention):
+       claim.*  : claim.created, claim.status_changed, claim.carrier_changed, claim.contact_changed
+       job.*    : job.created, job.status_changed, job.phase_changed, job.division_changed,
+                  job.approved_value_changed, job.invoiced_value_changed, job.payment_received
+       document.* : document.uploaded, document.deleted        note.* : note.added
+       esign.*  : esign.signed        message.* : message.outbound        contact.* : contact.merged
+       clock.*  : clock.abandoned
+       time_entry.* : time_entry.admin_clocked_out, time_entry.admin_updated,
+                      time_entry.auto_closed_stale, time_entry.deleted
+       crm_*    : crm_lead_created[_manual], crm_lead_updated, crm_lead_promoted, crm_lead_scored,
+                  crm_lead_attributed, crm_lead_caller_named, crm_lead_stage_changed,
+                  crm_lead_status_updated, crm_lead_details_updated, crm_contact_owner_set,
+                  crm_contact_lifecycle_set, crm_contacts_imported, crm_task_created,
+                  crm_task_status_changed, crm_call_transcribed, crm_form_saved/published/submitted,
+                  crm_email_campaign_created/updated/deleted/queued/sent/exclusions_set,
+                  crm_email_unsubscribed.
+   NB: get_claims_list's last_activity_at deliberately EXCLUDES `%.created` events (bulk-import noise).
+
+2) Transition-history tables — typed, per-entity movement logs (NOT in system_events):
+     claim_status_history(from_status,to_status,changed_at)      — F (AFTER UPDATE OF status trigger)
+     invoice_status_history(from_status,to_status,changed_at)    — F (same pattern)
+     job_phase_history(from_phase,to_phase,changed_by,changed_at,duration_hours)   — pre-existing
+     lead_stage_history(stage_id,from_stage_id,lost_reason,moved_by,moved_at)      — CRM
+   These are the backfill-proof source for funnel/aging/velocity reporting the rv_* layer builds on.
+```
+
+---
+
 ## Stack
 - **Frontend:** React 19 + Vite
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
@@ -2718,6 +3085,48 @@ owner-only gates use two different email strings for the same person. Not a bug 
 knowing before assuming they're interchangeable.
 
 ---
+
+## Property Meld — restoration meld intake (Jul 7 2026)
+We are a **vendor** in our property-manager client's Property Meld (no API for vendors), but we get
+an email for every "Meld" (work order). This feature reads those emails and surfaces the
+**restoration** ones in UPR. Carpet-cleaning Melds go to a *different business* and are excluded.
+
+- **Classification is by Property Meld vendor account id** (in the email URLs), NOT the job title —
+  titles mislead ("Carpet repair" came via cleaning; "Clean Mold Under Stairs" is restoration).
+  `83074` = Utah Pros Restoration (**ingest**); `51865` = Utah Pros Carpet Cleaning (**exclude**).
+  "A2Z Properties" and "Presidio Property Management" are the SAME company (a rebrand) — brand name
+  is ignored on purpose.
+- **Parser lib:** `functions/lib/property-meld.js` — `parseMeldEmail()` (assigned/canceled/message/
+  appointment/daily-summary), `classifyMeldBusiness()`, `shouldIngestMeld()`, `meldToUpsertParams()`.
+  Pure, no I/O; 28 unit tests from real inbox emails (`property-meld.test.js`).
+- **Table `property_meld_melds`** (RLS + policy at creation): one row per Meld, de-dup key
+  `meld_number` (UNIQUE — present in every email type; the internal numeric id is absent on cancels).
+  `state` ∈ open|canceled|imported|archived; `imported_job_id` → jobs(id) for the future import.
+- **RPCs:** `upsert_property_meld_meld(...)` (idempotent by meld_number; assign/message/cancel all
+  update the same row, later events never wipe earlier fields, cancel closes it, imported never
+  reverts) and `get_property_meld_melds(p_include_closed default false)` → SETOF json (emergencies
+  first, newest first). Both SECURITY DEFINER + GRANT to anon, authenticated.
+- **Page:** `/melds` (`src/pages/Melds.jsx`, owner-only via `MoroniRoute`, no nav link yet) — reads
+  `get_property_meld_melds`; cards show type/emergency badge/address/status/due + a Property Meld
+  deep link. **Email is lossy:** photos & inspection reports are portal-only, long descriptions
+  truncate ("See More") → `description_clipped`; the portal link is how a tech reaches the rest.
+- **Backfilled** 3 verified-real restoration melds (Reconstruction TFTBCQP, Mold check TH1BCY1,
+  EMERGENCY Active Flooding T3YA1KM — all account 83074).
+- **Live ingestion worker:** `POST /api/inbound-meld` (`functions/api/inbound-meld.js`) — a forwarder
+  sends Property Meld emails here; it parses, keeps restoration only, upserts idempotently, and on a
+  meld's FIRST assignment pushes the owner. **Auth:** shared secret header `x-meld-secret` =
+  `INBOUND_MELD_SECRET` (set in BOTH Cloudflare env sets). **Transport setup:**
+  `docs/property-meld-ingestion.md` (recommended: a Gmail Apps Script forwarding
+  `from:msg.propertymeld.com`; Cloudflare Email Routing is an alternative). Core is node-tested
+  (`inbound-meld.test.js`).
+- **Push notification:** `notification_types` row `meld.received` (enabled, push+bell default) —
+  the worker fires it to the owner (employee `moroni@utah-pros.com`) with a `/melds` deep link and a
+  🚨 title for emergencies, via the shared `dispatchEvent` (recipient_ids explicit).
+- **Nav:** `/melds` added to `OVERFLOW_ITEMS` in `navItems.jsx` as `moroniOnly` (owner-only, mirrors
+  Homebuilding) — matches the `MoroniRoute` guard on the route.
+- **NOT built yet (next slices):** (1) "Import to UPR job" (stub toast today — will write a real
+  `jobs` row); (2) reply-to-thread (each message email's UUID From address threads back into
+  Property Meld — `thread_reply_address` is already captured).
 
 ## Known Pending Items
 (Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note

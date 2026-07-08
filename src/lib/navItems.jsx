@@ -136,6 +136,7 @@ export const OVERFLOW_ITEMS = [
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing' },
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,       featureFlag: 'page:leads' },
   { key: 'marketing',          label: 'Marketing',          path: '/marketing',          icon: IconMarketing,  featureFlag: 'page:marketing' },
+  { key: 'melds',              label: 'Property Meld',      path: '/melds',              icon: IconClaim,      moroniOnly: true },
   { key: 'homebuilding',       label: 'Homebuilding',       path: '/homebuilding',       icon: IconHomebuilding, moroniOnly: true },
   // always: true — like Help, visible to every logged-in user. Without it,
   // isItemVisible falls through to canAccess('feedback'), which no role has,
