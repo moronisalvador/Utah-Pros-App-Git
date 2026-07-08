@@ -835,6 +835,48 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
                                   Creates+deletes its own throwaway rows (leaves nothing).
 ```
 
+### DB-Foundation (Phase F, Jul 8 2026 — security/audit/drift hardening)
+Full plan: `docs/db-foundation-roadmap.md`; rules: `.claude/rules/database-standard.md`
+(authoritative on grants/deny-all/triggers/MT/drift) + `db-foundation-wave-ownership.md`.
+All applied + verified live on the shared Supabase.
+```
+-- New tables (RLS on, authenticated-read policy, anon revoked; SECURITY DEFINER triggers write them)
+claim_status_history(id, claim_id→claims ON DELETE CASCADE, from_status, to_status, changed_at)
+invoice_status_history(id, invoice_id→invoices ON DELETE CASCADE, from_status, to_status, changed_at)
+     — append-only audit of every claims/invoices status change. Seeded a current-state
+       baseline row per existing parent (130 claims / 80 invoices). Fed by AFTER UPDATE OF
+       status triggers (trg_claim_status_history / trg_invoice_status_history) that fire ONLY
+       WHEN (OLD.status IS DISTINCT FROM NEW.status) and are defensive (EXCEPTION-wrapped —
+       can never roll back the parent financial write).
+
+-- New RPCs (authenticated + service_role ONLY — NOT anon)
+mt_date(p_ts timestamptz) → date   — America/Denver calendar date of a moment. IMMUTABLE
+                                     (index/generated-column safe). Bucket "today"/"this week"
+                                     with this, never UTC.
+mt_today() → date                  — today's Denver date. STABLE (reads now()).
+
+-- Security hardening
+set_billing_setting(p_key,p_value) — NOW admin-gated: PERFORM p9_assert_admin() first stmt
+                                     (was anon-callable with no caller check). Signature frozen;
+                                     anon EXECUTE revoked. Whitelist rebuilt from live body.
+ALTER DEFAULT PRIVILEGES            — REVOKE anon on new tables/sequences/functions. Tables/
+                                     sequences: fully effective. Functions: Supabase re-applies
+                                     built-in EXECUTE-TO-PUBLIC on ddl_command_end, so EVERY new
+                                     function migration MUST `REVOKE EXECUTE ... FROM PUBLIC, anon`
+                                     + explicit grants (database-standard §2). anon only from the
+                                     §2 allowlist.
+Secret-store deny-all              — integration_credentials / integration_config /
+                                     user_google_accounts stay RLS-enabled with ZERO policies
+                                     (deny anon AND authenticated). Tripwire gate:
+                                     supabase/tests/db_foundation_secret_exposure.{sql,test.js}.
+
+-- Drift reconciliation
+system_events, get_dashboard_stats — drift-captured (re-derived from live catalog, idempotent).
+                                     db/baseline/ snapshot + scripts/db-drift-check.{sql,mjs}
+                                     regenerate + diff live vs repo and list untracked objects
+                                     (~73 tables / ~101 functions predate schema-as-code — backlog).
+```
+
 ### Workers & Dev
 ```
 get_worker_runs(p_limit INT)    — Last N worker_runs rows (default 10)
