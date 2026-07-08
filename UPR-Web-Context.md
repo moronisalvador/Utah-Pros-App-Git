@@ -33,6 +33,32 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 ---
 
+## DB Foundation initiative — plan of record (planning session, 2026-07-08)
+
+A masterplan planning session produced the **DB Foundation** plan of record: `docs/db-foundation-roadmap.md`
++ `docs/db-foundation-dispatch.md` + `.claude/rules/db-foundation-wave-ownership.md`, plus the new standing
+rulebook `.claude/rules/database-standard.md`, three reviewer agents (`db-foundation-phase-reviewer`,
+`anon-grant-auditor`, and the amended `migration-safety-checker`), and least-privilege amendments to
+`CLAUDE.md` (Rule 7 + the PostgREST/RLS paragraph). **No schema shipped in the planning session** — the
+build phases (F, P1–P8, hotfix H0) run next, gated by the roadmap's GREEN/YELLOW/RED autonomy ledger.
+
+**Key live findings (verified against `glsmljpabrwonfiltiqm` 2026-07-08, not memory):** 198/220 public
+policies are `USING(true)` and 163 grant `anon` (incl. `payments`/`invoices`/`employees` write); ~329
+`SECURITY DEFINER` functions are anon-executable; both storage buckets are public with anon write/delete
+(`message-attachments` has 21 orphaned objects + zero code consumers); 290 live migrations vs 133 repo
+files (`system_events`, `get_dashboard_stats` live-only); live duplicate external-IDs
+(`invoices.qbo_invoice_id` 7 dup groups, etc.); 108 unindexed FKs; 25 mutable `search_path`. **Secrets:
+NO exposure** — every API key/OAuth token is in a deny-all RLS table (anon+auth read 0 rows), plaintext at
+rest (Vault empty). Two live fixes queued: `set_billing_setting` lacks an admin gate (anon-callable
+billing-config write), and Postgres default privileges auto-grant `anon` on every new object (Foundation
+ships `ALTER DEFAULT PRIVILEGES ... REVOKE ... FROM anon`). The initiative is additive/policy/index-only
+with a **frontend-contract freeze** — no column moves, no RPC signature/return-shape changes (the sole FE
+location change is P8's photo URLs public→signed, isolated as a serial tail). Full details + the challenge
+report (2 draft claims refuted) live in the roadmap. Standing DB rules now in
+`.claude/rules/database-standard.md`.
+
+---
+
 ## Stack
 - **Frontend:** React 19 + Vite
 - **Database:** Supabase (PostgreSQL + PostgREST REST API — NO Supabase JS SDK)
