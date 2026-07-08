@@ -21,10 +21,25 @@
 --   page, authenticated admin) still succeeds — see the live admin round-trip in
 --   the PR notes and db_foundation_billing_admin_gate.test.js.
 --
--- ROLLBACK (restores the pre-gate function + anon grant):
---   -- re-run the prior body WITHOUT the PERFORM line, then:
---   -- GRANT EXECUTE ON FUNCTION public.set_billing_setting(text, text) TO anon;
---   (full prior body is preserved in git history of this file.)
+-- ROLLBACK (exact inverse — restores the pre-gate function + anon grant):
+--   CREATE OR REPLACE FUNCTION public.set_billing_setting(p_key text, p_value text)
+--   RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+--   AS $function$
+--   BEGIN
+--     IF p_key NOT IN (
+--       'accept_card','accept_ach','default_terms','surcharge_enabled','surcharge_pct',
+--       'qbo_stripe_clearing_account_id','qbo_stripe_clearing_account_name',
+--       'qbo_fee_expense_account_id','qbo_fee_expense_account_name',
+--       'qbo_bank_account_id','qbo_bank_account_name'
+--     ) THEN
+--       RAISE EXCEPTION 'Not an editable billing setting: %', p_key;
+--     END IF;
+--     INSERT INTO integration_config (key, value, updated_at)
+--     VALUES (p_key, p_value, now())
+--     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+--   END;
+--   $function$;
+--   GRANT EXECUTE ON FUNCTION public.set_billing_setting(text, text) TO anon;
 -- ═════════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public.set_billing_setting(p_key text, p_value text)

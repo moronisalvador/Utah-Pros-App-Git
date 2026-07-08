@@ -11,15 +11,22 @@
 --   production: every statement is IF-NOT-EXISTS / idempotent, so applying it to the
 --   live DB is a no-op. On a fresh database it recreates the table faithfully.
 --
---   Reproduced verbatim from pg_get_… introspection on 2026-07-08 (columns, FKs,
---   the 6 indexes, RLS + the two anon policies, and the live grants). This is a
---   FAITHFUL capture of the existing posture — it deliberately does NOT tighten the
---   table's anon access (that would be a separate reviewed change, not a drift
---   capture). The explicit anon GRANTs below are needed to reproduce the live state
---   on a fresh build now that default privileges no longer auto-grant anon.
+--   Reproduced from pg_get_… introspection on 2026-07-08 (columns, FKs, the 6
+--   indexes, RLS + the two anon policies). The table STRUCTURE and the RLS-governed
+--   anon surface (INSERT via `log_system_event`; SELECT) are captured faithfully.
 --
--- ADDITIVE / IDEMPOTENT. ROLLBACK: none needed on live (no-op). On a fresh build:
---   DROP TABLE IF EXISTS public.system_events CASCADE;
+--   ONE security tightening applied at the same time (database-standard §2): the
+--   live table also granted anon `UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER` —
+--   an over-grant. `TRUNCATE` is NOT filtered by RLS, so that grant alone let a
+--   logged-out caller wipe the entire audit log. The app never uses any of these
+--   as anon (it only INSERTs — click-to-call logging — and reads via SECURITY
+--   DEFINER RPCs), so they are revoked here: a functionally-safe least-privilege
+--   fix, live on apply. anon keeps only the RLS-policied SELECT + INSERT.
+--
+-- ADDITIVE / IDEMPOTENT (structure) + a policy-grant tightening (anon DML revoke).
+-- ROLLBACK (restores the prior permissive anon grant):
+--   GRANT UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.system_events TO anon;
+--   -- fresh build only: DROP TABLE IF EXISTS public.system_events CASCADE;
 -- ═════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS public.system_events (
@@ -50,7 +57,10 @@ DROP POLICY IF EXISTS anon_select_system_events ON public.system_events;
 CREATE POLICY anon_insert_system_events ON public.system_events FOR INSERT TO anon WITH CHECK (true);
 CREATE POLICY anon_select_system_events ON public.system_events FOR SELECT TO anon USING (true);
 
--- Live grants (faithful reproduction).
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.system_events TO anon;
+-- anon: only the RLS-policied surface (SELECT + INSERT). The RLS-bypassing /
+-- never-legitimate DML grants are explicitly REVOKED (tightening — see header).
+GRANT SELECT, INSERT ON public.system_events TO anon;
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.system_events FROM anon;
+-- Trusted roles keep the live grant set (faithful reproduction).
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.system_events TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.system_events TO service_role;

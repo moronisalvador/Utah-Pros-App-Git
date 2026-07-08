@@ -111,8 +111,13 @@ BEGIN
 END;
 $$;
 
+-- Trigger-only functions (a direct call errors — "can only be called as a
+-- trigger"), but follow the database-standard §2 explicit-grant block anyway:
+-- deny anon/PUBLIC, grant the trusted roles.
 REVOKE ALL ON FUNCTION public.capture_claim_status_history()   FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.capture_invoice_status_history() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.capture_claim_status_history()   TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.capture_invoice_status_history() TO authenticated, service_role;
 
 -- ─── 3. Triggers — fire ONLY on a real status change (never bare AFTER UPDATE) ─
 DROP TRIGGER IF EXISTS trg_claim_status_history   ON public.claims;

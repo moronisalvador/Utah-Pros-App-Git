@@ -872,6 +872,9 @@ Secret-store deny-all              — integration_credentials / integration_con
 
 -- Drift reconciliation
 system_events, get_dashboard_stats — drift-captured (re-derived from live catalog, idempotent).
+                                     system_events anon grant tightened to SELECT+INSERT (RLS-
+                                     policied); anon UPDATE/DELETE/TRUNCATE revoked (TRUNCATE
+                                     bypassed RLS — anon could wipe the audit log).
                                      db/baseline/ snapshot + scripts/db-drift-check.{sql,mjs}
                                      regenerate + diff live vs repo and list untracked objects
                                      (~73 tables / ~101 functions predate schema-as-code — backlog).

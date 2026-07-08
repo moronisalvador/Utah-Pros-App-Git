@@ -63,7 +63,7 @@ RLS policy) is sanctioned, because they are reached by logged-out visitors:
 | Public web forms / lead capture | `upsert_lead_from_form`, `upsert_form`→public read, `form_submissions` insert |
 | E-sign by token (customer link) | `get_sign_request_by_token`, `complete_sign_request` |
 | Email tracking / unsubscribe | `record_email_open`, `email_unsubscribe` |
-| Append-only event log | `system_events` anon INSERT policy (`log_system_event` path) |
+| Append-only event log | `system_events` anon INSERT (`log_system_event` / click-to-call) + SELECT, both RLS-policied. Anon has NO `UPDATE/DELETE/TRUNCATE` — those were revoked (Phase F): `TRUNCATE` bypasses RLS and would let anon wipe the log. |
 | Dashboard headline counts | `get_dashboard_stats` (existing; captured by Phase F) |
 
 Anything **not** on this list is `authenticated`+`service_role` only. Adding a row to

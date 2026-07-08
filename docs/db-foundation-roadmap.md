@@ -105,7 +105,16 @@ Recorded for transparency — Phase F ran as an autonomous build from a self-con
 5. **`⑥` scope.** Captured only `system_events` + `get_dashboard_stats` (verified live,
    untracked); did not capture `job_sales`/`billing_overview` (verified absent live);
    documented the ~73/~101 untracked tail as backlog rather than mass-capturing it.
-6. **Reviewers.** The prompt named `anon-grant-auditor` + `db-foundation-phase-reviewer`;
+6. **`⑥` system_events anon over-grant (reviewer-driven tightening).** The faithful
+   drift-capture initially reproduced the live grant set, which included anon
+   `UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER`. Both reviewers flagged `TRUNCATE` — it is
+   not filtered by RLS, so a logged-out caller could wipe the entire audit log. Since the
+   app only ever INSERTs to `system_events` as anon (click-to-call logging) and reads via
+   SECURITY DEFINER RPCs, those DML grants have no legitimate use; revoked them live (anon
+   kept only the RLS-policied SELECT + INSERT) — a functionally-safe least-privilege fix,
+   and `database-standard §2` updated to match.
+7. **Reviewers.** The prompt named `anon-grant-auditor` + `db-foundation-phase-reviewer`;
    those agent types are not registered in this environment. Ran `migration-safety-checker`
-   + `upr-pattern-checker` (the closest available) and did the anon-grant audit inline via
-   live `pg_default_acl` / `has_*_privilege` checks (recorded in the PR).
+   + `upr-pattern-checker` (the closest available), acted on both findings (this ledger #6
+   + the `capture_*` explicit-grant / rollback-note polish), and did the anon-grant audit
+   inline via live `pg_default_acl` / `has_*_privilege` checks (recorded in the PR).
