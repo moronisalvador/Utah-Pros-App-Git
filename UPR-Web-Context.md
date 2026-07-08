@@ -170,6 +170,43 @@ owner approval. It lives OUTSIDE `supabase/migrations/` so no `supabase db push`
 sweeps it (a `.STAGED.sql` suffix inside the dir would NOT be excluded — the CLI globs `*.sql`). Pre-apply
 guard: `supabase/tests/db_foundation_p2_purge_precheck.test.js`.
 
+### DB Foundation — Phase P3 anon closure (2026-07-08, staged RED — awaiting owner apply)
+
+Closes the anonymous (`anon`) browser-role exposure (roadmap finding S1). The app runs as
+`authenticated` (real Supabase JWT — `AuthContext.jsx`); workers as `service_role`; so scoping
+public policies + RPC grants to those roles regresses nothing. Generated from the LIVE catalog
+(161 anon policies / 85 tables; 327 anon-executable functions), MINUS the `database-standard.md`
+§2 allowlist, MINUS the ownership-manifest §8 deferred-hardening tables.
+
+```
+-- Migration A — ADDITIVE, applied (code-first). 20260708_dbf_p3_sign_document_templates_rpc.sql
+get_sign_document_templates(p_token text) → SETOF document_templates  — SECURITY DEFINER, token-gated.
+     Replaces SignPage.jsx's direct anon read of the whole document_templates table: resolves the
+     doc_type from a valid sign_requests.token and returns only that type's sections (bogus token →
+     0 rows). anon EXECUTE kept (§2 allowlist: public e-sign). SignPage.jsx now calls this RPC.
+
+-- Migration B — RED, STAGED. 20260708_dbf_p3_anon_policy_closure.sql
+Recreates 126 public policies (66 tables) dropping anon → TO authenticated (USING/WITH CHECK
+     unchanged, incl. the `(NOT is_crm_partner(auth.uid()))` predicates). nav_permissions narrowed
+     (anon ALL → anon SELECT, for devLogin bootstrap). notifications_select ALTERed TO authenticated
+     (never dropped — realtime + reads depend on it). Idempotent (DROP POLICY IF EXISTS), alphabetical.
+
+-- Migration C — RED, STAGED. 20260708_dbf_p3_anon_rpc_revoke.sql
+REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants — anon ∈ PUBLIC;
+     revoking anon alone leaves the PUBLIC grant, per F's managed-Supabase note) + re-GRANT
+     authenticated, service_role (belt-and-suspenders). Rollback = re-GRANT anon (commented in-file).
+
+-- KEPT anon (§2 allowlist): RPCs get_feature_flags, get_employee_page_access, get_crm_build_progress,
+     upsert_lead_from_form, get_sign_request_by_token, get_sign_document_templates; table reads on
+     employees / feature_flags / employee_page_access / nav_permissions (login+devLogin bootstrap).
+-- DEFERRED (manifest §8 — anon LEFT until the owning in-flight phase merges): messages, conversations,
+     conversation_participants, email_campaigns/recipients/exclusions, email_suppressions (omni);
+     crm_automations, crm_automation_runs, jobs, job_phase_history (5-Ops); appointments, claims,
+     contacts (schedule); automation_settings (CRM 4b). 30 anon policies stay this phase.
+-- Gate: supabase/tests/db_foundation_p3_anon_closure.{sql,test.js} — asserts zero anon outside the
+     allowlist (∪ deferred) post-apply. Supersedes the unapplied hardening migration in PR #224.
+```
+
 ---
 
 ## Stack
