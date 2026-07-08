@@ -207,6 +207,81 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
      allowlist (∪ deferred) post-apply. Supersedes the unapplied hardening migration in PR #224.
 ```
 
+### DB Foundation — Phase P6 SHIPPED (2026-07-08, reporting foundation)
+
+Reviewed via the full gauntlet (`migration-safety-checker` + `anon-grant-auditor` +
+`db-foundation-phase-reviewer`). Applied + verified live on the shared Supabase. Two migrations,
+both additive/body-only — nothing the deployed frontend reads was renamed, dropped, or reshaped.
+
+```
+-- ① Reporting-views layer  (20260708_dbf_p6_reporting_views.sql) — the first TRACKED views (was 0).
+--    All WITH (security_invoker = true) → run as the QUERYING user (RLS on base tables applies, no
+--    owner-bypass); REVOKE ALL FROM PUBLIC, anon; GRANT SELECT TO authenticated, service_role only.
+--    Faithful 1:1 projections (no row filtering) + convenience columns future dashboards kept
+--    re-deriving. NO consumer yet — pure additive scaffolding. mt_date()/mt_today() supply MT days.
+rv_jobs         — one row per job: division/phase/status/source (text), value + cost columns, a rolled
+                  total_cost (labor+material+equipment+sub+other), created_day/converted_day (mt_date).
+rv_invoices     — AR projection: totals, balance_due, insurance/homeowner split, is_qbo_synced,
+                  created_day, days_outstanding = mt_today()−invoice_date when unpaid & balance>0.
+rv_payments     — amount, method, payer, stripe_fee, refunded_amount, created_day, is_qbo_synced.
+rv_leads        — source/medium/campaign, lead_status/score, is_answered_call / is_missed_call (call +
+                  duration_sec), spam_flag, occurred_day/created_day (mt_date of occurred_at∥created_at).
+rv_time_entries — hours, travel_minutes, rate, total_cost, computed_labor_cost =
+                  (travel_minutes/60 + hours)×rate (tech-mobile-ux model), created_day.
+    Guard: supabase/tests/db_foundation_p6_reporting_views.test.js — asserts anon is DENIED on each view.
+
+-- ② Timezone RPC body-replaces  (20260708_dbf_p6_timezone_rpc_bodies.sql) — one convention: MT (§7).
+--    Session TZ on this DB is UTC (no role/db override), so naive CURRENT_DATE returned the UTC day —
+--    wrong every evening for a Denver business. BODY-ONLY swap CURRENT_DATE → public.mt_today() in 8
+--    live RPCs; signatures + RETURNS shapes byte-identical (drift-dumped via pg_get_functiondef first —
+--    3 were never in the repo). CREATE OR REPLACE preserves each function's existing grants (anon kept —
+--    P3 owns anon closure, not P6); each also `REVOKE EXECUTE ... FROM PUBLIC` (managed-Supabase trap).
+    add_custom_schedule_phase · get_assigned_tasks* · get_call_volume† · get_conversion_trend† ·
+    get_my_appointments_today* · get_payroll_summary · get_stalled_materials_for_employee* ·
+    get_timesheet_entries.
+    † CRM Phase-9 frozen · * tech-v2 frozen → body-only replace under a DISCLOSED rule amendment
+      (manifest §3); their existing backward-compat tests (crm_phase9_intelligence.test.js,
+      tech_v2_feed_upgrades.test.js) assert RETURN SHAPE only and stay green.
+    Guard: supabase/tests/db_foundation_p6_timezone_rpcs.test.js — per-RPC return-shape guard.
+```
+
+**event_type registry (system-wide audit + lifecycle vocabulary).** Two complementary layers record
+"what happened / how did state move":
+
+```
+1) system_events — the general audit log (drift-captured by F; RLS-on deny-all, written by
+   SECURITY DEFINER RPCs / service-role workers via log_system_event). Columns: event_type,
+   entity_type, entity_id, actor_id, job_id, payload(jsonb), created_at.
+   • entity_type ∈ { claim, contact, crm_import_batch, crm_task, document, email_campaign,
+     email_suppression, form_definition, inbound_lead, job, job_time_entry, lead_attribution,
+     message, note, sign_request }.
+   • event_type naming: core domain events use dotted `domain.action`; CRM events use snake
+     `crm_*`. Current registry (extend deliberately — keep the prefix convention):
+       claim.*  : claim.created, claim.status_changed, claim.carrier_changed, claim.contact_changed
+       job.*    : job.created, job.status_changed, job.phase_changed, job.division_changed,
+                  job.approved_value_changed, job.invoiced_value_changed, job.payment_received
+       document.* : document.uploaded, document.deleted        note.* : note.added
+       esign.*  : esign.signed        message.* : message.outbound        contact.* : contact.merged
+       clock.*  : clock.abandoned
+       time_entry.* : time_entry.admin_clocked_out, time_entry.admin_updated,
+                      time_entry.auto_closed_stale, time_entry.deleted
+       crm_*    : crm_lead_created[_manual], crm_lead_updated, crm_lead_promoted, crm_lead_scored,
+                  crm_lead_attributed, crm_lead_caller_named, crm_lead_stage_changed,
+                  crm_lead_status_updated, crm_lead_details_updated, crm_contact_owner_set,
+                  crm_contact_lifecycle_set, crm_contacts_imported, crm_task_created,
+                  crm_task_status_changed, crm_call_transcribed, crm_form_saved/published/submitted,
+                  crm_email_campaign_created/updated/deleted/queued/sent/exclusions_set,
+                  crm_email_unsubscribed.
+   NB: get_claims_list's last_activity_at deliberately EXCLUDES `%.created` events (bulk-import noise).
+
+2) Transition-history tables — typed, per-entity movement logs (NOT in system_events):
+     claim_status_history(from_status,to_status,changed_at)      — F (AFTER UPDATE OF status trigger)
+     invoice_status_history(from_status,to_status,changed_at)    — F (same pattern)
+     job_phase_history(from_phase,to_phase,changed_by,changed_at,duration_hours)   — pre-existing
+     lead_stage_history(stage_id,from_stage_id,lost_reason,moved_by,moved_at)      — CRM
+   These are the backfill-proof source for funnel/aging/velocity reporting the rv_* layer builds on.
+```
+
 ---
 
 ## Stack
