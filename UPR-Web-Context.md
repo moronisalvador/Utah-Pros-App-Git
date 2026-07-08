@@ -207,6 +207,34 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
      allowlist (∪ deferred) post-apply. Supersedes the unapplied hardening migration in PR #224.
 ```
 
+### DB Foundation — Phase P5 covering indexes (2026-07-08, half 1 shipped; DROP half deferred)
+
+Postgres does **not** auto-index the referencing side of a foreign key, so FK joins/lookups and
+parent-DELETE integrity checks fall back to sequential scans. The live audit found **108** unindexed
+FKs. P5's covering-index half adds indexes to a deliberately **tight hot-path subset (7)** — the rest
+were excluded on principle, not overlooked:
+
+```
+-- APPLIED + VERIFIED LIVE (all indisvalid). 20260708_dbf_p5_fk_covering_indexes.sql (YELLOW, additive)
+idx_jobs_lead_tech_id                     jobs(lead_tech_id)               -- filter jobs by lead tech (dispatch/schedule)
+idx_invoices_estimate_id                  invoices(estimate_id)            -- estimate → invoice link (billing)
+idx_estimates_converted_invoice_id        estimates(converted_invoice_id)  -- estimate → converted invoice (billing)
+idx_job_documents_sign_request_id         job_documents(sign_request_id)   -- docs for an e-sign request (45k+ seq scans/table)
+idx_sign_requests_contact_id              sign_requests(contact_id)        -- sign requests for a contact (e-sign)
+idx_job_time_entries_continued_from       job_time_entries(continued_from) -- supersede/continuation clock chain (tech clock)
+idx_conversation_participants_contact_id  conversation_participants(contact_id) -- inbound SMS resolves conversation by participant contact_id
+
+-- EXCLUDED from the CREATE set (not hot-path):
+--   • employee audit FKs (created_by/updated_by/recorded_by/entered_by/approved_by/…) — never filtered,
+--     parent (employees) is deactivated not DELETEd → index only taxes writes.
+--   • zero-row flag-gated crm_*/form_*/sequence_* tables (page:crm closed) — no active read path yet.
+-- Touches NONE of P4's external-ID columns (all 7 are internal uuid FKs). Rollback = 7 DROP INDEX (in-file header).
+
+-- DEFERRED — DROP-unused/duplicate half. Blocked on P6 merge (no open PR yet): needs P6's view/RPC
+--   definitions to build the exclusion list + a fresh idx_scan re-verify; RED-tier (owner OK). Ships as
+--   a separate revert-ready migration (CREATE statements in its header) once P6 lands.
+```
+
 ---
 
 ## Stack
