@@ -24,8 +24,9 @@ esp. the CRM Phase Workflow + Rule 7 migration rules):
    stub (SQL RPC vs the Supabase dev branch) — commit it and watch it fail before writing
    the implementation. Never edit a committed test to make it pass; fix the code.
 5. **Close-out reminders:** set the phase's `crm_build_phases` status to `'shipped'` via
-   `set_crm_phase_status`; update `UPR-Web-Context.md` (Rule 9); run `upr-pattern-checker`
-   then `crm-phase-reviewer`; delete disposable test rows (dev tracking number / test
+   `set_crm_phase_status`; update `UPR-Web-Context.md` (Rule 9); run `upr-pattern-checker`,
+   `migration-safety-checker` + `anon-grant-auditor` (the migration), then `crm-phase-reviewer`;
+   delete disposable test rows (dev tracking number / test
    `org_id`) before the `dev → main` PR.
 
 Confirm real column names via `information_schema.columns` (or MCP schema tools) before

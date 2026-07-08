@@ -35,7 +35,11 @@ is enforced by `CLAUDE.md` — this skill just makes the sequence automatic.
   scoped to `@media (max-width: 768px)`.
 - **Migrations:** write to `supabase/migrations/` first, additive-only, RLS-enabled at
   creation, applied + verified on `dev`. One shared Supabase — a migration hits prod
-  instantly, so sequence consuming code to deploy first.
+  instantly, so sequence consuming code to deploy first. Follow
+  **`.claude/rules/database-standard.md`**: least-privilege grants
+  (`GRANT EXECUTE TO authenticated, service_role`, policies `TO authenticated` — `anon`
+  only via its §2 allowlist), a rollback note on every live-table/RPC change, no
+  anon/authenticated-readable secret columns, and `timestamptz` + `America/Denver` dates.
 - New/edited files get the Documentation Standard header.
 
 ## 5. Verify + self-review (never claim "done" unverified)
@@ -43,6 +47,10 @@ is enforced by `CLAUDE.md` — this skill just makes the sequence automatic.
 - Run the **`upr-pattern-checker`** agent (rules lint), then — for anything with real
   acceptance criteria or money/consent/auth logic — an independent reviewer agent
   (e.g. `crm-phase-reviewer`) to grade against the criteria.
+- **If the change ships a migration:** run **`migration-safety-checker`** (additive-only,
+  RLS, least-privilege grants) **and `anon-grant-auditor`** (no stray `anon` grant/policy,
+  no secret reachable by anon/authenticated). For a DB Foundation phase, also run
+  **`db-foundation-phase-reviewer`**.
 
 ## 6. Document + ship
 - Update `UPR-Web-Context.md` (Rule 9) for any new table / RPC / component / page / worker.
