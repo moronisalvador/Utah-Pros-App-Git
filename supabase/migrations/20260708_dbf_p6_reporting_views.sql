@@ -18,10 +18,12 @@
 --   • WITH (security_invoker = true) — the view runs with the QUERYING user's
 --     rights, so each caller only sees rows their own RLS allows. Without this a
 --     view runs as its OWNER and would silently bypass RLS on the base tables.
---   • REVOKE ALL FROM PUBLIC, anon after each; GRANT SELECT to authenticated +
---     service_role only. These are internal staff reporting surfaces — never anon
---     (not on the §2 public allowlist). Belt-and-suspenders on top of F's
---     ALTER DEFAULT PRIVILEGES revoke.
+--   • REVOKE ALL FROM PUBLIC, anon, authenticated after each; then GRANT SELECT to
+--     authenticated + service_role. So authenticated gets SELECT ONLY (the project
+--     default-privileges GRANT ALL to authenticated on new objects is stripped —
+--     honoring §1 least-privilege intent; no escalation either way since
+--     security_invoker routes any write through base-table RLS). service_role keeps
+--     its trusted-backend default. Never anon (not on the §2 public allowlist).
 --
 -- FE-CONTRACT / FREEZE (manifest §5): NEW names only (rv_* — verified zero
 --   collisions live on 2026-07-08). No existing object is renamed, dropped, or
@@ -80,7 +82,7 @@ SELECT
    + COALESCE(j.total_other_cost, 0)) AS total_cost
 FROM public.jobs j;
 
-REVOKE ALL ON public.rv_jobs FROM PUBLIC, anon;
+REVOKE ALL ON public.rv_jobs FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.rv_jobs TO authenticated, service_role;
 
 -- ─── rv_invoices — AR-oriented projection, MT day + days-outstanding ─────────
@@ -118,7 +120,7 @@ SELECT
   END                             AS days_outstanding
 FROM public.invoices i;
 
-REVOKE ALL ON public.rv_invoices FROM PUBLIC, anon;
+REVOKE ALL ON public.rv_invoices FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.rv_invoices TO authenticated, service_role;
 
 -- ─── rv_payments — payments with MT day + QBO-synced flag ────────────────────
@@ -143,7 +145,7 @@ SELECT
   (p.qbo_payment_id IS NOT NULL)  AS is_qbo_synced
 FROM public.payments p;
 
-REVOKE ALL ON public.rv_payments FROM PUBLIC, anon;
+REVOKE ALL ON public.rv_payments FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.rv_payments TO authenticated, service_role;
 
 -- ─── rv_leads — inbound leads with MT day + answered/missed-call flags ───────
@@ -170,7 +172,7 @@ SELECT
   public.mt_date(il.created_at)   AS created_day
 FROM public.inbound_leads il;
 
-REVOKE ALL ON public.rv_leads FROM PUBLIC, anon;
+REVOKE ALL ON public.rv_leads FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.rv_leads TO authenticated, service_role;
 
 -- ─── rv_time_entries — labor with MT day + total (travel+on-site) labor cost ─
@@ -198,5 +200,5 @@ SELECT
   public.mt_date(t.created_at)    AS created_day
 FROM public.job_time_entries t;
 
-REVOKE ALL ON public.rv_time_entries FROM PUBLIC, anon;
+REVOKE ALL ON public.rv_time_entries FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.rv_time_entries TO authenticated, service_role;
