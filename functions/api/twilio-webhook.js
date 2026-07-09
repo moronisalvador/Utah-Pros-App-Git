@@ -1,30 +1,88 @@
-// POST /api/twilio-webhook
-// Receives inbound SMS/MMS from Twilio.
-//
-// COMPLIANCE: Handles STOP/HELP/START keywords per CTIA guidelines.
-// We ALWAYS update our own state here:
-//   1. Updating our database (contacts.opt_in_status, contacts.dnd)
-//   2. Logging to sms_consent_log (audit trail for TCPA)
-// The customer-facing REPLY is conditional (see keywordReplyBody):
-//   - Advanced Opt-Out OFF (default): we reply with a CTIA-compliant STOP/HELP
-//     confirmation carrying UPR's SMS support contact.
-//   - Advanced Opt-Out ON (env TWILIO_ADVANCED_OPT_OUT='true'): Twilio's
-//     messaging service owns the reply, so we return empty TwiML (no double-text).
-//
-// Flow:
-//   1. Validate Twilio signature (prevents spoofed webhooks)
-//   2. Check for compliance keywords (STOP/HELP/START)
-//   3. Find or create contact
-//   4. Find or create conversation
-//   5. Insert message
-//   6. Update conversation metadata
-//   7. Run automation rules
+/**
+ * ════════════════════════════════════════════════
+ * FILE: twilio-webhook.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   This is where a text FROM a customer lands. Twilio calls it for every inbound
+ *   SMS/MMS. It figures out who texted, handles the legally-required opt-out words
+ *   (STOP / START / HELP and their variants), saves the message into that person's
+ *   conversation thread, and pings the assigned rep. Phase A hardened it:
+ *     1. It verifies the call is really from Twilio using the current auth token
+ *        from the Connections page (not just the old env var), so rotating the
+ *        token can't silently break or spoof inbound.
+ *     2. STOP now also catches "STOPALL", "STOP.", "Stop!" and similar, while a
+ *        real sentence ("stop by tomorrow") is never mistaken for an opt-out.
+ *     3. A real database error returns 500 so Twilio retries — we stop silently
+ *        losing inbound texts. A duplicate (already-stored) text acks 200.
+ *     4. The unread badge is bumped atomically and every call writes a worker_runs
+ *        row for observability.
+ *   The customer-facing auto-REPLY is conditional (see keywordReplyBody): OFF
+ *   (default) we send our own CTIA-compliant confirmation; when Advanced Opt-Out
+ *   is ON (env TWILIO_ADVANCED_OPT_OUT='true') Twilio owns the reply and we return
+ *   empty TwiML. The DB opt-in/DND update + sms_consent_log audit run regardless.
+ *
+ * WHERE IT LIVES:
+ *   ENDPOINT: POST /api/twilio-webhook  (Twilio inbound webhook — public,
+ *             authenticated by the X-Twilio-Signature HMAC, not a session)
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  ../lib/supabase.js (service-role REST client),
+ *              ../lib/twilio.js (validateTwilioSignature),
+ *              ../lib/credentials.js (resolveCredential — DB-first auth token),
+ *              ../lib/phone.js (normalizePhone), ../lib/cors.js, ./notify.js
+ *   Data:      reads  → contacts, conversation_participants, conversations,
+ *                       integration_credentials
+ *              writes → contacts (opt-in/DND on STOP/START), conversations,
+ *                       conversation_participants, messages, sms_consent_log,
+ *                       worker_runs; unread bump via increment_conversation_unread
+ *
+ * NOTES / GOTCHAS:
+ *   - F-3: STOP/START match every stored phone format (digits-OR) and update ALL
+ *     matching rows (id=in.(…)), so an opt-out can't leave a duplicate row opted-in.
+ *   - F-7: "yes"/"info" double as real replies — they are persisted BEFORE the
+ *     keyword early-return so a genuine message is never swallowed.
+ *   - F-9: a transient DB error returns 500 (Twilio retries); a duplicate
+ *     twilio_sid returns 200 (already processed). See isDuplicateSidError.
+ *   - F-13: the auth token is resolved DB-first (Connections page) with an env
+ *     fallback, so a token rotation never silently kills inbound.
+ *   - The message insert follows the F-core-frozen column shape (channel:'sms').
+ *   - The notify hook is fire-and-forget (context.waitUntil) — it can never break
+ *     the SMS-ingest path.
+ * ════════════════════════════════════════════════
+ */
 
 import { supabase } from '../lib/supabase.js';
 import { validateTwilioSignature } from '../lib/twilio.js';
+import { resolveCredential } from '../lib/credentials.js';
 import { handleOptions } from '../lib/cors.js';
 import { normalizePhone } from '../lib/phone.js';
 import { dispatchEvent } from './notify.js';
+
+const WORKER_NAME = 'twilio-webhook';
+
+// A retried inbound whose MessageSid we already stored trips the messages
+// UNIQUE(twilio_sid) constraint — that is a duplicate no-op, not a failure:
+// ack it 200 so Twilio stops retrying. Any OTHER DB error returns 500 so Twilio
+// retries and the inbound is never silently lost (F-9).
+export function isDuplicateSidError(err) {
+  return /409|duplicate key|messages_twilio_sid_key/i.test(String(err?.message || err));
+}
+
+// worker_runs telemetry — one row per invocation; never let it break the path.
+async function recordRun(db, { status, processed, errorMessage, startedAt }) {
+  try {
+    await db.insert('worker_runs', {
+      worker_name: WORKER_NAME,
+      status,
+      records_processed: processed,
+      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+    });
+  } catch { /* telemetry is best-effort */ }
+}
 
 // ── message.inbound notification hook (Notification Center, Session B) ──
 // Additive + fire-and-forget: hands the just-saved inbound message to the shared
@@ -55,16 +113,26 @@ export async function notifyInboundMessage({ db, env, conversation, contact, fro
 }
 
 // ── STOP/HELP/START keyword detection ──
-// CTIA requires handling these exact keywords (case-insensitive)
-const STOP_KEYWORDS = ['stop', 'unsubscribe', 'cancel', 'end', 'quit'];
+// CTIA/carrier requires handling these exact keywords (case-insensitive).
+// STOPALL is on Twilio's default opt-out keyword list alongside STOP.
+const STOP_KEYWORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
 const START_KEYWORDS = ['start', 'unstop', 'subscribe', 'yes'];
 const HELP_KEYWORDS = ['help', 'info'];
 
+// Punctuation tolerance: strip everything but a–z/0–9 so "STOP.", "Stop!",
+// "STOP ALL" and "s.t.o.p" all resolve to their keyword, while a real sentence
+// ("stop by tomorrow" → "stopbytomorrow") stays a non-match — only a lone
+// keyword token collapses onto an entry in the lists above.
+export function normalizeKeyword(body) {
+  return (body || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export function detectKeyword(body) {
-  const trimmed = (body || '').trim().toLowerCase();
-  if (STOP_KEYWORDS.includes(trimmed)) return 'stop';
-  if (START_KEYWORDS.includes(trimmed)) return 'start';
-  if (HELP_KEYWORDS.includes(trimmed)) return 'help';
+  const norm = normalizeKeyword(body);
+  if (!norm) return null;
+  if (STOP_KEYWORDS.includes(norm)) return 'stop';
+  if (START_KEYWORDS.includes(norm)) return 'start';
+  if (HELP_KEYWORDS.includes(norm)) return 'help';
   return null;
 }
 
@@ -110,7 +178,7 @@ export function buildPhoneOrFilter(rawFrom) {
 // is never lost; the keyword action (re-subscribe / HELP reply) still runs after.
 const AMBIGUOUS_CONTENT_KEYWORDS = ['yes', 'info'];
 export function isAmbiguousContentReply(body) {
-  return AMBIGUOUS_CONTENT_KEYWORDS.includes((body || '').trim().toLowerCase());
+  return AMBIGUOUS_CONTENT_KEYWORDS.includes(normalizeKeyword(body));
 }
 
 // ── Compliance-keyword auto-reply copy ──
@@ -150,18 +218,28 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
+  const startedAt = new Date().toISOString();
+
+  // ── 1. Validate Twilio signature (DB-first auth token — F-13) ──
+  // Resolve the token from the Connections page first, env fallback, so rotating
+  // it via the admin UI does not silently break (or spoof-open) inbound.
+  let authToken = null;
+  try {
+    ({ authToken } = await resolveCredential(env, db, 'twilio'));
+  } catch { authToken = env.TWILIO_AUTH_TOKEN || null; }
+
+  if (!authToken) {
+    console.warn('twilio-webhook: no Twilio auth token configured — rejecting (fail closed)');
+    await recordRun(db, { status: 'error', processed: 0, errorMessage: 'no auth token', startedAt });
+    return new Response('Twilio auth token not configured', { status: 500 });
+  }
+  const isValid = await validateTwilioSignature(request, authToken, request.url);
+  if (!isValid) {
+    await recordRun(db, { status: 'error', processed: 0, errorMessage: 'invalid signature', startedAt });
+    return new Response('Forbidden', { status: 403 });
+  }
 
   try {
-    // ── 1. Validate Twilio signature ──
-    // Skip validation if auth token not configured (dev/testing)
-    if (!env.TWILIO_AUTH_TOKEN) {
-      console.warn('TWILIO_AUTH_TOKEN not configured — rejecting webhook (fail closed)');
-      return new Response('Twilio auth token not configured', { status: 500 });
-    }
-    const isValid = await validateTwilioSignature(request, env.TWILIO_AUTH_TOKEN, request.url);
-    if (!isValid) {
-      return new Response('Forbidden', { status: 403 });
-    }
 
     // Parse Twilio webhook payload (application/x-www-form-urlencoded)
     const formData = await request.formData();
@@ -172,8 +250,12 @@ export async function onRequestPost(context) {
     const numMedia = parseInt(formData.get('NumMedia') || '0', 10);
 
     if (!from || !messageSid) {
+      await recordRun(db, { status: 'completed', processed: 0, startedAt });
       return twimlResponse('');  // Empty TwiML = no auto-reply
     }
+
+    // Count of inbound messages actually persisted this run (telemetry).
+    let stored = 0;
 
     // Collect media URLs if MMS
     const mediaUrls = [];
@@ -226,6 +308,7 @@ export async function onRequestPost(context) {
     // the keyword action below still runs.
     if (keyword && isAmbiguousContentReply(body)) {
       await persistInboundMessage(context, db, env, { contact, from, to, body, messageSid, mediaUrls });
+      stored = 1;
     }
 
     if (keyword === 'stop') {
@@ -247,6 +330,7 @@ export async function onRequestPost(context) {
         details: `Contact texted "${body.trim()}". Opted out and DND enabled.`,
       })));
 
+      await recordRun(db, { status: 'completed', processed: stored, startedAt });
       return twimlResponse(keywordReplyBody('stop', { advancedOptOut }));
     }
 
@@ -271,6 +355,7 @@ export async function onRequestPost(context) {
         details: `Contact texted "${body.trim()}". Re-subscribed and DND disabled.`,
       })));
 
+      await recordRun(db, { status: 'completed', processed: stored, startedAt });
       return twimlResponse(keywordReplyBody('start', { advancedOptOut }));
     }
 
@@ -284,22 +369,32 @@ export async function onRequestPost(context) {
         details: `Contact texted "${body.trim()}".`,
       });
 
+      await recordRun(db, { status: 'completed', processed: stored, startedAt });
       return twimlResponse(keywordReplyBody('help', { advancedOptOut }));
     }
 
     // ── 4-7. Normal inbound message: persist into its conversation + notify ──
     await persistInboundMessage(context, db, env, { contact, from, to, body, messageSid, mediaUrls });
+    stored = 1;
 
     // ── 8. Run automation rules (future) ──
     // TODO: Check automation_rules for matching triggers and execute actions
 
     // Return empty TwiML (no auto-reply for normal messages)
+    await recordRun(db, { status: 'completed', processed: stored, startedAt });
     return twimlResponse('');
 
   } catch (err) {
+    // A duplicate MessageSid means Twilio retried something we already stored —
+    // ack it 200 so it stops. Every other error returns 500 so Twilio retries
+    // and the inbound is never silently lost (F-9).
+    if (isDuplicateSidError(err)) {
+      await recordRun(db, { status: 'completed', processed: 0, startedAt });
+      return twimlResponse('');
+    }
     console.error('twilio-webhook error:', err);
-    // Still return 200 to Twilio so it doesn't retry
-    return twimlResponse('');
+    await recordRun(db, { status: 'error', processed: 0, errorMessage: err.message, startedAt });
+    return new Response('Server error — retry', { status: 500 });
   }
 }
 
@@ -342,6 +437,7 @@ async function persistInboundMessage(context, db, env, { contact, from, to, body
   await db.insert('messages', {
     conversation_id: conversation.id,
     type: 'sms_inbound',
+    channel: 'sms',
     body: body.trim() || null,
     status: 'received',
     twilio_sid: messageSid,
@@ -355,9 +451,12 @@ async function persistInboundMessage(context, db, env, { contact, from, to, body
     status_changed_at: new Date().toISOString(),
     last_message_at: new Date().toISOString(),
     last_message_preview: (body.trim() || '[Media]').substring(0, 100),
-    unread_count: (conversation.unread_count || 0) + 1,
     updated_at: new Date().toISOString(),
   });
+
+  // Atomic unread bump (F-core contract) — replaces a read-modify-write +1 that
+  // could lose a count when two inbound messages land together.
+  await db.rpc('increment_conversation_unread', { p_conversation_id: conversation.id, p_by: 1 });
 
   // Fire-and-forget so Twilio still gets its TwiML instantly.
   context.waitUntil(notifyInboundMessage({ db, env, conversation, contact, from, text: body }));
