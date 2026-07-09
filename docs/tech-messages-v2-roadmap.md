@@ -202,17 +202,17 @@ fixed header.
 > **Model: Opus · high** (frozen-seam edits + live-RPC contracts + a compliance-adjacent
 > surface). **Read scope:** CLAUDE.md + this roadmap + the ownership manifest +
 > `.claude/rules/database-standard.md` + tech-mobile-ux.md.
-> **Close-out checklist:**
-> - [ ] Flag row seeded live FIRST via MCP (`enabled=false`, owner dev_only) — BEFORE any code push; `EXPLICIT_FLAGS` entry `enabled:false` in the same PR
-> - [ ] Migration: `get_tech_conversations` (composite shape, fixed keyset cursor, filters, single-row mode) + `find_or_create_conversation`; GRANT authenticated,service_role + REVOKE FROM PUBLIC,anon; SQL headers + rollback notes; committed shape + cursor tests; `migration-safety-checker` + `anon-grant-auditor` clean
-> - [ ] techQuery amendment (kinds convos/thread + 'message' mutation + dehydrate filter excluding thread) + `techQuery.test.js` same commit
-> - [ ] Shared `useTechConversations` hook (RPC + 60s refetch + pane-lifetime conversations subscription updating the cache)
-> - [ ] TechLayout: third pane block + `paneCovering` fold-in + lazy import + Messages-tab unread badge (from the hook's `unread_total`; never active-gated)
-> - [ ] `TechMsgsPane` host (disclosed TechPane copy-in; two layers; active-gated nav-hide class; scoped `:has` rule)
-> - [ ] Stub `TechMessagesV2` pane page (skeleton list; proves cover + fallback both ways)
-> - [ ] css `TECH-V2: MSGS` reserved marker appended; i18n `msgs` namespace scaffold (3 locales + index.js recipe; parity test green)
-> - [ ] Manifests: commit `.claude/rules/tech-messages-v2-wave-ownership.md`; tech-v2 §8 amendment; sms-experience §10 amendment; sms roadmap §6 supersession pointer (all landed with THIS plan — verify present, extend only if drifted)
-> - [ ] `npm run test` + `build` + eslint; `upr-pattern-checker`; `tech-phase-reviewer` graded against THIS block; UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff; owner/orchestrator merges) — flag stays OFF
+> **Close-out checklist:** _(all shipped — F-M PR into `dev`; flag stays OFF/owner-only)_
+> - [x] Flag row seeded live FIRST via MCP (`enabled=false`, owner dev_only) — BEFORE any code push; verified live (SELECT confirmed the row); `EXPLICIT_FLAGS` entry `enabled:false` in the same PR
+> - [x] Migration: `get_tech_conversations` (composite shape, fixed keyset cursor, filters, single-row mode) + `find_or_create_conversation`; GRANT authenticated,service_role + REVOKE FROM PUBLIC,anon; SQL headers + rollback notes; committed shape + cursor tests; `migration-safety-checker` + `anon-grant-auditor` clean — applied + verified live via MCP
+> - [x] techQuery amendment (kinds convos/thread + 'message' mutation + dehydrate filter excluding thread) + `techQuery.test.js` same commit
+> - [x] Shared `useTechConversations` hook (RPC + 60s refetch + pane-lifetime conversations subscription updating the cache)
+> - [x] TechLayout: third pane block + `paneCovering` fold-in + lazy import + Messages-tab unread badge (from the hook's `unread_total`; never active-gated)
+> - [x] `TechMsgsPane` host (disclosed TechPane copy-in; two layers; active-gated nav-hide class; scoped `:has` rule)
+> - [x] Stub `TechMessagesV2` pane page (skeleton list; proves cover + fallback both ways)
+> - [x] css `TECH-V2: MSGS` reserved marker appended; i18n `msgs` namespace scaffold (3 locales + index.js recipe; parity test green)
+> - [x] Manifests: commit `.claude/rules/tech-messages-v2-wave-ownership.md`; tech-v2 §8 amendment; sms-experience §10 amendment; sms roadmap §6 supersession pointer (all landed with THIS plan — verify present, extend only if drifted)
+> - [x] `npm run test` + `build` + eslint; `upr-pattern-checker`; `tech-phase-reviewer` graded against THIS block; UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff; owner/orchestrator merges) — flag stays OFF
 **Scope:** owns the manifest-listed seams + `src/pages/tech/v2/TechMessagesV2.jsx` (stub) + `src/pages/tech/v2/messages/**` (hook + pane host) + one migration.
 
 ### Phase B1 — Core experience (the native-feel bar)
