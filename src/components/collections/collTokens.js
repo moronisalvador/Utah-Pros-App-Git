@@ -129,16 +129,22 @@ export function bucketKey(d) {
 }
 
 // Invoice status word from balances/dates — shared by the A/R and Invoices tabs so
-// they always agree. paid → overdue → draft (unsent) → partial → sent.
+// they always agree. paid → overdue → partial → draft → saved → sent.
+// The lifecycle tier (draft/saved/sent) is authoritative from the `status` column +
+// qbo_invoice_id, since there is no reliable "emailed" timestamp to derive it from:
+//   • draft — not yet in QuickBooks, OR edited since the last push (the editor resets
+//             status to 'draft' the moment a saved invoice is changed, until re-pushed).
+//   • saved — recorded in QuickBooks and current, but not yet emailed to the customer.
+//   • sent  — emailed to the customer via "Send to customer".
+// paid/overdue/partial (balance-driven) always take precedence over the tier.
 export function invoiceStatusKind(r, today = midnight()) {
   const total = Number(r.total || 0), paid = Number(r.amount_paid || 0), bal = Number(r.balance || 0);
   if (total > 0 && bal <= 0.005) return 'paid';
   const d = daysPastDue(r.due_date, today);
   if (bal > 0 && d != null && d > 0) return 'overdue';
-  const sent = !!r.sent_at || !!r.qbo_invoice_id;
-  if (!sent || r.status === 'draft') return 'draft';
   if (paid > 0) return 'partial';
-  return 'sent';
+  if (!r.qbo_invoice_id || r.status === 'draft') return 'draft';
+  return r.status === 'sent' ? 'sent' : 'saved';
 }
 
 // periodRange: turns a period choice into {start,end} Dates (null = unbounded).
