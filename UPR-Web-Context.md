@@ -6347,3 +6347,42 @@ for the Phase 8/5 callers). No omni/CRM branch is in flight. CRM 4b campaigns/bl
 frozen `messages` insert shape; `process-scheduled` ownership → A); counter-ordering won the Wave -1
 hotfix + F-core/F-red split. Full detail in `docs/sms-experience-roadmap.md`; launch blocks in
 `docs/sms-experience-dispatch.md`; ownership in `.claude/rules/sms-experience-wave-ownership.md`.
+
+---
+
+## Session log — 2026-07-09 · SMS Experience Phase C — Conversation UX rebuild (shipped)
+
+Rebuilt the shared `Conversations.jsx` (mounted at `/conversations`, `/tech/conversations`,
+`/crm/conversations`) to the iMessage/WhatsApp bar. **Absorbs the unbuilt omni-inbox Phase U** (roadmap
+§8a — SMS-only; email channel left for a future omni reconciliation). Zero schema, worker stays the sole
+writer of any `sms_*` row.
+
+**New files** (`src/components/conversations/`): `messageUtils.js` (GSM-7/UCS-2 segment counter, scheme-
+whitelisted `linkifyTokens`, `parseMediaUrls` for the JSON-string `media_urls` column, `uiClassForMessage`
+importing the frozen `functions/lib/twilio-errors.js`, per-thread draft get/set/clear), `MessageBubble.jsx`
+(bubble + MMS render with `<img>`→file-link fallback + delivery-status affordance + inline retry),
+`SegmentCounter.jsx`, `messageUtils.test.js` (18 cases, green).
+
+**Behavior shipped:**
+- **Optimistic send** — a `pending-N` bubble appends instantly (`_clientId`), reconciled by the worker's
+  `data.message` AND the realtime INSERT (match by id, then by body) so neither ordering dupes; status
+  `pending → sent → delivered → read → failed`, `failed` tinted by F's `uiClass` with **inline Retry**
+  (reason from `error_code`/`error_message`). All async `setMessages` guarded by `activeIdRef`
+  (**wrong-thread-injection fix**). Same-tick double-Enter guarded by reading/blanking the composer ref.
+- **MMS** — inbound `media_urls` render (fixes F-6 empty bubble); outbound attach uploads (image-compressed)
+  to the **public `job-files`** bucket under `conversations/{convId}/…` and passes the public URL as
+  `media_urls` (the `message-attachments` bucket is private with no upload policy, and this phase ships zero
+  schema — documented tradeoff; worker requires a non-empty body so MMS carries text).
+- **Composer** — live segment/char counter accounting for the server `Name: ` prefix; per-thread localStorage
+  **draft persistence**; multiline `pre-wrap`; toasts consolidated to the `upr:toast` CustomEvent (Rule 2).
+- **List/scroll** — thread + list **pagination** (`Load earlier` / `Load more`), scroll anchoring on prepend,
+  **jump-to-latest pill** (never yanks a scrolled-up reader), **unread-desync** fix (open+visible thread stays
+  read via `markActiveRead`; conversations realtime UPDATE can't re-mark it unread).
+- **Deep-link + mobile** — per-thread **`?c=<id>` URL** (push-tap lands in-thread; no `App.jsx` route edit);
+  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via `document` `visibilitychange`
+  (hidden→visible only) + `visualViewport` keyboard offset — **no `realtime.js` edit**.
+
+**Ownership honored:** edited only `Conversations.jsx`, new `components/conversations/**`, and `index.css`
+inside the §623 omni-U marker. No edit to `realtime.js` / `CrmConversations.jsx` / any worker. `test` +
+`build` + `eslint` green. **Owner-gated tail:** on-device iOS `/tech/conversations` verification is the
+Phase G lane; A2P live-send stays gated (§7).

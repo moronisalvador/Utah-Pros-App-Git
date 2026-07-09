@@ -257,6 +257,14 @@ new `src/components/conversations/**` + `index.css` §623 (omni-U marker).
   one-tap, status-color-from-3-feet); **Capacitor webview-suspend recovery** (`visibilitychange`/focus
   refetch — consumer-side, NO edit to frozen `realtime.js`); keyboard/`visualViewport` handling.
 
+**Close-out checklist (shipped 2026-07-09):**
+- [x] optimistic send: client-id pending bubble → reconciled by worker response AND realtime insert (both orderings, no dup); pending → sent → delivered → read → failed with F's `uiClass` tint + **inline retry**; `error_code`/`error_message` surfaced _(new `src/components/conversations/**`)_
+- [x] inbound **MMS render** (fixes F-6 empty bubble) + outbound MMS attach _(uploaded to the public `job-files` bucket under `conversations/…`, public URL passed as `media_urls` to the frozen `/api/send-message` — chosen because the `message-attachments` bucket is private with no upload policy and this phase ships zero schema; graceful `<img>`→file-link fallback for auth-gated Twilio URLs)_
+- [x] GSM-7/UCS-2 **segment + char counter** accounting for the server `Name: ` prefix; per-thread **draft persistence** (localStorage); thread + list **pagination**; scroll anchoring + **jump-to-latest pill**; **unread-desync** fix on the open thread; **wrong-thread-injection** fix (`activeIdRef` guards every async message mutation); multiline `pre-wrap`; scheme-whitelisted **linkify** (no raw HTML); per-thread **`?c=` deep-link** URL; `toast` → `upr:toast` CustomEvent
+- [x] tech-PWA: ≥48px targets, Capacitor `visibilitychange`/focus refetch (NO `realtime.js` edit), `visualViewport` keyboard offset; CSS only inside the `index.css` §623 omni-U marker
+- [x] client inserts **no** `sms_*` row (worker sole writer); no edit to `realtime.js` / `CrmConversations.jsx` / any worker; `test` + `build` + `eslint` green (new `messageUtils.test.js`, 18 cases)
+- [ ] **owner-gated:** on-device iOS `/tech/conversations` verification (tap targets, keyboard, reconnect-after-suspend, push-tap→thread) is the **Phase G** on-device lane (§4 Wave 2) — no simulator in this session; A2P live-send smoke stays gated (§7)
+
 **Phase D — Automated visibility & throughput** (Opus·high) **[disclosed CRM amendment §8]**. Owns
 `functions/lib/automated-send.js`, `functions/api/run-automations.js` + tests.
 - Automated SMS write conversation + `messages` rows (**service-role, worker-sole-writer**) +
