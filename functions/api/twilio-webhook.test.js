@@ -21,7 +21,14 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { detectKeyword, keywordReplyBody, notifyInboundMessage } from './twilio-webhook.js';
+import {
+  detectKeyword,
+  keywordReplyBody,
+  notifyInboundMessage,
+  phoneMatchVariants,
+  buildPhoneOrFilter,
+  isAmbiguousContentReply,
+} from './twilio-webhook.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test' };
 
@@ -82,6 +89,53 @@ describe('keywordReplyBody (auto-reply copy + Advanced Opt-Out gate)', () => {
   it('returns empty string for an unknown keyword', () => {
     expect(keywordReplyBody(null, { advancedOptOut: false })).toBe('');
     expect(keywordReplyBody('nope', { advancedOptOut: false })).toBe('');
+  });
+});
+
+describe('phoneMatchVariants / buildPhoneOrFilter (F-3 digits-OR STOP match)', () => {
+  it('produces every common stored format for a US number', () => {
+    const variants = phoneMatchVariants('+18019196858');
+    // The two formats that actually exist live (E.164 + "(XXX) XXX-XXXX") plus common typed forms.
+    expect(variants).toContain('+18019196858');   // E.164
+    expect(variants).toContain('8019196858');      // bare 10-digit
+    expect(variants).toContain('18019196858');     // bare 11-digit
+    expect(variants).toContain('(801) 919-6858');  // (XXX) XXX-XXXX (live non-E.164 format)
+    expect(variants).toContain('801-919-6858');    // XXX-XXX-XXXX
+    expect(variants).toContain('801.919.6858');    // XXX.XXX.XXXX
+  });
+
+  it('normalizes a non-E.164 inbound to the same variant set', () => {
+    // Twilio always sends E.164, but the helper must be format-agnostic.
+    expect(phoneMatchVariants('(801) 919-6858')).toEqual(phoneMatchVariants('+18019196858'));
+  });
+
+  it('builds a PostgREST or=() filter with quoted, URL-encoded candidates', () => {
+    const f = buildPhoneOrFilter('+18019196858');
+    expect(f.startsWith('or=(')).toBe(true);
+    expect(f.endsWith(')')).toBe(true);
+    expect(f).toContain('phone.eq.');
+    // The formatted number's parens + space must be percent-encoded inside a quoted value.
+    expect(f).toContain('%22%28801%29%20919-6858%22');
+    // The + in E.164 must be %2B, never a raw + (which would decode to a space).
+    expect(f).not.toMatch(/phone\.eq\.\+/);
+  });
+
+  it('falls back to an exact match for an unparseable sender (shortcode / junk)', () => {
+    expect(buildPhoneOrFilter('12345')).toBe('phone=eq.12345&limit=1');
+  });
+});
+
+describe('isAmbiguousContentReply (F-7 — never swallow a real "yes"/"info")', () => {
+  it('flags exact yes/info (case-insensitive, trimmed)', () => {
+    for (const w of ['yes', 'YES', ' Yes ', 'info', 'INFO', ' Info ']) {
+      expect(isAmbiguousContentReply(w)).toBe(true);
+    }
+  });
+
+  it('does not flag unambiguous commands or normal text', () => {
+    for (const w of ['stop', 'start', 'help', 'unsubscribe', 'yes please', 'more info', 'hello', '', null, undefined]) {
+      expect(isAmbiguousContentReply(w)).toBe(false);
+    }
   });
 });
 
