@@ -115,47 +115,56 @@ export async function onRequestPost(context) {
       const primaryParticipant = participants[0];
       const [contact] = await db.select('contacts', `id=eq.${primaryParticipant.contact_id}`);
 
-      if (contact) {
-        // ── CHECK 1: DND (Do Not Disturb) ──
-        // If DND is on, block the message immediately.
-        // Twilio can suspend accounts that message DND contacts.
-        if (contact.dnd) {
-          // Log the blocked attempt
-          await db.insert('sms_consent_log', {
-            contact_id: contact.id,
-            phone: contact.phone,
-            event_type: 'send_blocked_dnd',
-            source: 'system',
-            details: `Outbound blocked: DND active since ${contact.dnd_at || 'unknown'}`,
-            performed_by: sent_by,
-          });
+      // ── FAIL CLOSED: no contact → cannot verify consent → refuse ──
+      // The lookup returning no row (dangling/forged participant contact_id) must
+      // never fall through to an unguarded send. This keeps the "no bypass"
+      // guarantee whole alongside the skip_compliance removal (F-2).
+      if (!contact) {
+        return jsonResponse({
+          error: 'Message blocked: could not resolve contact for compliance check',
+          code: 'CONTACT_NOT_FOUND',
+        }, 403, request, env);
+      }
 
-          return jsonResponse({
-            error: 'Message blocked: contact has Do Not Disturb enabled',
-            code: 'DND_ACTIVE',
-            contact_id: contact.id,
-          }, 403, request, env);
-        }
+      // ── CHECK 1: DND (Do Not Disturb) ──
+      // If DND is on, block the message immediately.
+      // Twilio can suspend accounts that message DND contacts.
+      if (contact.dnd) {
+        // Log the blocked attempt
+        await db.insert('sms_consent_log', {
+          contact_id: contact.id,
+          phone: contact.phone,
+          event_type: 'send_blocked_dnd',
+          source: 'system',
+          details: `Outbound blocked: DND active since ${contact.dnd_at || 'unknown'}`,
+          performed_by: sent_by,
+        });
 
-        // ── CHECK 2: Opt-in status ──
-        // TCPA requires prior express consent for business texts.
-        // If opt_in_status is false, they either never opted in or opted out.
-        if (!contact.opt_in_status) {
-          await db.insert('sms_consent_log', {
-            contact_id: contact.id,
-            phone: contact.phone,
-            event_type: 'send_blocked_no_consent',
-            source: 'system',
-            details: `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
-            performed_by: sent_by,
-          });
+        return jsonResponse({
+          error: 'Message blocked: contact has Do Not Disturb enabled',
+          code: 'DND_ACTIVE',
+          contact_id: contact.id,
+        }, 403, request, env);
+      }
 
-          return jsonResponse({
-            error: 'Message blocked: contact has not opted in to SMS',
-            code: 'NO_CONSENT',
-            contact_id: contact.id,
-          }, 403, request, env);
-        }
+      // ── CHECK 2: Opt-in status ──
+      // TCPA requires prior express consent for business texts.
+      // If opt_in_status is false, they either never opted in or opted out.
+      if (!contact.opt_in_status) {
+        await db.insert('sms_consent_log', {
+          contact_id: contact.id,
+          phone: contact.phone,
+          event_type: 'send_blocked_no_consent',
+          source: 'system',
+          details: `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
+          performed_by: sent_by,
+        });
+
+        return jsonResponse({
+          error: 'Message blocked: contact has not opted in to SMS',
+          code: 'NO_CONSENT',
+          contact_id: contact.id,
+        }, 403, request, env);
       }
     }
 
@@ -177,6 +186,10 @@ export async function onRequestPost(context) {
     const statusCallback = `${baseUrl}/api/twilio-status`;
 
     // 5. Send via Twilio
+    // NOTE: the group/broadcast branches below are UNREACHABLE — the refuse-guard
+    // above (F-4) returns 400 for those types. They are left in place, not rebuilt,
+    // for Phase B to replace with the real per-participant consent loop. Only the
+    // `else` (direct, single-recipient) branch runs today.
     const results = [];
 
     if (conversation.type === 'group') {

@@ -117,6 +117,16 @@ describe('send-message compliance chain (Wave -1)', () => {
     expect(h.twilio).not.toHaveBeenCalled();
   });
 
+  it('fails CLOSED when the participant contact cannot be resolved (403, no send)', async () => {
+    // participants[0].contact_id points at a row that doesn't exist → we cannot
+    // verify consent, so we must refuse rather than send unguarded.
+    h.db = makeDb({ conversation: DIRECT, contact: undefined });
+    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_NOT_FOUND');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
   it('allows a direct send to a compliant, opted-in contact (201)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
