@@ -41,15 +41,17 @@
 import { NAV_ITEMS, PRIMARY_ITEMS, OVERFLOW_ITEMS } from '@/lib/navItems';
 
 // ─── SECTION: Helpers ───
-// 'tech' is a grouping-only category for field-tech flags whose KEYS still use
-// the `page:` prefix (e.g. page:tech_moisture) — it can't be inferred from the
-// prefix, so those entries set `category: 'tech'` explicitly below.
-const VALID_CATEGORIES = ['page', 'tool', 'feature', 'tech'];
-// Infer the DevTools grouping from the key prefix (page:/tool:/feature:). Note
-// 'tech' is never inferred (no `tech:` keys exist) — it's set explicitly.
+// 'tech', 'crm', and 'infra' are grouping-only categories for flags whose KEYS
+// don't match the group (e.g. page:tech_moisture, feature:crm_leads, feature:pwa)
+// — they can't be inferred from the `page:`/`tool:`/`feature:` prefix, so those
+// entries set `category` explicitly below. DevTools also renders any category not
+// in its ORDER list at the end, so a stray/unknown category can never hide a flag.
+const VALID_CATEGORIES = ['page', 'tool', 'feature', 'tech', 'crm', 'infra'];
+// Infer the DevTools grouping from the key prefix (page:/tool:/feature:). The
+// grouping-only categories above are never inferred — they're set explicitly.
 const categoryFor = (key) => {
   const prefix = String(key).split(':')[0];
-  return VALID_CATEGORIES.includes(prefix) ? prefix : 'feature';
+  return ['page', 'tool', 'feature'].includes(prefix) ? prefix : 'feature';
 };
 
 // ─── SECTION: Explicit flags (features not tied to a nav item) ───
@@ -83,12 +85,14 @@ const EXPLICIT_FLAGS = [
     key: 'page:tech_dash_v2',
     label: 'Tech Dashboard v2',
     description: 'Rebuilt field-tech dashboard (mission control). Owner-only during the Tech Mobile v2 wave; legacy dashboard shows for everyone else.',
+    category: 'tech',
     enabled: false,
   },
   {
     key: 'page:tech_sched_v2',
     label: 'Tech Schedule v2',
     description: 'Rebuilt field-tech schedule/calendar. Owner-only during the Tech Mobile v2 wave; legacy schedule shows for everyone else.',
+    category: 'tech',
     enabled: false,
   },
   // ── Tech Mobile v2 — Phase M1 (Job Hub) ──────────────────────────────────────
@@ -100,6 +104,7 @@ const EXPLICIT_FLAGS = [
     key: 'page:tech_job_hub',
     label: 'Tech Job Hub',
     description: 'Merged job + appointment field surface (Job Hub) at /tech/job/:jobId?appt=. Owner-only during Tech Mobile v2 M1; legacy appointment/job detail pages show for everyone else.',
+    category: 'tech',
     enabled: false,
   },
   // ── Technician field-tool flags (Hydro / Phase 2) ────────────────────────────
@@ -140,10 +145,12 @@ const EXPLICIT_FLAGS = [
   // dev_only_user_id (owner) so the admin-mobile screens under /tech/admin/* stay
   // owner-only until the owner flips the flag on in DevTools → Flags. The screens
   // are additionally gated to employee.role === 'admin' (see AdminMobileRoute).
+  // category:'tech' — it lives inside the field-tech PWA (/tech/admin/*).
   {
     key: 'page:admin_mobile',
     label: 'Admin Mobile',
     description: 'Admin capabilities (dashboard, collections/AR, invoice + record-payment, estimates, lead center) inside the field-tech PWA, reached from "More". Admin-only; owner-only during the Admin Mobile rollout.',
+    category: 'tech',
     enabled: false,
   },
   // ── CRM per-screen rollout sub-flags (Phase 6b) ──────────────────────────────
@@ -168,6 +175,7 @@ const EXPLICIT_FLAGS = [
     ['feature:crm_settings',      'CRM · Settings'],
   ].map(([key, label]) => ({
     key, label,
+    category: 'crm',
     description: `Per-screen access sub-flag for the ${label.replace('CRM · ', '')} CRM screen — combined with each employee's page access.`,
   })),
 ];
