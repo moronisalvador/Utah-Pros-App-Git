@@ -484,7 +484,7 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
   const canEdit=employee?.role==='admin'||employee?.role==='office'||employee?.role==='project_manager';
   return(
     <div className="job-page-financial">
-      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit}/>
+      <RevenueTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <InsFinTile job={job} fmt={fmt} saveBatch={saveBatch} canEdit={canEdit} db={db}/>
       <CostsTile job={job} fmt={fmt} totalCost={totalCost}/>
       <div className="job-page-section">
@@ -496,10 +496,6 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
         <FR label="Margin" value={`${margin}%`} bold color={grossProfit>=0?'var(--status-resolved)':'var(--status-needs-response)'}/>
         {outstanding>0&&<FR label="Outstanding" value={fmt(outstanding)} color="#d97706" bold/>}
       </div>
-      <div className="job-page-section job-page-section-full">
-        <div className="job-page-section-title">Invoices &amp; Payments</div>
-        <ClaimBilling jobs={[job]} db={db} canEdit={canEdit} hideSummary/>
-      </div>
       {canEdit&&isFeatureEnabled('tool:oop_pricing')&&(
         <div style={{marginTop:'var(--space-3)',display:'flex',justifyContent:'flex-end'}}>
           <Link to={`/tools/oop-pricing?jobId=${job.id}`} className="btn btn-secondary btn-sm" style={{gap:6,textDecoration:'none'}}>
@@ -510,14 +506,27 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
     </div>
   );}
 
-function RevenueTile({job,fmt,saveBatch,canEdit}){
+// Revenue = the money-in story for the job, top to bottom: projection targets
+// (Estimated / Approved) then the real Invoices & Payments folded in as the detail.
+// When the job has ≥1 pushed invoice (job._fin.invoice_count), the invoice rollup is
+// the source of truth, so the manual Invoiced/Collected rows are dropped (they'd just
+// echo the invoice summary below). A never-invoiced job keeps those manual rows.
+function RevenueTile({job,fmt,saveBatch,canEdit,db}){
   const[ed,setEd]=useState(false);const[sv,setSv]=useState(false);const[f,sF]=useState({});
   const fmtD=v=>v?new Date(v+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+  const hasInv=Number(job._fin?.invoice_count||0)>0;
   const start=()=>{sF({estimated_value:job.estimated_value||'',approved_value:job.approved_value||'',invoiced_value:job.invoiced_value||'',invoiced_date:job.invoiced_date||''});setEd(true);};
   const save=async()=>{setSv(true);try{await saveBatch({estimated_value:parseFloat(f.estimated_value)||null,approved_value:parseFloat(f.approved_value)||null,invoiced_value:parseFloat(f.invoiced_value)||null,invoiced_date:f.invoiced_date||null});setEd(false);}catch(e){errToast('Failed to save: '+e.message);}finally{setSv(false);}};
-  return(<div className="job-page-section">
+  return(<div className="job-page-section job-page-section-full">
     {canEdit?<TileHeader title="Revenue" editing={ed} onEdit={start} onCancel={()=>setEd(false)} onSave={save} saving={sv}/>:<div className="job-page-section-title">Revenue</div>}
-    {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced Date" value={f.invoiced_date} onChange={v=>sF(p=>({...p,invoiced_date:v}))} type="date"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/><FR label="Invoiced" value={fmt(job.invoiced_value)}/>{job.invoiced_date&&<FR label="Invoiced Date" value={fmtD(job.invoiced_date)}/>}<FR label="Collected" value={fmt(job.collected_value)}/></>)}
+    {ed?(<><EF label="Estimated" value={f.estimated_value} onChange={v=>sF(p=>({...p,estimated_value:v}))} type="number" placeholder="0.00"/><EF label="Approved" value={f.approved_value} onChange={v=>sF(p=>({...p,approved_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced" value={f.invoiced_value} onChange={v=>sF(p=>({...p,invoiced_value:v}))} type="number" placeholder="0.00"/><EF label="Invoiced Date" value={f.invoiced_date} onChange={v=>sF(p=>({...p,invoiced_date:v}))} type="date"/><FR label="Collected" value={fmt(job.collected_value)}/></>):(<><FR label="Estimated" value={fmt(job.estimated_value)}/><FR label="Approved" value={fmt(job.approved_value)}/>{!hasInv&&<><FR label="Invoiced" value={fmt(job.invoiced_value)}/>{job.invoiced_date&&<FR label="Invoiced Date" value={fmtD(job.invoiced_date)}/>}<FR label="Collected" value={fmt(job.collected_value)}/></>}</>)}
+
+    {/* Invoices & Payments — the billing detail lives inside Revenue (invoice summary + cards + record-payment) */}
+    <div className="job-page-fin-divider"/>
+    <div style={{display:'flex',alignItems:'center',padding:'var(--space-2) 0 var(--space-1)'}}>
+      <span style={{fontSize:'var(--text-xs)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.03em',color:'var(--text-tertiary)'}}>Invoices &amp; Payments</span>
+    </div>
+    <ClaimBilling jobs={[job]} db={db} canEdit={canEdit}/>
   </div>);}
 
 function InsFinTile({job,fmt,saveBatch,canEdit,db}){
