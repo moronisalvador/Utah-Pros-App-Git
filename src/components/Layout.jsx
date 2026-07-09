@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { subscribeToConversations } from '@/lib/realtime';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import OverflowDrawer from './OverflowDrawer';
@@ -103,28 +104,38 @@ export default function Layout() {
     return () => window.removeEventListener('upr:toast', handler);
   }, []);
 
-  // ── Poll unread count for badge ──
+  // ── Unread badge — realtime, not polled ──
+  // unreadByConv tracks each conversation's own unread_count so a single realtime row
+  // update can adjust the total without a full-table refetch (was: 30s poll).
+  const unreadByConvRef = useRef({});
+  const recomputeUnread = useCallback(() => {
+    const total = Object.values(unreadByConvRef.current).reduce((sum, n) => sum + (n || 0), 0);
+    setUnreadCount(total);
+  }, []);
+
   const fetchUnread = useCallback(async () => {
     try {
-      const convs = await db.select('conversations', 'select=unread_count');
-      const total = convs.reduce((sum, c) => sum + (c.unread_count || 0), 0);
-      setUnreadCount(total);
+      const convs = await db.select('conversations', 'select=id,unread_count');
+      unreadByConvRef.current = Object.fromEntries(convs.map(c => [c.id, c.unread_count || 0]));
+      recomputeUnread();
     } catch { /* silent */ }
-  }, [db]);
+  }, [db, recomputeUnread]);
 
-  // Mount + interval — single source of truth
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
-    return () => clearInterval(interval);
-  }, [fetchUnread]);
+  // One initial fetch to seed the map, then the shared realtime channel keeps it current.
+  useEffect(() => { fetchUnread(); }, [fetchUnread]);
 
-  // Refetch on navigation but skip the very first render (already fetched above)
   useEffect(() => {
-    if (!mountedRef.current) { mountedRef.current = true; return; }
-    fetchUnread();
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+    const unsubscribe = subscribeToConversations((payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        if (id != null) delete unreadByConvRef.current[id];
+      } else if (payload.new) {
+        unreadByConvRef.current[payload.new.id] = payload.new.unread_count || 0;
+      }
+      recomputeUnread();
+    });
+    return unsubscribe;
+  }, [recomputeUnread]);
 
   // Load lookup data for AddContactModal — use rpc to bypass PostgREST schema cache
   useEffect(() => {

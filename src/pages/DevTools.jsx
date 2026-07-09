@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
+import DeliverabilityHealth from '@/components/DeliverabilityHealth';
 
 /* ── Toast helpers ── */
 const ok  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -1118,6 +1119,7 @@ function MessagingTab() {
     { key: 'templates', label: 'Template Preview' },
     { key: 'log', label: 'Message Log' },
     { key: 'queue', label: 'Scheduled Queue' },
+    { key: 'deliverability', label: 'Deliverability' },
   ];
   return (
     <div>
@@ -1141,6 +1143,7 @@ function MessagingTab() {
       {subTab === 'templates' && <TemplatePreview />}
       {subTab === 'log' && <MessageLog />}
       {subTab === 'queue' && <ScheduledQueue />}
+      {subTab === 'deliverability' && <DeliverabilityHealth />}
     </div>
   );
 }
