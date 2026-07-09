@@ -26,7 +26,9 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (useAuth → db), ./usePolledRpc
+ *   Internal:  @/contexts/AuthContext (useAuth → db), ./usePolledRpc,
+ *              @/lib/reportPeriods (shared periodRange — same boundaries the
+ *              /jobs/closed drill-down uses, so tile count === list length)
  *   Data:      reads  → get_jobs_closed() RPC (reads jobs.is_real_job / real_job_marked_at)
  *              writes → none
  *
@@ -40,27 +42,12 @@
  */
 import { useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { periodRange } from '@/lib/reportPeriods';
 import { usePolledRpc } from './usePolledRpc';
 
 const DAY = 86400000;
 const SPARK_DAYS = 30;
 const VB_W = 234; // sparkline drawable width (viewBox 0 0 240 58)
-
-// Returns the [startTs, endTs) window for the selected period. Every period
-// except "Prev mo" runs through `now`; "Prev mo" is a bounded prior calendar month.
-function periodRange(period, now) {
-  const d = new Date(now);
-  if (period === 'Prev mo') {
-    return {
-      startTs: new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime(),
-      endTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), // 1st of this month (exclusive)
-    };
-  }
-  if (period === 'QTD') return { startTs: new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1).getTime(), endTs: now };
-  if (period === 'YTD') return { startTs: new Date(d.getFullYear(), 0, 1).getTime(), endTs: now };
-  if (period === 'Last 30') return { startTs: now - 30 * DAY, endTs: now };
-  return { startTs: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), endTs: now }; // MTD
-}
 
 function buildSparkline(times, now) {
   const counts = new Array(SPARK_DAYS).fill(0);

@@ -150,7 +150,7 @@ export default function Dashboard() {
       ? <PaymentsReceived periodLabel={periodLabel} showHandle={editing} data={pay.data ?? undefined} loading={pay.loading} error={pay.error} onRetry={pay.reload} />
       : <RestrictedCard spanClass="ovw-span-4" title="Payments received" showHandle={editing} />,
     openEstimates:  <OpenEstimates showHandle={editing} data={est.data ?? undefined} loading={est.loading} error={est.error} onRetry={est.reload} />,
-    newClaims:      <NewJobsClosed periodLabel={periodLabel} showHandle={editing} data={jobsClosed.data ?? undefined} loading={jobsClosed.loading} error={jobsClosed.error} onRetry={jobsClosed.reload} />,
+    newClaims:      <NewJobsClosed period={period} periodLabel={periodLabel} showHandle={editing} data={jobsClosed.data ?? undefined} loading={jobsClosed.loading} error={jobsClosed.error} onRetry={jobsClosed.reload} />,
     jobsCompleted:  <JobsCompleted periodLabel={periodLabel} showHandle={editing} data={jobs.data ?? undefined} loading={jobs.loading} error={jobs.error} onRetry={jobs.reload} />,
     activeDrying:   <ActiveDrying showHandle={editing} data={drying.data ?? undefined} loading={drying.loading} error={drying.error} onRetry={drying.reload} />,
     collections: canFin
