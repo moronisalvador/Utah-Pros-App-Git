@@ -886,13 +886,21 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
                           + CHECK widened to sms|mms|rcs|email; type CHECK widened to add email_inbound|
                           email_outbound; nullable email cols: email_message_id (UNIQUE partial),
                           in_reply_to, email_references, email_from, email_to, subject, email_html,
-                          sender_email
+                          sender_email. SMS-experience F-core (Jul 9 2026) additive: num_segments int,
+                          price numeric (Twilio metering; Phase A fills from the status callback).
 conversation_participants — Omni-inbox adds nullable `email` (email participants)
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
-scheduled_messages      — Queued outbound messages
+scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
+                          claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
+-- NOTE (SMS-experience F-core, Jul 9 2026): the 5 SMS tables above (conversations, messages,
+-- conversation_participants, sms_consent_log, scheduled_messages) had drifted in with NO CREATE TABLE
+-- in migrations; 20260709_sms_f01_drift_capture.sql now captures their exact live shape (schema-as-code
+-- baseline, no-op on live). messages/conversations realtime-publication membership + messages.twilio_sid
+-- UNIQUE are now tracked too (…f02). Anon-policy closure on messages/conversations/participants is
+-- DEFERRED to F-red (owner-gated) — the drift-capture reproduces the live anon surface, does not close it.
 email_suppressions      — do-not-email list. Omni-inbox widens reason CHECK: adds hard_bounce|complaint|
                           global (kept legacy unsubscribed|bounced|complained|manual). Fed by unsubscribe
                           clicks + the Resend bounce/complaint webhook (resend-webhook.js)
@@ -1212,6 +1220,23 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
                                   and claim idempotency. Backs supabase/tests/omni_messages_check_widen.
                                   Creates+deletes its own throwaway rows (leaves nothing).
 ```
+
+### SMS-experience — F-core (Foundation, Jul 9 2026)
+```
+claim_scheduled_message(p_id UUID) → boolean — SECURITY DEFINER, GRANT authenticated+service_role
+                                  (never anon). Atomic compare-and-set on scheduled_messages.claimed_at:
+                                  TRUE to exactly ONE caller claiming a still-'pending' row (unclaimed,
+                                  or stale-claimed >10 min ago → crash recovery); FALSE otherwise. Kills
+                                  the process-scheduled double-send (finding F-11). Does NOT set 'status'
+                                  (the status CHECK has no 'processing' value). Consumed by Phase A.
+increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → integer — SECURITY DEFINER,
+                                  GRANT authenticated+service_role (never anon). One atomic UPDATE (no
+                                  read-modify-write race); clamps at 0; returns new unread_count, NULL if
+                                  the conversation is missing. Consumed by Phase A + D.
+```
+Shared lib: `functions/lib/twilio-errors.js` — `classifyTwilioError(code)` → `{label, suppress,
+contactFlag, uiClass}` for 21610/30006/30007/30034 (+ safe DEFAULT). Import-only for the wave (A applies
+suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `.claude/rules/sms-experience-wave-ownership.md` §9.
 
 ### Workers & Dev
 ```

@@ -176,6 +176,14 @@ Fixes only the three live-now flag-independent P0s + one latent-neutralizer:
 - [ ] reviewers green → PR into `dev`
 
 ### Wave 0 — F-core (Session F · Opus·high)  [may run ∥ Wave -1, disjoint files]
+> ✅ **SHIPPED 2026-07-09** (migrations applied + verified live via MCP; atomicity gate green; unit +
+> least-privilege tests green). Delivered: drift-capture of the 5 SMS tables
+> (`20260709_sms_f01_drift_capture.sql`); additive `messages.num_segments`/`price` + realtime-publication
+> tracking (`…f02…`); `claim_scheduled_message` + `increment_conversation_unread` RPCs +
+> `scheduled_messages.claimed_at` (`…f03…`, `authenticated`+`service_role` only); `functions/lib/twilio-errors.js`;
+> the frozen-contract specs in manifest §9; omni-F SHIPPED banner. Anon-policy closure is **deferred to
+> F-red** (owner-gated), as designed — not done here.
+>
 > **Prerequisite:** none. **Read scope:** CLAUDE.md + this block + manifest + `database-standard.md`.
 > Green additive; unblocks the wave. Owns **100% of schema** + new shared libs + manifest + frozen
 > contracts.

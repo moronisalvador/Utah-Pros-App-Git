@@ -80,6 +80,16 @@ key-based so nullable-column adds are safe; the system is already de-facto per-c
 ## 4. Phase blocks
 
 ### Phase F — Foundation
+
+> ✅ **SHIPPED (#309, merged to `dev`).** Verified live 2026-07-09 by the sms-experience F-core session
+> (disclosed cross-doc tick, per that roadmap §1): the `messages`/`conversations`/`conversation_participants`
+> schema additions + widened `channel`/`type` CHECKs are live; `functions/lib/email-threading.js`,
+> `functions/lib/conversation-email.js`, `functions/api/resend-webhook.js` and their tests are on disk;
+> `email.js` passes `In-Reply-To`/`References` via its generic `headers` passthrough; `process-sequences.js`
+> `gatherExitSignals` includes `email_inbound`; the `claim_inbound_email` RPC and the `feature:email_inbox`
+> flag exist. The unchecked boxes below are retained as the historical build checklist. Phases I/O/U remain
+> per the omni manifest supersession note (O/U were absorbed by the sms-experience initiative).
+
 > **Branch:** session-assigned (illustrative `omni-inbox/phase-f`), cut from `origin/dev`
 > **Prerequisite:** this roadmap merged to `dev`
 > **Model · effort:** Opus 4.8 · High (schema + consent gate + widen of a live table)

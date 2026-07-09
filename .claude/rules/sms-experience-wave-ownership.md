@@ -133,3 +133,124 @@ within the sequenced window (F only) → update `UPR-Web-Context.md` (Rule 9) �
 checkboxes (both directions; owner-gated stages stay open with the reason disclosed) → delete TEST rows
 → push `-u` → **open a PR into `dev` as a handoff and STOP** (the owner merges; do not subscribe to /
 babysit / click-merge). F-red's RED apply waits for the owner's explicit OK.
+
+---
+
+## 9. Frozen-contract specifications (F-core — the authoritative shapes)
+
+These are the concrete shapes behind the §3 named contracts. **Shipped + verified live 2026-07-09.**
+A wave phase implements the BODY behind these; it never changes the shape. Where a phase adds a field
+it does so **additively** (never remove/rename a field a sibling reads). Source of truth for column
+names/types is the drift-capture migration `supabase/migrations/20260709_sms_f01_drift_capture.sql`.
+
+### 9.1 `POST /api/send-message` request/response (B implements · C consumes)
+
+**Auth:** `Authorization: Bearer <supabase access_token>` required (`requireAuth`). Missing/invalid → `401 {error}`.
+
+**Request body (JSON):**
+```
+{
+  conversation_id: uuid,        // required
+  body:            string,      // required, non-empty (trimmed)
+  sent_by:         uuid,        // employee id (nullable in practice, used for prefix + audit)
+  media_urls?:     string[],    // MMS attachments
+  is_internal_note?: boolean    // true → insert-only internal_note, no Twilio, no consent
+  // NOTE: `skip_compliance` is REMOVED by Wave -1/H0 — never reintroduce it (consent invariant §6).
+}
+```
+
+**Response:**
+- Internal note → `201 { success:true, message:<messages row>, type:'internal_note' }`
+- Outbound     → `201 { success:true, message:<messages row>, twilio:[<per-recipient result>] }`
+  (B adds per-recipient `messages` rows + surfaces `error_code`/`error_message`; new response fields
+  are additive — C must tolerate extra fields and must not depend on `twilio[]` ordering beyond index 0
+  for a `direct` conversation.)
+- Blocked (consent) → `403 { error, code:'DND_ACTIVE'|'NO_CONSENT', contact_id }`
+- Validation → `400 { error }` · Not found → `404 { error }` · Auth → `401 { error }` · Server → `500 { error }`
+
+### 9.2 `messages` insert column-shape (all writers: H0/A/B/D + service-role automated path)
+
+Every writer inserts into the SAME live column set (drift-capture §f01). Canonical outbound-SMS insert:
+```
+{
+  conversation_id: uuid,          // required, FK → conversations (ON DELETE CASCADE)
+  type:            text,          // 'sms_inbound'|'sms_outbound'|'internal_note'|'email_inbound'|'email_outbound' (CHECK)
+  body:            text,
+  channel:         text,          // default 'sms'; CHECK null|'sms'|'mms'|'rcs'|'email'
+  status:          text,          // default 'queued'; CHECK queued|sent|delivered|read|failed|undelivered|received
+  twilio_sid:      text,          // UNIQUE (messages_twilio_sid_key) — one row per Twilio SID; NULL allowed (notes/queued)
+  sent_by:         uuid,          // FK → employees
+  media_urls:      jsonb,         // array of URLs (writers currently JSON.stringify an array before insert)
+  error_code:      text,          // Twilio numeric code as text (A fills from status callback)
+  error_message:   text,
+  num_segments:    integer,       // NEW (f02) — Twilio segment count; A fills from status callback. Nullable.
+  price:           numeric         // NEW (f02) — Twilio price; A fills from status callback. Nullable.
+  // also live (omni + misc): direction, sender_phone, sender_contact_id, rcs_content_sid, read_at,
+  // clicked_at, email_* / subject / in_reply_to / email_references / sender_email — see f01.
+}
+```
+Invariant (§7.1 adopted from omni): the **worker is the sole writer** of any `sms_*` row; the client
+inserts only `type:'internal_note'` (channel is left NULL for notes).
+
+**num_segments / price capture:** Twilio sends `NumSegments` / `Price` / `PriceUnit` as status-callback
+form fields. **Phase A reads them directly from the callback `formData`** in `twilio-status.js` and
+writes `num_segments`/`price`. `functions/lib/twilio.js` is **NOT widened by F-core** (its
+`parseTwilioWebhook` stays frozen); if A finds it must round-trip these through the shared parser, that
+is a small F-core follow-up, not an in-phase edit to the frozen file.
+
+### 9.3 `sendAutomatedMessage` / `sendGatedSms` signature + return vocab (D fills · Phase 5/8 depend)
+
+```
+sendAutomatedMessage(channel, contactId, templateKey, variables = {}, env, extra = {})
+  // channel ∈ 'email'|'sms'; extra: { html, body, subject, orgId, now, ... }
+sendGatedSms(env, { contact, body, orgId, now })
+```
+**Return (frozen):** `{ ok: boolean, skipped: boolean, reason?: string }`
+(+ `sid` on a real send, `error` on a thrown send — both additive to the base three).
+
+**`reason` vocabulary (frozen — extend ADDITIVELY, never rename/reshape):**
+`'sms_disabled'`, `'no_phone'`, `'dnd'`, `'no_consent'`, `'quiet_hours'`, `'contact_not_found'`.
+**Load-bearing (do NOT rename — held-retry keys on them):** **`'sms_disabled'`** and **`'quiet_hours'`**
+(consumed by `process-sequences.js` and `process-crm-automations.js`). D ships committed backward-compat
+tests that both non-owned callers still succeed (roadmap §8).
+
+### 9.4 New RPCs (A + D consume · never re-`CREATE OR REPLACE`)
+
+```
+claim_scheduled_message(p_id uuid) → boolean
+  -- SECURITY DEFINER; GRANT EXECUTE TO authenticated, service_role (never anon).
+  -- Atomic compare-and-set on scheduled_messages.claimed_at: returns TRUE to exactly ONE caller that
+  -- claims a still-'pending' row (unclaimed, or stale-claimed >10 min ago → crash recovery). Does NOT
+  -- touch `status` (the status CHECK has no 'processing' value — the old worker's 'processing' write is
+  -- retired by A in favour of this RPC + a terminal 'sent'/'failed').
+  -- ⚠️ Phase A OBLIGATION (at-least-once semantics): after a successful claim + send, A MUST write the
+  --    terminal 'sent' (or 'failed') PROMPTLY. A crash AFTER send but BEFORE the terminal write leaves the
+  --    row 'pending'+stale, so the 10-min stale-recovery re-claims and can double-send. The RPC guarantees
+  --    exactly-one-winner PER CLAIM WINDOW, not exactly-once end-to-end — closing that residual window
+  --    (write terminal status immediately post-send; idempotency/twilio dedup) is Phase A's acceptance line.
+
+increment_conversation_unread(p_conversation_id uuid, p_by integer DEFAULT 1) → integer
+  -- SECURITY DEFINER; GRANT EXECUTE TO authenticated, service_role (never anon).
+  -- One atomic UPDATE (no read-modify-write race). Clamps at 0. Returns the new unread_count, or NULL
+  -- if the conversation does not exist.
+```
+
+### 9.5 `functions/lib/twilio-errors.js` (A applies suppression/flags · C uses `uiClass`)
+
+```
+classifyTwilioError(code) → { code:number, label:string, suppress:boolean,
+                              contactFlag:'opt_out'|'invalid_number'|null, uiClass:string }
+TWILIO_ERROR_CODES  // 21610 (opt-out→suppress+opt_out+'blocked'), 30006 (unreachable→suppress+
+                    // invalid_number+'unreachable'), 30007 (carrier filter→'carrier', no flag),
+                    // 30034 (unregistered A2P→'config', no flag)
+DEFAULT_TWILIO_ERROR  // unknown/blank → { suppress:false, contactFlag:null, uiClass:'error' }
+```
+`uiClass` tokens (C maps to CSS): `'blocked'|'carrier'|'unreachable'|'config'|'error'`. `contactFlag`
+is a hint — the consumer decides how to persist it (never write from this pure module). Extend the
+table additively; never repurpose a token.
+
+### 9.6 index.css reserved seam
+
+F-core writes **no** `index.css`. The single wave writer is **Phase C**, inside the pre-existing
+omni-U marker `/* ─── OMNI-INBOX RESERVED — Phase U (unified inbox UI) ─── */` at `src/index.css:623`
+(C literally occupies omni-U's seam — §5). No new SMS-experience marker is created.
