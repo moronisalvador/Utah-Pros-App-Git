@@ -8,10 +8,9 @@
 //   sent_by: uuid (employee id),
 //   media_urls?: string[],
 //   is_internal_note?: boolean,
-//   skip_compliance?: boolean  // Only for system-initiated (e.g. automations that already checked)
 // }
 //
-// COMPLIANCE CHAIN (runs before every outbound message):
+// COMPLIANCE CHAIN (runs before EVERY outbound message — no bypass):
 // 1. DND check — blocks if contact.dnd === true
 // 2. Opt-out check — blocks if contact.opt_in_status === false
 // 3. Consent log — every send attempt is auditable
@@ -54,7 +53,7 @@ export async function onRequestPost(context) {
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   try {
-    const { conversation_id, body, sent_by, media_urls, is_internal_note, skip_compliance } = await request.json();
+    const { conversation_id, body, sent_by, media_urls, is_internal_note } = await request.json();
 
     if (!conversation_id || !body?.trim()) {
       return jsonResponse({ error: 'conversation_id and body are required' }, 400, request, env);
@@ -87,6 +86,17 @@ export async function onRequestPost(context) {
       return jsonResponse({ error: 'Conversation not found' }, 404, request, env);
     }
 
+    // ═══ REFUSE GROUP / BROADCAST (Wave -1, F-4) ═══
+    // The legacy per-participant loop only consent-checked participants[0], then
+    // texted everyone — a TCPA hole. No UI creates these today; hard-refuse until
+    // Phase B ships the real per-recipient consent loop.
+    if (conversation.type === 'group' || conversation.type === 'broadcast') {
+      return jsonResponse({
+        error: 'Group and broadcast sends are not supported',
+        code: 'MULTI_RECIPIENT_UNSUPPORTED',
+      }, 400, request, env);
+    }
+
     const participants = await db.select(
       'conversation_participants',
       `conversation_id=eq.${conversation_id}&is_active=eq.true`
@@ -96,9 +106,11 @@ export async function onRequestPost(context) {
       return jsonResponse({ error: 'No active participants in conversation' }, 400, request, env);
     }
 
-    // ═══ COMPLIANCE CHECKS ═══
-    // These run for every outbound message unless skip_compliance is true (system automations only)
-    if (!skip_compliance) {
+    // ═══ COMPLIANCE CHECKS (run for EVERY outbound message — no bypass) ═══
+    // The old `skip_compliance` escape hatch was removed in Wave -1 (F-2): it had
+    // zero legitimate callers and let any valid JWT skip the entire DND + opt-in
+    // chain. Automated sends run their own consent gate (functions/lib/automated-send.js).
+    {
       // Get the primary contact for compliance checks
       const primaryParticipant = participants[0];
       const [contact] = await db.select('contacts', `id=eq.${primaryParticipant.contact_id}`);
