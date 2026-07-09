@@ -6386,3 +6386,50 @@ importing the frozen `functions/lib/twilio-errors.js`, per-thread draft get/set/
 inside the §623 omni-U marker. No edit to `realtime.js` / `CrmConversations.jsx` / any worker. `test` +
 `build` + `eslint` green. **Owner-gated tail:** on-device iOS `/tech/conversations` verification is the
 Phase G lane; A2P live-send stays gated (§7).
+
+---
+
+## Session log — 2026-07-09 · SMS Experience Phase G — Deliverability ops + verification tails (shipped)
+
+Wave 2, launched after A + C merged into `dev`. Owned a new deliverability health component +
+`Layout.jsx` (unread-badge only, per the ownership manifest); everything else was verification.
+
+**Shipped:**
+- **New `src/components/DeliverabilityHealth.jsx`**, embedded as a "Deliverability" sub-tab under
+  DevTools → Messaging (zero new routes, zero schema/RPCs). Three read-only sections: (1) worker
+  health for `twilio-webhook`/`twilio-status`/`process-scheduled` — latest status + recent error count
+  via the existing `get_worker_runs` RPC; (2) A2P/messaging-service config health via the existing
+  `get_managed_credentials_status()` RPC (booleans + phone number only — the secret itself is never
+  exposed); (3) recent failed/undelivered messages grouped by F-core's frozen `classifyTwilioError`
+  (imports `functions/lib/twilio-errors.js` directly — the same pattern
+  `components/conversations/messageUtils.js` already established for a frontend file consuming a
+  `functions/lib` module).
+- **`Layout.jsx` unread badge**: replaced the 30s `fetchUnread` poll with the existing
+  `subscribeToConversations` realtime channel + one seed fetch on mount. A per-conversation unread map
+  (`unreadByConvRef`) is updated incrementally from INSERT/UPDATE/DELETE payloads and re-summed, instead
+  of re-querying every conversation row on a timer.
+
+**Verification tails — one confirmed-broken finding, filed not fixed:**
+- **Per-thread push deep-link is BROKEN end-to-end** (live-traced, not fixed — the fix is outside G's
+  owned files): `twilio-webhook.js`'s `notifyInboundMessage` calls `dispatchEvent` with
+  `link: '/conversations'` (no `?c=<conversation_id>`); `notify.js:163` forwards it verbatim as the push
+  payload's `url`; `public/sw.js`'s `notificationclick` opens that URL as-is. A push tap for an inbound
+  text always lands on the bare inbox, never the specific thread, even though Phase C's `?c=` deep-link
+  param works correctly when navigated to directly. Same `link` also drives the in-app
+  `NotificationBell` click-through. **One-line fix** (append `?c=${conversation?.id}`) lives in
+  `twilio-webhook.js`, exclusively owned by Session A — G has no edit rights there per the ownership
+  manifest, so this is a disclosed follow-up, not an in-phase fix.
+- **Tech-PWA on-device lane**: no iOS simulator/device in this session (same disclosure as Phase C).
+  Static grep confirms the `visibilitychange` Capacitor-suspend recovery and `visualViewport` keyboard
+  handler Phase C claimed are actually present in `Conversations.jsx`. Full on-device confirmation
+  (including the push-tap→thread check, blocked on the finding above) stays owner-gated.
+- **A2P live-smoke decision fork**: live-checked at session start — `automation_settings
+  .sms_sending_enabled = false` and `integration_config.twilio_messaging_service_sid` /
+  `twilio_account_sid` / `twilio_phone_number` are still unconfigured in the DB (env-only fallback,
+  unchanged since the plan of record). No owner confirmation of A2P campaign approval was given at
+  session start, so per roadmap §7 the live send stays deferred — never faked.
+
+**Ownership honored:** touched only `src/components/DeliverabilityHealth.jsx` (new) and `Layout.jsx`
+(unread-badge block only), plus one additive sub-tab wiring in `src/pages/DevTools.jsx` (not frozen by
+this initiative) to host the new component. No edit to any worker, `Conversations.jsx`,
+`components/conversations/**`, or any migration. `test` + `build` + `eslint` green.
