@@ -6152,6 +6152,129 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-hub-errorscreen__sub { font-size: 13px; color: var(--text-tertiary); margin-bottom: 20px; }
 .tv2-hub-errorscreen__actions { display: flex; gap: 10px; }
 
+/* ══ Job Hub v2 (H2) — Below-fold zones & polish ═══════════════════════════ */
+
+/* Collapsible section head (Job & Claim). */
+.tv2-hub-collapse__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 44px; padding: 0;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-sans); text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-collapse__chev { color: var(--text-tertiary); flex-shrink: 0; transition: transform 0.2s ease; }
+.tv2-hub-collapse__chev.is-open { transform: rotate(180deg); }
+.tv2-hub-collapse__body { margin-top: 8px; }
+.tv2-hub-subhead {
+  font-size: 10px; font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 6px;
+}
+.tv2-hub-collapse__body > .tv2-hub-subhead:first-child { margin-top: 4px; }
+
+/* Claim breadcrumb card (division-colored left edge, per design law 7). */
+.tv2-hub-claimcard {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
+  padding: 12px 14px; margin-bottom: 4px;
+  background: var(--bg-primary); border: 1px solid var(--border-light);
+  border-left: 4px solid var(--tech-accent); border-radius: 12px;
+  color: var(--text-secondary); font-family: var(--font-sans);
+  cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-claimcard__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv2-hub-claimcard__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
+.tv2-hub-claimcard__num { font-size: 14px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+
+/* Contact card — one-tap call / email. */
+.tv2-hub-contact {
+  padding: 10px 12px; margin-top: 6px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 12px;
+}
+.tv2-hub-contact__top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tv2-hub-contact__name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tv2-hub-contact__role { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: capitalize; }
+.tv2-hub-contact__company { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.tv2-hub-contact__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.tv2-hub-contact__action {
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--tech-min-tap, 48px);
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 13px; font-weight: 600; text-decoration: none; font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reference detail rows. */
+.tv2-hub-detaillist { display: flex; flex-direction: column; }
+.tv2-hub-detail {
+  display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 8px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.tv2-hub-detail.is-multiline { align-items: flex-start; }
+.tv2-hub-detail:last-child { border-bottom: none; }
+.tv2-hub-detail__k { flex-shrink: 0; min-width: 104px; font-size: 12px; font-weight: 600; color: var(--text-tertiary); }
+.tv2-hub-detail__v {
+  flex: 1; min-width: 0; text-align: right; font-size: 14px; font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tv2-hub-detail__v.is-mono { font-family: var(--font-mono); }
+.tv2-hub-detail__v.is-link { color: var(--accent); text-decoration: none; }
+.tv2-hub-detail__v.is-multiline { white-space: pre-wrap; overflow: visible; word-break: break-word; }
+.tv2-hub-divpill {
+  display: inline-block; padding: 2px 10px; border-radius: var(--radius-full);
+  background: var(--bg-tertiary); border-left: 4px solid var(--tech-accent);
+  font-size: 12px; font-weight: 700; text-transform: capitalize;
+}
+
+/* Photos & Notes — gallery. */
+.tv2-hub-photogroup { margin-top: 10px; }
+.tv2-hub-photogroup__label { font-size: 11px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 6px; }
+.tv2-hub-photogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tv2-hub-thumb {
+  position: relative; display: block; aspect-ratio: 1; padding: 0; overflow: hidden;
+  border-radius: 10px; border: 1px solid var(--border-light); background: var(--bg-tertiary);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.tv2-hub-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tv2-hub-thumb__cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 6px 4px;
+  font-size: 10px; line-height: 1.2; color: var(--text-inverse); text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+}
+.tv2-hub-photomore {
+  width: 100%; min-height: 40px; margin-top: 8px; padding: 8px;
+  background: none; border: 1px dashed var(--border-color); border-radius: 10px;
+  color: var(--text-secondary); font-size: 13px; font-weight: 600; font-family: var(--font-sans);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
+/* Notes list. */
+.tv2-hub-notelist { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.tv2-hub-noteitem { padding: 10px 12px; border-radius: 12px; background: var(--bg-tertiary); }
+.tv2-hub-noteitem__text { font-size: 14px; line-height: 1.4; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+.tv2-hub-noteitem__meta { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+
+/* Inline add-note form. */
+.tv2-hub-noteform {
+  margin-top: 12px; padding: 12px; border-radius: 12px;
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+}
+.tv2-hub-noteform__input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 16px;
+  border: 1px solid var(--border-color); border-radius: 10px;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: var(--font-sans); resize: vertical;
+}
+.tv2-hub-noteform__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+/* Lightbox "Add note / room" action — sibling overlay (Lightbox has no slot). */
+.tv2-hub-lightbox-action {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 1001;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px 20px;
+  background: var(--accent); color: var(--accent-text); border: none; border-radius: var(--radius-full);
+  font-size: 14px; font-weight: 700; font-family: var(--font-sans);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    ADMIN MOBILE — admin capabilities inside the field-tech PWA (/tech/admin/*)
    Six reserved markers, one per phase. Foundation owns SHARED (the .am-* base

@@ -224,10 +224,23 @@ export function OpenEstimates({ showHandle, data = PLACEHOLDER.estimates, loadin
 
 // ─── SECTION: Row B — jobs closed + jobs completed ──────────────
 
-export function NewJobsClosed({ periodLabel, showHandle, data = PLACEHOLDER.jobsClosed, loading, error, onRetry }) {
+export function NewJobsClosed({ period, periodLabel, showHandle, data = PLACEHOLDER.jobsClosed, loading, error, onRetry }) {
+  const navigate = useNavigate();
+  // Clicking the tile drills into the list of those sold jobs, carrying the SAME
+  // period so the page opens on the exact window shown here. Inert in edit mode
+  // (showHandle) so a click to navigate can't fight a click to rearrange.
+  const linkable = !showHandle;
+  const go = () => navigate(`/jobs/closed?period=${encodeURIComponent(period || 'MTD')}`);
+  const nav = linkable ? {
+    onClick: go,
+    role: 'button',
+    tabIndex: 0,
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } },
+    style: { display: 'flex', alignItems: 'center', gap: 22, cursor: 'pointer' },
+  } : { style: { display: 'flex', alignItems: 'center', gap: 22 } };
   return (
     <Card spanClass="ovw-span-6" title="New Jobs Closed" suffix={periodLabel} showHandle={showHandle} loading={loading} error={error} onRetry={onRetry}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+      <div {...nav}>
         <div style={{ flex: 'none' }}>
           <div style={{ fontSize: 36, fontWeight: 800, color: C.ink, lineHeight: 1, letterSpacing: '-.02em', ...tnum }}>{data.count}</div>
           {data.projected && <div style={{ fontSize: 12.5, color: C.body, fontWeight: 600, marginTop: 7 }}>{data.projected}</div>}

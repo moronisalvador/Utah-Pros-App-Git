@@ -196,10 +196,15 @@ export default function TechJobHub() {
         <HubBelowFold
           jobId={jobId}
           jobNumber={job.job_number}
+          job={job}
           appointments={appointments}
           selectedId={selectedId}
           contacts={contacts}
           claim={claim}
+          isAdmin={isAdmin}
+          rooms={roomsQuery.data || null}
+          onCreateRoom={handleCreateRoom}
+          onMutation={onMutation}
           onSelect={selectVisit}
         />
       </PullToRefresh>

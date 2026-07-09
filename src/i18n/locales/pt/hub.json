@@ -78,10 +78,51 @@
     "noVisits": "Nenhuma visita agendada para este trabalho ainda.",
     "aVisit": "Visita",
     "jobClaim": "Trabalho e Sinistro",
-    "h2tag": "Em breve",
-    "viewClaim": "Ver sinistro {{number}}",
-    "photos": "Fotos e Notas",
-    "seeAllPhotos": "Ver todas as fotos e notas"
+    "photos": "Fotos e Notas"
+  },
+  "jobClaim": {
+    "partOfClaim": "Parte do sinistro",
+    "aClaim": "este sinistro",
+    "contactsHead": "Contatos",
+    "detailsHead": "Detalhes",
+    "adjusterHead": "Regulador",
+    "unnamedContact": "Contato",
+    "address": "Endereço",
+    "division": "Divisão",
+    "status": "Situação",
+    "dateOfLoss": "Data do sinistro",
+    "typeOfLoss": "Tipo de sinistro",
+    "carrier": "Seguradora",
+    "outOfPocket": "Pagamento próprio",
+    "policyNo": "Apólice #",
+    "claimNo": "Sinistro #",
+    "deductible": "Franquia",
+    "notes": "Notas",
+    "name": "Nome",
+    "phone": "Telefone",
+    "email": "E-mail"
+  },
+  "photos": {
+    "seeAll": "Ver tudo",
+    "noPhotos": "Ainda não há fotos",
+    "moreCount": "+{{count}} fotos a mais",
+    "notePlaceholder": "O que você quer anotar?",
+    "saving": "Salvando…",
+    "saveNote": "Salvar nota",
+    "addNote": "Adicionar nota",
+    "addNoteRoom": "Adicionar nota / sala",
+    "today": "Hoje",
+    "yesterday": "Ontem"
+  },
+  "admin": {
+    "mergeJob": "Mesclar trabalho",
+    "deleteJob": "Excluir trabalho",
+    "deleteTitle": "Excluir trabalho",
+    "archiveBody": "será arquivado. Pode ser restaurado depois, mas ficará oculto em todas as visualizações.",
+    "typeConfirm": "Digite {{word}} para confirmar:",
+    "deleting": "Excluindo…",
+    "archived": "Trabalho {{number}} arquivado",
+    "deleteFailed": "Não foi possível excluir o trabalho: {{message}}"
   },
   "common": {
     "add": "Adicionar",
@@ -113,6 +154,8 @@
     "placementQueued": "Colocação na fila — será enviada quando houver conexão",
     "equipRemoved": "Equipamento removido",
     "equipMarkedRemoval": "Equipamento marcado para remoção",
-    "removeFailed": "Falha ao remover: {{message}}"
+    "removeFailed": "Falha ao remover: {{message}}",
+    "noteSaved": "Nota salva",
+    "noteSaveFailed": "Não foi possível salvar a nota: {{message}}"
   }
 }

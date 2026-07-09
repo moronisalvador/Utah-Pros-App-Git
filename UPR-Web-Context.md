@@ -755,6 +755,16 @@ maps. This dashboard keeps its own scoped palette (above).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" drill-down — DONE (no migration):** the tile is now clickable → deep-links to a new
+  page **`/jobs/closed?period=…`** (`src/pages/JobsClosed.jsx`, lazy route in `App.jsx` under `jobs`, before
+  `:jobId`) that lists the actual sold jobs behind the number, carrying the SAME period the dashboard shows.
+  Click is keyboard-accessible, inert in edit mode (mirrors `useJobRowNav`). **Matches the tile by
+  construction:** shared data logic in `src/lib/reportPeriods.js` (`periodRange`/`REPORT_PERIODS`, lifted OUT
+  of `useJobsClosed.js` so tile + page share one period-boundary definition) + `src/lib/jobsClosed.js`
+  (`fetchJobsClosed(db, period)` — same `get_jobs_closed` RPC + same window, hydrated from `jobs`). Page reuses
+  the Jobs-page `.job-list-card` CSS (no new styles); rows deep-link to `/jobs/:id`. **Built as a stepping
+  stone to the future reporting tool** — both shared libs are report-agnostic and foldable. No nav link (the
+  tile IS the entry point).
 - **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
   `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
   The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now
@@ -2017,6 +2027,33 @@ the idb persister), not M1's local `useState`.
   (`tv2-hub-*`). M1's modules (`VisitContext`/`JobPhotos`/`JobDetailsPanel`/`VisitPicker`/
   `WorkAuthBanner`/`ClaimBreadcrumb`) are now unused — H2 deletes them; `hubHelpers`+`AdminJobMenu`
   retained.
+
+#### Phase H2 — Below-fold & polish (SHIPPED Jul 7 2026; flag still OFF)
+
+Completed Z4 and polished the whole surface. No schema/RPC changes (H2 ships zero migrations);
+`page:tech_job_hub` stays owner-only OFF and `nav.js` is untouched. Stacked on H1 (H1 had not yet
+merged to `dev`, so this branch carries H1's 3 commits — merge H1 first, or merge this after it).
+- **Z4 in binding order** (`HubBelowFold.jsx` now just composes): **Visits switcher** (kept from
+  H1) → **`JobClaimSection.jsx`** (new — collapsible Job & Claim, ABOVE photos: every `contacts[]`
+  person with one-tap `tel:`/`mailto:`, division pill, carrier/policy/claim, adjuster block,
+  deductible admin-only, claim breadcrumb → `/tech/claims/:id`; full legacy `JobDetailsPanel`
+  field set) → **`PhotosNotes.jsx`** (new) → `GenerateReportButton` (self-gated, as-is).
+- **`PhotosNotes.jsx`:** job-wide `job_documents` via `buildDocsQuery({jobId})`, cached under the
+  `['tech','hub',jobId]` prefix (so `photo`/`doc` invalidation repaints it). Photos **selected-visit-
+  first then job-wide**, grouped by day, capped 12 + "See all"/"+N more" → `/tech/jobs/:id/photos`.
+  Tap → shared `Lightbox` with an **"Add note / room"** sibling-overlay button (Lightbox is a frozen
+  shared component with no slot) → `PhotoNoteSheet` (note + room-tag + create-room). Inline add-note
+  (`insert_job_document` category `note`, tagged to the selected visit). `sync:item-done`
+  `photo.upload` listener (keyed to job) refreshes the gallery on offline-photo sync.
+- **Admin kebab** (`AdminJobMenu`, H1-built, verified): merge + typed-`DELETE` archive — the ONLY
+  typed-confirm on the surface.
+- **Deleted M1 modules:** `JobPhotos`, `JobDetailsPanel`, `VisitContext`, `VisitPicker`,
+  `ClaimBreadcrumb`, `WorkAuthBanner`. Retained: `hubHelpers`(+test, incl. the `showWorkAuthBanner`
+  predicate), `AdminJobMenu`, and all H1 `Hub*`/`StageClock`/`useVisitClock` modules.
+- **i18n:** new `hub.jobClaim.*` + `hub.photos.*` keys (EN/PT/ES real-quality, parity-tested);
+  removed the H1 "coming soon" stub keys. **CSS:** appended inside the §HUB marker (`tv2-hub-*`
+  only), coherent with the Dash/Schedule v2 language. `npm test` (764 pass) / `build` / `eslint`
+  (changed files) clean. **Owner gate opens here** — owner bakes on their phone before H3.
 
 ---
 
