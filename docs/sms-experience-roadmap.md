@@ -238,6 +238,13 @@ access. Stage migration + rollback + tests; wait for owner OK per `database-stan
 
 **Phase B — Staff send chokepoint** (Opus·high) **[absorbs omni O, SMS-only]**. Owns
 `send-message.js` + `send-message.test.js`.
+> ▶ **BUILT 2026-07-09 — PR open into `dev` (handoff, not yet merged).** Test-first: the two obsolete
+> Wave -1 refuse-guard tests replaced by real per-participant-loop coverage (DND/opted-out beyond index 0
+> never texted; per-recipient failure row; no-phone refusal; all-blocked → 403). `npm run test` (13
+> Phase-B cases + full suite) + `build` + `eslint` green; `consent-path-auditor` PASS,
+> `sms-experience-phase-reviewer` SHIP-WITH-NITS (nits are Phase-C failed-affordance follow-ups, not B
+> defects), `upr-pattern-checker` clean. Zero schema; `skip_compliance` not reintroduced; only the two
+> owned files changed.
 - Full **per-participant** consent loop (Wave -1 only refuse-guarded) + **per-recipient `messages`
   rows** so group failures are recorded.
 - Adopt omni §7 "refuse, never cross-channel fallback / worker is sole writer" invariant.
