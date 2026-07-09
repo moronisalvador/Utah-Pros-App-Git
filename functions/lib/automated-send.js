@@ -386,7 +386,7 @@ async function findOrCreateAutomatedConversation(db, contact, phone) {
 // status callback will update. Best-effort: a thread-write failure must NEVER
 // turn a delivered text into a reported failure (the send already happened), so
 // everything here is wrapped and swallowed. Worker is the sole writer (omni §7.1).
-async function recordAutomatedSms(db, { contact, phone, body, sid, status }) {
+async function recordAutomatedSms(db, { contact, phone, body, sid }) {
   try {
     const conversation = await findOrCreateAutomatedConversation(db, contact, phone);
     if (!conversation) return null;
@@ -396,7 +396,12 @@ async function recordAutomatedSms(db, { contact, phone, body, sid, status }) {
       body,
       channel: 'sms',
       direction: 'outbound',
-      status: sid ? (status || 'queued') : 'failed',
+      // Always 'queued' on a real send — mirrors send-message.js. Do NOT store the
+      // raw Twilio status: under a Messaging Service the initial status is
+      // 'accepted', which is outside messages_status_check and would 400 the
+      // insert (swallowed → the F-12 thread row would silently vanish). The
+      // statusCallback advances this to sent/delivered/failed by twilio_sid.
+      status: sid ? 'queued' : 'failed',
       twilio_sid: sid || null,
       sent_by: null, // automated — no staff sender
       // num_segments / price left NULL — Phase A fills them from the status callback.
@@ -451,7 +456,7 @@ export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
   try {
     const result = await sendSmsWithBackoff(env, { to: phone, body, statusCallback });
     await logSmsConsent(db, contact, 'automated_send', `Automated SMS sent (sid ${result.sid})`);
-    await recordAutomatedSms(db, { contact, phone, body, sid: result.sid, status: result.status });
+    await recordAutomatedSms(db, { contact, phone, body, sid: result.sid });
     return { ok: true, skipped: false, sid: result.sid };
   } catch (e) {
     await logSmsConsent(db, contact, 'send_failed', `Automated SMS failed: ${e.message}`);

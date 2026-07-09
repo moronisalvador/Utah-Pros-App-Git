@@ -203,6 +203,20 @@ describe('sendAutomatedMessage — thread visibility + status callback (F-12)', 
     expect(state.sentTo[0].statusCallback).toMatch(/\/api\/twilio-status$/);
   });
 
+  it('stores the thread row as queued even when Twilio returns status:accepted (Messaging Service)', async () => {
+    // Under a Messaging Service the initial Twilio status is 'accepted', which is
+    // OUTSIDE messages_status_check — storing it raw would 400 the insert and the
+    // best-effort catch would silently drop the F-12 row. We must normalize to 'queued'.
+    state.smsEnabled = true;
+    state.sendImpl = () => ({ sid: 'SM_ms', status: 'accepted' });
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi', now: DAYTIME });
+    expect(res.ok).toBe(true);
+    const msg = state.inserts.find((i) => i.table === 'messages');
+    expect(msg).toBeTruthy();
+    expect(msg.data.status).toBe('queued'); // normalized, not the raw 'accepted'
+    expect(msg.data.twilio_sid).toBe('SM_ms');
+  });
+
   it('never writes a thread row (or texts) when the send is gated off', async () => {
     // Kill-switch OFF (default) → skipped before any Twilio/thread write.
     const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
