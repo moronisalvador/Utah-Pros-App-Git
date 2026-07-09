@@ -754,6 +754,16 @@ maps. This dashboard keeps its own scoped palette (above).
   `get_dashboard_action_items` row; the `ActionRequired` widget now leads with **customer name · job
   number**, then the doc status, then **address · sent date**, so a row is identifiable at a glance.
   Backward-compatible (existing keys unchanged → old code ignores the new ones).
+- **"New Jobs Closed" drill-down — DONE (no migration):** the tile is now clickable → deep-links to a new
+  page **`/jobs/closed?period=…`** (`src/pages/JobsClosed.jsx`, lazy route in `App.jsx` under `jobs`, before
+  `:jobId`) that lists the actual sold jobs behind the number, carrying the SAME period the dashboard shows.
+  Click is keyboard-accessible, inert in edit mode (mirrors `useJobRowNav`). **Matches the tile by
+  construction:** shared data logic in `src/lib/reportPeriods.js` (`periodRange`/`REPORT_PERIODS`, lifted OUT
+  of `useJobsClosed.js` so tile + page share one period-boundary definition) + `src/lib/jobsClosed.js`
+  (`fetchJobsClosed(db, period)` — same `get_jobs_closed` RPC + same window, hydrated from `jobs`). Page reuses
+  the Jobs-page `.job-list-card` CSS (no new styles); rows deep-link to `/jobs/:id`. **Built as a stepping
+  stone to the future reporting tool** — both shared libs are report-agnostic and foldable. No nav link (the
+  tile IS the entry point).
 - **"New Jobs Closed" card + commission foundation — DONE (migrations `20260630_job_sales_canonical.sql`,
   `_commission_foundation.sql`, superseded by `_commission_on_real_jobs.sql`):**
   The old **"New claims booked"** card (counted raw `claims`) was renamed to **"New Jobs Closed"** and now

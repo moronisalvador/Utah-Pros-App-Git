@@ -63,6 +63,7 @@ function lazyRetry(factory) {
 const Dashboard = lazyRetry(() => import('@/pages/Dashboard'));
 const Conversations = lazyRetry(() => import('@/pages/Conversations'));
 const Jobs = lazyRetry(() => import('@/pages/Jobs'));
+const JobsClosed = lazyRetry(() => import('@/pages/JobsClosed'));
 const JobPage = lazyRetry(() => import('@/pages/JobPage'));
 const ClaimsList = lazyRetry(() => import('@/pages/ClaimsList'));
 const ClaimPage = lazyRetry(() => import('@/pages/ClaimPage'));
@@ -349,6 +350,7 @@ function WebRoutes() {
         <Route path="jobs">
           <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
           <Route path="new" element={<Navigate to="/jobs" replace />} />
+          <Route path="closed" element={<ErrorBoundary section="Jobs Closed"><JobsClosed /></ErrorBoundary>} />
           <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
         </Route>
 
