@@ -169,11 +169,11 @@ Fixes only the three live-now flag-independent P0s + one latent-neutralizer:
 
 **Test-first:** `send-message.test.js` (consent gate holds, `skip_compliance` gone),
 `twilio-webhook` STOP digits-OR match test. **Close-out checklist:**
-- [ ] committed failing tests → fixes
-- [ ] `skip_compliance` removed; group/broadcast refuse-guard in place
-- [ ] STOP matches non-E.164 contacts + updates all rows; `Yes`/`info` stored
-- [ ] fake-send fallback gone; real errors surfaced
-- [ ] reviewers green → PR into `dev`
+- [x] committed failing tests → fixes _(red committed first: send-message.test.js new; twilio-webhook.test.js extended)_
+- [x] `skip_compliance` removed; group/broadcast refuse-guard in place _(F-2/F-4 — 400 `MULTI_RECIPIENT_UNSUPPORTED`)_
+- [x] STOP matches non-E.164 contacts + updates all rows; `Yes`/`info` stored _(F-3 digits-OR `id=in.(…)`; F-7 persist-before-early-return)_
+- [x] fake-send fallback gone; real errors surfaced _(F-1 — ghost insert deleted; `upr:toast` on failure)_
+- [x] reviewers green → PR into `dev`
 
 ### Wave 0 — F-core (Session F · Opus·high)  [may run ∥ Wave -1, disjoint files]
 > **Prerequisite:** none. **Read scope:** CLAUDE.md + this block + manifest + `database-standard.md`.
