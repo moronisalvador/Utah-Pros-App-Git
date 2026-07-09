@@ -134,7 +134,7 @@ const BADGE = {
   partial: { label: 'PARTIAL', ...STATUS.warning },
   overdue: { label: 'OVERDUE', ...STATUS.danger },
   draft:   { label: 'DRAFT',   ...STATUS.neutral },
-  saved:   { label: 'SAVED',   solid: '#7a5af8', text: '#5b3fd6', tint: '#f0edfe', border: '#ddd4fb' },
+  saved:   { label: 'SAVED',   solid: '#7c3aed', text: '#7c3aed', tint: '#ede9fe', border: '#ddd6fe' },
   sent:    { label: 'SENT',    ...STATUS.info },
   open:    { label: 'OPEN',    ...STATUS.info },
 };
