@@ -105,19 +105,21 @@ export function bucketKey(d) {
 }
 
 // Invoice status word from balances/dates (mirror of collTokens.invoiceStatusKind):
-// paid → overdue → draft (unsent) → partial → sent.
+// paid → overdue → partial → draft → saved → sent. The lifecycle tier
+// (draft/saved/sent) comes from the status column + qbo_invoice_id: draft = not in
+// QBO or edited since the last push; saved = recorded in QBO, not emailed; sent =
+// emailed to the customer.
 export function invoiceStatusKind(r, today = midnight()) {
   const total = Number(r.total || 0), paid = Number(r.amount_paid || 0), bal = Number(r.balance || 0);
   if (total > 0 && bal <= 0.005) return 'paid';
   const d = daysPastDue(r.due_date, today);
   if (bal > 0 && d != null && d > 0) return 'overdue';
-  const sent = !!r.sent_at || !!r.qbo_invoice_id;
-  if (!sent || r.status === 'draft') return 'draft';
   if (paid > 0) return 'partial';
-  return 'sent';
+  if (!r.qbo_invoice_id || r.status === 'draft') return 'draft';
+  return r.status === 'sent' ? 'sent' : 'saved';
 }
 
-const STATUS_LABEL = { paid: 'Paid', overdue: 'Overdue', draft: 'Draft', partial: 'Partial', sent: 'Sent' };
+const STATUS_LABEL = { paid: 'Paid', overdue: 'Overdue', draft: 'Draft', partial: 'Partial', saved: 'Saved', sent: 'Sent' };
 export const statusLabel = (kind) => STATUS_LABEL[kind] || '';
 
 // Estimate status word (mirror of EstimatesList.estStatus): converted → sync error → sent → draft.

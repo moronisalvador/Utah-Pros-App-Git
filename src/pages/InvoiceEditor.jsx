@@ -192,6 +192,12 @@ export default function InvoiceEditor() {
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
+      // Invoices always default their due date to today until one is picked — prefill and
+      // persist it (not a content edit, so it must NOT flip the invoice back to draft).
+      if (!i.due_date && canEditBilling(employee?.role) && !i.locked) {
+        i.due_date = today();
+        d.update('invoices', `id=eq.${invoiceId}`, { due_date: i.due_date }).catch(() => {});
+      }
       setInv(i);
       // Re-show the persisted Xactimate recap banner on (re)load — once per mount, so a manual
       // dismiss isn't undone by later loads triggered by line edits.
@@ -220,7 +226,7 @@ export default function InvoiceEditor() {
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, navigate, canEdit]);
+  }, [invoiceId, navigate, canEdit, employee]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -283,13 +289,25 @@ export default function InvoiceEditor() {
   }, [xactBusy]);
 
   // ─── SECTION: Line handlers ──────────────
+  // Once an invoice is in QuickBooks, editing it makes the QBO copy stale — flip the status
+  // back to 'draft' (live: badge → DRAFT) until the user re-Saves, which pushes to QBO and
+  // restores 'saved'. Skip paid/partially_paid so collection state is never disturbed, and
+  // skip not-yet-synced invoices (already draft — nothing to flip).
+  const markDirty = () => {
+    if (!inv?.qbo_invoice_id) return;
+    if (inv.status === 'draft' || inv.status === 'paid' || inv.status === 'partially_paid') return;
+    setInv((prev) => (prev ? { ...prev, status: 'draft' } : prev));
+    dbRef.current.update('invoices', `id=eq.${invoiceId}`, { status: 'draft' }).catch(() => {});
+  };
   const addLine = async () => {
     setBusy(true);
+    markDirty();
     try { await db.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: lines.length }); await load(); }
     catch (e) { toast('Failed to add line: ' + (e.message || e), 'error'); }
     finally { setBusy(false); }
   };
   const setLineLocal = (lineId, patch) => {
+    markDirty();
     setLines((prev) => prev.map((l) => {
       if (l.id !== lineId) return l;
       const next = { ...l, ...patch };
@@ -310,6 +328,7 @@ export default function InvoiceEditor() {
   };
   const removeLine = async (line) => {
     setBusy(true);
+    markDirty();
     try { await db.delete('invoice_line_items', `id=eq.${line.id}`); await load(); }
     catch { toast('Failed to remove line', 'error'); }
     finally { setBusy(false); }
@@ -318,6 +337,7 @@ export default function InvoiceEditor() {
   const onDropRow = async (toIdx) => {
     const from = dragIdx.current; dragIdx.current = null;
     if (from == null || from === toIdx) return;
+    markDirty();
     const next = [...lines];
     const [moved] = next.splice(from, 1);
     next.splice(toIdx, 0, moved);
