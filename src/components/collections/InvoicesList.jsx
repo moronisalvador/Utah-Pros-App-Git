@@ -113,7 +113,7 @@ export default function InvoicesList({ db, navigate, period = 'All' }) {
       if (filters.minAmt !== '' && total < Number(filters.minAmt)) return false;
       if (filters.maxAmt !== '' && total > Number(filters.maxAmt)) return false;
       if (q) {
-        const hay = `${r.client_name || ''} ${r.claim_number || ''} ${r.job_number || ''} ${r.invoice_number || ''} ${r.qbo_doc_number || ''} ${r.division || ''}`.toLowerCase();
+        const hay = `${r.client_name || ''} ${r.claim_number || ''} ${r.job_number || ''} ${r.invoice_number || ''} ${r.qbo_doc_number || ''} ${r.qbo_invoice_id || ''} ${r.division || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
