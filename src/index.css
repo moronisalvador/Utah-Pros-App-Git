@@ -10739,7 +10739,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #ef4444;
+  background: var(--status-needs-response);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
