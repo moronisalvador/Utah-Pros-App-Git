@@ -409,61 +409,40 @@ export default function Conversations({ replyAssist } = {}) {
     }
 
     // ── Immediate send path ──
-    // Strategy: POST to /api/send-message Worker first.
-    // Worker handles Twilio delivery + compliance checks (DND, opt-in).
-    // If Worker fails (not deployed, env vars missing), fall back to direct insert.
+    // POST to the /api/send-message Worker, which owns Twilio delivery + the
+    // compliance chain (DND, opt-in). F-1 (Wave -1): check res.ok BEFORE reading
+    // the body, and NEVER fall back to a direct messages insert — that "ghost row"
+    // made staff believe a text was sent when the Worker had actually failed and
+    // no SMS left. On any failure we surface the real error and append no bubble.
     setSending(true);
     try {
-      let newMsg = null;
-      let usedWorker = false;
-
-      try {
-        const authHeader = await getAuthHeader();
-        const res = await fetch('/api/send-message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({
-            conversation_id: activeId,
-            body: text,
-            sent_by: employee?.id || null,
-            is_internal_note: isNote,
-          }),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          // Handle compliance blocks with user-facing feedback
-          if (data.code === 'DND_ACTIVE') {
-            showToast('Blocked: contact has DND enabled');
-            setSending(false);
-            return;
-          }
-          if (data.code === 'NO_CONSENT') {
-            showToast('Blocked: contact has not opted in');
-            setSending(false);
-            return;
-          }
-          throw new Error(data.error || `Worker returned ${res.status}`);
-        }
-
-        newMsg = data.message;
-        usedWorker = true;
-      } catch (workerErr) {
-        // Worker not available — fall back to direct Supabase insert
-        // This is expected during development or before Twilio env vars are set
-        console.warn('Worker unavailable, using direct insert:', workerErr.message);
-
-        const msgData = {
+      const authHeader = await getAuthHeader();
+      const res = await fetch('/api/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
           conversation_id: activeId,
-          type: isNote ? 'internal_note' : 'sms_outbound',
           body: text,
-          status: isNote ? 'received' : 'queued',
           sent_by: employee?.id || null,
-        };
-        const [inserted] = await db.insert('messages', msgData);
-        newMsg = inserted;
+          is_internal_note: isNote,
+        }),
+      });
+
+      if (!res.ok) {
+        // Best-effort parse for a specific reason; never assume a JSON body.
+        let data = {};
+        try { data = await res.json(); } catch { /* non-JSON error body */ }
+        const message = data.code === 'DND_ACTIVE'
+          ? 'Blocked: contact has Do Not Disturb enabled'
+          : data.code === 'NO_CONSENT'
+            ? 'Blocked: contact has not opted in to SMS'
+            : (data.error || `Message not sent (${res.status})`);
+        window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+        return; // no optimistic bubble — nothing was sent
       }
+
+      const data = await res.json();
+      const newMsg = data.message;
 
       // Attach employee info for immediate rendering
       if (newMsg) {
@@ -471,24 +450,20 @@ export default function Conversations({ replyAssist } = {}) {
         setMessages(prev => [...prev, newMsg]);
       }
 
-      // Update conversation preview (Worker does this server-side too, but we update local state)
+      // The Worker already updated the conversation server-side; mirror locally.
       const preview = isNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
       const upd = { last_message_at: new Date().toISOString(), last_message_preview: preview, updated_at: new Date().toISOString() };
       if (!isNote && activeConv?.status === 'needs_response') {
         upd.status = 'waiting_on_client'; upd.status_changed_at = new Date().toISOString();
         if (!activeConv.first_response_at) upd.first_response_at = new Date().toISOString();
       }
-
-      // Only update conversation client-side if Worker wasn't used (Worker already did it)
-      if (!usedWorker) {
-        await db.update('conversations', `id=eq.${activeId}`, upd);
-      }
       setConversations(prev => prev.map(c => c.id === activeId ? { ...c, ...upd } : c));
 
       clearCompose(); setIsNote(false); composeRef.current?.focus();
     } catch (err) {
+      // Network failure (Worker unreachable) — surface it, append no bubble.
       console.error('Send error:', err);
-      showToast('Failed to send');
+      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Network error — message not sent', type: 'error' } }));
     } finally {
       setSending(false);
     }
