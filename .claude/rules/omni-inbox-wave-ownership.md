@@ -19,6 +19,13 @@ replies are **reply-only, channel-locked, transactional** (owner decisions 2026-
 
 ---
 
+> **SUPERSESSION (2026-07-09, owner-approved):** Phases **O** (`send-message.js`) and **U**
+> (`Conversations.jsx` + `src/components/conversations/**`) were **absorbed by the `sms-experience`
+> initiative** (`docs/sms-experience-roadmap.md` §8) while still unbuilt — B hardens `send-message.js`
+> (SMS-only; a future omni email branch builds on B's version), C builds the inbox UI into this
+> manifest's `index.css:623` marker. omni §7 wrong-channel invariants are *implemented* by B/C, not
+> violated. Do not re-dispatch O/U as greenfield; reconcile against the sms-experience versions.
+
 ## 1. Frozen in-wave — NOBODY edits these except the noted owner (they are the seams)
 
 - `functions/lib/email.js` — Foundation adds an additive threading-header path

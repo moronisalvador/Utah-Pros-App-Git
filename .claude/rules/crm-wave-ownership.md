@@ -21,6 +21,11 @@ split. Stay inside your files and your frozen stubs and no two sessions can coll
 - `src/pages/crm/CrmOverview.jsx` and `src/pages/crm/CrmContacts.jsx` — slot **skeletons**.
   Fill the slot components they render, never the skeletons.
 - `functions/lib/automated-send.js` — the completed send gate (email + sms). Import only.
+  > **AMENDED (2026-07-09, owner-approved):** the `sms-experience` initiative's Phase D edits
+  > `automated-send.js` + `run-automations.js` **additively** (thread-visibility for automated SMS,
+  > quiet-hours held-retry, MPS pacing) — signature AND return `{ok,skipped,reason}` vocabulary FROZEN
+  > (`'sms_disabled'`/`'quiet_hours'` load-bearing for Phase 8/5 held-retry), with backward-compat
+  > tests. See `docs/sms-experience-roadmap.md` §8.
 - `functions/lib/sms-consent.js`, `functions/lib/email-consent.js` — consent predicates.
 - `functions/lib/twilio.js`, `functions/lib/email.js`, `functions/lib/supabase.js`,
   `functions/lib/cors.js`, `functions/lib/date-mt.js`, `functions/lib/phone.js`,

@@ -6266,3 +6266,59 @@ validation; money early per owner priority; lists give P3/P4a their entry points
 **new `admin-mobile-phase-reviewer`** agent (money/gate-weighted) + reused `upr-pattern-checker`.
 Full detail in `docs/admin-mobile-roadmap.md`; launch blocks in `docs/admin-mobile-dispatch.md`;
 ownership in `.claude/rules/admin-mobile-wave-ownership.md`.
+
+
+---
+
+## Session log — 2026-07-09 · SMS Experience plan of record (planning only, zero feature code)
+
+Ran a full `/masterplan sms-experience` pass: 6-agent live audit (frontend `Conversations.jsx`;
+inbound/status/transport workers; automation senders; realtime/push/mobile; initiative recon;
+schema/tests) + independent live DB/Twilio verification + a 3-agent adversarial challenge pass. Committed
+the plan of record (docs/agents only): `docs/sms-experience-roadmap.md`,
+`docs/sms-experience-dispatch.md`, `.claude/rules/sms-experience-wave-ownership.md`, and a new
+`.claude/agents/sms-experience-phase-reviewer.md`. No feature code shipped.
+
+**Two objectives.** (1) A2P 10DLC code-readiness before the campaign approval — verdict **NOT ready**
+(four live P0s + an env-only A2P-sender crux); (2) make texting feel iMessage/WhatsApp — mid-fidelity,
+real gaps.
+
+**Key live findings (2026-07-09, verified).**
+- `messages`/`conversations`/`conversation_participants` carry live **anon `USING(true)`** policies +
+  table GRANTs — SMS archive readable (rows forgeable via INSERT) with the browser anon key. (`messages`
+  has no anon UPDATE/DELETE policy → read-surface-dominated.) Deferred by db-foundation §8; closed by F-red.
+- `Conversations.jsx:433` P0 silent fake-send: `res.json()` before `res.ok` → ghost `queued` row + "sent"
+  bubble on any worker error. `send-message.js:57` `skip_compliance` bypass (zero callers). STOP exact
+  phone-match misses non-E.164 contacts (9/148) → send-after-STOP. Group send consent-checks only
+  `participants[0]`.
+- `twilio-status.js` no signature validation; automated SMS invisible in-thread (no conversation/message
+  row); `run-automations` permanently drops quiet-hours-deferred texts; `process-scheduled` unauth +
+  non-atomic claim. Twilio workers write no `worker_runs`.
+- `integration_config.twilio_messaging_service_sid` NULL live → A2P sender is env-only
+  (`TWILIO_MESSAGING_SERVICE_SID`) — if unset, sends use a long code, not the A2P sender. **Owner must
+  verify the Cloudflare env var (both sets).** Twilio MCP not configured here → console side is an owner
+  checklist.
+- Schema-as-code gap: the 5 core SMS tables have NO `CREATE TABLE` in migrations; F-core ships a
+  drift-capture baseline before touching them. `messages.twilio_sid` UNIQUE index + messages/conversations
+  `supabase_realtime` publication membership are live-only (untracked drift) — F-core tracks them.
+
+**Structure.** Wave -1 compliance hotfix (H0) ships first (3 live P0s); Foundation splits into **F-core**
+(green, unblocks) + **F-red** (anon-closure, owner-gated, gates nothing); Wave 1 = A (transport
+hardening) ∥ B (send chokepoint, absorbs omni O) ∥ C (conversation UX, absorbs omni U) ∥ D (automated
+visibility, amends CRM automated-send freeze); Wave 2 = G (deliverability ops + verification tails +
+A2P live-smoke fork). Tech PWA covered — `Conversations.jsx` is one shared component mounted at
+`/tech/conversations` (Capacitor iOS); C additionally applies `tech-mobile-ux.md` + Capacitor
+suspend-recovery. Notification delivery = HAVE (web push works on the PWA per owner); APNs stays
+dormant/OUT.
+
+**Cross-manifest (owner-approved supersessions, disclosed roadmap §8):** absorbs unbuilt omni-inbox
+Phases O (`send-message.js`) + U (`Conversations.jsx`); amends the CRM-wave freeze on
+`automated-send.js`/`run-automations.js` (Phase D, additive, return-vocab frozen + backward-compat tests
+for the Phase 8/5 callers). No omni/CRM branch is in flight. CRM 4b campaigns/blasts + the
+`sms_sending_enabled` flip stay out of scope / owner's.
+
+**Challenge outcomes:** 6/6 refuted claims CONFIRMED; disjointness surfaced 5 hidden shared artifacts
+(moved into F-core: send-message contract freeze, return-vocab freeze, atomic `unread_count` increment,
+frozen `messages` insert shape; `process-scheduled` ownership → A); counter-ordering won the Wave -1
+hotfix + F-core/F-red split. Full detail in `docs/sms-experience-roadmap.md`; launch blocks in
+`docs/sms-experience-dispatch.md`; ownership in `.claude/rules/sms-experience-wave-ownership.md`.
