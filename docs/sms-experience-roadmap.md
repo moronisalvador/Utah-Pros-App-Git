@@ -391,6 +391,13 @@ they render on old + new UI alike — challenge-confirmed).
 
 ## 6. Tech PWA scope (owner Q, 2026-07-09)
 
+> ⚠️ **SUPERSEDED FOR THE TECH SHELL (2026-07-09, owner-directed):** the `tech-messages-v2`
+> initiative builds a dedicated keep-alive tech pane behind `page:tech_msgs_v2`
+> (`docs/tech-messages-v2-roadmap.md`; sms manifest §10 amendment). This section's
+> "reaches the field-tech app automatically" posture ends when that flag opens;
+> `Conversations.jsx` keeps serving web + CRM unchanged. The open tech-PWA on-device
+> verification lanes (Phase C :281, Phase G :356) retarget to the new pane's bake.
+
 `Conversations.jsx` is **one shared component** mounted at `/conversations` (web, `Layout`),
 **`/tech/conversations` (Capacitor iOS `TechLayout`, `App.jsx:279`)**, and `/crm/conversations`
 (`CrmLayout`) — so Phase C's rebuild + the A/B/D backend fixes reach the field-tech app automatically.

@@ -6463,3 +6463,40 @@ Wave 2, launched after A + C merged into `dev`. Owned a new deliverability healt
 (unread-badge block only), plus one additive sub-tab wiring in `src/pages/DevTools.jsx` (not frozen by
 this initiative) to host the new component. No edit to any worker, `Conversations.jsx`,
 `components/conversations/**`, or any migration. `test` + `build` + `eslint` green.
+
+---
+
+## Tech Messages v2 — plan of record (session 2026-07-09, docs only — no feature code)
+
+Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
+desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
+**keep-alive tech-v2 pane** behind `page:tech_msgs_v2` — the TechScheduleV2 machine (pane
+host, React-Query + idb cache-first paint, `tv2-*` css, i18n) applied to messaging. The
+shared `Conversations.jsx` is never edited (3 mounts; keeps serving web + CRM). 6-agent live
+audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
+
+- **Docs:** `docs/tech-messages-v2-roadmap.md` (plan of record: findings, gap audit,
+  corrected architecture calls, data contracts, adjudicated forks, F-M/B1/B2 phase blocks,
+  challenge report) · `docs/tech-messages-v2-dispatch.md` (cold-session blocks) ·
+  `.claude/rules/tech-messages-v2-wave-ownership.md` (ownership; authorized amendments) ·
+  tech-v2 manifest §8 + sms-experience manifest §10 + sms roadmap §6 pointer (cross-manifest
+  transparency).
+- **Foundation (F-M) will ship:** flag seed (row FIRST — fail-open trap at
+  AuthContext.jsx:294) · `get_tech_conversations` (composite `{conversations, unread_total,
+  status_counts}`, server search/filters, fixed COALESCE+id keyset cursor, single-row
+  deep-link mode; GRANT authenticated,service_role + REVOKE PUBLIC/anon) ·
+  `find_or_create_conversation` · techQuery kinds `convos`/`thread` + `message` mutation +
+  thread-excluding persister dehydrate filter (SMS bodies never hit IndexedDB) · TechLayout
+  third pane + **Messages-tab unread badge** · `TechMsgsPane` two-layer host (TechPane
+  copy-in) · msgs i18n namespace.
+- **Key adjudications:** App.jsx untouched (paneCovering suppresses the outlet — verified) ·
+  URL-driven thread open (`?c=` push / back) · optimistic overlay + setQueryData
+  patch/append (never invalidate-per-event) · Enter=send · techs get one-tap DND **ON**
+  only (OFF stays office/admin — TCPA asymmetry) · all-org scoping v1 (assigned_to is 100%
+  unpopulated; per-employee param reserved) · realtime verified to survive F-red
+  (authenticated JWT socket; devLogin caveat).
+- **Dispatch:** F-M → B1 (core experience, at the one-session ceiling) → B2 (completion +
+  polish; STRETCH = new-conversation, scheduled sends) — strictly serial; ~0.5 post-bake fix
+  session budgeted; cutover = owner flips the flag. Coordination seams: Job Hub H3
+  (`src/i18n/index.js` only), db-foundation P8 (MMS URL helper is the swap target), sms
+  deep-link follow-up (sms-owned).

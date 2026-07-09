@@ -254,3 +254,30 @@ table additively; never repurpose a token.
 F-core writes **no** `index.css`. The single wave writer is **Phase C**, inside the pre-existing
 omni-U marker `/* ─── OMNI-INBOX RESERVED — Phase U (unified inbox UI) ─── */` at `src/index.css:623`
 (C literally occupies omni-U's seam — §5). No new SMS-experience marker is created.
+
+---
+
+## 10. tech-messages-v2 addendum (2026-07-09) — dedicated tech pane supersedes the §6 posture for the tech shell
+
+The **tech-messages-v2** initiative (`docs/tech-messages-v2-roadmap.md`) builds a dedicated
+keep-alive field-tech messaging pane behind `page:tech_msgs_v2`. Recorded here so §§1–9 stay
+truthful:
+
+- **Supersession:** the roadmap §6 "one shared component reaches the tech app automatically"
+  posture is superseded FOR THE TECH SHELL once the pane's flag opens. `Conversations.jsx`
+  keeps serving `/conversations` + CRM unchanged; the open §6/Phase C/Phase G tech-PWA
+  on-device verification lanes retarget to the new pane's bake.
+- **Consumed contract (freeze):** `src/components/conversations/{MessageBubble,
+  SegmentCounter,messageUtils}` exports are imported by the pane — additive changes only;
+  a reshape needs a coordination note to the tech-messages owner.
+- **Authorized copy-ins (disclosed, never edits):** Conversations.jsx `dispatchSend`/
+  `retryMessage` (:732-870; `handleSend` rewritten), the suspend-merge heuristic (:258-278),
+  the unread-desync guard (:316-327), the MMS upload path (:687-700). `:364-399` is
+  reference-only.
+- **Deep-link coordination:** the Phase G FOUND-BROKEN push deep-link fix
+  (`twilio-webhook.js:104`, Session-A-owned) stays sms-owned; the pane ships `?c=` parity so
+  a role-aware link can later target `/tech/conversations?c=` without pane changes.
+- **Stale-banner disclosure:** roadmap :227 (Phase A "awaiting owner merge") and :249
+  (Phase B "not yet merged") are STALE — both merged (8f63ae9, 4a52d99).
+- Everything else in §§1–9 binds the new initiative unchanged (worker sole-writer, no
+  `skip_compliance`, call-only workers, realtime.js frozen, A2P owner gate).
