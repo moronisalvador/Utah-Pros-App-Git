@@ -178,9 +178,10 @@ allowlisted). Anon-executable public functions dropped to exactly the **6 allowl
 (`notifications` authenticated policy present). Applied as: `anon_policy_closure` verbatim; `anon_rpc_revoke`
 via an equivalent catalog-driven revoke (same reviewed intent — revoke PUBLIC+anon on all-but-6-allowlist;
 end state verified = 6). **TWO follow-ups still open:**
-- **`document_templates` temp anon-read bridge** (`20260708_dbf_p3_document_templates_anon_bridge.sql`) keeps
-  prod's old SignPage working. **DROP it after the `dev→main` release** ships the RPC-based SignPage to prod:
-  `DROP POLICY "temp anon read document_templates (until prod SignPage release)" ON public.document_templates;`
+- **`document_templates` temp anon-read bridge** — ✅ **REMOVED 2026-07-08** (`20260708_dbf_p3_drop_document_templates_bridge.sql`)
+  after the `dev→main` release (#355) shipped the RPC-based SignPage to prod. **P3 anon closure is now 100% complete**
+  — `document_templates` is authenticated-only; verified live post-drop that signing still works via
+  `get_sign_document_templates` (anon RPC returns rows) while direct anon table read returns 0.
 - **P2 purge:** `message-attachments` is flipped **private** (applied), but its 21 orphaned objects are NOT
   deleted — Supabase's `storage.protect_delete()` blocks SQL deletes; remove them via the Storage dashboard if
   desired (harmless in a now-private bucket). The staged SQL DELETE cannot run and should be treated as a no-op.
@@ -1278,13 +1279,18 @@ get_dashboard_stats()           — Dashboard stat counts
 ### Global Search (Jun 24 2026)
 ```
 global_search(p_term TEXT, p_limit INT DEFAULT 6)
-  — Desktop top-nav search. SECURITY DEFINER, GRANT EXECUTE anon/authenticated.
+  — Desktop top-nav search. SECURITY DEFINER, GRANT EXECUTE authenticated,
+    service_role (NOT anon — least-privilege per database-standard.md §1).
     Returns a JSONB object of grouped, read-only matches: customers (contacts),
     claims, jobs, invoices, payments — each [{id, title, subtitle}] (payments
-    also carry invoice_id + job_id for routing). The 'estimates' key is reserved
-    (always []) until an estimates module exists. Enum cols cast to text before
-    NULLIF. Migration: supabase/migrations/20260624_global_search.sql. Does NOT
-    modify the MCP-only upr_search. Surfaced only in the desktop TopNav.
+    also carry invoice_id + job_id for routing). Invoices match on
+    invoice_number, qbo_doc_number, qbo_invoice_id (added 2026-07-09 so a QBO
+    invoice id like "4274" finds visualization-only mirror rows), claim_number,
+    billed_to and contact name. The 'estimates' key is reserved (always [])
+    until an estimates module exists. Enum cols cast to text before NULLIF.
+    Migrations: supabase/migrations/20260624_global_search.sql (base),
+    20260709_global_search_match_qbo_invoice_id.sql (qbo_invoice_id widen).
+    Does NOT modify the MCP-only upr_search. Surfaced only in the desktop TopNav.
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)

@@ -87,12 +87,21 @@ describe('summarizeAr — outstanding / overdue / aging totals', () => {
 });
 
 describe('invoiceStatusKind — status word', () => {
-  it('reads paid / overdue / draft / partial / sent', () => {
+  it('reads paid / overdue / partial', () => {
     expect(invoiceStatusKind({ total: 100, balance: 0 }, TODAY)).toBe('paid');
     expect(invoiceStatusKind(inv('x', 5, 100, { sent_at: '2026-06-01' }), TODAY)).toBe('overdue');
-    expect(invoiceStatusKind({ total: 100, balance: 100 }, TODAY)).toBe('draft'); // unsent
     expect(invoiceStatusKind({ total: 100, balance: 50, amount_paid: 50, qbo_invoice_id: 'q1' }, TODAY)).toBe('partial');
-    expect(invoiceStatusKind({ total: 100, balance: 100, qbo_invoice_id: 'q1' }, TODAY)).toBe('sent');
+  });
+  it('splits the lifecycle tier: draft → saved → sent', () => {
+    // Not in QuickBooks yet → draft.
+    expect(invoiceStatusKind({ total: 100, balance: 100 }, TODAY)).toBe('draft');
+    // In QuickBooks, no status / status='saved' → saved (recorded, not emailed).
+    expect(invoiceStatusKind({ total: 100, balance: 100, qbo_invoice_id: 'q1' }, TODAY)).toBe('saved');
+    expect(invoiceStatusKind({ total: 100, balance: 100, qbo_invoice_id: 'q1', status: 'saved' }, TODAY)).toBe('saved');
+    // In QuickBooks but edited since the last push (status reset to draft) → draft.
+    expect(invoiceStatusKind({ total: 100, balance: 100, qbo_invoice_id: 'q1', status: 'draft' }, TODAY)).toBe('draft');
+    // Emailed to the customer → sent.
+    expect(invoiceStatusKind({ total: 100, balance: 100, qbo_invoice_id: 'q1', status: 'sent' }, TODAY)).toBe('sent');
   });
 });
 

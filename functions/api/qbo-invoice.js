@@ -80,7 +80,8 @@ export async function onRequestPost(context) {
     if (!inv.qbo_invoice_id) return jsonResponse({ error: 'No qbo_invoice_id to delete' }, 400, request, env);
     try {
       await deleteInvoice(env, inv.qbo_invoice_id);
-      await db.update('invoices', `id=eq.${invoiceId}`, { qbo_invoice_id: null, qbo_synced_at: null, qbo_sync_error: null });
+      // Removed from QuickBooks → back to a plain draft (clears saved/sent too).
+      await db.update('invoices', `id=eq.${invoiceId}`, { qbo_invoice_id: null, qbo_synced_at: null, qbo_sync_error: null, status: 'draft' });
       return jsonResponse({ deleted: inv.qbo_invoice_id }, 200, request, env);
     } catch (e) {
       return jsonResponse({ error: e.message }, 500, request, env);
@@ -108,6 +109,9 @@ export async function onRequestPost(context) {
         qbo_email_status: qboInv?.EmailStatus || 'EmailSent',
         sent_to_email:    sendTo,
         qbo_sync_error:   null,
+        // Emailed to the customer → 'sent'. Only advance from a pre-send tier so a
+        // later paid/partially_paid state is never overwritten by a resend.
+        ...((inv.status === 'draft' || inv.status === 'saved') ? { status: 'sent' } : {}),
       });
       await logRun(db, 'completed', 1, null, startedAt);
       return jsonResponse({ ok: true, emailed_to: sendTo, email_status: qboInv?.EmailStatus || 'EmailSent' }, 200, request, env);
@@ -259,14 +263,15 @@ export async function onRequestPost(context) {
     // Capture QBO's own invoice number (DocNumber) so UPR can display the matching number.
     const patch = { qbo_invoice_id: String(qboInv.Id), qbo_synced_at: nowIso, qbo_sync_error: null, qbo_doc_number: qboInv.DocNumber != null ? String(qboInv.DocNumber) : null };
     if (mode === 'created') {
-      // First time it reaches QBO: stamp "sent" + a default Net-30 due date (drives aging).
+      // First time it reaches QBO: stamp the push time + default the due date to today.
       if (!inv.sent_at) patch.sent_at = nowIso;
-      if (!inv.due_date) {
-        const base = inv.invoice_date ? new Date(inv.invoice_date + 'T00:00:00Z') : new Date();
-        base.setUTCDate(base.getUTCDate() + 30);
-        patch.due_date = base.toISOString().slice(0, 10);
-      }
+      if (!inv.due_date) patch.due_date = nowIso.slice(0, 10);
     }
+    // Once it's recorded in QuickBooks it's a real invoice, not a draft — move the status
+    // to 'saved' (in QBO, current, not yet emailed). This also re-clears the 'draft' the
+    // editor set when the invoice was edited since the last push. Only touch a 'draft'
+    // row so we never clobber a later saved/sent/paid/partially_paid state on re-save.
+    if (inv.status === 'draft') patch.status = 'saved';
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning }, 200, request, env);

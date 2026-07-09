@@ -6543,6 +6543,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .am-coll-chip--error { background: var(--status-needs-response-bg); color: var(--status-needs-response); }
 .am-coll-chip--partial { background: var(--status-waiting-bg); color: var(--status-waiting); }
 .am-coll-chip--sent { background: var(--status-active-bg); color: var(--accent); }
+.am-coll-chip--saved { background: #ede9fe; color: #7c3aed; }
 .am-coll-chip--draft { background: var(--bg-tertiary); color: var(--text-tertiary); }
 
 /* Payment sync marker. */
