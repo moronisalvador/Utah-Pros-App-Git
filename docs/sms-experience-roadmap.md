@@ -292,6 +292,32 @@ new `src/components/conversations/**` + `index.css` §623 (omni-U marker).
   (Phase 8) and `process-crm-automations` (Phase 5)**; disclose the thread-row-write behavior change to
   those two workers (§8).
 
+**Done (2026-07-09):**
+- [x] **F-12 in-thread visibility + delivery tracking** — a successful `sendGatedSms` find-or-creates the
+  contact's `direct` conversation (mirrors `twilio-webhook.js`), writes the `sms_outbound` `messages` row
+  (service-role, **worker sole writer**, `sent_by:null`, `direction:'outbound'`), bumps the conversation
+  preview, and passes a `/api/twilio-status` **statusCallback** so Phase A fills status/error/segment/price
+  by `twilio_sid`. The write is **best-effort** (wrapped + swallowed) — a DB hiccup never turns a delivered
+  text into a reported failure; test-guarded.
+- [x] **F-10 quiet-hours held-retry** — `run-automations` no longer records a terminal `system_events` row
+  for a **deferrable** skip (`quiet_hours` / `sms_disabled`) or a **transient** send failure (429/5xx), so
+  the lead stays a candidate and retries; **AND** the two SMS automations' candidate lookback widened to a
+  13h overnight window so an after-hours lead is still found at 8am, not lost. A **permanent** failure
+  (invalid number) now IS terminal — stops infinite-retrying.
+- [x] **MPS pacing + 429 backoff + transient/permanent classification** — `classifySendError` (via F's
+  `twilio-errors.js`) + `sendSmsWithBackoff` retry transient/429 with linear backoff and fail-fast on
+  permanent; `run-automations` paces real sends (`SMS_PACE_MS`, default 250ms) between SMS sends.
+- [x] **Per-recipient quiet-hours timezone** — derived from the phone's NANP **area code** (TCPA keys on the
+  called party's location; there is no `contacts.timezone` column and Phase D ships zero schema), falling
+  back to `billing_state` → env → Mountain default (`timezoneForContact`).
+- [x] **Frozen return preserved** — signature + `{ok,skipped,reason}` vocab unchanged; `sms_disabled` /
+  `quiet_hours` still load-bearing; new fields (`sid`/`error`/`permanent`) additive; **backward-compat tests**
+  assert `planStepOutcome` (Phase 8) + `planRunOutcome` (Phase 5) still HOLD/skip/send correctly.
+- [x] `test` (59 cases in the two suites, full suite green) + `build` + `eslint` green; zero schema; kill-switch
+  left **OFF** (not flipped — 4b/owner).
+- [ ] **owner-gated:** A2P live-send smoke stays deferred to the §7 gate (no live send tested this session);
+  `TWILIO_MESSAGING_SERVICE_SID` env presence + campaign approval remain owner ops-readiness items (§7).
+
 ### Wave 2 — Phase G — Deliverability ops + verification tails (Session G · Sonnet·medium)
 > **Prerequisite:** A + C merged (verification tails). Owns a new deliverability health component,
 > `src/components/Layout.jsx` (unread-badge only), tech-PWA verification.
