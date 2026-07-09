@@ -735,8 +735,8 @@ tr:hover td { background: var(--bg-secondary); }
     height: calc(100dvh - var(--conv-kb-offset, 0px));
   }
   /* Gloved-hand touch targets. */
-  .conv-plus-btn, .conv-send-btn { width: 44px; height: 44px; min-height: 44px; }
-  .conv-back-btn, .conv-info-btn { min-width: 44px; min-height: 44px; }
+  .conv-plus-btn, .conv-send-btn { width: 48px; height: 48px; min-height: 48px; }
+  .conv-back-btn, .conv-info-btn { min-width: 48px; min-height: 48px; }
   .conv-retry-btn { padding: 8px 14px; font-size: 12px; }
   .conv-jump-latest { bottom: 96px; padding: 11px 14px; }
   .conv-attach-chip { width: 64px; height: 64px; }
