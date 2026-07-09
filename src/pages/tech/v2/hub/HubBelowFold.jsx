@@ -4,12 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The part of the Job Hub below the stage. In H1 this is deliberately minimal:
- *   a working "which visit am I looking at" switcher (needed to move between
- *   visits and exercise every stage state), plus small placeholder cards for
- *   Job & Claim details and the photo gallery that H2 will build out in full.
- *   Keeping these as stubs protects the stage's design budget (the whole reason
- *   H1 and H2 are split).
+ *   Everything on the Job Hub below the stage, in a deliberate order: first the
+ *   visit switcher (which appointment am I looking at, and a button to schedule
+ *   a new one), then the collapsible "Job & Claim" reference card (kept ABOVE
+ *   the photos so the adjuster-call flow never scrolls past a gallery), then the
+ *   photos-and-notes zone, and finally the "Generate report" button. Each zone
+ *   is its own component; this file just lays them out in the right sequence.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (Z4 of /tech/job/:jobId)
@@ -17,13 +17,14 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
- *   Internal:  @/components/tech/v2 (StatusChip), @/components/tech/GenerateReportButton
- *   Data:      none (appointments/contacts/claim arrive as props)
+ *   Internal:  @/components/tech/v2 (StatusChip), @/components/tech/GenerateReportButton,
+ *              ./JobClaimSection, ./PhotosNotes
+ *   Data:      none directly (PhotosNotes fetches its own job_documents;
+ *              appointments/contacts/claim/job arrive as props)
  *
  * NOTES / GOTCHAS:
  *   - The switcher writes the selection up via onSelect (the page owns ?appt=).
- *   - Job & Claim + Photos are intentionally compact stubs marked "H2"; do not
- *     flesh them out here.
+ *   - Order is binding (reference before gallery) per the Job Hub v2 spec.
  * ════════════════════════════════════════════════
  */
 import React from 'react';
@@ -31,6 +32,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { StatusChip } from '@/components/tech/v2';
 import GenerateReportButton from '@/components/tech/GenerateReportButton';
+import JobClaimSection from './JobClaimSection.jsx';
+import PhotosNotes from './PhotosNotes.jsx';
 
 const DONE = ['completed', 'cancelled'];
 
@@ -56,10 +59,15 @@ function VisitRow({ appt, selected, onSelect, t }) {
 }
 
 /**
- * @param {{ jobId: string, jobNumber?: string, appointments?: Array, selectedId?: string|null,
- *           contacts?: Array, claim?: object|null, onSelect: (id:string)=>void }} props
+ * @param {{ jobId: string, jobNumber?: string, job: object, appointments?: Array,
+ *           selectedId?: string|null, contacts?: Array, claim?: object|null,
+ *           isAdmin?: boolean, rooms?: Array|null, onCreateRoom?: Function,
+ *           onMutation?: (kind:string)=>void, onSelect: (id:string)=>void }} props
  */
-export default function HubBelowFold({ jobId, jobNumber, appointments = [], selectedId, contacts = [], claim, onSelect }) {
+export default function HubBelowFold({
+  jobId, jobNumber, job, appointments = [], selectedId, contacts = [], claim,
+  isAdmin, rooms, onCreateRoom, onMutation, onSelect,
+}) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
   const today = new Date().toISOString().split('T')[0];
@@ -71,11 +79,9 @@ export default function HubBelowFold({ jobId, jobNumber, appointments = [], sele
     .filter((a) => a.date < today || DONE.includes(a.status))
     .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time_start || '').localeCompare(a.time_start || ''));
 
-  const primary = contacts.find((c) => c.is_primary) || contacts[0] || null;
-
   return (
     <>
-      {/* Visits switcher (functional — drives ?appt=) */}
+      {/* 1 — Visits switcher (drives ?appt=). */}
       <section className="tv2-hub-section">
         <div className="tv2-hub-section__title">
           {t('below.visits')}{appointments.length > 0 && <span className="tv2-hub-section__count">{appointments.length}</span>}
@@ -98,37 +104,19 @@ export default function HubBelowFold({ jobId, jobNumber, appointments = [], sele
         </button>
       </section>
 
-      {/* Job & Claim — compact stub (H2 completes) */}
-      <section className="tv2-hub-section">
-        <div className="tv2-hub-section__head">
-          <span className="tv2-hub-section__title">{t('below.jobClaim')}</span>
-          <span className="tv2-hub-h2tag">{t('below.h2tag')}</span>
-        </div>
-        {primary && (
-          <div className="tv2-hub-stubcontact">
-            <span className="tv2-hub-stubcontact__name">{primary.name}{primary.role ? ` · ${primary.role}` : ''}</span>
-            {primary.phone && <a className="tv2-hub-stubcontact__phone" href={`tel:${primary.phone}`}>{primary.phone}</a>}
-          </div>
-        )}
-        {claim && (
-          <button type="button" className="tv2-hub-claimlink" onClick={() => navigate(`/tech/claims/${claim.id}`)}>
-            <span>{t('below.viewClaim', { number: claim.claim_number || '' })}</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-          </button>
-        )}
-      </section>
+      {/* 2 — Job & Claim (collapsible, ABOVE photos — order is binding). */}
+      <JobClaimSection job={job} contacts={contacts} claim={claim} isAdmin={isAdmin} />
 
-      {/* Photos & Notes — compact stub (H2 completes) */}
-      <section className="tv2-hub-section">
-        <div className="tv2-hub-section__head">
-          <span className="tv2-hub-section__title">{t('below.photos')}</span>
-          <span className="tv2-hub-h2tag">{t('below.h2tag')}</span>
-        </div>
-        <button type="button" className="tv2-hub-seeall" onClick={() => navigate(`/tech/jobs/${jobId}/photos`)}>
-          {t('below.seeAllPhotos')}
-        </button>
-      </section>
+      {/* 3 — Photos & Notes. */}
+      <PhotosNotes
+        jobId={jobId}
+        appointmentId={selectedId}
+        rooms={rooms}
+        onCreateRoom={onCreateRoom}
+        onMutation={onMutation}
+      />
 
+      {/* 4 — Generate report (self-gated). */}
       <GenerateReportButton jobId={jobId} jobNumber={jobNumber} />
     </>
   );
