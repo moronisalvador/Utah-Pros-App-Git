@@ -672,6 +672,14 @@ tr:hover td { background: var(--bg-secondary); }
   padding: var(--space-6); padding-bottom: 0;
 }
 
+/* Narrow variant for the Jobs Closed drill-down: constrain to the standard
+   centered 1320px column like the Collections/Invoice pages (the full-width
+   .jobs-page list is unchanged). Ultra-wide bumps mirror .coll-page. */
+.jobs-page.jobs-page-narrow { max-width: 1320px; width: 100%; margin-left: auto; margin-right: auto; }
+@media (min-width: 1600px) { .jobs-page.jobs-page-narrow { max-width: 1520px; } }
+@media (min-width: 2100px) { .jobs-page.jobs-page-narrow { max-width: 1680px; } }
+@media (min-width: 2560px) { .jobs-page.jobs-page-narrow { max-width: 1800px; } }
+
 .jobs-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: var(--space-4); flex-shrink: 0;
