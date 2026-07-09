@@ -267,6 +267,11 @@ export async function onRequestPost(context) {
         patch.due_date = base.toISOString().slice(0, 10);
       }
     }
+    // Once it exists in QuickBooks it's a real invoice, not a draft — flip the status
+    // off 'draft' even if it hasn't been emailed to the customer yet (mirrors the
+    // estimate worker's draft→submitted flip). Only touch a still-'draft' row so we
+    // never clobber a later paid/partially_paid/overdue/voided state on re-save.
+    if (inv.status === 'draft') patch.status = 'sent';
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning }, 200, request, env);
