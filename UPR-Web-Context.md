@@ -6466,7 +6466,7 @@ this initiative) to host the new component. No edit to any worker, `Conversation
 
 ---
 
-## Tech Messages v2 — plan of record (session 2026-07-09, docs only — no feature code)
+## Tech Messages v2 — Foundation F-M SHIPPED (session 2026-07-09; flag OFF/owner-only)
 
 Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
 desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
@@ -6481,14 +6481,28 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   `.claude/rules/tech-messages-v2-wave-ownership.md` (ownership; authorized amendments) ·
   tech-v2 manifest §8 + sms-experience manifest §10 + sms roadmap §6 pointer (cross-manifest
   transparency).
-- **Foundation (F-M) will ship:** flag seed (row FIRST — fail-open trap at
-  AuthContext.jsx:294) · `get_tech_conversations` (composite `{conversations, unread_total,
-  status_counts}`, server search/filters, fixed COALESCE+id keyset cursor, single-row
-  deep-link mode; GRANT authenticated,service_role + REVOKE PUBLIC/anon) ·
-  `find_or_create_conversation` · techQuery kinds `convos`/`thread` + `message` mutation +
-  thread-excluding persister dehydrate filter (SMS bodies never hit IndexedDB) · TechLayout
-  third pane + **Messages-tab unread badge** · `TechMsgsPane` two-layer host (TechPane
-  copy-in) · msgs i18n namespace.
+- **Foundation (F-M) SHIPPED** (branch `claude/tech-msgs-v2-foundation-8gawvm`; PR into `dev`;
+  flag stays OFF/owner-only): flag row seeded FIRST via MCP (fail-open trap at
+  AuthContext.jsx:294) + `EXPLICIT_FLAGS` entry `enabled:false` · migration
+  `supabase/migrations/20260709_tech_msgs_v2_fm_conversation_rpcs.sql` (applied + verified live
+  via MCP): `get_tech_conversations(p_limit,p_before,p_before_id,p_search,p_status,p_conversation_id)→jsonb`
+  (composite `{conversations, unread_total, status_counts}`, legacy embed incl. `dnd`/`dnd_at`
+  + computed `sort_key`, `email_reply_token` STRIPPED; server search/filters; `p_status='unread'`;
+  fixed `COALESCE(last_message_at,created_at) DESC, id DESC` keyset cursor — no unreachable NULL
+  tail; single-row deep-link mode) + `find_or_create_conversation(p_contact_id)→jsonb`
+  (advisory-locked per contact — kills the split-thread hazard; same embed). BOTH SECURITY
+  DEFINER, GRANT authenticated,service_role + REVOKE PUBLIC/anon · `src/lib/techQuery.js` kinds
+  `convos()`/`thread()` (8th/9th) + `MUTATION_INVALIDATIONS.message=[convos,thread]` +
+  `dehydrate.shouldDehydrateQuery` excluding the thread kind (raw SMS bodies never hit IndexedDB;
+  the inbox list does) — registry re-frozen after F-M · `useTechConversations` hook (sole
+  convos-cache reader/writer: RPC + 60s refetch + ONE ref-counted `subscribeToConversations`
+  channel) · TechLayout third flag-gated pane (folded into `paneCovering`; App.jsx UNTOUCHED) +
+  **Messages-tab unread badge** (flag-gated, never active-gated) · `TechMsgsPane` two-layer host
+  (disclosed TechPane copy-in — list restore vs thread pinned; thread-open nav-hide class only
+  while active, scoped `:has` rule) · stub `TechMessagesV2` (cover+fallback proof) · css
+  `TECH-V2: MSGS` reserved marker (`tv2-msgs-*`) · `msgs` i18n namespace (en/pt/es parity-green).
+  Tests: SQL gate `supabase/tests/tech_msgs_v2_f_conversation_rpcs.sql` (shape/cursor/idempotency,
+  fixture IDs) + vitest anon least-privilege gate + `techQuery.test.js` + i18n parity — all green.
 - **Key adjudications:** App.jsx untouched (paneCovering suppresses the outlet — verified) ·
   URL-driven thread open (`?c=` push / back) · optimistic overlay + setQueryData
   patch/append (never invalidate-per-event) · Enter=send · techs get one-tap DND **ON**
