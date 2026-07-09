@@ -4424,6 +4424,25 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        one-click). The unsubscribe link carries `?rid=<recipient id>` when the caller
                        has one (campaign sends) so a click flips that exact recipient row, or a plain
                        `?email=` link otherwise (a future non-campaign automation send).
+                       **SMS-experience Phase D (Jul 9 2026)** — the SMS branch (`sendGatedSms`) is
+                       fully live: after passing the three frozen gates (kill-switch → TCPA consent →
+                       quiet-hours, UNCHANGED order) a successful send now (1) **mirrors the text into
+                       the contact's conversation thread** — find-or-create a `direct` conversation
+                       (mirrors `twilio-webhook.js`) + insert an `sms_outbound` `messages` row
+                       (service-role, **worker sole writer**, `sent_by:null`, `direction:'outbound'`) +
+                       bump the conversation preview — and (2) passes a `/api/twilio-status`
+                       **statusCallback** so Phase A fills status/error_code/num_segments/price by
+                       twilio_sid (F-12). The thread-write is **best-effort** (wrapped+swallowed: a DB
+                       hiccup never demotes a delivered text to a failure). Quiet-hours timezone is now
+                       **per-recipient** (`timezoneForContact` — NANP area code → `billing_state` → env
+                       → Mountain default; no `contacts.timezone` column exists and Phase D ships zero
+                       schema, so the area code is the TCPA-correct "called party" signal). Sends retry
+                       transient/429 errors with linear backoff and fail-fast on permanent ones
+                       (`classifySendError` via F's `twilio-errors.js` + `sendSmsWithBackoff`), returning
+                       an additive `{ permanent }` flag. **Frozen return preserved**: `{ok,skipped,reason}`
+                       + the load-bearing `sms_disabled`/`quiet_hours` strings unchanged; new
+                       `sid`/`error`/`permanent` are additive; backward-compat tests assert Phase 8's
+                       `planStepOutcome` + Phase 5's `planRunOutcome` still HOLD/skip/send correctly.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
@@ -4936,12 +4955,23 @@ trigger writes a `system_events` row whose `event_type` is the substrate a futur
 subscribe to: `speed_to_lead→lead_created`, `missed_call_textback→call_missed`,
 `no_response_followup→lead_stale`, `review_request→job_completed` (payload `{automation, channel,
 outcome, reason}`). **Idempotency**: `alreadyFired(event_type, entity_id)` on `system_events` means a
-lead/job is contacted at most once per trigger; a terminal outcome (`sent` or consent-`skipped`)
-writes the row, a transient `failed` writes nothing so the next tick retries. **Consent skips are
-durable** — recorded in `system_events` for every channel, plus `sms_consent_log` for SMS (via the
-frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback otherwise; SMS
-bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
+lead/job is contacted at most once per trigger; only a TERMINAL outcome writes the row.
+**Consent skips are durable** — recorded in `system_events` for every channel, plus `sms_consent_log`
+for SMS (via the frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback
+otherwise; SMS bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
 `https://utahpros.app`).
+
+**SMS-experience Phase D (Jul 9 2026) — F-10 held-retry + throughput.** The terminal/idempotency rule
+above was refined so a **deferred** text is never permanently dropped: `fireAutomation` now writes the
+terminal `system_events` row only for `sent`, a **durable** consent-skip (dnd/no_consent/no_phone), or a
+**PERMANENT** send failure (invalid number, via `sendGatedSms`'s additive `{permanent}` flag). A
+**deferrable** skip (`quiet_hours` / `sms_disabled` — `DEFERRABLE_SKIP_REASONS`) and a **transient**
+failure (429/5xx) write NO row, so the lead stays a candidate and retries once the window lifts. To keep
+an after-hours lead visible until 8am, the two SMS automations' candidate lookback widened from 60 min to
+a **13h overnight window** (`OVERNIGHT_DEFER_LOOKBACK_MIN`; email windows unchanged). Real SMS sends are
+**MPS-paced** (`paceSms`, `SMS_PACE_MS` env, default 250 ms, injectable/0 in tests) between sends. The
+per-recipient quiet-hours timezone, 429 backoff, statusCallback and in-thread mirror all live in
+`automated-send.js` (see its entry). Zero schema.
 
 **SMS is dark, doubly.** The two SMS automations are skipped entirely at the worker level unless
 `sms_sending_enabled` is ON (`smsLive` guard — no queries, no burned idempotency rows while dark), and
