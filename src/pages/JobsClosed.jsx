@@ -108,7 +108,7 @@ export default function JobsClosed() {
   // ─── SECTION: Render ──────────────
 
   return (
-    <div className="jobs-page">
+    <div className="jobs-page jobs-page-narrow">
       {/* Header */}
       <div className="jobs-header">
         <div>

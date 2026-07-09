@@ -24,6 +24,7 @@ export default function ClaimPage() {
 
   const [claim, setClaim] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [invoicesByJob, setInvoicesByJob] = useState({});   // job_id → its (first) invoice, for the per-job View-invoice link + amount
   const [contact, setContact] = useState(null);
   const [adjuster, setAdjuster] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,16 +67,28 @@ export default function ClaimPage() {
         return;
       }
       setClaim(data.claim);
-      setJobs(await withJobFinancials(db, data.jobs || []));
+      const jobsList = await withJobFinancials(db, data.jobs || []);
+      setJobs(jobsList);
       setContact(data.contact || null);
       setAdjuster(data.adjuster || null);
+      // Per-job invoice (first one) — backs the JOBS-card amount + View-invoice link.
+      // Non-fatal: a failure here must not blank the whole claim.
+      const jobIds = jobsList.map(j => j.id);
+      if (isFeatureEnabled('feature:billing') && jobIds.length) {
+        try {
+          const invs = await db.select('invoices', `job_id=in.(${jobIds.join(',')})&select=id,job_id,total,adjusted_total,amount_paid,status&order=created_at.asc`) || [];
+          const map = {};
+          invs.forEach(inv => { if (!map[inv.job_id]) map[inv.job_id] = inv; });
+          setInvoicesByJob(map);
+        } catch { setInvoicesByJob({}); }
+      } else { setInvoicesByJob({}); }
     } catch (e) {
       setLoadError(e.message);
       errToast('Failed to load claim');
     } finally {
       setLoading(false);
     }
-  }, [db, claimId]);
+  }, [db, claimId, isFeatureEnabled]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
@@ -231,6 +244,8 @@ export default function ClaimPage() {
   const jobsContent = (
     <JobsSection
       jobs={jobs}
+      invoicesByJob={invoicesByJob}
+      billingOn={isFeatureEnabled('feature:billing')}
       expandedJob={expandedJob}
       setExpandedJob={setExpandedJob}
       taskSummaries={taskSummaries}
@@ -543,7 +558,7 @@ function CollapsibleSection({ title, count, open, onToggle, children }) {
 // ═══════════════════════════════════════════════════════════════════════
 // JOBS SECTION
 // ═══════════════════════════════════════════════════════════════════════
-function JobsSection({ jobs, expandedJob, setExpandedJob, taskSummaries, navigate, onAddJob, isTech }) {
+function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpandedJob, taskSummaries, navigate, onAddJob, isTech }) {
   if (jobs.length === 0) {
     return (
       <div className="claim-ops-empty">
@@ -559,6 +574,8 @@ function JobsSection({ jobs, expandedJob, setExpandedJob, taskSummaries, navigat
         const color = DIVISION_COLORS[job.division] || '#6b7280';
         const isExpanded = expandedJob === job.id;
         const summary = taskSummaries[job.id];
+        const inv = billingOn ? invoicesByJob[job.id] : null;
+        const invTotal = inv ? Number(inv.adjusted_total ?? inv.total ?? 0) : null;
 
         return (
           <div key={job.id} className="claim-ops-job-card" style={{ borderLeft: `4px solid ${color}` }}>
@@ -581,6 +598,11 @@ function JobsSection({ jobs, expandedJob, setExpandedJob, taskSummaries, navigat
                   </div>
                 )}
               </div>
+              {invTotal != null && (
+                <span title="Invoiced" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                  {fmtK(invTotal)}
+                </span>
+              )}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
                 <polyline points="6 9 12 15 18 9" />
               </svg>
@@ -623,6 +645,11 @@ function JobsSection({ jobs, expandedJob, setExpandedJob, taskSummaries, navigat
                   <button className="btn btn-primary btn-sm" onClick={() => navigate(isTech ? `/tech/jobs/${job.id}` : `/jobs/${job.id}`)} style={{ fontSize: 12 }}>
                     View Job →
                   </button>
+                  {inv && !isTech && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)} style={{ fontSize: 12 }}>
+                      View Invoice →
+                    </button>
+                  )}
                 </div>
               </div>
             )}
