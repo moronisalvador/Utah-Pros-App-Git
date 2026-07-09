@@ -24,7 +24,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { notifyNewLead } from './callrail-webhook.js';
-import { notifyNewLeadFromForm } from './form-submit.js';
+import {
+  notifyNewLeadFromForm,
+  buildLeadNotificationContent,
+  leadNotificationRows,
+} from './form-submit.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test' };
 
@@ -72,6 +76,87 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     expect(calls[0].body.entity_id).toBe('lead-9');
     expect(calls[0].body.body).toContain('Water Damage Quote');
     expect(calls[0].body.payload.source_type).toBe('form');
+  });
+
+  it('carries the full submission into the alert (bell/push body + email html)', async () => {
+    const calls = [];
+    const dispatchImpl = async (evt) => { calls.push(evt); };
+    const schema = {
+      name: 'Water Damage Quote',
+      fields: [
+        { key: 'name', label: 'Full name', type: 'text' },
+        { key: 'phone', label: 'Phone', type: 'phone' },
+        { key: 'email', label: 'Email', type: 'email' },
+        { key: 'service', label: 'Service needed', type: 'select', options: ['Water damage', 'Mold'] },
+        { key: 'message', label: 'How can we help?', type: 'textarea' },
+        { key: 'consent', label: 'I agree to be contacted', type: 'consent' },
+      ],
+    };
+    const data = {
+      name: 'Jane Doe',
+      phone: '801-555-1234',
+      email: 'jane@example.com',
+      service: 'Water damage',
+      message: 'Basement flooded overnight',
+      consent: true,
+    };
+    await notifyNewLeadFromForm({
+      db: {}, env: ENV, dispatchImpl, formName: 'Water Damage Quote', schema, data,
+      lead: { id: 'lead-42', callrail_id: 'form:tok', spam_flag: false },
+    });
+    expect(calls).toHaveLength(1);
+    const { title, body, html } = calls[0].body;
+    // Title carries the lead's name.
+    expect(title).toBe('New lead · Jane Doe');
+    // Plain-text body (bell + push) lists every answered field...
+    expect(body).toContain('Full name: Jane Doe');
+    expect(body).toContain('Phone: 801-555-1234');
+    expect(body).toContain('Service needed: Water damage');
+    expect(body).toContain('Basement flooded overnight');
+    // ...but never the consent bookkeeping.
+    expect(body).not.toContain('I agree to be contacted');
+    // Email HTML is present, branded, and links to the lead.
+    expect(html).toContain('New website lead');
+    expect(html).toContain('Jane Doe');
+    expect(html).toContain('/leads');
+  });
+
+  it('escapes untrusted submission values in the email HTML', () => {
+    const { html, body } = buildLeadNotificationContent({
+      formName: 'Contact',
+      schema: { fields: [{ key: 'name', label: 'Name', type: 'text' }] },
+      data: { name: '<script>alert(1)</script>' },
+    });
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+    // Plain text keeps the raw value (no HTML context to break out of).
+    expect(body).toContain('<script>');
+  });
+
+  it('degrades to a generic line when no schema/data is available', () => {
+    const { title, body } = buildLeadNotificationContent({ formName: 'Web Form' });
+    expect(title).toBe('New lead');
+    expect(body).toContain('Web form submission');
+    expect(body).toContain('Web Form');
+  });
+
+  it('leadNotificationRows skips consent/honeypot and empty answers, joins multi-select', () => {
+    const rows = leadNotificationRows(
+      {
+        fields: [
+          { key: 'name', label: 'Name', type: 'text' },
+          { key: 'services', label: 'Services', type: 'checkbox', options: ['a', 'b', 'c'] },
+          { key: 'notes', label: 'Notes', type: 'textarea' },
+          { key: 'consent', label: 'Consent', type: 'consent' },
+          { key: 'hp', label: 'Leave blank', type: 'text' },
+        ],
+      },
+      { name: 'Bob', services: ['a', 'c'], notes: '', consent: true, hp: 'bot-filled' },
+    );
+    expect(rows).toEqual([
+      { key: 'name', label: 'Name', value: 'Bob' },
+      { key: 'services', label: 'Services', value: 'a, c' },
+    ]);
   });
 
   it('never throws when the dispatcher fails', async () => {

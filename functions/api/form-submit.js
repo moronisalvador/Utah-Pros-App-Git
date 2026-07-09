@@ -22,7 +22,8 @@
  *   Packages:  none
  *   Internal:  functions/lib/supabase.js (service-role client),
  *              functions/lib/forms.js (validateSubmission, checkSpam,
- *              consentValue, sanitizeLinkMarkup)
+ *              consentValue, sanitizeLinkMarkup, escapeHtml),
+ *              functions/api/notify.js (dispatchEvent — lead.new alert)
  *   Data:      reads  → form_definitions, form_definition_versions,
  *                       form_submissions (per-IP rate check)
  *              writes → inbound_leads, contacts, form_submissions,
@@ -45,23 +46,164 @@
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup, pickConfiguredKey } from '../lib/forms.js';
+import { validateSubmission, checkSpam, consentValue, sanitizeLinkMarkup, pickConfiguredKey, escapeHtml } from '../lib/forms.js';
 import { dispatchEvent } from './notify.js';
+
+// ─── SECTION: lead.new notification content builder ───
+
+// Field types we never surface in the alert: the consent tick is legal bookkeeping,
+// not lead info, and the honeypot is a spam trap that should always be empty.
+const NOTIFY_SKIP_TYPES = new Set(['consent']);
+const NOTIFY_SKIP_KEYS = new Set(['hp', 'honeypot']);
+// Keep the plain-text (bell/push) body legible — long free-text answers are
+// truncated there; the HTML email keeps the full value.
+const PLAIN_VALUE_MAX = 140;
+
+// Turn a submitted value (string, array of chosen options, or empty) into one
+// display string. Arrays (multi-select checkboxes) join with commas; blanks drop.
+function displayValue(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
+  }
+  return raw == null ? '' : String(raw).trim();
+}
+
+/**
+ * Flatten a form submission into ordered { key, label, value } rows for the
+ * notification — schema order first (so the alert reads like the form), skipping
+ * consent/honeypot and any empty answer. Falls back to the raw data keys when a
+ * schema is unavailable, so an alert is never blank.
+ */
+export function leadNotificationRows(schema, data) {
+  const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
+  const d = data && typeof data === 'object' ? data : {};
+  const rows = [];
+  const seen = new Set();
+
+  for (const f of fields) {
+    if (!f || !f.key) continue;
+    if (NOTIFY_SKIP_TYPES.has(f.type) || NOTIFY_SKIP_KEYS.has(f.key)) {
+      seen.add(f.key); // schema-defined but intentionally omitted — don't let the raw fallback re-add it
+      continue;
+    }
+    const value = displayValue(d[f.key]);
+    if (!value) continue;
+    rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || f.key, value });
+    seen.add(f.key);
+  }
+  // Any submitted keys the schema didn't describe (defensive — schema is source
+  // of truth, but never silently drop data the admin might need).
+  for (const [k, v] of Object.entries(d)) {
+    if (seen.has(k) || NOTIFY_SKIP_KEYS.has(k)) continue;
+    const value = displayValue(v);
+    if (!value) continue;
+    rows.push({ key: k, label: k, value });
+  }
+  return rows;
+}
+
+// The lead's name for the title/subject, if the form captured one (a field whose
+// key or label mentions "name"). Cosmetic — falls back to a generic title.
+function pickLeadName(rows) {
+  const match = rows.find((r) => /name/i.test(r.key) || /name/i.test(r.label));
+  return match ? match.value : '';
+}
+
+function truncate(s, max) {
+  const str = String(s);
+  return str.length > max ? `${str.slice(0, max - 1).trimEnd()}…` : str;
+}
+
+/**
+ * Build the notification content for a web-form lead across all three channels:
+ * a title (push title / email subject / bell title), a plain-text body (bell +
+ * push — every field, long answers truncated), and branded HTML (email — the
+ * full submission in a UPR-styled card). Every submitted value is HTML-escaped
+ * for the email: form data is untrusted public input.
+ */
+export function buildLeadNotificationContent({ schema, data, formName, env } = {}) {
+  const rows = leadNotificationRows(schema, data);
+  const name = pickLeadName(rows);
+  const form = formName && String(formName).trim();
+
+  const title = name ? `New lead · ${name}` : 'New lead';
+
+  // Plain text — bell + OS push. One "Label: value" per line, values truncated.
+  let body;
+  if (rows.length) {
+    body = rows.map((r) => `${r.label}: ${truncate(r.value, PLAIN_VALUE_MAX)}`).join('\n');
+    if (form) body += `\n— ${form}`;
+  } else {
+    // No parsed fields (e.g. schema-less) — keep the old, always-useful line.
+    body = `Web form submission${form ? ` · ${form}` : ''}.`;
+  }
+
+  const html = buildLeadEmailHtml({ rows, name, form, env });
+  return { title, body, html };
+}
+
+// Branded HTML card for the email channel — mirrors the UPR design tokens
+// (#1e293b brand header, white card, --text-* / --border-* / --accent palette)
+// used by functions/lib/email-template.js so every UPR email reads as one system.
+function buildLeadEmailHtml({ rows, name, form, env }) {
+  const base = (env && env.APP_BASE_URL) || 'https://utahpros.app';
+  const leadsUrl = `${String(base).replace(/\/$/, '')}/leads`;
+
+  const rowsHtml = rows.length
+    ? rows.map((r) => `
+            <tr>
+              <td style="padding:12px 0;border-bottom:1px solid #f0f1f3;vertical-align:top;width:36%;color:#5f6672;font-size:13px;">${escapeHtml(r.label)}</td>
+              <td style="padding:12px 0 12px 16px;border-bottom:1px solid #f0f1f3;vertical-align:top;color:#111318;font-size:14px;font-weight:500;">${escapeHtml(r.value).replace(/\n/g, '<br>')}</td>
+            </tr>`).join('')
+    : `
+            <tr><td style="padding:12px 0;color:#5f6672;font-size:14px;">A new web-form submission came in. Open the lead for details.</td></tr>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8f9fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fb;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1px solid #e2e5e9;">
+        <tr><td style="background:#1e293b;padding:24px 32px;">
+          <p style="margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">New website lead</p>
+          <p style="margin:6px 0 0;font-size:20px;font-weight:700;color:#ffffff;">${escapeHtml(name || 'New lead')}</p>
+          ${form ? `<p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">${escapeHtml(form)}</p>` : ''}
+        </td></tr>
+        <tr><td style="padding:8px 32px 28px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            ${rowsHtml}
+          </table>
+          <div style="margin-top:24px;">
+            <a href="${escapeHtml(leadsUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">View lead &rarr;</a>
+          </div>
+        </td></tr>
+      </table>
+      <p style="margin:16px 0 0;font-size:12px;color:#8b929e;">Utah Pros Restoration &middot; lead notification</p>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
 
 // ── lead.new notification hook (Notification Center, Session B) ──
 // Additive + fire-and-forget: announces a genuinely-new web-form lead to admins.
 // The RPC is idempotent on the submission token, so the caller only invokes this
 // when the pre-existence check saw no prior lead for this token — a resubmit /
 // retry with the same token never re-fires. INERT until the catalog type is on.
-export async function notifyNewLeadFromForm({ db, env, lead, formName, dispatchImpl = dispatchEvent }) {
+// Passes the full submission through so the bell/push/email carry the form data,
+// not just a "new lead" placeholder (schema/data optional — degrades gracefully).
+export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, data, dispatchImpl = dispatchEvent }) {
   try {
     if (!lead || lead.spam_flag) return;
+    const { title, body, html } = buildLeadNotificationContent({ schema, data, formName, env });
     await dispatchImpl({
       db, env,
       typeKey: 'lead.new',
       body: {
-        title: 'New lead',
-        body: `Web form submission${formName ? ` · ${formName}` : ''}.`,
+        title,
+        body,
+        html,
         link: '/leads',
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
@@ -232,7 +374,7 @@ export async function onRequestPost(context) {
     // Notify admins on a genuinely-new submission only (idempotent by the pre-check).
     if (!leadExisted) {
       const leadRow = Array.isArray(lead) ? lead[0] : lead;
-      context.waitUntil(notifyNewLeadFromForm({ db, env, lead: leadRow, formName: schema?.name || null }));
+      context.waitUntil(notifyNewLeadFromForm({ db, env, lead: leadRow, formName: schema?.name || null, schema, data }));
     }
 
     await db.insert('worker_runs', {
