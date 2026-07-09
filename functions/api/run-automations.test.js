@@ -71,7 +71,8 @@ function makeCtx({
     async insert(table, data) { inserts.push({ table, data }); return [data]; },
   };
   const send = async (...args) => { sendCalls.push(args); return sendResult; };
-  const ctx = { db, env: {}, now: NOW, send, orgId: 'org-1' };
+  // paceMs: 0 keeps the MPS pacer a no-op so tests never sleep.
+  const ctx = { db, env: {}, now: NOW, send, orgId: 'org-1', paceMs: 0 };
   return { ctx, inserts, sendCalls };
 }
 
@@ -206,6 +207,73 @@ describe('consent gate', () => {
     expect(ev).toBeTruthy();
     expect(ev.data.payload.outcome).toBe('skipped');
     expect(ev.data.payload.reason).toBe('dnd');
+  });
+});
+
+// ─── F-10: a quiet-hours defer is NOT terminal (retried, never dropped) ───────
+describe('quiet-hours held-retry (F-10)', () => {
+  it('does NOT write a terminal system_events row when the send is deferred (quiet_hours)', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [freshCall],
+      sendResult: { ok: false, skipped: true, reason: 'quiet_hours' },
+    });
+    expect(await runSpeedToLead(ctx)).toBe(0); // not counted as sent
+    // No terminal event → the lead stays a candidate and next run retries it.
+    expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+
+  it('does NOT write a terminal row while the SMS kill-switch is OFF (sms_disabled)', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [missedCall],
+      sendResult: { ok: false, skipped: true, reason: 'sms_disabled' },
+    });
+    await runMissedCallTextback(ctx);
+    expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+
+  it('STILL writes a terminal row for a durable consent skip (dnd) — not deferrable', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [freshCall],
+      sendResult: { ok: false, skipped: true, reason: 'dnd' },
+    });
+    await runSpeedToLead(ctx);
+    const ev = inserts.find((i) => i.table === 'system_events');
+    expect(ev).toBeTruthy();
+    expect(ev.data.payload.reason).toBe('dnd');
+  });
+
+  it('retries after a defer: the same lead sends on a later run once quiet-hours lift', async () => {
+    // Run 1: deferred (quiet_hours) → no event written.
+    const run1 = makeCtx({ leads: [freshCall], sendResult: { ok: false, skipped: true, reason: 'quiet_hours' } });
+    await runSpeedToLead(run1.ctx);
+    expect(run1.inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+    // Run 2 (window lifted): no prior event exists → it fires and now records terminal.
+    const run2 = makeCtx({ leads: [freshCall], firedEvents: [], sendResult: { ok: true, sid: 'SM_x' } });
+    expect(await runSpeedToLead(run2.ctx)).toBe(1);
+    expect(run2.inserts.find((i) => i.table === 'system_events')).toBeTruthy();
+  });
+});
+
+// ─── Permanent send failure is terminal (stop infinite-retrying invalid numbers)
+describe('permanent-failure terminal (F-10 companion)', () => {
+  it('writes a terminal row on a PERMANENT failure so it is not retried forever', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [freshCall],
+      sendResult: { ok: false, skipped: false, error: 'Invalid number', permanent: true },
+    });
+    await runSpeedToLead(ctx);
+    const ev = inserts.find((i) => i.table === 'system_events');
+    expect(ev).toBeTruthy();
+    expect(ev.data.payload.outcome).toBe('failed');
+  });
+
+  it('does NOT write a row on a TRANSIENT failure (429/5xx) so the next run retries', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [freshCall],
+      sendResult: { ok: false, skipped: false, error: 'Too Many Requests', permanent: false },
+    });
+    await runSpeedToLead(ctx);
+    expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
   });
 });
 
