@@ -28,6 +28,8 @@ import {
   phoneMatchVariants,
   buildPhoneOrFilter,
   isAmbiguousContentReply,
+  normalizeKeyword,
+  isDuplicateSidError,
 } from './twilio-webhook.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test' };
@@ -55,6 +57,47 @@ describe('detectKeyword (CTIA keyword mapping)', () => {
     for (const w of ['hello', 'when can you come?', 'stop by tomorrow', '', null, undefined]) {
       expect(detectKeyword(w)).toBe(null);
     }
+  });
+
+  it('maps STOPALL and "STOP ALL" to stop (Phase A — Twilio opt-out keyword)', () => {
+    for (const w of ['STOPALL', 'stopall', 'STOP ALL', ' Stop All ']) {
+      expect(detectKeyword(w)).toBe('stop');
+    }
+  });
+
+  it('tolerates trailing/embedded punctuation on a lone keyword (Phase A)', () => {
+    expect(detectKeyword('STOP.')).toBe('stop');
+    expect(detectKeyword('Stop!')).toBe('stop');
+    expect(detectKeyword('stop?')).toBe('stop');
+    expect(detectKeyword('s.t.o.p')).toBe('stop');   // filter-evasion still opts out
+    expect(detectKeyword('help!')).toBe('help');
+    expect(detectKeyword('YES!')).toBe('start');
+  });
+
+  it('does NOT let punctuation turn a real sentence into a keyword', () => {
+    expect(detectKeyword('please stop.')).toBe(null);  // multi-word → not a lone keyword
+    expect(detectKeyword('can you help?')).toBe(null);
+  });
+});
+
+describe('normalizeKeyword (Phase A punctuation/whitespace collapse)', () => {
+  it('lowercases, trims, and strips non-alphanumerics', () => {
+    expect(normalizeKeyword(' STOP! ')).toBe('stop');
+    expect(normalizeKeyword('STOP ALL')).toBe('stopall');
+    expect(normalizeKeyword('')).toBe('');
+    expect(normalizeKeyword(null)).toBe('');
+  });
+});
+
+describe('isDuplicateSidError (F-9 dup-sid → 200 no-op, else 500 retry)', () => {
+  it('recognizes a UNIQUE(twilio_sid) / 409 violation', () => {
+    expect(isDuplicateSidError(new Error('Supabase INSERT messages: 409 conflict'))).toBe(true);
+    expect(isDuplicateSidError(new Error('duplicate key value violates unique constraint "messages_twilio_sid_key"'))).toBe(true);
+  });
+  it('does NOT treat a generic/transient error as a duplicate', () => {
+    expect(isDuplicateSidError(new Error('Supabase INSERT messages: 500 server error'))).toBe(false);
+    expect(isDuplicateSidError(new Error('fetch failed'))).toBe(false);
+    expect(isDuplicateSidError(null)).toBe(false);
   });
 });
 

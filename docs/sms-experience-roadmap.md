@@ -224,6 +224,14 @@ access. Stage migration + rollback + tests; wait for owner OK per `database-stan
 
 **Phase A — Transport/worker hardening** (Opus·high). Owns `twilio-webhook.js`, `twilio-status.js`,
 `process-scheduled.js` + tests.
+> 🟢 **BUILT 2026-07-09** (PR into `dev`, awaiting owner merge). Delivered: `twilio-status` DB-first
+> signature validation + `WRITABLE_STATUSES` whitelist + monotonic out-of-order guard + `num_segments`/
+> `price` capture + error-code→suppression (21610/30006 flip `dnd`/opt-in + `sms_consent_log`; 30007/30034
+> ops-only) via `twilio-errors.js`; `twilio-webhook` STOPALL + punctuation-tolerant keywords, DB-first
+> signature (F-13), atomic `increment_conversation_unread`, `channel:'sms'`; `process-scheduled` cron-secret
+> auth gate + `claim_scheduled_message` (retires the invalid `status='processing'` write) + TCPA quiet-hours
+> deferral; `worker_runs` row + 500-transient/200-dup-sid (F-9) on all three. Unit tests green (52 new),
+> zero migrations (F owns schema). No live A2P send tested (§7, owner-gated).
 - `twilio-status`: signature validation (**DB-first `resolveCredential`**, not env-only) + status
   whitelist + monotonic/out-of-order guard; capture `num_segments`/`price`.
 - Error-code mapping via `twilio-errors.js` → suppression writes + contact flags + surfaced
