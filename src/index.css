@@ -10678,3 +10678,73 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 @media (max-width: 768px) {
   .settings-cred-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── TECH-V2: MSGS (Tech Messages v2 — F-M foundation; pane host + layers) ─────
+   Reserved for the tech-messages-v2 initiative. F-M ships only the pane-host
+   skeleton below; B1/B2 write CSS ONLY inside this marker (new tv2-msgs-* classes;
+   pane-scoped descendant overrides of reused .message* / .conv-* classes ARE
+   permitted here — they cannot leak, legacy never renders inside .tv2-msgs-*).
+   Mobile-only rules use @media (max-width: 768px). ─────────────────────────────── */
+
+/* Persistent messaging pane — a flex child of .tech-layout, kept mounted across
+   navigation and hidden with display:none when it isn't the active tab (transforms
+   are banned on WKWebView). Mirrors .tv2-pane. */
+.tv2-msgs-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tv2-msgs-pane[hidden] { display: none !important; }
+
+/* Two stacked layers (list + thread). Only one shows; the other is hidden but kept
+   mounted so its scroll position and state survive the swap. */
+.tv2-msgs-layer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tv2-msgs-layer[hidden] { display: none !important; }
+
+/* Each layer owns its own scroller (independent scroll tracking — see TechMsgsPane). */
+.tv2-msgs-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-secondary);
+}
+/* The list clears the bottom tab bar; the thread manages its own composer/keyboard
+   padding (Phase B1) and hides the nav while open. */
+.tv2-msgs-list-layer .tv2-msgs-scroll {
+  padding-bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)));
+}
+
+/* Hide the bottom tab bar while a thread is open — but ONLY when the pane is the
+   visible tab (a background pane's thread-open state must never strand the whole
+   app's tab bar). Precedent: the legacy .conversations-layout.mobile-thread rule
+   near the top of this file. */
+.tech-layout:has(.tv2-msgs-pane:not([hidden]) .tv2-msgs-thread-open) > .tech-nav {
+  display: none;
+}
+
+/* Messages-tab unread badge — a small red count pill on the tab icon. Positioned
+   within .tech-nav-tab (position: relative). */
+.tv2-msgs-nav-badge {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 4px);
+  box-sizing: border-box;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--tech-nav-bg, #fff);
+  pointer-events: none;
+}

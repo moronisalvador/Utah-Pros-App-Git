@@ -1,0 +1,29 @@
+{
+  "list": {
+    "title": "Mensajes",
+    "empty": "Aún no hay conversaciones",
+    "searchPlaceholder": "Buscar mensajes"
+  },
+  "filters": {
+    "all": "Todas",
+    "unread": "No leídas",
+    "needs_response": "Necesita respuesta",
+    "waiting_on_client": "En espera",
+    "resolved": "Resueltas"
+  },
+  "thread": {
+    "back": "Atrás",
+    "loadEarlier": "Cargar mensajes anteriores",
+    "jumpToLatest": "Ir al más reciente"
+  },
+  "composer": {
+    "placeholder": "Mensaje",
+    "send": "Enviar",
+    "note": "Nota interna"
+  },
+  "states": {
+    "loading": "Cargando mensajes…",
+    "error": "No se pudieron cargar los mensajes",
+    "retry": "Reintentar"
+  }
+}

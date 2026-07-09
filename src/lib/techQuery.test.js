@@ -25,7 +25,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { techKeys, TECH_QUERY_KINDS, MUTATION_INVALIDATIONS, invalidateTech } from './techQuery.js';
+import { techKeys, TECH_QUERY_KINDS, MUTATION_INVALIDATIONS, invalidateTech, makeTechQueryClient } from './techQuery.js';
 
 describe('techQuery — frozen key registry', () => {
   it('every key is rooted at "tech" and carries its kind + id', () => {
@@ -36,11 +36,15 @@ describe('techQuery — frozen key registry', () => {
     expect(techKeys.rooms('j1')).toEqual(['tech', 'rooms', 'j1']);
     expect(techKeys.docs('a1')).toEqual(['tech', 'docs', 'a1']);
     expect(techKeys.hub('j1')).toEqual(['tech', 'hub', 'j1']);
+    // Tech Messages v2 (F-M): convos default vs per-filter; thread per conversation.
+    expect(techKeys.convos()).toEqual(['tech', 'convos', null]);
+    expect(techKeys.convos('unread')).toEqual(['tech', 'convos', 'unread']);
+    expect(techKeys.thread('c1')).toEqual(['tech', 'thread', 'c1']);
   });
 
-  it('exposes exactly the seven documented kinds', () => {
+  it('exposes exactly the nine documented kinds', () => {
     expect(Object.values(TECH_QUERY_KINDS).sort()).toEqual(
-      ['active-clock', 'dash', 'docs', 'hub', 'rooms', 'sched-month', 'tasks'],
+      ['active-clock', 'convos', 'dash', 'docs', 'hub', 'rooms', 'sched-month', 'tasks', 'thread'],
     );
   });
 
@@ -83,6 +87,13 @@ describe('invalidateTech', () => {
     expect(c.calls).toEqual([['tech', 'dash'], ['tech', 'docs'], ['tech', 'hub']]);
   });
 
+  it('message refreshes the inbox list and the open thread (Phase F-M) — not the hub', async () => {
+    const c = fakeClient();
+    await invalidateTech(c, 'message');
+    expect(c.calls).toEqual([['tech', 'convos'], ['tech', 'thread']]);
+    expect(c.calls).not.toContainEqual(['tech', 'hub']);
+  });
+
   it('every mutation invalidates the hub (Phase H1)', async () => {
     for (const mutation of ['clock', 'task', 'photo', 'doc', 'room', 'appointment']) {
       const c = fakeClient();
@@ -101,5 +112,29 @@ describe('invalidateTech', () => {
   it('throws on an unknown mutation instead of silently no-op', async () => {
     const c = fakeClient();
     await expect(() => invalidateTech(c, 'nope')).toThrow(/Unknown tech mutation/);
+  });
+});
+
+describe('persister dehydrate filter (Phase F-M privacy)', () => {
+  const shouldDehydrate = () =>
+    makeTechQueryClient().getDefaultOptions().dehydrate.shouldDehydrateQuery;
+  const q = (queryKey, status = 'success') => ({ queryKey, state: { status } });
+
+  it('NEVER persists the thread kind (raw SMS bodies stay off disk)', () => {
+    const filter = shouldDehydrate();
+    expect(filter(q(techKeys.thread('c1')))).toBe(false);
+  });
+
+  it('DOES persist the inbox list + other kinds (instant cold paint)', () => {
+    const filter = shouldDehydrate();
+    expect(filter(q(techKeys.convos()))).toBe(true);
+    expect(filter(q(techKeys.convos('unread')))).toBe(true);
+    expect(filter(q(techKeys.dash('e1')))).toBe(true);
+  });
+
+  it('still honours the default (only successful queries persist)', () => {
+    const filter = shouldDehydrate();
+    expect(filter(q(techKeys.convos(), 'pending'))).toBe(false);
+    expect(filter(q(techKeys.thread('c1'), 'pending'))).toBe(false);
   });
 });
