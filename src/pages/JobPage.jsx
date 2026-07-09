@@ -204,7 +204,7 @@ export default function JobPage(){
 
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
         {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
-        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
+        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser} db={db}/>}
@@ -248,16 +248,47 @@ export default function JobPage(){
 /* ===========================================
    OVERVIEW TAB
    =========================================== */
-function OverviewTab({job,employees,saveBatch,fmtDate,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer,onNavigateClaim}){
+function OverviewTab({job,employees,saveBatch,fmtDate,fmt,onOpenFinancial,claimData,siblingJobs,onAddRelatedJob,onNavigateJob,onNavigateCustomer,onNavigateClaim}){
   return(
     <div className="job-page-grid">
       <ClientTile job={job} saveBatch={saveBatch} onNavigateCustomer={onNavigateCustomer}/>
       <InsuranceTile job={job} saveBatch={saveBatch}/>
+      <RevenueSummaryTile job={job} fmt={fmt} onOpenFinancial={onOpenFinancial}/>
       <JobDetailsTile job={job} saveBatch={saveBatch} fmtDate={fmtDate}/>
       <TeamTile job={job} employees={employees} saveBatch={saveBatch}/>
       <NotesTile job={job} saveBatch={saveBatch}/>
       {job.encircle_summary&&(<div className="job-page-section job-page-section-full"><div className="job-page-section-title">Encircle Summary</div><div style={{fontSize:'var(--text-sm)',whiteSpace:'pre-wrap',color:'var(--text-secondary)'}}>{job.encircle_summary}</div></div>)}
       {claimData&&<RelatedJobsSection claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={onAddRelatedJob} onNavigateJob={onNavigateJob} onNavigateClaim={onNavigateClaim}/>}
+    </div>
+  );
+}
+
+/* === REVENUE SUMMARY (Overview) === */
+// Read-only money-at-a-glance on the Overview tab. Values are invoice-aware
+// (job.invoiced_value/collected_value are overlaid from the invoice rollup by
+// withJobFinancials). The full Invoices & Payments detail lives on the Financial tab.
+function RevenueSummaryTile({job,fmt,onOpenFinancial}){
+  const estimated=Number(job.estimated_value||0);const approved=Number(job.approved_value||0);
+  const invoiced=Number(job.invoiced_value||0);const collected=Number(job.collected_value||0);
+  const balance=Math.max(0,invoiced-collected);
+  const hasAny=estimated>0||approved>0||invoiced>0||collected>0;
+  return(
+    <div className="job-page-section">
+      <div className="job-page-section-title">Revenue</div>
+      {hasAny?(<>
+        <FR label="Estimated" value={fmt(job.estimated_value)}/>
+        <FR label="Approved" value={fmt(job.approved_value)}/>
+        <FR label="Invoiced" value={fmt(job.invoiced_value)}/>
+        <FR label="Collected" value={fmt(job.collected_value)}/>
+        {invoiced>0&&<><div className="job-page-fin-divider"/><FR label="Balance" value={fmt(balance)} bold color={balance>0.005?'#dc2626':'var(--status-resolved)'}/></>}
+      </>):(
+        <div style={{fontSize:'var(--text-sm)',color:'var(--text-tertiary)',padding:'var(--space-2) 0'}}>No revenue recorded yet.</div>
+      )}
+      <div style={{marginTop:'var(--space-3)'}}>
+        <button className="btn btn-secondary btn-sm" onClick={onOpenFinancial} style={{fontSize:12}}>
+          {invoiced>0?'Manage invoices & payments →':'Add invoice →'}
+        </button>
+      </div>
     </div>
   );
 }
