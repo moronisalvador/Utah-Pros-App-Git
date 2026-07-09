@@ -142,3 +142,25 @@ parallel session runs against these files.
   retarget; cutover is the FLAG opening, not a code flip.
 - Everything else in §1's frozen list stays frozen. M1's `hub/**` modules belong to H1/H2
   to rework or delete (zero outside consumers, challenge-verified).
+
+---
+
+## 8. Tech Messages v2 addendum (2026-07-09) — cross-initiative seam authorization
+
+The **tech-messages-v2** initiative (`docs/tech-messages-v2-roadmap.md`; own manifest
+`.claude/rules/tech-messages-v2-wave-ownership.md`) is authorized to amend four seams this
+manifest froze, in its Foundation phase (F-M) only:
+
+1. **`src/components/TechLayout.jsx`** — a third flag-gated pane (`page:tech_msgs_v2`) +
+   `paneCovering` fold-in + a Messages-tab unread badge. Nothing else in the file.
+2. **`src/lib/techQuery.js` + `techQuery.test.js`** — kinds `convos()`/`thread(convId)` +
+   `MUTATION_INVALIDATIONS['message']` + a thread-excluding persister dehydrate filter,
+   test updated in the same commit (precedent: §7's `hub` kind). **Re-frozen after F-M.**
+3. **`src/lib/featureFlags.js`** — one `EXPLICIT_FLAGS` entry (`page:tech_msgs_v2`,
+   `enabled:false`).
+4. **`src/index.css`** — one new appended `TECH-V2: MSGS` reserved marker (its own §5 rules).
+
+`TechPane` stays frozen — tech-messages-v2 uses a **disclosed copy-in** (`TechMsgsPane`).
+`App.jsx` is NOT edited by that initiative. **H3 coordination:** the only file both touch is
+`src/i18n/index.js` (H3 deletes namespaces, F-M adds `msgs`) — trivial conflict; whoever
+merges second resolves; H3's link re-grep will find the pane's job chip on `jobHref()`.

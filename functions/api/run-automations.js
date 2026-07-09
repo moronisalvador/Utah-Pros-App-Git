@@ -46,9 +46,13 @@
  *     twilio.js / send-message.js directly and NEVER passes skip_compliance
  *     (crm-wave-ownership.md frozen-file rule + TCPA).
  *   - Idempotency: before acting we check system_events for a prior row of the
- *     same (event_type, entity_id). A terminal outcome (sent OR consent-skip)
- *     writes that row so it never repeats. A transient failure writes NO row,
- *     so the next run retries it.
+ *     same (event_type, entity_id). Only a TERMINAL outcome writes that row so it
+ *     never repeats — a `sent`, a durable consent-skip (dnd/no_consent), or a
+ *     PERMANENT send failure (invalid number). A DEFERRED skip (quiet_hours, or
+ *     the SMS kill-switch being OFF) and a TRANSIENT failure (429/5xx) write NO
+ *     row, so the lead stays a candidate and the next run retries it once the
+ *     window lifts (F-10). The two SMS automations therefore use a wide overnight
+ *     lookback so an after-hours lead is still found at 8am, not lost.
  *   - Message bodies prefer a matching message_templates row (by title) so an
  *     admin can override copy without a deploy; the hardcoded default is the
  *     fallback when no such template exists.
@@ -84,14 +88,30 @@ export const AUTOMATION_CHANNELS = {
 
 // Tunables. Lookbacks are generous enough to survive a missed cron tick;
 // idempotency (not the window) is what prevents repeats.
-const SPEED_TO_LEAD_LOOKBACK_MIN = 60;
-const MISSED_CALL_LOOKBACK_MIN = 60;
+//
+// The two SMS automations use a WIDE overnight window (F-10): a text due inside
+// TCPA quiet-hours (9pm–8am recipient-local) is DEFERRED by the send gate — it
+// returns reason 'quiet_hours', which fireAutomation no longer records as
+// terminal — so its lead must stay a candidate until the window lifts. The
+// continuous quiet block is at most ~11h (a 9:00pm lead waits until 8:00am);
+// 13h gives margin for cron cadence + a recipient in a later US zone. Email has
+// no quiet-hours defer, so its windows stay tight. Idempotency still prevents any
+// repeat inside the wider window.
+const OVERNIGHT_DEFER_LOOKBACK_MIN = 13 * 60; // covers the overnight quiet block + margin
+const SPEED_TO_LEAD_LOOKBACK_MIN = OVERNIGHT_DEFER_LOOKBACK_MIN; // was 60 — widened for F-10 defer
+const MISSED_CALL_LOOKBACK_MIN = OVERNIGHT_DEFER_LOOKBACK_MIN;   // was 60 — widened for F-10 defer
 const NO_RESPONSE_STALE_DAYS = 3;   // quiet at least this long
 const NO_RESPONSE_MAX_AGE_DAYS = 30; // …but don't chase ancient leads
 const REVIEW_LOOKBACK_HOURS = 48;
 const OPEN_LEAD_STATUSES = ['new'];  // a lead still worth following up on
 const COMPLETED_PHASES = ['completed'];
 const CANDIDATE_LIMIT = 200;
+
+// MPS pacing: space out real Twilio sends so a burst of overnight-deferred texts
+// firing at 8am stays under the messaging-service rate limit. Only applied
+// between actual sends (skips/already-fired never hit Twilio). Injectable + 0 in
+// tests via ctx.paceMs / ctx.sleep.
+const DEFAULT_SMS_PACE_MS = 250;
 
 const DAY_MS = 86400000;
 
@@ -168,6 +188,21 @@ async function alreadyFired(db, eventType, entityId) {
   return rows.length > 0;
 }
 
+// MPS pacing between real SMS sends. `ctx.paceMs` (default DEFAULT_SMS_PACE_MS)
+// and `ctx.sleep` are injectable so tests run with no delay (paceMs: 0).
+async function paceSms(ctx) {
+  const ms = ctx.paceMs ?? DEFAULT_SMS_PACE_MS;
+  if (!ms) return;
+  const sleep = ctx.sleep || ((n) => new Promise((r) => setTimeout(r, n)));
+  await sleep(ms);
+}
+
+// Skip reasons that mean "not now, try again later" rather than "never" — the
+// text is still owed, so we DON'T write a terminal event (F-10). 'quiet_hours'
+// lifts at 8am; 'sms_disabled' lifts when Phase 4b flips the kill-switch. Every
+// other skip reason (dnd / no_consent / no_phone / suppressed) is durable.
+const DEFERRABLE_SKIP_REASONS = new Set(['quiet_hours', 'sms_disabled']);
+
 // The single place an automation acts: consent-gated send + a durable audit
 // event. Returns { outcome } where outcome ∈ sent | skipped | failed | already_fired.
 async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId, templateKey, variables, extra }) {
@@ -180,10 +215,18 @@ async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId
   const result = await send(channel, contactId, templateKey, variables, extra);
   const outcome = result?.ok ? 'sent' : result?.skipped ? 'skipped' : 'failed';
 
-  // Persist the trigger + outcome only on a terminal result. A consent skip is
-  // terminal (don't keep pestering a dnd/suppressed contact); a transient
-  // failure is left unrecorded so the next run retries it.
-  if (outcome !== 'failed') {
+  // Persist the trigger + outcome only on a TERMINAL result, so the idempotency
+  // check can't permanently drop a text that was merely deferred (F-10):
+  //   • sent                              → terminal (never repeat).
+  //   • skipped, deferrable (quiet_hours) → NOT terminal → retried when it lifts.
+  //   • skipped, durable (dnd/no_consent) → terminal (don't pester).
+  //   • failed, transient (429 / 5xx)     → NOT terminal → retried next run.
+  //   • failed, permanent (invalid number)→ terminal (stop infinite-retrying).
+  const isDeferredSkip = outcome === 'skipped' && DEFERRABLE_SKIP_REASONS.has(result?.reason);
+  const isTransientFail = outcome === 'failed' && !result?.permanent;
+  const terminal = !isDeferredSkip && !isTransientFail;
+
+  if (terminal) {
     await db.insert('system_events', {
       event_type: eventType,
       entity_type: entityType,
@@ -227,7 +270,7 @@ export async function runSpeedToLead(ctx) {
       contactId: lead.contact_id, templateKey: 'Speed to Lead',
       variables: { name }, extra: { orgId, body: speedToLeadBody(name) },
     });
-    if (r.outcome === 'sent') sent++;
+    if (r.outcome === 'sent') { sent++; await paceSms(ctx); }
   }
   return sent;
 }
@@ -248,7 +291,7 @@ export async function runMissedCallTextback(ctx) {
       contactId: lead.contact_id, templateKey: 'Missed Call Text-Back',
       variables: { name }, extra: { orgId, body: missedCallBody(name) },
     });
-    if (r.outcome === 'sent') sent++;
+    if (r.outcome === 'sent') { sent++; await paceSms(ctx); }
   }
   return sent;
 }
@@ -308,7 +351,8 @@ export async function runAutomations(db, env, now = new Date()) {
   let processed = 0;
   try {
     const orgId = await resolveOrgId(db);
-    const ctx = { db, env, now, send, orgId };
+    const paceMs = Number.isFinite(Number(env?.SMS_PACE_MS)) ? Number(env.SMS_PACE_MS) : DEFAULT_SMS_PACE_MS;
+    const ctx = { db, env, now, send, orgId, paceMs };
 
     let settings = null;
     if (orgId) {

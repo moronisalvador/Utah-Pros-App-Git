@@ -1,10 +1,57 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useLocation } from 'react-router-dom';
-import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Conversations.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The team's text-message inbox. On the left is the list of conversations; tap one
+ *   and the middle shows the back-and-forth thread with a box to type a reply. It
+ *   feels like iMessage/WhatsApp: a reply appears instantly as "Sending…" and then
+ *   flips to Sent → Delivered → Read (or Failed, with a one-tap Retry), you can attach
+ *   photos, it counts how many texts a long message will cost, remembers a half-typed
+ *   draft per conversation, and loads older messages as you scroll up. The same screen
+ *   runs on the web, the field-tech phone app, and inside the CRM.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /conversations (web) · /tech/conversations (iOS) · /crm/conversations
+ *   Rendered by:  Layout / TechLayout / CrmConversations
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/realtime (subscriptions + auth header),
+ *              @/lib/mediaCompress (image attach), ./conversations/* (bubble, counter,
+ *              utils), @/components/Icons, @/components/DatePicker
+ *   Data:      reads  → conversations, conversation_participants, contacts, messages,
+ *                       jobs, message_templates
+ *              writes → conversations (metadata/unread), scheduled_messages,
+ *                       conversation_participants, contacts (dnd), sms_consent_log,
+ *                       job-files storage (MMS attachments). Outbound SMS/MMS is sent
+ *                       ONLY through POST /api/send-message — the worker is the sole
+ *                       writer of any sms_* message row; the client inserts nothing
+ *                       into `messages` (not even notes — the worker owns that too).
+ *
+ * NOTES / GOTCHAS:
+ *   - Optimistic bubbles carry a temporary id ("pending-N") + `_clientId`; they are
+ *     reconciled against the worker's returned row AND the realtime INSERT (whichever
+ *     arrives first), matching by _clientId then by body to avoid a duplicate.
+ *   - All message-state mutations are guarded by activeIdRef so a reply that resolves
+ *     after the user switches threads never lands in the wrong thread.
+ *   - Toasts go through the global `upr:toast` CustomEvent (Rule 2) — no local toast.
+ *   - Capacitor suspends the webview; a visibilitychange/focus refetch recovers state
+ *     without touching the frozen realtime.js.
+ * ════════════════════════════════════════════════
+ */
+
+import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, subscribeToConversations, getAuthHeader } from '@/lib/realtime';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';
 import DatePicker from '@/components/DatePicker';
+import { compressImage, isImage, sanitizeFilename } from '@/lib/mediaCompress';
+import MessageBubble from '@/components/conversations/MessageBubble';
+import SegmentCounter from '@/components/conversations/SegmentCounter';
+import { getDraft, setDraft, clearDraft, parseMediaUrls } from '@/components/conversations/messageUtils';
 
 // ═══════════════════════════════════════════════════════════════════
 // INLINE ICONS
@@ -46,6 +93,9 @@ function IconCheckAll(props) {
 function IconPaperclip(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>);
 }
+function IconArrowDown(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -60,10 +110,6 @@ function formatListTime(iso) {
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'short' });
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-function formatMsgTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 function getDateLabel(iso) {
   if (!iso) return '';
@@ -85,6 +131,10 @@ function getInitials(name) {
 }
 function cleanName(title) { return (title || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
+function emitToast(message, type = 'info') {
+  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+}
+
 const STATUS_MAP = {
   needs_response: { label: 'Needs Response', cls: 'status-needs-response' },
   waiting_on_client: { label: 'Waiting', cls: 'status-waiting' },
@@ -103,6 +153,10 @@ const TEMPLATE_CATEGORIES = {
   auto: '🤖 Auto', general: '📝 General',
 };
 
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,created_at,employees(full_name)';
+const PAGE = 30;         // messages fetched per thread page
+const LIST_PAGE = 40;    // conversations fetched per list page
+
 // ═══════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════
@@ -110,6 +164,7 @@ const TEMPLATE_CATEGORIES = {
 export default function Conversations({ replyAssist } = {}) {
   const { db, employee } = useAuth();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkHandled = useRef(false);
 
   const [conversations, setConversations] = useState([]);
@@ -126,6 +181,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [loading, setLoading] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [listLimit, setListLimit] = useState(LIST_PAGE);
 
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewConv, setShowNewConv] = useState(false);
@@ -139,12 +195,43 @@ export default function Conversations({ replyAssist } = {}) {
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
   const [showComposeActions, setShowComposeActions] = useState(false);
-  const [toast, setToast] = useState(null); // { text, key }
+
+  const [attachments, setAttachments] = useState([]);    // { clientId, name, url, localPreview, uploading, error }
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [newInThread, setNewInThread] = useState(0);      // messages arrived while scrolled up
+  const [atBottom, setAtBottom] = useState(true);
 
   const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
   const composeRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const activeIdRef = useRef(null);
+  const atBottomRef = useRef(true);
+  const clientIdCounter = useRef(0);
+  const attachCounter = useRef(0);
+  const scheduleSendingRef = useRef(false);
+  const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
+  const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
+  const justOpenedRef = useRef(false);     // force instant scroll on thread open
+  const prependAnchorRef = useRef(null);   // scrollHeight snapshot for load-earlier anchoring
 
-  // ═══ DATA ═══
+  const attachmentsRef = useRef([]);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { atBottomRef.current = atBottom; }, [atBottom]);
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+
+  // Revoke any object-URL previews and empty the tray (prevents a blob-URL leak).
+  const clearAttachments = useCallback(() => {
+    attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
+    setAttachments([]);
+  }, []);
+  // Revoke on unmount too.
+  useEffect(() => () => {
+    attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
+  }, []);
+
+  // ─── SECTION: Data fetching ──────────────
 
   const loadConversations = useCallback(async () => {
     try {
@@ -158,10 +245,51 @@ export default function Conversations({ replyAssist } = {}) {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // Deep-link: open/create conversation for a specific contact passed via location.state
+  // Idempotent "this thread is read now" — clears the badge locally + server-side.
+  const markActiveRead = useCallback(async (convId) => {
+    if (!convId) return;
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
+    try { await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 }); }
+    catch (err) { console.error('Mark active read error:', err); }
+  }, [db]);
+
+  // Refetch the newest page for the OPEN thread, preserving any un-reconciled
+  // optimistic bubbles. Used by the Capacitor suspend/focus recovery.
+  const reloadActiveMessages = useCallback(async () => {
+    const convId = activeIdRef.current;
+    if (!convId) return;
+    try {
+      const rows = await db.select('messages', `conversation_id=eq.${convId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
+      if (activeIdRef.current !== convId) return;
+      const asc = rows.slice().reverse();
+      const serverIds = new Set(asc.map(m => m.id));
+      // Match by body+type too: if a send's POST response AND its realtime INSERT were
+      // both lost during the webview suspend, the row is on the server but its pending
+      // bubble was never reconciled — drop it here so no permanent "Sending…" ghost
+      // renders next to the delivered row.
+      const serverBodies = new Set(asc.map(m => `${m.type}::${m.body}`));
+      setMessages(prev => {
+        const optimistic = prev.filter(m => (m._pending || m._failed)
+          && !serverIds.has(m.id) && !serverBodies.has(`${m.type}::${m.body}`));
+        return [...asc, ...optimistic];
+      });
+      setHasMoreMessages(rows.length === PAGE);
+    } catch (err) { console.error('Reload messages error:', err); }
+  }, [db]);
+
+  // Deep-link: open a conversation for a contact passed via location.state, or via
+  // the ?c=<conversationId> query param (push-notification / shareable URL).
   useEffect(() => {
+    if (loading || deepLinkHandled.current) return;
     const targetContactId = location.state?.contactId;
-    if (!targetContactId || loading || deepLinkHandled.current) return;
+    const targetConvId = searchParams.get('c');
+
+    if (targetConvId && conversations.some(c => c.id === targetConvId)) {
+      deepLinkHandled.current = true;
+      selectConversation(targetConvId);
+      return;
+    }
+    if (!targetContactId) return;
     deepLinkHandled.current = true;
     const existing = conversations.find(c => c.conversation_participants?.some(p => p.contact_id === targetContactId));
     if (existing) { selectConversation(existing.id); return; }
@@ -178,81 +306,209 @@ export default function Conversations({ replyAssist } = {}) {
         selectConversation(conv.id);
       } catch (err) { console.error('Deep-link conversation error:', err); }
     })();
-  }, [loading, conversations, location.state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, conversations, location.state, searchParams]);
 
+  // Conversation-list realtime. Guards the open+visible thread from a server-side
+  // unread bump re-marking it unread under the reader (the unread-desync fix).
   useEffect(() => {
     const unsubscribe = subscribeToConversations((payload) => {
       if (payload.eventType === 'UPDATE' && payload.new) {
+        const isActiveVisible = payload.new.id === activeIdRef.current
+          && (typeof document === 'undefined' || document.visibilityState === 'visible');
         setConversations(prev =>
-          prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c)
-            .sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0))
+          prev.map(c => {
+            if (c.id !== payload.new.id) return c;
+            const merged = { ...c, ...payload.new };
+            if (isActiveVisible) merged.unread_count = 0;
+            return merged;
+          }).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0))
         );
+        if (isActiveVisible && payload.new.unread_count > 0) markActiveRead(payload.new.id);
       } else if (payload.eventType === 'INSERT') { loadConversations(); }
     });
     return unsubscribe;
-  }, [loadConversations]);
+  }, [loadConversations, markActiveRead]);
 
+  // Load the newest page of messages when a thread opens.
   useEffect(() => {
-    if (!activeId) { setMessages([]); setLinkedJob(null); return; }
+    if (!activeId) { setMessages([]); setLinkedJob(null); setHasMoreMessages(false); return; }
     let cancelled = false;
+    prevLastIdRef.current = undefined;
+    justOpenedRef.current = true;
+    setMsgLoading(true);
     const load = async () => {
-      setMsgLoading(true);
       try {
-        const msgs = await db.select('messages',
-          `conversation_id=eq.${activeId}&order=created_at.asc&select=id,type,body,status,sent_by,sender_contact_id,media_urls,created_at,employees(full_name)`
-        );
-        if (!cancelled) setMessages(msgs);
+        const rows = await db.select('messages',
+          `conversation_id=eq.${activeId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
+        if (cancelled) return;
+        setMessages(rows.slice().reverse());
+        setHasMoreMessages(rows.length === PAGE);
+        setNewInThread(0);
         const conv = conversations.find(c => c.id === activeId);
-        if (conv?.unread_count > 0) {
-          await db.update('conversations', `id=eq.${activeId}`, { unread_count: 0 });
-          setConversations(prev => prev.map(c => c.id === activeId ? { ...c, unread_count: 0 } : c));
-        }
+        if (conv?.unread_count > 0) markActiveRead(activeId);
         if (conv?.job_id) {
           try {
             const jobs = await db.select('jobs', `id=eq.${conv.job_id}&select=id,job_number,insured_name,phase,division&limit=1`);
-            if (!cancelled && jobs.length > 0) setLinkedJob(jobs[0]); else if (!cancelled) setLinkedJob(null);
+            if (!cancelled) setLinkedJob(jobs.length > 0 ? jobs[0] : null);
           } catch { if (!cancelled) setLinkedJob(null); }
-        } else { if (!cancelled) setLinkedJob(null); }
+        } else if (!cancelled) setLinkedJob(null);
       } catch (err) { console.error('Load messages error:', err); }
       finally { if (!cancelled) setMsgLoading(false); }
     };
     load();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, db]);
 
+  // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
+  // keeps the open thread marked read when an inbound arrives.
   useEffect(() => {
     if (!activeId) return;
-    const unsubscribe = subscribeToMessages(activeId, (newMsg, eventType) => {
-      if (eventType === 'update') setMessages(prev => prev.map(m => m.id === newMsg.id ? newMsg : m));
-      else setMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+    const convId = activeId;
+    const unsubscribe = subscribeToMessages(convId, (newMsg, eventType) => {
+      // A realtime frame already in flight can fire after a thread switch but before
+      // the channel tears down — drop it so it can't inject into the new thread.
+      if (activeIdRef.current !== convId) return;
+      if (eventType === 'update') {
+        setMessages(prev => prev.map(m => m.id === newMsg.id ? { ...newMsg, employees: m.employees || newMsg.employees } : m));
+        return;
+      }
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) return prev;                 // already have real row
+        const isOutbound = newMsg.type === 'sms_outbound' || newMsg.type === 'internal_note';
+        if (isOutbound) {
+          // Reconcile an optimistic bubble (pending OR already-marked-failed — the
+          // worker can insert the row yet return an error, then deliver it here).
+          const idx = prev.findIndex(m => (m._pending || m._failed) && m.type === newMsg.type && m.body === newMsg.body);
+          if (idx !== -1) {
+            const cid = prev[idx]._clientId;
+            if (cid) delete retryStore.current[cid];
+            const copy = prev.slice();
+            copy[idx] = { ...newMsg, employees: prev[idx].employees || newMsg.employees };
+            return copy;
+          }
+        }
+        return [...prev, newMsg];
+      });
+      if (newMsg.type === 'sms_inbound' && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+        markActiveRead(convId);
+      }
     });
     return unsubscribe;
-  }, [activeId]);
+  }, [activeId, markActiveRead]);
 
-  // Auto-scroll to bottom
+  // ─── SECTION: Scroll management ──────────────
+
   const scrollToBottom = useCallback((smooth = true) => {
     const doScroll = () => messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
     doScroll();
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
 
-  // Scroll on new messages arriving (realtime / send)
-  useEffect(() => {
-    if (messages.length > 0 && !msgLoading) scrollToBottom(true);
-  }, [messages, scrollToBottom]);
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    setAtBottom(near);
+    if (near) setNewInThread(0);
+  }, []);
 
-  // Scroll after messages finish loading (initial open + mobile panel transition)
-  const prevMsgLoading = useRef(true);
-  useEffect(() => {
-    if (prevMsgLoading.current && !msgLoading && messages.length > 0) {
-      // msgLoading just flipped false → messages are ready, scroll to bottom
-      // Use a timeout to let mobile display:none → display:flex finish painting
-      setTimeout(() => scrollToBottom(false), 50);
+  // Preserve scroll position when older messages are prepended (load-earlier).
+  useLayoutEffect(() => {
+    if (prependAnchorRef.current != null && messagesScrollRef.current) {
+      const el = messagesScrollRef.current;
+      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
+      prependAnchorRef.current = null;
+      prevLastIdRef.current = messages[messages.length - 1]?.id;
     }
-    prevMsgLoading.current = msgLoading;
-  }, [msgLoading, messages.length, scrollToBottom]);
+  }, [messages]);
 
-  // ═══ DERIVED ═══
+  // Auto-scroll on tail growth: snap to bottom on thread open, follow new messages
+  // only if the reader is already near the bottom, else bump the jump-to-latest pill.
+  useEffect(() => {
+    if (msgLoading || prependAnchorRef.current != null) return;
+    const lastId = messages[messages.length - 1]?.id;
+    if (lastId === prevLastIdRef.current) return;
+    const wasFirstPaint = prevLastIdRef.current === undefined;
+    prevLastIdRef.current = lastId;
+    if (justOpenedRef.current || wasFirstPaint) {
+      justOpenedRef.current = false;
+      setNewInThread(0);
+      setTimeout(() => scrollToBottom(false), 50);
+      return;
+    }
+    if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
+    else setNewInThread(n => n + 1);
+  }, [messages, msgLoading, scrollToBottom]);
+
+  const loadEarlier = useCallback(async () => {
+    const convId = activeIdRef.current;
+    if (!convId || loadingEarlier || !hasMoreMessages) return;
+    const oldest = messages.find(m => !m._pending && !m._failed);
+    if (!oldest?.created_at) return;
+    setLoadingEarlier(true);
+    try {
+      const rows = await db.select('messages',
+        `conversation_id=eq.${convId}&created_at=lt.${encodeURIComponent(oldest.created_at)}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
+      if (activeIdRef.current !== convId) return;
+      const older = rows.slice().reverse();
+      if (older.length) {
+        prependAnchorRef.current = messagesScrollRef.current?.scrollHeight || 0;
+        setMessages(prev => {
+          const existing = new Set(prev.map(m => m.id));
+          const fresh = older.filter(m => !existing.has(m.id));
+          return [...fresh, ...prev];
+        });
+      }
+      setHasMoreMessages(rows.length === PAGE);
+    } catch (err) { console.error('Load earlier error:', err); }
+    finally { setLoadingEarlier(false); }
+  }, [db, messages, loadingEarlier, hasMoreMessages]);
+
+  // ─── SECTION: Lifecycle — suspend recovery + keyboard ──────────────
+
+  // Capacitor suspends the webview on background; realtime channels die silently.
+  // Only after a real hidden→visible transition do we refetch the OPEN thread (so a
+  // plain desktop refocus never resets a reader scrolled up in history). A cheap
+  // list refresh runs on any focus. NO edit to realtime.js.
+  const wasHiddenRef = useRef(false);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') { wasHiddenRef.current = true; return; }
+      loadConversations();
+      if (wasHiddenRef.current) { wasHiddenRef.current = false; reloadActiveMessages(); }
+    };
+    const onFocus = () => { loadConversations(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [loadConversations, reloadActiveMessages]);
+
+  // Lift the composer above the on-screen keyboard using the visual viewport.
+  const [kbOpen, setKbOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--conv-kb-offset', `${offset}px`);
+      setKbOpen(offset > 80);
+    };
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    onResize();
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+      document.documentElement.style.removeProperty('--conv-kb-offset');
+    };
+  }, []);
+
+  // ─── SECTION: Derived ──────────────
 
   const activeConv = useMemo(() => conversations.find(c => c.id === activeId) || null, [conversations, activeId]);
   const activeContact = useMemo(() => {
@@ -261,9 +517,12 @@ export default function Conversations({ replyAssist } = {}) {
     return p?.contacts || null;
   }, [activeConv]);
 
-  // Context for an optional reply-assist slot. The CRM injects AiReplySuggestions
-  // via the `replyAssist` render-prop; the main app passes nothing, so no slot
-  // renders and this is inert there.
+  // Length of the server-added "Name: " prefix, so the segment counter matches the wire.
+  const senderPrefixLen = useMemo(() => {
+    if (isNote || !employee?.full_name) return 0;
+    return `${employee.full_name}: `.length;
+  }, [isNote, employee]);
+
   const replyContext = useMemo(() => {
     const lastInbound = [...messages].reverse().find(m => m.type === 'sms_inbound');
     return {
@@ -284,6 +543,8 @@ export default function Conversations({ replyAssist } = {}) {
     }
     return list;
   }, [conversations, filter, search]);
+
+  const visibleConvs = useMemo(() => filtered.slice(0, listLimit), [filtered, listLimit]);
 
   const statusCounts = useMemo(() => {
     const c = { all: conversations.length, unread: 0, needs_response: 0, waiting_on_client: 0, resolved: 0 };
@@ -313,25 +574,46 @@ export default function Conversations({ replyAssist } = {}) {
     return contacts.filter(c => c.name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.company?.toLowerCase().includes(q));
   }, [contacts, contactSearch]);
 
-  // ═══ ACTIONS ═══
+  const uploadingAttachment = attachments.some(a => a.uploading);
+
+  // ─── SECTION: Event handlers — navigation ──────────────
+
+  const syncDeepLinkParam = (id) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('c', id); else next.delete('c');
+    setSearchParams(next, { replace: true });
+  };
 
   const selectConversation = (id) => {
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
-    clearCompose(); setIsNote(false); setShowTemplates(false); setShowSchedule(false); setContextMenu(null); setShowComposeActions(false);
+    clearComposeState();
+    setContextMenu(null); setShowComposeActions(false);
+    setListLimit(LIST_PAGE);
+    // Restore any saved draft for this thread into the composer.
+    const draft = getDraft(id);
+    setCompose(draft);
+    if (composeRef.current) composeRef.current.innerText = draft;
+    syncDeepLinkParam(id);
   };
-  const goBackToList = () => { setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false); };
+  const goBackToList = () => {
+    setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false);
+    syncDeepLinkParam(null);
+  };
 
-  const showToast = (text) => {
-    setToast({ text, key: Date.now() });
-    setTimeout(() => setToast(null), 2000);
+  // Reset per-thread composer sub-state (note/templates/schedule/attachments).
+  const clearComposeState = () => {
+    setIsNote(false); setShowTemplates(false); setShowSchedule(false);
+    setScheduleDate(''); setScheduleTime(''); clearAttachments();
   };
+
+  // ─── SECTION: Event handlers — read/unread + DND ──────────────
 
   const markAsUnread = async (convId) => {
     setContextMenu(null);
     try {
       await db.update('conversations', `id=eq.${convId}`, { unread_count: 1 });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 1 } : c));
-      showToast('Marked as unread');
+      emitToast('Marked as unread', 'info');
     } catch (err) { console.error('Mark unread error:', err); }
   };
   const markAsRead = async (convId) => {
@@ -339,18 +621,17 @@ export default function Conversations({ replyAssist } = {}) {
     try {
       await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
-      showToast('Marked as read');
+      emitToast('Marked as read', 'info');
     } catch (err) { console.error('Mark read error:', err); }
   };
   const readAll = async () => {
     const unread = conversations.filter(c => c.unread_count > 0);
     if (!unread.length) return;
     try {
-      // Single PATCH via PostgREST in() filter — one request instead of N
       const ids = unread.map(c => c.id).join(',');
       await db.update('conversations', `id=in.(${ids})`, { unread_count: 0 });
       setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 })));
-      showToast(`${unread.length} conversations marked as read`);
+      emitToast(`${unread.length} conversations marked as read`, 'success');
     } catch (err) { console.error('Read all error:', err); }
   };
 
@@ -362,8 +643,6 @@ export default function Conversations({ replyAssist } = {}) {
         dnd_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
-
-      // TCPA compliance: log every DND change
       await db.insert('sms_consent_log', {
         contact_id: contactId,
         phone: activeContact?.phone || '',
@@ -372,7 +651,6 @@ export default function Conversations({ replyAssist } = {}) {
         details: `DND ${newDnd ? 'enabled' : 'disabled'} by team member via conversations UI.`,
         performed_by: employee?.id || null,
       });
-
       setConversations(prev => prev.map(c => ({
         ...c,
         conversation_participants: c.conversation_participants?.map(p =>
@@ -381,118 +659,217 @@ export default function Conversations({ replyAssist } = {}) {
             : p
         ),
       })));
-      showToast(newDnd ? 'DND enabled — messaging blocked' : 'DND disabled — messaging allowed');
+      emitToast(newDnd ? 'DND enabled — messaging blocked' : 'DND disabled — messaging allowed', 'info');
     } catch (err) {
       console.error('Toggle DND error:', err);
+      emitToast('Could not update DND', 'error');
     }
   };
 
-  const handleSend = async () => {
-    const text = compose.trim();
-    if (!text || sending || !activeId) return;
+  // ─── SECTION: Event handlers — attachments (MMS) ──────────────
 
-    // ── Scheduled message path ──
-    if (showSchedule && scheduleDate && scheduleTime) {
-      const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
-      if (new Date(sendAt) <= new Date()) {
-        showToast('Scheduled time must be in the future');
+  const onPickFiles = () => { if (!isNote) fileInputRef.current?.click(); };
+
+  const handleFilesSelected = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    const convId = activeIdRef.current;
+    if (!convId) return;
+    for (const file of files) {
+      if (attachments.length >= 5) { emitToast('Up to 5 attachments per message', 'info'); break; }
+      const clientId = `att-${++attachCounter.current}`;
+      let localPreview = null;
+      try { localPreview = URL.createObjectURL(file); } catch { /* non-fatal */ }
+      setAttachments(prev => [...prev, { clientId, name: file.name, url: null, localPreview, uploading: true, error: false }]);
+      try {
+        let blob = file;
+        let uploadName = file.name;
+        if (isImage(file.type)) {
+          const c = await compressImage(file);
+          blob = c.blob;
+          if (c.didCompress) uploadName = uploadName.replace(/\.\w+$/, '') + '.jpg';
+        }
+        const ts = Date.now();
+        const path = `conversations/${convId}/${ts}-${sanitizeFilename(uploadName)}`;
+        const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': blob.type || 'application/octet-stream' },
+          body: blob,
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        const url = `${db.baseUrl}/storage/v1/object/public/job-files/${path}`;
+        setAttachments(prev => prev.map(a => a.clientId === clientId ? { ...a, uploading: false, url } : a));
+      } catch (err) {
+        console.error('Attachment upload error:', err);
+        setAttachments(prev => prev.map(a => a.clientId === clientId ? { ...a, uploading: false, error: true } : a));
+        emitToast(`Couldn't attach ${file.name}`, 'error');
+      }
+    }
+  };
+
+  const removeAttachment = (clientId) => {
+    setAttachments(prev => {
+      const gone = prev.find(a => a.clientId === clientId);
+      if (gone?.localPreview) { try { URL.revokeObjectURL(gone.localPreview); } catch { /* ignore */ } }
+      return prev.filter(a => a.clientId !== clientId);
+    });
+  };
+
+  // ─── SECTION: Event handlers — send (optimistic + reconcile + retry) ──────────────
+
+  const applyConvMeta = (convId, wasNote, preview) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const upd = { ...c, last_message_at: new Date().toISOString(), last_message_preview: preview };
+      if (!wasNote && c.status === 'needs_response') {
+        upd.status = 'waiting_on_client'; upd.status_changed_at = new Date().toISOString();
+        if (!c.first_response_at) upd.first_response_at = new Date().toISOString();
+      }
+      return upd;
+    }));
+  };
+
+  const dispatchSend = useCallback(async ({ clientId, convId, text, media_urls, isNote: note }) => {
+    try {
+      const authHeader = await getAuthHeader();
+      const res = await fetch('/api/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
+          conversation_id: convId,
+          body: text,
+          sent_by: employee?.id || null,
+          is_internal_note: note,
+          ...(media_urls && media_urls.length ? { media_urls } : {}),
+        }),
+      });
+
+      if (!res.ok) {
+        let data = {};
+        try { data = await res.json(); } catch { /* non-JSON error body */ }
+        const reason = data.code === 'DND_ACTIVE' ? 'Contact has Do Not Disturb enabled'
+          : data.code === 'NO_CONSENT' ? 'Contact has not opted in to SMS'
+            : (data.error || `Message not sent (${res.status})`);
+        // Mark the optimistic bubble failed (if still on this thread) — keep it for retry.
+        if (activeIdRef.current === convId) {
+          setMessages(prev => prev.map(m => m._clientId === clientId
+            ? { ...m, _pending: false, _failed: true, status: 'failed', error_message: reason, error_code: data.code || m.error_code }
+            : m));
+        }
+        emitToast(reason, 'error');
         return;
       }
+
+      const data = await res.json();
+      const real = data.message;
+      if (real && activeIdRef.current === convId) {
+        real.employees = employee ? { full_name: employee.full_name } : (real.employees || null);
+        setMessages(prev => {
+          const hasReal = prev.some(m => m.id === real.id);
+          const next = prev.filter(m => m._clientId !== clientId);
+          return hasReal ? next : [...next, real];
+        });
+      }
+      if (clientId) delete retryStore.current[clientId];
+    } catch (err) {
+      console.error('Send error:', err);
+      if (activeIdRef.current === convId) {
+        setMessages(prev => prev.map(m => m._clientId === clientId
+          ? { ...m, _pending: false, _failed: true, status: 'failed', error_message: 'Network error — message not sent' }
+          : m));
+      }
+      emitToast('Network error — message not sent', 'error');
+    }
+  }, [employee]);
+
+  const handleSend = async () => {
+    if (!activeId) return;
+    // Read the live composer text (source of truth) so a second Enter in the SAME
+    // tick — before React re-renders — sees the box we blank below and no-ops.
+    const el = composeRef.current;
+    const text = (el ? (el.innerText || '') : compose).trim();
+
+    // ── Scheduled message path (unchanged; text-only) ──
+    if (showSchedule && scheduleDate && scheduleTime) {
+      if (!text) return;
+      // Synchronous guard: Enter bypasses the disabled button, so a same-tick
+      // double-Enter would otherwise insert two scheduled rows before `sending` flips.
+      if (scheduleSendingRef.current) return;
+      const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+      if (new Date(sendAt) <= new Date()) { emitToast('Scheduled time must be in the future', 'error'); return; }
+      scheduleSendingRef.current = true;
       setSending(true);
       try {
         await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
-        clearCompose(); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
-        showToast('Message scheduled');
-      } catch (err) { console.error('Schedule error:', err); showToast('Failed to schedule'); }
-      finally { setSending(false); }
+        clearCompose(); clearDraft(activeId); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
+        emitToast('Message scheduled', 'success');
+      } catch (err) { console.error('Schedule error:', err); emitToast('Failed to schedule', 'error'); }
+      finally { setSending(false); scheduleSendingRef.current = false; }
       return;
     }
 
-    // ── Immediate send path ──
-    // Strategy: POST to /api/send-message Worker first.
-    // Worker handles Twilio delivery + compliance checks (DND, opt-in).
-    // If Worker fails (not deployed, env vars missing), fall back to direct insert.
-    setSending(true);
-    try {
-      let newMsg = null;
-      let usedWorker = false;
+    if (uploadingAttachment) { emitToast('Attachment still uploading…', 'info'); return; }
+    const readyMedia = attachments.filter(a => a.url).map(a => a.url);
+    if (!text) return;                               // worker requires a non-empty body (even for MMS)
+    if (activeContact?.dnd && !isNote) return;       // guarded by the compose UI too
 
-      try {
-        const authHeader = await getAuthHeader();
-        const res = await fetch('/api/send-message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader },
-          body: JSON.stringify({
-            conversation_id: activeId,
-            body: text,
-            sent_by: employee?.id || null,
-            is_internal_note: isNote,
-          }),
-        });
+    // Blank the composer synchronously (before the async optimistic append) so a
+    // rapid double-Enter cannot fire a second identical send.
+    if (el) el.innerText = '';
 
-        const data = await res.json();
+    const convId = activeId;
+    const wasNote = isNote;
+    const previewMedia = attachments.map(a => a.url || a.localPreview).filter(Boolean);
+    const clientId = `pending-${++clientIdCounter.current}`;
+    const optimistic = {
+      id: clientId,
+      _clientId: clientId,
+      _pending: true,
+      type: wasNote ? 'internal_note' : 'sms_outbound',
+      body: text,
+      status: 'pending',
+      media_urls: (readyMedia.length ? readyMedia : previewMedia).length
+        ? JSON.stringify(readyMedia.length ? readyMedia : previewMedia) : null,
+      created_at: new Date().toISOString(),
+      employees: employee ? { full_name: employee.full_name } : null,
+    };
+    retryStore.current[clientId] = { text, media_urls: readyMedia, isNote: wasNote };
 
-        if (!res.ok) {
-          // Handle compliance blocks with user-facing feedback
-          if (data.code === 'DND_ACTIVE') {
-            showToast('Blocked: contact has DND enabled');
-            setSending(false);
-            return;
-          }
-          if (data.code === 'NO_CONSENT') {
-            showToast('Blocked: contact has not opted in');
-            setSending(false);
-            return;
-          }
-          throw new Error(data.error || `Worker returned ${res.status}`);
-        }
+    setMessages(prev => [...prev, optimistic]);
+    atBottomRef.current = true; setAtBottom(true); setNewInThread(0);
 
-        newMsg = data.message;
-        usedWorker = true;
-      } catch (workerErr) {
-        // Worker not available — fall back to direct Supabase insert
-        // This is expected during development or before Twilio env vars are set
-        console.warn('Worker unavailable, using direct insert:', workerErr.message);
+    // Optimistic UI reset + conversation-list metadata bump.
+    clearCompose(); clearDraft(convId); clearAttachments(); setIsNote(false);
+    const preview = wasNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
+    applyConvMeta(convId, wasNote, preview);
 
-        const msgData = {
-          conversation_id: activeId,
-          type: isNote ? 'internal_note' : 'sms_outbound',
-          body: text,
-          status: isNote ? 'received' : 'queued',
-          sent_by: employee?.id || null,
-        };
-        const [inserted] = await db.insert('messages', msgData);
-        newMsg = inserted;
-      }
-
-      // Attach employee info for immediate rendering
-      if (newMsg) {
-        newMsg.employees = employee ? { full_name: employee.full_name } : null;
-        setMessages(prev => [...prev, newMsg]);
-      }
-
-      // Update conversation preview (Worker does this server-side too, but we update local state)
-      const preview = isNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
-      const upd = { last_message_at: new Date().toISOString(), last_message_preview: preview, updated_at: new Date().toISOString() };
-      if (!isNote && activeConv?.status === 'needs_response') {
-        upd.status = 'waiting_on_client'; upd.status_changed_at = new Date().toISOString();
-        if (!activeConv.first_response_at) upd.first_response_at = new Date().toISOString();
-      }
-
-      // Only update conversation client-side if Worker wasn't used (Worker already did it)
-      if (!usedWorker) {
-        await db.update('conversations', `id=eq.${activeId}`, upd);
-      }
-      setConversations(prev => prev.map(c => c.id === activeId ? { ...c, ...upd } : c));
-
-      clearCompose(); setIsNote(false); composeRef.current?.focus();
-    } catch (err) {
-      console.error('Send error:', err);
-      showToast('Failed to send');
-    } finally {
-      setSending(false);
-    }
+    dispatchSend({ clientId, convId, text, media_urls: readyMedia, isNote: wasNote });
+    composeRef.current?.focus();
   };
+
+  const retryMessage = useCallback((msg) => {
+    const convId = activeIdRef.current;
+    // Optimistic send-time failures keep their payload in retryStore; a carrier-level
+    // failure (status webhook flipped a confirmed row to 'failed', no _clientId) is
+    // reconstructed from the row itself (drop blob: previews, keep real media URLs).
+    const stored = msg._clientId ? retryStore.current[msg._clientId] : null;
+    const payload = stored || {
+      text: msg.body || '',
+      media_urls: parseMediaUrls(msg.media_urls).filter(u => /^https?:/i.test(u)),
+      isNote: msg.type === 'internal_note',
+    };
+    if (!payload.text && !payload.media_urls.length) { emitToast('Cannot retry this message', 'error'); return; }
+    // Flip this exact bubble back to pending. Match by _clientId (optimistic) OR by
+    // id (real row) — never `undefined === undefined`, which would hit every row.
+    const matchKey = msg._clientId || msg.id;
+    retryStore.current[matchKey] = payload;
+    setMessages(prev => prev.map(m => ((m._clientId && m._clientId === msg._clientId) || m.id === msg.id)
+      ? { ...m, _clientId: matchKey, _pending: true, _failed: false, status: 'pending', error_message: null, error_code: null }
+      : m));
+    dispatchSend({ clientId: matchKey, convId, text: payload.text, media_urls: payload.media_urls, isNote: payload.isNote });
+  }, [dispatchSend]);
+
+  // ─── SECTION: Event handlers — composer input ──────────────
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -500,28 +877,24 @@ export default function Conversations({ replyAssist } = {}) {
       handleSend();
     }
   };
-
-  // Read text from contentEditable div
   const handleComposeInput = () => {
     const el = composeRef.current;
     if (!el) return;
-    setCompose(el.innerText || '');
+    const text = el.innerText || '';
+    setCompose(text);
+    setDraft(activeIdRef.current, text);   // persist draft per thread
   };
-
-  // Clear the contentEditable div content
   const clearCompose = () => {
     setCompose('');
-    if (composeRef.current) {
-      composeRef.current.innerText = '';
-    }
+    if (composeRef.current) composeRef.current.innerText = '';
   };
-
-  // Paste plain text only (strip HTML from clipboard)
   const handlePaste = (e) => {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
   };
+
+  // ─── SECTION: Event handlers — new conversation / templates ──────────────
 
   const openNewConvModal = async () => {
     setShowNewConv(true); setContactSearch('');
@@ -538,7 +911,7 @@ export default function Conversations({ replyAssist } = {}) {
       const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
       await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
       setShowNewConv(false); await loadConversations(); selectConversation(conv.id);
-    } catch (err) { console.error('Create conversation error:', err); }
+    } catch (err) { console.error('Create conversation error:', err); emitToast('Could not start conversation', 'error'); }
     finally { setCreatingConv(false); }
   };
 
@@ -552,16 +925,15 @@ export default function Conversations({ replyAssist } = {}) {
   const insertTemplate = (tmpl) => {
     setCompose(tmpl.body);
     if (composeRef.current) composeRef.current.innerText = tmpl.body;
+    setDraft(activeIdRef.current, tmpl.body);
     setShowTemplates(false);
     composeRef.current?.focus();
   };
 
-  // Drop a chosen reply-assist draft into the composer — same DOM+state path as
-  // a template insert (the composer is contentEditable, so set both). Draft only:
-  // this fills the box for a human to review and send; it never sends.
   const insertDraft = useCallback((text) => {
     setCompose(text || '');
     if (composeRef.current) composeRef.current.innerText = text || '';
+    setDraft(activeIdRef.current, text || '');
     composeRef.current?.focus();
   }, []);
 
@@ -573,10 +945,10 @@ export default function Conversations({ replyAssist } = {}) {
     return () => window.removeEventListener('click', close);
   }, [contextMenu]);
 
-  // ═══ RENDER ═══
+  // ─── SECTION: Render ──────────────
 
   return (
-    <div className={`conversations-layout${mobileView === 'thread' ? ' mobile-thread' : ''}`}>
+    <div className={`conversations-layout${mobileView === 'thread' ? ' mobile-thread' : ''}${kbOpen ? ' conv-kb-open' : ''}`}>
 
       {/* ═══ LEFT: Conversation List ═══ */}
       <div className="conv-list-panel">
@@ -612,32 +984,39 @@ export default function Conversations({ replyAssist } = {}) {
               <div className="empty-state-title">No conversations</div>
               <div className="empty-state-text">{search || filter !== 'all' ? 'Try adjusting your filters' : 'Messages will appear when they come in'}</div>
             </div>
-          ) : filtered.map(conv => {
-            const isActive = conv.id === activeId;
-            const hasUnread = conv.unread_count > 0;
-            const si = STATUS_MAP[conv.status] || {};
-            return (
-              <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
-                onClick={() => selectConversation(conv.id)}
-                onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
-                <div className="conv-item-avatar">{getInitials(conv.title)}</div>
-                <div className="conv-item-content">
-                  <div className="conv-item-top">
-                    <span className="conv-item-name">{cleanName(conv.title)}</span>
-                    <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
+          ) : (<>
+            {visibleConvs.map(conv => {
+              const isActive = conv.id === activeId;
+              const hasUnread = conv.unread_count > 0;
+              const si = STATUS_MAP[conv.status] || {};
+              return (
+                <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
+                  onClick={() => selectConversation(conv.id)}
+                  onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
+                  <div className="conv-item-avatar">{getInitials(conv.title)}</div>
+                  <div className="conv-item-content">
+                    <div className="conv-item-top">
+                      <span className="conv-item-name">{cleanName(conv.title)}</span>
+                      <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
+                    </div>
+                    <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
+                    <div className="conv-item-meta">
+                      <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
+                      {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
+                    </div>
                   </div>
-                  <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
-                  <div className="conv-item-meta">
-                    <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
-                    {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
-                  </div>
+                  <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
+                    <IconDots style={{ width: 16, height: 16 }} />
+                  </button>
                 </div>
-                <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
-                  <IconDots style={{ width: 16, height: 16 }} />
-                </button>
-              </div>
-            );
-          })}
+              );
+            })}
+            {filtered.length > visibleConvs.length && (
+              <button className="conv-load-more" onClick={() => setListLimit(n => n + LIST_PAGE)}>
+                Load {Math.min(LIST_PAGE, filtered.length - visibleConvs.length)} more
+              </button>
+            )}
+          </>)}
         </div>
       </div>
 
@@ -662,14 +1041,12 @@ export default function Conversations({ replyAssist } = {}) {
                   title={activeConv?.unread_count > 0 ? 'Mark as read' : 'Mark as unread'}
                 >
                   {activeConv?.unread_count > 0
-                    ? /* Open envelope = "mark as read" */
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
+                    ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
                         <path d="M21.2 8L12 13 2.8 8" />
                         <path d="M2 8v10c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2V8" />
                         <path d="M2 8l10-5 10 5" />
                       </svg>
-                    : /* Closed envelope = "mark as unread" */
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ width: 19, height: 19 }}>
                         <rect x="2" y="4" width="20" height="16" rx="2" />
                         <polyline points="22,4 12,13 2,4" />
                       </svg>
@@ -684,29 +1061,31 @@ export default function Conversations({ replyAssist } = {}) {
               </div>
             </div>
 
-            <div className="conv-messages">
+            <div className="conv-messages" ref={messagesScrollRef} onScroll={handleMessagesScroll}>
               {msgLoading ? (<div className="loading-page"><div className="spinner" /></div>
               ) : messages.length === 0 ? (
                 <div className="empty-state" style={{ flex: 1 }}><div className="empty-state-text">No messages yet. Send the first one below.</div></div>
-              ) : groupedMessages.map((item, i) => {
-                if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
-                const msg = item.data;
-                const cls = `message ${msg.type === 'sms_inbound' ? 'inbound' : msg.type === 'internal_note' ? 'internal-note' : 'outbound'}`;
-                return (
-                  <div key={msg.id} className={cls}>
-                    <div className="message-bubble">
-                      {msg.type === 'internal_note' && <span className="msg-note-label">📝 {msg.employees?.full_name || 'Note'}</span>}
-                      {msg.body}
-                    </div>
-                    <div className="message-meta">
-                      <span>{formatMsgTime(msg.created_at)}</span>
-                      {msg.type === 'sms_outbound' && msg.status && <span className="msg-status-tag">{msg.status}</span>}
-                    </div>
-                  </div>
-                );
-              })}
+              ) : (<>
+                {hasMoreMessages && (
+                  <button className="conv-load-earlier" onClick={loadEarlier} disabled={loadingEarlier}>
+                    {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
+                  </button>
+                )}
+                {groupedMessages.map((item, i) => {
+                  if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
+                  return <MessageBubble key={item.data.id} msg={item.data} onRetry={retryMessage} />;
+                })}
+              </>)}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Jump-to-latest pill */}
+            {!atBottom && messages.length > 0 && (
+              <button className="conv-jump-latest" onClick={() => { scrollToBottom(true); setNewInThread(0); }}>
+                {newInThread > 0 && <span className="conv-jump-count">{newInThread}</span>}
+                <IconArrowDown style={{ width: 16, height: 16 }} />
+              </button>
+            )}
 
             {/* Template picker */}
             {showTemplates && (
@@ -773,9 +1152,9 @@ export default function Conversations({ replyAssist } = {}) {
                   <span className="conv-action-icon" style={{ background: showSchedule ? 'var(--accent-light)' : 'var(--bg-tertiary)' }}><IconClock style={{ width: 18, height: 18, color: showSchedule ? 'var(--accent)' : 'var(--text-secondary)' }} /></span>
                   <div><div className="conv-action-label">{showSchedule ? 'Cancel Schedule' : 'Schedule Message'}</div><div className="conv-action-desc">{showSchedule ? 'Send immediately instead' : 'Choose when to send'}</div></div>
                 </button>
-                <button className="conv-action-item" onClick={() => setShowComposeActions(false)} disabled>
+                <button className="conv-action-item" onClick={() => { setShowComposeActions(false); onPickFiles(); }} disabled={isNote}>
                   <span className="conv-action-icon"><IconPaperclip style={{ width: 18, height: 18 }} /></span>
-                  <div><div className="conv-action-label">Attach File</div><div className="conv-action-desc">Photos, documents — coming soon</div></div>
+                  <div><div className="conv-action-label">Attach Photo</div><div className="conv-action-desc">{isNote ? 'Not available for notes' : 'Send a photo as MMS'}</div></div>
                 </button>
               </div>
             )}
@@ -783,27 +1162,48 @@ export default function Conversations({ replyAssist } = {}) {
             {replyAssist && activeConv && !isNote && (
               <div className="crm-reply-assist-slot">{replyAssist(replyContext, insertDraft)}</div>
             )}
+
+            {/* Attachment tray */}
+            {attachments.length > 0 && (
+              <div className="conv-attach-tray">
+                {attachments.map(a => (
+                  <div key={a.clientId} className={`conv-attach-chip${a.error ? ' error' : ''}`}>
+                    {a.localPreview || a.url
+                      ? <img src={a.url || a.localPreview} alt={a.name} />
+                      : <span className="conv-attach-icon"><IconPaperclip style={{ width: 16, height: 16 }} /></span>}
+                    {a.uploading && <span className="conv-attach-uploading"><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /></span>}
+                    {a.error && <span className="conv-attach-err">!</span>}
+                    <button className="conv-attach-remove" onClick={() => removeAttachment(a.clientId)} aria-label={`Remove ${a.name}`}><IconX style={{ width: 12, height: 12 }} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* ── Compose bar: [+] [input] [send] ── */}
+            <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleFilesSelected} />
             <div className={`conv-compose${isNote ? ' note-mode' : ''}${showSchedule && scheduleDate && scheduleTime ? ' schedule-mode' : ''}`}>
               <button className={`conv-plus-btn${showComposeActions ? ' active' : ''}${isNote ? ' note-active' : ''}`} onClick={() => setShowComposeActions(!showComposeActions)} aria-label="More actions">
                 <IconPlus style={{ width: 18, height: 18, transition: 'transform 200ms ease', transform: showComposeActions ? 'rotate(45deg)' : 'none' }} />
               </button>
               {isNote && !showComposeActions && <span className="conv-mode-chip note">📝 Note</span>}
               {showSchedule && scheduleDate && scheduleTime && !showComposeActions && <span className="conv-mode-chip schedule">🕐 Scheduled</span>}
-              <div
-                ref={composeRef}
-                className="conv-compose-input"
-                contentEditable
-                role="textbox"
-                data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
-                onInput={handleComposeInput}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                enterKeyHint="send"
-                suppressContentEditableWarning
-              />
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || sending || (showSchedule && (!scheduleDate || !scheduleTime)) || (activeContact?.dnd && !isNote)} aria-label="Send">
-                {sending ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
+              <div className="conv-compose-mid">
+                <div
+                  ref={composeRef}
+                  className="conv-compose-input"
+                  contentEditable
+                  role="textbox"
+                  data-placeholder={isNote ? 'Write an internal note...' : activeContact?.dnd ? 'DND is on — use internal note' : showSchedule && scheduleDate ? 'Write scheduled message...' : 'Type a message...'}
+                  onInput={handleComposeInput}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  enterKeyHint="send"
+                  suppressContentEditableWarning
+                />
+                {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
+              </div>
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime)) || (activeContact?.dnd && !isNote) || (sending && showSchedule)} aria-label="Send">
+                {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>
           </>
@@ -817,7 +1217,6 @@ export default function Conversations({ replyAssist } = {}) {
           <>
             <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
-            {/* Avatar + Name — clickable to profile page */}
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
               <a href={activeContact ? `/contacts/${activeContact.id}` : '#'} className="conv-detail-profile-link">
                 <div className="conv-detail-avatar-lg">{getInitials(activeContact?.name || activeConv.title)}</div>
@@ -832,7 +1231,6 @@ export default function Conversations({ replyAssist } = {}) {
               )}
             </div>
 
-            {/* DND Toggle — Twilio compliance */}
             {activeContact && (
               <div className="conv-detail-section">
                 <div className="conv-detail-label">Messaging</div>
@@ -859,7 +1257,6 @@ export default function Conversations({ replyAssist } = {}) {
               </div>
             )}
 
-            {/* Contact details */}
             <div className="conv-detail-section">
               <div className="conv-detail-label">Contact</div>
               {activeContact?.phone && <div className="conv-detail-row"><IconPhone style={{ width: 14, height: 14, color: 'var(--text-tertiary)', flexShrink: 0 }} /><a href={`tel:${activeContact.phone}`} className="conv-detail-link">{activeContact.phone}</a></div>}
@@ -930,11 +1327,6 @@ export default function Conversations({ replyAssist } = {}) {
             </div>
           </div>
         </div>
-      )}
-
-      {/* ═══ Toast Notification ═══ */}
-      {toast && (
-        <div className="conv-toast" key={toast.key}>{toast.text}</div>
       )}
     </div>
   );

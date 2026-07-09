@@ -625,6 +625,125 @@ tr:hover td { background: var(--bg-secondary); }
    (docs/omni-inbox-roadmap.md, ownership manifest §6). New classes are namespaced to
    avoid touching existing .conv-* selectors; mobile rules use @media (max-width:768px). */
 
+/* ── sms-experience Phase C — Conversation UX rebuild (ABSORBS omni-U, roadmap §8a).
+   Optimistic-send status, MMS render/attach, segment counter, jump-pill, pagination,
+   mobile/keyboard. New .conv-* classes only; reuses the existing @keyframes spin. ── */
+
+/* Message body: preserve the newlines the sender typed (multiline pre-wrap). */
+.conv-msg-text { white-space: pre-wrap; }
+.conv-msg-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; word-break: break-word; }
+.message.inbound .conv-msg-link { color: var(--accent); }
+
+/* Optimistic pending / failed bubble states. */
+.message.is-pending .message-bubble { opacity: 0.72; }
+.message.is-failed .message-bubble { box-shadow: 0 0 0 1px var(--status-needs-response) inset; }
+
+/* Per-message delivery affordance (pending → sent → delivered → read → failed). */
+.conv-status { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; }
+.conv-status svg { flex-shrink: 0; }
+.conv-status-sent { color: var(--text-tertiary); }
+.conv-status-delivered { color: var(--text-secondary); }
+.conv-status-read { color: var(--accent); }
+.conv-status-pending { color: var(--text-tertiary); }
+.conv-status-failed { color: var(--status-needs-response); flex-wrap: wrap; gap: 6px; }
+.conv-status-failed.uiclass-carrier, .conv-status-failed.uiclass-config { color: var(--status-waiting); }
+.conv-status-reason { white-space: normal; }
+.conv-status-spinner {
+  width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+  border: 2px solid var(--text-tertiary); border-top-color: transparent;
+  animation: spin 0.7s linear infinite;
+}
+.conv-retry-btn {
+  border: 1px solid currentColor; background: transparent; color: inherit;
+  font: inherit; font-size: 11px; font-weight: 600; line-height: 1;
+  padding: 4px 9px; border-radius: 9999px; cursor: pointer;
+}
+.conv-retry-btn:hover { background: var(--status-needs-response); color: #fff; border-color: transparent; }
+
+/* MMS attachments rendered inside a bubble. */
+.conv-media-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.conv-media-thumb { display: block; line-height: 0; border-radius: var(--radius-md); overflow: hidden; max-width: 220px; }
+.conv-media-thumb img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: cover; }
+.conv-media-file {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+  border-radius: var(--radius-md); background: var(--bg-tertiary);
+  color: var(--text-primary); font-size: var(--text-xs); text-decoration: none;
+}
+
+/* Composer mid-column: input stacked over the SMS segment/char counter. */
+.conv-compose-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.conv-seg-counter {
+  display: flex; align-items: center; gap: 6px; justify-content: flex-end;
+  font-size: 10px; color: var(--text-tertiary); padding: 0 2px;
+}
+.conv-seg-counter.warn { color: var(--status-waiting); font-weight: 600; }
+.conv-seg-parts { font-variant-numeric: tabular-nums; }
+
+/* Attachment tray above the composer (snap-first: uploads on pick). */
+.conv-attach-tray {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4); border-top: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+.conv-attach-chip {
+  position: relative; width: 56px; height: 56px; border-radius: var(--radius-md);
+  overflow: hidden; background: var(--bg-tertiary); flex-shrink: 0; color: var(--text-tertiary);
+  display: flex; align-items: center; justify-content: center;
+}
+.conv-attach-chip img { width: 100%; height: 100%; object-fit: cover; }
+.conv-attach-chip.error { box-shadow: 0 0 0 2px var(--status-needs-response) inset; }
+.conv-attach-uploading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35);
+}
+.conv-attach-err { position: absolute; bottom: 2px; left: 4px; color: var(--status-needs-response); font-weight: 800; font-size: 14px; }
+.conv-attach-remove {
+  position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.55); color: #fff; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Jump-to-latest pill — anchored to the thread panel, never yanks a scrolled reader. */
+.conv-thread-panel { position: relative; }
+.conv-jump-latest {
+  position: absolute; right: 16px; bottom: 88px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 5px; padding: 8px 12px;
+  border-radius: 9999px; border: 1px solid var(--border-color);
+  background: var(--bg-primary); color: var(--text-secondary);
+  box-shadow: var(--shadow-md); cursor: pointer;
+}
+.conv-jump-count {
+  background: var(--accent); color: #fff; border-radius: 9999px; padding: 0 5px;
+  font-size: 11px; font-weight: 700; min-width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Pagination controls (thread + list). */
+.conv-load-earlier, .conv-load-more {
+  align-self: center; margin: var(--space-2) auto; padding: 7px 14px;
+  border: 1px solid var(--border-color); border-radius: 9999px; background: var(--bg-primary);
+  color: var(--text-secondary); font-size: var(--text-xs); font-weight: 600; cursor: pointer;
+}
+.conv-load-earlier:hover, .conv-load-more:hover { background: var(--bg-tertiary); }
+.conv-load-earlier[disabled] { opacity: 0.6; cursor: default; }
+.conv-load-more { display: block; width: calc(100% - var(--space-6)); }
+
+/* ── Mobile / field-tech (tech-mobile-ux): ≥48px tap targets, keyboard-safe composer ── */
+@media (max-width: 768px) {
+  /* Lift the whole thread above the on-screen keyboard using the visual viewport. */
+  .conversations-layout.mobile-thread.conv-kb-open {
+    height: calc(100dvh - var(--conv-kb-offset, 0px));
+  }
+  /* Gloved-hand touch targets. */
+  .conv-plus-btn, .conv-send-btn { width: 48px; height: 48px; min-height: 48px; }
+  .conv-back-btn, .conv-info-btn { min-width: 48px; min-height: 48px; }
+  .conv-retry-btn { padding: 8px 14px; font-size: 12px; }
+  .conv-jump-latest { bottom: 96px; padding: 11px 14px; }
+  .conv-attach-chip { width: 64px; height: 64px; }
+  .conv-attach-remove { width: 24px; height: 24px; }
+  .conv-media-thumb { max-width: 60vw; }
+}
+
 /* ── Page transitions + loading skeletons (Collections / My Money).
    Reuses the convSlideIn/convSlideBack + ovwShimmer keyframes. See hooks/usePageTransition.js ── */
 .page-slide-fwd  { animation: convSlideIn 200ms ease both; }

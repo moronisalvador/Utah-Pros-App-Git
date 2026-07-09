@@ -543,7 +543,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant)
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On any send failure it surfaces the real error via `window.dispatchEvent(new CustomEvent('upr:toast', {detail:{message,type:'error'}}))` and appends no optimistic bubble.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -649,14 +649,14 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s)
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is now **authenticated** (scheduler `x-webhook-secret` via `checkCronSecret`, or a logged-in employee — mirrors `run-automations`; the `scheduled()` cron handler stays auth-free). Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. Writes a `worker_runs` row. `messages` insert carries `channel:'sms'`.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
                                     email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
-    send-message.js               — Outbound SMS with TCPA compliance + DND guard
+    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded (status `failed`, `error_code`/`error_message`) instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted (omni §7). Response is additive to F's frozen `/api/send-message` contract: direct blocked → 403 `{error, code:DND_ACTIVE|NO_CONSENT|CONTACT_NOT_FOUND, contact_id}` (unchanged); all-blocked group → 403 `ALL_RECIPIENTS_BLOCKED`; success → 201 `{success, message:<row0>, twilio:[per-recipient…]}` (+ top-level `error_code`/`error_message` when the direct send failed). `num_segments`/`price` left NULL for Phase A to fill from the status callback. SMS-only — omni-O's `channel`/email branch deferred (roadmap §8a).
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
     submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
@@ -665,7 +665,7 @@ functions/
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
-    twilio-webhook.js             — Inbound SMS handler. Detects STOP/START/HELP keywords (+ synonyms) via exported `detectKeyword`; ALWAYS writes opt-in/DND state to `contacts` + audits to `sms_consent_log`. Customer-facing reply comes from exported `keywordReplyBody(keyword, {advancedOptOut})`: default sends a CTIA reply (HELP shows SMS support (385) 336-0611 / restoration@utah-pros.com, kept in sync with the Privacy Policy); when env `TWILIO_ADVANCED_OPT_OUT='true'` (set only after enabling Advanced Opt-Out on the Twilio Messaging Service) it returns empty TwiML so Twilio owns the reply — avoids double-texting / post-STOP error 21610.
+    twilio-webhook.js             — Inbound SMS handler. Detects STOP/START/HELP keywords (+ synonyms) via exported `detectKeyword`; ALWAYS writes opt-in/DND state to `contacts` + audits to `sms_consent_log`. Customer-facing reply comes from exported `keywordReplyBody(keyword, {advancedOptOut})`: default sends a CTIA reply (HELP shows SMS support (385) 336-0611 / restoration@utah-pros.com, kept in sync with the Privacy Policy); when env `TWILIO_ADVANCED_OPT_OUT='true'` (set only after enabling Advanced Opt-Out on the Twilio Messaging Service) it returns empty TwiML so Twilio owns the reply — avoids double-texting / post-STOP error 21610. **Wave -1 hotfix (Jul 9 2026):** the inbound sender is now resolved by a **digits-OR match** (exported `phoneMatchVariants`/`buildPhoneOrFilter`, using `normalizePhone`) across every common stored format (E.164, bare digits, `(XXX) XXX-XXXX`, dashed, dotted) — not an exact `phone=eq.{from}`; STOP/START update **ALL** matching contact rows (`id=in.(…)`) + log a consent row per match, closing the F-3 send-after-STOP hole where a non-E.164 dup stayed opted-in. Exact `yes`/`info` inbound messages are now persisted (via `persistInboundMessage`) **before** the keyword early-return so a real reply is never swallowed (F-7, exported `isAmbiguousContentReply`).
     encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
     encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
     encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
@@ -886,13 +886,21 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
                           + CHECK widened to sms|mms|rcs|email; type CHECK widened to add email_inbound|
                           email_outbound; nullable email cols: email_message_id (UNIQUE partial),
                           in_reply_to, email_references, email_from, email_to, subject, email_html,
-                          sender_email
+                          sender_email. SMS-experience F-core (Jul 9 2026) additive: num_segments int,
+                          price numeric (Twilio metering; Phase A fills from the status callback).
 conversation_participants — Omni-inbox adds nullable `email` (email participants)
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
-scheduled_messages      — Queued outbound messages
+scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
+                          claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
+-- NOTE (SMS-experience F-core, Jul 9 2026): the 5 SMS tables above (conversations, messages,
+-- conversation_participants, sms_consent_log, scheduled_messages) had drifted in with NO CREATE TABLE
+-- in migrations; 20260709_sms_f01_drift_capture.sql now captures their exact live shape (schema-as-code
+-- baseline, no-op on live). messages/conversations realtime-publication membership + messages.twilio_sid
+-- UNIQUE are now tracked too (…f02). Anon-policy closure on messages/conversations/participants is
+-- DEFERRED to F-red (owner-gated) — the drift-capture reproduces the live anon surface, does not close it.
 email_suppressions      — do-not-email list. Omni-inbox widens reason CHECK: adds hard_bounce|complaint|
                           global (kept legacy unsubscribed|bounced|complained|manual). Fed by unsubscribe
                           clicks + the Resend bounce/complaint webhook (resend-webhook.js)
@@ -1212,6 +1220,23 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
                                   and claim idempotency. Backs supabase/tests/omni_messages_check_widen.
                                   Creates+deletes its own throwaway rows (leaves nothing).
 ```
+
+### SMS-experience — F-core (Foundation, Jul 9 2026)
+```
+claim_scheduled_message(p_id UUID) → boolean — SECURITY DEFINER, GRANT authenticated+service_role
+                                  (never anon). Atomic compare-and-set on scheduled_messages.claimed_at:
+                                  TRUE to exactly ONE caller claiming a still-'pending' row (unclaimed,
+                                  or stale-claimed >10 min ago → crash recovery); FALSE otherwise. Kills
+                                  the process-scheduled double-send (finding F-11). Does NOT set 'status'
+                                  (the status CHECK has no 'processing' value). Consumed by Phase A.
+increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → integer — SECURITY DEFINER,
+                                  GRANT authenticated+service_role (never anon). One atomic UPDATE (no
+                                  read-modify-write race); clamps at 0; returns new unread_count, NULL if
+                                  the conversation is missing. Consumed by Phase A + D.
+```
+Shared lib: `functions/lib/twilio-errors.js` — `classifyTwilioError(code)` → `{label, suppress,
+contactFlag, uiClass}` for 21610/30006/30007/30034 (+ safe DEFAULT). Import-only for the wave (A applies
+suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `.claude/rules/sms-experience-wave-ownership.md` §9.
 
 ### Workers & Dev
 ```
@@ -4399,6 +4424,25 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        one-click). The unsubscribe link carries `?rid=<recipient id>` when the caller
                        has one (campaign sends) so a click flips that exact recipient row, or a plain
                        `?email=` link otherwise (a future non-campaign automation send).
+                       **SMS-experience Phase D (Jul 9 2026)** — the SMS branch (`sendGatedSms`) is
+                       fully live: after passing the three frozen gates (kill-switch → TCPA consent →
+                       quiet-hours, UNCHANGED order) a successful send now (1) **mirrors the text into
+                       the contact's conversation thread** — find-or-create a `direct` conversation
+                       (mirrors `twilio-webhook.js`) + insert an `sms_outbound` `messages` row
+                       (service-role, **worker sole writer**, `sent_by:null`, `direction:'outbound'`) +
+                       bump the conversation preview — and (2) passes a `/api/twilio-status`
+                       **statusCallback** so Phase A fills status/error_code/num_segments/price by
+                       twilio_sid (F-12). The thread-write is **best-effort** (wrapped+swallowed: a DB
+                       hiccup never demotes a delivered text to a failure). Quiet-hours timezone is now
+                       **per-recipient** (`timezoneForContact` — NANP area code → `billing_state` → env
+                       → Mountain default; no `contacts.timezone` column exists and Phase D ships zero
+                       schema, so the area code is the TCPA-correct "called party" signal). Sends retry
+                       transient/429 errors with linear backoff and fail-fast on permanent ones
+                       (`classifySendError` via F's `twilio-errors.js` + `sendSmsWithBackoff`), returning
+                       an additive `{ permanent }` flag. **Frozen return preserved**: `{ok,skipped,reason}`
+                       + the load-bearing `sms_disabled`/`quiet_hours` strings unchanged; new
+                       `sid`/`error`/`permanent` are additive; backward-compat tests assert Phase 8's
+                       `planStepOutcome` + Phase 5's `planRunOutcome` still HOLD/skip/send correctly.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
@@ -4911,12 +4955,23 @@ trigger writes a `system_events` row whose `event_type` is the substrate a futur
 subscribe to: `speed_to_lead→lead_created`, `missed_call_textback→call_missed`,
 `no_response_followup→lead_stale`, `review_request→job_completed` (payload `{automation, channel,
 outcome, reason}`). **Idempotency**: `alreadyFired(event_type, entity_id)` on `system_events` means a
-lead/job is contacted at most once per trigger; a terminal outcome (`sent` or consent-`skipped`)
-writes the row, a transient `failed` writes nothing so the next tick retries. **Consent skips are
-durable** — recorded in `system_events` for every channel, plus `sms_consent_log` for SMS (via the
-frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback otherwise; SMS
-bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
+lead/job is contacted at most once per trigger; only a TERMINAL outcome writes the row.
+**Consent skips are durable** — recorded in `system_events` for every channel, plus `sms_consent_log`
+for SMS (via the frozen gate). Copy prefers a `message_templates` row by title, hardcoded fallback
+otherwise; SMS bodies append "Reply STOP to opt out." Review link = `env.GOOGLE_REVIEW_URL` (fallback
 `https://utahpros.app`).
+
+**SMS-experience Phase D (Jul 9 2026) — F-10 held-retry + throughput.** The terminal/idempotency rule
+above was refined so a **deferred** text is never permanently dropped: `fireAutomation` now writes the
+terminal `system_events` row only for `sent`, a **durable** consent-skip (dnd/no_consent/no_phone), or a
+**PERMANENT** send failure (invalid number, via `sendGatedSms`'s additive `{permanent}` flag). A
+**deferrable** skip (`quiet_hours` / `sms_disabled` — `DEFERRABLE_SKIP_REASONS`) and a **transient**
+failure (429/5xx) write NO row, so the lead stays a candidate and retries once the window lifts. To keep
+an after-hours lead visible until 8am, the two SMS automations' candidate lookback widened from 60 min to
+a **13h overnight window** (`OVERNIGHT_DEFER_LOOKBACK_MIN`; email windows unchanged). Real SMS sends are
+**MPS-paced** (`paceSms`, `SMS_PACE_MS` env, default 250 ms, injectable/0 in tests) between sends. The
+per-recipient quiet-hours timezone, 429 backoff, statusCallback and in-thread mirror all live in
+`automated-send.js` (see its entry). Zero schema.
 
 **SMS is dark, doubly.** The two SMS automations are skipped entirely at the worker level unless
 `sms_sending_enabled` is ON (`smsLive` guard — no queries, no burned idempotency rows while dark), and
@@ -6266,3 +6321,182 @@ validation; money early per owner priority; lists give P3/P4a their entry points
 **new `admin-mobile-phase-reviewer`** agent (money/gate-weighted) + reused `upr-pattern-checker`.
 Full detail in `docs/admin-mobile-roadmap.md`; launch blocks in `docs/admin-mobile-dispatch.md`;
 ownership in `.claude/rules/admin-mobile-wave-ownership.md`.
+
+
+---
+
+## Session log — 2026-07-09 · SMS Experience plan of record (planning only, zero feature code)
+
+Ran a full `/masterplan sms-experience` pass: 6-agent live audit (frontend `Conversations.jsx`;
+inbound/status/transport workers; automation senders; realtime/push/mobile; initiative recon;
+schema/tests) + independent live DB/Twilio verification + a 3-agent adversarial challenge pass. Committed
+the plan of record (docs/agents only): `docs/sms-experience-roadmap.md`,
+`docs/sms-experience-dispatch.md`, `.claude/rules/sms-experience-wave-ownership.md`, and a new
+`.claude/agents/sms-experience-phase-reviewer.md`. No feature code shipped.
+
+**Two objectives.** (1) A2P 10DLC code-readiness before the campaign approval — verdict **NOT ready**
+(four live P0s + an env-only A2P-sender crux); (2) make texting feel iMessage/WhatsApp — mid-fidelity,
+real gaps.
+
+**Key live findings (2026-07-09, verified).**
+- `messages`/`conversations`/`conversation_participants` carry live **anon `USING(true)`** policies +
+  table GRANTs — SMS archive readable (rows forgeable via INSERT) with the browser anon key. (`messages`
+  has no anon UPDATE/DELETE policy → read-surface-dominated.) Deferred by db-foundation §8; closed by F-red.
+- `Conversations.jsx:433` P0 silent fake-send: `res.json()` before `res.ok` → ghost `queued` row + "sent"
+  bubble on any worker error. `send-message.js:57` `skip_compliance` bypass (zero callers). STOP exact
+  phone-match misses non-E.164 contacts (9/148) → send-after-STOP. Group send consent-checks only
+  `participants[0]`.
+- `twilio-status.js` no signature validation; automated SMS invisible in-thread (no conversation/message
+  row); `run-automations` permanently drops quiet-hours-deferred texts; `process-scheduled` unauth +
+  non-atomic claim. Twilio workers write no `worker_runs`.
+- `integration_config.twilio_messaging_service_sid` NULL live → A2P sender is env-only
+  (`TWILIO_MESSAGING_SERVICE_SID`) — if unset, sends use a long code, not the A2P sender. **Owner must
+  verify the Cloudflare env var (both sets).** Twilio MCP not configured here → console side is an owner
+  checklist.
+- Schema-as-code gap: the 5 core SMS tables have NO `CREATE TABLE` in migrations; F-core ships a
+  drift-capture baseline before touching them. `messages.twilio_sid` UNIQUE index + messages/conversations
+  `supabase_realtime` publication membership are live-only (untracked drift) — F-core tracks them.
+
+**Structure.** Wave -1 compliance hotfix (H0) ships first (3 live P0s); Foundation splits into **F-core**
+(green, unblocks) + **F-red** (anon-closure, owner-gated, gates nothing); Wave 1 = A (transport
+hardening) ∥ B (send chokepoint, absorbs omni O) ∥ C (conversation UX, absorbs omni U) ∥ D (automated
+visibility, amends CRM automated-send freeze); Wave 2 = G (deliverability ops + verification tails +
+A2P live-smoke fork). Tech PWA covered — `Conversations.jsx` is one shared component mounted at
+`/tech/conversations` (Capacitor iOS); C additionally applies `tech-mobile-ux.md` + Capacitor
+suspend-recovery. Notification delivery = HAVE (web push works on the PWA per owner); APNs stays
+dormant/OUT.
+
+**Cross-manifest (owner-approved supersessions, disclosed roadmap §8):** absorbs unbuilt omni-inbox
+Phases O (`send-message.js`) + U (`Conversations.jsx`); amends the CRM-wave freeze on
+`automated-send.js`/`run-automations.js` (Phase D, additive, return-vocab frozen + backward-compat tests
+for the Phase 8/5 callers). No omni/CRM branch is in flight. CRM 4b campaigns/blasts + the
+`sms_sending_enabled` flip stay out of scope / owner's.
+
+**Challenge outcomes:** 6/6 refuted claims CONFIRMED; disjointness surfaced 5 hidden shared artifacts
+(moved into F-core: send-message contract freeze, return-vocab freeze, atomic `unread_count` increment,
+frozen `messages` insert shape; `process-scheduled` ownership → A); counter-ordering won the Wave -1
+hotfix + F-core/F-red split. Full detail in `docs/sms-experience-roadmap.md`; launch blocks in
+`docs/sms-experience-dispatch.md`; ownership in `.claude/rules/sms-experience-wave-ownership.md`.
+
+---
+
+## Session log — 2026-07-09 · SMS Experience Phase C — Conversation UX rebuild (shipped)
+
+Rebuilt the shared `Conversations.jsx` (mounted at `/conversations`, `/tech/conversations`,
+`/crm/conversations`) to the iMessage/WhatsApp bar. **Absorbs the unbuilt omni-inbox Phase U** (roadmap
+§8a — SMS-only; email channel left for a future omni reconciliation). Zero schema, worker stays the sole
+writer of any `sms_*` row.
+
+**New files** (`src/components/conversations/`): `messageUtils.js` (GSM-7/UCS-2 segment counter, scheme-
+whitelisted `linkifyTokens`, `parseMediaUrls` for the JSON-string `media_urls` column, `uiClassForMessage`
+importing the frozen `functions/lib/twilio-errors.js`, per-thread draft get/set/clear), `MessageBubble.jsx`
+(bubble + MMS render with `<img>`→file-link fallback + delivery-status affordance + inline retry),
+`SegmentCounter.jsx`, `messageUtils.test.js` (18 cases, green).
+
+**Behavior shipped:**
+- **Optimistic send** — a `pending-N` bubble appends instantly (`_clientId`), reconciled by the worker's
+  `data.message` AND the realtime INSERT (match by id, then by body) so neither ordering dupes; status
+  `pending → sent → delivered → read → failed`, `failed` tinted by F's `uiClass` with **inline Retry**
+  (reason from `error_code`/`error_message`). All async `setMessages` guarded by `activeIdRef`
+  (**wrong-thread-injection fix**). Same-tick double-Enter guarded by reading/blanking the composer ref.
+- **MMS** — inbound `media_urls` render (fixes F-6 empty bubble); outbound attach uploads (image-compressed)
+  to the **public `job-files`** bucket under `conversations/{convId}/…` and passes the public URL as
+  `media_urls` (the `message-attachments` bucket is private with no upload policy, and this phase ships zero
+  schema — documented tradeoff; worker requires a non-empty body so MMS carries text).
+- **Composer** — live segment/char counter accounting for the server `Name: ` prefix; per-thread localStorage
+  **draft persistence**; multiline `pre-wrap`; toasts consolidated to the `upr:toast` CustomEvent (Rule 2).
+- **List/scroll** — thread + list **pagination** (`Load earlier` / `Load more`), scroll anchoring on prepend,
+  **jump-to-latest pill** (never yanks a scrolled-up reader), **unread-desync** fix (open+visible thread stays
+  read via `markActiveRead`; conversations realtime UPDATE can't re-mark it unread).
+- **Deep-link + mobile** — per-thread **`?c=<id>` URL** (push-tap lands in-thread; no `App.jsx` route edit);
+  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via `document` `visibilitychange`
+  (hidden→visible only) + `visualViewport` keyboard offset — **no `realtime.js` edit**.
+
+**Ownership honored:** edited only `Conversations.jsx`, new `components/conversations/**`, and `index.css`
+inside the §623 omni-U marker. No edit to `realtime.js` / `CrmConversations.jsx` / any worker. `test` +
+`build` + `eslint` green. **Owner-gated tail:** on-device iOS `/tech/conversations` verification is the
+Phase G lane; A2P live-send stays gated (§7).
+
+---
+
+## Session log — 2026-07-09 · SMS Experience Phase G — Deliverability ops + verification tails (shipped)
+
+Wave 2, launched after A + C merged into `dev`. Owned a new deliverability health component +
+`Layout.jsx` (unread-badge only, per the ownership manifest); everything else was verification.
+
+**Shipped:**
+- **New `src/components/DeliverabilityHealth.jsx`**, embedded as a "Deliverability" sub-tab under
+  DevTools → Messaging (zero new routes, zero schema/RPCs). Three read-only sections: (1) worker
+  health for `twilio-webhook`/`twilio-status`/`process-scheduled` — latest status + recent error count
+  via the existing `get_worker_runs` RPC; (2) A2P/messaging-service config health via the existing
+  `get_managed_credentials_status()` RPC (booleans + phone number only — the secret itself is never
+  exposed); (3) recent failed/undelivered messages grouped by F-core's frozen `classifyTwilioError`
+  (imports `functions/lib/twilio-errors.js` directly — the same pattern
+  `components/conversations/messageUtils.js` already established for a frontend file consuming a
+  `functions/lib` module).
+- **`Layout.jsx` unread badge**: replaced the 30s `fetchUnread` poll with the existing
+  `subscribeToConversations` realtime channel + one seed fetch on mount. A per-conversation unread map
+  (`unreadByConvRef`) is updated incrementally from INSERT/UPDATE/DELETE payloads and re-summed, instead
+  of re-querying every conversation row on a timer.
+
+**Verification tails — one confirmed-broken finding, filed not fixed:**
+- **Per-thread push deep-link is BROKEN end-to-end** (live-traced, not fixed — the fix is outside G's
+  owned files): `twilio-webhook.js`'s `notifyInboundMessage` calls `dispatchEvent` with
+  `link: '/conversations'` (no `?c=<conversation_id>`); `notify.js:163` forwards it verbatim as the push
+  payload's `url`; `public/sw.js`'s `notificationclick` opens that URL as-is. A push tap for an inbound
+  text always lands on the bare inbox, never the specific thread, even though Phase C's `?c=` deep-link
+  param works correctly when navigated to directly. Same `link` also drives the in-app
+  `NotificationBell` click-through. **One-line fix** (append `?c=${conversation?.id}`) lives in
+  `twilio-webhook.js`, exclusively owned by Session A — G has no edit rights there per the ownership
+  manifest, so this is a disclosed follow-up, not an in-phase fix.
+- **Tech-PWA on-device lane**: no iOS simulator/device in this session (same disclosure as Phase C).
+  Static grep confirms the `visibilitychange` Capacitor-suspend recovery and `visualViewport` keyboard
+  handler Phase C claimed are actually present in `Conversations.jsx`. Full on-device confirmation
+  (including the push-tap→thread check, blocked on the finding above) stays owner-gated.
+- **A2P live-smoke decision fork**: live-checked at session start — `automation_settings
+  .sms_sending_enabled = false` and `integration_config.twilio_messaging_service_sid` /
+  `twilio_account_sid` / `twilio_phone_number` are still unconfigured in the DB (env-only fallback,
+  unchanged since the plan of record). No owner confirmation of A2P campaign approval was given at
+  session start, so per roadmap §7 the live send stays deferred — never faked.
+
+**Ownership honored:** touched only `src/components/DeliverabilityHealth.jsx` (new) and `Layout.jsx`
+(unread-badge block only), plus one additive sub-tab wiring in `src/pages/DevTools.jsx` (not frozen by
+this initiative) to host the new component. No edit to any worker, `Conversations.jsx`,
+`components/conversations/**`, or any migration. `test` + `build` + `eslint` green.
+
+---
+
+## Tech Messages v2 — plan of record (session 2026-07-09, docs only — no feature code)
+
+Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
+desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
+**keep-alive tech-v2 pane** behind `page:tech_msgs_v2` — the TechScheduleV2 machine (pane
+host, React-Query + idb cache-first paint, `tv2-*` css, i18n) applied to messaging. The
+shared `Conversations.jsx` is never edited (3 mounts; keeps serving web + CRM). 6-agent live
+audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
+
+- **Docs:** `docs/tech-messages-v2-roadmap.md` (plan of record: findings, gap audit,
+  corrected architecture calls, data contracts, adjudicated forks, F-M/B1/B2 phase blocks,
+  challenge report) · `docs/tech-messages-v2-dispatch.md` (cold-session blocks) ·
+  `.claude/rules/tech-messages-v2-wave-ownership.md` (ownership; authorized amendments) ·
+  tech-v2 manifest §8 + sms-experience manifest §10 + sms roadmap §6 pointer (cross-manifest
+  transparency).
+- **Foundation (F-M) will ship:** flag seed (row FIRST — fail-open trap at
+  AuthContext.jsx:294) · `get_tech_conversations` (composite `{conversations, unread_total,
+  status_counts}`, server search/filters, fixed COALESCE+id keyset cursor, single-row
+  deep-link mode; GRANT authenticated,service_role + REVOKE PUBLIC/anon) ·
+  `find_or_create_conversation` · techQuery kinds `convos`/`thread` + `message` mutation +
+  thread-excluding persister dehydrate filter (SMS bodies never hit IndexedDB) · TechLayout
+  third pane + **Messages-tab unread badge** · `TechMsgsPane` two-layer host (TechPane
+  copy-in) · msgs i18n namespace.
+- **Key adjudications:** App.jsx untouched (paneCovering suppresses the outlet — verified) ·
+  URL-driven thread open (`?c=` push / back) · optimistic overlay + setQueryData
+  patch/append (never invalidate-per-event) · Enter=send · techs get one-tap DND **ON**
+  only (OFF stays office/admin — TCPA asymmetry) · all-org scoping v1 (assigned_to is 100%
+  unpopulated; per-employee param reserved) · realtime verified to survive F-red
+  (authenticated JWT socket; devLogin caveat).
+- **Dispatch:** F-M → B1 (core experience, at the one-session ceiling) → B2 (completion +
+  polish; STRETCH = new-conversation, scheduled sends) — strictly serial; ~0.5 post-bake fix
+  session budgeted; cutover = owner flips the flag. Coordination seams: Job Hub H3
+  (`src/i18n/index.js` only), db-foundation P8 (MMS URL helper is the swap target), sms
+  deep-link follow-up (sms-owned).
