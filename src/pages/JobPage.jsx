@@ -12,6 +12,7 @@ import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/Div
 import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
+import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials } from '@/lib/claimUtils';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
@@ -494,6 +495,10 @@ function FinancialTab({job,fmt,saveBatch,employee,db}){
         <FR label="Gross Profit" value={fmt(grossProfit)} bold color={grossProfit>=0?'var(--status-resolved)':'var(--status-needs-response)'}/>
         <FR label="Margin" value={`${margin}%`} bold color={grossProfit>=0?'var(--status-resolved)':'var(--status-needs-response)'}/>
         {outstanding>0&&<FR label="Outstanding" value={fmt(outstanding)} color="#d97706" bold/>}
+      </div>
+      <div className="job-page-section job-page-section-full">
+        <div className="job-page-section-title">Invoices &amp; Payments</div>
+        <ClaimBilling jobs={[job]} db={db} canEdit={canEdit} hideSummary/>
       </div>
       {canEdit&&isFeatureEnabled('tool:oop_pricing')&&(
         <div style={{marginTop:'var(--space-3)',display:'flex',justifyContent:'flex-end'}}>
