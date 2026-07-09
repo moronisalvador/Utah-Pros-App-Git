@@ -23,6 +23,7 @@
 import { supabase } from '../lib/supabase.js';
 import { validateTwilioSignature } from '../lib/twilio.js';
 import { handleOptions } from '../lib/cors.js';
+import { normalizePhone } from '../lib/phone.js';
 import { dispatchEvent } from './notify.js';
 
 // ── message.inbound notification hook (Notification Center, Session B) ──
@@ -65,6 +66,51 @@ export function detectKeyword(body) {
   if (START_KEYWORDS.includes(trimmed)) return 'start';
   if (HELP_KEYWORDS.includes(trimmed)) return 'help';
   return null;
+}
+
+// ── F-3: digits-based contact lookup ──
+// The webhook used to resolve the inbound sender with an exact `phone=eq.{from}`.
+// A contact stored in a non-E.164 form (e.g. "(801) 919-6858") never matched, so
+// a STOP created a *duplicate* opted-out row while the original stayed opted-in —
+// a send-after-STOP TCPA hole. We now match against every common stored format of
+// the number. Twilio always sends E.164, but this is format-agnostic on both sides.
+export function phoneMatchVariants(rawFrom) {
+  const e164 = normalizePhone(rawFrom);
+  if (!e164) return [];
+  const ten = e164.slice(2); // strip the "+1"
+  const a = ten.slice(0, 3), b = ten.slice(3, 6), c = ten.slice(6);
+  return [
+    e164,                    // +1XXXXXXXXXX  (E.164 — the live majority)
+    ten,                     // XXXXXXXXXX    (bare 10-digit)
+    '1' + ten,               // 1XXXXXXXXXX   (bare 11-digit)
+    `(${a}) ${b}-${c}`,      // (XXX) XXX-XXXX (the live non-E.164 format)
+    `${a}-${b}-${c}`,        // XXX-XXX-XXXX
+    `${a}.${b}.${c}`,        // XXX.XXX.XXXX
+  ];
+}
+
+// Build a PostgREST `or=(...)` filter matching a contact stored in ANY of the
+// formats above. Each candidate is double-quoted (so parens/space/commas are
+// literal) and URL-encoded (so "+" becomes %2B, never a decoded space). Falls
+// back to an exact match for an unparseable sender (shortcode / junk).
+export function buildPhoneOrFilter(rawFrom) {
+  const variants = phoneMatchVariants(rawFrom);
+  if (variants.length === 0) {
+    return `phone=eq.${encodeURIComponent(rawFrom)}&limit=1`;
+  }
+  const enc = (v) => encodeURIComponent(`"${v}"`).replace(/\(/g, '%28').replace(/\)/g, '%29');
+  const conds = [...new Set(variants)].map((v) => `phone.eq.${enc(v)}`);
+  return `or=(${conds.join(',')})`;
+}
+
+// ── F-7: "yes" and "info" double as real customer replies ──
+// They live in the START/HELP keyword lists, so the webhook used to swallow them
+// (act on the keyword, never store the message). For these ambiguous words we
+// persist the inbound message BEFORE the keyword early-return so a genuine reply
+// is never lost; the keyword action (re-subscribe / HELP reply) still runs after.
+const AMBIGUOUS_CONTENT_KEYWORDS = ['yes', 'info'];
+export function isAmbiguousContentReply(body) {
+  return AMBIGUOUS_CONTENT_KEYWORDS.includes((body || '').trim().toLowerCase());
 }
 
 // ── Compliance-keyword auto-reply copy ──
@@ -136,8 +182,13 @@ export async function onRequestPost(context) {
       if (url) mediaUrls.push(url);
     }
 
-    // ── 2. Find or create contact ──
-    let [contact] = await db.select('contacts', `phone=eq.${encodeURIComponent(from)}&limit=1`);
+    // ── 2. Find or create contact (digits-OR match — F-3) ──
+    // Match every common stored format of the number, not just an exact E.164
+    // string, so STOP/START update the REAL contact row(s) instead of creating a
+    // duplicate opted-out row while the original stays opted-in (a send-after-STOP
+    // TCPA hole). A number stored more than once → all rows are updated together.
+    let phoneMatches = await db.select('contacts', `${buildPhoneOrFilter(from)}&order=created_at.asc`);
+    let contact = phoneMatches[0] || null;
 
     if (!contact) {
       // Auto-create contact from inbound message
@@ -148,6 +199,7 @@ export async function onRequestPost(context) {
         opt_in_source: 'inbound_sms',
         opt_in_at: new Date().toISOString(),
       });
+      phoneMatches = [contact];
 
       // Log the implied consent
       await db.insert('sms_consent_log', {
@@ -167,10 +219,18 @@ export async function onRequestPost(context) {
     // still gets a CTIA-compliant confirmation. Owner sets this true only after
     // enabling Advanced Opt-Out in the Twilio console.
     const advancedOptOut = env.TWILIO_ADVANCED_OPT_OUT === 'true';
+    const matchIds = phoneMatches.map((c) => c.id);
+
+    // F-7: "yes" (START) / "info" (HELP) are also real customer replies. Persist
+    // the inbound message BEFORE the keyword early-return so it is never swallowed;
+    // the keyword action below still runs.
+    if (keyword && isAmbiguousContentReply(body)) {
+      await persistInboundMessage(context, db, env, { contact, from, to, body, messageSid, mediaUrls });
+    }
 
     if (keyword === 'stop') {
-      // ── STOP: Immediately opt out + DND ──
-      await db.update('contacts', `id=eq.${contact.id}`, {
+      // ── STOP: Immediately opt out + DND on ALL matching rows (F-3) ──
+      await db.update('contacts', `id=in.(${matchIds.join(',')})`, {
         opt_in_status: false,
         opt_out_at: new Date().toISOString(),
         opt_out_reason: 'stop_keyword',
@@ -179,20 +239,20 @@ export async function onRequestPost(context) {
         updated_at: new Date().toISOString(),
       });
 
-      await db.insert('sms_consent_log', {
-        contact_id: contact.id,
-        phone: from,
+      await db.insert('sms_consent_log', phoneMatches.map((c) => ({
+        contact_id: c.id,
+        phone: c.phone || from,
         event_type: 'stop_keyword',
         source: 'keyword',
         details: `Contact texted "${body.trim()}". Opted out and DND enabled.`,
-      });
+      })));
 
       return twimlResponse(keywordReplyBody('stop', { advancedOptOut }));
     }
 
     if (keyword === 'start') {
-      // ── START: Re-subscribe ──
-      await db.update('contacts', `id=eq.${contact.id}`, {
+      // ── START: Re-subscribe ALL matching rows (F-3) ──
+      await db.update('contacts', `id=in.(${matchIds.join(',')})`, {
         opt_in_status: true,
         opt_in_source: 'start_keyword',
         opt_in_at: new Date().toISOString(),
@@ -203,13 +263,13 @@ export async function onRequestPost(context) {
         updated_at: new Date().toISOString(),
       });
 
-      await db.insert('sms_consent_log', {
-        contact_id: contact.id,
-        phone: from,
+      await db.insert('sms_consent_log', phoneMatches.map((c) => ({
+        contact_id: c.id,
+        phone: c.phone || from,
         event_type: 'start_keyword',
         source: 'keyword',
         details: `Contact texted "${body.trim()}". Re-subscribed and DND disabled.`,
-      });
+      })));
 
       return twimlResponse(keywordReplyBody('start', { advancedOptOut }));
     }
@@ -227,63 +287,8 @@ export async function onRequestPost(context) {
       return twimlResponse(keywordReplyBody('help', { advancedOptOut }));
     }
 
-    // ── 4. Find or create conversation ──
-    // Look for existing active conversation with this contact
-    let conversation = null;
-    const existingParticipants = await db.select(
-      'conversation_participants',
-      `contact_id=eq.${contact.id}&is_active=eq.true&select=conversation_id`
-    );
-
-    if (existingParticipants.length > 0) {
-      const convId = existingParticipants[0].conversation_id;
-      const [existing] = await db.select('conversations', `id=eq.${convId}`);
-      if (existing) conversation = existing;
-    }
-
-    if (!conversation) {
-      // Create new conversation
-      const title = contact.name || from;
-      [conversation] = await db.insert('conversations', {
-        type: 'direct',
-        title,
-        status: 'needs_response',
-        twilio_number: to,
-      });
-
-      await db.insert('conversation_participants', {
-        conversation_id: conversation.id,
-        contact_id: contact.id,
-        phone: from,
-        role: 'primary',
-      });
-    }
-
-    // ── 5. Insert inbound message ──
-    await db.insert('messages', {
-      conversation_id: conversation.id,
-      type: 'sms_inbound',
-      body: body.trim() || null,
-      status: 'received',
-      twilio_sid: messageSid,
-      sender_phone: from,
-      sender_contact_id: contact.id,
-      media_urls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
-    });
-
-    // ── 6. Update conversation ──
-    await db.update('conversations', `id=eq.${conversation.id}`, {
-      status: 'needs_response',
-      status_changed_at: new Date().toISOString(),
-      last_message_at: new Date().toISOString(),
-      last_message_preview: (body.trim() || '[Media]').substring(0, 100),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    });
-
-    // ── 7. Notify the assigned rep / office of the inbound message ──
-    // Fire-and-forget in the background so Twilio still gets its TwiML instantly.
-    context.waitUntil(notifyInboundMessage({ db, env, conversation, contact, from, text: body }));
+    // ── 4-7. Normal inbound message: persist into its conversation + notify ──
+    await persistInboundMessage(context, db, env, { contact, from, to, body, messageSid, mediaUrls });
 
     // ── 8. Run automation rules (future) ──
     // TODO: Check automation_rules for matching triggers and execute actions
@@ -296,6 +301,68 @@ export async function onRequestPost(context) {
     // Still return 200 to Twilio so it doesn't retry
     return twimlResponse('');
   }
+}
+
+// ── Persist an inbound message into its conversation ──
+// Find-or-create the per-contact conversation, insert the message row, bump the
+// conversation metadata, and fire the (background) notify hook. Extracted so the
+// F-7 "yes"/"info" path can store the message BEFORE the keyword early-return
+// without duplicating the normal-message path.
+async function persistInboundMessage(context, db, env, { contact, from, to, body, messageSid, mediaUrls }) {
+  // Find existing active conversation for this contact
+  let conversation = null;
+  const existingParticipants = await db.select(
+    'conversation_participants',
+    `contact_id=eq.${contact.id}&is_active=eq.true&select=conversation_id`
+  );
+
+  if (existingParticipants.length > 0) {
+    const convId = existingParticipants[0].conversation_id;
+    const [existing] = await db.select('conversations', `id=eq.${convId}`);
+    if (existing) conversation = existing;
+  }
+
+  if (!conversation) {
+    const title = contact.name || from;
+    [conversation] = await db.insert('conversations', {
+      type: 'direct',
+      title,
+      status: 'needs_response',
+      twilio_number: to,
+    });
+
+    await db.insert('conversation_participants', {
+      conversation_id: conversation.id,
+      contact_id: contact.id,
+      phone: from,
+      role: 'primary',
+    });
+  }
+
+  await db.insert('messages', {
+    conversation_id: conversation.id,
+    type: 'sms_inbound',
+    body: body.trim() || null,
+    status: 'received',
+    twilio_sid: messageSid,
+    sender_phone: from,
+    sender_contact_id: contact.id,
+    media_urls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
+  });
+
+  await db.update('conversations', `id=eq.${conversation.id}`, {
+    status: 'needs_response',
+    status_changed_at: new Date().toISOString(),
+    last_message_at: new Date().toISOString(),
+    last_message_preview: (body.trim() || '[Media]').substring(0, 100),
+    unread_count: (conversation.unread_count || 0) + 1,
+    updated_at: new Date().toISOString(),
+  });
+
+  // Fire-and-forget so Twilio still gets its TwiML instantly.
+  context.waitUntil(notifyInboundMessage({ db, env, conversation, contact, from, text: body }));
+
+  return conversation;
 }
 
 // ── TwiML response helper ──
