@@ -133,7 +133,11 @@ export default function Composer({ convId, contact, onSend, sending }) {
   };
 
   const onPickFiles = (e) => {
-    const files = e.target.files;
+    // Snapshot to a real array BEFORE clearing the input — on iOS WebKit `e.target.files`
+    // is a LIVE FileList, so `value = ''` empties it and addFiles would get nothing
+    // (parity with legacy Conversations.jsx:674). This was the "pick photos → nothing
+    // happens" bug (bake report 2026-07-10).
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
     addFiles(files);
     setSheet(null);

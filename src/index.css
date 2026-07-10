@@ -10817,7 +10817,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 12px;
   width: 100%;
   min-height: 68px;
-  padding: 10px 14px 10px 0;
+  padding: 10px 14px;
   border: none;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
@@ -10826,10 +10826,6 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   -webkit-tap-highlight-color: transparent;
 }
 .tv2-msgs-row:active { background: var(--bg-secondary); }
-.tv2-msgs-row__bar { width: 4px; align-self: stretch; border-radius: 0 2px 2px 0; background: var(--text-tertiary); flex-shrink: 0; }
-.tv2-msgs-row__bar--needs-response { background: var(--status-needs-response); }
-.tv2-msgs-row__bar--waiting { background: var(--status-waiting); }
-.tv2-msgs-row__bar--resolved { background: var(--status-resolved); }
 .tv2-msgs-row__avatar {
   flex-shrink: 0;
   width: 44px;

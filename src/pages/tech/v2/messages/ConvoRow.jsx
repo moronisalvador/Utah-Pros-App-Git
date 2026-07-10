@@ -6,10 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   One row in the messaging inbox: the person's initials, their name, a one-line
  *   preview of the last message, when it happened, and — if there are unread texts —
- *   bold text plus a red count. A colored bar down the left edge shows the
- *   conversation's status (red = needs response, amber = waiting, green = resolved) so
- *   a tech can read state from three feet away. A group/broadcast thread shows a small
- *   badge with how many people are on it. Tapping the row opens the thread; tapping the
+ *   bold text plus a red count. A group/broadcast thread shows a small badge with how
+ *   many people are on it. Tapping the row opens the thread; tapping the
  *   "⋯" opens one inline 48px button to mark the thread read or unread.
  *
  * WHERE IT LIVES:
@@ -51,20 +49,12 @@ function IconGroup(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
 }
 
-// status → the status-color accent bar token (3-feet readability).
-const STATUS_TOKEN = {
-  needs_response: 'needs-response',
-  waiting_on_client: 'waiting',
-  resolved: 'resolved',
-};
-
 export default function ConvoRow({ conv, onOpen, onSetUnread }) {
   const { t } = useTranslation('msgs');
   const [showActions, setShowActions] = useState(false);
   const { isUnread, count } = convoUnread(conv);
   const name = cleanName(conv.title);
   const preview = conv.last_message_preview || '';
-  const token = STATUS_TOKEN[conv.status] || 'needs-response';
   const multi = isMultiConversation(conv);
 
   const toggleActions = (e) => { e.stopPropagation(); setShowActions((v) => !v); };
@@ -82,7 +72,6 @@ export default function ConvoRow({ conv, onOpen, onSetUnread }) {
           className={`tv2-msgs-row${isUnread ? ' unread' : ''}`}
           onClick={() => onOpen(conv.id)}
         >
-          <span className={`tv2-msgs-row__bar tv2-msgs-row__bar--${token}`} aria-hidden="true" />
           <span className="tv2-msgs-row__avatar">
             {multi ? <IconGroup width={20} height={20} /> : initials(conv.title)}
           </span>
