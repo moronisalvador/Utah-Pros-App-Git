@@ -124,7 +124,6 @@ export default function TechMessagesV2({ active = true }) {
     <TechMsgsPane
       active={active}
       threadOpen={threadOpen}
-      threadScrollRef={threadScrollRef}
       list={(
         <ConvoList
           conversations={conversations}

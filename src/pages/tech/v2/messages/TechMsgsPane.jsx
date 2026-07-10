@@ -36,9 +36,11 @@
  *   - The thread layer carries `tv2-msgs-thread-open` ONLY while `active` — the CSS
  *     nav-hide rule is scoped to a NOT-hidden pane, so a background pane with a thread
  *     "open" in state can never strand the whole app's tab bar.
- *   - `threadScrollRef` is forwarded to the thread scroller so the page (Phase B1) can
- *     drive pin-to-bottom / load-earlier anchoring; the list scroller stays internal
- *     (the host owns its restore).
+ *   - The THREAD layer does not wrap the content in a scroller — ThreadView owns its
+ *     own scroller (ref forwarded from the page) AND docks the composer as a flex
+ *     sibling BELOW that scroller, so the composer lands flush above the keyboard
+ *     without a sticky-in-momentum-scroll foot (bake report 2026-07-10). Only the LIST
+ *     layer keeps a host-owned scroller (it needs scroll-position restore).
  * ════════════════════════════════════════════════
  */
 import React, { useRef, useEffect, useLayoutEffect } from 'react';
@@ -48,15 +50,12 @@ import React, { useRef, useEffect, useLayoutEffect } from 'react';
  *   active: boolean,           // this pane is the visible tab
  *   threadOpen?: boolean,      // a thread is open (list hidden, thread shown)
  *   list: React.ReactNode,     // conversation-list layer content
- *   thread?: React.ReactNode,  // open-thread layer content
- *   threadScrollRef?: React.RefObject<HTMLDivElement>, // page-owned thread scroller ref
+ *   thread?: React.ReactNode,  // open-thread layer content (owns its own scroller)
  * }} props
  */
-export default function TechMsgsPane({ active, threadOpen = false, list, thread = null, threadScrollRef }) {
+export default function TechMsgsPane({ active, threadOpen = false, list, thread = null }) {
   const listScrollRef = useRef(null);
   const listScrollTop = useRef(0);
-  const internalThreadRef = useRef(null);
-  const threadRef = threadScrollRef || internalThreadRef;
 
   // Track LIST scroll continuously while it's the visible layer.
   useEffect(() => {
@@ -81,13 +80,14 @@ export default function TechMsgsPane({ active, threadOpen = false, list, thread 
       <div className="tv2-msgs-layer tv2-msgs-list-layer" hidden={threadOpen}>
         <div className="tv2-msgs-scroll" ref={listScrollRef}>{list}</div>
       </div>
-      {/* Thread layer — own scroller, pinned to newest (no restore-to-saved). The
-          thread-open class (→ nav-hide) is applied ONLY while this pane is active. */}
+      {/* Thread layer — ThreadView renders its OWN scroller (pinned to newest) plus a
+          docked composer below it. The thread-open class (→ nav-hide) is applied ONLY
+          while this pane is active. */}
       <div
         className={`tv2-msgs-layer tv2-msgs-thread-layer${active && threadOpen ? ' tv2-msgs-thread-open' : ''}`}
         hidden={!threadOpen}
       >
-        <div className="tv2-msgs-scroll tv2-msgs-thread-scroll" ref={threadRef}>{thread}</div>
+        {thread}
       </div>
     </div>
   );

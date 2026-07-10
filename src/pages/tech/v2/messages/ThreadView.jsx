@@ -200,7 +200,13 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   };
 
   return (
-    <div className="tv2-msgs-thread" ref={rootRef}>
+    <div className="tv2-msgs-thread-shell" ref={rootRef}>
+      {/* Own scroller: sticky header + messages. The composer is docked OUTSIDE this
+          scroller (a flex sibling below) so it lands flush above the keyboard without a
+          sticky-in-momentum-scroll foot — the iOS combo that left a white gap (bake
+          report 2026-07-10). */}
+      <div className="tv2-msgs-scroll tv2-msgs-thread-scroll" ref={scrollRef}>
+        <div className="tv2-msgs-thread">
       {/* Fixed top bar (sticky inside the scroller). Title toggles the info panel. */}
       <header className="tv2-msgs-thread__bar">
         <button type="button" className="tv2-msgs-thread__back" aria-label={t('thread.back')} onClick={onBack}>
@@ -286,8 +292,11 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
         )}
       </div>
 
-      {/* Sticky foot: the jump pill floats above the composer; both stay pinned to the
-          bottom of the scroller (sticky is the pill's positioning context). */}
+        </div>{/* .tv2-msgs-thread */}
+      </div>{/* .tv2-msgs-thread-scroll — messages scroll; composer is docked below */}
+
+      {/* Docked foot (OUTSIDE the scroller): the composer sits flush above the keyboard
+          and the jump pill floats above it (the foot is the pill's positioning context). */}
       <div className="tv2-msgs-thread__foot">
         {!atBottom && newInThread > 0 && (
           <button type="button" className="tv2-msgs-jump" onClick={() => { scrollToBottom(true); setNewInThread(0); }}>

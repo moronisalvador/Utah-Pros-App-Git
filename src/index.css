@@ -10873,6 +10873,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    pane-scoped by ThreadView), lifting the sticky composer above the keyboard. */
 .tv2-msgs-thread-layer { padding-bottom: var(--tv2-msgs-kb, 0px); }
 
+/* Thread shell — flex column filling the (keyboard-lifted) thread layer: the scroller
+   flexes, the composer docks below it and lands flush above the keyboard. This replaces
+   the old sticky-composer-inside-the-scroller approach, whose -webkit-overflow-scrolling
+   momentum + min-height:100% left a white gap on iOS (bake report 2026-07-10). */
+.tv2-msgs-thread-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tv2-msgs-thread-scroll { min-height: 0; }
+
 .tv2-msgs-thread { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
 
 .tv2-msgs-thread__bar {
@@ -10929,9 +10936,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-weight: 600;
 }
 
-/* Sticky foot — pins the composer (and the floating jump pill) to the bottom of the
-   thread scroller. Being position:sticky, it is the containing block for the pill. */
-.tv2-msgs-thread__foot { position: sticky; bottom: 0; z-index: 6; flex-shrink: 0; }
+/* Docked foot — a flex sibling BELOW the scroller (not sticky-in-momentum-scroll). It
+   is the positioning context for the floating jump pill (see .tv2-msgs-jump). */
+.tv2-msgs-thread__foot { position: relative; z-index: 6; flex-shrink: 0; }
 
 /* Jump-to-latest pill — floats just above the composer via the sticky foot. */
 .tv2-msgs-jump {
