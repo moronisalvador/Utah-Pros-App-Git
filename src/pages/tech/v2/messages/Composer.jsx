@@ -42,6 +42,12 @@ import { useTemplates } from './useTemplates';
 
 const MAX_LINES = 5;
 
+// Keep the on-screen keyboard up when a composer toolbar button is tapped: preventing
+// the default mousedown stops the button from stealing focus from the textarea, so iOS
+// doesn't dismiss the keyboard (and the composer never drops). Standard iOS toolbar
+// pattern — matches Apple/WhatsApp where the attach menu doesn't close the keyboard.
+const keepKeyboard = (e) => e.preventDefault();
+
 function IconSend(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>);
 }
@@ -241,12 +247,13 @@ export default function Composer({ convId, contact, onSend, sending }) {
             className="tv2-msgs-action"
             role="menuitem"
             disabled={isNote}
+            onMouseDown={keepKeyboard}
             onClick={() => fileRef.current?.click()}
           >
             <IconImage width={20} height={20} />
             <span>{t('composer.attachPhotos')}</span>
           </button>
-          <button type="button" className="tv2-msgs-action" role="menuitem" onClick={openTemplates}>
+          <button type="button" className="tv2-msgs-action" role="menuitem" onMouseDown={keepKeyboard} onClick={openTemplates}>
             <IconTemplate width={20} height={20} />
             <span>{t('composer.templates')}</span>
           </button>
@@ -255,6 +262,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
             className={`tv2-msgs-action${isNote ? ' active' : ''}`}
             role="menuitemcheckbox"
             aria-checked={isNote}
+            onMouseDown={keepKeyboard}
             onClick={() => { setIsNote((v) => !v); setSheet(null); requestAnimationFrame(() => taRef.current?.focus()); }}
           >
             <IconNote width={20} height={20} />
@@ -278,6 +286,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
           className={`tv2-msgs-plus${sheet ? ' active' : ''}`}
           aria-label={t('composer.moreActions')}
           aria-expanded={!!sheet}
+          onMouseDown={keepKeyboard}
           onClick={toggleActions}
         >
           <IconPlus width={22} height={22} />
