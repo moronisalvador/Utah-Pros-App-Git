@@ -204,7 +204,6 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
 
   return (
     <div className="tv2-msgs-thread-shell" ref={rootRef}>
-      {kbDbg && <div className="tv2-msgs-kbdebug">{kbDbg}</div>}
       {/* Own scroller: sticky header + messages. The composer is docked OUTSIDE this
           scroller (a flex sibling below) so it lands flush above the keyboard without a
           sticky-in-momentum-scroll foot — the iOS combo that left a white gap (bake
@@ -308,6 +307,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
             {t('thread.newCount', { count: newInThread })}
           </button>
         )}
+        {kbDbg && <div className="tv2-msgs-kbdebug">{kbDbg}</div>}
         <Composer
           convId={convId}
           contact={contact}
