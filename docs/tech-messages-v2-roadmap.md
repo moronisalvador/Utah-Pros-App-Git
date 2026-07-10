@@ -218,18 +218,18 @@ fixed header.
 ### Phase B1 — Core experience (the native-feel bar)
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** F-M merged.
 > **Model: Opus · high.** **AT THE MEASURED ONE-SESSION CEILING — nothing may be added.**
-> **Close-out checklist:**
-> - [ ] List: rows ≥56px, status-color-from-3-feet accents, unread bold+badge, relative dates via techDateUtils, pull-to-refresh below a fixed header, skeletons cold-start only
-> - [ ] All/Unread filter + search (server-side via the RPC params; cache keyed per filter)
-> - [ ] Thread: own pinned-to-bottom scroller, load-earlier w/ scroll anchoring (no setTimeout), jump-to-latest pill w/ new-count, DateDivider, MessageBubble/SegmentCounter imports (flex-column container)
-> - [ ] URL-driven open/close (`?c=` push / navigate(-1)); deep-link miss → single-row fetch + cache merge; iOS swipe-back closes the thread
-> - [ ] Composer: textarea autosize (capped), Enter=send + Shift+Enter newline, `enterKeyHint="send"`, ≥16px, 48px send, prefixLen-aware SegmentCounter, per-thread drafts, internal-note toggle + amber note path, [+] actions-sheet SHELL (MMS/templates land B2)
-> - [ ] Keyboard: active-gated visualViewport handler → pane-scoped var → thread-layer padding-bottom; no layout jump; nav-hide only while active
-> - [ ] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
-> - [ ] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
-> - [ ] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (draft)
-> - [ ] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path
-> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md; reconcile; PR to `dev` ready; flag stays owner-only
+> **Close-out checklist:** — **B1 SHIPPED 2026-07-10** (branch `claude/tech-msgs-v2-b1-core-5gqbi3`; flag stays OFF/owner-only)
+> - [x] List: rows ≥56px (68px), status-color-from-3-feet accents, unread bold+badge, relative dates via techDateUtils, pull-to-refresh below a fixed (sticky) header, skeletons cold-start only
+> - [x] All/Unread filter + search (server-side via the RPC's `p_status`/`p_search`; cache keyed per filter via `conversationsFilterKey`)
+> - [x] Thread: pane-owned pinned-to-bottom scroller (`threadScrollRef`), load-earlier w/ pre-paint scroll anchoring (no setTimeout), jump-to-latest pill w/ new-count, DateDivider, MessageBubble/SegmentCounter imports (flex-column body)
+> - [x] URL-driven open/close (`?c=` push / navigate(-1)); deep-link miss → single-row RPC fetch + `mergeConvoIntoList` cache merge; iOS swipe-back closes the thread
+> - [x] Composer: textarea autosize (capped 5 lines), Enter=send + Shift+Enter newline, `enterKeyHint="send"`, 16px, 48px send, prefixLen-aware SegmentCounter, per-thread drafts, internal-note toggle + amber note path, [+] actions-sheet SHELL (MMS/templates land B2)
+> - [x] Keyboard: active-gated visualViewport handler → pane-scoped `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → `.tv2-msgs-thread-layer` padding-bottom; no layout jump; nav-hide only while active (F-M's scoped `:has` rule)
+> - [x] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics via `mergeOverlay`/`reconcileOverlay`); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
+> - [x] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
+> - [x] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (real translations, locale-parity green)
+> - [x] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path (`msgsSelectors.test.js`, 25 cases)
+> - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled; PR to `dev` ready; flag stays owner-only
 **Scope:** owns `TechMessagesV2.jsx` + `messages/**` + css §MSGS only. ZERO schema.
 
 ### Phase B2 — Capability completion & polish

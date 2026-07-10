@@ -2,6 +2,7 @@
   "list": {
     "title": "Mensajes",
     "empty": "Aún no hay conversaciones",
+    "noMatch": "Sin resultados",
     "searchPlaceholder": "Buscar mensajes"
   },
   "filters": {
@@ -13,13 +14,21 @@
   },
   "thread": {
     "back": "Atrás",
-    "loadEarlier": "Cargar mensajes anteriores",
-    "jumpToLatest": "Ir al más reciente"
+    "empty": "Aún no hay mensajes",
+    "loadEarlier": "Desliza para cargar anteriores",
+    "loadingEarlier": "Cargando anteriores…",
+    "jumpToLatest": "Ir al más reciente",
+    "newCount_one": "{{count}} mensaje nuevo",
+    "newCount_other": "{{count}} mensajes nuevos"
   },
   "composer": {
     "placeholder": "Mensaje",
+    "notePlaceholder": "Nota interna (no se envía)",
     "send": "Enviar",
-    "note": "Nota interna"
+    "note": "Nota interna",
+    "moreActions": "Más acciones",
+    "dndBlock": "No Molestar está activo — envío bloqueado",
+    "dndNote": "No Molestar está activo — aún puedes agregar una nota interna"
   },
   "states": {
     "loading": "Cargando mensajes…",
