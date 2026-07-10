@@ -11069,7 +11069,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -11181,7 +11181,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
+  min-height: 48px; /* 48px floor — the phone row is a tel: tap target */
   color: var(--text-primary);
   text-decoration: none;
 }
@@ -11242,13 +11242,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-attach.error img { opacity: 0.4; }
 .tv2-msgs-attach__remove {
   position: absolute;
-  top: -8px;
-  right: -8px;
+  top: -10px;
+  right: -10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;                 /* generous tap area (extends beyond the tile) */
-  height: 44px;
+  width: 48px;                 /* 48px floor — tap area extends beyond the tile */
+  height: 48px;
   border: none;
   background: transparent;
   color: #fff;
@@ -11317,9 +11317,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin: -10px -10px -10px 0;
+  width: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
+  height: 48px;
+  margin: -10px -12px -10px 0;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
