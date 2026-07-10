@@ -76,6 +76,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const [atBottom, setAtBottom] = useState(true);
   const [newInThread, setNewInThread] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
+  const [kbDbg, setKbDbg] = useState(''); // TEMP instrumentation (owner-only pane) — remove after calibration
   const atBottomRef = useRef(true);
   const prevLastId = useRef(undefined);
   const justOpened = useRef(true);
@@ -102,6 +103,8 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
       const raw = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       const offset = raw > 24 ? raw : 0;
       pane.style.setProperty('--tv2-msgs-kb', `${offset}px`);
+      // TEMP instrumentation (remove after calibration): live viewport numbers.
+      setKbDbg(`iH${window.innerHeight} vv${Math.round(vv.height)} oT${Math.round(vv.offsetTop)} sab${Math.round(vv.height + vv.offsetTop)} kb${offset}`);
       if (offset > 0 && atBottomRef.current) scrollToBottom(false);
     };
     vv.addEventListener('resize', onResize);
@@ -201,6 +204,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
 
   return (
     <div className="tv2-msgs-thread-shell" ref={rootRef}>
+      {kbDbg && <div className="tv2-msgs-kbdebug">{kbDbg}</div>}
       {/* Own scroller: sticky header + messages. The composer is docked OUTSIDE this
           scroller (a flex sibling below) so it lands flush above the keyboard without a
           sticky-in-momentum-scroll foot — the iOS combo that left a white gap (bake
