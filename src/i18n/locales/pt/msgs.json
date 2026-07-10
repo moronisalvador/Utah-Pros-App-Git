@@ -1,0 +1,67 @@
+{
+  "common": {
+    "close": "Fechar"
+  },
+  "list": {
+    "title": "Mensagens",
+    "empty": "Nenhuma conversa ainda",
+    "noMatch": "Nenhum resultado",
+    "error": "Não foi possível carregar as conversas",
+    "searchPlaceholder": "Buscar mensagens",
+    "markAllRead": "Marcar todas como lidas",
+    "markRead": "Marcar como lida",
+    "markUnread": "Marcar como não lida",
+    "rowActions": "Ações da conversa"
+  },
+  "filters": {
+    "all": "Todas",
+    "unread": "Não lidas",
+    "needs_response": "Precisa resposta",
+    "waiting_on_client": "Aguardando",
+    "resolved": "Resolvidas"
+  },
+  "thread": {
+    "back": "Voltar",
+    "empty": "Nenhuma mensagem ainda",
+    "loadEarlier": "Puxe para carregar anteriores",
+    "loadingEarlier": "Carregando anteriores…",
+    "jumpToLatest": "Ir para a mais recente",
+    "newCount_one": "{{count}} nova mensagem",
+    "newCount_other": "{{count}} novas mensagens",
+    "dndOn": "NPI ativo",
+    "recipients_one": "{{count}} pessoa",
+    "recipients_other": "{{count}} pessoas",
+    "type": {
+      "group": "Grupo",
+      "broadcast": "Difusão"
+    }
+  },
+  "info": {
+    "phone": "Telefone",
+    "viewJob": "Ver trabalho",
+    "enableDnd": "Ativar Não Perturbe",
+    "dndOnState": "Não Perturbe está ativo"
+  },
+  "composer": {
+    "placeholder": "Mensagem",
+    "notePlaceholder": "Nota interna (não enviada)",
+    "send": "Enviar",
+    "note": "Nota interna",
+    "moreActions": "Mais ações",
+    "attachPhotos": "Anexar fotos",
+    "attachments": "Anexos",
+    "removeAttachment": "Remover anexo",
+    "templates": "Modelos",
+    "noTemplates": "Nenhum modelo ainda",
+    "templatesError": "Não foi possível carregar os modelos",
+    "dndBlock": "Não Perturbe está ativo — envio bloqueado",
+    "dndNote": "Não Perturbe está ativo — você ainda pode adicionar uma nota interna"
+  },
+  "states": {
+    "loading": "Carregando mensagens…",
+    "error": "Não foi possível carregar as mensagens",
+    "retry": "Tentar novamente",
+    "notFound": "Esta conversa não está disponível",
+    "backToList": "Voltar às mensagens"
+  }
+}

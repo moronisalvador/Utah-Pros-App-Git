@@ -202,52 +202,52 @@ fixed header.
 > **Model: Opus · high** (frozen-seam edits + live-RPC contracts + a compliance-adjacent
 > surface). **Read scope:** CLAUDE.md + this roadmap + the ownership manifest +
 > `.claude/rules/database-standard.md` + tech-mobile-ux.md.
-> **Close-out checklist:**
-> - [ ] Flag row seeded live FIRST via MCP (`enabled=false`, owner dev_only) — BEFORE any code push; `EXPLICIT_FLAGS` entry `enabled:false` in the same PR
-> - [ ] Migration: `get_tech_conversations` (composite shape, fixed keyset cursor, filters, single-row mode) + `find_or_create_conversation`; GRANT authenticated,service_role + REVOKE FROM PUBLIC,anon; SQL headers + rollback notes; committed shape + cursor tests; `migration-safety-checker` + `anon-grant-auditor` clean
-> - [ ] techQuery amendment (kinds convos/thread + 'message' mutation + dehydrate filter excluding thread) + `techQuery.test.js` same commit
-> - [ ] Shared `useTechConversations` hook (RPC + 60s refetch + pane-lifetime conversations subscription updating the cache)
-> - [ ] TechLayout: third pane block + `paneCovering` fold-in + lazy import + Messages-tab unread badge (from the hook's `unread_total`; never active-gated)
-> - [ ] `TechMsgsPane` host (disclosed TechPane copy-in; two layers; active-gated nav-hide class; scoped `:has` rule)
-> - [ ] Stub `TechMessagesV2` pane page (skeleton list; proves cover + fallback both ways)
-> - [ ] css `TECH-V2: MSGS` reserved marker appended; i18n `msgs` namespace scaffold (3 locales + index.js recipe; parity test green)
-> - [ ] Manifests: commit `.claude/rules/tech-messages-v2-wave-ownership.md`; tech-v2 §8 amendment; sms-experience §10 amendment; sms roadmap §6 supersession pointer (all landed with THIS plan — verify present, extend only if drifted)
-> - [ ] `npm run test` + `build` + eslint; `upr-pattern-checker`; `tech-phase-reviewer` graded against THIS block; UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff; owner/orchestrator merges) — flag stays OFF
+> **Close-out checklist:** _(all shipped — F-M PR into `dev`; flag stays OFF/owner-only)_
+> - [x] Flag row seeded live FIRST via MCP (`enabled=false`, owner dev_only) — BEFORE any code push; verified live (SELECT confirmed the row); `EXPLICIT_FLAGS` entry `enabled:false` in the same PR
+> - [x] Migration: `get_tech_conversations` (composite shape, fixed keyset cursor, filters, single-row mode) + `find_or_create_conversation`; GRANT authenticated,service_role + REVOKE FROM PUBLIC,anon; SQL headers + rollback notes; committed shape + cursor tests; `migration-safety-checker` + `anon-grant-auditor` clean — applied + verified live via MCP
+> - [x] techQuery amendment (kinds convos/thread + 'message' mutation + dehydrate filter excluding thread) + `techQuery.test.js` same commit
+> - [x] Shared `useTechConversations` hook (RPC + 60s refetch + pane-lifetime conversations subscription updating the cache)
+> - [x] TechLayout: third pane block + `paneCovering` fold-in + lazy import + Messages-tab unread badge (from the hook's `unread_total`; never active-gated)
+> - [x] `TechMsgsPane` host (disclosed TechPane copy-in; two layers; active-gated nav-hide class; scoped `:has` rule)
+> - [x] Stub `TechMessagesV2` pane page (skeleton list; proves cover + fallback both ways)
+> - [x] css `TECH-V2: MSGS` reserved marker appended; i18n `msgs` namespace scaffold (3 locales + index.js recipe; parity test green)
+> - [x] Manifests: commit `.claude/rules/tech-messages-v2-wave-ownership.md`; tech-v2 §8 amendment; sms-experience §10 amendment; sms roadmap §6 supersession pointer (all landed with THIS plan — verify present, extend only if drifted)
+> - [x] `npm run test` + `build` + eslint; `upr-pattern-checker`; `tech-phase-reviewer` graded against THIS block; UPR-Web-Context.md; checkboxes reconciled; PR to `dev` ready (handoff; owner/orchestrator merges) — flag stays OFF
 **Scope:** owns the manifest-listed seams + `src/pages/tech/v2/TechMessagesV2.jsx` (stub) + `src/pages/tech/v2/messages/**` (hook + pane host) + one migration.
 
 ### Phase B1 — Core experience (the native-feel bar)
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** F-M merged.
 > **Model: Opus · high.** **AT THE MEASURED ONE-SESSION CEILING — nothing may be added.**
-> **Close-out checklist:**
-> - [ ] List: rows ≥56px, status-color-from-3-feet accents, unread bold+badge, relative dates via techDateUtils, pull-to-refresh below a fixed header, skeletons cold-start only
-> - [ ] All/Unread filter + search (server-side via the RPC params; cache keyed per filter)
-> - [ ] Thread: own pinned-to-bottom scroller, load-earlier w/ scroll anchoring (no setTimeout), jump-to-latest pill w/ new-count, DateDivider, MessageBubble/SegmentCounter imports (flex-column container)
-> - [ ] URL-driven open/close (`?c=` push / navigate(-1)); deep-link miss → single-row fetch + cache merge; iOS swipe-back closes the thread
-> - [ ] Composer: textarea autosize (capped), Enter=send + Shift+Enter newline, `enterKeyHint="send"`, ≥16px, 48px send, prefixLen-aware SegmentCounter, per-thread drafts, internal-note toggle + amber note path, [+] actions-sheet SHELL (MMS/templates land B2)
-> - [ ] Keyboard: active-gated visualViewport handler → pane-scoped var → thread-layer padding-bottom; no layout jump; nav-hide only while active
-> - [ ] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
-> - [ ] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
-> - [ ] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (draft)
-> - [ ] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path
-> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md; reconcile; PR to `dev` ready; flag stays owner-only
+> **Close-out checklist:** — **B1 SHIPPED 2026-07-10** (branch `claude/tech-msgs-v2-b1-core-5gqbi3`; flag stays OFF/owner-only)
+> - [x] List: rows ≥56px (68px), status-color-from-3-feet accents, unread bold+badge, relative dates via techDateUtils, pull-to-refresh below a fixed (sticky) header, skeletons cold-start only
+> - [x] All/Unread filter + search (server-side via the RPC's `p_status`/`p_search`; cache keyed per filter via `conversationsFilterKey`)
+> - [x] Thread: pane-owned pinned-to-bottom scroller (`threadScrollRef`), load-earlier w/ pre-paint scroll anchoring (no setTimeout), jump-to-latest pill w/ new-count, DateDivider, MessageBubble/SegmentCounter imports (flex-column body)
+> - [x] URL-driven open/close (`?c=` push / navigate(-1)); deep-link miss → single-row RPC fetch + `mergeConvoIntoList` cache merge; iOS swipe-back closes the thread
+> - [x] Composer: textarea autosize (capped 5 lines), Enter=send + Shift+Enter newline, `enterKeyHint="send"`, 16px, 48px send, prefixLen-aware SegmentCounter, per-thread drafts, internal-note toggle + amber note path, [+] actions-sheet SHELL (MMS/templates land B2)
+> - [x] Keyboard: active-gated visualViewport handler → pane-scoped `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → `.tv2-msgs-thread-layer` padding-bottom; no layout jump; nav-hide only while active (F-M's scoped `:has` rule)
+> - [x] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics via `mergeOverlay`/`reconcileOverlay`); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
+> - [x] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
+> - [x] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (real translations, locale-parity green)
+> - [x] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path (`msgsSelectors.test.js`, 25 cases)
+> - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled; PR to `dev` ready; flag stays owner-only
 **Scope:** owns `TechMessagesV2.jsx` + `messages/**` + css §MSGS only. ZERO schema.
 
 ### Phase B2 — Capability completion & polish
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** B1 merged.
 > **Model: Opus · high** (polish IS the deliverable; consent surface included).
-> **Close-out checklist — CORE (must ship):**
-> - [ ] MMS: attach ≤5, mediaCompress, storage upload, media_urls send; inbound render via parseMediaUrls (P8 coordination note honored — this module is the named swap target)
-> - [ ] Status filter pills (NeedsResponse/Waiting/Resolved) + per-filter counts from the RPC's `status_counts`
-> - [ ] Templates picker (message_templates, categories, tap-insert)
-> - [ ] Mark-unread as a 48px affordance (no right-click/hover idioms); read-all driven by server counts
-> - [ ] One-tap DND ON for techs (consent-log write verbatim, `performed_by`); DND OFF absent for techs (office-only) — fork disclosure in the PR
-> - [ ] Thread info header: contact name/phone, DND state, linked-job chip via `jobHref()` (never hardcoded /tech paths)
-> - [ ] Group/broadcast rendering (type badge, recipient count, partial-block surfacing)
-> - [ ] Error/empty/not-found states (Back+Retry — never a dead end); dark-theme pane-scoped bubble overrides; PT/ES sweep to real quality; polish pass vs Dash/Sched design language (haptics on send, 200ms thread slide w/ reduced-motion guard, no autofocus-on-open, blur-on-scroll-up)
-> **STRETCH (explicitly shed-able, each its own honest checkbox):**
-> - [ ] New-conversation flow (contact search via server, `find_or_create_conversation`; phone-less contacts unselectable)
-> - [ ] Scheduled sends (date/time picker → scheduled_messages insert)
-> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `consent-path-auditor` + `tech-phase-reviewer`; UPR-Web-Context.md; reconcile (shed stretch honestly, never silently); PR to `dev` ready
+> **Close-out checklist — CORE (must ship):** — **B2 SHIPPED 2026-07-10** (branch `claude/tech-msgs-v2-b2-polish-6yam75`; flag stays OFF/owner-only)
+> - [x] MMS: attach ≤5, mediaCompress, storage upload, media_urls send; inbound render via parseMediaUrls (P8 coordination note honored — URL construction is in ONE helper, `messages/mediaUpload.js`, the named swap target)
+> - [x] Status filter pills (NeedsResponse/Waiting/Resolved) + per-filter counts from the RPC's `status_counts` (5-pill horizontal-scroll filter row; hook already threads `p_status`)
+> - [x] Templates picker (message_templates is_active, categories, tap-insert AT CURSOR)
+> - [x] Mark-unread as a 48px affordance (row overflow "⋯" → one inline 48px action, no right-click/hover); read-all driven by server counts (`unread_count=gt.0` update, not the loaded page)
+> - [x] One-tap DND ON for techs (consent-log write verbatim, `performed_by`); DND OFF absent for techs (office-only) — fork disclosed in the PR
+> - [x] Thread info header: contact name/phone, DND state, linked-job chip via `jobHref()` (never a hardcoded /tech path — H3-safe)
+> - [x] Group/broadcast rendering (type badge, recipient count, partial-block surfacing from the worker's `twilio[]`)
+> - [x] Error/empty/not-found states (Back+Retry — never a dead end); dark-theme pane-scoped bubble override (internal-note hexes); PT/ES parity (locale-parity test green); polish pass (haptics `impact('light')` on send success, 200ms thread slide-in w/ reduced-motion guard, no autofocus-on-open, blur-on-scroll-up)
+> **STRETCH (SHED honestly — open, with reasons):**
+> - [ ] New-conversation flow — **SHED.** Doing it to the pane's standard needs a *server* contact-search RPC (none exists); the only zero-schema option is legacy's unbounded all-contacts client load, which is exactly Finding-2's anti-pattern this pane exists to kill. Deferred to a follow-up that ships a `search_contacts`-style RPC (separate reviewed change). `find_or_create_conversation` is already live (F-M) and ready for it.
+> - [ ] Scheduled sends — **SHED.** An office workflow (techs rarely schedule) requiring a second client-insert send path (`scheduled_messages`) alongside the core composer; kept out to keep the native-feel send path pristine for the owner bake. Easy post-bake add if the owner wants it.
+> - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled (both directions; stretch shed with reasons above); PR to `dev` ready
 **Scope:** same files as B1. ZERO schema. **OWNER GATE opens after B2: bake on the owner's
 phone (flag owner-only). Budgeted: ~0.5 session of post-bake fixes — expected, not failure.
 Cutover = the owner flips `page:tech_msgs_v2` in DevTools → Flags. No deletion phase:

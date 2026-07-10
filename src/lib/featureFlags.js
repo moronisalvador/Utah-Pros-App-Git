@@ -107,6 +107,21 @@ const EXPLICIT_FLAGS = [
     category: 'tech',
     enabled: false,
   },
+  // ── Tech Messages v2 — dedicated field-tech messaging pane (Phase F-M) ────────
+  // enabled:false is LOAD-BEARING (same reason as the tech-v2 flags above). The
+  // DevTools auto-seed creates any missing registry key ENABLED; without the
+  // explicit false this would seed ON and swap every tech onto the unfinished v2
+  // messaging pane (and light up its unread badge) for everyone. The live row is
+  // also seeded enabled:false + dev_only_user_id (owner) so the pane at
+  // /tech/conversations stays owner-only until the owner flips it on in
+  // DevTools → Flags; the shared desktop Conversations screen shows for everyone else.
+  {
+    key: 'page:tech_msgs_v2',
+    label: 'Tech Messages v2',
+    description: 'Rebuilt field-tech messaging pane (keep-alive, native-iOS feel) at /tech/conversations, plus the Messages-tab unread badge. Owner-only during the Tech Messages v2 build; the shared desktop Conversations screen shows for everyone else.',
+    category: 'tech',
+    enabled: false,
+  },
   // ── Technician field-tool flags (Hydro / Phase 2) ────────────────────────────
   // The Moisture, Equipment, and Rooms sections in TechAppointment.jsx are each
   // gated by one of these. Their KEYS keep the `page:` prefix (unchanged — they're

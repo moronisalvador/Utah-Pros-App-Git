@@ -10678,3 +10678,769 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 @media (max-width: 768px) {
   .settings-cred-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── TECH-V2: MSGS (Tech Messages v2 — F-M foundation; pane host + layers) ─────
+   Reserved for the tech-messages-v2 initiative. F-M ships only the pane-host
+   skeleton below; B1/B2 write CSS ONLY inside this marker (new tv2-msgs-* classes;
+   pane-scoped descendant overrides of reused .message* / .conv-* classes ARE
+   permitted here — they cannot leak, legacy never renders inside .tv2-msgs-*).
+   Mobile-only rules use @media (max-width: 768px). ─────────────────────────────── */
+
+/* Persistent messaging pane — a flex child of .tech-layout, kept mounted across
+   navigation and hidden with display:none when it isn't the active tab (transforms
+   are banned on WKWebView). Mirrors .tv2-pane. */
+.tv2-msgs-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tv2-msgs-pane[hidden] { display: none !important; }
+
+/* Two stacked layers (list + thread). Only one shows; the other is hidden but kept
+   mounted so its scroll position and state survive the swap. */
+.tv2-msgs-layer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.tv2-msgs-layer[hidden] { display: none !important; }
+
+/* Each layer owns its own scroller (independent scroll tracking — see TechMsgsPane). */
+.tv2-msgs-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-secondary);
+}
+/* The list clears the bottom tab bar; the thread manages its own composer/keyboard
+   padding (Phase B1) and hides the nav while open. */
+.tv2-msgs-list-layer .tv2-msgs-scroll {
+  padding-bottom: calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)));
+}
+
+/* Hide the bottom tab bar while a thread is open — but ONLY when the pane is the
+   visible tab (a background pane's thread-open state must never strand the whole
+   app's tab bar). Precedent: the legacy .conversations-layout.mobile-thread rule
+   near the top of this file. */
+.tech-layout:has(.tv2-msgs-pane:not([hidden]) .tv2-msgs-thread-open) > .tech-nav {
+  display: none;
+}
+
+/* Messages-tab unread badge — a small red count pill on the tab icon. Positioned
+   within .tech-nav-tab (position: relative). */
+.tv2-msgs-nav-badge {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 4px);
+  box-sizing: border-box;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--status-needs-response);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--tech-nav-bg, #fff);
+  pointer-events: none;
+}
+
+/* ─── B1 (core experience): list · row · thread · composer ───────────────────── */
+
+/* ── Inbox list ── */
+.tv2-msgs-list { display: block; background: var(--bg-secondary); min-height: 100%; }
+
+/* Fixed header — sticks to the top of the pane host's list scroller. */
+.tv2-msgs-list__header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px calc(10px + env(safe-area-inset-top, 0px));
+  padding-top: max(10px, env(safe-area-inset-top, 10px));
+}
+.tv2-msgs-list__title { font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
+
+.tv2-msgs-search { position: relative; margin-top: 10px; }
+.tv2-msgs-search__icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); pointer-events: none; }
+.tv2-msgs-search__input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 14px 0 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 16px; /* ≥16px — no iOS zoom-on-focus */
+}
+.tv2-msgs-search__input:focus { outline: none; border-color: var(--accent); background: var(--bg-primary); }
+
+.tv2-msgs-filters { display: flex; gap: 8px; margin-top: 10px; }
+.tv2-msgs-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px; /* tech-mobile-ux 48px floor — gloved hands, no exceptions */
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.tv2-msgs-filter.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tv2-msgs-filter__count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.tv2-msgs-filter.active .tv2-msgs-filter__count { background: rgba(255, 255, 255, 0.25); }
+
+.tv2-msgs-rows { display: flex; flex-direction: column; }
+
+/* ── Conversation row (≥56px target; status color from 3 feet) ── */
+.tv2-msgs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tv2-msgs-row:active { background: var(--bg-secondary); }
+.tv2-msgs-row__avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tv2-msgs-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv2-msgs-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tv2-msgs-row__name { font-size: 16px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv2-msgs-row__time { flex-shrink: 0; font-size: 12px; color: var(--text-tertiary); }
+.tv2-msgs-row__preview { font-size: 14px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv2-msgs-row.unread .tv2-msgs-row__name { font-weight: 800; }
+.tv2-msgs-row.unread .tv2-msgs-row__preview { color: var(--text-primary); font-weight: 600; }
+.tv2-msgs-row__badge {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--status-needs-response);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+.tv2-msgs-empty { padding: 56px 24px; text-align: center; color: var(--text-secondary); }
+.tv2-msgs-empty__icon { font-size: 40px; margin-bottom: 10px; }
+.tv2-msgs-empty__title { font-size: 15px; font-weight: 600; }
+
+/* ── Thread ── */
+/* Keyboard lift: the thread layer shrinks by the on-screen keyboard height (var set
+   pane-scoped by ThreadView), lifting the sticky composer above the keyboard. */
+.tv2-msgs-thread-layer { padding-bottom: var(--tv2-msgs-kb, 0px); }
+
+/* Thread shell — flex column filling the (keyboard-lifted) thread layer: the scroller
+   flexes, the composer docks below it and lands flush above the keyboard. This replaces
+   the old sticky-composer-inside-the-scroller approach, whose -webkit-overflow-scrolling
+   momentum + min-height:100% left a white gap on iOS (bake report 2026-07-10). */
+.tv2-msgs-thread-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tv2-msgs-thread-scroll { min-height: 0; }
+
+.tv2-msgs-thread { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
+
+.tv2-msgs-thread__bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 52px;
+  padding: 0 8px;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+}
+.tv2-msgs-thread__back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tv2-msgs-thread__title { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; color: var(--text-primary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv2-msgs-thread__bar-spacer { width: 48px; flex-shrink: 0; }
+
+/* Message body — flex column so MessageBubble align-self (inbound/outbound) resolves.
+   flex:1 + gap gives WhatsApp-style bottom alignment when there are few messages. */
+.tv2-msgs-thread__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 14px 14px 8px;
+}
+
+/* Bubbles hug their content (text or media) instead of stretching. The shared bubble
+   stretches to fill .message, whose width was being driven by the wide failed-status
+   meta line ("Failed — …  Retry"), pushing every bubble to ~80%. Pane-scoped override
+   of the shared .message* classes (roadmap §10 — cannot leak; legacy never renders
+   inside .tv2-msgs-thread). */
+.tv2-msgs-thread .message-bubble { width: fit-content; max-width: 100%; }
+.tv2-msgs-thread .message.outbound .message-bubble { align-self: flex-end; }
+.tv2-msgs-thread .message.inbound .message-bubble { align-self: flex-start; }
+/* Internal notes had no align-self, so they stretched full-width — hug content too. */
+.tv2-msgs-thread .message.internal-note { align-self: flex-end; }
+.tv2-msgs-thread .message.internal-note .message-bubble { align-self: flex-end; }
+
+.tv2-msgs-thread__loading,
+.tv2-msgs-thread__empty { margin: auto; padding: 40px 0; color: var(--text-tertiary); font-size: 14px; text-align: center; }
+.tv2-msgs-thread__earlier { align-self: center; padding: 6px 0 10px; color: var(--text-tertiary); font-size: 12px; }
+
+.tv2-msgs-day {
+  align-self: center;
+  margin: 8px auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.05));
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Docked foot — a flex sibling BELOW the scroller (not sticky-in-momentum-scroll). It
+   is the positioning context for the floating jump pill (see .tv2-msgs-jump). */
+.tv2-msgs-thread__foot { position: relative; z-index: 6; flex-shrink: 0; }
+
+/* Jump-to-latest pill — floats just above the composer via the sticky foot. */
+.tv2-msgs-jump {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px; /* tech-mobile-ux 48px floor */
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  z-index: 7;
+  cursor: pointer;
+}
+
+/* ── Composer ── */
+.tv2-msgs-composer {
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  /* Home-indicator inset ONLY when the keyboard is closed. When it's open the keyboard
+     covers the indicator, so --tv2-msgs-kb (its height) zeroes this out — otherwise the
+     inset becomes dead space between the composer and the keyboard (WhatsApp drops it too;
+     legacy documents the same "safe-area only when closed" rule). */
+  padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--tv2-msgs-kb, 0px)));
+}
+/* Keyboard up → drop the home-indicator inset entirely (the keyboard covers it). On
+   iOS 26 the lift var stays ~0 because iOS pans the page instead, so this class — not
+   the `- --tv2-msgs-kb` term — is what closes the residual white gap (verified 2026-07-10). */
+.tv2-msgs-pane.tv2-msgs-kb-open .tv2-msgs-composer { padding-bottom: 0; }
+.tv2-msgs-composer[data-note='true'] { background: var(--status-waiting-bg); }
+
+.tv2-msgs-dnd-banner {
+  padding: 8px 14px;
+  background: var(--status-needs-response-bg);
+  color: var(--status-needs-response);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Actions sheet ([+] menu) — always mounted; animates open AND closed via max-height +
+   opacity (a fresh conditional mount could only ever animate the open direction). No
+   transform (WKWebView-safe). */
+.tv2-msgs-actions-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  border-bottom: 1px solid transparent;
+  pointer-events: none;
+  transition: max-height 220ms ease, opacity 150ms ease, padding 220ms ease, border-bottom-color 220ms ease;
+}
+.tv2-msgs-actions-sheet.open {
+  max-height: 180px;
+  opacity: 1;
+  padding: 6px;
+  border-bottom-color: var(--border);
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv2-msgs-actions-sheet { transition: none; }
+}
+.tv2-msgs-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.tv2-msgs-action.active { color: #b45309; background: #fef9c3; }
+
+.tv2-msgs-composer-row { display: flex; align-items: flex-end; gap: 6px; padding: 8px 8px; }
+.tv2-msgs-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.tv2-msgs-plus.active { color: var(--accent); background: var(--bg-secondary); }
+
+.tv2-msgs-input-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--bg-secondary);
+}
+/* Keep the input pill a STABLE gray fill on focus (iMessage-style) — only the border
+   brightens. Swapping the fill to --bg-primary made it blend into the white composer
+   bar on focus (owner bake report 2026-07-10). */
+.tv2-msgs-input-wrap:focus-within { border-color: var(--accent); }
+.tv2-msgs-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  resize: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px; /* ≥16px — no iOS zoom */
+  line-height: 22px;
+  max-height: 110px;
+}
+.tv2-msgs-input:focus { outline: none; }
+.tv2-msgs-input::placeholder { color: var(--text-tertiary); }
+
+.tv2-msgs-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.tv2-msgs-send:disabled { opacity: 0.4; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tv2-msgs-send { transition: none; }
+}
+
+/* ─── B2 (capability completion & polish): MMS · pills · templates · info · group ─
+   All new tv2-msgs-* classes; pane-scoped descendant overrides of reused .message*
+   classes are permitted here (dark-theme note bubble) — they cannot leak. ────────── */
+
+/* ── List header: title row + mark-all-read ── */
+.tv2-msgs-list__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tv2-msgs-readall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tv2-msgs-readall:active { background: var(--bg-tertiary, var(--bg-secondary)); }
+
+/* Five status pills — horizontal scroll rather than wrap (thumb-swipe on mobile). */
+.tv2-msgs-filters {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding: 0 14px;
+}
+.tv2-msgs-filters::-webkit-scrollbar { display: none; }
+.tv2-msgs-filter { flex-shrink: 0; }
+
+/* ── Conversation row: wrap + inline overflow action (mark read/unread) ── */
+.tv2-msgs-row-wrap { border-bottom: 1px solid var(--border); background: var(--bg-primary); }
+.tv2-msgs-row-line { display: flex; align-items: stretch; }
+/* The row button loses its own border (the wrap carries it) and flexes beside "⋯". */
+.tv2-msgs-row { flex: 1; min-width: 0; border-bottom: none; }
+.tv2-msgs-row__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;              /* 48px floor — gloved hands */
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.tv2-msgs-row__more:active { background: var(--bg-secondary); }
+.tv2-msgs-row__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px 10px;
+  background: var(--bg-secondary);
+}
+.tv2-msgs-row__action {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Group/broadcast recipient pill inside the row preview line. */
+.tv2-msgs-row__pill {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+/* ── Thread bar: tappable title + type/DND subline ── */
+.tv2-msgs-thread__titlebtn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.tv2-msgs-thread__subline { display: inline-flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 12px; }
+.tv2-msgs-thread__caret { transition: transform 160ms ease; color: var(--text-tertiary); }
+.tv2-msgs-thread__caret.open { transform: rotate(180deg); }
+.tv2-msgs-typebadge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-light, var(--bg-secondary));
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tv2-msgs-dndchip { display: inline-flex; align-items: center; gap: 3px; color: var(--status-needs-response); font-weight: 700; }
+
+/* ── Thread info panel (inline expandable — phone / DND / linked job) ── */
+.tv2-msgs-info {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+}
+.tv2-msgs-info__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px; /* 48px floor — the phone row is a tel: tap target */
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.tv2-msgs-info__label { font-size: 13px; color: var(--text-tertiary); }
+.tv2-msgs-info__value { font-size: 15px; font-weight: 600; }
+.tv2-msgs-info__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  min-height: 48px;
+  margin-top: 4px;
+  padding: 0 16px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-light, var(--bg-secondary));
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.tv2-msgs-info__dnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  min-height: 48px;
+  margin-top: 4px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tv2-msgs-info__dnd.on { color: var(--status-needs-response); border-color: transparent; background: var(--status-needs-response-bg); cursor: default; }
+
+/* ── Attachment tray (MMS) ── */
+.tv2-msgs-attach-tray {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tv2-msgs-attach-tray::-webkit-scrollbar { display: none; }
+.tv2-msgs-attach {
+  position: relative;
+  flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-md);
+  overflow: visible;
+  background: var(--bg-secondary);
+}
+.tv2-msgs-attach img { width: 80px; height: 80px; object-fit: cover; border-radius: var(--radius-md); display: block; }
+.tv2-msgs-attach.error img { opacity: 0.4; }
+.tv2-msgs-attach__remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;                 /* 48px floor — tap area extends beyond the tile */
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.tv2-msgs-attach__remove::before {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
+}
+.tv2-msgs-attach__remove svg { position: relative; z-index: 1; }
+.tv2-msgs-attach__spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: tv2-msgs-spin 0.7s linear infinite;
+}
+.tv2-msgs-attach__err {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--status-needs-response);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+@keyframes tv2-msgs-spin { to { transform: rotate(360deg); } }
+
+/* Action-sheet disabled (attach photos while in note mode). */
+.tv2-msgs-action:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Templates picker ── */
+.tv2-msgs-templates {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+.tv2-msgs-templates__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.tv2-msgs-templates__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
+  height: 48px;
+  margin: -10px -12px -10px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.tv2-msgs-templates__scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.tv2-msgs-templates__empty { padding: 24px; text-align: center; color: var(--text-tertiary); font-size: 14px; }
+.tv2-msgs-templates__cat {
+  padding: 10px 14px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.tv2-msgs-template {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.tv2-msgs-template:active { background: var(--bg-secondary); }
+.tv2-msgs-template__title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.tv2-msgs-template__preview {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Error / not-found states + retry ── */
+.tv2-msgs-thread__error { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 0; }
+.tv2-msgs-retry-btn {
+  min-height: 48px;
+  padding: 0 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tv2-msgs-empty .tv2-msgs-retry-btn { margin-top: 14px; }
+
+/* ── Dark-theme pane-scoped bubble override (internal-note uses hardcoded hexes;
+      everything else already reads re-pointed .tech-layout tokens). Cannot leak —
+      legacy never renders inside .tv2-msgs-thread. ── */
+[data-theme="dark"] .tv2-msgs-thread .message.internal-note .message-bubble {
+  background: var(--status-waiting-bg);
+  color: #fde68a;
+  border-color: rgba(180, 83, 9, 0.6);
+}
+[data-theme="dark"] .tv2-msgs-thread .msg-note-label { color: #fbbf24; }
+[data-theme="dark"] .tv2-msgs-action.active { color: #fbbf24; background: rgba(180, 83, 9, 0.22); }
+
+/* ── Native thread slide-in (200ms, reduced-motion guarded). Transient transform on
+      MOUNT only (open) — not a persistent transform (WKWebView keep-alive uses the
+      pane's display:none, untouched). Close is an instant Back / iOS swipe-back. ── */
+@keyframes tv2-msgs-slide-in {
+  from { transform: translateX(14%); opacity: 0.4; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+.tv2-msgs-thread-layer:not([hidden]) .tv2-msgs-thread { animation: tv2-msgs-slide-in 200ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tv2-msgs-thread-layer:not([hidden]) .tv2-msgs-thread { animation: none; }
+  .tv2-msgs-thread__caret { transition: none; }
+  .tv2-msgs-attach__spin { animation: none; }
+}

@@ -1,0 +1,67 @@
+{
+  "common": {
+    "close": "Close"
+  },
+  "list": {
+    "title": "Messages",
+    "empty": "No conversations yet",
+    "noMatch": "No matches",
+    "error": "Couldn't load conversations",
+    "searchPlaceholder": "Search messages",
+    "markAllRead": "Mark all read",
+    "markRead": "Mark read",
+    "markUnread": "Mark unread",
+    "rowActions": "Conversation actions"
+  },
+  "filters": {
+    "all": "All",
+    "unread": "Unread",
+    "needs_response": "Needs Response",
+    "waiting_on_client": "Waiting",
+    "resolved": "Resolved"
+  },
+  "thread": {
+    "back": "Back",
+    "empty": "No messages yet",
+    "loadEarlier": "Pull to load earlier",
+    "loadingEarlier": "Loading earlier…",
+    "jumpToLatest": "Jump to latest",
+    "newCount_one": "{{count}} new message",
+    "newCount_other": "{{count}} new messages",
+    "dndOn": "DND on",
+    "recipients_one": "{{count}} person",
+    "recipients_other": "{{count}} people",
+    "type": {
+      "group": "Group",
+      "broadcast": "Broadcast"
+    }
+  },
+  "info": {
+    "phone": "Phone",
+    "viewJob": "View job",
+    "enableDnd": "Turn on Do Not Disturb",
+    "dndOnState": "Do Not Disturb is on"
+  },
+  "composer": {
+    "placeholder": "Message",
+    "notePlaceholder": "Internal note (not sent)",
+    "send": "Send",
+    "note": "Internal note",
+    "moreActions": "More actions",
+    "attachPhotos": "Attach photos",
+    "attachments": "Attachments",
+    "removeAttachment": "Remove attachment",
+    "templates": "Templates",
+    "noTemplates": "No templates yet",
+    "templatesError": "Couldn't load templates",
+    "dndBlock": "Do Not Disturb is on — texting is blocked",
+    "dndNote": "Do Not Disturb is on — you can still add an internal note"
+  },
+  "states": {
+    "loading": "Loading messages…",
+    "error": "Couldn't load messages",
+    "retry": "Retry",
+    "notFound": "This conversation isn't available",
+    "backToList": "Back to messages"
+  }
+}

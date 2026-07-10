@@ -37,12 +37,16 @@ import { IconSchedule, IconConversations } from '@/components/Icons';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
 import TechPane from '@/components/tech/v2/TechPane.jsx';
 import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
+import { useTechConversations } from '@/pages/tech/v2/messages/useTechConversations.js';
 
 // Tech Mobile v2 panes — lazy so their chunk loads only when the flag is on
 // (dev-only during the wave). They render PERSISTENTLY in the pane host below,
 // outside the keyed <Outlet/>, so tab switches don't remount them.
 const TechDashV2 = lazy(() => import('@/pages/tech/v2/TechDashV2.jsx'));
 const TechScheduleV2 = lazy(() => import('@/pages/tech/v2/TechScheduleV2.jsx'));
+// Tech Messages v2 (Phase F-M) — the dedicated messaging pane, behind
+// page:tech_msgs_v2 (owner-only during the build; legacy Conversations otherwise).
+const TechMessagesV2 = lazy(() => import('@/pages/tech/v2/TechMessagesV2.jsx'));
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -139,6 +143,21 @@ const TABS = [
   { key: 'messages', label: 'Messages', path: '/tech/conversations', Icon: IconChat },
   { key: 'more', label: 'More', path: '/tech/more', Icon: IconMoreDots },
 ];
+
+/* ── Messages-tab unread badge (Phase F-M) ── */
+// Mounted ONLY when page:tech_msgs_v2 is on, so the convos poll + realtime channel
+// run only for flagged (owner) users. Reads unread_total from the shared
+// useTechConversations hook (the sole convos-cache owner). NEVER gated on the pane
+// being the active tab — a new-message badge matters most when the tech is elsewhere.
+function MessagesUnreadBadge() {
+  const { unreadTotal } = useTechConversations();
+  if (!unreadTotal) return null;
+  return (
+    <span className="tv2-msgs-nav-badge" title={`${unreadTotal} unread`}>
+      {unreadTotal > 99 ? '99+' : unreadTotal}
+    </span>
+  );
+}
 
 /* ── PWA Install Banner ── */
 
@@ -240,9 +259,11 @@ export default function TechLayout() {
   // non-owner during the wave) → no pane mounts and behavior is byte-identical.
   const dashV2 = isFeatureEnabled('page:tech_dash_v2');
   const schedV2 = isFeatureEnabled('page:tech_sched_v2');
+  const msgsV2 = isFeatureEnabled('page:tech_msgs_v2');
   const dashActive = dashV2 && location.pathname === '/tech';
   const schedActive = schedV2 && location.pathname === '/tech/schedule';
-  const paneCovering = dashActive || schedActive;
+  const msgsActive = msgsV2 && location.pathname === '/tech/conversations';
+  const paneCovering = dashActive || schedActive || msgsActive;
 
   /* ── Global toast listener ── */
   useEffect(() => {
@@ -292,6 +313,15 @@ export default function TechLayout() {
           </Suspense>
         </TechPane>
       )}
+      {/* Messages pane (Phase F-M). TechMessagesV2 owns its two-layer TechMsgsPane
+          host, so the hidden wrapper lives inside it — the Suspense fallback here
+          mirrors that hidden .tv2-msgs-pane shell so a first-load chunk fetch on
+          another tab never flashes a skeleton over the visible screen. */}
+      {msgsV2 && (
+        <Suspense fallback={<div className="tv2-msgs-pane" hidden={!msgsActive} aria-hidden={!msgsActive}><SkeletonList rows={7} /></div>}>
+          <TechMessagesV2 active={msgsActive} />
+        </Suspense>
+      )}
 
       {/* Legacy + detail routes: keyed by pathname so each navigation remounts +
           replays the 0.2s fade. Not rendered while a v2 pane covers the screen. */}
@@ -329,6 +359,7 @@ export default function TechLayout() {
               className={`tech-nav-tab${active ? ' active' : ''}`}
             >
               <tab.Icon filled={active} />
+              {tab.key === 'messages' && msgsV2 && <MessagesUnreadBadge />}
               {showDot && (
                 <span style={{
                   position: 'absolute', top: 4, right: '50%', marginRight: -16,

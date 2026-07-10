@@ -1,0 +1,67 @@
+{
+  "common": {
+    "close": "Cerrar"
+  },
+  "list": {
+    "title": "Mensajes",
+    "empty": "Aún no hay conversaciones",
+    "noMatch": "Sin resultados",
+    "error": "No se pudieron cargar las conversaciones",
+    "searchPlaceholder": "Buscar mensajes",
+    "markAllRead": "Marcar todas como leídas",
+    "markRead": "Marcar como leída",
+    "markUnread": "Marcar como no leída",
+    "rowActions": "Acciones de la conversación"
+  },
+  "filters": {
+    "all": "Todas",
+    "unread": "No leídas",
+    "needs_response": "Necesita respuesta",
+    "waiting_on_client": "En espera",
+    "resolved": "Resueltas"
+  },
+  "thread": {
+    "back": "Atrás",
+    "empty": "Aún no hay mensajes",
+    "loadEarlier": "Desliza para cargar anteriores",
+    "loadingEarlier": "Cargando anteriores…",
+    "jumpToLatest": "Ir al más reciente",
+    "newCount_one": "{{count}} mensaje nuevo",
+    "newCount_other": "{{count}} mensajes nuevos",
+    "dndOn": "NM activo",
+    "recipients_one": "{{count}} persona",
+    "recipients_other": "{{count}} personas",
+    "type": {
+      "group": "Grupo",
+      "broadcast": "Difusión"
+    }
+  },
+  "info": {
+    "phone": "Teléfono",
+    "viewJob": "Ver trabajo",
+    "enableDnd": "Activar No Molestar",
+    "dndOnState": "No Molestar está activo"
+  },
+  "composer": {
+    "placeholder": "Mensaje",
+    "notePlaceholder": "Nota interna (no se envía)",
+    "send": "Enviar",
+    "note": "Nota interna",
+    "moreActions": "Más acciones",
+    "attachPhotos": "Adjuntar fotos",
+    "attachments": "Adjuntos",
+    "removeAttachment": "Quitar adjunto",
+    "templates": "Plantillas",
+    "noTemplates": "Aún no hay plantillas",
+    "templatesError": "No se pudieron cargar las plantillas",
+    "dndBlock": "No Molestar está activo — envío bloqueado",
+    "dndNote": "No Molestar está activo — aún puedes agregar una nota interna"
+  },
+  "states": {
+    "loading": "Cargando mensajes…",
+    "error": "No se pudieron cargar los mensajes",
+    "retry": "Reintentar",
+    "notFound": "Esta conversación no está disponible",
+    "backToList": "Volver a los mensajes"
+  }
+}

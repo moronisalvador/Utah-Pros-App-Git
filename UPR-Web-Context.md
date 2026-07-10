@@ -6466,7 +6466,7 @@ this initiative) to host the new component. No edit to any worker, `Conversation
 
 ---
 
-## Tech Messages v2 — plan of record (session 2026-07-09, docs only — no feature code)
+## Tech Messages v2 — F-M + B1 + B2 SHIPPED (2026-07-09/10; flag OFF/owner-only)
 
 Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
 desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
@@ -6481,22 +6481,118 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   `.claude/rules/tech-messages-v2-wave-ownership.md` (ownership; authorized amendments) ·
   tech-v2 manifest §8 + sms-experience manifest §10 + sms roadmap §6 pointer (cross-manifest
   transparency).
-- **Foundation (F-M) will ship:** flag seed (row FIRST — fail-open trap at
-  AuthContext.jsx:294) · `get_tech_conversations` (composite `{conversations, unread_total,
-  status_counts}`, server search/filters, fixed COALESCE+id keyset cursor, single-row
-  deep-link mode; GRANT authenticated,service_role + REVOKE PUBLIC/anon) ·
-  `find_or_create_conversation` · techQuery kinds `convos`/`thread` + `message` mutation +
-  thread-excluding persister dehydrate filter (SMS bodies never hit IndexedDB) · TechLayout
-  third pane + **Messages-tab unread badge** · `TechMsgsPane` two-layer host (TechPane
-  copy-in) · msgs i18n namespace.
+- **Foundation (F-M) SHIPPED** (branch `claude/tech-msgs-v2-foundation-8gawvm`; PR into `dev`;
+  flag stays OFF/owner-only): flag row seeded FIRST via MCP (fail-open trap at
+  AuthContext.jsx:294) + `EXPLICIT_FLAGS` entry `enabled:false` · migration
+  `supabase/migrations/20260709_tech_msgs_v2_fm_conversation_rpcs.sql` (applied + verified live
+  via MCP): `get_tech_conversations(p_limit,p_before,p_before_id,p_search,p_status,p_conversation_id)→jsonb`
+  (composite `{conversations, unread_total, status_counts}`, legacy embed incl. `dnd`/`dnd_at`
+  + computed `sort_key`, `email_reply_token` STRIPPED; server search/filters; `p_status='unread'`;
+  fixed `COALESCE(last_message_at,created_at) DESC, id DESC` keyset cursor — no unreachable NULL
+  tail; single-row deep-link mode) + `find_or_create_conversation(p_contact_id)→jsonb`
+  (advisory-locked per contact — kills the split-thread hazard; same embed). BOTH SECURITY
+  DEFINER, GRANT authenticated,service_role + REVOKE PUBLIC/anon · `src/lib/techQuery.js` kinds
+  `convos()`/`thread()` (8th/9th) + `MUTATION_INVALIDATIONS.message=[convos,thread]` +
+  `dehydrate.shouldDehydrateQuery` excluding the thread kind (raw SMS bodies never hit IndexedDB;
+  the inbox list does) — registry re-frozen after F-M · `useTechConversations` hook (sole
+  convos-cache reader/writer: RPC + 60s refetch + ONE ref-counted `subscribeToConversations`
+  channel) · TechLayout third flag-gated pane (folded into `paneCovering`; App.jsx UNTOUCHED) +
+  **Messages-tab unread badge** (flag-gated, never active-gated) · `TechMsgsPane` two-layer host
+  (disclosed TechPane copy-in — list restore vs thread pinned; thread-open nav-hide class only
+  while active, scoped `:has` rule) · stub `TechMessagesV2` (cover+fallback proof) · css
+  `TECH-V2: MSGS` reserved marker (`tv2-msgs-*`) · `msgs` i18n namespace (en/pt/es parity-green).
+  Tests: SQL gate `supabase/tests/tech_msgs_v2_f_conversation_rpcs.sql` (shape/cursor/idempotency,
+  fixture IDs) + vitest anon least-privilege gate + `techQuery.test.js` + i18n parity — all green.
 - **Key adjudications:** App.jsx untouched (paneCovering suppresses the outlet — verified) ·
   URL-driven thread open (`?c=` push / back) · optimistic overlay + setQueryData
   patch/append (never invalidate-per-event) · Enter=send · techs get one-tap DND **ON**
   only (OFF stays office/admin — TCPA asymmetry) · all-org scoping v1 (assigned_to is 100%
   unpopulated; per-employee param reserved) · realtime verified to survive F-red
   (authenticated JWT socket; devLogin caveat).
-- **Dispatch:** F-M → B1 (core experience, at the one-session ceiling) → B2 (completion +
-  polish; STRETCH = new-conversation, scheduled sends) — strictly serial; ~0.5 post-bake fix
-  session budgeted; cutover = owner flips the flag. Coordination seams: Job Hub H3
-  (`src/i18n/index.js` only), db-foundation P8 (MMS URL helper is the swap target), sms
-  deep-link follow-up (sms-owned).
+- **Phase B1 (core experience) SHIPPED** (branch `claude/tech-msgs-v2-b1-core-5gqbi3`; PR into
+  `dev`; flag stays OFF/owner-only; ZERO schema). Fills the F-M stub — owned files only
+  (`src/pages/tech/v2/TechMessagesV2.jsx` + `src/pages/tech/v2/messages/**` + css inside the
+  `TECH-V2: MSGS` marker + the `msgs` locale files); every frozen file untouched.
+  - **`useThread(convId,{active})`** (`messages/useThread.js`): `useInfiniteQuery` on
+    `techKeys.thread` (newest-30, keyset `created_at<cursor`) + a pane-local **optimistic
+    overlay** keyed by `_clientId`. Realtime (active-gated `subscribeToMessages`): UPDATE →
+    `patchMessageInPages` (delivery ticks patch in place, never refetch); INSERT →
+    `appendMessageToPages` + `reconcileOverlay` (dedupe by id → type+body). Send = copied
+    `dispatchSend`/`retryMessage` + rewritten `handleSend` → **POST /api/send-message only**
+    (worker sole writer; no `skip_compliance`); 201-with-failed-row preserved; the four 403
+    codes (DND_ACTIVE/NO_CONSENT/CONTACT_NOT_FOUND/ALL_RECIPIENTS_BLOCKED) surfaced inline;
+    mark-read on open (raw `db.update` — F-red safe) + inbound-while-open desync guard;
+    suspend/visibility → `invalidate` safety net.
+  - **`messages/msgsSelectors.js`** — pure page-flatten/cursor, overlay merge+reconcile,
+    append/patch/mark-pending/drop-by-clientId, `groupMessagesByDay`, unread math,
+    `mergeConvoIntoList` — covered by `msgsSelectors.test.js` (overlay reconcile, page-merge+
+    cursor, day-divider, unread math, deep-link miss; 25 cases). `msgDateUtils.js` = localized
+    list-time + day-divider labels (reuses `techDateUtils.currentLocaleTag` + `tech:date.*`).
+  - **UI:** `ConvoList` (sticky fixed header; All/Unread + server-side search via the RPC's
+    `p_status`/`p_search`, cached per filter; PTR below the fixed header; ≥68px rows, status-
+    color accents, unread bold+badge, relative dates; cold-start skeleton only) · `ConvoRow` ·
+    `ThreadView` (pane-owned pinned-to-bottom scroller via `threadScrollRef`; load-earlier with
+    pre-paint scroll anchoring, NO setTimeout; jump-to-latest pill w/ new-count; `DateDivider`;
+    `MessageBubble`/`SegmentCounter` imports in a flex-column body) · `Composer` (real
+    `<textarea>` autosize capped 5 lines, Enter=send + Shift+Enter, `enterKeyHint="send"`, 16px
+    font, 48px send, prefixLen-aware `SegmentCounter`, per-thread drafts via `messageUtils`,
+    internal-note toggle + amber path, `[+]` actions-sheet SHELL (MMS/templates are B2), DND
+    banner blocking send).
+  - **Nav/keyboard:** URL-driven open (`setSearchParams({c})` push) / close (`navigate(-1)` →
+    iOS swipe-back); `?c=` deep-link miss → single-row RPC fetch + `mergeConvoIntoList` into the
+    convos cache. Keyboard = active-gated `visualViewport` handler writing a **pane-scoped**
+    `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → consumed as `padding-bottom`
+    on `.tv2-msgs-thread-layer`, shrinking the scroller so the sticky composer clears the keyboard.
+  - **i18n:** `msgs` namespace EN complete + PT/ES through `t()` (locale-parity green).
+- **Phase B2 (capability completion & polish) SHIPPED** (branch `claude/tech-msgs-v2-b2-polish-6yam75`;
+  PR into `dev`; flag stays OFF/owner-only; ZERO schema). Owned files only (`TechMessagesV2.jsx` +
+  `messages/**` + css inside the `TECH-V2: MSGS` marker + the `msgs` locales); every frozen file
+  untouched; consent-path-auditor PASS (send stays worker-only, no `skip_compliance`).
+  - **MMS:** `messages/mediaUpload.js` = the ONE media helper (compress via `@/lib/mediaCompress`
+    → POST `job-files/conversations/{convId}/{ts}-{name}` → `publicMediaUrl()`; **the named
+    db-foundation-P8 signed-URL swap target** — URL construction lives in one function).
+    `messages/useComposerAttachments.js` runs the ≤5 tray (instant object-URL preview, per-tile
+    upload state, revoke on remove/unmount). Composer sends `media_urls`; inbound render is the
+    reused `MessageBubble` (`parseMediaUrls` + broken-image → file-link fallback). Body still
+    required even for MMS (worker contract) — parity with legacy.
+  - **Status pills:** `ConvoList` filter row is the full 5 (all/unread/needs_response/
+    waiting_on_client/resolved), horizontal-scroll, counts from the RPC's `status_counts`;
+    read-all is SERVER-count-driven (`useConvoMutations.markAllRead` → `db.update('conversations',
+    'unread_count=gt.0', {unread_count:0})` + invalidate), shown only when `status_counts.unread>0`.
+  - **Templates:** `messages/useTemplates.js` (lazy-once `message_templates is_active`, grouped by
+    category via pure `groupTemplates` in msgsSelectors); Composer `[+]` → picker inserts the body
+    **at the caret** (setSelectionRange), not append.
+  - **Mark-unread:** `ConvoRow` restructured to a wrap `div` + main tap button + a 48px overflow
+    "⋯" → inline 48px Mark read/Mark unread action (no hover/right-click). Routes through
+    `useConvoMutations.setUnread` (optimistic `setConvoUnreadInData` cache patch keeping
+    `unread_total` honest, then persist; invalidate on failure).
+  - **DND fork:** `useConvoMutations.enableDnd` (ON only) writes `contacts.dnd/dnd_at` + a **verbatim
+    `sms_consent_log` row** (`event_type:'dnd_on'`, `source:'manual'`, `performed_by=employee.id`,
+    copied from Conversations.jsx:646-653) + optimistic cache patch. **No OFF control is rendered
+    for techs** — a DND-on thread shows a read-only state (office/admin turn it off). Composer keeps
+    the DND banner blocking a real text (note still allowed).
+  - **Thread info header:** `ThreadView` title is now a button toggling an inline info panel —
+    `tel:` phone, DND state/one-tap enable, and a **linked-job chip via `jobHref(conv.job_id)`**
+    (`react-router` `Link`; never a hardcoded `/tech` path — H3-safe). Group/broadcast threads show
+    a type badge + recipient count in the bar + info panel.
+  - **Group/broadcast:** `isMultiConversation`/`recipientCount`/`summarizeSendResult` (pure, tested);
+    `ConvoRow` shows a group icon + recipient pill; `useThread` surfaces a partial-block toast
+    ("Sent to X of Y — Z not reached") from the worker's `twilio[]` array on a multi send.
+  - **States + polish:** deep-link miss → keyed not-found panel (Back to messages, never a dead end);
+    thread + list error states with Retry (`refetch`); dark-theme **pane-scoped** override of the
+    internal-note bubble hexes (cannot leak — legacy never renders in `.tv2-msgs-thread`);
+    `impact('light')` haptic on a genuinely-accepted send; 200ms thread slide-in (mount, reduced-
+    motion guarded; close is instant Back/swipe); blur-on-scroll-up dismisses the keyboard; no
+    autofocus on thread open. New css only inside the `TECH-V2: MSGS` marker (B2 block).
+  - **Tests:** `msgsSelectors.test.js` extended to 33 cases (adds `setConvoUnreadInData` read/unread/
+    badge-delta/clamp, `isMultiConversation`/`recipientCount`, `summarizeSendResult`, `groupTemplates`).
+  - **STRETCH shed (honest, open in the roadmap):** new-conversation flow (needs a *server*
+    contact-search RPC; the zero-schema all-contacts client load is exactly Finding-2's anti-pattern —
+    deferred to a follow-up; `find_or_create_conversation` is live and ready) · scheduled sends (an
+    office workflow + a second client-insert send path — kept out to keep the core composer pristine
+    for the owner bake).
+- **Dispatch:** F-M → B1 → B2 — strictly serial; **all three shipped.** Next = OWNER GATE: owner
+  bakes on their phone (flag owner-only), ~0.5 post-bake fix session budgeted; cutover = owner flips
+  `page:tech_msgs_v2` in DevTools → Flags. Coordination seams: Job Hub H3 (`src/i18n/index.js` only),
+  db-foundation P8 (`messages/mediaUpload.js` `publicMediaUrl` is the swap target), sms deep-link
+  follow-up (sms-owned).
