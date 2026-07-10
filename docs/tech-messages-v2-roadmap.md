@@ -228,7 +228,7 @@ fixed header.
 > - [x] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics via `mergeOverlay`/`reconcileOverlay`); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
 > - [x] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
 > - [x] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (real translations, locale-parity green)
-> - [x] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path (`msgsSelectors.test.js`, 27 cases)
+> - [x] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path (`msgsSelectors.test.js`, 25 cases)
 > - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled; PR to `dev` ready; flag stays owner-only
 **Scope:** owns `TechMessagesV2.jsx` + `messages/**` + css §MSGS only. ZERO schema.
 

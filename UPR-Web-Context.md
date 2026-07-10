@@ -6526,7 +6526,7 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   - **`messages/msgsSelectors.js`** — pure page-flatten/cursor, overlay merge+reconcile,
     append/patch/mark-pending/drop-by-clientId, `groupMessagesByDay`, unread math,
     `mergeConvoIntoList` — covered by `msgsSelectors.test.js` (overlay reconcile, page-merge+
-    cursor, day-divider, unread math, deep-link miss; 27 cases). `msgDateUtils.js` = localized
+    cursor, day-divider, unread math, deep-link miss; 25 cases). `msgDateUtils.js` = localized
     list-time + day-divider labels (reuses `techDateUtils.currentLocaleTag` + `tech:date.*`).
   - **UI:** `ConvoList` (sticky fixed header; All/Unread + server-side search via the RPC's
     `p_status`/`p_search`, cached per filter; PTR below the fixed header; ≥68px rows, status-

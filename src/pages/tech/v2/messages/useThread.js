@@ -137,11 +137,12 @@ export function useThread(convId, { active = true } = {}) {
     catch (e) { console.error('Mark read error:', e); }
   }, [convId, db, queryClient]);
 
-  // Mark read once when the thread opens.
+  // Mark read when the thread opens (and when the pane re-activates with it open, so a
+  // thread opened while the pane was backgrounded still clears on return).
   useEffect(() => {
     if (enabled && active) markRead();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convId, enabled]);
+  }, [convId, enabled, active]);
 
   // ─── SECTION: Realtime (active-gated) ──────────────
   useEffect(() => {
