@@ -249,7 +249,8 @@ export function useThread(convId, { active = true } = {}) {
   // Public: send a new message (text and/or media, or an internal note).
   const send = useCallback(({ text, media_urls = [], isNote = false }) => {
     const body = (text || '').trim();
-    if (!body) return;
+    // A photo can send with no caption (media-only MMS); a text or note still needs a body.
+    if (!body && !(media_urls && media_urls.length)) return;
     const clientId = `pending-${++clientIdCounter.current}`;
     const optimistic = {
       id: clientId,

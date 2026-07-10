@@ -25,8 +25,8 @@
  *     re-homed against the pane's own state so the shared screen is never edited.
  *   - A local object-URL preview shows instantly (snap-first); it is revoked on remove
  *     and on unmount so the webview never leaks blob URLs.
- *   - The worker still requires a non-empty body even for MMS (send-message.js:182),
- *     so the composer keeps text required — attachments ride along with a caption.
+ *   - A photo can send with no caption — the worker (send-message.js) accepts a
+ *     media-only send once the upload has finished (no text required).
  * ════════════════════════════════════════════════
  */
 import { useState, useRef, useCallback, useEffect } from 'react';

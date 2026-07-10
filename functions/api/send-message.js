@@ -153,7 +153,7 @@ async function updateConversationAfterSend(db, conversation, rawBody) {
   const now = new Date().toISOString();
   const updateData = {
     last_message_at: now,
-    last_message_preview: rawBody.substring(0, 100),
+    last_message_preview: rawBody ? rawBody.substring(0, 100) : '📷 Photo',
     status: 'waiting_on_client',
     status_changed_at: now,
     updated_at: now,
@@ -179,11 +179,13 @@ export async function onRequestPost(context) {
   try {
     const { conversation_id, body, sent_by, media_urls, is_internal_note } = await request.json();
 
-    if (!conversation_id || !body?.trim()) {
-      return jsonResponse({ error: 'conversation_id and body are required' }, 400, request, env);
+    // A photo can go with no caption (media-only MMS); a text or note still needs a body.
+    const hasMedia = Array.isArray(media_urls) && media_urls.length > 0;
+    if (!conversation_id || (!body?.trim() && !(hasMedia && !is_internal_note))) {
+      return jsonResponse({ error: 'conversation_id and a message body or media are required' }, 400, request, env);
     }
 
-    const rawBody = body.trim();
+    const rawBody = (body || '').trim();
 
     // ═══ INTERNAL NOTE: just insert, no Twilio, no compliance needed ═══
     // channel stays NULL (a note has no transport) — it is physically unsendable.
@@ -230,7 +232,9 @@ export async function onRequestPost(context) {
       const [employee] = await db.select('employees', `id=eq.${sent_by}`);
       if (employee?.full_name) senderPrefix = `${employee.full_name}: `;
     }
-    const clientBody = senderPrefix + rawBody;
+    // Media-only send: drop the dangling "Name: " colon so the MMS carries just the
+    // sender's name (CTIA identification) with the photo, not "Jane: " + nothing.
+    const clientBody = rawBody ? senderPrefix + rawBody : senderPrefix.replace(/:\s*$/, '');
 
     // 3. Status callback URL for delivery receipts (Phase A reads segment/price here).
     const baseUrl = env.PAGES_URL || `https://${request.headers.get('host')}`;

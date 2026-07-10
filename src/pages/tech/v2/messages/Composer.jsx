@@ -29,8 +29,8 @@
  *     shows a return key and sending is the button only. On a desktop keyboard
  *     (fine pointer) Enter sends and Shift+Enter is a newline. Font is ≥16px so iOS
  *     never zooms the page on focus.
- *   - The worker requires a non-empty body even for MMS, so a photo rides with a caption:
- *     Send stays disabled until there is text (parity with legacy).
+ *   - A photo can send with no caption (media-only MMS): Send enables once an attachment
+ *     has finished uploading, even with no text.
  *   - A template inserts at the caret (not append) so a tech can top-and-tail it.
  * ════════════════════════════════════════════════
  */
@@ -103,9 +103,10 @@ export default function Composer({ convId, contact, onSend, sending }) {
   const doSend = useCallback(() => {
     const el = taRef.current;
     const body = (el ? el.value : text).trim();
-    if (!body || blockedByDnd) return;
-    if (uploading) return; // wait for attachments to finish
     const media = isNote ? [] : readyUrls;
+    // Allow a photo-only send (media, no caption); a text or note still needs a body.
+    if (blockedByDnd || (!body && media.length === 0)) return;
+    if (uploading) return; // wait for attachments to finish
     // Blank synchronously so a same-tick double-Enter can't fire twice.
     if (el) el.value = '';
     setText('');
@@ -166,7 +167,9 @@ export default function Composer({ convId, contact, onSend, sending }) {
   const openTemplates = () => { loadTemplates(); setSheet('templates'); };
   const toggleActions = () => setSheet((s) => (s ? null : 'actions'));
 
-  const canSend = !!text.trim() && !blockedByDnd && !sending && !uploading;
+  // A ready (uploaded) photo can send on its own — text OR media enables Send.
+  const hasReadyMedia = !isNote && readyUrls.length > 0;
+  const canSend = (!!text.trim() || hasReadyMedia) && !blockedByDnd && !sending && !uploading;
 
   return (
     <div className="tv2-msgs-composer" data-note={isNote ? 'true' : undefined}>
