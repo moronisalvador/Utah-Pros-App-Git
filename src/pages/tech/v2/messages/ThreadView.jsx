@@ -84,28 +84,36 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const lastScrollTop = useRef(0);
   const rootRef = useRef(null);
 
-  // Keyboard lift (active-gated). Writes a PANE-SCOPED var on the nearest .tv2-msgs-pane
-  // (never documentElement — legacy owns --conv-kb-offset); CSS consumes it as
-  // padding-bottom on the thread layer only, shrinking the scroller so the sticky
-  // composer rises above the on-screen keyboard. No layout jump, blur-safe.
+  // Keyboard lift (active-gated). Writes a PANE-SCOPED var + a `tv2-msgs-kb-open` class
+  // on the nearest .tv2-msgs-pane (never documentElement — legacy owns --conv-kb-offset).
+  // CSS uses the var as padding-bottom on the thread layer (adds any residual lift iOS
+  // didn't already do) and the class to drop the composer's home-indicator inset while
+  // the keyboard is up. Blur-safe, no layout jump.
   useEffect(() => {
     if (!active) return undefined;
     const vv = window.visualViewport;
     const pane = rootRef.current?.closest('.tv2-msgs-pane');
     if (!vv || !pane) return undefined;
+    // Keyboard-CLOSED viewport height. window.innerHeight is unreliable on iOS 26 — it
+    // tracks the VISUAL viewport, so innerHeight === vv.height with the keyboard up and
+    // the old `innerHeight - vv.height` formula computed 0 (verified on-device 2026-07-10:
+    // iH479 vv479 oT415). Capture the tallest vv.height we see (keyboard closed) instead.
+    let baseline = 0;
     const onResize = () => {
-      // Distance from the layout-viewport bottom up to the visual-viewport bottom = the
-      // occluded strip (keyboard, and/or just the input-accessory bar when iOS resizes
-      // the layout viewport). Lifting the composer by it lands it flush above whatever
-      // is occluding — matching the visual viewport bottom in BOTH WKWebView modes.
-      // Threshold is a small jitter guard only (accessory bar alone is ~45px, so it must
-      // stay below that) — NOT the 80px "is the full keyboard up" gate.
-      const raw = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      const offset = raw > 24 ? raw : 0;
-      pane.style.setProperty('--tv2-msgs-kb', `${offset}px`);
+      const vh = vv.height;
+      if (vh > baseline) baseline = vh;
+      const kbInset = baseline - vh;                 // total keyboard occlusion
+      const kbOpen = kbInset > 60;                   // real keyboard, not jitter/URL bar
+      // iOS 26 pans the page up by vv.offsetTop to reveal the focused field, covering
+      // most/all of the inset; older iOS pans nothing. Lift only the RESIDUAL iOS left,
+      // so the docked composer lands flush above the keyboard in both modes.
+      const raw = Math.max(0, kbInset - vv.offsetTop);
+      const lift = raw > 4 ? raw : 0;
+      pane.style.setProperty('--tv2-msgs-kb', `${lift}px`);
+      pane.classList.toggle('tv2-msgs-kb-open', kbOpen);
       // TEMP instrumentation (remove after calibration): live viewport numbers.
-      setKbDbg(`iH${window.innerHeight} vv${Math.round(vv.height)} oT${Math.round(vv.offsetTop)} sab${Math.round(vv.height + vv.offsetTop)} kb${offset}`);
-      if (offset > 0 && atBottomRef.current) scrollToBottom(false);
+      setKbDbg(`base${Math.round(baseline)} vv${Math.round(vh)} oT${Math.round(vv.offsetTop)} inset${Math.round(kbInset)} lift${lift} ${kbOpen ? 'OPEN' : 'closed'}`);
+      if (kbOpen && atBottomRef.current) scrollToBottom(false);
     };
     vv.addEventListener('resize', onResize);
     vv.addEventListener('scroll', onResize);
@@ -114,6 +122,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
       vv.removeEventListener('resize', onResize);
       vv.removeEventListener('scroll', onResize);
       pane.style.removeProperty('--tv2-msgs-kb');
+      pane.classList.remove('tv2-msgs-kb-open');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);

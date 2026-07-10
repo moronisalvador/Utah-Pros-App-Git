@@ -10986,6 +10986,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
      legacy documents the same "safe-area only when closed" rule). */
   padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--tv2-msgs-kb, 0px)));
 }
+/* Keyboard up → drop the home-indicator inset entirely (the keyboard covers it). On
+   iOS 26 the lift var stays ~0 because iOS pans the page instead, so this class — not
+   the `- --tv2-msgs-kb` term — is what closes the residual white gap (verified 2026-07-10). */
+.tv2-msgs-pane.tv2-msgs-kb-open .tv2-msgs-composer { padding-bottom: 0; }
 .tv2-msgs-composer[data-note='true'] { background: var(--status-waiting-bg); }
 
 .tv2-msgs-dnd-banner {
