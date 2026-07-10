@@ -37,6 +37,7 @@ import { buildResetUrl } from './lib/staleChunkReload.js';
 import { techQueryClient } from './lib/techQuery.js';
 import { techQueryPersister } from './lib/techQueryPersister.js';
 import { isWebPushEnabled, registerPushServiceWorker } from './lib/registerSW.js';
+import { configureNativeKeyboard } from './lib/nativeKeyboard.js';
 import './index.css';
 
 // Bumped to force a new bundle hash when the Cloudflare edge cached a
@@ -60,6 +61,11 @@ try {
 } catch (err) {
   console.warn('CapacitorUpdater.notifyAppReady threw:', err?.message || err);
 }
+
+// One-time native keyboard config (no-op on web): hides the iOS accessory bar so
+// the tech Messages composer sits flush on the keyboard like iMessage. See
+// lib/nativeKeyboard.js. Fire-and-forget; internally guarded + error-swallowing.
+configureNativeKeyboard();
 
 // PersistQueryClientProvider sits ABOVE the router/auth (both live inside <App/>)
 // so the whole tech tree shares one QueryClient and its on-device cache. The
