@@ -75,9 +75,16 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
     const pane = rootRef.current?.closest('.tv2-msgs-pane');
     if (!vv || !pane) return undefined;
     const onResize = () => {
-      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      pane.style.setProperty('--tv2-msgs-kb', `${offset > 80 ? offset : 0}px`);
-      if (offset > 80 && atBottomRef.current) scrollToBottom(false);
+      // Distance from the layout-viewport bottom up to the visual-viewport bottom = the
+      // occluded strip (keyboard, and/or just the input-accessory bar when iOS resizes
+      // the layout viewport). Lifting the composer by it lands it flush above whatever
+      // is occluding — matching the visual viewport bottom in BOTH WKWebView modes.
+      // Threshold is a small jitter guard only (accessory bar alone is ~45px, so it must
+      // stay below that) — NOT the 80px "is the full keyboard up" gate.
+      const raw = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const offset = raw > 24 ? raw : 0;
+      pane.style.setProperty('--tv2-msgs-kb', `${offset}px`);
+      if (offset > 0 && atBottomRef.current) scrollToBottom(false);
     };
     vv.addEventListener('resize', onResize);
     vv.addEventListener('scroll', onResize);

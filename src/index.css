@@ -10960,7 +10960,11 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-composer {
   background: var(--bg-primary);
   border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Home-indicator inset ONLY when the keyboard is closed. When it's open the keyboard
+     covers the indicator, so --tv2-msgs-kb (its height) zeroes this out — otherwise the
+     inset becomes dead space between the composer and the keyboard (WhatsApp drops it too;
+     legacy documents the same "safe-area only when closed" rule). */
+  padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--tv2-msgs-kb, 0px)));
 }
 .tv2-msgs-composer[data-note='true'] { background: var(--status-waiting-bg); }
 
