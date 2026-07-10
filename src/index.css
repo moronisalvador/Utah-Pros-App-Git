@@ -10917,6 +10917,19 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   padding: 14px 14px 8px;
 }
+
+/* Bubbles hug their content (text or media) instead of stretching. The shared bubble
+   stretches to fill .message, whose width was being driven by the wide failed-status
+   meta line ("Failed — …  Retry"), pushing every bubble to ~80%. Pane-scoped override
+   of the shared .message* classes (roadmap §10 — cannot leak; legacy never renders
+   inside .tv2-msgs-thread). */
+.tv2-msgs-thread .message-bubble { width: fit-content; max-width: 100%; }
+.tv2-msgs-thread .message.outbound .message-bubble { align-self: flex-end; }
+.tv2-msgs-thread .message.inbound .message-bubble { align-self: flex-start; }
+/* Internal notes had no align-self, so they stretched full-width — hug content too. */
+.tv2-msgs-thread .message.internal-note { align-self: flex-end; }
+.tv2-msgs-thread .message.internal-note .message-bubble { align-self: flex-end; }
+
 .tv2-msgs-thread__loading,
 .tv2-msgs-thread__empty { margin: auto; padding: 40px 0; color: var(--text-tertiary); font-size: 14px; text-align: center; }
 .tv2-msgs-thread__earlier { align-self: center; padding: 6px 0 10px; color: var(--text-tertiary); font-size: 12px; }
