@@ -6466,7 +6466,7 @@ this initiative) to host the new component. No edit to any worker, `Conversation
 
 ---
 
-## Tech Messages v2 — Foundation F-M SHIPPED (session 2026-07-09; flag OFF/owner-only)
+## Tech Messages v2 — F-M + Phase B1 SHIPPED (2026-07-09/10; flag OFF/owner-only)
 
 Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
 desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
@@ -6509,6 +6509,44 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   only (OFF stays office/admin — TCPA asymmetry) · all-org scoping v1 (assigned_to is 100%
   unpopulated; per-employee param reserved) · realtime verified to survive F-red
   (authenticated JWT socket; devLogin caveat).
+- **Phase B1 (core experience) SHIPPED** (branch `claude/tech-msgs-v2-b1-core-5gqbi3`; PR into
+  `dev`; flag stays OFF/owner-only; ZERO schema). Fills the F-M stub — owned files only
+  (`src/pages/tech/v2/TechMessagesV2.jsx` + `src/pages/tech/v2/messages/**` + css inside the
+  `TECH-V2: MSGS` marker + the `msgs` locale files); every frozen file untouched.
+  - **`useThread(convId,{active})`** (`messages/useThread.js`): `useInfiniteQuery` on
+    `techKeys.thread` (newest-30, keyset `created_at<cursor`) + a pane-local **optimistic
+    overlay** keyed by `_clientId`. Realtime (active-gated `subscribeToMessages`): UPDATE →
+    `patchMessageInPages` (delivery ticks patch in place, never refetch); INSERT →
+    `appendMessageToPages` + `reconcileOverlay` (dedupe by id → type+body). Send = copied
+    `dispatchSend`/`retryMessage` + rewritten `handleSend` → **POST /api/send-message only**
+    (worker sole writer; no `skip_compliance`); 201-with-failed-row preserved; the four 403
+    codes (DND_ACTIVE/NO_CONSENT/CONTACT_NOT_FOUND/ALL_RECIPIENTS_BLOCKED) surfaced inline;
+    mark-read on open (raw `db.update` — F-red safe) + inbound-while-open desync guard;
+    suspend/visibility → `invalidate` safety net.
+  - **`messages/msgsSelectors.js`** — pure page-flatten/cursor, overlay merge+reconcile,
+    append/patch/mark-pending/drop-by-clientId, `groupMessagesByDay`, unread math,
+    `mergeConvoIntoList` — covered by `msgsSelectors.test.js` (overlay reconcile, page-merge+
+    cursor, day-divider, unread math, deep-link miss; 27 cases). `msgDateUtils.js` = localized
+    list-time + day-divider labels (reuses `techDateUtils.currentLocaleTag` + `tech:date.*`).
+  - **UI:** `ConvoList` (sticky fixed header; All/Unread + server-side search via the RPC's
+    `p_status`/`p_search`, cached per filter; PTR below the fixed header; ≥68px rows, status-
+    color accents, unread bold+badge, relative dates; cold-start skeleton only) · `ConvoRow` ·
+    `ThreadView` (pane-owned pinned-to-bottom scroller via `threadScrollRef`; load-earlier with
+    pre-paint scroll anchoring, NO setTimeout; jump-to-latest pill w/ new-count; `DateDivider`;
+    `MessageBubble`/`SegmentCounter` imports in a flex-column body) · `Composer` (real
+    `<textarea>` autosize capped 5 lines, Enter=send + Shift+Enter, `enterKeyHint="send"`, 16px
+    font, 48px send, prefixLen-aware `SegmentCounter`, per-thread drafts via `messageUtils`,
+    internal-note toggle + amber path, `[+]` actions-sheet SHELL (MMS/templates are B2), DND
+    banner blocking send).
+  - **Nav/keyboard:** URL-driven open (`setSearchParams({c})` push) / close (`navigate(-1)` →
+    iOS swipe-back); `?c=` deep-link miss → single-row RPC fetch + `mergeConvoIntoList` into the
+    convos cache. Keyboard = active-gated `visualViewport` handler writing a **pane-scoped**
+    `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → consumed as `padding-bottom`
+    on `.tv2-msgs-thread-layer`, shrinking the scroller so the sticky composer clears the keyboard.
+  - **i18n:** `msgs` namespace EN complete + PT/ES through `t()` (locale-parity green).
+  - **B2 deferred (per plan):** MMS attach, templates, status-filter pills + counts, mark-unread
+    affordance, one-tap DND ON, thread info header, group/broadcast rendering, dark-theme bubble
+    overrides, PT/ES polish, new-conversation flow (STRETCH), scheduled sends (STRETCH).
 - **Dispatch:** F-M → B1 (core experience, at the one-session ceiling) → B2 (completion +
   polish; STRETCH = new-conversation, scheduled sends) — strictly serial; ~0.5 post-bake fix
   session budgeted; cutover = owner flips the flag. Coordination seams: Job Hub H3
