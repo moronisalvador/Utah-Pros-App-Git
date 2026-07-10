@@ -11,7 +11,9 @@
  *   that on a group conversation EACH participant is consent-checked individually
  *   (a blocked participant beyond the first is never texted), and that a send that
  *   fails for one recipient still records its own message row so the failure is
- *   visible instead of vanishing.
+ *   visible instead of vanishing. It also proves a caption-less photo (media-only
+ *   MMS) still passes through the same consent gate — and that a truly empty send,
+ *   or a media-only internal note, is refused.
  *
  * HOW TO RUN:
  *   `npm test` (vitest) — no network, no live A2P send.
@@ -143,6 +145,46 @@ describe('send-message compliance chain', () => {
     const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  // Media-only (caption-less MMS) — the body-required relaxation must NOT skip the gate.
+  it('blocks a DND contact on a media-only (no caption) send — the gate runs for MMS too', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
+    const res = await onRequestPost({
+      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      env: ENV,
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('DND_ACTIVE');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('allows a media-only (no caption) send to an opted-in contact (201, MMS dispatched)', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio.mock.calls[0][1].mediaUrls).toEqual(['https://files.test/p.jpg']);
+  });
+
+  it('rejects a truly empty send — no body AND no media (400, no send)', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1' }), env: ENV });
+    expect(res.status).toBe(400);
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('rejects a media-only INTERNAL NOTE (400) — media cannot make an empty note sendable', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', is_internal_note: true, media_urls: ['https://files.test/p.jpg'] }),
+      env: ENV,
+    });
+    expect(res.status).toBe(400);
+    expect(h.twilio).not.toHaveBeenCalled();
   });
 
   it('rejects an unauthenticated caller (401) before touching compliance', async () => {
