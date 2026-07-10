@@ -24,8 +24,11 @@
  *              hook); the send itself goes through ThreadView → useThread → the worker.
  *
  * NOTES / GOTCHAS:
- *   - Enter = send, Shift+Enter = newline (legacy tech muscle memory); enterKeyHint
- *     "send". Font is ≥16px so iOS never zooms the page on focus.
+ *   - Enter behavior is pointer-aware (bake report 2026-07-10): on a TOUCH device
+ *     (phone/tablet) Enter inserts a newline like iMessage/Housecall — the field
+ *     shows a return key and sending is the button only. On a desktop keyboard
+ *     (fine pointer) Enter sends and Shift+Enter is a newline. Font is ≥16px so iOS
+ *     never zooms the page on focus.
  *   - The worker requires a non-empty body even for MMS, so a photo rides with a caption:
  *     Send stays disabled until there is text (parity with legacy).
  *   - A template inserts at the caret (not append) so a tech can top-and-tail it.
@@ -66,6 +69,15 @@ export default function Composer({ convId, contact, employee, onSend, sending })
   const [sheet, setSheet] = useState(null); // null | 'actions' | 'templates'
   const taRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Touch device? Then Enter should insert a newline (native), not send — the phone
+  // keyboard has no easy Shift+Enter and messaging apps let you type multi-line and
+  // tap Send. Fine pointer (desktop) keeps Enter-to-send. Computed once (a device
+  // doesn't switch pointer class mid-session).
+  const isTouch = useMemo(
+    () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches,
+    [],
+  );
 
   const { attachments, addFiles, removeAttachment, clearAttachments, readyUrls, uploading } = useComposerAttachments(convId);
   const { groups, loading: tmplLoading, error: tmplError, load: loadTemplates } = useTemplates();
@@ -113,6 +125,9 @@ export default function Composer({ convId, contact, employee, onSend, sending })
   }, [text, blockedByDnd, uploading, isNote, readyUrls, convId, onSend, clearAttachments]);
 
   const onKeyDown = (e) => {
+    // Touch: let Enter fall through to the textarea as a newline. Desktop: Enter
+    // sends, Shift+Enter is a newline.
+    if (isTouch) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       doSend();
@@ -276,7 +291,7 @@ export default function Composer({ convId, contact, employee, onSend, sending })
             onChange={onChange}
             onKeyDown={onKeyDown}
             placeholder={isNote ? t('composer.notePlaceholder') : t('composer.placeholder')}
-            enterKeyHint="send"
+            enterKeyHint={isTouch ? 'enter' : 'send'}
             rows={1}
             aria-label={isNote ? t('composer.note') : t('composer.placeholder')}
           />
