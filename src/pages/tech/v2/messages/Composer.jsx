@@ -239,9 +239,13 @@ export default function Composer({ convId, contact, onSend, sending }) {
         </div>
       )}
 
-      {/* Actions sheet ([+]). */}
-      {sheet === 'actions' && (
-        <div className="tv2-msgs-actions-sheet" role="menu">
+      {/* Actions sheet ([+]) — always mounted so it animates open AND closed (collapse
+          via max-height/opacity in CSS, never an unmount; keeps the textarea focused). */}
+      <div
+        className={`tv2-msgs-actions-sheet${sheet === 'actions' ? ' open' : ''}`}
+        role="menu"
+        aria-hidden={sheet !== 'actions'}
+      >
           <button
             type="button"
             className="tv2-msgs-action"
@@ -268,8 +272,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
             <IconNote width={20} height={20} />
             <span>{t('composer.note')}</span>
           </button>
-        </div>
-      )}
+      </div>
 
       <input
         ref={fileRef}

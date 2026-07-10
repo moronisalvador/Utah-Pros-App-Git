@@ -10985,7 +10985,30 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   border-bottom: 1px solid var(--border);
 }
 
-.tv2-msgs-actions-sheet { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--border); }
+/* Actions sheet ([+] menu) — always mounted; animates open AND closed via max-height +
+   opacity (a fresh conditional mount could only ever animate the open direction). No
+   transform (WKWebView-safe). */
+.tv2-msgs-actions-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  border-bottom: 1px solid transparent;
+  pointer-events: none;
+  transition: max-height 220ms ease, opacity 150ms ease, padding 220ms ease, border-bottom-color 220ms ease;
+}
+.tv2-msgs-actions-sheet.open {
+  max-height: 180px;
+  opacity: 1;
+  padding: 6px;
+  border-bottom-color: var(--border);
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv2-msgs-actions-sheet { transition: none; }
+}
 .tv2-msgs-action {
   display: flex;
   align-items: center;
