@@ -10786,8 +10786,8 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: 0 14px;
+  min-height: 48px; /* tech-mobile-ux 48px floor — gloved hands, no exceptions */
+  padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg-secondary);
@@ -10941,8 +10941,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 14px;
+  min-height: 48px; /* tech-mobile-ux 48px floor */
+  padding: 0 18px;
   border: none;
   border-radius: 999px;
   background: var(--accent);
@@ -10960,7 +10962,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-.tv2-msgs-composer[data-note='true'] { background: #fffbeb; }
+.tv2-msgs-composer[data-note='true'] { background: var(--status-waiting-bg); }
 
 .tv2-msgs-dnd-banner {
   padding: 8px 14px;
