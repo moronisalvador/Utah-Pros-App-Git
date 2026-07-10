@@ -46,10 +46,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, getAuthHeader } from '@/lib/realtime';
 import { techKeys } from '@/lib/techQuery';
 import { parseMediaUrls } from '@/components/conversations/messageUtils';
+import { impact } from '@/lib/nativeHaptics';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
   appendMessageToPages, patchMessageInPages, markPendingByMatch, dropByClientId,
-  failByClientId,
+  failByClientId, summarizeSendResult,
 } from './msgsSelectors';
 
 const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,created_at,employees(full_name)';
@@ -218,6 +219,16 @@ export function useThread(convId, { active = true } = {}) {
         real.employees = employee ? { full_name: employee.full_name } : (real.employees || null);
         setPages((p) => appendMessageToPages(dropByClientId(p, clientId), real));
         if (mounted.current) setOverlay((o) => reconcileOverlay(o, real, clientId));
+      }
+      // Native "sent" tap (light) — only on a genuinely-accepted row, not a failed 201.
+      if (real && real.status !== 'failed') impact('light');
+      // Group / broadcast: surface a partial block ("Sent to 3 of 5 — 2 blocked") so a
+      // tech knows some recipients were skipped for consent. Direct threads (twilio.length
+      // ≤ 1) never trigger this — a blocked direct send already returns 403.
+      const summary = summarizeSendResult(data.twilio);
+      if (summary.total > 1 && (summary.blocked > 0 || summary.failed > 0)) {
+        const missed = summary.blocked + summary.failed;
+        emitToast(`Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`, 'info');
       }
       delete retryStore.current[clientId];
     } catch (err) {

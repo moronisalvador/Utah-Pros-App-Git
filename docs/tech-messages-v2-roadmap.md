@@ -235,19 +235,19 @@ fixed header.
 ### Phase B2 — Capability completion & polish
 > **Branch:** session-assigned, cut from `origin/dev`. **Prerequisite:** B1 merged.
 > **Model: Opus · high** (polish IS the deliverable; consent surface included).
-> **Close-out checklist — CORE (must ship):**
-> - [ ] MMS: attach ≤5, mediaCompress, storage upload, media_urls send; inbound render via parseMediaUrls (P8 coordination note honored — this module is the named swap target)
-> - [ ] Status filter pills (NeedsResponse/Waiting/Resolved) + per-filter counts from the RPC's `status_counts`
-> - [ ] Templates picker (message_templates, categories, tap-insert)
-> - [ ] Mark-unread as a 48px affordance (no right-click/hover idioms); read-all driven by server counts
-> - [ ] One-tap DND ON for techs (consent-log write verbatim, `performed_by`); DND OFF absent for techs (office-only) — fork disclosure in the PR
-> - [ ] Thread info header: contact name/phone, DND state, linked-job chip via `jobHref()` (never hardcoded /tech paths)
-> - [ ] Group/broadcast rendering (type badge, recipient count, partial-block surfacing)
-> - [ ] Error/empty/not-found states (Back+Retry — never a dead end); dark-theme pane-scoped bubble overrides; PT/ES sweep to real quality; polish pass vs Dash/Sched design language (haptics on send, 200ms thread slide w/ reduced-motion guard, no autofocus-on-open, blur-on-scroll-up)
-> **STRETCH (explicitly shed-able, each its own honest checkbox):**
-> - [ ] New-conversation flow (contact search via server, `find_or_create_conversation`; phone-less contacts unselectable)
-> - [ ] Scheduled sends (date/time picker → scheduled_messages insert)
-> - [ ] `npm run test`+`build`+eslint; `upr-pattern-checker` + `consent-path-auditor` + `tech-phase-reviewer`; UPR-Web-Context.md; reconcile (shed stretch honestly, never silently); PR to `dev` ready
+> **Close-out checklist — CORE (must ship):** — **B2 SHIPPED 2026-07-10** (branch `claude/tech-msgs-v2-b2-polish-6yam75`; flag stays OFF/owner-only)
+> - [x] MMS: attach ≤5, mediaCompress, storage upload, media_urls send; inbound render via parseMediaUrls (P8 coordination note honored — URL construction is in ONE helper, `messages/mediaUpload.js`, the named swap target)
+> - [x] Status filter pills (NeedsResponse/Waiting/Resolved) + per-filter counts from the RPC's `status_counts` (5-pill horizontal-scroll filter row; hook already threads `p_status`)
+> - [x] Templates picker (message_templates is_active, categories, tap-insert AT CURSOR)
+> - [x] Mark-unread as a 48px affordance (row overflow "⋯" → one inline 48px action, no right-click/hover); read-all driven by server counts (`unread_count=gt.0` update, not the loaded page)
+> - [x] One-tap DND ON for techs (consent-log write verbatim, `performed_by`); DND OFF absent for techs (office-only) — fork disclosed in the PR
+> - [x] Thread info header: contact name/phone, DND state, linked-job chip via `jobHref()` (never a hardcoded /tech path — H3-safe)
+> - [x] Group/broadcast rendering (type badge, recipient count, partial-block surfacing from the worker's `twilio[]`)
+> - [x] Error/empty/not-found states (Back+Retry — never a dead end); dark-theme pane-scoped bubble override (internal-note hexes); PT/ES parity (locale-parity test green); polish pass (haptics `impact('light')` on send success, 200ms thread slide-in w/ reduced-motion guard, no autofocus-on-open, blur-on-scroll-up)
+> **STRETCH (SHED honestly — open, with reasons):**
+> - [ ] New-conversation flow — **SHED.** Doing it to the pane's standard needs a *server* contact-search RPC (none exists); the only zero-schema option is legacy's unbounded all-contacts client load, which is exactly Finding-2's anti-pattern this pane exists to kill. Deferred to a follow-up that ships a `search_contacts`-style RPC (separate reviewed change). `find_or_create_conversation` is already live (F-M) and ready for it.
+> - [ ] Scheduled sends — **SHED.** An office workflow (techs rarely schedule) requiring a second client-insert send path (`scheduled_messages`) alongside the core composer; kept out to keep the native-feel send path pristine for the owner bake. Easy post-bake add if the owner wants it.
+> - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled (both directions; stretch shed with reasons above); PR to `dev` ready
 **Scope:** same files as B1. ZERO schema. **OWNER GATE opens after B2: bake on the owner's
 phone (flag owner-only). Budgeted: ~0.5 session of post-bake fixes — expected, not failure.
 Cutover = the owner flips `page:tech_msgs_v2` in DevTools → Flags. No deletion phase:

@@ -6466,7 +6466,7 @@ this initiative) to host the new component. No edit to any worker, `Conversation
 
 ---
 
-## Tech Messages v2 — F-M + Phase B1 SHIPPED (2026-07-09/10; flag OFF/owner-only)
+## Tech Messages v2 — F-M + B1 + B2 SHIPPED (2026-07-09/10; flag OFF/owner-only)
 
 Masterplan for the field-tech messaging rewrite: `/tech/conversations` (today the SHARED
 desktop `Conversations.jsx` remounting inside TechLayout's keyed outlet) becomes a dedicated
@@ -6544,11 +6544,55 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
     `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → consumed as `padding-bottom`
     on `.tv2-msgs-thread-layer`, shrinking the scroller so the sticky composer clears the keyboard.
   - **i18n:** `msgs` namespace EN complete + PT/ES through `t()` (locale-parity green).
-  - **B2 deferred (per plan):** MMS attach, templates, status-filter pills + counts, mark-unread
-    affordance, one-tap DND ON, thread info header, group/broadcast rendering, dark-theme bubble
-    overrides, PT/ES polish, new-conversation flow (STRETCH), scheduled sends (STRETCH).
-- **Dispatch:** F-M → B1 (core experience, at the one-session ceiling) → B2 (completion +
-  polish; STRETCH = new-conversation, scheduled sends) — strictly serial; ~0.5 post-bake fix
-  session budgeted; cutover = owner flips the flag. Coordination seams: Job Hub H3
-  (`src/i18n/index.js` only), db-foundation P8 (MMS URL helper is the swap target), sms
-  deep-link follow-up (sms-owned).
+- **Phase B2 (capability completion & polish) SHIPPED** (branch `claude/tech-msgs-v2-b2-polish-6yam75`;
+  PR into `dev`; flag stays OFF/owner-only; ZERO schema). Owned files only (`TechMessagesV2.jsx` +
+  `messages/**` + css inside the `TECH-V2: MSGS` marker + the `msgs` locales); every frozen file
+  untouched; consent-path-auditor PASS (send stays worker-only, no `skip_compliance`).
+  - **MMS:** `messages/mediaUpload.js` = the ONE media helper (compress via `@/lib/mediaCompress`
+    → POST `job-files/conversations/{convId}/{ts}-{name}` → `publicMediaUrl()`; **the named
+    db-foundation-P8 signed-URL swap target** — URL construction lives in one function).
+    `messages/useComposerAttachments.js` runs the ≤5 tray (instant object-URL preview, per-tile
+    upload state, revoke on remove/unmount). Composer sends `media_urls`; inbound render is the
+    reused `MessageBubble` (`parseMediaUrls` + broken-image → file-link fallback). Body still
+    required even for MMS (worker contract) — parity with legacy.
+  - **Status pills:** `ConvoList` filter row is the full 5 (all/unread/needs_response/
+    waiting_on_client/resolved), horizontal-scroll, counts from the RPC's `status_counts`;
+    read-all is SERVER-count-driven (`useConvoMutations.markAllRead` → `db.update('conversations',
+    'unread_count=gt.0', {unread_count:0})` + invalidate), shown only when `status_counts.unread>0`.
+  - **Templates:** `messages/useTemplates.js` (lazy-once `message_templates is_active`, grouped by
+    category via pure `groupTemplates` in msgsSelectors); Composer `[+]` → picker inserts the body
+    **at the caret** (setSelectionRange), not append.
+  - **Mark-unread:** `ConvoRow` restructured to a wrap `div` + main tap button + a 48px overflow
+    "⋯" → inline 48px Mark read/Mark unread action (no hover/right-click). Routes through
+    `useConvoMutations.setUnread` (optimistic `setConvoUnreadInData` cache patch keeping
+    `unread_total` honest, then persist; invalidate on failure).
+  - **DND fork:** `useConvoMutations.enableDnd` (ON only) writes `contacts.dnd/dnd_at` + a **verbatim
+    `sms_consent_log` row** (`event_type:'dnd_on'`, `source:'manual'`, `performed_by=employee.id`,
+    copied from Conversations.jsx:646-653) + optimistic cache patch. **No OFF control is rendered
+    for techs** — a DND-on thread shows a read-only state (office/admin turn it off). Composer keeps
+    the DND banner blocking a real text (note still allowed).
+  - **Thread info header:** `ThreadView` title is now a button toggling an inline info panel —
+    `tel:` phone, DND state/one-tap enable, and a **linked-job chip via `jobHref(conv.job_id)`**
+    (`react-router` `Link`; never a hardcoded `/tech` path — H3-safe). Group/broadcast threads show
+    a type badge + recipient count in the bar + info panel.
+  - **Group/broadcast:** `isMultiConversation`/`recipientCount`/`summarizeSendResult` (pure, tested);
+    `ConvoRow` shows a group icon + recipient pill; `useThread` surfaces a partial-block toast
+    ("Sent to X of Y — Z not reached") from the worker's `twilio[]` array on a multi send.
+  - **States + polish:** deep-link miss → keyed not-found panel (Back to messages, never a dead end);
+    thread + list error states with Retry (`refetch`); dark-theme **pane-scoped** override of the
+    internal-note bubble hexes (cannot leak — legacy never renders in `.tv2-msgs-thread`);
+    `impact('light')` haptic on a genuinely-accepted send; 200ms thread slide-in (mount, reduced-
+    motion guarded; close is instant Back/swipe); blur-on-scroll-up dismisses the keyboard; no
+    autofocus on thread open. New css only inside the `TECH-V2: MSGS` marker (B2 block).
+  - **Tests:** `msgsSelectors.test.js` extended to 33 cases (adds `setConvoUnreadInData` read/unread/
+    badge-delta/clamp, `isMultiConversation`/`recipientCount`, `summarizeSendResult`, `groupTemplates`).
+  - **STRETCH shed (honest, open in the roadmap):** new-conversation flow (needs a *server*
+    contact-search RPC; the zero-schema all-contacts client load is exactly Finding-2's anti-pattern —
+    deferred to a follow-up; `find_or_create_conversation` is live and ready) · scheduled sends (an
+    office workflow + a second client-insert send path — kept out to keep the core composer pristine
+    for the owner bake).
+- **Dispatch:** F-M → B1 → B2 — strictly serial; **all three shipped.** Next = OWNER GATE: owner
+  bakes on their phone (flag owner-only), ~0.5 post-bake fix session budgeted; cutover = owner flips
+  `page:tech_msgs_v2` in DevTools → Flags. Coordination seams: Job Hub H3 (`src/i18n/index.js` only),
+  db-foundation P8 (`messages/mediaUpload.js` `publicMediaUrl` is the swap target), sms deep-link
+  follow-up (sms-owned).

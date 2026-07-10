@@ -1,9 +1,17 @@
 {
+  "common": {
+    "close": "Fechar"
+  },
   "list": {
     "title": "Mensagens",
     "empty": "Nenhuma conversa ainda",
     "noMatch": "Nenhum resultado",
-    "searchPlaceholder": "Buscar mensagens"
+    "error": "Não foi possível carregar as conversas",
+    "searchPlaceholder": "Buscar mensagens",
+    "markAllRead": "Marcar todas como lidas",
+    "markRead": "Marcar como lida",
+    "markUnread": "Marcar como não lida",
+    "rowActions": "Ações da conversa"
   },
   "filters": {
     "all": "Todas",
@@ -19,7 +27,20 @@
     "loadingEarlier": "Carregando anteriores…",
     "jumpToLatest": "Ir para a mais recente",
     "newCount_one": "{{count}} nova mensagem",
-    "newCount_other": "{{count}} novas mensagens"
+    "newCount_other": "{{count}} novas mensagens",
+    "dndOn": "NPI ativo",
+    "recipients_one": "{{count}} pessoa",
+    "recipients_other": "{{count}} pessoas",
+    "type": {
+      "group": "Grupo",
+      "broadcast": "Difusão"
+    }
+  },
+  "info": {
+    "phone": "Telefone",
+    "viewJob": "Ver trabalho",
+    "enableDnd": "Ativar Não Perturbe",
+    "dndOnState": "Não Perturbe está ativo"
   },
   "composer": {
     "placeholder": "Mensagem",
@@ -27,12 +48,20 @@
     "send": "Enviar",
     "note": "Nota interna",
     "moreActions": "Mais ações",
+    "attachPhotos": "Anexar fotos",
+    "attachments": "Anexos",
+    "removeAttachment": "Remover anexo",
+    "templates": "Modelos",
+    "noTemplates": "Nenhum modelo ainda",
+    "templatesError": "Não foi possível carregar os modelos",
     "dndBlock": "Não Perturbe está ativo — envio bloqueado",
     "dndNote": "Não Perturbe está ativo — você ainda pode adicionar uma nota interna"
   },
   "states": {
     "loading": "Carregando mensagens…",
     "error": "Não foi possível carregar as mensagens",
-    "retry": "Tentar novamente"
+    "retry": "Tentar novamente",
+    "notFound": "Esta conversa não está disponível",
+    "backToList": "Voltar às mensagens"
   }
 }
