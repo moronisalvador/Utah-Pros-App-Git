@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   One open conversation, full screen: a fixed top bar with a Back arrow and the
- *   person's name, the back-and-forth messages grouped under day headers, and the
+ *   person's name (tap it to see phone, Do-Not-Disturb state, and a chip that jumps to
+ *   the linked job), the back-and-forth messages grouped under day headers, and the
  *   reply box pinned at the bottom. It opens already scrolled to the newest message,
  *   loads older messages as you scroll up (keeping your place), and shows a "jump to
  *   latest" pill with a count if new messages arrive while you're reading history.
@@ -16,26 +17,32 @@
  *   Rendered by:  src/pages/tech/v2/TechMessagesV2.jsx (keyed by conversation id)
  *
  * DEPENDS ON:
- *   Packages:  react, react-i18next
- *   Internal:  ./useThread, ./msgsSelectors (groupMessagesByDay), ./msgDateUtils
- *              (dayLabel), @/components/conversations/MessageBubble, ./Composer
+ *   Packages:  react, react-router-dom, react-i18next
+ *   Internal:  ./useThread, ./msgsSelectors (groupMessagesByDay, isMultiConversation,
+ *              recipientCount), ./msgDateUtils (dayLabel),
+ *              @/components/conversations/MessageBubble, @/components/tech/v2/nav
+ *              (jobHref — NEVER a hardcoded /tech path, H3-safe), ./Composer
  *   Data:      via useThread — reads messages, writes through POST /api/send-message
  *
  * NOTES / GOTCHAS:
  *   - The scroller is owned by the pane host (TechMsgsPane) and forwarded here as
- *     `scrollRef`; this view drives pin-to-bottom, load-earlier anchoring, and the
- *     jump pill against it. Anchoring uses a scrollHeight snapshot in useLayoutEffect
- *     (pre-paint) — NO setTimeout.
- *   - The message container is a flex column so MessageBubble's align-self (inbound
- *     left / outbound right) resolves.
+ *     `scrollRef`; anchoring uses a scrollHeight snapshot in useLayoutEffect (pre-paint)
+ *     — NO setTimeout.
+ *   - Scrolling UP dismisses the keyboard (blurs the composer) — a native reading gesture.
+ *   - The job chip links via jobHref() so the later Job-Hub cutover (M2/H3) retargets it
+ *     without a code change here.
+ *   - DND is one-tap ON only (techs); turning it OFF is office/admin-only, so no OFF
+ *     control is rendered — a DND-on thread shows a read-only state.
  * ════════════════════════════════════════════════
  */
 import React, { useRef, useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import { jobHref } from '@/components/tech/v2/nav';
 import { useThread } from './useThread';
-import { groupMessagesByDay } from './msgsSelectors';
+import { groupMessagesByDay, isMultiConversation, recipientCount } from './msgsSelectors';
 import { dayLabel } from './msgDateUtils';
 import Composer from './Composer';
 
@@ -45,13 +52,22 @@ function IconBack(props) {
 function IconDown(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>);
 }
+function IconChevron(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="6 9 12 15 18 9" /></svg>);
+}
+function IconBriefcase(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>);
+}
+function IconMute(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M18.63 13A17.89 17.89 0 0 1 18 8" /><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" /><path d="M18 8a6 6 0 0 0-9.33-5" /><line x1="1" y1="1" x2="23" y2="23" /></svg>);
+}
 
 function cleanName(s) { return (s || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
-export default function ThreadView({ convId, conv, active, onBack, scrollRef }) {
+export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, scrollRef }) {
   const { t } = useTranslation('msgs');
   const {
-    messages, isColdStart, hasMore, loadingEarlier, loadEarlier, error,
+    messages, isColdStart, hasMore, loadingEarlier, loadEarlier, error, refetch,
     sending, send, retry,
   } = useThread(convId, { active });
 
@@ -59,10 +75,12 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
 
   const [atBottom, setAtBottom] = useState(true);
   const [newInThread, setNewInThread] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
   const atBottomRef = useRef(true);
   const prevLastId = useRef(undefined);
   const justOpened = useRef(true);
   const prependAnchor = useRef(null);
+  const lastScrollTop = useRef(0);
   const rootRef = useRef(null);
 
   // Keyboard lift (active-gated). Writes a PANE-SCOPED var on the nearest .tv2-msgs-pane
@@ -97,11 +115,13 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  const isMulti = isMultiConversation(conv);
   const contact = useMemo(() => {
     const parts = conv?.conversation_participants || [];
     const p = parts.find((x) => x.role === 'primary') || parts[0];
     return p?.contacts || null;
   }, [conv]);
+  const contactPhone = contact?.phone || conv?.conversation_participants?.[0]?.phone || '';
 
   const items = useMemo(() => groupMessagesByDay(messages), [messages]);
 
@@ -115,7 +135,8 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
     requestAnimationFrame(() => { if (!smooth) go(); });
   }, [scrollRef]);
 
-  // Scroll handler: near-bottom tracking + auto load-earlier near the top (anchored).
+  // Scroll handler: near-bottom tracking + auto load-earlier near the top (anchored) +
+  // dismiss the keyboard when the tech scrolls UP to read history.
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -123,6 +144,12 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
     atBottomRef.current = near;
     setAtBottom(near);
     if (near) setNewInThread(0);
+    // Blur-on-scroll-up: an upward drag past a small threshold dismisses the keyboard.
+    if (el.scrollTop < lastScrollTop.current - 24) {
+      const ae = document.activeElement;
+      if (ae && typeof ae.blur === 'function' && ae.tagName === 'TEXTAREA') ae.blur();
+    }
+    lastScrollTop.current = el.scrollTop;
     if (el.scrollTop < 80 && hasMore && !loadingEarlier && prependAnchor.current == null) {
       prependAnchor.current = el.scrollHeight;
       loadEarlier();
@@ -165,24 +192,82 @@ export default function ThreadView({ convId, conv, active, onBack, scrollRef }) 
   }, [messages, scrollToBottom]);
 
   const showLoader = isColdStart && messages.length === 0;
+  const dnd = !!contact?.dnd;
+
+  const onDndTap = () => {
+    if (!contact?.id || dnd) return;
+    onEnableDnd?.(contact.id, contactPhone);
+  };
 
   return (
     <div className="tv2-msgs-thread" ref={rootRef}>
-      {/* Fixed top bar (sticky inside the scroller). */}
+      {/* Fixed top bar (sticky inside the scroller). Title toggles the info panel. */}
       <header className="tv2-msgs-thread__bar">
         <button type="button" className="tv2-msgs-thread__back" aria-label={t('thread.back')} onClick={onBack}>
           <IconBack width={24} height={24} />
         </button>
-        <div className="tv2-msgs-thread__title">{cleanName(conv?.title)}</div>
+        <button
+          type="button"
+          className="tv2-msgs-thread__titlebtn"
+          aria-expanded={showInfo}
+          onClick={() => setShowInfo((v) => !v)}
+        >
+          <span className="tv2-msgs-thread__title">{cleanName(conv?.title)}</span>
+          <span className="tv2-msgs-thread__subline">
+            {isMulti && (
+              <span className="tv2-msgs-typebadge">
+                {t(`thread.type.${conv.type}`)} · {t('thread.recipients', { count: recipientCount(conv) })}
+              </span>
+            )}
+            {dnd && <span className="tv2-msgs-dndchip"><IconMute width={11} height={11} /> {t('thread.dndOn')}</span>}
+            <IconChevron className={`tv2-msgs-thread__caret${showInfo ? ' open' : ''}`} width={14} height={14} />
+          </span>
+        </button>
         <div className="tv2-msgs-thread__bar-spacer" aria-hidden="true" />
       </header>
+
+      {/* Info panel — phone, DND, linked-job chip. Inline expandable (no modal). */}
+      {showInfo && (
+        <div className="tv2-msgs-info">
+          {contactPhone && (
+            <a className="tv2-msgs-info__row" href={`tel:${contactPhone}`}>
+              <span className="tv2-msgs-info__label">{t('info.phone')}</span>
+              <span className="tv2-msgs-info__value">{contactPhone}</span>
+            </a>
+          )}
+          {isMulti && (
+            <div className="tv2-msgs-info__row">
+              <span className="tv2-msgs-info__label">{t(`thread.type.${conv.type}`)}</span>
+              <span className="tv2-msgs-info__value">{t('thread.recipients', { count: recipientCount(conv) })}</span>
+            </div>
+          )}
+          {conv?.job_id && (
+            <Link className="tv2-msgs-info__chip" to={jobHref(conv.job_id)}>
+              <IconBriefcase width={16} height={16} />
+              {t('info.viewJob')}
+            </Link>
+          )}
+          {!isMulti && contact?.id && (
+            dnd ? (
+              <div className="tv2-msgs-info__dnd on"><IconMute width={16} height={16} /> {t('info.dndOnState')}</div>
+            ) : (
+              <button type="button" className="tv2-msgs-info__dnd" onClick={onDndTap}>
+                <IconMute width={16} height={16} /> {t('info.enableDnd')}
+              </button>
+            )
+          )}
+        </div>
+      )}
 
       {/* Message body — flex column so bubble align-self resolves. */}
       <div className="tv2-msgs-thread__body">
         {showLoader ? (
           <div className="tv2-msgs-thread__loading">{t('states.loading')}</div>
         ) : error && messages.length === 0 ? (
-          <div className="tv2-msgs-thread__empty">{t('states.error')}</div>
+          <div className="tv2-msgs-thread__error">
+            <div className="tv2-msgs-thread__empty">{t('states.error')}</div>
+            <button type="button" className="tv2-msgs-retry-btn" onClick={() => refetch()}>{t('states.retry')}</button>
+          </div>
         ) : messages.length === 0 ? (
           <div className="tv2-msgs-thread__empty">{t('thread.empty')}</div>
         ) : (

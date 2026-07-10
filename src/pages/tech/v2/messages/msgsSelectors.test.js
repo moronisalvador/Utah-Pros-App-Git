@@ -26,6 +26,8 @@ import {
   appendMessageToPages, patchMessageInPages, dayKeyOf, groupMessagesByDay,
   convoUnread, mergeConvoIntoList, hasConversation,
   markPendingByMatch, dropByClientId,
+  setConvoUnreadInData, isMultiConversation, recipientCount, summarizeSendResult,
+  groupTemplates,
 } from './msgsSelectors.js';
 
 // A server row as get_tech_conversations / messages returns it (created_at ISO).
@@ -201,5 +203,85 @@ describe('deep-link miss path (mergeConvoIntoList)', () => {
     const out = mergeConvoIntoList(list, { id: 'c1', title: 'A+', sort_key: '2026-07-09T10:01:00Z' });
     expect(out.map((c) => c.id)).toEqual(['c2', 'c1']);
     expect(out.find((c) => c.id === 'c1').title).toBe('A+');
+  });
+});
+
+// ─── B2 additions ──────────────────────────────────────────────────────────────
+
+describe('B2 · setConvoUnreadInData (mark read/unread + badge)', () => {
+  const data = {
+    conversations: [
+      { id: 'c1', unread_count: 3 },
+      { id: 'c2', unread_count: 0 },
+    ],
+    unread_total: 5, // c1 has 3, other pages carry 2 more
+  };
+
+  it('mark-read (0) clears the row and drops unread_total by that delta', () => {
+    const out = setConvoUnreadInData(data, 'c1', 0);
+    expect(out.conversations.find((c) => c.id === 'c1').unread_count).toBe(0);
+    expect(out.unread_total).toBe(2);
+  });
+
+  it('mark-unread (1) raises the row and bumps unread_total by the delta', () => {
+    const out = setConvoUnreadInData(data, 'c2', 1);
+    expect(out.conversations.find((c) => c.id === 'c2').unread_count).toBe(1);
+    expect(out.unread_total).toBe(6);
+  });
+
+  it('returns the SAME reference when nothing changes (no needless notify)', () => {
+    expect(setConvoUnreadInData(data, 'c2', 0)).toBe(data);      // already 0
+    expect(setConvoUnreadInData(data, 'missing', 1)).toBe(data); // not present
+    expect(setConvoUnreadInData(null, 'c1', 0)).toBe(null);
+  });
+
+  it('clamps unread_total at 0', () => {
+    const skewed = { conversations: [{ id: 'c1', unread_count: 3 }], unread_total: 1 };
+    expect(setConvoUnreadInData(skewed, 'c1', 0).unread_total).toBe(0);
+  });
+});
+
+describe('B2 · group/broadcast helpers', () => {
+  const parts = (n) => Array.from({ length: n }, (_, i) => ({ contact_id: `p${i}`, is_active: true }));
+
+  it('isMultiConversation is true for group/broadcast only', () => {
+    expect(isMultiConversation({ type: 'group' })).toBe(true);
+    expect(isMultiConversation({ type: 'broadcast' })).toBe(true);
+    expect(isMultiConversation({ type: 'direct' })).toBe(false);
+    expect(isMultiConversation(null)).toBe(false);
+  });
+
+  it('recipientCount counts active participants', () => {
+    expect(recipientCount({ conversation_participants: parts(3) })).toBe(3);
+    const mixed = { conversation_participants: [{ is_active: true }, { is_active: false }, { is_active: true }] };
+    expect(recipientCount(mixed)).toBe(2);
+    expect(recipientCount({})).toBe(0);
+  });
+
+  it('summarizeSendResult tallies sent / blocked / failed from the twilio[] array', () => {
+    const twilio = [
+      { sid: 'SM1', contact_id: 'a' },                 // sent
+      { skipped: true, code: 'DND_ACTIVE', to: 'b' },  // blocked
+      { skipped: true, code: 'NO_CONSENT', to: 'c' },  // blocked
+      { error: 'boom', error_code: '30006', to: 'd' }, // failed
+    ];
+    expect(summarizeSendResult(twilio)).toEqual({ total: 4, sent: 1, blocked: 2, failed: 1 });
+    expect(summarizeSendResult([])).toEqual({ total: 0, sent: 0, blocked: 0, failed: 0 });
+    expect(summarizeSendResult(undefined)).toEqual({ total: 0, sent: 0, blocked: 0, failed: 0 });
+  });
+});
+
+describe('B2 · groupTemplates', () => {
+  it('groups by category, preserving first-seen order, blank category last-of-its-own', () => {
+    const rows = [
+      { id: 't1', title: 'A', category: 'Greetings' },
+      { id: 't2', title: 'B', category: 'Scheduling' },
+      { id: 't3', title: 'C', category: 'Greetings' },
+      { id: 't4', title: 'D', category: '' },
+    ];
+    const groups = groupTemplates(rows);
+    expect(groups.map((g) => g.category)).toEqual(['Greetings', 'Scheduling', '']);
+    expect(groups[0].items.map((t) => t.id)).toEqual(['t1', 't3']);
+    expect(groupTemplates(null)).toEqual([]);
   });
 });
