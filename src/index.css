@@ -11023,7 +11023,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   border-radius: 22px;
   background: var(--bg-secondary);
 }
-.tv2-msgs-input-wrap:focus-within { border-color: var(--accent); background: var(--bg-primary); }
+/* Keep the input pill a STABLE gray fill on focus (iMessage-style) — only the border
+   brightens. Swapping the fill to --bg-primary made it blend into the white composer
+   bar on focus (owner bake report 2026-07-10). */
+.tv2-msgs-input-wrap:focus-within { border-color: var(--accent); }
 .tv2-msgs-input {
   flex: 1;
   min-width: 0;
