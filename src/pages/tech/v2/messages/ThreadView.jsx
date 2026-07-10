@@ -38,7 +38,6 @@
 import React, { useRef, useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '@/contexts/AuthContext';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import { jobHref } from '@/components/tech/v2/nav';
 import { useThread } from './useThread';
@@ -71,12 +70,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     sending, send, retry,
   } = useThread(convId, { active });
 
-  const { employee } = useAuth();
-
   const [atBottom, setAtBottom] = useState(true);
   const [newInThread, setNewInThread] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
-  const [kbDbg, setKbDbg] = useState(''); // TEMP instrumentation (owner-only pane) — remove after calibration
   const atBottomRef = useRef(true);
   const prevLastId = useRef(undefined);
   const justOpened = useRef(true);
@@ -111,8 +107,6 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
       const lift = raw > 4 ? raw : 0;
       pane.style.setProperty('--tv2-msgs-kb', `${lift}px`);
       pane.classList.toggle('tv2-msgs-kb-open', kbOpen);
-      // TEMP instrumentation (remove after calibration): live viewport numbers.
-      setKbDbg(`base${Math.round(baseline)} vv${Math.round(vh)} oT${Math.round(vv.offsetTop)} inset${Math.round(kbInset)} lift${lift} ${kbOpen ? 'OPEN' : 'closed'}`);
       if (kbOpen && atBottomRef.current) scrollToBottom(false);
     };
     vv.addEventListener('resize', onResize);
@@ -316,11 +310,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
             {t('thread.newCount', { count: newInThread })}
           </button>
         )}
-        {kbDbg && <div className="tv2-msgs-kbdebug">{kbDbg}</div>}
         <Composer
           convId={convId}
           contact={contact}
-          employee={employee}
           onSend={send}
           sending={sending}
         />

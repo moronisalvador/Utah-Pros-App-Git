@@ -10880,19 +10880,6 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-thread-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .tv2-msgs-thread-scroll { min-height: 0; }
 
-/* TEMP instrumentation (owner-only pane) — live viewport numbers docked right above
-   the composer so they stay visible (and stable) with the keyboard up. Remove after
-   calibration. */
-.tv2-msgs-kbdebug {
-  padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.82);
-  color: #34d399;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-}
-
 .tv2-msgs-thread { display: flex; flex-direction: column; min-height: 100%; background: var(--bg-secondary); }
 
 .tv2-msgs-thread__bar {

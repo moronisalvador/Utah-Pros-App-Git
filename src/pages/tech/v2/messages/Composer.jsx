@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   The box at the bottom of a conversation where the tech types a reply and taps Send.
- *   It grows as you type (up to a few lines), sends on Enter, remembers a half-typed
- *   message per conversation, and shows a live "how many texts this will cost" counter.
+ *   It grows as you type (up to a few lines), sends on Enter, and remembers a half-typed
+ *   message per conversation.
  *   The "+" opens a small sheet with three tools: attach photos (up to five, shown as
  *   thumbnails while they upload), drop in a saved template, or switch to an internal
  *   note. If the contact has Do Not Disturb on it shows a banner and blocks sending a
@@ -18,8 +18,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-i18next
- *   Internal:  @/components/conversations/SegmentCounter, ./messageUtils drafts,
- *              ./useComposerAttachments (MMS tray), ./useTemplates (canned replies)
+ *   Internal:  ./messageUtils drafts, ./useComposerAttachments (MMS tray),
+ *              ./useTemplates (canned replies)
  *   Data:      reads/writes → localStorage draft + Supabase Storage (attachments, via the
  *              hook); the send itself goes through ThreadView → useThread → the worker.
  *
@@ -36,7 +36,6 @@
  */
 import React, { useState, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import SegmentCounter from '@/components/conversations/SegmentCounter';
 import { getDraft, setDraft, clearDraft } from '@/components/conversations/messageUtils';
 import { useComposerAttachments } from './useComposerAttachments';
 import { useTemplates } from './useTemplates';
@@ -62,7 +61,7 @@ function IconX(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 }
 
-export default function Composer({ convId, contact, employee, onSend, sending }) {
+export default function Composer({ convId, contact, onSend, sending }) {
   const { t } = useTranslation('msgs');
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
@@ -84,12 +83,6 @@ export default function Composer({ convId, contact, employee, onSend, sending })
 
   const dnd = !!contact?.dnd;
   const blockedByDnd = dnd && !isNote;
-
-  // Sender-name prefix the server prepends ("Jane: ") counts toward the segment total.
-  const prefixLen = useMemo(() => {
-    if (isNote || !employee?.full_name) return 0;
-    return `${employee.full_name}: `.length;
-  }, [isNote, employee]);
 
   // Draft is seeded lazily from the initial state above. ThreadView is keyed by
   // conversation id, so this Composer remounts per thread — convId never changes within
@@ -295,7 +288,6 @@ export default function Composer({ convId, contact, employee, onSend, sending })
             rows={1}
             aria-label={isNote ? t('composer.note') : t('composer.placeholder')}
           />
-          {text.trim() && <SegmentCounter text={isNote ? '' : text} prefixLen={prefixLen} />}
         </div>
 
         <button
