@@ -2,6 +2,7 @@
   "list": {
     "title": "Messages",
     "empty": "No conversations yet",
+    "noMatch": "No matches",
     "searchPlaceholder": "Search messages"
   },
   "filters": {
@@ -13,13 +14,21 @@
   },
   "thread": {
     "back": "Back",
-    "loadEarlier": "Load earlier messages",
-    "jumpToLatest": "Jump to latest"
+    "empty": "No messages yet",
+    "loadEarlier": "Pull to load earlier",
+    "loadingEarlier": "Loading earlier…",
+    "jumpToLatest": "Jump to latest",
+    "newCount_one": "{{count}} new message",
+    "newCount_other": "{{count}} new messages"
   },
   "composer": {
     "placeholder": "Message",
+    "notePlaceholder": "Internal note (not sent)",
     "send": "Send",
-    "note": "Internal note"
+    "note": "Internal note",
+    "moreActions": "More actions",
+    "dndBlock": "Do Not Disturb is on — texting is blocked",
+    "dndNote": "Do Not Disturb is on — you can still add an internal note"
   },
   "states": {
     "loading": "Loading messages…",
