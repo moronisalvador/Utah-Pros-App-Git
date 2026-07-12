@@ -52,6 +52,11 @@
  *     (posts the note to Encircle).
  *   - resumeDraft() forces a full window.location.reload() to fully reset state
  *     rather than relying on the bootstrap effect to re-hydrate.
+ *   - Cold-relaunch recovery: iOS/Capacitor can purge the webview when the tech
+ *     switches to another app (e.g. the calculator) and cold-reload at the start
+ *     URL, dropping the ?id. A durable 'scopesheet:active' pointer lets the
+ *     bootstrap effect jump back into the last active draft (pickResumeDraftId)
+ *     so in-progress work reappears instead of a blank sheet.
  *   - This file defines several helper components (EncircleSearchModal,
  *     ReviewScreen, ResultScreen) and pure builders (buildEmailHTML,
  *     buildNoteText) above the default-exported TechDemoSheet page.
@@ -62,6 +67,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { pickResumeDraftId } from './scopeSheetRecovery';
 
 // Schema-driven renderer + design tokens are shared with the desktop builder.
 import {
@@ -96,6 +102,32 @@ function clearDraftMirror(id) {
     localStorage.removeItem(mirrorKeyFor(id));
     localStorage.removeItem(MIRROR_PREFIX + 'pending');
   } catch { /* ignore */ }
+}
+
+// ─── SECTION: Active-draft pointer (cold-relaunch recovery) ──────────────
+// The mirror above is keyed by the draft's row id, but that id only lives in
+// the ?id URL param. iOS/Capacitor purges the webview under memory pressure
+// (e.g. the tech leaves to open the calculator app) and cold-reloads at the
+// start URL — dropping ?id, and with it the URL-keyed mirror. So we also keep
+// a durable, id-independent pointer to the LAST active draft. On a fresh load
+// with no ?id, pickResumeDraftId() decides whether to jump back into it so the
+// tech's in-progress work reappears instead of a blank sheet.
+const ACTIVE_KEY = 'scopesheet:active';
+const ACTIVE_TTL_MS = 24 * 60 * 60 * 1000; // only auto-resume drafts touched in the last 24h
+function readActiveDraft() {
+  try { const s = localStorage.getItem(ACTIVE_KEY); return s ? JSON.parse(s) : null; }
+  catch { return null; }
+}
+function writeActiveDraft(id, meta) {
+  try {
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify({
+      id: id || null, ts: Date.now(),
+      jobId: meta?.jobId || null, jobNumber: meta?.jobNumber || null,
+    }));
+  } catch { /* best-effort */ }
+}
+function clearActiveDraft() {
+  try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
 }
 
 // ─── SECTION: Encircle search modal (component) ──────────────
@@ -893,6 +925,21 @@ export default function TechDemoSheet() {
       const apptAddress   = searchParams.get('address')    || '';
       const apptInsured   = searchParams.get('insuredName')|| '';
       const apptClaim     = searchParams.get('claimId')    || '';
+
+      // Cold-relaunch recovery: iOS/Capacitor can purge the webview under
+      // memory pressure (the tech switches to another app and back) and reload
+      // at the start URL, dropping the ?id. If we still hold unsynced edits for
+      // the last active draft, jump back into it (?id) so the draft-hydration
+      // path above restores the server row + the freshest local mirror.
+      const active = readActiveDraft();
+      const resumeId = pickResumeDraftId(
+        active,
+        active?.id ? !!readDraftMirror(active.id) : false,
+        { jobId: apptJobId, jobNumber: apptJobNumber },
+        Date.now(), ACTIVE_TTL_MS,
+      );
+      if (resumeId) { setSearchParams({ id: resumeId }, { replace: true }); return; }
+
       if (apptJobId) setJobIdState(apptJobId);
       if (apptJobNumber || apptAddress || apptInsured) {
         setJobInfo(p => ({
@@ -924,7 +971,7 @@ export default function TechDemoSheet() {
       setHydrated(true);
     }
     db.rpc('get_demo_sheet_drafts').then(d => setDrafts(d || [])).catch(() => {});
-  }, [db, searchParams, schema]);
+  }, [db, searchParams, schema, setSearchParams]);
 
   // Default tech to current employee once techs are loaded
   useEffect(() => {
@@ -935,11 +982,14 @@ export default function TechDemoSheet() {
   }, [techs, employee, jobInfo.tech]);
 
   // Mirror the live draft to localStorage on every change — synchronous and
-  // offline-safe, so a failed network save or a crash never loses work.
+  // offline-safe, so a failed network save or a crash never loses work. Also
+  // refresh the durable active-draft pointer so a cold relaunch (which drops
+  // the ?id) can find its way back to this draft (see pickResumeDraftId).
   useEffect(() => {
     if (!hydrated || showResult) return;
     writeDraftMirror(sheetIdRef.current, { rooms, jobInfo, jobData, encircleLinked, encircleRooms, hasSketchDone: sketchAnswer });
-  }, [hydrated, showResult, rooms, jobInfo, jobData, encircleLinked, encircleRooms, sketchAnswer]);
+    writeActiveDraft(sheetIdRef.current, { jobId, jobNumber: jobInfo.jobNumber });
+  }, [hydrated, showResult, rooms, jobInfo, jobData, encircleLinked, encircleRooms, sketchAnswer, jobId]);
 
   // Debounced autosave on any meaningful change (with status + retry).
   useEffect(() => {
@@ -1080,6 +1130,11 @@ export default function TechDemoSheet() {
     setSending(true);
     try {
       await flushSave({ status: 'draft' });
+      // Persisted + leaving deliberately — drop the local mirror + active
+      // pointer so re-opening the tool starts fresh (the draft stays available
+      // in the "Resume draft" banner).
+      clearDraftMirror(sheetIdRef.current);
+      clearActiveDraft();
       toast('Draft saved', 'success');
       navigate(-1);
     } catch (e) {
@@ -1101,6 +1156,7 @@ export default function TechDemoSheet() {
       await flushSave({ status: 'submitted' });
       saveOk = true;
       clearDraftMirror(sheetIdRef.current); // submitted + persisted — drop the local copy
+      clearActiveDraft();                    // and the cold-relaunch pointer
     } catch (e) {
       saveErr = e?.message || 'Failed to save';
     }
@@ -1226,6 +1282,7 @@ export default function TechDemoSheet() {
     setSubmitResult(null);
     setShowResult(false);
     clearDraftMirror(sheetIdRef.current); // also drops the 'pending' mirror
+    clearActiveDraft();                   // starting over — forget the last active draft
     setSaveState('idle');
     applySheetId(null);
     setSearchParams({}, { replace: true });
