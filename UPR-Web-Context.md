@@ -1491,16 +1491,6 @@ doc-category keys unchanged). Two new schema capabilities:
   (`scopesheet:draft:<id|pending>`) on every change; a header status shows Saving/Saved/Failed;
   failed saves retry (~8s) and the mirror is restored on next load (cleared on confirmed save /
   submit). Prevents field data loss on poor signal.
-- **Cold-relaunch recovery (2026-07-12)** — the mirror above is keyed by the draft id, which lives
-  only in the `?id` URL param; iOS/Capacitor purges the webview under memory pressure (tech opens
-  the calculator app and comes back) and cold-reloads at the start URL, dropping `?id` and orphaning
-  the freshest edits. A durable, id-independent pointer `scopesheet:active` (`{id,ts,jobId,jobNumber}`,
-  24h TTL) is written on every change; on a fresh no-`id` load the bootstrap effect calls the pure,
-  unit-tested `pickResumeDraftId()` (`src/pages/tech/scopeSheetRecovery.js`) and, if unsynced edits
-  exist, redirects to `?id=<draft>` so the normal draft-hydration path restores server row + mirror
-  (the "Restored unsaved changes" toast fires). Appointment-prefill entries only auto-resume a draft
-  belonging to the SAME job (jobId/jobNumber match) so re-opening a different appointment's sheet
-  can't cross drafts. Pointer cleared on submit / Save&Close / Start New.
 - **Perf:** page routes are `React.lazy` + `Suspense` code-split (App.jsx) — initial JS dropped
   from one ~1.9 MB chunk to ~335 KB + per-page chunks. Draft load fetches `get_demo_sheet` once
   (deduped between the schema + bootstrap effects); job totals are `useMemo`-ized.
