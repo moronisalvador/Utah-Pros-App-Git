@@ -11514,9 +11514,20 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    F-S2 does not edit App.jsx/Layout). The sticky chrome is named so it stays put and
    only the content region transitions (reinforces page-lifecycle.md: shell stays). */
 @view-transition { navigation: auto; }
-/* Persistent shell chrome: named snapshots so they do NOT cross-fade with content. */
-.sidebar, .bottom-bar, .tech-nav, .topnav, .tech-header, .tv2-topbar {
-  view-transition-name: var(--vt-shell, none);
+/* Persistent shell chrome: UNIQUE named snapshots so each stays static (identical
+   old/new snapshot → no visible animation) and ONLY the content region (root)
+   transitions. Each name must be unique among on-screen elements. */
+.sidebar     { view-transition-name: vt-sidebar; }
+.bottom-bar  { view-transition-name: vt-bottombar; }
+.tech-nav    { view-transition-name: vt-technav; }
+.topnav      { view-transition-name: vt-topnav; }
+.tech-header { view-transition-name: vt-techheader; }
+.tv2-topbar  { view-transition-name: vt-tv2topbar; }
+/* Content (root) cross-fade — token-timed, GPU/opacity, degrades gracefully. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-duration-base);
+  animation-timing-function: var(--motion-ease-standard);
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),

@@ -356,6 +356,7 @@ export default function TechLayout() {
             <Link
               key={tab.key}
               to={tab.path}
+              viewTransition
               className={`tech-nav-tab${active ? ' active' : ''}`}
             >
               <tab.Icon filled={active} />

@@ -62,7 +62,7 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <IconMenu style={{ width: 20, height: 20 }} />
       </button>
 
-      <NavLink to="/" end className="topnav-logo-link" aria-label="Home">
+      <NavLink to="/" end viewTransition className="topnav-logo-link" aria-label="Home">
         <span className="topnav-logo">U</span>
       </NavLink>
 
@@ -71,6 +71,7 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
           <NavLink
             key={item.key}
             to={item.path}
+            viewTransition
             end={item.end}
             className={({ isActive }) => `topnav-link${isActive ? ' active' : ''}`}
           >
@@ -86,14 +87,14 @@ export default function TopNav({ unreadCount = 0, onAction, onMenuClick, showBel
         <GlobalSearch />
         <NewMenu onAction={onAction} />
         {showBell && <NotificationBell align="right" />}
-        <NavLink to="/help" className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
+        <NavLink to="/help" viewTransition className="topnav-icon-btn" title="Help & Guides" aria-label="Help & Guides">
           <IconHelp style={{ width: 18, height: 18 }} />
         </NavLink>
         {/* Gear → settings hub. Matches the Settings nav entry's any-visible-child
             gate (GC3/GC8): shown when the user can reach at least one settings page.
             crm_partner is excluded (Layout's choke point locks them to /crm/* + /help). */}
         {employee?.role !== 'crm_partner' && anySettingsChildVisible(ctx) && (
-          <NavLink to="/settings" className="topnav-icon-btn" title="Settings" aria-label="Settings">
+          <NavLink to="/settings" viewTransition className="topnav-icon-btn" title="Settings" aria-label="Settings">
             <IconSettings style={{ width: 18, height: 18 }} />
           </NavLink>
         )}
