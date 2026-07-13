@@ -8,6 +8,7 @@ import Layout from '@/components/Layout';
 import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import RouteRestorer from '@/components/RouteRestorer';
 import { hideSplash } from '@/lib/nativeAppearance';
 import {
   checkBiometricAvailable,
@@ -599,6 +600,10 @@ export default function App() {
     <ThemeProvider>
       <LanguageProvider>
         <BrowserRouter>
+          {/* Home-screen-PWA eviction recovery: iOS relaunches an evicted PWA at
+              the manifest start_url — this sends the tech back to the screen
+              they were working on. Renders nothing; standalone-mode only. */}
+          <RouteRestorer />
           <BiometricGate>
             <AuthProvider>
               {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}

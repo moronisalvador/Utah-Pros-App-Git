@@ -50,8 +50,9 @@
  *     tables directly: /api/encircle-search, /api/encircle-rooms (Encircle job +
  *     room lookup), /api/send-demo-sheet (emails the sheet), /api/encircle-upload
  *     (posts the note to Encircle).
- *   - resumeDraft() forces a full window.location.reload() to fully reset state
- *     rather than relying on the bootstrap effect to re-hydrate.
+ *   - resumeDraft() re-hydrates IN PLACE (pause mirror/autosave via hydrated=false,
+ *     clear timers/caches, change ?id) — never a window.location.reload(), which
+ *     re-downloads the bundle and reads as a crash to a field tech.
  *   - This file defines several helper components (EncircleSearchModal,
  *     ReviewScreen, ResultScreen) and pure builders (buildEmailHTML,
  *     buildNoteText) above the default-exported TechDemoSheet page.
@@ -1232,9 +1233,20 @@ export default function TechDemoSheet() {
   };
 
   const resumeDraft = (d) => {
+    // In-place resume — NO full reload. A hard reload re-downloads the whole
+    // bundle (slow on field signal) and reads as a crash/refresh to the tech.
+    // Instead: pause the mirror/autosave effects (hydrated=false), clear any
+    // pending timers and the cached row, then change ?id — the schema +
+    // bootstrap effects re-hydrate exactly like a fresh navigation would.
+    clearTimeout(saveTimerRef.current);
+    clearTimeout(retryTimerRef.current);
+    setHydrated(false);
+    loadedRowRef.current = null;
+    applySheetId(null);
+    setShowResult(false);
+    setSubmitResult(null);
+    setSaveState('idle');
     setSearchParams({ id: d.id }, { replace: false });
-    // The bootstrap effect will re-hydrate. Simpler: reload to fully reset state.
-    window.location.reload();
   };
 
   const visibleDrafts = drafts.filter(d => d.id !== sheetId);

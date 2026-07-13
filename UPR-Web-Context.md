@@ -1491,6 +1491,22 @@ doc-category keys unchanged). Two new schema capabilities:
   (`scopesheet:draft:<id|pending>`) on every change; a header status shows Saving/Saved/Failed;
   failed saves retry (~8s) and the mirror is restored on next load (cleared on confirmed save /
   submit). Prevents field data loss on poor signal.
+- **Resume smoothness (2026-07-13)** — two app-wide fixes born from the scope-sheet resume
+  investigation (multi-agent diagnosis; Schedule was the "does nothing on resume" gold standard):
+  (1) **identity-stable authenticated db client** — `src/lib/stableDb.js` `createTokenBoundClient`
+  reads the JWT from a ref per-request; `AuthContext.bindAuthDb()` updates the ref on
+  SIGNED_IN/TOKEN_REFRESHED so the `db` object identity NEVER changes on token renewal → no
+  `[db]`-keyed loader re-runs → pages no longer visibly refetch/reset when the app resumes near
+  the ~1h token boundary (previously TechDemoSheet re-hydrated from the last mirror "saved point"
+  on desktop resume; ClaimPage/TechAppointment flashed skeletons). `db.apiKey` is a getter (live
+  token for storage uploads). Do NOT revert to per-token clients.
+  (2) **home-screen-PWA route restoration** — iOS evicts the standalone PWA in the background and
+  relaunches at manifest `start_url` (/tech); `src/lib/resumeRestore.js` (pure, tested) +
+  `src/components/RouteRestorer.jsx` (in App.jsx inside BrowserRouter) save the last route on every
+  navigation and, standalone-mode only + boot-at-/tech only + <30 min fresh, jump back to the exact
+  URL — so the scope sheet's `?id` + keystroke-level mirror rehydrate mid-task work in place.
+  Also: TechDemoSheet `resumeDraft()` no longer `window.location.reload()`s — it re-hydrates in
+  place (hydrated=false → change `?id` → bootstrap effect).
 - **Perf:** page routes are `React.lazy` + `Suspense` code-split (App.jsx) — initial JS dropped
   from one ~1.9 MB chunk to ~335 KB + per-page chunks. Draft load fetches `get_demo_sheet` once
   (deduped between the schema + bootstrap effects); job totals are `useMemo`-ized.

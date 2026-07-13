@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { realtimeClient } from '@/lib/realtime';
-import { createSupabaseClient, db } from '@/lib/supabase';
+import { db } from '@/lib/supabase';
+import { createTokenBoundClient } from '@/lib/stableDb';
 import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotifications';
 import { setBiometricEnabled } from '@/lib/nativeBiometric';
 import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
@@ -31,8 +32,24 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Create an authenticated DB client when we have a session
+  // Create an authenticated DB client when we have a session.
+  // IDENTITY-STABLE by design: the client object is created ONCE and reads the
+  // current JWT from tokenRef at each request (createTokenBoundClient). Token
+  // renewals update the ref only — they must NOT mint a new client object,
+  // because every page keys its data loader on [db] (CLAUDE.md pattern) and a
+  // new identity would re-run all of them, visibly "resetting" pages right
+  // when the app resumes from background (~hourly TOKEN_REFRESHED).
   const [authDb, setAuthDb] = useState(null);
+  const tokenRef = useRef(null);
+  const stableDbRef = useRef(null);
+  const bindAuthDb = (token) => {
+    tokenRef.current = token;
+    if (!stableDbRef.current) {
+      stableDbRef.current = createTokenBoundClient(() => tokenRef.current);
+    }
+    setAuthDb(stableDbRef.current); // same identity after first call — no-op re-render
+    return stableDbRef.current;
+  };
 
   // ── Bootstrap: check existing session ──
   useEffect(() => {
@@ -80,15 +97,17 @@ export function AuthProvider({ children }) {
           }
           await handleAuthUser(session.user, session.access_token);
         } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
-          // Supabase silently refreshed the JWT — rebuild our fetch client with the new token
-          // Without this, all db calls return 401 after ~1 hour
-          setAuthDb(createSupabaseClient(session.access_token));
+          // Supabase silently refreshed the JWT — swap the token IN PLACE.
+          // Without this, all db calls return 401 after ~1 hour. bindAuthDb
+          // keeps the client's identity stable so no [db]-keyed loader re-runs.
+          bindAuthDb(session.access_token);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setEmployee(null);
           setPermissions([]);
           setFeatureFlags({});
           setEmployeePageAccess({});
+          tokenRef.current = null;
           setAuthDb(null);
         }
       }
@@ -144,9 +163,8 @@ export function AuthProvider({ children }) {
   const handleAuthUser = async (authUser, token) => {
     setUser(authUser);
 
-    // Create authenticated client with the session token
-    const authenticatedDb = createSupabaseClient(token);
-    setAuthDb(authenticatedDb);
+    // Bind the session token to the identity-stable authenticated client
+    const authenticatedDb = bindAuthDb(token);
 
     try {
       // Use the authenticated client — anon client breaks if RLS tightens
@@ -222,6 +240,7 @@ export function AuthProvider({ children }) {
     setPermissions([]);
     setFeatureFlags({});
     setEmployeePageAccess({});
+    tokenRef.current = null;
     setAuthDb(null);
   }, []);
 
@@ -244,7 +263,7 @@ export function AuthProvider({ children }) {
       const emp = employees[0];
       setEmployee(emp);
       setUser({ id: emp.id, email: emp.email }); // Fake user object
-      setAuthDb(createSupabaseClient()); // Uses anon key in dev
+      bindAuthDb(null); // Uses anon key in dev (token-bound client, null token = anon)
       await Promise.all([
         loadPermissions(emp.role),
         loadFeatureFlags(db, emp),
