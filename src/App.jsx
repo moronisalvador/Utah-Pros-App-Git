@@ -9,6 +9,7 @@ import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import RouteRestorer from '@/components/RouteRestorer';
+import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
 import {
   checkBiometricAvailable,
@@ -585,6 +586,29 @@ function BiometricGate({ children }) {
   return children;
 }
 
+// Null-render tracker: keeps html[data-nav] in sync with the router so the
+// directional page-push View Transition (index.css) knows forward vs Back.
+function NavDirectionTracker() {
+  useNavDirection();
+  return null;
+}
+
+// Toggles root-level classes for owner-gated UI previews so their CSS (index.css)
+// activates ONLY when the feature flag is on — instantly reversible in
+// DevTools → Flags, no deploy. Renders nothing. Must live inside <AuthProvider>.
+function UiFlagClasses() {
+  const { isFeatureEnabled } = useAuth();
+  const pageTransitions = isFeatureEnabled('feature:page_transitions');
+  const liquidGlass = isFeatureEnabled('feature:liquid_glass');
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-vt', !!pageTransitions);
+  }, [pageTransitions]);
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-glass', !!liquidGlass);
+  }, [liquidGlass]);
+  return null;
+}
+
 export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
@@ -600,12 +624,18 @@ export default function App() {
     <ThemeProvider>
       <LanguageProvider>
         <BrowserRouter>
+          {/* Sets html[data-nav]=forward|back each navigation so the directional
+              View-Transition page push (index.css) reverses on Back. Renders nothing. */}
+          <NavDirectionTracker />
           {/* Home-screen-PWA eviction recovery: iOS relaunches an evicted PWA at
               the manifest start_url — this sends the tech back to the screen
               they were working on. Renders nothing; standalone-mode only. */}
           <RouteRestorer />
           <BiometricGate>
             <AuthProvider>
+              {/* Owner-gated preview classes (page transitions / liquid glass) —
+                  reads feature flags, so must be inside AuthProvider. */}
+              <UiFlagClasses />
               {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
             </AuthProvider>
           </BiometricGate>
