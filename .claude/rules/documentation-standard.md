@@ -78,11 +78,23 @@ the return statement, outside the markup.
 Only on non-obvious logic. Explain WHY, not what. Never comment
 self-explanatory lines (no `// set loading to true`).
 
-## Current adoption (as of this audit)
+## Current adoption
 
 Coverage is partial by design — this only applies to new files and files substantially edited,
-not a backfill mandate. Last measured: ~105/191 files in `src/` (55%), ~15/58 in `functions/` (26%)
-have the header. Re-measure with `grep -rl "FILE:" src --include=*.jsx --include=*.js | wc -l`.
+not a backfill mandate. Last measured 2026-07-13: **~307/381 in `src/` (81%)**, **~62/105 in
+`functions/` (59%)**. Re-measure (don't trust this number — the file that forbids trusting memory must
+not itself go stale):
+```
+echo "src:      $(grep -rl 'FILE:' src --include=*.jsx --include=*.js | wc -l) / $(find src -name '*.jsx' -o -name '*.js' | wc -l)"
+echo "functions:$(grep -rl 'FILE:' functions --include=*.js | wc -l) / $(find functions -name '*.js' | wc -l)"
+```
+
+## Standards-doc stamps (addendum — UX-Quality F-S1, 2026-07-13)
+
+Every file in `.claude/rules/` and the design-system doc carries a **Last-verified** date; when a session
+relies on or changes a standard, it bumps that stamp as part of close-out (`close-out-standard.md`). A
+superseded rule is struck in place with a `superseded-by:` pointer, never silently rewritten (preserves
+history).
 
 ## SQL migration header (addendum — DB-Foundation P7, 2026-07-08)
 

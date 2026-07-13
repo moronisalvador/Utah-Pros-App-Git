@@ -295,15 +295,37 @@ export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
+// The scheduler authenticates with a shared secret (same shape as
+// process-scheduled / run-automations) — Cloudflare Pages exposes no Cron UI, so
+// this HTTP entry is the manual/scheduled trigger and must not be public: it
+// performs irreversible storage deletes. The native scheduled() path below is
+// OS-invoked and needs no secret.
+async function checkCronSecret(request, db) {
+  const provided = request.headers.get('x-webhook-secret');
+  if (!provided) return false;
+  try {
+    const [row] = await db.select('integration_config', 'key=eq.cron_worker_secret&select=value&limit=1');
+    return !!row?.value && row.value === provided;
+  } catch {
+    return false;
+  }
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env);
+  if (!(await checkCronSecret(request, db))) {
+    return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  }
   const u = new URL(request.url);
   const daysRaw = parseInt(u.searchParams.get('days') || '90', 10);
+  // Floor the retention window at 30 days so a caller can never purge recent
+  // media (a small/zero value would delete active feedback attachments).
+  const days = Math.max(30, Number.isFinite(daysRaw) ? daysRaw : 90);
   const dryRun = ['1', 'true', 'yes'].includes((u.searchParams.get('dry_run') || '').toLowerCase());
 
   const result = await runPurge(db, makeStorageDelete(env), {
-    days: Number.isFinite(daysRaw) ? daysRaw : 90,
+    days,
     dryRun,
     now: () => new Date(),
     storageList: makeStorageList(env),

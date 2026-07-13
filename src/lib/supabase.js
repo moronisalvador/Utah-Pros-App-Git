@@ -32,6 +32,12 @@ function fetchWithTimeout(url, options) {
 
 // Retries a fetch once on network failure or timeout (not on 4xx/5xx).
 // Gives field techs on weak signal a transparent second chance.
+//
+// SAFETY: only ever wrap idempotent GETs (select) in this. A timeout does NOT
+// mean the server didn't process the request — it means we didn't get the
+// response. Re-sending a non-idempotent write (insert/update/delete/rpc) can
+// duplicate it (double payment, double appointment). Writers below call
+// fetchWithTimeout directly (no retry) for exactly this reason.
 async function fetchWithRetry(url, options) {
   try {
     return await fetchWithTimeout(url, options);
@@ -61,7 +67,7 @@ export function createSupabaseClient(token) {
     },
 
     async insert(table, data) {
-      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
@@ -74,7 +80,7 @@ export function createSupabaseClient(token) {
     },
 
     async update(table, filter, data) {
-      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(data),
@@ -88,7 +94,7 @@ export function createSupabaseClient(token) {
     },
 
     async delete(table, filter) {
-      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
         method: 'DELETE',
         headers,
       });
@@ -102,7 +108,7 @@ export function createSupabaseClient(token) {
     },
 
     async rpc(fn, params = {}) {
-      const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      const res = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(params),
