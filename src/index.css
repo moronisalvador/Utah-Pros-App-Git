@@ -63,17 +63,8 @@
 
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
-
-  /* Motion — full standard + recipes in UPR-Design-System.md "Animation & Motion Standards".
-     Compose duration + easing: `transition: transform var(--dur-2) var(--ease-out)`.
-     Animate ONLY transform/opacity/filter for the 120fps compositor path (iOS 26 ProMotion);
-     layout props (height/width/max-height/padding/top) are main-thread → 60fps ceiling. */
-  --dur-1: 120ms;   /* micro — button press, toggle, hover, chip */
-  --dur-2: 180ms;   /* base  — menus, popovers, sheets, tooltips */
-  --dur-3: 260ms;   /* large — slide-in panels, page/section transitions */
-  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);       /* ENTER — the house iOS-like ease-out */
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);            /* EXIT  — accelerate away */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful overshoot — pop/check/badge */
+  /* Motion tokens/standard: .claude/rules/motion-standard.md (UX-Quality F-S2 owns the
+     --motion-duration-* / --motion-ease-* catalog). Use tokens, never bespoke literals. */
 
   /* Safe area for notched iPhones */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -11021,11 +11012,11 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   padding: 0 6px;
   border-bottom: 1px solid transparent;
   pointer-events: none;
-  /* Recipe C (collapse that pushes content) — layout-bound, so 60fps; max-height is set
-     CLOSE to the real content height so the ease-out tail isn't wasted. Motion tokens +
-     recipe: UPR-Design-System.md "Animation & Motion Standards". */
-  transition: max-height var(--dur-2) var(--ease-out), opacity var(--dur-1) var(--ease-out),
-              padding var(--dur-2) var(--ease-out), border-bottom-color var(--dur-2) var(--ease-out);
+  /* Collapse that pushes the composer up — layout-bound (max-height), so 60fps; max-height
+     is set CLOSE to the real content height so the ease-out tail isn't wasted. Uses the
+     existing --transition tokens (motion-standard.md — no bespoke duration literals). */
+  transition: max-height var(--transition-base), opacity var(--transition-fast),
+              padding var(--transition-base), border-bottom-color var(--transition-base);
 }
 .tv2-msgs-actions-sheet.open {
   max-height: 160px;
