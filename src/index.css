@@ -11527,10 +11527,19 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    the content region (root) moves. Direction is driven by html[data-nav], set per
    navigation by useNavDirection (src/lib/useNavDirection.js). Default (attribute
    absent → unsupported/first paint) is forward. transform/opacity only (GPU). */
-html::view-transition-old(root) { animation: vtPushOutLeft  var(--motion-duration-base) var(--motion-ease-standard)   both; }
-html::view-transition-new(root) { animation: vtPushInRight  var(--motion-duration-base) var(--motion-ease-decelerate) both; }
-html[data-nav="back"]::view-transition-old(root) { animation: vtPushOutRight var(--motion-duration-base) var(--motion-ease-standard)   both; }
-html[data-nav="back"]::view-transition-new(root) { animation: vtPushInLeft   var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+/* Gated behind the `feature:page_transitions` flag — UiFlagClasses (src/App.jsx)
+   toggles html.ui-vt from isFeatureEnabled(). Owner-only + instantly reversible in
+   DevTools → Flags. Flag OFF → the kill-switch below zeroes every view-transition
+   animation, so navigation is an instant swap (no push, no default cross-fade). */
+html.ui-vt::view-transition-old(root) { animation: vtPushOutLeft  var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html.ui-vt::view-transition-new(root) { animation: vtPushInRight  var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+html.ui-vt[data-nav="back"]::view-transition-old(root) { animation: vtPushOutRight var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html.ui-vt[data-nav="back"]::view-transition-new(root) { animation: vtPushInLeft   var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+/* Flag OFF (or an unsupported browser): suppress ALL page-transition animation so
+   the swap is instant — no push and no UA default cross-fade. */
+html:not(.ui-vt)::view-transition-group(*),
+html:not(.ui-vt)::view-transition-old(*),
+html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 @keyframes vtPushInRight  { from { transform: translateX(100%); }             to { transform: translateX(0); } }
 @keyframes vtPushOutLeft  { from { transform: translateX(0); opacity: 1; }    to { transform: translateX(-24%); opacity: .5; } }
 @keyframes vtPushInLeft   { from { transform: translateX(-100%); }            to { transform: translateX(0); } }

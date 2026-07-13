@@ -593,6 +593,22 @@ function NavDirectionTracker() {
   return null;
 }
 
+// Toggles root-level classes for owner-gated UI previews so their CSS (index.css)
+// activates ONLY when the feature flag is on — instantly reversible in
+// DevTools → Flags, no deploy. Renders nothing. Must live inside <AuthProvider>.
+function UiFlagClasses() {
+  const { isFeatureEnabled } = useAuth();
+  const pageTransitions = isFeatureEnabled('feature:page_transitions');
+  const liquidGlass = isFeatureEnabled('feature:liquid_glass');
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-vt', !!pageTransitions);
+  }, [pageTransitions]);
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-glass', !!liquidGlass);
+  }, [liquidGlass]);
+  return null;
+}
+
 export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
@@ -617,6 +633,9 @@ export default function App() {
           <RouteRestorer />
           <BiometricGate>
             <AuthProvider>
+              {/* Owner-gated preview classes (page transitions / liquid glass) —
+                  reads feature flags, so must be inside AuthProvider. */}
+              <UiFlagClasses />
               {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
             </AuthProvider>
           </BiometricGate>
