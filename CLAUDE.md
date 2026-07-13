@@ -85,7 +85,7 @@ supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count d
 .claude/rules/       tech-mobile-ux.md, documentation-standard.md, scope-sheet-rollback.md,
                      database-standard.md, and the UX-Quality laws: page-lifecycle.md,
                      loading-error-states.md, perf-budget.md, workers-standard.md,
-                     close-out-standard.md. Wave-ownership manifests live here while their
+                     close-out-standard.md, motion-standard.md. Wave-ownership manifests live here while their
                      initiative is active; when its LAST phase merges, `git mv` the manifest to
                      `docs/archive/rules/` with a one-line tombstone (keeps the active set honest).
 .claude/commands/    custom slash commands (e.g. /invoice)
