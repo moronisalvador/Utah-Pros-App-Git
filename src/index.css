@@ -11714,3 +11714,88 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .ui-chat-bubble-sent, .ui-chat-bubble-received { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — FROSTED CHROME PROTOTYPE (shell chrome ONLY)
+   ───────────────────────────────────────────────────────────────────────────
+   PROTOTYPE for on-device owner judgment. Layered OVERRIDES only — this block
+   does NOT edit the F-S2 base rules above or the chrome base rules elsewhere;
+   it re-declares only background / backdrop-filter / box-shadow on the three
+   app-shell chrome surfaces so the change is fully reversible (delete this block).
+
+   HONEST platform ceiling (state in the PR): real Apple "Liquid Glass" refraction
+   (SVG feDisplacementMap via `backdrop-filter: url()`) is Chromium-only. Safari /
+   WKWebView (the iPhone target) silently drops the SVG part, so on iPhone this is
+   frosted blur + saturation + a specular edge — NOT literal lensing. Built to that
+   ceiling deliberately. Blur is GPU-heavy → chrome surfaces ONLY (perf-budget.md),
+   never content.
+
+   Token-driven (color-mix off the surface's own bg token) so it adapts to light
+   AND dark with no per-theme fork. Applied to the three real chrome surfaces:
+   .sidebar (desktop rail), .topnav (desktop top bar), .tech-nav (tech bottom nav).
+   .tech-header / .tv2-topbar are intentionally skipped — they have no base rule
+   or JSX usage in this build (only the view-transition line references them).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* GATING: every rule below is scoped to html.ui-glass, toggled by UiFlagClasses
+   (src/App.jsx) from the `feature:liquid_glass` flag — owner-only, instantly
+   reversible in DevTools → Flags. Flag OFF → the class is absent → none of this
+   matches → chrome renders with its normal base styles. */
+
+/* Desktop left rail — stays dark (its --sidebar-bg does not flip with theme), so
+   the translucency is mixed off its OWN token to keep contrast/legibility. */
+html.ui-glass .sidebar {
+  background: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* hairline specular top edge — the "light from above" glass cue (border-right kept) */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+/* Desktop top bar — mixed off --bg-primary so it reads as frosted white glass. */
+html.ui-glass .topnav {
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* border-bottom (base rule) kept; add a specular top highlight for the glass lip */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 60%, transparent);
+}
+
+/* Tech bottom nav — already frosted (blur 12px); bump to the glass recipe. Mixed
+   off --tech-nav-bg, which the tech dark-theme block re-points, so it adapts. The
+   original dark top-separator hairline is preserved and paired with a light inset
+   highlight (the edge facing the content above it) for a subtle beveled lip. */
+html.ui-glass .tech-nav {
+  background: color-mix(in srgb, var(--tech-nav-bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05),
+              inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+}
+
+/* ── Fallback 1: accessibility — user asked for less transparency → go solid. ── */
+@media (prefers-reduced-transparency: reduce) {
+  html.ui-glass .sidebar {
+    background: var(--sidebar-bg);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  html.ui-glass .topnav {
+    background: var(--bg-primary);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  html.ui-glass .tech-nav {
+    background: var(--tech-nav-bg);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05); /* original separator restored */
+  }
+}
+
+/* ── Fallback 2: no backdrop-filter support → solid, so chrome is never a bare,
+   unblurred see-through surface. ── */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.ui-glass .sidebar  { background: var(--sidebar-bg); }
+  html.ui-glass .topnav   { background: var(--bg-primary); }
+  html.ui-glass .tech-nav { background: var(--tech-nav-bg); }
+}
