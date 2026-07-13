@@ -145,8 +145,10 @@ extending the existing `--transition-*`); build `Modal` (role=dialog, focus trap
 `useTwoClickConfirm`, `useLookup`, `usePhotoUpload`+`thumbUrl`. **Motion & transitions
 (`.claude/rules/motion-standard.md`):** wire the native **View Transitions API** for page
 enter/back transitions (`@view-transition{navigation:auto}` + the router's `viewTransition`; retire the 4
-ad-hoc `entering` patterns), give every primitive its standard motion (dropdown/modal/sheet/toast), and
-honor `prefers-reduced-motion` — all driven by the motion tokens so it's tunable in one place. Rewrite
+ad-hoc `entering` patterns), give every primitive AND interaction its standard motion (buttons/press,
+selections/toggles, dropdowns, modals/sheets, toasts, chat sent-received) + paired native haptics
+(`src/lib/nativeHaptics.js`, import-only), refresh-rate-agnostic (no >60fps dependency), and honor
+`prefers-reduced-motion` universally — all driven by the motion tokens so it's tunable in one place. Rewrite
 `UPR-Design-System.md` from inline-hex recipes to component imports (Kit Registry, dark-theme contract, a
 **Motion section = the tunable catalog**, color tables regenerated from code). Ships primitives **with**
 the doc sections — the enforcement demands it.
