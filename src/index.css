@@ -11737,9 +11737,14 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
    or JSX usage in this build (only the view-transition line references them).
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* GATING: every rule below is scoped to html.ui-glass, toggled by UiFlagClasses
+   (src/App.jsx) from the `feature:liquid_glass` flag — owner-only, instantly
+   reversible in DevTools → Flags. Flag OFF → the class is absent → none of this
+   matches → chrome renders with its normal base styles. */
+
 /* Desktop left rail — stays dark (its --sidebar-bg does not flip with theme), so
    the translucency is mixed off its OWN token to keep contrast/legibility. */
-.sidebar {
+html.ui-glass .sidebar {
   background: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -11748,7 +11753,7 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 }
 
 /* Desktop top bar — mixed off --bg-primary so it reads as frosted white glass. */
-.topnav {
+html.ui-glass .topnav {
   background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -11760,7 +11765,7 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
    off --tech-nav-bg, which the tech dark-theme block re-points, so it adapts. The
    original dark top-separator hairline is preserved and paired with a light inset
    highlight (the edge facing the content above it) for a subtle beveled lip. */
-.tech-nav {
+html.ui-glass .tech-nav {
   background: color-mix(in srgb, var(--tech-nav-bg) 82%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -11770,17 +11775,17 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 
 /* ── Fallback 1: accessibility — user asked for less transparency → go solid. ── */
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar {
+  html.ui-glass .sidebar {
     background: var(--sidebar-bg);
     backdrop-filter: none; -webkit-backdrop-filter: none;
     box-shadow: none;
   }
-  .topnav {
+  html.ui-glass .topnav {
     background: var(--bg-primary);
     backdrop-filter: none; -webkit-backdrop-filter: none;
     box-shadow: none;
   }
-  .tech-nav {
+  html.ui-glass .tech-nav {
     background: var(--tech-nav-bg);
     backdrop-filter: none; -webkit-backdrop-filter: none;
     box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05); /* original separator restored */
@@ -11790,7 +11795,7 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 /* ── Fallback 2: no backdrop-filter support → solid, so chrome is never a bare,
    unblurred see-through surface. ── */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sidebar  { background: var(--sidebar-bg); }
-  .topnav   { background: var(--bg-primary); }
-  .tech-nav { background: var(--tech-nav-bg); }
+  html.ui-glass .sidebar  { background: var(--sidebar-bg); }
+  html.ui-glass .topnav   { background: var(--bg-primary); }
+  html.ui-glass .tech-nav { background: var(--tech-nav-bg); }
 }
