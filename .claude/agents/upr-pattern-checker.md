@@ -1,6 +1,6 @@
 ---
 name: upr-pattern-checker
-description: Read-only linter that audits changed files against the UPR CLAUDE.md non-negotiable rules (useAuth() only, no alert()/confirm(), CSS tokens not hardcoded hex, two-click confirm, migration-first + RLS on new tables). Run at the end of each CRM phase before the PR. Reports violations; does not edit.
+description: Read-only linter that audits changed files against the UPR CLAUDE.md non-negotiable rules (useAuth() only, no alert()/confirm(), no raw upr:toast dispatch, CSS tokens not hardcoded hex, two-click confirm, migration-first + RLS on new tables, doc headers). Run on ANY PR touching src/ (and routine dev pushes), before the PR. Part of the 3-agent gauntlet with design-consistency-checker (visual) and page-behavior-checker (lifecycle). Reports violations; does not edit.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -19,5 +19,17 @@ Rules to enforce:
 6. New/substantially-edited files carry the Documentation Standard header (`.claude/rules/documentation-standard.md`).
 7. CRM migrations are additive-only — flag any `ALTER`/`DROP`/rename of a live table inside a phase.
 
-Output: only violations (grouped by file, each with line, rule #, suggested fix). If a
-file is clean, say so in one line. Be precise; do not speculate beyond what the files show.
+Additional mechanical checks (added 2026-07-13):
+8. No raw `window.dispatchEvent(new CustomEvent('upr:toast', …))` and no local `errToast`/`okToast` copy — toasts go through `src/lib/toast.js` (`toast`/`ok`/`err`) only.
+9. No `import { db }` from `@/lib/supabase` in a component/page (rule 1 restated mechanically); no direct `localStorage` write in a page for data that belongs in the db.
+10. No new page-scoped `.css` file import — new CSS lives in the `index.css` reserved marker.
+11. New or substantially-edited files carry the Documentation Standard header.
+
+Scope & delegation: run on ANY changed `src/` files (not CRM-only). This agent owns the CLAUDE.md
+non-negotiables + the mechanical checks above. Delegate the rest of the gauntlet — **visual/token/kit
+rules → `design-consistency-checker`; lifecycle/loading/error/resume rules → `page-behavior-checker`**;
+do not duplicate their checks, but do point the reader at them for anything out of this agent's lane.
+
+Output in the standard format: a one-line verdict (`pass` / `changes-requested` / `blocker`), then
+violations grouped by file (each with `file:line`, rule #, minimal fix). If a file is clean, say so in
+one line. Be precise; do not speculate beyond what the files show.

@@ -5,7 +5,7 @@
 ## ⚠️ NON-NEGOTIABLE RULES
 
 1. **Read files from disk before editing.** Never assume file contents from memory.
-2. **No `alert()`/`confirm()`.** Feedback via `window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }))`. Destructive actions use inline two-click confirm, never a modal. Pattern: `UPR-Design-System.md`.
+2. **No `alert()`/`confirm()`** (eslint-enforced, error-level). Feedback goes through **`src/lib/toast.js`** (`toast`/`ok`/`err`) — the ONLY toast entry point; never dispatch `upr:toast` raw or copy a local `errToast` (eslint-`warn`, ratcheting to error). Destructive actions use inline two-click confirm, never a modal. Patterns: `UPR-Design-System.md`; states law: [`.claude/rules/loading-error-states.md`](.claude/rules/loading-error-states.md).
 3. **`const { db } = useAuth()`** in components — never import `db` directly from `@/lib/supabase` (that also exports an unauthenticated singleton for bootstrapping only).
 4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exception:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)) — concurrent sessions genuinely need the isolation + reviewer gauntlet. See [Deployment](#deployment--release-workflow).
 5. **Mobile CSS: `@media (max-width: 768px)` only.** Never touch desktop layout/colors/spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
@@ -20,7 +20,7 @@
 ## How we work
 
 1. **Understand before acting.** Read the real file (Rule 1); reuse existing patterns ([Patterns](#patterns-to-follow)) over inventing.
-2. **Verify before shipping.** Run `npm run lint`, `npm run build`, `npm test` (vitest). CI blocks PRs to `main` on **build+test**; lint is non-blocking there (175 pre-existing errors) but don't add new ones. Report the real result — never claim "done" unverified.
+2. **Verify before shipping.** Run `npm run lint`, `npm run build`, `npm test` (vitest). CI runs **build+test on PRs to `main` AND `dev`** (staging no longer ships unchecked); lint is non-blocking (pre-existing baseline) but don't add new ones — the changed-files ratchet surfaces them. Any change touching `src/pages`|`src/components` runs the **3-agent gauntlet** (`upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`) and the [close-out standard](.claude/rules/close-out-standard.md) — including the **minimize/resume test** and a 390px mobile check. Behavior law: [`page-lifecycle.md`](.claude/rules/page-lifecycle.md); perf budget: [`perf-budget.md`](.claude/rules/perf-budget.md). Report the real result — never claim "done" unverified.
 3. **Ship the sanctioned way (Rule 4).** Routine work: commit direct to `dev`, it auto-deploys to staging — no branch, no PR. Production: reviewed `dev → main` PR → merge commit (not squash) → fast-forward `dev`. CRM wave: feature branch → PR into `dev`. Wait for the Cloudflare Pages check on any prod release.
 4. **Report honestly.** State outcomes and discrepancies out loud. Ask when a request is genuinely ambiguous.
 5. **Keep context lean.** Delegate broad searches to subagents. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components).
@@ -81,14 +81,19 @@ src/components/      Layout (app shell), TechLayout (tech shell), Sidebar, Error
                      collections/ tech/ overview/ (feature-scoped subfolders)
 functions/api/       Cloudflare Pages Functions (workers) — see below
 functions/lib/       supabase.js (worker-side client), cors.js, email.js
-supabase/migrations/ 66+ tracked SQL migrations — schema-as-code (Rule 7)
-.claude/rules/       tech-mobile-ux.md, documentation-standard.md, scope-sheet-rollback.md
+supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count drifts; derive it: `ls supabase/migrations/*.sql | wc -l` (163 as of 2026-07; live DB has more — some pre-2026 migrations are untracked)
+.claude/rules/       tech-mobile-ux.md, documentation-standard.md, scope-sheet-rollback.md,
+                     database-standard.md, and the UX-Quality laws: page-lifecycle.md,
+                     loading-error-states.md, perf-budget.md, workers-standard.md,
+                     close-out-standard.md. Wave-ownership manifests live here while their
+                     initiative is active; when its LAST phase merges, `git mv` the manifest to
+                     `docs/archive/rules/` with a one-line tombstone (keeps the active set honest).
 .claude/commands/    custom slash commands (e.g. /invoice)
 ```
 
 ## Workers (Cloudflare Pages Functions)
 
-Each worker exports `onRequest`. Client: `import { createClient } from '../lib/supabase.js'`. CORS: `import { jsonResponse } from '../lib/cors.js'`. **58 files:**
+Each worker exports `onRequest`. Client: `import { createClient } from '../lib/supabase.js'`. CORS: `import { jsonResponse } from '../lib/cors.js'`. Standard: [`.claude/rules/workers-standard.md`](.claude/rules/workers-standard.md) (auth-via-lib, outbound timeouts, idempotency, `worker_runs`). Count drifts — derive: `ls functions/api/*.js | wc -l` (~95 as of 2026-07). **Representative set:**
 - **SMS:** `send-message`, `twilio-webhook`, `twilio-status`, `process-scheduled` (cron)
 - **Encircle:** `sync-encircle`, `sync-claim-to-encircle`, `encircle-import/search/upload/rooms/backfill`
 - **E-sign:** `send-esign`, `submit-esign`, `resend-esign`, `track-open`

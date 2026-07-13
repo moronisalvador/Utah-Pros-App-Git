@@ -1,24 +1,25 @@
 name: CI
 
-# Pre-merge gate for production. main IS production (Cloudflare deploys main to
-# utahpros.app, and the native app loads /tech/* from the same build), so this
-# runs on every PR targeting main and blocks the merge if the app fails to build
-# or the test suite goes red. It also runs on push to main as a post-merge signal.
+# Pre-merge gate. main IS production (Cloudflare deploys main to utahpros.app, and
+# the native app loads /tech/* from the same build); dev IS staging (dev.utahpros.app,
+# auto-deploys on push). This runs build+test on every PR targeting main OR dev and
+# on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
 # What blocks a merge:  build + test  (both currently green)
-# What does NOT block:   lint          (175 pre-existing hygiene errors — runs for
-#                                       visibility only via continue-on-error until
-#                                       the baseline is cleaned up)
+# What does NOT block:   lint          (pre-existing hygiene baseline — full-tree lint
+#                                       and the changed-files ratchet run for visibility
+#                                       via continue-on-error until the baseline is
+#                                       cleaned by the UX-Quality waves, then flip to blocking)
 #
 # NOTE: a passing workflow does not enforce anything by itself. To actually block
-# merges, mark the "verify" check as a Required status check in the repo's branch
-# protection rules for main (Settings → Branches).
+# merges, mark the "verify" check as a Required status check in branch protection
+# for BOTH main and dev (Settings → Branches).
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -60,4 +61,24 @@ jobs:
       # continue-on-error once the baseline is green.
       - name: Lint (non-blocking)
         run: npm run lint
+        continue-on-error: true
+
+      # Changed-files ratchet: surface the new UX-Quality rules (no-alert, no
+      # confirm/prompt, raw upr:toast, db-import) on just the files a PR touches, so
+      # the untouched baseline never blocks. Non-blocking during rollout; flip to
+      # blocking (remove continue-on-error) once the W-waves clean the touched surfaces.
+      - name: Lint changed files (UX-Quality ratchet)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}" || true
+          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
+          if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
+        continue-on-error: true
+
+      # Perf-budget trend signal (perf-budget.md). Non-blocking; reports the gzipped
+      # JS weight so a regression is visible in the run. Hard-fail ratchet is a follow-up.
+      - name: Bundle size report
+        run: |
+          BYTES=$(cat dist/assets/*.js | gzip -c | wc -c)
+          echo "dist JS gzip (concatenated): ${BYTES} bytes  (perf-budget.md entry-graph guide ~232KB, fail intent at +10%)"
         continue-on-error: true
