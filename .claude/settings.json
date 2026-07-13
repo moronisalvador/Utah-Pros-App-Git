@@ -113,6 +113,8 @@
     "deny": [
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
       "Bash(rm -rf:*)",
       "mcp__github__merge_pull_request",
       "mcp__UPR_MCP__upr_sql",

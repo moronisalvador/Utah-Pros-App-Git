@@ -125,6 +125,16 @@ const load = useCallback(async () => {
 useEffect(() => { load(); }, [load]);
 ```
 
+## Specialist skills & precedence
+
+Installed skills auto-load by description when a task matches; you rarely invoke them by hand (name one explicitly — `/impeccable audit …` — only when you need to force it). **Jurisdiction (one authority per concern):**
+- **Design/UX:** `impeccable` decides *where* design & motion belong (`/impeccable audit|critique|polish|animate`); the **Emil pack** (`emil-design-eng`, `apple-design`, `improve-animations`, `review-animations`, `animation-vocabulary`) decides *how motion feels* + reviews it.
+- **React:** `vercel-react-best-practices`, `vercel-composition-patterns` — framework-neutral (we're Vite; **reject Next.js-only advice**).
+- **Data/SQL:** `supabase`, `supabase-postgres-best-practices` — patterns only, **subordinate to `.claude/rules/database-standard.md`** (least-privilege, anon-allowlist, one shared prod DB).
+- **Tests:** `playwright-core`. **UPR-native workflows** (`new-feature`, `db-migration`, `new-crm-module`, `masterplan`) orchestrate the actual work and outrank vendor skills.
+
+**Precedence when guidance conflicts:** (1) CLAUDE.md non-negotiables + `.claude/rules/` standards are **law** — always win; (2) UPR-native skills drive the flow; (3) vendor skills advise within their lane only. A vendor skill **never** overrides a standard: no `framer-motion`/`gsap` (`perf-budget.md` — motion is CSS tokens + View Transitions, see `motion-standard.md §8`), no Next.js APIs, no loosening `database-standard.md`. The **impeccable PostToolUse hook** is the one *deterministic* layer — it runs on every UI edit; fix its findings or consciously waive them (never silence a real one).
+
 ## What NOT to Touch
 
 `src/lib/supabase.js`, `src/lib/realtime.js` — stable. `src/contexts/AuthContext.jsx`, `src/components/Layout.jsx` — only if a feature needs it. `src/App.jsx` — only add routes. Any existing page — don't touch unless instructed. `main` — never push directly (Rule 4).
