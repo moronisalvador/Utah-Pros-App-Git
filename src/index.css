@@ -64,6 +64,17 @@
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
 
+  /* Motion — full standard + recipes in UPR-Design-System.md "Animation & Motion Standards".
+     Compose duration + easing: `transition: transform var(--dur-2) var(--ease-out)`.
+     Animate ONLY transform/opacity/filter for the 120fps compositor path (iOS 26 ProMotion);
+     layout props (height/width/max-height/padding/top) are main-thread → 60fps ceiling. */
+  --dur-1: 120ms;   /* micro — button press, toggle, hover, chip */
+  --dur-2: 180ms;   /* base  — menus, popovers, sheets, tooltips */
+  --dur-3: 260ms;   /* large — slide-in panels, page/section transitions */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);       /* ENTER — the house iOS-like ease-out */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);            /* EXIT  — accelerate away */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful overshoot — pop/check/badge */
+
   /* Safe area for notched iPhones */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -11010,10 +11021,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   padding: 0 6px;
   border-bottom: 1px solid transparent;
   pointer-events: none;
-  transition: max-height 220ms ease, opacity 150ms ease, padding 220ms ease, border-bottom-color 220ms ease;
+  /* Recipe C (collapse that pushes content) — layout-bound, so 60fps; max-height is set
+     CLOSE to the real content height so the ease-out tail isn't wasted. Motion tokens +
+     recipe: UPR-Design-System.md "Animation & Motion Standards". */
+  transition: max-height var(--dur-2) var(--ease-out), opacity var(--dur-1) var(--ease-out),
+              padding var(--dur-2) var(--ease-out), border-bottom-color var(--dur-2) var(--ease-out);
 }
 .tv2-msgs-actions-sheet.open {
-  max-height: 180px;
+  max-height: 160px;
   opacity: 1;
   padding: 6px;
   border-bottom-color: var(--border);
