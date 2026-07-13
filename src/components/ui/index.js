@@ -21,7 +21,8 @@
 
 export { default as Modal } from './Modal';
 export { default as IconButton } from './IconButton';
-export { default as StatusPill, toneForStatus } from './StatusPill';
+export { default as StatusPill } from './StatusPill';
+export { toneForStatus } from './statusTone';
 export { default as EmptyState } from './EmptyState';
 export { default as ErrorState } from './ErrorState';
 export { default as PageHeader } from './PageHeader';

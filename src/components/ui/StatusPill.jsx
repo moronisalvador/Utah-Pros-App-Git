@@ -27,30 +27,12 @@
  *     strings fall back to 'neutral' — never an uncolored/broken pill.
  *   - `dot` adds a leading status dot (the .status-badge idiom). `label` overrides
  *     the visible text (defaults to the humanized status).
+ *   - The status→tone classifier lives in ./statusTone.js (kept separate so this
+ *     stays a pure-component file for React fast-refresh).
  * ════════════════════════════════════════════════
  */
 
-const TONE_KEYWORDS = {
-  success: ['paid', 'active', 'complete', 'completed', 'approved', 'resolved', 'linked', 'won', 'sent', 'delivered', 'connected', 'enabled', 'live', 'success'],
-  danger: ['urgent', 'overdue', 'failed', 'error', 'declined', 'rejected', 'cancelled', 'canceled', 'lost', 'unpaid', 'past_due', 'blocked', 'needs_response', 'disabled'],
-  warning: ['pending', 'waiting', 'draft', 'review', 'partial', 'hold', 'on_hold', 'due', 'warning', 'dev_only', 'unregistered'],
-  info: ['active_work', 'in_progress', 'scheduled', 'confirmed', 'processing', 'sent_to', 'open', 'new', 'info', 'en_route'],
-  neutral: ['closed', 'inactive', 'archived', 'cancelled', 'default', 'unknown', 'none', 'paused'],
-};
-
-/** Classify a raw status string into one of the five semantic tones. */
-export function toneForStatus(status) {
-  if (!status) return 'neutral';
-  const s = String(status).toLowerCase().trim().replace(/\s+/g, '_');
-  for (const [tone, words] of Object.entries(TONE_KEYWORDS)) {
-    if (words.includes(s)) return tone;
-  }
-  // substring fallback (e.g. "estimate_approved" → success via "approved")
-  for (const [tone, words] of Object.entries(TONE_KEYWORDS)) {
-    if (words.some((w) => s.includes(w))) return tone;
-  }
-  return 'neutral';
-}
+import { toneForStatus } from './statusTone';
 
 function humanize(status) {
   return String(status || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());

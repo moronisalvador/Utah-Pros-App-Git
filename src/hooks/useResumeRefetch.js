@@ -45,8 +45,12 @@ export function useResumeRefetch({
 } = {}) {
   const onResumeRef = useRef(onResume);
   const onFocusRef = useRef(onFocus);
-  onResumeRef.current = onResume;
-  onFocusRef.current = onFocus;
+  // Keep the latest callbacks in refs (updated after each render) so passing a fresh
+  // inline function every render does NOT re-subscribe the listeners below.
+  useEffect(() => {
+    onResumeRef.current = onResume;
+    onFocusRef.current = onFocus;
+  });
 
   useEffect(() => {
     if (!enabled || typeof document === 'undefined') return undefined;

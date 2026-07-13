@@ -19,16 +19,16 @@
  *   Data:      none
  *
  * NOTES / GOTCHAS:
- *   - `actions` renders on the right (buttons, a create menu). `as` lets a detail
- *     page render the title as h1/h2 as appropriate (defaults to h1).
+ *   - `actions` renders on the right (buttons, a create menu). The title is an <h1>
+ *     (the page's heading) styled via .ui-page-header-title.
  * ════════════════════════════════════════════════
  */
 
-export default function PageHeader({ title, subtitle, actions, as: Heading = 'h1', className = '', children }) {
+export default function PageHeader({ title, subtitle, actions, className = '', children }) {
   return (
     <div className={`ui-page-header${className ? ' ' + className : ''}`}>
       <div className="ui-page-header-titles">
-        <Heading className="ui-page-header-title">{title}</Heading>
+        <h1 className="ui-page-header-title">{title}</h1>
         {subtitle != null && <div className="ui-page-header-sub">{subtitle}</div>}
         {children}
       </div>
