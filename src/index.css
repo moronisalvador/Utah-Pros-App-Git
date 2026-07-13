@@ -98,6 +98,18 @@
   --motion-ease-standard: cubic-bezier(.2, 0, 0, 1);      /* the default */
   --motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);     /* enter */
   --motion-ease-accelerate: cubic-bezier(.3, 0, 1, 1);    /* exit */
+  /* Gentle spring easing for one-shot ENTERS only (modal pop, menu Pop-in, toast-in).
+     linear() samples a damped-harmonic step response (ζ≈0.6, ~12% overshoot, single
+     bounce, settles to exactly 1) — a "springy" enter with ZERO JS. Keep it OFF exits,
+     off the mobile sheet slide, and off money/claims surfaces (subtle only; a bouncing
+     invoice erodes trust — motion-standard.md §3). Reduced-motion wraps its consumers.
+     NAMING (intentional, not a typo): the `-in` suffix (vs the `--motion-ease-*` beziers)
+     marks this as a linear() SPRING, not a cubic-bezier, and as direction-specific — it
+     encodes overshoot so it belongs on enters only, never as a general ease. */
+  --motion-spring-in: linear(
+    0, 0.038, 0.132, 0.260, 0.401, 0.545, 0.678, 0.794, 0.891, 0.967,
+    1.030, 1.079, 1.109, 1.122, 1.122, 1.114, 1.100, 1.083, 1.065, 1.026, 1
+  );
 
   /* Safe area for notched iPhones */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -650,6 +662,21 @@ tr:hover td { background: var(--bg-secondary); }
 }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+/* Toast-in on the spring token (enter only — the toastOut auto-dismiss stays plain ease
+   because it also drives the toast's removal). Overrides ONLY the per-animation easing
+   longhand (toastIn→spring, toastOut→ease), leaving the base durations/delay/fill intact.
+   Gated to no-preference so reduced motion keeps the un-sprung enter (no overshoot) and the
+   dismissal path is untouched either way.
+   NOTE: the app's primary toast (lib/toast.js) is inline-styled in Layout.jsx — out of this
+   PR's Modal.jsx+index.css scope — so this wires the in-CSS toast-in that is reachable. */
+@media (prefers-reduced-motion: no-preference) {
+  .conv-toast { animation-timing-function: var(--motion-spring-in), ease; }
+}
+/* Reduced motion: no slide in/out at all (closes the pre-existing §6 gap — toastIn/toastOut
+   both translateY). The toast still appears/removes, just without the vertical motion. */
+@media (prefers-reduced-motion: reduce) {
+  .conv-toast { animation: none; }
+}
 
 /* Slide-in animation for mobile thread */
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
@@ -1141,8 +1168,11 @@ tr:hover td { background: var(--bg-secondary); }
 .create-menu-fab.active { background: var(--text-primary); transform: rotate(45deg); box-shadow: var(--shadow-md); }
 .create-menu-fab-icon { width: 20px; height: 20px; }
 .create-menu-backdrop { position: fixed; inset: 0; z-index: -1; }
-.create-menu-popup { position: absolute; top: 52px; right: 0; width: 240px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); overflow: hidden; animation: createMenuIn 150ms cubic-bezier(0.32, 0.72, 0, 1); transform-origin: top right; }
-@keyframes createMenuIn { from { opacity: 0; transform: scale(0.9) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.create-menu-popup { position: absolute; top: 52px; right: 0; width: 240px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); overflow: hidden; animation: createMenuIn 150ms var(--motion-spring-in); transform-origin: top right; }
+/* Pop-in from the trigger corner. Spring easing + a tightened 0.96 start (was 0.9 — a
+   9:10 origin scale reads more like a menu opening than a zoom). motion-standard.md §3. */
+@keyframes createMenuIn { from { opacity: 0; transform: scale(0.96) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .create-menu-popup { animation: none; } }
 .create-menu-header { padding: var(--space-3) var(--space-4); font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); border-bottom: 1px solid var(--border-light); }
 .create-menu-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4); background: none; border: none; cursor: pointer; font-family: inherit; text-align: left; transition: background var(--transition-fast); min-height: 48px; }
 .create-menu-item:hover { background: var(--bg-secondary); }
@@ -11562,6 +11592,27 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
   .btn:active:not(:disabled) { transform: none; }
 }
 
+/* ─── Motion polish — legacy reduced-motion + hover-gate sweep (motion-standard.md §6/§3) ──
+   ADDITIVE guards for legacy presses/hovers that predate the tokened F-S2 idioms — no
+   restyle, just (a) collapse the unwrapped scale presses under reduced motion, and (b) stop
+   the hover-lift transforms from firing on the touch PWA (iOS fires :hover on tap and it
+   sticks until the next tap). Real hover-capable pointers keep the lift unchanged. Placed
+   after the legacy rules so source order wins on equal specificity.
+   (.tech-layout .btn:active is already covered by the F-S2 .btn reduced-motion rule above.) */
+@media (prefers-reduced-motion: reduce) {
+  .tech-tracker-btn:active,
+  .tech-tracker-btn-secondary:active,
+  .doc-cl-view-btn:active,
+  .doc-cl-item:active { transform: none; }
+}
+@media (hover: none), (pointer: coarse) {
+  /* create-menu-fab excludes .active so its open-state rotate is never neutralized. */
+  .macro-card:hover,
+  .ar-claim-card:hover,
+  .coll-chat-fab:hover,
+  .create-menu-fab:not(.active):hover { transform: none; }
+}
+
 /* ─── Modal (role=dialog) — centered on desktop, bottom-sheet on mobile ─── */
 .ui-modal-overlay {
   position: fixed; inset: 0; z-index: 1000;
@@ -11575,10 +11626,19 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
   width: 100%; max-width: 560px; max-height: 90dvh;
   display: flex; flex-direction: column; overflow: hidden;
   box-shadow: var(--shadow-lg);
-  animation: uiModalIn var(--motion-duration-base) var(--motion-ease-decelerate);
+  /* Desktop panel pops in on the spring token (subtle overshoot). Mobile overrides to
+     the sheet slide below; --closing swaps to the exit keyframe (Modal.jsx). */
+  animation: uiModalIn var(--motion-duration-base) var(--motion-spring-in);
 }
 .ui-modal--sm { max-width: 420px; }
 .ui-modal--lg { max-width: 760px; }
+/* Exit (close) — Modal.jsx adds --closing when `open` flips false, plays ~75% of the
+   enter on the accelerate curve (consumes the previously-DEAD --motion-ease-accelerate
+   token), then unmounts on animationend. `forwards` holds the faded/scaled-out end
+   state so there is no flash back to visible before unmount. Desktop = fade + scale-down;
+   the mobile media query overrides .ui-modal--closing to slide DOWN off-screen. */
+.ui-modal-overlay--closing { animation: uiFadeOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+.ui-modal--closing { animation: uiModalOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
 .ui-modal-header {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-color);
@@ -11605,12 +11665,22 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
     padding-bottom: env(safe-area-inset-bottom, 0px);
     animation: uiSheetUp var(--motion-duration-base) var(--motion-ease-decelerate);
   }
+  /* Bottom-sheet exit: reverse the slide-up (down off-screen). Overrides the desktop
+     scale-down --closing rule above (later source order, equal specificity). */
+  .ui-modal--closing { animation: uiSheetDown calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
 }
 @keyframes uiFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes uiModalIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes uiSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+/* Exit keyframes (paired with the .ui-modal*--closing rules above). transform/opacity only. */
+@keyframes uiFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes uiModalOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
+@keyframes uiSheetDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) {
-  .ui-modal-overlay, .ui-modal { animation: none; }
+  /* Instant close is enforced in Modal.jsx (it skips the --closing class under reduced
+     motion); these are belt-and-suspenders so no enter OR exit keyframe ever plays. */
+  .ui-modal-overlay, .ui-modal,
+  .ui-modal-overlay--closing, .ui-modal--closing { animation: none; }
   .ui-modal-close { transition: none; }
 }
 
