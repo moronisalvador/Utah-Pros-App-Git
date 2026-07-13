@@ -33,6 +33,34 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 ---
 
+## UX Quality initiative — plan of record + Phase 0 + F-S1 (2026-07-13)
+
+A masterplan-standard session (11-auditor read-only sweep → synthesis → adversarial verification)
+produced the **UX Quality** plan of record: `docs/ux-quality-roadmap.md` + `docs/ux-quality-dispatch.md`
++ `.claude/rules/ux-alignment-wave-ownership.md`. Goal: make every surface (desktop + tech PWA) behave
+and look uniformly, and install enforcement so new work ships excellent without manual UX/UI cleanup.
+Owner decisions: prep-for-redesign consolidation + foundation-first sequencing.
+
+**Shipped this session (branch → dev):**
+- **Phase 0 hardening** — REST client no longer retries non-idempotent writes (`src/lib/supabase.js`);
+  `encircle-search/rooms/upload` now require a Supabase session (+ Bearer on the `TechDemoSheet` callers);
+  `purge-feedback-media` gated behind the scheduler secret + 30-day floor; `stripe-payout` gated to
+  admin/manager + stable idempotency key; destructive-SQL hook matcher broadened to `mcp__.*__`. Tests in
+  `functions/api/phase0-security-gates.test.js`. (Deferred to F-B: the broad money-worker role gate and
+  crew-sync atomicity — see the roadmap.)
+- **F-S1 standards** — five rule docs (`page-lifecycle`, `loading-error-states`, `perf-budget`,
+  `close-out-standard`, `workers-standard`), two reviewer agents (`design-consistency-checker`,
+  `page-behavior-checker`), amended `upr-pattern-checker`, `eslint.config.js` (Rule 2 now error-level;
+  toast/db-import drift at warn), `ci.yml` (build+test now gates `dev`), and amendments to `CLAUDE.md`,
+  `tech-mobile-ux.md`, `documentation-standard.md`, and the `masterplan` skill (5 changes incl. a
+  frontend-excellence guardrail + the minimize/resume test in close-out).
+
+**Key audit findings (grounded in file:line, not memory):** two-speed codebase (new surfaces already
+correct, legacy half hand-rolls); 1,644 hardcoded hex (836 distinct); 11 surfaces blank a rendered page
+on PTR/mutation; 6 loading primitives; 125 raw toast dispatches; failed loads render success empty-states
+on top screens (Schedule/JobPage). Foundation-then-wave remediation (F-S2 primitives/tokens, F-B backend,
+W1–W5 page alignment, W6 fold-ins) is dispatched but not yet built — runs alongside next week's features.
+
 ## DB Foundation initiative — plan of record (planning session, 2026-07-08)
 
 A masterplan planning session produced the **DB Foundation** plan of record: `docs/db-foundation-roadmap.md`
