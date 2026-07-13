@@ -54,6 +54,33 @@ Owner decisions: prep-for-redesign consolidation + foundation-first sequencing.
   toast/db-import drift at warn), `ci.yml` (build+test now gates `dev`), and amendments to `CLAUDE.md`,
   `tech-mobile-ux.md`, `documentation-standard.md`, and the `masterplan` skill (5 changes incl. a
   frontend-excellence guardrail + the minimize/resume test in close-out).
+- **F-B backend foundation (branch `claude/ux-fb-backend`, PR into `dev`, 2026-07-13)** — three shared
+  worker libs + three transactional RPCs + offline-queue extension. ⚠️ **The 3 RPC migrations are staged
+  on disk but NOT yet applied to the shared prod DB** — the orchestrator applies + verifies them via MCP
+  in a low-traffic window before merge.
+  - **New RPCs** (all `SECURITY DEFINER`, `REVOKE EXECUTE FROM PUBLIC, anon` + `GRANT TO authenticated,
+    service_role`; migrations `supabase/migrations/20260713_uxq_fb_*.sql`):
+    - `sync_appointment_crew(p_appointment_id uuid, p_crew jsonb) → SETOF appointment_crew` — atomic
+      delete-then-insert replace of an appointment's crew (kills the non-atomic loop in
+      `TechEditAppointment`/`EditAppointmentModal`/`EventModal`).
+    - `save_estimate_lines(p_id uuid, p_lines jsonb, p_kind text DEFAULT 'estimate') → jsonb` — atomic
+      line replace for estimates (default) or invoices (`p_kind='invoice'`); never writes the GENERATED
+      `line_total`; the recompute trigger rolls up the subtotal.
+    - `get_jobs_list(p_search text, p_limit int, p_offset int) → SETOF json` — trimmed ~31-col set +
+      server-side search (name/job#/address/claim#/insurer) + pagination (`total_count` window),
+      replacing the ~52-col unbounded Jobs/Production query. Tests: `supabase/tests/uxq_fb_rpcs.test.js`
+      (anon-denied least-privilege) + `supabase/tests/uxq_fb_rpcs.sql` (live atomicity/shape gate).
+  - **New libs** (`functions/lib/`): `auth.js` (`requireUser`/`requireEmployee`/`requireRole`/
+    `checkCronSecret` + `getActorEmployee` moved here from `google-drive.js`, which now re-exports it;
+    token verify uses the anon key on `/auth/v1/user`), `http.js` (`fetchWithTimeout`, 15s
+    `AbortSignal.timeout`, adopted in `twilio/quickbooks/email/callrail-api`), `worker-runs.js`
+    (`recordWorkerRun`/`withRunRecording`).
+  - **Consolidation:** 11 uncontested workers swapped from a local `requireAuth` copy to `requireUser`;
+    8 uncontested workers' hand-rolled `worker_runs` inserts migrated to `recordWorkerRun`. Files owned by
+    active initiatives were left for their owners (see the F-B PR body for the exact skip list).
+  - **Offline queue:** `note.insert` + `task.toggle` mutation types added (`src/lib/dispatchers/
+    {noteDispatcher,taskDispatcher}.js` + `syncRunner.js` switch) so offline notes/checkbox taps sync
+    like online. Money-worker safety tests added (`functions/api/{qbo-payment,stripe-webhook}.test.js`).
 
 **Key audit findings (grounded in file:line, not memory):** two-speed codebase (new surfaces already
 correct, legacy half hand-rolls); 1,644 hardcoded hex (836 distinct); 11 surfaces blank a rendered page
