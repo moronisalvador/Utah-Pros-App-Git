@@ -47,13 +47,19 @@ Build (riskiest/most-depended-on first):
    Conversations.jsx:475-489 edge-detection + usePolledRpc.js:58-84 hidden-pause; silent + cancel-guarded],
    useTwoClickConfirm, useLookup (react-query wrapper for employees/job_phases/carriers), usePhotoUpload
    + thumbUrl (storage render transform URLs + mediaCompress on the upload path).
-4. Motion & transitions (.claude/rules/motion-standard.md): add the motion tokens to :root; wire the
-   native View Transitions API for page enter/back (@view-transition{navigation:auto} + the RRv7
-   viewTransition prop; mark the app shell as a persistent transition name so only content animates;
-   retire the 4 ad-hoc `entering` patterns in TechAppointment/TechJobDetail/TechClaimDetail/
-   tech/v2/schedule/DayTimeline); give each primitive (dropdown/modal/sheet/toast) its standard motion;
-   wrap ALL of it in a prefers-reduced-motion fallback (the API does not auto-skip). transform/opacity
-   only, never gate a spinner, never refetch on transition.
+4. Motion, interactions & haptics (.claude/rules/motion-standard.md): add the motion tokens to :root
+   (durations + easings; migrate the raw --transition-* and hardcoded 0.1s/200ms sites; de-dup the
+   fadeIn/sheetSlideUp keyframes). Wire the native View Transitions API for page enter/back
+   (@view-transition{navigation:auto} + the RRv7 viewTransition prop; app shell = persistent transition
+   name so only content animates; retire the 4 ad-hoc `entering` patterns). Standardize the interaction
+   idioms: button press feedback (scale(0.97)+touch-action, promote from .tech-layout .btn to the shared
+   button); animated selection indicators for tabs/segments/chips/toggles (kill the snaps incl.
+   TechDemoSheet's inline tech-select); chat sent/received bubble motion (author now; the shared
+   Conversations/MessageBubble is sms-experience-owned → implement at the W6 fold-in). Pair native
+   haptics via src/lib/nativeHaptics.js (impact('light') press/send, selection() selection changes) —
+   import-only, no dep. Wrap EVERYTHING in a prefers-reduced-motion fallback (nothing auto-skips) +
+   suppress haptics under it. transform/opacity only, refresh-rate-agnostic (no >60fps dependency),
+   never gate a spinner, never refetch on transition.
 5. Rewrite UPR-Design-System.md: DELETE the inline-hex Status Color Palette recipe; every pattern
    section shows a component IMPORT not a style object; add the Kit Registry, the dark-theme contract
    (components consume color ONLY via var()), the **Motion section = the one tunable catalog** (page
