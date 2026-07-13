@@ -1,0 +1,122 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION: 20260713_uxq_perf_indexes
+-- Phase: UX-Quality — perceived-perf index audit for the transitioned routes
+--        (plan review docs/ux-plan-review-vs-skills.md §3 #8 / §4 supabase-postgres)
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   NOTHING is applied by this migration today. It is the written record of an
+--   index audit of the hot list/board queries behind the routes that now animate
+--   (page transitions), so a route push never looks like a stall. The audit ran
+--   EXPLAIN (ANALYZE, BUFFERS) on every one of those queries against live data on
+--   2026-07-13 and found that ALL of them are ALREADY index-optimal — every query
+--   either walks an existing index on its selective path, or correctly reads a tiny
+--   (<250-row), fully-cached table where Postgres rightly ignores any index. So per
+--   the audit rule "only ship an index EXPLAIN shows actually helps — no speculative
+--   indexing", this migration ships ZERO CREATE INDEX statements. The growth-path
+--   candidates below are staged as COMMENTED-OUT, each with the exact row-count
+--   trigger at which it should be re-EXPLAINed and reconsidered — they are NOT
+--   active and must NOT be uncommented until their trigger condition is met.
+--
+-- ADDITIVE-ONLY:
+--   Yes — index-only by nature, and currently a no-op (all candidates commented).
+--   No table DROP/RENAME/ALTER COLUMN, no data change, no grant/policy change.
+--   Applying this file changes nothing in the database.
+--
+-- ════════════════════════════════════════════════
+-- ROLLBACK:
+--   n/a — this migration creates no object. If a candidate below is ever
+--   uncommented and applied under supervision, its rollback is the paired
+--   `DROP INDEX CONCURRENTLY IF EXISTS <name>;` recorded beside it.
+-- ════════════════════════════════════════════════
+--
+-- ── APPLY NOTE (for whoever later uncomments a candidate) ──────────────────────
+--   `CREATE INDEX CONCURRENTLY` acquires no table-write lock but CANNOT run inside
+--   a transaction block — so it CANNOT go through Supabase MCP `apply_migration`
+--   (which wraps the file in a txn). Run any uncommented candidate as a standalone
+--   statement via `mcp__Supabase__execute_sql` (or psql) OUTSIDE a txn, one at a
+--   time, in a low-traffic window (database-standard.md §5). `IF NOT EXISTS` keeps
+--   each re-runnable. This is why every candidate is written CONCURRENTLY even
+--   though the target tables are tiny today.
+--
+-- ══════════════════════════════════════════════════════════════════════════════
+-- AUDIT FINDINGS — the hot transitioned-route queries (live EXPLAIN, 2026-07-13)
+-- ══════════════════════════════════════════════════════════════════════════════
+-- All times are steady-state core-query execution; every plan was 100% shared-buffer
+-- HIT (zero disk reads). Row counts: jobs 243, appointments 254, appointment_crew 433,
+-- job_tasks 196, claims 132, contacts 152, conversations 5, inbound_leads 88.
+--
+--   get_jobs_list(NULL,100,0)   1.05 ms  Index Scan using jobs_created_at_idx
+--                                        (status<>'deleted' removes 1 row) — OPTIMAL
+--   get_dispatch_board(±7d)     1.55 ms  Seq Scan jobs(243) + Index Scan
+--                                        idx_appointments_date for the range EXISTS;
+--                                        the 3-way OR (phase / pinned / has-appt) is
+--                                        not single-index-able and 243 rows = 22 cached
+--                                        buffers — OPTIMAL
+--   get_assigned_tasks(emp)     5.3  ms  every join on an index: idx_appointment_crew_
+--                                        employee → idx_job_tasks_appointment →
+--                                        jobs_pkey(Memoized) → appointments_pkey — OPTIMAL
+--   get_claims_list()           7.5  ms  all 4 correlated last-activity subplans on an
+--                                        index: idx_jobs_claim, idx_appointments_job_id,
+--                                        idx_system_events_job_type_date, idx_time_
+--                                        entries_job — OPTIMAL (residual cost is the RPC
+--                                        computing the 4-way GREATEST twice: a query-
+--                                        rewrite concern, NOT an indexing one; RPC frozen)
+--   get_customers_list(NULL)   ~2   ms  seq scan contacts(152)/claims(131) tiny +
+--                                        idx_contact_jobs_contact for nested jobs — OPTIMAL
+--   get_tech_conversations()   ~<1  ms  conversations has 5 rows — trivial — OPTIMAL
+--   get_inbound_leads(100)      0.28 ms  Seq Scan inbound_leads(88) + quicksort — the
+--                                        planner ignores idx_inbound_leads_occurred
+--                                        because 88 rows in 19 buffers beat an index
+--                                        walk + heap fetches — OPTIMAL
+--
+-- CONCLUSION: The DB is NOT the perceived-perf bottleneck for these routes. Cold
+-- function-level latency (13–38 ms, warming to ~15 ms on the 2nd call) is JIT
+-- compilation + plan-cache warmup + per-row JSON serialization + nested-executor
+-- overhead — none of which an index addresses (proved by the >15× gap between the
+-- function-scan time and the extracted core-query time). Adding indexes now would
+-- only tax writes and be ignored by the planner. The route-transition "stall" risk,
+-- if any, lives in the client (the animation itself + avoiding refetch-on-resume per
+-- page-lifecycle.md + react-query caching), not in these queries.
+--
+-- ══════════════════════════════════════════════════════════════════════════════
+-- STAGED GROWTH-PATH CANDIDATES (COMMENTED OUT — do NOT apply until the trigger hits)
+-- ══════════════════════════════════════════════════════════════════════════════
+-- Re-run the paired EXPLAIN when a table crosses its trigger; uncomment ONLY the
+-- candidate whose fresh EXPLAIN flips from Seq Scan to wanting the index. Ordered by
+-- how soon each is likely to matter.
+--
+-- (1) Jobs/Production default list — partial+covering, future-proofs get_jobs_list's
+--     ORDER BY created_at DESC once soft-deleted rows accumulate and the table grows.
+--     TRIGGER: jobs > ~5,000 rows OR jobs filtered by status='deleted' > ~5% of table.
+--     Today: 243 rows / 1 deleted → jobs_created_at_idx already serves it in 1.05 ms.
+--   -- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_created_at
+--   --   ON public.jobs (created_at DESC)
+--   --   WHERE status <> 'deleted';
+--   -- ROLLBACK: DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_created_at;
+--
+-- (2) Jobs/Customers server-side SEARCH path — leading-wildcard ILIKE ('%term%') on
+--     name / job# / address / claim# / insurer is NOT btree-indexable; it needs a
+--     pg_trgm GIN index. This is the search box, not the route paint.
+--     TRIGGER: jobs (or contacts) > ~5,000 rows AND search latency measurably > ~50 ms.
+--     Today: seq-scan ILIKE over 243/152 rows is sub-millisecond.
+--     Prereq: CREATE EXTENSION IF NOT EXISTS pg_trgm; (extensions schema)
+--   -- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_search_trgm
+--   --   ON public.jobs USING gin (
+--   --     (coalesce(insured_name,'') || ' ' || coalesce(job_number,'') || ' ' ||
+--   --      coalesce(address,'') || ' ' || coalesce(claim_number,'') || ' ' ||
+--   --      coalesce(insurance_company,'')) gin_trgm_ops);
+--   -- ROLLBACK: DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_search_trgm;
+--
+-- (3) Inbound leads list — exact ORDER BY (occurred_at DESC NULLS LAST, created_at DESC)
+--     to skip the sort once the leads table is large. Existing idx_inbound_leads_occurred
+--     (occurred_at DESC, single-key, NULLS FIRST) cannot satisfy the NULLS-LAST 2-key sort.
+--     TRIGGER: inbound_leads > ~20,000 rows AND get_inbound_leads sort time > ~20 ms.
+--     Today: quicksort of 88 rows is 0.13 ms.
+--   -- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_inbound_leads_occurred_created
+--   --   ON public.inbound_leads (occurred_at DESC NULLS LAST, created_at DESC);
+--   -- ROLLBACK: DROP INDEX CONCURRENTLY IF EXISTS public.idx_inbound_leads_occurred_created;
+--
+-- ══════════════════════════════════════════════════════════════════════════════
+-- End of migration — intentionally applies nothing.
+-- ══════════════════════════════════════════════════════════════════════════════
