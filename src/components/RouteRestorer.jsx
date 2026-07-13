@@ -48,9 +48,18 @@ export default function RouteRestorer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Remember where the tech is working (rules filter what qualifies).
+  // Remember where the tech is working (rules filter what qualifies). Also
+  // re-stamp the timestamp the moment the app is backgrounded — that's when
+  // the eviction clock starts, and a tech parked >30 min on ONE screen (a
+  // long scope sheet) must still restore after a calculator detour.
   useEffect(() => {
-    saveRoute(location.pathname + location.search);
+    const url = location.pathname + location.search;
+    saveRoute(url);
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') saveRoute(url);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, [location.pathname, location.search]);
 
   return null;

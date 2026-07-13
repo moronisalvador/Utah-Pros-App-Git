@@ -54,6 +54,7 @@ describe('pickRestoreUrl — eviction-relaunch route recovery', () => {
   it('rejects malformed saved values', () => {
     expect(pickRestoreUrl('/tech', { url: 'javascript:alert(1)', ts: NOW }, NOW)).toBe(null);
     expect(pickRestoreUrl('/tech', { url: 'https://evil.example/x', ts: NOW }, NOW)).toBe(null);
+    expect(pickRestoreUrl('/tech', { url: '//evil.example/x', ts: NOW }, NOW)).toBe(null); // protocol-relative
     expect(pickRestoreUrl('/tech', { ts: NOW }, NOW)).toBe(null);
   });
 

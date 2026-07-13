@@ -775,6 +775,10 @@ export default function TechDemoSheet() {
   const sheetIdRef = useRef(null);
   const createInFlightRef = useRef(null);
   const retryTimerRef = useRef(null);
+  // Bumped by resumeDraft/startNew: any save continuation from a previous
+  // sheet that resolves after the switch sees a different epoch and discards
+  // itself (it must not adopt its INSERT id or rewrite ?id on the new sheet).
+  const saveEpochRef = useRef(0);
   // Caches the draft row fetched by the schema effect so the bootstrap effect
   // doesn't re-fetch the same get_demo_sheet on load.
   const loadedRowRef = useRef(null);
@@ -951,6 +955,10 @@ export default function TechDemoSheet() {
       // First INSERT still in flight — saving again without an id would
       // create a duplicate draft. The next change re-arms the timer.
       if (!sheetIdRef.current && createInFlightRef.current) return;
+      // Epoch guard: resumeDraft/startNew bump this so a save continuation
+      // that resolves AFTER the tech switched sheets is discarded instead of
+      // adopting its id / rewriting ?id under the newly-selected draft.
+      const epoch = saveEpochRef.current;
       setSaveState('saving');
       try {
         const payload = {
@@ -970,6 +978,7 @@ export default function TechDemoSheet() {
         const savePromise = db.rpc('save_demo_sheet', payload);
         if (!sheetIdRef.current) createInFlightRef.current = savePromise;
         const newId = await savePromise;
+        if (epoch !== saveEpochRef.current) return; // sheet switched mid-flight
         if (!sheetIdRef.current && newId) {
           applySheetId(newId);
           const next = new URLSearchParams(searchParams);
@@ -982,6 +991,7 @@ export default function TechDemoSheet() {
         clearDraftMirror(sheetIdRef.current);
         setSaveState('saved');
       } catch {
+        if (epoch !== saveEpochRef.current) return; // stale failure — don't retry onto the new sheet
         // Keep the localStorage mirror (holds the unsynced edits) and retry.
         setSaveState('error');
         clearTimeout(retryTimerRef.current);
@@ -1218,6 +1228,8 @@ export default function TechDemoSheet() {
   };
 
   const startNew = () => {
+    saveEpochRef.current += 1;          // discard any in-flight save continuation
+    createInFlightRef.current = null;   // and never adopt its INSERT id
     setRooms([makeDefaultRoom(schema)]);
     setJobInfo({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
     setJobData(makeDefaultJobData(schema));
@@ -1238,11 +1250,20 @@ export default function TechDemoSheet() {
     // Instead: pause the mirror/autosave effects (hydrated=false), clear any
     // pending timers and the cached row, then change ?id — the schema +
     // bootstrap effects re-hydrate exactly like a fresh navigation would.
+    saveEpochRef.current += 1;          // discard any in-flight save continuation
+    createInFlightRef.current = null;   // and never adopt its INSERT id
     clearTimeout(saveTimerRef.current);
     clearTimeout(retryTimerRef.current);
     setHydrated(false);
     loadedRowRef.current = null;
     applySheetId(null);
+    // Reset the schema like a fresh navigation: the bootstrap effect must WAIT
+    // for the resumed draft's own snapshotted schema. Leaving the previous
+    // schema in place made bootstrap hydrate immediately with the WRONG schema,
+    // mirror that half-hydrated state, and re-restore it with a spurious
+    // "Restored unsaved changes" toast once the real schema arrived.
+    setSchema(null);
+    setSchemaError(null);
     setShowResult(false);
     setSubmitResult(null);
     setSaveState('idle');

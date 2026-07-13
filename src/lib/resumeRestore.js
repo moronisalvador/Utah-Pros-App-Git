@@ -68,6 +68,7 @@ export function shouldSaveRoute(pathname) {
 // Returns the URL to restore, or null to stay put.
 export function pickRestoreUrl(currentPath, saved, now, ttlMs = RESUME_TTL_MS) {
   if (!saved || typeof saved.url !== 'string' || !saved.url.startsWith('/')) return null;
+  if (saved.url.startsWith('//')) return null; // protocol-relative = cross-origin — never navigate there
   if (!START_URLS.has(currentPath)) return null;         // only the start_url landing is an eviction signature
   if (now - (saved.ts || 0) > ttlMs) return null;        // stale — treat as a fresh open
   const savedPath = saved.url.split('?')[0];
