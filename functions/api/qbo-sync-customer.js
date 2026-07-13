@@ -12,6 +12,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import {
   getConnection,
   mapContactToCustomer,
@@ -92,16 +93,10 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name:       'qbo-sync-customer',
-      status,
-      records_processed: processed,
-      error_message:     errorMessage || null,
-      started_at:        startedAt,
-      completed_at:      new Date().toISOString(),
-    });
-  } catch (_) { /* logging is best-effort */ }
+  await recordWorkerRun(db, {
+    workerName: 'qbo-sync-customer', status, recordsProcessed: processed,
+    errorMessage, startedAt,
+  });
 }
 
 function loadPending(db, limit) {

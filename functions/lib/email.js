@@ -46,6 +46,7 @@
  */
 
 import { resolveCredential } from './credentials.js';
+import { fetchWithTimeout } from './http.js';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
@@ -124,7 +125,7 @@ export async function sendEmail(env, { to, subject, html, text, from, replyTo, a
 
   let res;
   try {
-    res = await fetch(RESEND_ENDPOINT, {
+    res = await fetchWithTimeout(RESEND_ENDPOINT, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

@@ -11,6 +11,8 @@ import { dispatchRoom } from './dispatchers/roomDispatcher';
 import { dispatchPhoto } from './dispatchers/photoDispatcher';
 import { dispatchReading } from './dispatchers/readingDispatcher';
 import { dispatchEquipmentPlace, dispatchEquipmentRemove } from './dispatchers/equipmentDispatcher';
+import { dispatchNote } from './dispatchers/noteDispatcher';
+import { dispatchTaskToggle } from './dispatchers/taskDispatcher';
 
 const MAX_RETRIES = 5;
 const POLL_MS = 30_000;
@@ -55,6 +57,10 @@ export function createSyncRunner({ db, employee }) {
         return dispatchEquipmentPlace(db, employee, item.payload, item);
       case 'equipment.remove':
         return dispatchEquipmentRemove(db, employee, item.payload, item);
+      case 'note.insert':
+        return dispatchNote(db, employee, item.payload, item);
+      case 'task.toggle':
+        return dispatchTaskToggle(db, employee, item.payload, item);
       default:
         throw new Error(`Unknown queue item type: ${item.type}`);
     }
