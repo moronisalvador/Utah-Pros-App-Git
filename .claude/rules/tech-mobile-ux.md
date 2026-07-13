@@ -8,13 +8,27 @@ Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/
 - **Snap-first, describe-later** — Photos upload immediately on capture with no blocking step. Description is optional, offered via a dismissable toast with "Add note" link. Never block the camera→save flow with a required input.
 - **No modals for field actions** — Inline expandable inputs on cards, not popups. The tech shouldn't lose context of where they are.
 - **One primary action per screen** — Clock In on Dash, checkbox on Tasks, search on Claims.
-- **48px minimum touch targets** — No exceptions. Gloved hands, wet fingers.
+- **Touch targets: 48px primary, 44px documented-secondary** — gloved hands, wet fingers. Primary field
+  actions (Clock In, checkbox, save, capture) are ≥48px. A dense secondary control (a Remove ✕, an inline
+  chip) may be 44px if it carries a comment saying so. **Hit areas <24px are banned regardless of visual
+  size.** Typography floor: 11px absolute, 12px for any actionable text.
 - **Status = color from 3 feet away** — Amber=OMW/en_route, Green=working, Red=paused, Blue=scheduled, Gray=completed.
 - **Sticky headers don't move on pull-to-refresh** — The greeting/date header stays fixed, only the content below refreshes. Pattern: `PullToRefresh` wraps content BELOW the fixed header, not around it.
 - **Empty states show upcoming work** — When 0 appointments today, show next 7 days of upcoming appointments so techs can prep the night before.
 - **Completed state shows breakdown** — Travel time, on-site time, total. Never just "3.5h" with no context.
 
-**Task assignment business logic (CRITICAL):**
+**Resume, loading & offline (the field reality — see [`page-lifecycle.md`](page-lifecycle.md) for the full law):**
+- **Resume does nothing.** The app is an installed home-screen PWA; iOS suspends it on a quick app-switch
+  and evicts it after a longer background. On resume the sticky header stays put, refetches are silent, and
+  any timer (clock, OMW) keeps continuity — a tech who checks the calculator and comes back sees exactly
+  what they left. Never re-run a spinner-gated `load()` on resume/pull-to-refresh (the minimize test at
+  close-out enforces this).
+- **Loading:** cold-start skeleton only; a refetch never blanks a rendered screen.
+- **Offline:** mutations go through `useOfflineQueue` where wired (photos, notes, task toggles) so a
+  basement with no signal doesn't lose work; a failed sync retries, never silently drops.
+
+**Task assignment business logic (CRITICAL):** *(also mirrored in `UPR-Web-Context.md`; that is the
+source of truth for the join paths and column names — verify live, not from this summary.)*
 Tasks are NOT assigned directly to technicians. Tasks belong to appointments. Technicians are assigned to appointments via `appointment_crew`. The join path is: `employee → appointment_crew → appointments → tasks`. The `get_assigned_tasks` RPC handles this join internally.
 
 **Time tracking model:**

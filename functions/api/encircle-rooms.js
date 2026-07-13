@@ -4,12 +4,30 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
+// Verify a Supabase session before proxying Encircle. Anon key is a valid apikey
+// for the GoTrue /user endpoint; we verify the caller's Bearer token. F-B
+// consolidates these per-worker copies into functions/lib/auth.js.
+async function requireAuth(request, env) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const anonKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { 'apikey': anonKey, 'Authorization': `Bearer ${token}` },
+  });
+  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
+  return { ok: true };
+}
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
 export async function onRequestGet(context) {
   const { request, env } = context;
+  const auth = await requireAuth(request, env);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
   const apiKey = env.ENCIRCLE_API_KEY;
   if (!apiKey) {
     return jsonResponse({ error: 'ENCIRCLE_API_KEY not configured' }, 500, request, env);

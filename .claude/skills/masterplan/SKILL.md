@@ -40,6 +40,11 @@ once (e.g. `sched-board`) and use it consistently for `docs/<slug>-roadmap.md`,
   real file reads. If the initiative has a live progress tracker (CRM:
   `crm_build_phases`/`crm_build_stages`), statuses come from IT, "not assumed from
   the doc"; otherwise from the roadmap doc's checklists.
+- **Verify platform/external facts against CURRENT sources, not training memory.** When the initiative
+  depends on how a platform or third party behaves (iOS/Safari PWA lifecycle, a browser API, a
+  Twilio/QBO/Stripe/Encircle capability or limit), confirm it via web research (WebSearch/WebFetch) and
+  cite it in the plan. Training data goes stale; a 2026-07 example: the iOS-26/27 PWA resume behavior
+  materially changed a design and was confirmed live, not assumed.
 - Fan out the broad inventories (frontend, backend/schema, docs/conventions) — keep
   this session's context for judgment.
 - Produce a **finish-first list**: everything open in in-flight work, as concrete
@@ -68,8 +73,10 @@ once (e.g. `sched-board`) and use it consistently for `docs/<slug>-roadmap.md`,
   (**Branch** (session-assigned; illustrative name) / **Prerequisite** / **Model ·
   effort** / **Read scope**) + checkbox **Close-out checklist** (named test-first
   targets → acceptance criteria → `npm run test` + `build` + eslint → reviewer-agent
-  gauntlet → visual check → `UPR-Web-Context.md` → set-status + reconcile + test-data
-  cleanup + push/PR) + one-line **Scope** naming owned files and fillable RPC bodies.
+  gauntlet → **the `.claude/rules/close-out-standard.md` checks: minimize/resume test, 390px
+  mobile check on any touched page, loading/empty/error states forced, perf delta** →
+  `UPR-Web-Context.md` → set-status + reconcile + test-data cleanup + push/PR) + one-line
+  **Scope** naming owned files and fillable RPC bodies.
 - **Model/effort logic:** Opus·high for money math, consent/compliance, live-RPC
   replaces, public unauthenticated surfaces; Opus·medium for data-integrity CRUD;
   Sonnet·medium for verification/close-out and mechanical scaffolding. State which
@@ -94,6 +101,10 @@ once (e.g. `sched-board`) and use it consistently for `docs/<slug>-roadmap.md`,
   (SECURITY DEFINER + GRANT, body RAISE 'not implemented'; signatures are contracts —
   changing one post-F is forbidden, `migration-safety-checker` enforces); shared
   helpers extracted once with tests; shared UI extracted behavior-identical;
+  **the design seam** — Foundation owns/extends the shared UI primitives (Modal, StatusPill,
+  EmptyState, ErrorState, PageHeader, form fields, the resume/lookup hooks) + the semantic design
+  tokens the wave consumes, the SAME way it owns 100% of schema; wave sessions IMPORT them and never
+  hand-roll a variant (this makes "no manual UX/UI cleanup" structural, not hoped-for);
   **slot components** so two phases never co-edit a page; ALL wiring (routes via a
   stub-page pattern, nav, icons, reserved css section markers per phase); and the
   **ownership manifest** `.claude/rules/<slug>-wave-ownership.md` (Session → files
@@ -188,8 +199,12 @@ owner says go.** If plan mode is active, exit via the approval flow.
    recreate them.** Plan docs are CONSUMED, never re-authored by a wave session. (A phase
    that skips this branches from `main`, re-authors divergent plan copies, and can wipe the
    wave plan — a real incident.)
-5. **Agents**: reuse `upr-pattern-checker`, `crm-phase-reviewer`,
-   `migration-safety-checker`, `consent-path-auditor`. Create a new agent ONLY for a
+5. **Agents**: reuse the existing roster in `.claude/agents/` (`ls` it — currently
+   `upr-pattern-checker`, `design-consistency-checker`, `page-behavior-checker`,
+   `migration-safety-checker`, `anon-grant-auditor`, `consent-path-auditor`, and the per-initiative
+   phase-reviewers). Any wave phase touching `src/pages`|`src/components` runs the **3-agent UI
+   gauntlet** (`upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`) per
+   `.claude/rules/close-out-standard.md`. Create a new agent ONLY for a
    job recurring across 3+ phases (frontmatter name/description/tools/model;
    read-only tools + sonnet for checkers, opus for judgment graders; body = ground
    truth, procedure, classification taxonomy, output format).
@@ -209,6 +224,13 @@ owner says go.** If plan mode is active, exit via the approval flow.
 
 ## Standing guardrails (bind every phase whose surface they touch — carry them into the blocks)
 
+- **Frontend excellence (any phase touching `src/pages`|`src/components`):** the page complies with
+  `.claude/rules/page-lifecycle.md` (does nothing on resume — no refetch flash, no spinner-gated reload,
+  no hard reload; the minimize test passes) and `loading-error-states.md` (a failed load never renders
+  the success empty-state or a blank page); it consumes the design-system tokens + shared primitives
+  (zero new hardcoded hex / bespoke `const C={}` palette); on tech surfaces it meets `tech-mobile-ux.md`.
+  The 3-agent gauntlet + the `close-out-standard.md` minimize/390px/perf checks enforce this — carry
+  them into the phase block, the same way consent/DB guardrails are carried.
 - Additive-only migrations; RLS + explicit policy (scoped `TO authenticated`, not `anon`)
   in the SAME migration as every CREATE TABLE; `org_id` on domain parents (documented
   child/global-tracker exceptions); UNIQUE on external-system IDs + ON CONFLICT upserts

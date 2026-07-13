@@ -23,7 +23,7 @@
         ]
       },
       {
-        "matcher": "mcp__Supabase__apply_migration|mcp__Supabase__execute_sql",
+        "matcher": "mcp__.*__apply_migration|mcp__.*__execute_sql",
         "hooks": [
           {
             "type": "command",
