@@ -12,20 +12,7 @@
 // contact → claim → jobs chain, repairs legacy orphan jobs, dedup-safe, idempotent.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
-async function requireAuth(request, env) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true };
-}
+import { requireUser } from '../lib/auth.js';
 
 // ── Shared helpers (match encircle-import.js) ─────────────────────────────────
 function normalizePhone(phone) {
@@ -719,13 +706,13 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestGet(context) {
-  const auth = await requireAuth(context.request, context.env);
+  const auth = await requireUser(context.request, context.env);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   return runBackfill(context.request, context.env, { method: 'GET' });
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireAuth(context.request, context.env);
+  const auth = await requireUser(context.request, context.env);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   return runBackfill(context.request, context.env, { method: 'POST' });
 }
