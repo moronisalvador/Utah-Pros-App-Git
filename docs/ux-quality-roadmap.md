@@ -113,6 +113,19 @@ change against its real browser caller before merge (e.g. `TechDemoSheet.jsx:119
 header added when `encircle-search` starts requiring auth). Gauntlet: `upr-pattern-checker` +
 `anon-grant-auditor` posture on the worker gates.
 
+**Shipped 2026-07-13 (honest scope reconciliation):** H1 (retry select-only), H2 (encircle ×3
+`requireAuth` + Bearer on all 3 `TechDemoSheet` callers), H3 (purge cron-secret gate + `days ≥ 30`
+floor), H5 (payout idempotency key: client-UUID per action), H6 (hook matcher `mcp__.*__`), and the
+**stripe-payout** role gate (`['admin','manager']`, mirrors `claimUtils.BILLING_EDIT_ROLES`; its sole
+caller is already `canEditBilling`-gated). Tests in `functions/api/phase0-security-gates.test.js`
+(unauthenticated → 401 on all 5 endpoints, 503-unchanged for dormant Stripe).
+**Deferred to F-B (severity-based, to avoid a blind production break):** the *broad* money-worker
+role gate on `qbo-payment/invoice/estimate/charge` + `send-email-campaign` — their callers span roles
+(gating `qbo-estimate` to billing-roles-only would break estimators), so F-B maps each endpoint's
+legitimate roles with per-endpoint tests. These already require a valid employee token (insider risk,
+not internet-facing). H7 (crew-sync atomicity) also folds into F-B's `sync_appointment_crew` RPC
+rather than churning 3 files with an interim non-atomic tweak.
+
 ### F-S1 — Standards & enforcement · this session
 > **Branch** session-assigned · **Prereq** Phase 0 merged (shares eslint/CI/settings files) ·
 > **Model·effort** Opus·high · **Read scope** CLAUDE.md + the full audit

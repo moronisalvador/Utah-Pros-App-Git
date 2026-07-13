@@ -103,6 +103,7 @@ function clearDraftMirror(id) {
 // ── Encircle Job Search Sheet ────────────────────────────────────────────────
 function EncircleSearchModal({ onSelect, onClose }) {
   // ─── SECTION: State & hooks ──────────────
+  const { db } = useAuth(); // for the Bearer token — /api/encircle-search is auth-gated
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('policyholder_name');
   const [results, setResults] = useState([]);
@@ -117,14 +118,16 @@ function EncircleSearchModal({ onSelect, onClose }) {
     setLoading(true); setError(null);
     try {
       const params = new URLSearchParams({ [searchType]: q });
-      const res = await fetch(`/api/encircle-search?${params}`);
+      const res = await fetch(`/api/encircle-search?${params}`, {
+        headers: { 'Authorization': `Bearer ${db.apiKey}` },
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       setResults(data.list || []);
       setSearched(true);
     } catch (e) { setError(e.message); }
     setLoading(false);
-  }, [searchType]);
+  }, [searchType, db]);
 
   // ─── SECTION: Event handlers ──────────────
   const handleInput = (val) => {
@@ -1015,7 +1018,9 @@ export default function TechDemoSheet() {
     setShowEncircle(false);
     setEncircleRoomsLoading(true);
     try {
-      const res = await fetch(`/api/encircle-rooms?claim_id=${claim.id}`);
+      const res = await fetch(`/api/encircle-rooms?claim_id=${claim.id}`, {
+        headers: { 'Authorization': `Bearer ${db.apiKey}` },
+      });
       const data = await res.json();
       if (res.ok && data.rooms?.length) {
         setEncircleRooms(data.rooms.map(r => r.name));
@@ -1158,7 +1163,7 @@ export default function TechDemoSheet() {
         tasks.push(
           fetch('/api/encircle-upload', {
             method:'POST',
-            headers:{ 'Content-Type':'application/json' },
+            headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${db.apiKey}` },
             body: JSON.stringify({
               claim_id: encircleLinked.id,
               title: `Scope Sheet — ${jobInfo.jobNumber||'No Job #'} | ${jobInfo.techName||'?'}`,
