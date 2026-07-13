@@ -214,7 +214,7 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
 
-## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-13, F-S2)*
+## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-13, F-S2 + motion-polish: `--motion-spring-in` token, modal/sheet exit motion)*
 
 All motion is defined in **two central places only**: the `:root` motion tokens (below) and this catalog.
 Change a token → the whole app retunes. **No bespoke `120ms`/`ease-in-out`/`@keyframes` in a page or
@@ -231,6 +231,10 @@ review failure).
 --motion-ease-standard:   cubic-bezier(.2, 0, 0, 1);   /* the default */
 --motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);    /* enter */
 --motion-ease-accelerate: cubic-bezier(.3, 0, 1, 1);   /* exit */
+--motion-spring-in:       linear(0, .038, … , 1);      /* gentle ~12% spring — ENTERS only
+                                                          (modal/menu/toast pop); a linear()
+                                                          spring, not a bezier; OFF exits, the
+                                                          mobile sheet slide & money surfaces */
 /* plus the two legacy --transition-fast/--transition-base still in use */
 ```
 
@@ -241,12 +245,12 @@ review failure).
 | **Page transition** | content region slides; sticky shell stays put | `--motion-duration-base` · `--motion-ease-standard` | Native View Transitions API — `@view-transition { navigation: auto }` is shipped in `index.css`; a routed link opts in with the router's `viewTransition` prop (shell-owner wiring). Degrades gracefully (unsupported browsers navigate instantly). Never re-runs `load()`. |
 | **Button press** | `scale(0.97)` on `:active`, springs back | `--motion-duration-fast` · `--motion-ease-standard` | Built into `.btn` (+ `touch-action:manipulation`). Native also fires `impact('light')`. |
 | **Selection / tabs / segments / chips** | animated indicator (slide/cross-fade), never a snap | `--motion-duration-fast` | `.ui-seg` + `.ui-seg-indicator` primitive; native fires `nativeHaptics.selection()`. |
-| **Modal (desktop)** | overlay fades, panel fades + scales up | `--motion-duration-base` · `--motion-ease-decelerate` | `<Modal>` (CSS `uiModalIn`). |
-| **Sheet (mobile)** | slides up from the bottom edge | `--motion-duration-base` · `--motion-ease-decelerate` | `<Modal>` at ≤768px (CSS `uiSheetUp`); dismiss reverses. |
+| **Modal (desktop)** | enter: overlay fades, panel fades + **springs** up. exit: panel fades + scales down, overlay fades | enter `--motion-duration-base` · `--motion-spring-in` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` — enter `uiModalIn`, exit `uiModalOut` + overlay `uiFadeOut`; `Modal.jsx` adds `--closing` then unmounts on `animationend` (safety-timeout fallback). |
+| **Sheet (mobile)** | enter: slides up from the bottom edge. dismiss: slides **down** off-screen | enter `--motion-duration-base` · `--motion-ease-decelerate` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` at ≤768px — enter `uiSheetUp`, exit `uiSheetDown`. Spring is kept **OFF** the sheet (it would fight the slide). |
 | **Chat — sent** | bubble rises from the composer edge + fades | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-sent` (wired at the sms-experience W6 fold-in). |
 | **Chat — received** | bubble fades + scales in (0.98→1) | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-received`. |
-| **Dropdown / popover** | fade + slight scale (0.96→1) from trigger | `--motion-duration-fast` | consume the tokens on the popover. |
-| **Toast** | slide/fade from the container edge | `--motion-duration-base` | shell toast container. |
+| **Dropdown / popover / menu** | fade + slight scale (0.96→1) from trigger, **springs** into place | `--motion-duration-fast` · `--motion-spring-in` | consume the tokens on the popover; e.g. `.create-menu-popup` (CSS `createMenuIn`). |
+| **Toast** | slide/fade from the container edge; enter **springs** | `--motion-duration-base` · `--motion-spring-in` (enter) | shell toast container; in-CSS `.conv-toast` uses `toastIn` on the spring (the shell's live toast is inline-styled in `Layout.jsx`). |
 | **Form focus** | border/ring transition | `--motion-duration-fast` | `.field:focus` / `.input:focus`. |
 
 ### Haptics (native-feel multiplier — pairs with motion, never replaces it)
