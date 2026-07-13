@@ -22,8 +22,9 @@ reviewer gauntlet + git-revert). Stay inside your owned files and no two session
 - **`src/components/ui/**` + the new shared hooks** (`useResumeRefetch`, `useTwoClickConfirm`,
   `useLookup`, `usePhotoUpload`) — F-S2 owns/creates them; wave sessions IMPORT only. A needed change to
   a primitive is a disclosed F-S2 follow-up, never an in-wave edit.
-- **`src/index.css` `:root` token block + the design-system base** — F-S2 owns the token definitions;
-  wave sessions consume `var(--…)` and write only inside their reserved section marker.
+- **`src/index.css` `:root` token block (color + motion) + the design-system base + the global
+  `@view-transition` rule** — F-S2 owns the token definitions and the page-transition mechanism; wave
+  sessions consume `var(--…)` + the shared transition and write only inside their reserved section marker.
 - **`functions/lib/{auth,http,worker-runs,supabase,cors}.js`** — F-B owns; workers import only.
 - **`src/lib/{supabase,stableDb,realtime,toast}.js`, `src/contexts/AuthContext.jsx`,
   `src/components/{Layout,TechLayout,Sidebar,TopNav}.jsx`** — shared shell/auth surface; consume, don't
