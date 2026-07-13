@@ -9,6 +9,7 @@ import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import RouteRestorer from '@/components/RouteRestorer';
+import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
 import {
   checkBiometricAvailable,
@@ -585,6 +586,13 @@ function BiometricGate({ children }) {
   return children;
 }
 
+// Null-render tracker: keeps html[data-nav] in sync with the router so the
+// directional page-push View Transition (index.css) knows forward vs Back.
+function NavDirectionTracker() {
+  useNavDirection();
+  return null;
+}
+
 export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
@@ -600,6 +608,9 @@ export default function App() {
     <ThemeProvider>
       <LanguageProvider>
         <BrowserRouter>
+          {/* Sets html[data-nav]=forward|back each navigation so the directional
+              View-Transition page push (index.css) reverses on Back. Renders nothing. */}
+          <NavDirectionTracker />
           {/* Home-screen-PWA eviction recovery: iOS relaunches an evicted PWA at
               the manifest start_url — this sends the tech back to the screen
               they were working on. Renders nothing; standalone-mode only. */}

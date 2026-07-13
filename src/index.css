@@ -11523,12 +11523,19 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .topnav      { view-transition-name: vt-topnav; }
 .tech-header { view-transition-name: vt-techheader; }
 .tv2-topbar  { view-transition-name: vt-tv2topbar; }
-/* Content (root) cross-fade — token-timed, GPU/opacity, degrades gracefully. */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: var(--motion-duration-base);
-  animation-timing-function: var(--motion-ease-standard);
-}
+/* Directional page push (iOS-style). Shell chrome is named → stays static; only
+   the content region (root) moves. Direction is driven by html[data-nav], set per
+   navigation by useNavDirection (src/lib/useNavDirection.js). Default (attribute
+   absent → unsupported/first paint) is forward. transform/opacity only (GPU). */
+html::view-transition-old(root) { animation: vtPushOutLeft  var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html::view-transition-new(root) { animation: vtPushInRight  var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+html[data-nav="back"]::view-transition-old(root) { animation: vtPushOutRight var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html[data-nav="back"]::view-transition-new(root) { animation: vtPushInLeft   var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+@keyframes vtPushInRight  { from { transform: translateX(100%); }             to { transform: translateX(0); } }
+@keyframes vtPushOutLeft  { from { transform: translateX(0); opacity: 1; }    to { transform: translateX(-24%); opacity: .5; } }
+@keyframes vtPushInLeft   { from { transform: translateX(-100%); }            to { transform: translateX(0); } }
+@keyframes vtPushOutRight { from { transform: translateX(0); opacity: 1; }    to { transform: translateX(24%); opacity: .5; } }
+/* Reduced motion: collapse the push to instant (no slide, no parallax dim). */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),
   ::view-transition-old(*),
