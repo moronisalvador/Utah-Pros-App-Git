@@ -131,3 +131,34 @@ review failure.
 - Rollout is progressive enhancement — F-S2 ships the tokens + the shared idioms and improves every page at
   once; the ad-hoc `entering` pages and inline transition-less controls (`TechDemoSheet`) are cleaned up as
   their waves (W1/W2) touch them.
+
+## 8. Two surfaces, one motion system — where each layer actually works (verified 2026-07-13)
+
+UPR ships to **three iOS surfaces that all run the same system WebKit**: Safari tab, home-screen PWA
+(standalone), and the Capacitor app (WKWebView). Because the engine is shared, web capabilities are
+version-gated *identically* across all three — the split is not "web vs native", it is **which layer of
+the feel each surface can render**:
+
+| Layer | iOS Safari | Home-screen PWA | Capacitor app |
+|---|---|---|---|
+| **Visual motion** — View Transitions (`startViewTransition`, same-document) + CSS motion tokens | ✅ iOS 18.0+ | ✅ iOS 18.0+ | ✅ iOS 18.0+ |
+| **Haptics** — Taptic via `@capacitor/haptics` | ❌ no-op | ❌ no-op | ✅ works |
+
+- **View Transitions are cross-surface, not native-only.** The React-Router route change is *same-document*,
+  so the floor is **iOS 18.0** (the `@view-transition { navigation: auto }` at-rule is the cross-document/MPA
+  form and needs 18.2); everywhere below 18.0 it degrades to instant navigation (§2). `navigator.vibrate()`
+  has **never** been implemented in WebKit, so the `nativeHaptics.js` web fallback is a genuine no-op on
+  Safari **and** the PWA — not just "desktop web" as §4 puts it.
+- **Design implication (the load-bearing rule):** on the web/PWA surface the **visual motion carries the
+  entire feel**, because there is no haptic reinforcement to lean on. So easing quality, duration, origin,
+  and interruptibility matter *more* there, not less. Haptics stay **strictly additive** (§4) — a native-app
+  bonus, never a crutch the visual design depends on. Never gate comprehension or feedback on a haptic tick.
+- **Taste / review layer (advisory skills, not a rule change):** the Emil Kowalski pack
+  (`.claude/skills/{emil-design-eng,apple-design,improve-animations,review-animations,animation-vocabulary}`)
+  is the sanctioned *how-should-this-feel* reference — use `improve-animations` for a motion audit and
+  `review-animations` before merging motion work; `apple-design` for gesture/sheet fluidity. It is
+  **subordinate to this doc and `perf-budget.md`**: its CSS/WAAPI-first guidance fits UPR's dependency-free
+  stance, but its spring/`Motion`-library suggestions are **not** licence to add `framer-motion`/`gsap` —
+  a JS motion dependency needs an explicit `perf-budget.md` justification (entry-JS ≤ 232 KB gz) and, if
+  ever adopted, must be route-lazy and scoped to a genuinely gesture-driven surface. View Transitions +
+  CSS tokens remain the mechanism.
