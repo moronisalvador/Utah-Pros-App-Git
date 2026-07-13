@@ -2,6 +2,7 @@
 // No SDK — pure fetch() + Web Crypto API for signature validation
 
 import { resolveCredential } from './credentials.js';
+import { fetchWithTimeout } from './http.js';
 
 /**
  * Validate Twilio webhook signature using HMAC-SHA1
@@ -73,7 +74,7 @@ export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) 
     params.set('StatusCallback', statusCallback);
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
     {
       method: 'POST',

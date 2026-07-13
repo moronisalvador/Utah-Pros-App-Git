@@ -6,6 +6,7 @@
 // refresh tokens roll forward on each refresh and are persisted automatically.
 
 import { supabase } from './supabase.js';
+import { fetchWithTimeout } from './http.js';
 
 const PROVIDER      = 'quickbooks';
 const TOKEN_URL     = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
@@ -45,7 +46,7 @@ export function buildAuthorizeUrl(env, state) {
 }
 
 async function postToken(env, params) {
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithTimeout(TOKEN_URL, {
     method: 'POST',
     headers: {
       'Authorization': basicAuth(env),
@@ -127,7 +128,7 @@ export async function getValidAccessToken(env) {
 export async function qboFetch(env, path, options = {}) {
   const { accessToken, realmId, environment } = await getValidAccessToken(env);
   const url = `${apiBase(environment)}/v3/company/${realmId}${path}`;
-  return fetch(url, {
+  return fetchWithTimeout(url, {
     ...options,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
@@ -153,7 +154,7 @@ export async function paymentsFetch(env, path, options = {}) {
   const { accessToken, environment } = await getValidAccessToken(env);
   const url = `${paymentsApiBase(environment)}/quickbooks/v4/payments${path}`;
   const { requestId, headers, ...rest } = options;
-  return fetch(url, {
+  return fetchWithTimeout(url, {
     ...rest,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
@@ -298,7 +299,7 @@ export async function ensureQboCustomer(request, env, contactId) {
   if (!contactId) return false;
   try {
     const url = new URL('/api/qbo-sync-customer', request.url);
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithTimeout(url.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-webhook-secret': env.QBO_WEBHOOK_SECRET || '' },
       body:    JSON.stringify({ contact_id: contactId }),

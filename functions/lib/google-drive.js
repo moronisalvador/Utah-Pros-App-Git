@@ -176,20 +176,7 @@ export async function downloadFile(env, employeeId, { id, mimeType, name }) {
 }
 
 // ─── SECTION: Auth — resolve request → employee ──────────────
-// Validates the Supabase Bearer token and maps the auth user to their employee
-// row. Mirrors the getAuthUser + employees lookup repeated across QBO workers.
-export async function getActorEmployee(request, env, db) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return null;
-
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  const user = await res.json();
-  if (!user?.id) return null;
-
-  const emp = await db.select('employees', `auth_user_id=eq.${user.id}&select=id,full_name,email&limit=1`);
-  return emp?.[0] || null;
-}
+// getActorEmployee moved to functions/lib/auth.js (F-B consolidation). Re-exported
+// here so the existing `import { getActorEmployee } from '../lib/google-drive.js'`
+// callers keep working unchanged.
+export { getActorEmployee } from './auth.js';
