@@ -61,10 +61,43 @@
   --text-xs: 11px; --text-sm: 13px; --text-base: 14px;
   --text-lg: 16px; --text-xl: 18px; --text-2xl: 22px;
 
+  /* ─── Semantic status tokens (UX-Quality F-S2) ───────────────────────────
+     Minted from the dominant in-code status triplets (grep-verified 2026-07-13:
+     danger #dc2626/#fef2f2/#fecaca ×55/19/33 · success #16a34a/#f0fdf4/#bbf7d0 ·
+     warning #d97706/#fffbeb/#fde68a · info #2563eb/#eff6ff/#bfdbfe ·
+     neutral #6b7280/#f1f3f5/#e5e7eb). These replace the inline-hex "Status Color
+     Palette" recipe in UPR-Design-System.md — components consume var() only, so a
+     dark theme (or a future re-tone) is a one-place change. Full triplet = fg + bg
+     + border; StatusPill/StatusBadge read them. */
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --info: #2563eb;
+  --info-bg: #eff6ff;
+  --info-border: #bfdbfe;
+  --neutral: #6b7280;
+  --neutral-bg: #f1f3f5;
+  --neutral-border: #e5e7eb;
+
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
-  /* Motion tokens/standard: .claude/rules/motion-standard.md (UX-Quality F-S2 owns the
-     --motion-duration-* / --motion-ease-* catalog). Use tokens, never bespoke literals. */
+  /* ─── Motion catalog tokens (UX-Quality F-S2 · law: .claude/rules/motion-standard.md) ──
+     ONE tunable place for durations + easings — change a token, the whole app retunes.
+     Use these (or the two --transition-* above), never a bespoke ms/cubic-bezier literal
+     where a token exists (design-consistency-checker fails those). The human-readable
+     catalog mapping each primitive to its tokens lives in UPR-Design-System.md → Motion. */
+  --motion-duration-fast: 120ms;   /* hovers, toggles, press, selection */
+  --motion-duration-base: 220ms;   /* page + modal/sheet transitions, chat bubbles */
+  --motion-duration-slow: 320ms;   /* large surfaces */
+  --motion-ease-standard: cubic-bezier(.2, 0, 0, 1);      /* the default */
+  --motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);     /* enter */
+  --motion-ease-accelerate: cubic-bezier(.3, 0, 1, 1);    /* exit */
 
   /* Safe area for notched iPhones */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -4459,6 +4492,20 @@ tr:hover td { background: var(--bg-secondary); }
   --status-working-bg: #0f2b22;
   --status-paused-bg: #2c1618;
   --status-completed-bg: #1c1f26;
+  /* Semantic status tokens re-toned for dark (UX-Quality F-S2) — the fg/border
+     keep their hue for contrast; only the tinted backgrounds darken. This is why
+     the StatusPill primitive reads var() instead of the inline-hex recipe: dark is
+     a token swap, not a per-component fix. */
+  --success-bg: #0f2b22;
+  --success-border: #14532d;
+  --danger-bg: #2c1618;
+  --danger-border: #7f1d1d;
+  --warning-bg: #2e2410;
+  --warning-border: #78350f;
+  --info-bg: #14233d;
+  --info-border: #1e3a5f;
+  --neutral-bg: #1c1f26;
+  --neutral-border: #2c303a;
 }
 
 /* ─── TECH SETTINGS (/tech/settings hub) ─── */
@@ -11449,4 +11496,194 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   .tv2-msgs-thread-layer:not([hidden]) .tv2-msgs-thread { animation: none; }
   .tv2-msgs-thread__caret { transition: none; }
   .tv2-msgs-attach__spin { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UX-QUALITY F-S2 — SHARED PRIMITIVES + MOTION FOUNDATION
+   Owned by F-S2 (ownership manifest: .claude/rules/ux-alignment-wave-ownership.md).
+   Base styles for src/components/ui/** + the tunable motion mechanism.
+   Law: .claude/rules/motion-standard.md · catalog: UPR-Design-System.md → Motion.
+   Everything here is transform/opacity-only (GPU, refresh-rate-agnostic), token-
+   driven, and wrapped in a prefers-reduced-motion fallback. Call-site migration of
+   the 158 inline pills / 45 modals / etc. is W1–W3's job — F-S2 ships the contract.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Page transitions — the native View Transitions API (progressive enhancement) ──
+   Degrades gracefully: browsers without support just navigate instantly. SPA opt-in
+   also needs React-Router's `viewTransition` prop on links (shell-owner follow-up —
+   F-S2 does not edit App.jsx/Layout). The sticky chrome is named so it stays put and
+   only the content region transitions (reinforces page-lifecycle.md: shell stays). */
+@view-transition { navigation: auto; }
+/* Persistent shell chrome: named snapshots so they do NOT cross-fade with content. */
+.sidebar, .bottom-bar, .tech-nav, .topnav, .tech-header, .tv2-topbar {
+  view-transition-name: var(--vt-shell, none);
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation-duration: 1ms !important; }
+}
+
+/* ─── Button press feedback (promoted from .tech-layout .btn:active to the base btn) ──
+   The house idiom — a quick scale-down on press that springs back on release. */
+.btn { transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+                    background var(--transition-fast), border-color var(--transition-fast),
+                    color var(--transition-fast); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: background var(--transition-fast), border-color var(--transition-fast); }
+  .btn:active:not(:disabled) { transform: none; }
+}
+
+/* ─── Modal (role=dialog) — centered on desktop, bottom-sheet on mobile ─── */
+.ui-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-4);
+  animation: uiFadeIn var(--motion-duration-base) var(--motion-ease-standard);
+}
+.ui-modal {
+  background: var(--bg-primary); border-radius: var(--radius-xl);
+  width: 100%; max-width: 560px; max-height: 90dvh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  animation: uiModalIn var(--motion-duration-base) var(--motion-ease-decelerate);
+}
+.ui-modal--sm { max-width: 420px; }
+.ui-modal--lg { max-width: 760px; }
+.ui-modal-header {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.ui-modal-title { font-size: var(--text-lg); font-weight: 600; color: var(--text-primary); }
+.ui-modal-body { padding: var(--space-5); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ui-modal-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.ui-modal-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; min-width: 32px; border-radius: var(--radius-md);
+  border: none; background: none; color: var(--text-tertiary); cursor: pointer;
+  font-size: 18px; line-height: 1; transition: background var(--transition-fast);
+}
+.ui-modal-close:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+@media (max-width: 768px) {
+  .ui-modal-overlay { align-items: flex-end; padding: 0; }
+  .ui-modal {
+    border-radius: 16px 16px 0 0; max-width: 100%; max-height: 92dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: uiSheetUp var(--motion-duration-base) var(--motion-ease-decelerate);
+  }
+}
+@keyframes uiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes uiModalIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes uiSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal-overlay, .ui-modal { animation: none; }
+  .ui-modal-close { transition: none; }
+}
+
+/* ─── StatusPill — reads the semantic tokens, never inline hex ─── */
+.ui-status-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--text-xs); font-weight: 700; line-height: 1.4;
+  padding: 2px 8px; border-radius: var(--radius-full);
+  border: 1px solid transparent; white-space: nowrap;
+}
+.ui-status-pill[data-tone="success"] { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.ui-status-pill[data-tone="danger"]  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.ui-status-pill[data-tone="warning"] { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.ui-status-pill[data-tone="info"]    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
+.ui-status-pill[data-tone="neutral"] { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+.ui-status-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* ─── EmptyState / ErrorState — the two success/failure primitives ─── */
+.ui-empty-state, .ui-error-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 48px 24px; gap: var(--space-2);
+}
+.ui-empty-state-icon { font-size: 32px; line-height: 1; margin-bottom: var(--space-1); opacity: 0.85; }
+.ui-empty-state-title, .ui-error-state-title { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+.ui-empty-state-sub, .ui-error-state-msg { font-size: var(--text-sm); color: var(--text-tertiary); max-width: 340px; }
+.ui-empty-state-action, .ui-error-state-actions { margin-top: var(--space-3); display: flex; gap: var(--space-2); }
+.ui-error-state-icon { font-size: 28px; line-height: 1; }
+
+/* ─── PageHeader — the shared title/subtitle/actions row ─── */
+.ui-page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-4);
+}
+.ui-page-header-titles { min-width: 0; }
+.ui-page-header-title { font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); }
+.ui-page-header-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
+.ui-page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+
+/* ─── SearchInput — icon + input + optional clear ─── */
+.ui-search { position: relative; display: inline-flex; align-items: center; width: 100%; }
+.ui-search-icon { position: absolute; left: 10px; display: flex; color: var(--text-tertiary); pointer-events: none; }
+.ui-search-input { width: 100%; padding-left: 32px; padding-right: 30px; }
+.ui-search-clear {
+  position: absolute; right: 6px; display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: none; background: none; cursor: pointer;
+  color: var(--text-tertiary); border-radius: var(--radius-sm); font-size: 15px; line-height: 1;
+  transition: background var(--transition-fast);
+}
+.ui-search-clear:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .ui-search-clear { transition: none; } }
+
+/* ─── IconButton — accessible icon-only control (label required in JSX) ─── */
+.ui-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; min-width: 36px; border-radius: var(--radius-md);
+  border: 1px solid transparent; background: none; color: var(--text-secondary);
+  cursor: pointer; padding: 0;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--transition-fast), color var(--transition-fast);
+}
+.ui-icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ui-icon-btn:active:not(:disabled) { transform: scale(0.92); }
+.ui-icon-btn:disabled { opacity: 0.45; cursor: default; }
+.ui-icon-btn--sm { width: 30px; height: 30px; min-width: 30px; }
+/* Tech/field floor — ≥44px hit area (tech-mobile-ux.md); use on any tech-surface icon button. */
+.ui-icon-btn--lg { width: 48px; height: 48px; min-width: 48px; }
+.ui-icon-btn--danger:hover { background: var(--danger-bg); color: var(--danger); }
+@media (prefers-reduced-motion: reduce) { .ui-icon-btn:active:not(:disabled) { transform: none; } }
+
+/* ─── Animated selection indicator — segmented control that slides, never snaps ──
+   The shared correct primitive (TechDemoSheet's inline tech-select etc. migrate to
+   it in their own wave). The active fill cross-fades on the motion-fast token. */
+.ui-seg { position: relative; display: inline-flex; background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3px; gap: 2px; }
+.ui-seg-btn {
+  position: relative; z-index: 1; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: var(--text-xs); font-weight: 500; padding: 5px 14px;
+  color: var(--text-secondary); border-radius: calc(var(--radius-md) - 2px);
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.ui-seg-btn[data-active="true"] { color: var(--accent); font-weight: 600; }
+.ui-seg-indicator {
+  /* Position + size via transform ONLY (translateX + scaleX) so selection animates on
+     the GPU with no layout/reflow — the wiring component sets the transform, never width
+     (motion-standard.md §5: animate transform/opacity only). */
+  position: absolute; z-index: 0; top: 3px; left: 0; height: calc(100% - 6px);
+  transform-origin: left center; border-radius: calc(var(--radius-md) - 2px);
+  background: var(--bg-primary); box-shadow: var(--shadow-xs);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-seg-btn, .ui-seg-indicator { transition: none; }
+}
+
+/* ─── Chat bubble motion — reusable enter classes (wired by the sms-experience
+   surface at the W6 fold-in; F-S2 authors the tokened classes now per motion §3). ── */
+.ui-chat-bubble-sent { animation: uiChatSent var(--motion-duration-base) var(--motion-ease-decelerate); }
+.ui-chat-bubble-received { animation: uiChatReceived var(--motion-duration-base) var(--motion-ease-decelerate); }
+@keyframes uiChatSent { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes uiChatReceived { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .ui-chat-bubble-sent, .ui-chat-bubble-received { animation: none; }
 }

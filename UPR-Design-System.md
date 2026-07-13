@@ -1,8 +1,14 @@
 # UPR Platform — Design System Reference
-**Last updated:** July 1, 2026 (added the Collections Kit, Overview Kit, and Conversations sections — audit found they'd grown into real, reused systems with zero doc coverage)
+**Last updated:** July 13, 2026 (UX-Quality F-S2: minted the semantic token family + motion catalog, added the shared UI primitives `@/components/ui`, the Kit Registry, the dark-theme contract, and the Motion catalog; **deleted the inline-hex Status Color Palette recipe** — it contradicted the "no hardcoded colors" rule and was the single largest source of hex duplication)
 **For:** Claude Code — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
+
+> **Reach for a shared primitive before a style object.** Every visual pattern below that has a
+> component in `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput,
+> IconButton) shows the **import**, not the inline styles — inline recipes are how 1,644 hardcoded hex
+> and 158 duplicate status pills happened. Colors come from **tokens** (`var(--…)`) only, so light/dark
+> and any future re-tone are a one-place change (the **Dark-theme contract** section is the law).
 
 **Three design systems currently coexist.** Most of the app (Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs) uses the tokens/classes below. Two newer, deliberately page-scoped systems have since grown up alongside it — **not drift, but not merged in either**:
 - **Collections Kit** (§ below) — Collections/AR, Time Tracking, Invoice Editor, Estimate Editor
@@ -61,46 +67,59 @@ Building in one of those areas? Use that section, not the tokens below. Building
 --status-active-bg: #eff6ff
 ```
 
-### Status Color Palette (inline style pattern)
-These are used for badges, pills, and flags. Always use the full triplet: bg + color + border.
+### Semantic status tokens — the ONLY way to color a status *(Last-verified: 2026-07-13, F-S2)*
+The old inline-hex "Status Color Palette" recipe was **deleted** — it prescribed copy-pasting
+`bg/color/border` triplets, which contradicted the "no hardcoded colors" rule and produced ~727 of the
+1,644 hex literals in the app. The values were minted into `:root` tokens (grep-verified as the dominant
+in-code triplets) and are the single source now. Each is a full triplet — foreground + `-bg` + `-border`:
 
-```js
-// Green (success, active, paid, linked)
-bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0'
-
-// Red (error, urgent, needs response, force-disabled)
-bg: '#fef2f2', color: '#dc2626', border: '#fecaca'
-
-// Yellow/Amber (warning, pending, dev-only)
-bg: '#fffbeb', color: '#d97706', border: '#fde68a'
-
-// Blue (info, active, in-progress)
-bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe'
-
-// Purple (feature flags, schedule mode)
-bg: '#faf5ff', color: '#7c3aed', border: '#ddd6fe'
-
-// Gray (inactive, closed, default)
-bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9'
+```css
+--success  #16a34a   --success-bg  #f0fdf4   --success-border  #bbf7d0   /* paid, active, approved, linked */
+--danger   #dc2626   --danger-bg   #fef2f2   --danger-border   #fecaca   /* error, urgent, overdue, failed */
+--warning  #d97706   --warning-bg  #fffbeb   --warning-border  #fde68a   /* pending, waiting, draft, dev-only */
+--info     #2563eb   --info-bg     #eff6ff   --info-border     #bfdbfe   /* info, in-progress, scheduled */
+--neutral  #6b7280   --neutral-bg  #f1f3f5   --neutral-border  #e5e7eb   /* inactive, closed, default, paused */
 ```
 
-### Division Colors
-```js
-// From DivisionIcons.jsx — import DIVISION_COLORS from '@/components/DivisionIcons'
-water:          '#2563eb'
-mold:           '#9d174d'
-reconstruction: '#d97706'
-fire:           '#dc2626'
-contents:       '#059669'
-general:        '#6b7280'
+**Never hand-build a status badge.** Use the primitive, which reads these tokens (so dark mode + a
+re-tone are a one-place change):
 
-// Division badges (data-division CSS attribute)
-water:          bg #dbeafe, color #1e40af
-mold:           bg #fce7f3, color #9d174d
-reconstruction: bg #fef3c7, color #92400e
-fire:           bg #fee2e2, color #b91c1c
-contents:       bg #d1fae5, color #065f46
+```jsx
+import { StatusPill } from '@/components/ui';
+
+<StatusPill status="paid" />              {/* classifies "paid" → success tone automatically */}
+<StatusPill status="overdue" dot />       {/* leading status dot */}
+<StatusPill tone="warning" label="Draft" /> {/* pass an explicit tone when the word is ambiguous */}
 ```
+
+`StatusPill` classifies the status string into one of the five tones via `toneForStatus()`
+(`@/components/ui/statusTone`); pass an explicit `tone` to override. Legacy `.status-badge` /
+`.status-needs-response` classes still exist for the shell, but new code uses `StatusPill`.
+
+> Purple (`#7c3aed`, feature flags / schedule mode) is a **one-off accent**, not a status tone — it has
+> no semantic token because it isn't a status. Keep it inline where it's genuinely a brand accent, or add
+> a named `--accent-*` token if it starts repeating.
+
+### Division Colors *(Last-verified: 2026-07-13 — regenerated from `DivisionIcons.jsx` `DIVISION_CONFIG`)*
+**`src/components/DivisionIcons.jsx` is the source of truth.** Import, never hardcode:
+`import { DIVISION_COLORS, DIVISION_CONFIG, DivisionIcon } from '@/components/DivisionIcons'`.
+
+| Division | `color` | `bg` | Label |
+|---|---|---|---|
+| water | `#1d4ed8` | `#dbeafe` | Water |
+| mold | `#7e22ce` | `#f3e8ff` | Mold |
+| reconstruction | `#b45309` | `#fef3c7` | Reconstruction |
+| remodeling | `#c0432a` | `#fdece8` | Remodeling |
+| fire | `#b91c1c` | `#fee2e2` | Fire |
+| contents | `#047857` | `#d1fae5` | Contents |
+| general | `#475569` | `#f1f5f9` | General |
+
+`DIVISION_COLORS` is the flat `{ division: color }` convenience map; `DIVISION_CONFIG` carries
+`{ color, bg, label }`. `LOSS_CONFIG` (same file) maps loss types (water/fire/mold/storm/sewer/
+vandalism/other). The `.division-badge[data-division="…"]` CSS classes exist for markup that can't reach
+JS, but they drift from `DIVISION_CONFIG` (e.g. mold badge CSS `#9d174d` vs config `#7e22ce`) — prefer
+the JS config + `DivisionIcon`. **Collections Kit uses a DIFFERENT division palette** (`collTokens.DIV_COLOR`)
+— see Known Inconsistencies.
 
 ### Phase/Status Colors
 Used consistently across Jobs, Production, CustomerPage, JobPage:
@@ -134,6 +153,11 @@ closed, on_hold, cancelled: bg #f1f3f5, color #6b7280
 --text-2xl:  22px   /* page titles */
 ```
 
+**Typography floor (hard rule):** **11px is the absolute minimum** anywhere; **12px minimum for any
+actionable text** on the tech surface (a tappable label/chip/button) — a gloved hand in sunlight can't
+read smaller (`tech-mobile-ux.md`). Mobile inputs stay **16px** (the `.input` class enforces it — iOS
+auto-zooms below 16px). Never set a font-size below these.
+
 ### Spacing
 ```css
 --space-1: 4px   --space-2: 8px   --space-3: 12px
@@ -159,6 +183,78 @@ closed, on_hold, cancelled: bg #f1f3f5, color #6b7280
 > `--motion-ease-*` tokens + per-primitive recipes, enforced by `design-consistency-checker`).
 
 ---
+
+## Kit Registry — which system a surface uses *(Last-verified: 2026-07-13)*
+
+Four visual systems coexist **by design**. Pick the one that owns the surface you're building; never mix
+their tokens/components. Full details are in each system's section below.
+
+| Kit | Scope | Tokens source | Components | Notes |
+|---|---|---|---|---|
+| **Main / Shared** | Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs, everything not below | `:root` tokens in `index.css` (`--bg-*`, `--text-*`, `--accent`, `--success/--danger/…`, `--space-*`, `--radius-*`, `--motion-*`) | `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton) + the `.btn`/`.card`/`.input` utility classes | The default. New pages use this unless they live in a kit below. |
+| **Collections Kit** | Collections/AR, Time Tracking, Invoice/Estimate editors | `collTokens.js` (page-scoped hex — a DIFFERENT green/red than `--success`/`--danger`) | `collKit.jsx` (`CollCard`, `SegControl`, `Kpi`, `PopoverButton`, `StatusBadge`, `Pill`, …), `.coll-*` CSS | Page-scoped; do NOT import into unrelated pages. |
+| **Overview Kit** | Dashboard/home only | `overview/tokens.js` (dashboard-scoped) | `Card.jsx`/`Widgets.jsx` + `react-grid-layout`, `.ovw-*` CSS | Dashboard only. |
+| **Tech Mobile** | `src/pages/tech/**`, `src/components/tech/**` | `--tech-*` + `--status-*` tokens scoped on `.tech-layout`; v2 adds `tv2-*` classes | tech + tech-v2 primitives (`StatusChip`, `ApptListRow`, `TechPane`, skeletons) | Dark-mode capable (see Dark-theme contract). Status owns the color channel. |
+
+The `@/components/ui` primitives + `:root` tokens are the **shared** layer the Main kit uses and the
+others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
+their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
+
+## Dark-theme contract *(Last-verified: 2026-07-13, F-S2)*
+
+- **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
+  the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
+  `--accent-light`, the `--status-*` tints, and the F-S2 semantic `--*-bg`/`--*-border` tints). The desktop
+  office app is light-only today.
+- **The contract: components consume color ONLY through `var(--token)`.** A component that reads a token
+  goes dark for free when the token is re-pointed; a component with an inline hex does not (and becomes a
+  dark-mode bug). This is *why* `StatusPill` reads `--success`/`--danger`/… instead of the old inline
+  triplet — dark is a token swap, never a per-badge edit. Any new hex on the tech surface is a defect
+  (the audit found ~297 tech-surface hex literals W1 migrates to `var(--status-*)`).
+- **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
+  `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
+
+## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-13, F-S2)*
+
+All motion is defined in **two central places only**: the `:root` motion tokens (below) and this catalog.
+Change a token → the whole app retunes. **No bespoke `120ms`/`ease-in-out`/`@keyframes` in a page or
+component where a token/entry exists** (`design-consistency-checker` fails those). Everything is
+transform/opacity-only (GPU, refresh-rate-agnostic — no >60fps dependency), and **every entry is wrapped
+in a `@media (prefers-reduced-motion: reduce)` fallback** (nothing auto-skips; a motion without one is a
+review failure).
+
+### Tokens (`:root` in `index.css`)
+```css
+--motion-duration-fast: 120ms;   /* hovers, toggles, press, selection */
+--motion-duration-base: 220ms;   /* page + modal/sheet transitions, chat bubbles */
+--motion-duration-slow: 320ms;   /* large surfaces */
+--motion-ease-standard:   cubic-bezier(.2, 0, 0, 1);   /* the default */
+--motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);    /* enter */
+--motion-ease-accelerate: cubic-bezier(.3, 0, 1, 1);   /* exit */
+/* plus the two legacy --transition-fast/--transition-base still in use */
+```
+
+### The catalog (each entry names its tokens)
+
+| Motion | What moves | Tokens | How to get it |
+|---|---|---|---|
+| **Page transition** | content region slides; sticky shell stays put | `--motion-duration-base` · `--motion-ease-standard` | Native View Transitions API — `@view-transition { navigation: auto }` is shipped in `index.css`; a routed link opts in with the router's `viewTransition` prop (shell-owner wiring). Degrades gracefully (unsupported browsers navigate instantly). Never re-runs `load()`. |
+| **Button press** | `scale(0.97)` on `:active`, springs back | `--motion-duration-fast` · `--motion-ease-standard` | Built into `.btn` (+ `touch-action:manipulation`). Native also fires `impact('light')`. |
+| **Selection / tabs / segments / chips** | animated indicator (slide/cross-fade), never a snap | `--motion-duration-fast` | `.ui-seg` + `.ui-seg-indicator` primitive; native fires `nativeHaptics.selection()`. |
+| **Modal (desktop)** | overlay fades, panel fades + scales up | `--motion-duration-base` · `--motion-ease-decelerate` | `<Modal>` (CSS `uiModalIn`). |
+| **Sheet (mobile)** | slides up from the bottom edge | `--motion-duration-base` · `--motion-ease-decelerate` | `<Modal>` at ≤768px (CSS `uiSheetUp`); dismiss reverses. |
+| **Chat — sent** | bubble rises from the composer edge + fades | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-sent` (wired at the sms-experience W6 fold-in). |
+| **Chat — received** | bubble fades + scales in (0.98→1) | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-received`. |
+| **Dropdown / popover** | fade + slight scale (0.96→1) from trigger | `--motion-duration-fast` | consume the tokens on the popover. |
+| **Toast** | slide/fade from the container edge | `--motion-duration-base` | shell toast container. |
+| **Form focus** | border/ring transition | `--motion-duration-fast` | `.field:focus` / `.input:focus`. |
+
+### Haptics (native-feel multiplier — pairs with motion, never replaces it)
+`import { impact, selection, notify } from '@/lib/nativeHaptics'` (import-only; Taptic on native,
+`navigator.vibrate` on web, no-op on desktop, fire-and-forget). Vocabulary: `impact('light')` = a
+button/field press or a message send; `selection()` = a tab/segment/chip/toggle change; `notify('success'|'error')`
+= a completed multi-step action or a failure. Haptics respect `prefers-reduced-motion` and are additive —
+a control must be fully usable and visually animated with haptics off.
 
 ## Utility Classes (already in index.css — use these, don't recreate)
 
@@ -202,14 +298,20 @@ closed, on_hold, cancelled: bg #f1f3f5, color #6b7280
 <span className="priority-tag priority-high">HIGH</span>
 ```
 
-### Empty State
+### Empty / Error / Loading states — use the primitives *(law: `loading-error-states.md`)*
+Three DISTINCT states; never conflate them. A failed load must NOT render the empty-state or a blank page.
 ```jsx
-<div className="empty-state">
-  <div className="empty-state-icon">📋</div>
-  <div className="empty-state-text">No items found</div>
-  <div className="empty-state-sub">Try adjusting your filters</div>
-</div>
+import { EmptyState, ErrorState } from '@/components/ui';
+import TabLoading from '@/components/TabLoading';
+
+if (loading)   return <TabLoading />;                                    // cold load only (never on refetch)
+if (loadError) return <ErrorState message="Couldn’t load jobs" onRetry={load} />;  // a load threw
+if (!rows.length) return <EmptyState icon="📋" title="No jobs yet" sub="Create one to start"
+                                     action={<button className="btn btn-primary">New job</button>} />;  // success + 0 rows
 ```
+`<EmptyState>` renders **only after a successful load**. Legacy `.empty-state*` classes still exist for
+the shell; new code uses the primitives. Loading vocabulary: `<TabLoading/>` (tabs/panels), skeletons
+(tech/Overview), `.loading-page` spinner (route cold-load only) — no bare "Loading…" text.
 
 ### Loading Spinner
 ```jsx
@@ -446,7 +548,25 @@ Avatar circle + body + right-side badge.
 
 ## Modal/Panel Patterns
 
-### Centered Modal (Admin)
+### Modal — use the primitive *(new modals; F-S2)*
+```jsx
+import { Modal } from '@/components/ui';
+
+<Modal open={open} onClose={close} title="Edit job" size="sm"
+  footer={<>
+    <button className="btn btn-secondary" onClick={close}>Cancel</button>
+    <button className="btn btn-primary" onClick={save}>Save</button>
+  </>}>
+  {/* body */}
+</Modal>
+```
+`Modal` is the shared dialog: `role="dialog"` + focus trap + ESC/overlay close + **centered on desktop,
+bottom-sheet on mobile** (motion + layout are CSS, tokened + reduced-motion-safe). It replaces the ~45
+hand-rolled overlays (0 of which had `role=dialog` or a focus trap). W3 migrates the inline overlays.
+Destructive confirmation is **two-click inline** (`useTwoClickConfirm`), **never a modal** (Rule 2). The
+legacy `.admin-modal*` classes below remain for the shell; new modals use `<Modal>`.
+
+### Centered Modal (Admin) — legacy shell pattern
 ```jsx
 <div className="admin-modal-overlay" onClick={onClose}>
   <div className="admin-modal" onClick={e => e.stopPropagation()}>
@@ -465,8 +585,11 @@ Avatar circle + body + right-side badge.
 - On mobile (`@media max-width: 768px`): becomes a **bottom sheet** via CSS (`admin-modal-overlay` aligns to flex-end, `admin-modal` gets `border-radius: 16px 16px 0 0`).
 - For smaller confirms: add `admin-modal-sm` class (max-width: 420px).
 
-### Bottom Sheet Modal (any new modal)
-New modals should follow the admin-modal pattern — centered on desktop, bottom sheet on mobile. Add these CSS classes:
+### Bottom Sheet Modal — legacy recipe (new modals use `<Modal>`)
+> **Superseded by `<Modal>` (F-S2)** — it already ships centered-desktop / bottom-sheet-mobile +
+> `role=dialog` + focus trap + tokened `dvh` motion. Only hand-roll the classes below if you genuinely
+> can't use the primitive; if you do, use `dvh` not `vh` and reduced-motion-wrap the animation.
+The historical admin-modal recipe — centered on desktop, bottom sheet on mobile:
 ```css
 /* In your component's inline styles or via new CSS classes */
 .my-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: var(--space-4); }
@@ -502,7 +625,13 @@ New modals should follow the admin-modal pattern — centered on desktop, bottom
 
 ## Tab Bar Patterns
 
-### Underline Tabs (JobPage, Admin, DevTools)
+> **Motion note (F-S2):** the tab/segment/pill recipes below are the existing shell markup and their
+> active state **snaps** (no transition). New tab/segment/chip controls should use the **animated
+> selection indicator** — the `.ui-seg` / `.ui-seg-indicator` primitive (a sliding pill on
+> `--motion-duration-fast`) per the Motion Catalog's "Selection / tabs / segments / chips" row — rather
+> than a hard active-fill swap. W1–W3 migrate these as they touch each surface.
+
+### Underline Tabs (JobPage, Admin, DevTools) — legacy shell pattern
 ```jsx
 <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
   {TABS.map(tab => (
@@ -616,14 +745,13 @@ New modals should follow the admin-modal pattern — centered on desktop, bottom
 
 ## Badge/Pill Patterns
 
-### Status pill (inline)
+### Status pill — use the primitive (never inline)
 ```jsx
-<span style={{
-  fontSize: 11, fontWeight: 700, padding: '2px 8px',
-  borderRadius: 'var(--radius-full)',
-  background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
-}}>Active</span>
+import { StatusPill } from '@/components/ui';
+<StatusPill status="active" />   {/* tokened; classifies to a tone; dark-safe */}
 ```
+The old inline `<span style={{ background:'#f0fdf4', … }}>` recipe is **retired** — see Semantic status
+tokens. W3 migrates the 158 inline pills onto `StatusPill`.
 
 ### Monospace code badge (keys, IDs, job numbers)
 ```jsx
@@ -687,31 +815,29 @@ On mobile, use `flex-direction: column` inside a `@media (max-width: 768px)` rul
 </button>
 ```
 
-### Two-click confirm (REQUIRED for destructive actions — never use alert/confirm)
+### Two-click confirm (REQUIRED for destructive actions — never use alert/confirm/modal)
+Use the shared hook — it owns the arm/timeout/cancel logic (colors come from the `--danger-*` tokens):
 ```jsx
-const [confirmDel, setConfirmDel] = useState(null);
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 
-const handleDelete = async (item) => {
-  if (confirmDel !== item.id) { setConfirmDel(item.id); return; }
-  setConfirmDel(null);
-  // ... execute delete
-};
+const { isArmed, arm, cancel } = useTwoClickConfirm();
 
 <button
-  onClick={() => handleDelete(item)}
-  onBlur={() => setConfirmDel(null)}
+  onClick={() => (isArmed(item.id) ? runDelete(item) : arm(item.id))}
+  onBlur={cancel}   // mobile has no hover — cancel on blur (Rule #5)
   style={{
-    background: confirmDel === item.id ? '#fef2f2' : 'var(--bg-tertiary)',
-    color:      confirmDel === item.id ? '#dc2626' : 'var(--text-tertiary)',
-    border:     `1px solid ${confirmDel === item.id ? '#fecaca' : 'var(--border-light)'}`,
+    background: isArmed(item.id) ? 'var(--danger-bg)' : 'var(--bg-tertiary)',
+    color:      isArmed(item.id) ? 'var(--danger)'    : 'var(--text-tertiary)',
+    border: `1px solid ${isArmed(item.id) ? 'var(--danger-border)' : 'var(--border-light)'}`,
     padding: '4px 10px', borderRadius: 'var(--radius-md)', fontSize: 11,
-    fontWeight: confirmDel === item.id ? 600 : 400, cursor: 'pointer',
-    transition: 'all 0.12s',
+    fontWeight: isArmed(item.id) ? 600 : 400, cursor: 'pointer',
+    transition: 'all var(--motion-duration-fast) var(--motion-ease-standard)',
   }}
 >
-  {confirmDel === item.id ? 'Confirm Delete' : 'Delete'}
+  {isArmed(item.id) ? 'Confirm Delete' : 'Delete'}
 </button>
 ```
+W3 migrates the 26 hand-rolled two-click reimplementations onto this hook.
 
 ---
 
@@ -733,14 +859,18 @@ Always use `PullToRefresh` as the scrollable wrapper. The bottom bar padding is 
 
 ---
 
-## Toast Notifications (NEVER use alert/confirm)
+## Toast Notifications (NEVER use alert/confirm; ONE entry point)
+`src/lib/toast.js` is the **only** way to raise a toast — raw `window.dispatchEvent(new CustomEvent('upr:toast'…))`
+and local `errToast` copies are **banned** (eslint-enforced; the audit found 125 raw dispatches + 22 copies).
 ```js
-// Success
-window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Saved!', type: 'success' } }));
+import { toast } from '@/lib/toast';
 
-// Error
-window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to save', type: 'error' } }));
+toast('Saved!');              // success (default type)
+toast('Failed to save', 'error');
 ```
+The `ok()` / `err()` thin wrappers are the planned additions W3 makes to `toast.js` (it currently exports
+only `toast`); once they land, prefer `ok('Saved!')` / `err('Failed to save')`. W3 migrates the raw
+dispatches, then flips the eslint rule to error.
 
 ---
 
@@ -920,6 +1050,22 @@ Collections Kit / Overview Kit / Conversations pages use their own shell classes
 ## Component Imports
 
 ```jsx
+// ── Shared UI primitives (F-S2) — reach for these before a style object ──
+import { Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton } from '@/components/ui';
+//   Modal        role=dialog + focus trap + ESC/overlay close + mobile bottom-sheet
+//   StatusPill   status→tone badge, reads --success/--danger/--warning/--info/--neutral tokens
+//   EmptyState   success + zero-rows panel (icon/title/sub/action)  — NEVER on a failed load
+//   ErrorState   failed-load panel (message + onRetry) — shape from TechJobDetail:330
+//   PageHeader   title + subtitle + actions row
+//   SearchInput  icon + controlled input + clear button (onChange gets the string)
+//   IconButton   icon-only button — `label` is REQUIRED (a11y); light haptic on press
+
+// ── Shared hooks (F-S2) ──
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';   // silent resume/focus/poll refetch (no spinner)
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm'; // destructive-action arm/confirm
+import { useLookup } from '@/hooks/useLookup';                 // cached react-query rosters: 'employees'|'job_phases'|'carriers'
+import { usePhotoUpload, thumbUrl, publicUrl } from '@/hooks/usePhotoUpload'; // compress+upload; thumbnail vs full-res URLs
+
 // Always available
 import { useAuth } from '@/contexts/AuthContext';       // { db, employee, canAccess, isFeatureEnabled, featureFlags }
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';

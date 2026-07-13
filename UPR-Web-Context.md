@@ -33,7 +33,7 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 ---
 
-## UX Quality initiative — plan of record + Phase 0 + F-S1 (2026-07-13)
+## UX Quality initiative — plan of record + Phase 0 + F-S1 + F-S2 (2026-07-13)
 
 A masterplan-standard session (11-auditor read-only sweep → synthesis → adversarial verification)
 produced the **UX Quality** plan of record: `docs/ux-quality-roadmap.md` + `docs/ux-quality-dispatch.md`
@@ -59,7 +59,34 @@ Owner decisions: prep-for-redesign consolidation + foundation-first sequencing.
 correct, legacy half hand-rolls); 1,644 hardcoded hex (836 distinct); 11 surfaces blank a rendered page
 on PTR/mutation; 6 loading primitives; 125 raw toast dispatches; failed loads render success empty-states
 on top screens (Schedule/JobPage). Foundation-then-wave remediation (F-S2 primitives/tokens, F-B backend,
-W1–W5 page alignment, W6 fold-ins) is dispatched but not yet built — runs alongside next week's features.
+W1–W5 page alignment, W6 fold-ins) — F-S2 shipped (below); F-B + W1–W5 run alongside next week's features.
+
+### F-S2 — Shared primitives, tokens & motion foundation (2026-07-13, branch → dev)
+The contract every W-session imports. **Ships primitives + tokens + docs only; zero call-site migration
+(that's W1–W3 by design).**
+- **`src/index.css` `:root`** — new semantic status token family `--success/--danger/--warning/--info/--neutral`
+  (+ `-bg`/`-border`), minted from the grep-verified dominant in-code triplets, with dark-theme re-tones in
+  the `[data-theme="dark"] .tech-layout` block; new motion catalog tokens `--motion-duration-{fast,base,slow}`
+  + `--motion-ease-{standard,decelerate,accelerate}`. Plus a base CSS block for the primitives, the promoted
+  `.btn` press feedback, the animated `.ui-seg` segmented control, the reusable `.ui-chat-bubble-*` classes,
+  and the `@view-transition { navigation: auto }` page-transition mechanism — all transform/opacity-only and
+  `prefers-reduced-motion`-wrapped.
+- **`src/components/ui/**`** — `Modal` (role=dialog + focus trap + ESC/overlay close + mobile bottom-sheet),
+  `StatusPill` (+ `statusTone.js` classifier), `EmptyState`, `ErrorState` (shape from TechJobDetail:330),
+  `PageHeader`, `SearchInput`, `IconButton` (label-required); barrel `index.js`.
+- **`src/hooks/**`** — `useResumeRefetch` (the one silent resume/focus/poll refetch hook — replaces 8
+  hand-rolled visibility handlers), `useTwoClickConfirm`, `useLookup` (react-query roster cache:
+  employees/job_phases/carriers), `usePhotoUpload` + `thumbUrl`/`publicUrl` (mediaCompress on upload; the
+  single media-URL construction point = db-foundation P8's signed-URL swap seam).
+- **`UPR-Design-System.md`** — deleted the inline-hex Status Color Palette recipe; converted the
+  Modal/StatusPill/empty-error-loading/two-click/toast pattern sections to component/hook imports; added the
+  Kit Registry, the Dark-theme contract, and the Motion Catalog; regenerated the division table from
+  `DivisionIcons.DIVISION_CONFIG`; per-section Last-verified 2026-07-13 stamps.
+- Tests: `src/components/ui/uiPrimitives.render.test.jsx` + `src/hooks/hooks.test.jsx` (renderToStaticMarkup
+  + pure-logic). Build clean, full suite green (1119 passed), 0 new eslint findings, CSS bundle 392.82 KB raw
+  (< 400 KB budget). **Deferred (by design):** the router `viewTransition`-prop wiring + shell
+  `view-transition-name` marking (App.jsx/Layout are frozen — a shell-owner follow-up); call-site adoption of
+  every primitive/hook is W1–W3/W5.
 
 ## DB Foundation initiative — plan of record (planning session, 2026-07-08)
 
