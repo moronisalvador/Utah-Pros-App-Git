@@ -18,6 +18,7 @@
 // Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { qboFetch } from '../lib/quickbooks.js';
 
@@ -48,13 +49,10 @@ async function isAuthorized(request, env) {
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: 'collections-chat', status, records_processed: processed,
-      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
-      started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort */ }
+  await recordWorkerRun(db, {
+    workerName: 'collections-chat', status, recordsProcessed: processed,
+    errorMessage, startedAt,
+  })
 }
 
 // ─── SECTION: System prompt ──────────────

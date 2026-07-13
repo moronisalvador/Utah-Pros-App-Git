@@ -12,6 +12,7 @@
 // Env:   ANTHROPIC_API_KEY (Cloudflare Pages — Preview + Production), SUPABASE_*.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -33,13 +34,10 @@ async function getUserEmail(request, env) {
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: 'homebuilding-estimate', status, records_processed: processed,
-      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
-      started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort */ }
+  await recordWorkerRun(db, {
+    workerName: 'homebuilding-estimate', status, recordsProcessed: processed,
+    errorMessage, startedAt,
+  })
 }
 
 // Per-region cost anchors the model reasons from. Ballpark current Utah ranges — the model

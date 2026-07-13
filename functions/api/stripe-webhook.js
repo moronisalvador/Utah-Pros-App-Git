@@ -13,6 +13,7 @@
 // Auth: Stripe signature (STRIPE_WEBHOOK_SECRET). Dormant-safe: 503 until keys exist.
 
 import { jsonResponse } from '../lib/cors.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { stripeConfigured, constructEvent, retrieveCharge } from '../lib/stripe.js';
 import { getConnection, createPayment, createPurchase, createTransfer, deletePayment, deleteEntity } from '../lib/quickbooks.js';
@@ -27,12 +28,10 @@ async function getConfig(db, keys) {
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: 'stripe-webhook', status, records_processed: processed,
-      error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort */ }
+  await recordWorkerRun(db, {
+    workerName: 'stripe-webhook', status, recordsProcessed: processed,
+    errorMessage, startedAt,
+  })
 }
 
 export async function onRequestPost(context) {
