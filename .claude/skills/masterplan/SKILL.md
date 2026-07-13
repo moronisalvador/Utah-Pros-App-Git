@@ -16,6 +16,11 @@ challenge pass (section 5) fans out many agents.
 subagents. Use the Workflow orchestration tool when available (ultracode sessions);
 otherwise launch parallel Explore-type subagents via the Agent/Task tool. Same intent
 either way: many independent read-only investigators, results structured back to you.
+**Model routing for fan-outs:** inventory / localization / "where is X, who calls Y"
+investigators use the `upr-scout` agent type (Haiku — a subagent with no model set
+inherits the expensive session model, which mechanical searching doesn't need).
+Reserve session-model/Opus agents for judgment work: the challenge pass, counter-
+ordering, security/money review, and acceptance grading.
 
 **Calibration:** the worked example of this entire standard is the "Roadmap v3"
 section of `docs/crm-roadmap.md` plus `docs/crm-dispatch.md` — skim both first to see
