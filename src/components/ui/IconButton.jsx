@@ -47,7 +47,8 @@ const IconButton = forwardRef(function IconButton(
     onClick?.(e);
   };
 
-  const sizeClass = size === 'sm' ? ' ui-icon-btn--sm' : '';
+  // 'lg' = the ≥44px tech/field floor (tech-mobile-ux.md); 'sm' = dense 30px secondary.
+  const sizeClass = size === 'sm' ? ' ui-icon-btn--sm' : size === 'lg' ? ' ui-icon-btn--lg' : '';
   return (
     <button
       ref={ref}

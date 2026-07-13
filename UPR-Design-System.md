@@ -585,8 +585,11 @@ legacy `.admin-modal*` classes below remain for the shell; new modals use `<Moda
 - On mobile (`@media max-width: 768px`): becomes a **bottom sheet** via CSS (`admin-modal-overlay` aligns to flex-end, `admin-modal` gets `border-radius: 16px 16px 0 0`).
 - For smaller confirms: add `admin-modal-sm` class (max-width: 420px).
 
-### Bottom Sheet Modal (any new modal)
-New modals should follow the admin-modal pattern — centered on desktop, bottom sheet on mobile. Add these CSS classes:
+### Bottom Sheet Modal — legacy recipe (new modals use `<Modal>`)
+> **Superseded by `<Modal>` (F-S2)** — it already ships centered-desktop / bottom-sheet-mobile +
+> `role=dialog` + focus trap + tokened `dvh` motion. Only hand-roll the classes below if you genuinely
+> can't use the primitive; if you do, use `dvh` not `vh` and reduced-motion-wrap the animation.
+The historical admin-modal recipe — centered on desktop, bottom sheet on mobile:
 ```css
 /* In your component's inline styles or via new CSS classes */
 .my-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: var(--space-4); }
@@ -622,7 +625,13 @@ New modals should follow the admin-modal pattern — centered on desktop, bottom
 
 ## Tab Bar Patterns
 
-### Underline Tabs (JobPage, Admin, DevTools)
+> **Motion note (F-S2):** the tab/segment/pill recipes below are the existing shell markup and their
+> active state **snaps** (no transition). New tab/segment/chip controls should use the **animated
+> selection indicator** — the `.ui-seg` / `.ui-seg-indicator` primitive (a sliding pill on
+> `--motion-duration-fast`) per the Motion Catalog's "Selection / tabs / segments / chips" row — rather
+> than a hard active-fill swap. W1–W3 migrate these as they touch each surface.
+
+### Underline Tabs (JobPage, Admin, DevTools) — legacy shell pattern
 ```jsx
 <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-color)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
   {TABS.map(tab => (

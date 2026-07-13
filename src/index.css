@@ -11584,6 +11584,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 @keyframes uiSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-overlay, .ui-modal { animation: none; }
+  .ui-modal-close { transition: none; }
 }
 
 /* ─── StatusPill — reads the semantic tokens, never inline hex ─── */
@@ -11632,6 +11633,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   transition: background var(--transition-fast);
 }
 .ui-search-clear:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .ui-search-clear { transition: none; } }
 
 /* ─── IconButton — accessible icon-only control (label required in JSX) ─── */
 .ui-icon-btn {
@@ -11646,6 +11648,8 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .ui-icon-btn:active:not(:disabled) { transform: scale(0.92); }
 .ui-icon-btn:disabled { opacity: 0.45; cursor: default; }
 .ui-icon-btn--sm { width: 30px; height: 30px; min-width: 30px; }
+/* Tech/field floor — ≥44px hit area (tech-mobile-ux.md); use on any tech-surface icon button. */
+.ui-icon-btn--lg { width: 48px; height: 48px; min-width: 48px; }
 .ui-icon-btn--danger:hover { background: var(--danger-bg); color: var(--danger); }
 @media (prefers-reduced-motion: reduce) { .ui-icon-btn:active:not(:disabled) { transform: none; } }
 
@@ -11662,10 +11666,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 .ui-seg-btn[data-active="true"] { color: var(--accent); font-weight: 600; }
 .ui-seg-indicator {
-  position: absolute; z-index: 0; top: 3px; bottom: 3px; border-radius: calc(var(--radius-md) - 2px);
+  /* Position + size via transform ONLY (translateX + scaleX) so selection animates on
+     the GPU with no layout/reflow — the wiring component sets the transform, never width
+     (motion-standard.md §5: animate transform/opacity only). */
+  position: absolute; z-index: 0; top: 3px; left: 0; height: calc(100% - 6px);
+  transform-origin: left center; border-radius: calc(var(--radius-md) - 2px);
   background: var(--bg-primary); box-shadow: var(--shadow-xs);
-  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
-              width var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 @media (prefers-reduced-motion: reduce) {
   .ui-seg-btn, .ui-seg-indicator { transition: none; }

@@ -5,8 +5,9 @@
  * their INITIAL return values (renderToStaticMarkup runs the render body but not
  * effects — enough to prove the initial contract).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { subscribeResume } from '@/hooks/useResumeRefetch';
 
 // useLookup / usePhotoUpload import the Supabase-backed auth+realtime client at
 // module eval; this test exercises only pure helpers + the registry, so stub those
@@ -71,5 +72,94 @@ describe('stateful hooks initial contract', () => {
   });
   it('useResumeRefetch renders without throwing and returns nothing (side-effect hook)', () => {
     expect(renderToStaticMarkup(<ResumeProbe />)).toContain('ok');
+  });
+});
+
+// ── subscribeResume behavior (the effect body, tested via injected fake DOM targets
+//    + fake timers — the repo's vitest runs in plain node, so no jsdom is available). ──
+function makeTarget(props = {}) {
+  const listeners = {};
+  return {
+    ...props,
+    addEventListener(type, fn) { (listeners[type] ||= new Set()).add(fn); },
+    removeEventListener(type, fn) { listeners[type]?.delete(fn); },
+    dispatch(type) { [...(listeners[type] || [])].forEach((fn) => fn()); },
+    count(type) { return listeners[type]?.size || 0; },
+  };
+}
+
+describe('subscribeResume behavior', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('fires onResume once on a real hidden→visible edge (hiddenEdgeOnly)', () => {
+    const onResume = vi.fn();
+    const doc = makeTarget({ visibilityState: 'visible', hidden: false });
+    const win = makeTarget();
+    subscribeResume({ doc, win, getOnResume: () => onResume, getOnFocus: () => null, hiddenEdgeOnly: true });
+
+    doc.visibilityState = 'hidden';
+    doc.dispatch('visibilitychange');       // hidden — arms wasHidden, no fire
+    expect(onResume).not.toHaveBeenCalled();
+    doc.visibilityState = 'visible';
+    doc.dispatch('visibilitychange');       // visible again — the edge → fire once
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT fire onResume on visible→visible (no edge) when hiddenEdgeOnly', () => {
+    const onResume = vi.fn();
+    const doc = makeTarget({ visibilityState: 'visible', hidden: false });
+    const win = makeTarget();
+    subscribeResume({ doc, win, getOnResume: () => onResume, getOnFocus: () => null, hiddenEdgeOnly: true });
+    doc.dispatch('visibilitychange');       // still visible, never hidden → no fire
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it('fires onResume on any visible dispatch when hiddenEdgeOnly is false', () => {
+    const onResume = vi.fn();
+    const doc = makeTarget({ visibilityState: 'visible', hidden: false });
+    const win = makeTarget();
+    subscribeResume({ doc, win, getOnResume: () => onResume, getOnFocus: () => null, hiddenEdgeOnly: false });
+    doc.dispatch('visibilitychange');
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('poll skips while hidden and runs while visible', () => {
+    const onResume = vi.fn();
+    const doc = makeTarget({ visibilityState: 'visible', hidden: true });
+    const win = makeTarget();
+    subscribeResume({ doc, win, getOnResume: () => onResume, getOnFocus: () => null, pollMs: 1000 });
+
+    vi.advanceTimersByTime(1000);           // hidden → skip
+    expect(onResume).not.toHaveBeenCalled();
+    doc.hidden = false;
+    vi.advanceTimersByTime(1000);           // visible → run
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches the focus listener unconditionally so a late onFocus still fires', () => {
+    let onFocus = null;                     // starts unset
+    const doc = makeTarget({ visibilityState: 'visible', hidden: false });
+    const win = makeTarget();
+    subscribeResume({ doc, win, getOnResume: () => null, getOnFocus: () => onFocus });
+    expect(win.count('focus')).toBe(1);     // listener attached despite null callback
+    win.dispatch('focus');                  // no-op, no throw
+    onFocus = vi.fn();                       // provided later
+    win.dispatch('focus');
+    expect(onFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanup removes listeners and stops the poll', () => {
+    const onResume = vi.fn();
+    const doc = makeTarget({ visibilityState: 'visible', hidden: false });
+    const win = makeTarget();
+    const cleanup = subscribeResume({ doc, win, getOnResume: () => onResume, getOnFocus: () => null, pollMs: 1000 });
+    expect(doc.count('visibilitychange')).toBe(1);
+    expect(win.count('focus')).toBe(1);
+    cleanup();
+    expect(doc.count('visibilitychange')).toBe(0);
+    expect(win.count('focus')).toBe(0);
+    vi.advanceTimersByTime(5000);           // interval cleared → no fire
+    expect(onResume).not.toHaveBeenCalled();
   });
 });

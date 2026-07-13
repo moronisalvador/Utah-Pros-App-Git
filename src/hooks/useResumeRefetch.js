@@ -30,11 +30,50 @@
  *     `onResume` on the interval (copy of usePolledRpc's hidden-guard). A poll never
  *     toasts (page-lifecycle.md §4) — that's on the caller's callback to honor.
  *   - Callbacks are held in refs, so passing a fresh inline function each render does
- *     NOT re-subscribe the listeners. `enabled=false` tears everything down.
+ *     NOT re-subscribe the listeners. Both listeners attach UNCONDITIONALLY (the
+ *     handlers read the latest callback live and no-op when unset) so a caller that
+ *     starts passing `onFocus` later still gets it. `enabled=false` tears down.
+ *   - The subscription itself is the exported pure `subscribeResume` (document/window
+ *     injected) so its behavior is unit-testable without a DOM (see hooks.test.jsx).
  * ════════════════════════════════════════════════
  */
 
 import { useEffect, useRef } from 'react';
+
+/**
+ * Pure subscription behind the hook — attaches the resume/focus/poll listeners to
+ * the injected `doc`/`win` targets and returns a cleanup fn. Handlers pull the
+ * callback live via getOnResume/getOnFocus, so both listeners attach unconditionally
+ * and a late-provided callback still fires. Exported for unit testing (no DOM needed).
+ */
+export function subscribeResume({ doc, win, getOnResume, getOnFocus, pollMs, hiddenEdgeOnly = true }) {
+  let wasHidden = false;
+
+  const handleVisibility = () => {
+    if (doc.visibilityState === 'hidden') { wasHidden = true; return; }
+    // visible again — fire only on a real hidden→visible edge when hiddenEdgeOnly
+    if (!hiddenEdgeOnly || wasHidden) getOnResume()?.();
+    wasHidden = false;
+  };
+  const handleFocus = () => { getOnFocus()?.(); };
+
+  doc.addEventListener('visibilitychange', handleVisibility);
+  win.addEventListener('focus', handleFocus);
+
+  let intervalId;
+  if (pollMs && pollMs > 0) {
+    intervalId = setInterval(() => {
+      if (doc.hidden) return; // skip polls while backgrounded
+      getOnResume()?.();
+    }, pollMs);
+  }
+
+  return () => {
+    doc.removeEventListener('visibilitychange', handleVisibility);
+    win.removeEventListener('focus', handleFocus);
+    if (intervalId) clearInterval(intervalId);
+  };
+}
 
 export function useResumeRefetch({
   onResume,
@@ -46,7 +85,7 @@ export function useResumeRefetch({
   const onResumeRef = useRef(onResume);
   const onFocusRef = useRef(onFocus);
   // Keep the latest callbacks in refs (updated after each render) so passing a fresh
-  // inline function every render does NOT re-subscribe the listeners below.
+  // inline function each render does NOT re-subscribe the listeners below.
   useEffect(() => {
     onResumeRef.current = onResume;
     onFocusRef.current = onFocus;
@@ -54,34 +93,14 @@ export function useResumeRefetch({
 
   useEffect(() => {
     if (!enabled || typeof document === 'undefined') return undefined;
-
-    let wasHidden = false;
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') { wasHidden = true; return; }
-      // visible again
-      if (!hiddenEdgeOnly || wasHidden) onResumeRef.current?.();
-      wasHidden = false;
-    };
-
-    const handleFocus = () => { onFocusRef.current?.(); };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    if (onFocusRef.current) window.addEventListener('focus', handleFocus);
-
-    let intervalId;
-    if (pollMs && pollMs > 0) {
-      intervalId = setInterval(() => {
-        if (document.hidden) return; // skip polls while backgrounded
-        onResumeRef.current?.();
-      }, pollMs);
-    }
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', handleFocus);
-      if (intervalId) clearInterval(intervalId);
-    };
+    return subscribeResume({
+      doc: document,
+      win: window,
+      getOnResume: () => onResumeRef.current,
+      getOnFocus: () => onFocusRef.current,
+      pollMs,
+      hiddenEdgeOnly,
+    });
   }, [enabled, hiddenEdgeOnly, pollMs]);
 }
 
