@@ -1,3 +1,41 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: AuthContext.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The app's login brain. It signs people in, figures out which employee
+ *   they are, what pages they may see, and which experimental features are
+ *   turned on for them. It also hands every screen the database connection
+ *   it should use. Every other part of the app asks this file "who is logged
+ *   in and what can they do?" via the useAuth() hook.
+ *
+ * WHERE IT LIVES:
+ *   Route:        n/a (context provider)
+ *   Rendered by:  src/App.jsx (wraps the whole routed app)
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  @/lib/realtime (Supabase auth session), @/lib/supabase
+ *              (anon bootstrap client), @/lib/stableDb (identity-stable
+ *              authenticated client), @/lib/pushNotifications,
+ *              @/lib/nativeBiometric, @/lib/registerSW, @/components/tech/v2/nav
+ *   Data:      reads  → employees, nav_permissions, feature flags
+ *                       (get_feature_flags), employee page access
+ *                       (get_employee_page_access)
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - The authenticated `db` client is IDENTITY-STABLE on purpose: hourly
+ *     token renewals (TOKEN_REFRESHED) swap the JWT inside a ref via
+ *     bindAuthDb() — they must never mint a new client object, because every
+ *     page keys its data loader on [db] and a new identity would re-run all
+ *     of them, visibly "resetting" pages right when the app resumes from
+ *     background. See src/lib/stableDb.js before changing anything here.
+ *   - The anon `db` import is the sanctioned bootstrapping exception to
+ *     CLAUDE.md Rule 3 — pre-login reads and DEV devLogin only.
+ * ════════════════════════════════════════════════
+ */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { realtimeClient } from '@/lib/realtime';
 import { db } from '@/lib/supabase';
