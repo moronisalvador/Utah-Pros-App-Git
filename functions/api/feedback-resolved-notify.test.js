@@ -100,6 +100,18 @@ describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
     expect(res.status).toBe(404);
   });
 
+  it('409s (no dispatch) when the row is not actually resolved', async () => {
+    let called = false;
+    const dispatchImpl = async () => { called = true; return { recipients: 1 }; };
+    const res = await handleFeedbackResolvedNotify({
+      request: makeRequest({ auth: 'Bearer tok' }),
+      env: ENV, db: makeDb({ feedback: { ...feedback, status: 'new' } }),
+      fetchImpl: authFetch(), dispatchImpl,
+    });
+    expect(res.status).toBe(409);
+    expect(called).toBe(false);
+  });
+
   it('skips (200) a row with no submitter, without dispatching', async () => {
     let called = false;
     const dispatchImpl = async () => { called = true; return { recipients: 0 }; };
