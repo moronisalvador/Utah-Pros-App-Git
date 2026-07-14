@@ -92,17 +92,28 @@ export default function Layout() {
 
   // ── Global toast system — fire from anywhere with:
   //    window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type, title } }))
+  // Dismissal plays an EXIT: mark the toast `leaving` (CSS `.upr-toast--leaving` →
+  // uprToastOut), then unmount on animationend — with a ~220ms safety timeout in case
+  // animationend never fires (reduced motion collapses the keyframe to none, or the tab
+  // is hidden). Mirrors ui/Modal.jsx's --closing lifecycle.
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+  const dismissToast = useCallback((id) => {
+    setToasts(prev => prev.map(t => (t.id === id ? { ...t, leaving: true } : t)));
+    setTimeout(() => removeToast(id), 220);
+  }, [removeToast]);
   useEffect(() => {
     const handler = (e) => {
       const { message, type = 'success', title } = e.detail || {};
       if (!message) return;
       const id = Date.now() + Math.random();
       setToasts(prev => [...prev, { id, message, type, title }]);
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+      setTimeout(() => dismissToast(id), 5000); // auto-dismiss triggers the exit animation
     };
     window.addEventListener('upr:toast', handler);
     return () => window.removeEventListener('upr:toast', handler);
-  }, []);
+  }, [dismissToast]);
 
   // ── Unread badge — realtime, not polled ──
   // unreadByConv tracks each conversation's own unread_count so a single realtime row
@@ -302,13 +313,14 @@ export default function Layout() {
       <div style={{position:'fixed',bottom:'calc(var(--bottom-bar-h) + var(--safe-bottom) + 12px)',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
         {toasts.map(toast => (
           <div key={toast.id}
+            className={`upr-toast${toast.leaving ? ' upr-toast--leaving' : ''}`}
+            onAnimationEnd={(e) => { if (e.animationName === 'uprToastOut') removeToast(toast.id); }}
             style={{
               background: toast.type==='error' ? '#fef2f2' : toast.type==='warning' ? '#fffbeb' : '#f0fdf4',
               border: `1px solid ${toast.type==='error' ? '#fecaca' : toast.type==='warning' ? '#fde68a' : '#bbf7d0'}`,
               borderLeft: `4px solid ${toast.type==='error' ? '#ef4444' : toast.type==='warning' ? '#f59e0b' : '#22c55e'}`,
               borderRadius:12,padding:'14px 18px',boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
               pointerEvents:'all',width:'100%',
-              animation:'slideUp 0.25s ease',
             }}>
             <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
               <span style={{fontSize:20,flexShrink:0,lineHeight:1.2}}>
@@ -318,13 +330,12 @@ export default function Layout() {
                 {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
                 <div style={{fontSize:13,color:'#334155',lineHeight:1.5}}>{toast.message}</div>
               </div>
-              <button onClick={()=>setToasts(prev=>prev.filter(t=>t.id!==toast.id))}
+              <button onClick={()=>dismissToast(toast.id)}
                 style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',padding:0,flexShrink:0,lineHeight:1}}>✕</button>
             </div>
           </div>
         ))}
       </div>
-      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }

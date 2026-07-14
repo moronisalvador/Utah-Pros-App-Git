@@ -77,7 +77,7 @@ export default function Customers() {
             <div className="empty-state-sub">{search ? 'Try a different search' : 'Create your first customer to get started'}</div>
           </div>
         ) : customers.map(c => (
-          <div key={c.id} className="customer-card" onClick={() => navigate(`/customers/${c.id}`)}>
+          <div key={c.id} className="customer-card" onClick={() => navigate(`/customers/${c.id}`, { viewTransition: true })}>
             <div className="customer-card-avatar">{initials(c.name)}</div>
             <div className="customer-card-body">
               <div className="customer-card-name">{c.name}</div>

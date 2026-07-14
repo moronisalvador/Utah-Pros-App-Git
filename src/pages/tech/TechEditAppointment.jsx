@@ -719,6 +719,7 @@ export default function TechEditAppointment() {
         zIndex: 10,
       }}>
         <button
+          className="btn"
           onClick={handleSave}
           disabled={!date || saving}
           style={{

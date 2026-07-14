@@ -47,6 +47,7 @@ import TechHelpButton from '@/components/tech/TechHelpButton';
 import { IconSearch } from '@/components/Icons';
 import { CLAIM_STATUS_COLORS as STATUS_COLORS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
+import { selection } from '@/lib/nativeHaptics';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 
 export default function TechClaims() {
@@ -138,7 +139,8 @@ export default function TechClaims() {
           {[{ key: 'mine', label: t('scopeMine') }, { key: 'all', label: t('scopeAll') }].map(s => (
             <button
               key={s.key}
-              onClick={() => setScope(s.key)}
+              className="tech-pill"
+              onClick={() => { selection(); setScope(s.key); }}
               style={{
                 padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
                 fontSize: 14, fontWeight: scope === s.key ? 600 : 400, cursor: 'pointer',

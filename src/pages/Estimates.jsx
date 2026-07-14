@@ -143,8 +143,8 @@ export default function Estimates() {
               {filtered.map((r, i) => {
                 const st = statusOf(r);
                 return (
-                  <div key={r.estimate_id} onClick={() => navigate(`/estimates/${r.estimate_id}`)}
-                    style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid var(--border-light)', cursor: 'pointer', background: 'var(--bg-primary)' }}>
+                  <div key={r.estimate_id} className="est-row" onClick={() => navigate(`/estimates/${r.estimate_id}`, { viewTransition: true })}
+                    style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '10px 14px', borderTop: i === 0 ? 'none' : '1px solid var(--border-light)', cursor: 'pointer' }}>
                     <Cell>
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.qbo_doc_number || r.estimate_number || 'Draft'}</span>
                       {r.converted_invoice_id && r.converted_invoice_number && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>→ {r.converted_invoice_number}</div>}

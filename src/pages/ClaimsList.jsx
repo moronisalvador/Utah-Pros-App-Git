@@ -186,7 +186,7 @@ export default function ClaimsList() {
         ) : (
           filtered.map(claim => (
             <ClaimListCard key={claim.id} claim={claim}
-              onClick={() => navigate(`/claims/${claim.id}`)} />
+              onClick={() => navigate(`/claims/${claim.id}`, { viewTransition: true })} />
           ))
         )}
       </PullToRefresh>
@@ -199,6 +199,7 @@ export default function ClaimsList() {
 // ═══════════════════════════════════════════════════════════════
 
 function ClaimListCard({ claim: c, onClick }) {
+  const navigate = useNavigate();
   const st = STATUS_MAP[c.status] || STATUS_MAP.open;
   const lossConf = LOSS_CONFIG[c.loss_type];
   const borderColor = lossConf?.color || '#6b7280';
@@ -266,7 +267,7 @@ function ClaimListCard({ claim: c, onClick }) {
                 border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
                 color: 'var(--text-secondary)', cursor: 'pointer',
                 borderLeft: `2px solid ${DIV_COLORS[j.division] || '#6b7280'}`,
-              }} onClick={e => { e.stopPropagation(); window.location.href = `/jobs/${j.id}`; }}>
+              }} onClick={e => { e.stopPropagation(); navigate(`/jobs/${j.id}`, { viewTransition: true }); }}>
                 {j.job_number || 'Job'}
               </span>
             ))}
