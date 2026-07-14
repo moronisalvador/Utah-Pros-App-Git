@@ -754,6 +754,11 @@ export default function TechDemoSheet() {
   const [hydrated, setHydrated] = useState(false);
   const [schema, setSchema] = useState(null);
   const [schemaError, setSchemaError] = useState(null);
+  // A failed load of an EXISTING sheet (?id) shows a retry screen — it must NOT
+  // fall through to a blank form + autosave, which would overwrite the real
+  // server row with an empty draft on a flaky field signal.
+  const [loadError, setLoadError] = useState(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   const [rooms, setRooms] = useState([]);
   const [jobInfo, setJobInfo] = useState({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
@@ -785,6 +790,12 @@ export default function TechDemoSheet() {
   // Caches the draft row fetched by the schema effect so the bootstrap effect
   // doesn't re-fetch the same get_demo_sheet on load.
   const loadedRowRef = useRef(null);
+  // Persisted status of the loaded sheet ('draft' | 'submitted'). Captured on
+  // load so autosave PRESERVES a submitted sheet instead of silently
+  // downgrading it to draft when a tech re-opens it just to look (feedback:
+  // Marcelo B., 2026-07-13). Only doSubmit promotes to 'submitted'; nothing
+  // auto-downgrades.
+  const statusRef = useRef('draft');
   const applySheetId = (id) => { sheetIdRef.current = id; setSheetId(id); };
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
 
@@ -855,6 +866,11 @@ export default function TechDemoSheet() {
   // Waits for schema to be ready before building default rooms.
   useEffect(() => {
     if (!schema) return;
+    // Request-guard: if the tech switches sheets (resumeDraft/startNew) while a
+    // get_demo_sheet is in flight, the stale response must not clobber the new
+    // sheet's state/status (mirrors the schema effect's cancelled flag above).
+    let cancelled = false;
+    setLoadError(null);
     const defaultRoom = () => makeDefaultRoom(schema);
     const id = searchParams.get('id');
     if (id) {
@@ -866,6 +882,10 @@ export default function TechDemoSheet() {
         : db.rpc('get_demo_sheet', { p_id: id }).then(rows => Array.isArray(rows) ? rows[0] : rows);
       rowPromise
         .then(row => {
+          if (cancelled) return; // sheet switched mid-flight — drop this response
+          // Capture the persisted status BEFORE hydration arms autosave, so a
+          // submitted sheet stays submitted on re-open (never auto-downgraded).
+          statusRef.current = row?.status || 'draft';
           if (row && row.form_data) {
             applySheetId(row.id);
             if (row.job_id) setJobIdState(row.job_id);
@@ -893,8 +913,14 @@ export default function TechDemoSheet() {
           }
           setHydrated(true);
         })
-        .catch(() => { setRooms([defaultRoom()]); setJobData(makeDefaultJobData(schema)); setHydrated(true); });
+        .catch(() => {
+          if (cancelled) return;
+          // Do NOT blank the form or set hydrated — that would arm autosave and
+          // overwrite the real server row with an empty draft. Show a retry.
+          setLoadError('Couldn’t load this scope sheet. Check your connection and try again.');
+        });
     } else {
+      statusRef.current = 'draft'; // fresh sheet / appt prefill — always a draft
       // Optional appt prefill via query params
       const apptJobId     = searchParams.get('jobId')      || '';
       const apptJobNumber = searchParams.get('jobNumber')  || '';
@@ -932,7 +958,8 @@ export default function TechDemoSheet() {
       setHydrated(true);
     }
     db.rpc('get_demo_sheet_drafts').then(d => setDrafts(d || [])).catch(() => {});
-  }, [db, searchParams, schema]);
+    return () => { cancelled = true; };
+  }, [db, searchParams, schema, reloadTick]);
 
   // Default tech to current employee once techs are loaded
   useEffect(() => {
@@ -973,7 +1000,8 @@ export default function TechDemoSheet() {
           p_address:    jobInfo.address || null,
           p_insured_name: jobInfo.insuredName || null,
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
-          p_status: 'draft',
+          // Preserve a submitted sheet; autosave must never downgrade to draft.
+          p_status: statusRef.current === 'submitted' ? 'submitted' : 'draft',
           p_job_id: jobId || null,
           p_summary: summary,
           p_schema_id: schema?._id || null,
@@ -1095,8 +1123,10 @@ export default function TechDemoSheet() {
     if (sending) return;
     setSending(true);
     try {
-      await flushSave({ status: 'draft' });
-      toast('Draft saved', 'success');
+      // Keep a submitted sheet submitted — closing it must not revert to draft.
+      const keepStatus = statusRef.current === 'submitted' ? 'submitted' : 'draft';
+      await flushSave({ status: keepStatus });
+      toast(keepStatus === 'submitted' ? 'Saved' : 'Draft saved', 'success');
       navigate(-1);
     } catch (e) {
       toast(`Save failed: ${e.message || 'unknown'}`, 'error');
@@ -1115,6 +1145,7 @@ export default function TechDemoSheet() {
     let saveErr = null;
     try {
       await flushSave({ status: 'submitted' });
+      statusRef.current = 'submitted'; // promoted — autosave/close now preserve it
       saveOk = true;
       clearDraftMirror(sheetIdRef.current); // submitted + persisted — drop the local copy
     } catch (e) {
@@ -1235,6 +1266,7 @@ export default function TechDemoSheet() {
   const startNew = () => {
     saveEpochRef.current += 1;          // discard any in-flight save continuation
     createInFlightRef.current = null;   // and never adopt its INSERT id
+    statusRef.current = 'draft';        // a brand-new sheet is always a draft
     setRooms([makeDefaultRoom(schema)]);
     setJobInfo({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
     setJobData(makeDefaultJobData(schema));
@@ -1295,6 +1327,29 @@ export default function TechDemoSheet() {
         <button onClick={() => navigate(-1)} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
           ← Back
         </button>
+      </div>
+    );
+  }
+
+  // A failed load of an existing sheet — show a retry, never a blank form (which
+  // would autosave an empty draft over the real row on a flaky signal).
+  if (loadError) {
+    return (
+      <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, fontFamily:'var(--font-sans)' }}>
+        <div style={{ fontSize:32, marginBottom:12 }}>⚠️</div>
+        <div style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:6 }}>Could not load scope sheet</div>
+        <div style={{ fontSize:12, color:C.muted, marginBottom:16, textAlign:'center', maxWidth:320 }}>{loadError}</div>
+        <div style={{ display:'flex', gap:10 }}>
+          <button
+            onClick={() => { loadedRowRef.current = null; setLoadError(null); setReloadTick(t => t + 1); }}
+            style={{ background:C.accent, border:'none', borderRadius:8, color:'#fff', padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-sans)' }}
+          >
+            Retry
+          </button>
+          <button onClick={() => navigate(-1)} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', fontFamily:'var(--font-sans)' }}>
+            ← Back
+          </button>
+        </div>
       </div>
     );
   }

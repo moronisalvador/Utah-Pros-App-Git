@@ -45,6 +45,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { stripBucketPrefix, formatBytes, isVideo } from '@/lib/mediaCompress';
+import { api } from '@/lib/api';
 
 const TYPE_BADGE = {
   bug:     { cls: 'fb-badge-bug', label: 'Bug' },
@@ -166,6 +167,11 @@ export default function AdminFeedback() {
         p_admin_notes: draftFor(item).trim() || null,
       });
       okToast(`Marked as ${STATUS_BADGE[newStatus].label}`);
+      // Let the submitting tech know their feedback was resolved (push + email).
+      // Fire-and-forget — a notify hiccup must never fail the status change.
+      if (newStatus === 'resolved') {
+        api('feedback-resolved-notify', { body: { feedback_id: item.id } }).catch(() => {});
+      }
       await load();
       setDrafts(prev => { const n = { ...prev }; delete n[item.id]; return n; });
     } catch (e) {
