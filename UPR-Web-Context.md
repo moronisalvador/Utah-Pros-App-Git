@@ -3079,6 +3079,14 @@ reverted rather than shipped on a self-granted exception the manifest doesn't ac
 **Follow-up needed (F-owner or a future session with F's authority):** either add an
 `onReset`-confirm prop to `TemplateEditor.jsx` that P4 can wire up, or bless the copy-in
 explicitly. Filed here instead of quietly re-adding it.
+**→ CLOSED 2026-07-14** by an owner-directed F-owner follow-up: the confirm now lives directly
+in `TemplateEditor.jsx` via the shared `useTwoClickConfirm` hook (arm → "Confirm reset?" with the
+`--danger`/`--danger-bg`/`--danger-border` triplet, disarm on blur or 3.5s timeout). Same commit
+also migrated the file's local `errToast` copy to the shared `toast(msg,'error')` entry point
+(clearing its one eslint baseline warning). Gauntlet: upr-pattern-checker pass ·
+page-behavior-checker pass · design-consistency-checker pass after two fixes it requested
+(shared hook + `--danger` tokens instead of hand-rolled state + `--status-needs-response`).
+P4 is now fully complete; the initiative's only remaining tail is the P9 owner cutover.
 
 `google-drive-callback.js` now 302s to `/settings/my-account?gdrive=…` instead of
 `/settings?gdrive=…`; F's SettingsHome forwarder stays as a permanent shim for any old

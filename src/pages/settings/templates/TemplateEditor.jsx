@@ -25,6 +25,10 @@
  *     breadcrumb "Documents" button; the ROUTE wrapper adds a router-level
  *     unsaved-changes guard via onDirtyChange (dirty is lifted to the parent).
  *   - Feedback via toasts (CLAUDE.md rule 2), no alert()/confirm().
+ *   - Reset-to-defaults uses the inline two-click confirm pattern (CLAUDE.md
+ *     rule 2) — an F-owner follow-up closing Settings Overhaul P4's blocked
+ *     item (the wave session's in-place edit was reverted as a frozen-file
+ *     violation; this module is F-owned, so the fix lands here directly).
  * ════════════════════════════════════════════════
  */
 import { useState, useRef, useEffect } from 'react';
@@ -32,8 +36,8 @@ import {
   DEFAULT_TEMPLATES, DIVISION_META, TEMPLATE_VARIABLES, DOC_TYPE_LABELS,
   renderMarkdown, substituteVarsPreview,
 } from './templateData';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+import { toast } from '@/lib/toast';
+import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 
 function IconEye(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>);}
 function IconEyeOff(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>);}
@@ -48,6 +52,7 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
   const [saving,      setSaving]      = useState(false);
   const [preview,     setPreview]     = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+  const { isArmed: resetArmed, arm: armReset, cancel: cancelReset } = useTwoClickConfirm();
   const lastFocused = useRef(null);
 
   // Lift dirty state so the route wrapper can install a router-level guard.
@@ -77,13 +82,19 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
       })));
       setDirty(false);
       onSaved(sections);
-    } catch (err) { errToast('Save failed: ' + err.message); }
+    } catch (err) { toast('Save failed: ' + err.message, 'error'); }
     finally { setSaving(false); }
   };
 
-  const handleReset = () => { setSections((DEFAULT_TEMPLATES[docType] || []).map(d => ({ ...d }))); setDirty(true); };
+  const handleReset = () => {
+    if (!resetArmed('reset')) { armReset('reset'); return; }
+    cancelReset();
+    setSections((DEFAULT_TEMPLATES[docType] || []).map(d => ({ ...d })));
+    setDirty(true);
+  };
   const handleBack  = () => { if (dirty) { setConfirmBack(true); return; } onBack(); };
   const isLong = docType !== 'coc';
+  const resetIsArmed = resetArmed('reset');
 
   return (
     <div>
@@ -97,7 +108,20 @@ export default function TemplateEditor({ db, docType, docMeta, initialSections, 
           {dirty && <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>● Unsaved</span>}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-ghost btn-sm" onClick={handleReset} style={{ gap: 4 }} title="Reset to built-in defaults"><IconRefresh style={{ width: 12, height: 12 }} /> Reset</button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleReset}
+            onBlur={cancelReset}
+            style={{
+              gap: 4,
+              background: resetIsArmed ? 'var(--danger-bg)' : undefined,
+              color: resetIsArmed ? 'var(--danger)' : undefined,
+              border: resetIsArmed ? '1px solid var(--danger-border)' : undefined,
+            }}
+            title="Reset to built-in defaults"
+          >
+            <IconRefresh style={{ width: 12, height: 12 }} /> {resetIsArmed ? 'Confirm reset?' : 'Reset'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setPreview(p => !p)} style={{ gap: 4 }}>
             {preview ? <><IconEyeOff style={{ width: 14, height: 14 }} /> Edit</> : <><IconEye style={{ width: 14, height: 14 }} /> Preview</>}
           </button>
