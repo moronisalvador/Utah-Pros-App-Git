@@ -2248,7 +2248,11 @@ designed with equal care. Sources: direction-b.html (dashboard) &#183; refine-b-
       btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-t') === t ? 'true' : 'false');
     }
   }
-  paint(root.getAttribute('data-theme') === 'dark' || (!root.getAttribute('data-theme') && mq.matches) ? 'dark' : (root.getAttribute('data-theme') || 'light'));
+  /* Light is the system's primary theme (owner decision 2026-07-14): the guide ALWAYS opens
+     light — never inherits the viewer's device/app dark preference. Dark is the equal-care
+     alternate, one tap away on the toggle. (mq kept only for potential future "system" demo.) */
+  void mq;
+  paint('light');
   var btns = document.querySelectorAll('.tt button');
   for (var i = 0; i < btns.length; i++) {
     btns[i].addEventListener('click', function(){ paint(this.getAttribute('data-t')); });

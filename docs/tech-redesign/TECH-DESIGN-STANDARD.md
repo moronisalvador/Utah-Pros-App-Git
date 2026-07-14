@@ -94,8 +94,9 @@ sentence and a numbered check appear to conflict, grade the check.
    cream and beige banned); dark is graphite-elevated neutral (never blue-tinted, never
    pure-black surfaces). **The check:** "equal care" = the section 3 dark token column
    shipped verbatim + the section 3.4 contrast watch-list re-measured — nothing else counts
-   as passing this rule. The shipped default theme MODE (system-auto vs light) is an open
-   owner decision — see section 11 item 11; a build session seeds nothing until it is made.
+   as passing this rule. **The shipped default theme is LIGHT** (owner decision 2026-07-14:
+   "we definitely prefer the lighter one") — see section 11 item 11. Light is designed first
+   and QA'd first on every screen; dark ships equal-care as a user choice, never as the default.
 6. **Status is shape-redundant, always.** Every status carries a glyph and a word beside its
    color: arrow = OMW, dot-in-ring = working, pause-bars = paused, clock = scheduled/due,
    check = done/dry/signed, drop = wet, flag = finish goal. State must survive grayscale and
@@ -1003,8 +1004,8 @@ tiebreaker** — for those screens the rules are:
 10. **Admin Mobile (`/tech/admin/*`) and the shared legacy `Conversations.jsx`** are other
     initiatives' surfaces inside the tech shell; the reskin reaches them through their own
     owners/waves, not by editing them in a screen session.
-11. **Default theme MODE is an owner decision, pending.** System-auto is the recommended
-    default (section 2.5), but the shipped default (`system` vs `light`) is not decided;
-    the owner rules at dispatch of the foundation phase. Until then no session seeds a
-    default-mode value; `ThemeContext`/`upr_theme_pref` mechanics (section 3.9) are
-    unaffected either way.
+11. **Default theme MODE — DECIDED (owner, 2026-07-14): `light` is the shipped default.**
+    The app opens light for every tech out of the box; `dark` and `system` (follow the
+    phone) remain selectable via the user setting. `ThemeContext`/`upr_theme_pref`
+    mechanics (section 3.9) are unchanged — only the seeded default value is now fixed
+    to `light`. Design/QA order on every screen: light first, dark verified equal-care.
