@@ -16,8 +16,15 @@ standard locked here, fully behind a feature flag.
 - **Motion is already standardized** — `.claude/rules/motion-standard.md` v2 (frequency-tier,
   exit animations, spring token, reduced-motion, scoped gestures). This session CONFIRMS/tunes the
   feel against the new look; it does not re-author motion.
-- **Foundation exists** — F-S2 shipped the token system + shared primitives. Design decisions here
-  become **token values + component styles**, so they propagate everywhere in one place.
+- **GREENFIELD — scrap the current design entirely.** The owner rejects the existing aesthetic
+  wholesale ("I hate it"). Do **NOT** carry over any current color, typography, spacing, radius,
+  elevation, or component look. Design a brand-new system **from a blank canvas**, informed only by
+  the target feeling + the real screens' functional/data needs + the persona. **Keep ONLY the
+  token/primitive *architecture*** F-S2 shipped (the swappable mechanism — CSS custom properties +
+  shared primitives); pour entirely new *values* and *component styles* into it. Treat the current
+  `UPR-Design-System.md` as the thing being replaced, not extended.
+- **Completeness bar:** the deliverable is a **full, fine-tuned design system**, not a mood board —
+  every foundation and every component spec'd with all states (see Deliverable).
 - **No emojis** — a proper **SVG icon system**. Extend/replace `src/components/Icons.jsx` +
   `src/components/tech/v2/*` icons. Style (stroke weight, outline vs filled vs duotone) TBD here.
 - **Persona (binding UX constraint):** a 64-year-old field tech, in gloves, in a flooded basement
@@ -67,7 +74,32 @@ standard locked here, fully behind a feature flag.
    component looks (button/card/input/modal/nav/list/status), and confirm the motion feel. This
    documented standard is the acceptance spec the build session executes against.
 
-## Deliverable
+## Deliverable — a COMPLETE, fine-tuned design system (not a mood board)
 
-A **decided, documented design standard** (doc + tokens + icon spec + chosen mockups) for `/tech/*` —
-nothing implemented in the app. The build session starts from it.
+A brand-new, fully documented design system for `/tech/*` — nothing implemented in the app; the build
+session starts from it. "Complete" means all of the following are decided, tokenized, and shown in a
+rendered style-guide artifact:
+
+- **Foundations:** full color system — brand + accent + neutrals (with a deliberate hue bias) +
+  semantic (good/warning/critical) + the field status set (OMW/working/paused/scheduled/done) —
+  designed with **equal care in BOTH light and dark**; typography — display + body + data/mono faces
+  (self-hosted subsetted woff2), a full type scale with weights/tracking/line-height; spacing scale;
+  radius scale; elevation/shadow system; stroke/border; density model.
+- **Iconography:** the complete **SVG icon system** — grid, stroke weight, outline/filled character,
+  corner treatment — plus the core tech-app icon set drawn (no emoji anywhere).
+- **Every component, every state** (default / hover [gated to `hover:hover`] / active / focus-visible /
+  disabled / loading / error): buttons (all variants) · fields/inputs/selects · checkbox/toggle ·
+  cards · list rows · modals + bottom sheets · tabs/segments · chips/pills · status badges · FAB ·
+  nav bar + headers · empty/error/loading states · toasts · skeletons.
+- **Motion mapping:** confirm `motion-standard.md` v2 per component (enter/exit/press/selection), tuned
+  to the chosen look; no re-authoring of the motion law.
+- **Tokens:** everything expressed as CSS custom properties (the swappable layer) — the single source
+  the build session consumes.
+- **A rendered style-guide artifact** (all of the above on one page, both themes) + the authoritative
+  written doc that replaces `UPR-Design-System.md` for `/tech/*`.
+
+**How completeness + fine-tuning are actually achieved (the process, not one prompt):** explore
+(2–3 distinct greenfield directions on real screens) → owner reacts and picks → refine to a single
+direction on a second screen → **then systematically build out every foundation + component above** →
+document. The owner's reactions at each step are what tune it to taste; the rigorous build-out is what
+makes it complete. Run the session with `ultracode` for maximal exploration depth.
