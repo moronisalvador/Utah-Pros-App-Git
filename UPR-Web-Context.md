@@ -33,6 +33,28 @@ Automated agents **cannot `git push` to `main`** — the Claude Code safety guar
 
 ---
 
+## Session-efficiency optimizations (2026-07-13 — tooling only, no feature code)
+
+Owner-approved token/usage optimizations for Claude Code sessions; no schema, no `src/` change:
+- **Admin Mobile manifest archived** — the initiative is fully merged (all 7 phases; flag opened
+  to all admins 2026-07-07; verified by a 10-agent audit incl. adversarial refutation against the
+  live DB + open PRs), so `admin-mobile-wave-ownership.md` moved to `docs/archive/rules/` with a
+  tombstone stub left in `.claude/rules/` per CLAUDE.md's archival rule. The other 8 wave manifests
+  were audited and stay ACTIVE (each has genuinely open phases: CRM 4b/5-Ops, settings P4-blocked
+  item + P9 owner cutover, tech-v2 H3, omni I/O/U, sms C/D/G + F-red, db-foundation P2–P8,
+  tech-messages F-M/B1/B2, ux-quality W1–W6).
+- **`upr-scout` agent** (`.claude/agents/upr-scout.md`) — Haiku, read-only, low-effort scout for
+  file/pattern/caller finding; CLAUDE.md "How we work" §5 + masterplan delegation vocabulary now
+  route inventory fan-outs to it (subagents with no `model:` inherit the expensive session model).
+- **CLAUDE.md compact instructions** — what auto-compaction must preserve (incl. applied
+  migrations on the shared Supabase) vs discard.
+- **TypeScript LSP wiring** — `typescript-lsp@claude-plugins-official` enabled in
+  `.claude/settings.json` (`enabledPlugins`); `typescript-language-server` + `typescript`
+  installed by `scripts/install_pkgs.sh` in cloud sessions (before the warm-cache skip); new root
+  `jsconfig.json` (`@/* → src/*`, `checkJs:false`) so the LSP resolves the alias without flooding
+  untyped-code diagnostics. Local machines: run
+  `npm install -g typescript-language-server typescript` once.
+
 ## UX Quality initiative — plan of record + Phase 0 + F-S1 (2026-07-13)
 
 A masterplan-standard session (11-auditor read-only sweep → synthesis → adversarial verification)
@@ -2256,8 +2278,8 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
   `POST /api/qbo-invoice { invoice_id }` to link in QBO, then navigates to the admin-mobile
   invoice detail via `adminInvoiceHref`.
 - **P4b links:** "Edit / add line items" → `adminEstimateEditorHref(estimateId)`; "New estimate"
-  → `adminEstimateEditorHref()`. The builder page (P4b) is not yet landed — **route-only
-  verification tail once P4b merges**.
+  → `adminEstimateEditorHref()`. ~~The builder page (P4b) is not yet landed~~ *(stale — P4b
+  merged; verified 2026-07-13, see the Q2-RECON live audit of the admin-mobile estimate screens)*.
 - **CSS:** `.am-est-*` classes inside the `ADMIN-MOBILE: ESTIMATE` marker (view rules, above any
   P4b builder block); tokens only. Actions are ≥48px touch targets.
 - **Gate:** admin-only via `AdminMobileRoute` (no extra financial gate on this screen).
