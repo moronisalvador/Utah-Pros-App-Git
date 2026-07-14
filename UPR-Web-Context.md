@@ -48,6 +48,18 @@ Owner-approved token/usage optimizations for Claude Code sessions; no schema, no
   route inventory fan-outs to it (subagents with no `model:` inherit the expensive session model).
 - **CLAUDE.md compact instructions** — what auto-compaction must preserve (incl. applied
   migrations on the shared Supabase) vs discard.
+- **`upr_code_context` MCP tool** (2026-07-14, `upr-mcp/`) — a read-only "where does this feature
+  live?" map for the UPR MCP server. Given a plain-English feature (e.g. "invoice payment
+  reconciliation") it returns the relevant pages/components/workers/RPCs/tables/tests, the applicable
+  `.claude/rules/` standards, and any gold-standard implementation named in those rules — in one
+  compact (<2k-token) response. Backed by a **curated keyword index** (`upr-mcp/src/codeIndex.js`,
+  no embeddings) with UPR business-vocabulary synonym expansion (claim/job/estimate/invoice/
+  collections/tech/CRM/scope-sheet/QBO/Encircle/Twilio…); regenerated from the repo docs by
+  `npm run build-index` (`upr-mcp/scripts/build-index.js`, scans `src/`, `functions/api/`,
+  `supabase/migrations/`, `.claude/rules/`, `UPR-Web-Context.md`, `CLAUDE.md`). Purely offline — no
+  DB or repo reads at runtime. Search logic in `upr-mcp/src/codeContext.js` (pure, unit-tested in
+  `codeContext.test.js`); registered alongside `upr_schema`/`upr_search` and allow-listed in
+  `.claude/settings.json`. Worker deploy is dashboard-side (`cd upr-mcp && npx wrangler deploy`).
 - **TypeScript LSP wiring** — `typescript-lsp@claude-plugins-official` enabled in
   `.claude/settings.json` (`enabledPlugins`); `typescript-language-server` + `typescript`
   installed by `scripts/install_pkgs.sh` in cloud sessions (before the warm-cache skip); new root

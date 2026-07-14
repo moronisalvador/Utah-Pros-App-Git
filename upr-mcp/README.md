@@ -131,6 +131,14 @@ text search), `upr_rpc` (read or, with confirm, any mutating function),
 `upr_insert`, `upr_upsert`, `upr_update`, `upr_delete` (writes require a filter +
 confirm).
 
+**UPR codebase (read):** `upr_code_context` — given a plain-English feature (e.g.
+"invoice payment reconciliation"), returns a compact map of where it lives:
+relevant pages, components, workers, RPCs, tables, tests, the applicable
+`.claude/rules/` standards, and any gold-standard implementation named in those
+rules. Backed by a checked-in **curated keyword index** (`src/codeIndex.js`, no
+embeddings) generated from the repo docs — regenerate with `npm run build-index`
+after the repo changes. Purely offline (no DB/repo reads at runtime).
+
 **Encircle (read):** `encircle_get_claim` (by `encircle_claim_id` → full claim
 incl. `created_at`, the true claim-filed date), `encircle_list_claims`
 *(search by policyholder / CLM# / etc. + paging)*, `encircle_list_media`,
