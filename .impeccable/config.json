@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "bounce-easing",
+        "value": "var(--motion-spring-in)",
+        "reason": "Owner-approved gentle spring token (ux-plan-review §3 #3): 12% single-overshoot linear() enter for modal/menu/toast, reduced-motion wrapped, kept off exits/sheet/money surfaces per motion-standard.md §3.",
+        "createdAt": "2026-07-13T22:21:37.939Z"
+      }
+    ]
+  }
+}
