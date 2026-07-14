@@ -1,0 +1,45 @@
+name: Deploy UPR MCP worker
+
+# Deploys the standalone upr-mcp Cloudflare Worker (NOT part of the Pages app,
+# so Cloudflare's git integration never touches it). Runs automatically when
+# anything under upr-mcp/ is pushed to dev, and can be run by hand from the
+# Actions tab ("Run workflow") any time.
+#
+# ONE-TIME SETUP (required before the first run):
+#   Add a repository secret named CLOUDFLARE_API_TOKEN
+#   (GitHub → repo Settings → Secrets and variables → Actions → New repository secret).
+#   Create the token in the Cloudflare dashboard with the "Edit Cloudflare Workers"
+#   template. If your Cloudflare login has more than one account, ALSO add a
+#   CLOUDFLARE_ACCOUNT_ID secret (optional otherwise).
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'upr-mcp/**'
+      - '.github/workflows/deploy-upr-mcp.yml'
+  workflow_dispatch: {}   # manual "Run workflow" button
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install upr-mcp dependencies
+        working-directory: upr-mcp
+        run: npm install --no-audit --no-fund
+
+      - name: Deploy with Wrangler
+        working-directory: upr-mcp
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
