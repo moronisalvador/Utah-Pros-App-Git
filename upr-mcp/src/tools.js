@@ -41,6 +41,7 @@ import {
   addComment as githubAddComment,
 } from './github.js';
 import { supabase } from './supabase.js';
+import { searchCodeContext } from './codeContext.js';
 
 const n = (v) => (v == null ? v : Number(v));
 const esc = (s) => String(s).replace(/'/g, "\\'");
@@ -607,6 +608,12 @@ export const TOOLS = {
       ]);
       return { contacts, jobs, claims };
     },
+  },
+  upr_code_context: {
+    write: false,
+    description: 'Map a UPR feature to where it lives in the codebase. Given a plain-English feature (e.g. "invoice payment reconciliation", "tech appointment loading", "scope sheet moisture"), returns a compact map of the relevant pages (src/pages/), components, workers (functions/api/), RPCs, tables, tests, the applicable .claude/rules/ standards, and any gold-standard implementation named in the rules. Read-only, offline curated keyword index (no DB/repo reads at runtime) — regenerate with `npm run build-index`. Great first call before editing an unfamiliar area.',
+    inputSchema: { type: 'object', properties: { feature: { type: 'string', description: 'A feature or domain phrase, e.g. "collections dunning" or "encircle claim sync".' }, max_results: { type: 'number', description: 'Optional cap per category (default ~6–12).' } }, required: ['feature'] },
+    run: (env, a) => searchCodeContext(a.feature, { maxResults: a.max_results }),
   },
   upr_insert: {
     write: true,
