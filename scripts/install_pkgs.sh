@@ -35,6 +35,16 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 
+# TypeScript language server for the typescript-lsp code-intelligence plugin
+# (works on JS/JSX too — see jsconfig.json). Runs BEFORE the node_modules
+# skip so warm-cache sessions still get it. Non-fatal: without it, code
+# navigation just degrades to grep.
+if ! command -v typescript-language-server >/dev/null 2>&1; then
+  echo "Installing typescript-language-server for code intelligence..."
+  npm install -g typescript-language-server typescript \
+    || echo "typescript-language-server install failed (non-fatal)."
+fi
+
 # Warm cache already has deps on disk — skip reinstalling.
 if [ -d node_modules ]; then
   echo "node_modules present — skipping install."
