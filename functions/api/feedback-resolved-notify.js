@@ -115,6 +115,14 @@ export async function handleFeedbackResolvedNotify({ request, env, db, fetchImpl
   const feedback = rows?.[0];
   if (!feedback) return { status: 404, data: { error: 'Feedback not found' } };
 
+  // Server-side precondition: only a genuinely-resolved row may fire a "resolved"
+  // notification. The UI is AdminRoute-gated, but that is a client gate only —
+  // this stops any authenticated caller from fabricating a false "your feedback
+  // was resolved" push/email for a row that is still open (workers-standard §1).
+  if (feedback.status !== 'resolved') {
+    return { status: 409, data: { error: 'Feedback is not resolved' } };
+  }
+
   // No submitter → nobody to notify. Return ok so the caller never fails.
   if (!feedback.employee_id) {
     return { status: 200, data: { ok: true, skipped: 'no_submitter' } };
