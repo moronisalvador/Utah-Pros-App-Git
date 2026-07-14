@@ -218,7 +218,7 @@ export default function ClaimPage() {
   if (!claim) return (
     <div className="claim-ops-page">
       <div className="claim-ops-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims')} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims', { viewTransition: true })} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           {isTech ? 'Claims' : 'Back'}
         </button>
@@ -305,7 +305,7 @@ export default function ClaimPage() {
 
       {/* ── TOP BAR ── */}
       <div className="claim-ops-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims')} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(isTech ? '/tech/claims' : '/claims', { viewTransition: true })} style={isTech ? { gap: 6, minWidth: 48, minHeight: 48, padding: '8px 12px', fontSize: 15 } : { gap: 4 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           {isTech ? 'Claims' : 'Back'}
         </button>
@@ -431,7 +431,7 @@ export default function ClaimPage() {
           {/* Financials link */}
           <button
             className="btn btn-secondary btn-sm"
-            onClick={() => navigate(`/collections/${claimId}`)}
+            onClick={() => navigate(`/collections/${claimId}`, { viewTransition: true })}
             style={{ marginTop: 8, fontSize: 12 }}
           >
             View Financials →
@@ -642,11 +642,11 @@ function JobsSection({ jobs, invoicesByJob = {}, billingOn, expandedJob, setExpa
 
                 {/* Quick actions */}
                 <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)' }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => navigate(isTech ? `/tech/jobs/${job.id}` : `/jobs/${job.id}`)} style={{ fontSize: 12 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(isTech ? `/tech/jobs/${job.id}` : `/jobs/${job.id}`, { viewTransition: true })} style={{ fontSize: 12 }}>
                     View Job →
                   </button>
                   {inv && !isTech && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/invoices/${inv.id}`)} style={{ fontSize: 12 }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/invoices/${inv.id}`, { viewTransition: true })} style={{ fontSize: 12 }}>
                       View Invoice →
                     </button>
                   )}
@@ -701,7 +701,7 @@ function ScheduleSection({ appointments, loaded, navigate, isTech }) {
     const divColor = DIVISION_COLORS[appt.division] || '#6b7280';
     return (
       <div key={appt.id} className="claim-ops-appt-card" style={{ borderLeft: `3px solid ${divColor}` }}
-        onClick={() => navigate(isTech ? `/tech/appointment/${appt.id}` : `/schedule/appointment/${appt.id}`)}>
+        onClick={() => navigate(isTech ? `/tech/appointment/${appt.id}` : `/schedule/appointment/${appt.id}`, { viewTransition: true })}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{appt.title || appt.type?.replace(/_/g, ' ')}</span>
@@ -1049,7 +1049,7 @@ function DemoSheetsSection({ sheets, loaded, navigate }) {
         return (
           <button
             key={s.id}
-            onClick={() => navigate(`/tech/tools/demo-sheet?id=${s.id}`)}
+            onClick={() => navigate(`/tech/tools/demo-sheet?id=${s.id}`, { viewTransition: true })}
             style={{
               display: 'flex', alignItems: 'center', gap: 12,
               width: '100%', minHeight: 56, padding: '12px 14px',

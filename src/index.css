@@ -245,7 +245,14 @@ button, a, [role="button"] {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-md);
   font-size: var(--text-sm); font-weight: 500; font-family: inherit;
-  cursor: pointer; border: 1px solid transparent; transition: all var(--transition-fast);
+  cursor: pointer; border: 1px solid transparent;
+  /* Named props (never `transition: all`) so the press-scale animates on the motion
+     token; the :active scale + reduced-motion fallback ship in the motion block below.
+     touch-action removes the 300ms tap delay / double-tap-zoom on the button. */
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--transition-fast), border-color var(--transition-fast),
+              color var(--transition-fast);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   white-space: nowrap; height: 36px; /* Slightly taller for touch */
   min-width: 44px; /* iOS min touch target */
 }
@@ -1163,9 +1170,22 @@ tr:hover td { background: var(--bg-secondary); }
 .timeline-phase_change .job-page-timeline-text { font-style: italic; color: var(--text-tertiary); }
 /* ═══ Create Menu (FAB + Popup) ═══ */
 .create-menu-container { position: fixed; top: 20px; right: 24px; z-index: 95; display: flex; flex-direction: column; align-items: flex-end; }
-.create-menu-fab { width: 40px; height: 40px; border-radius: var(--radius-lg); background: var(--accent); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); transition: all 200ms ease; }
-.create-menu-fab:hover { background: var(--accent-hover); transform: scale(1.05); box-shadow: var(--shadow-lg); }
+.create-menu-fab { width: 40px; height: 40px; border-radius: var(--radius-lg); background: var(--accent); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); touch-action: manipulation; transition: transform var(--motion-duration-fast) var(--motion-ease-standard), background var(--transition-base), box-shadow var(--transition-base); }
+.create-menu-fab:hover { background: var(--accent-hover); box-shadow: var(--shadow-lg); }
 .create-menu-fab.active { background: var(--text-primary); transform: rotate(45deg); box-shadow: var(--shadow-md); }
+/* Hover-lift + press-scale gated to fine pointers (motion-standard §6). On the touch PWA the
+   FAB's feedback is its open-state rotate; Foundation neutralizes transient FAB transforms on
+   coarse pointers to avoid iOS sticky-hover, so scoping here keeps touch behavior identical and
+   self-documenting (no cross-block specificity fight). Press after hover so it wins when both
+   match (desktop press = hover + active). Never when open (.active is the rotate state). */
+@media (hover: hover) and (pointer: fine) {
+  .create-menu-fab:not(.active):hover { transform: scale(1.05); }
+  .create-menu-fab:active:not(.active) { transform: scale(0.97); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .create-menu-fab { transition: background var(--transition-base), box-shadow var(--transition-base); }
+  .create-menu-fab:not(.active):hover, .create-menu-fab:active:not(.active) { transform: none; }
+}
 .create-menu-fab-icon { width: 20px; height: 20px; }
 .create-menu-backdrop { position: fixed; inset: 0; z-index: -1; }
 .create-menu-popup { position: absolute; top: 52px; right: 0; width: 240px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); overflow: hidden; animation: createMenuIn 150ms var(--motion-spring-in); transform-origin: top right; }
@@ -1228,12 +1248,11 @@ tr:hover td { background: var(--bg-secondary); }
 }
 
 .ptr-spinner.spinning {
-  animation: ptrSpin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
-
-@keyframes ptrSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* Reduced motion: freeze the rotation — the spinner shape still reads as "loading" (motion-standard §6). */
+@media (prefers-reduced-motion: reduce) {
+  .ptr-spinner.spinning { animation: none; }
 }
 
 .ptr-text {
@@ -3040,12 +3059,20 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* Details section slide-in */
 .create-job-details-section {
-  animation: fadeIn 0.2s ease;
+  animation: fadeInUp var(--motion-duration-base) var(--motion-ease-standard);
 }
 
-@keyframes fadeIn {
+/* fade + rise (distinct from the opacity-only `fadeIn` above) — renamed so it stops
+   colliding with the two opacity-only `@keyframes fadeIn` definitions (last-defined
+   won globally, silently flattening this section's slide). */
+@keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* keep the fade (comprehension), drop the rise */
+  .create-job-details-section { animation: fadeIn var(--motion-duration-base) var(--motion-ease-standard); }
 }
 
 /* btn-link for inline links */
@@ -3203,12 +3230,7 @@ tr:hover td { background: var(--bg-secondary); }
   z-index: 100;
   display: flex;
   flex-direction: column;
-  animation: slideInRight 0.2s ease;
-}
-
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  animation: slideIn 0.2s ease;
 }
 
 .customer-detail-backdrop {
@@ -4379,7 +4401,6 @@ tr:hover td { background: var(--bg-secondary); }
   z-index: 200; display: flex; align-items: flex-end; justify-content: center;
   animation: fadeIn 150ms ease;
 }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .ar-sheet {
   width: 100%; max-width: 500px; max-height: 85vh;
@@ -4389,7 +4410,6 @@ tr:hover td { background: var(--bg-secondary); }
   animation: sheetSlideUp 250ms cubic-bezier(0.32, 0.72, 0, 1);
   padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
 }
-@keyframes sheetSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 .ar-sheet-handle {
   width: 36px; height: 4px; background: var(--border-color);
@@ -8012,10 +8032,17 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .coll-tabrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
 
 /* Buttons */
-.coll-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 8px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background .12s; white-space: nowrap; }
+.coll-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 8px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background var(--motion-duration-fast) var(--motion-ease-standard), transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; white-space: nowrap; }
 .coll-ghost:hover, .coll-ghost-open { background: #fafbfc; }
-.coll-primary { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; background: #2f6bf2; border: none; border-radius: 9px; padding: 9px 15px; cursor: pointer; box-shadow: 0 1px 2px rgba(47,107,242,.25); transition: background .12s; white-space: nowrap; }
+.coll-primary { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; background: #2f6bf2; border: none; border-radius: 9px; padding: 9px 15px; cursor: pointer; box-shadow: 0 1px 2px rgba(47,107,242,.25); transition: background var(--motion-duration-fast) var(--motion-ease-standard), transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; white-space: nowrap; }
 .coll-primary:hover { background: #2a60d8; }
+/* Money-button press — crisp scale-down, NO spring/bounce (motion-standard §1: spring-in
+   stays OFF billing surfaces). */
+.coll-ghost:active:not(:disabled), .coll-primary:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .coll-ghost, .coll-primary { transition: background var(--motion-duration-fast) var(--motion-ease-standard); }
+  .coll-ghost:active:not(:disabled), .coll-primary:active:not(:disabled) { transform: none; }
+}
 
 /* Segmented control (section tabs / period / status filter) */
 .coll-seg { display: inline-flex; background: #fff; border: 1px solid #e7e9ee; border-radius: 10px; padding: 3px; gap: 2px; box-shadow: 0 1px 2px rgba(16,24,40,.04); flex-wrap: wrap; }
@@ -11869,3 +11896,34 @@ html.ui-glass .tech-nav {
   html.ui-glass .topnav   { background: var(--bg-primary); }
   html.ui-glass .tech-nav { background: var(--tech-nav-bg); }
 }
+
+/* ─── MOTION ROLLOUT RESERVED — W1 (toast enter/exit) ───────────────────────────
+   Global app toast (Layout.jsx). Enter pops in on the spring token (an occasional,
+   non-interruptible one-shot — motion-standard §1/§3). Exit accelerates up+out, driven
+   by a `leaving` flag + onAnimationEnd in Layout.jsx (mirrors ui/Modal.jsx's --closing
+   lifecycle) with a ~220ms safety-timeout fallback. transform/opacity only; both wrapped
+   in reduced-motion (collapses to instant, end-state still lands). Replaces Layout.jsx's
+   former inline `@keyframes slideUp` (TechLayout.jsx keeps its own parallel copy — out of
+   W1 scope, flagged for a future wave). */
+.upr-toast { animation: uprToastIn var(--motion-duration-base) var(--motion-spring-in); }
+.upr-toast--leaving { animation: uprToastOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+@keyframes uprToastIn  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes uprToastOut { from { opacity: 1; transform: translateY(0); }    to { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .upr-toast, .upr-toast--leaving { animation: none; }
+}
+
+/* Estimates list row — background-swap on hover/press (the ROW idiom, not a scale;
+   motion-standard §3 "list rows use the background/opacity swap"). Token colors only. */
+.est-row { background: var(--bg-primary); transition: background var(--motion-duration-fast) var(--motion-ease-standard); }
+.est-row:hover { background: var(--bg-secondary); }
+.est-row:active { background: var(--bg-tertiary); }
+@media (prefers-reduced-motion: reduce) { .est-row { transition: none; } }
+
+/* Field-tech scope/tab pill (TechClaims/TechTasks) — a HIGH-FREQUENCY in-place switch:
+   press-scale ONLY. The selection-change (background/color) stays INSTANT — no transition
+   on the fill (motion-standard §3 frequency tier; animating the indicator is deferred to
+   Wave 3). transform-only transition so the switch never waits on a slide. */
+.tech-pill { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
+.tech-pill:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) { .tech-pill:active:not(:disabled) { transform: none; } }

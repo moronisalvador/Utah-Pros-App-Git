@@ -867,6 +867,7 @@ export default function TechNewJob() {
         zIndex: 10,
       }}>
         <button
+          className="btn"
           onClick={handleSubmit}
           disabled={!canSubmit || saving}
           style={{
