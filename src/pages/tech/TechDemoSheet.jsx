@@ -785,6 +785,12 @@ export default function TechDemoSheet() {
   // Caches the draft row fetched by the schema effect so the bootstrap effect
   // doesn't re-fetch the same get_demo_sheet on load.
   const loadedRowRef = useRef(null);
+  // Persisted status of the loaded sheet ('draft' | 'submitted'). Captured on
+  // load so autosave PRESERVES a submitted sheet instead of silently
+  // downgrading it to draft when a tech re-opens it just to look (feedback:
+  // Marcelo B., 2026-07-13). Only doSubmit promotes to 'submitted'; nothing
+  // auto-downgrades.
+  const statusRef = useRef('draft');
   const applySheetId = (id) => { sheetIdRef.current = id; setSheetId(id); };
   const setJob = (k, v) => setJobInfo(p => ({ ...p, [k]:v }));
 
@@ -866,6 +872,9 @@ export default function TechDemoSheet() {
         : db.rpc('get_demo_sheet', { p_id: id }).then(rows => Array.isArray(rows) ? rows[0] : rows);
       rowPromise
         .then(row => {
+          // Capture the persisted status BEFORE hydration arms autosave, so a
+          // submitted sheet stays submitted on re-open (never auto-downgraded).
+          statusRef.current = row?.status || 'draft';
           if (row && row.form_data) {
             applySheetId(row.id);
             if (row.job_id) setJobIdState(row.job_id);
@@ -893,8 +902,9 @@ export default function TechDemoSheet() {
           }
           setHydrated(true);
         })
-        .catch(() => { setRooms([defaultRoom()]); setJobData(makeDefaultJobData(schema)); setHydrated(true); });
+        .catch(() => { statusRef.current = 'draft'; setRooms([defaultRoom()]); setJobData(makeDefaultJobData(schema)); setHydrated(true); });
     } else {
+      statusRef.current = 'draft'; // fresh sheet / appt prefill — always a draft
       // Optional appt prefill via query params
       const apptJobId     = searchParams.get('jobId')      || '';
       const apptJobNumber = searchParams.get('jobNumber')  || '';
@@ -973,7 +983,8 @@ export default function TechDemoSheet() {
           p_address:    jobInfo.address || null,
           p_insured_name: jobInfo.insuredName || null,
           p_encircle_claim_id: encircleLinked?.id ? String(encircleLinked.id) : null,
-          p_status: 'draft',
+          // Preserve a submitted sheet; autosave must never downgrade to draft.
+          p_status: statusRef.current === 'submitted' ? 'submitted' : 'draft',
           p_job_id: jobId || null,
           p_summary: summary,
           p_schema_id: schema?._id || null,
@@ -1095,8 +1106,10 @@ export default function TechDemoSheet() {
     if (sending) return;
     setSending(true);
     try {
-      await flushSave({ status: 'draft' });
-      toast('Draft saved', 'success');
+      // Keep a submitted sheet submitted — closing it must not revert to draft.
+      const keepStatus = statusRef.current === 'submitted' ? 'submitted' : 'draft';
+      await flushSave({ status: keepStatus });
+      toast(keepStatus === 'submitted' ? 'Saved' : 'Draft saved', 'success');
       navigate(-1);
     } catch (e) {
       toast(`Save failed: ${e.message || 'unknown'}`, 'error');
@@ -1115,6 +1128,7 @@ export default function TechDemoSheet() {
     let saveErr = null;
     try {
       await flushSave({ status: 'submitted' });
+      statusRef.current = 'submitted'; // promoted — autosave/close now preserve it
       saveOk = true;
       clearDraftMirror(sheetIdRef.current); // submitted + persisted — drop the local copy
     } catch (e) {
@@ -1235,6 +1249,7 @@ export default function TechDemoSheet() {
   const startNew = () => {
     saveEpochRef.current += 1;          // discard any in-flight save continuation
     createInFlightRef.current = null;   // and never adopt its INSERT id
+    statusRef.current = 'draft';        // a brand-new sheet is always a draft
     setRooms([makeDefaultRoom(schema)]);
     setJobInfo({ date:today(), tech:'', techName:'', jobNumber:'', address:'', insuredName:'' });
     setJobData(makeDefaultJobData(schema));
