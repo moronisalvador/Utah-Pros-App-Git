@@ -19,6 +19,10 @@ as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) 
   (titles + photos) + **Docs page** (signatures + Generate Water-Loss-Report + request-signature FAB
   sheet). Artifact: `claude.ai/code/artifact/96992ae5-afe9-4ed7-9d5d-b44f3ee35c86` (re-publishable
   from the committed HTML anytime — the file is the source of truth).
+- **Combined clickable app** (`full-app.html`) — all three flows in one navigable prototype
+  (Schedule → tap appointment → Job Hub → rooms/notes/docs → New Job), grouped jump-bar at the
+  bottom. Artifact: `claude.ai/code/artifact/c7a22959-8a60-403a-8d4f-c000b08e730e`. Rebuilt from the
+  three prototypes by `/tmp/kit/combine.js` (union kit + all screens + all scripts).
 
 **REMAINING — tomorrow's to-do (to finish the flows session, then move to Session 3 = build):**
 1. **Job Hub loose ends** (quick): the **Work Auth compliance ALERT** (red banner when unsigned) + the
