@@ -99,7 +99,23 @@ one line (previously only fit when the Done chip was narrow).
 | `kit.html` | foundation | tokens + sprite (30 verbatim + 18 authored gap glyphs) + fonts + components. Inlined into each prototype. |
 | `schedule.html` | **LOCKED** (owner: "we nailed the schedule and appointment creation part") | month (in-place day preview) · day (week strip + day-switch + prev/next) · day-empty · loading skeleton · error-over-stale · search (polished result layout) · **add-visit full-screen page** (job fpick→matching picker + create-new-job · date/time native pickers · start+end side-by-side · type choices no check · 5-tech crew · notes w/ ownership transfer). |
 | `new-job-flow.html` | built; **owner wants rework** (deferred to after hub) | 7-step: FAB menu → customer → job type (division+referral) → claim fork → review → non-blocking sync → land on hub. |
-| `job-hub.html` | **in Chromium review** (this session) | 5 clock states (scheduled/omw/working/paused/done) + interactive checklist + drying gateways + below-fold (Visits/Job&Claim/Photos/Documents) + 11-entry activity log + Finish two-tap. Sample: Gary Sorensen #26-1173, 1420 N Oak Dr Layton. |
+| `job-hub.html` | **in Chromium review** (this session) — being reworked into a "job dashboard" | 5 clock states + Tasks (collapsible, default-open) + Drying WIDGET (taps→hydro) + below-fold (Visits/Job&Claim/Photos/Documents/Notes) + Activity as a collapsed ROW → dedicated `s-activity` page (full log). Sample: Gary Sorensen #26-1173, 1420 N Oak Dr Layton. |
+
+**Job Hub rework (owner direction, 2026-07-15) — "treat it like a job dashboard":**
+- LOCKED/frozen (owner: "perfect, don't mess with it"): the stage card (clock/OMW→Start→Finish/time
+  tracking) + address row + the office-note glance. **Office note = the notes entered during
+  appointment creation.** Activity stays pinned at the very BOTTOM, always.
+- DONE this session (the owner's 3 asks + my advice, all approved): ① Activity → a collapsed row with a
+  latest-event preview that opens a dedicated full Activity page (`s-activity`). ② Checklist → renamed
+  **Tasks**, now a collapsible card (owner wanted default-collapsed; I recommended + shipped
+  **default-OPEN** because tasks are the primary on-site work and the Done-collapse already keeps it
+  short — one-line flip if owner still wants collapsed). ③ Drying gateway → a **progress widget**
+  (Day 4 · 2/3 dry · 1 wet · Readings due) that taps into the hydro page.
+- NEXT (owner's new requirement): **Room tiles** — tap a room → that room's photos + notes (the
+  Encircle *function*, NOT its banned visuals). Must be the organizing spine (not another stacked
+  section) to keep the page short. This reshapes how Photos/Notes are grouped. Its own focused build.
+- STILL OPEN (my tile proposal, pending owner nod): Visits / Job & Claim / Documents → compact tap
+  tiles instead of full stacked sections (the real length fix).
 
 **Sequencing (owner):** calendar/schedule 100% ✓ → **job creation rework (next)** → job hub ("most
 important"). NOTE: hub was built first as a draft to react to; the owner may still reorder.

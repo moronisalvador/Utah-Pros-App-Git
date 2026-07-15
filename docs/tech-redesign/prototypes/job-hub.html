@@ -1177,6 +1177,30 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .note-pin{ flex:none; display:inline-flex; align-items:center; gap:3px; padding:1px 7px 1px 5px; border-radius:999px; background:var(--surface2); color:var(--ink3); font-size:11px; font-weight:600; }
 .note-item--pinned{ border-top:0; }
 .note-item--pinned .note-text{ color:var(--ink); }
+/* ── Tasks (collapsible checklist) ── */
+.cklist .ck-head{ display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent; font:inherit; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; padding:16px 16px 12px; }
+.cklist .ck-count{ margin-left:auto; }
+.ck-chev{ flex:none; color:var(--ink3); transition:transform .16s ease; transform:rotate(90deg); }
+.cklist[data-collapsed="true"] .ck-chev{ transform:rotate(0deg); }
+.cklist[data-collapsed="true"] .ck-body{ display:none; }
+.cklist .ck-body .prog{ margin-top:0; }
+@media (prefers-reduced-motion:reduce){ .ck-chev{ transition:none; } }
+/* ── Drying widget (do-now, taps into hydro) ── */
+.jd-dry{ display:block; width:100%; text-align:left; border:0; background:var(--surface); border-radius:20px; box-shadow:var(--sh-card); padding:14px 16px; margin-top:14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jd-dry:active{ transform:scale(.99); }
+.jd-dry-head{ display:flex; align-items:center; gap:10px; }
+.jd-dry-ic{ flex:none; width:34px; height:34px; border-radius:11px; background:var(--surface2); display:grid; place-items:center; color:var(--ink2); }
+.jd-dry-title{ font-size:16px; font-weight:650; color:var(--ink); }
+.jd-dry-day{ font-size:13px; font-weight:600; color:var(--ink3); }
+.jd-dry-head .chev{ margin-left:auto; color:var(--ink3); }
+.jd-dry-prog{ margin:11px 0 9px; }
+.jd-dry-foot{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; font-weight:600; color:var(--ink2); }
+.jd-dry-foot .dnum{ color:var(--ink); }
+.jd-dry-due{ margin-left:auto; color:var(--amber); font-weight:700; }
+/* ── Activity collapsed row (taps into full log page) ── */
+.acti-row{ display:flex; align-items:center; gap:12px; padding:14px 16px; margin-top:8px; text-decoration:none; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.acti-row:active{ background:var(--surface2); }
+@media (prefers-reduced-motion:reduce){ .jd-dry:active{ transform:none; } }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1610,8 +1634,9 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
           <!-- Z2 WORK CARD -->
-          <section class="card cklist">
-            <div class="ck-head"><span class="ck-title">Checklist</span><span class="ck-count">0 of 5</span></div>
+          <section class="card cklist" data-collapsed="false">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:0%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Arrival photos</span></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Confirm equipment on site</span></div>
@@ -1622,13 +1647,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg>Add photo</button>
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
-          </section>
+          </div></section>
           <!-- Z2 MODULE GATEWAYS -->
-          <h3 class="sect-title">Drying · Day 4</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Readings &amp; equipment</div><div class="row-m"><span class="dnum">2</span> of <span class="dnum">3</span> materials dry · <span class="dnum">4</span> units on site · read 9:46 AM</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><div class="row-body"><div class="row-t">Wood Subfloor · Kitchen</div><div class="row-m"><span class="dnum">22%</span> · goal 15% · 2d stalled</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Wet</span></div>
-          </section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
           <!-- Z4 BELOW FOLD -->
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
@@ -1659,11 +1684,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
-          <h3 class="sect-title">Activity</h3>
-          <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-cal"/></svg></span><div class="row-body"><div class="row-t">Visit scheduled</div><div class="row-m">Dana (office) · Jul 10, 9:14 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-plus-circle"/></svg></span><div class="row-body"><div class="row-t">Job created</div><div class="row-m">Dana (office) · Jul 10, 9:02 AM</div></div></div>
-          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
         </div>
       </div>
       <div class="dock">
@@ -1706,8 +1731,9 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist">
-            <div class="ck-head"><span class="ck-title">Checklist</span><span class="ck-count">0 of 5</span></div>
+          <section class="card cklist" data-collapsed="false">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:0%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Arrival photos</span></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Confirm equipment on site</span></div>
@@ -1718,12 +1744,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg>Add photo</button>
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
-          </section>
-          <h3 class="sect-title">Drying · Day 4</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Readings &amp; equipment</div><div class="row-m"><span class="dnum">2</span> of <span class="dnum">3</span> materials dry · <span class="dnum">4</span> units on site · read 9:46 AM</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><div class="row-body"><div class="row-t">Wood Subfloor · Kitchen</div><div class="row-m"><span class="dnum">22%</span> · goal 15% · 2d stalled</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Wet</span></div>
-          </section>
+          </div></section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · this visit</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-navigate"/></svg>On my way</span></div>
@@ -1752,16 +1778,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
-          <h3 class="sect-title">Activity</h3>
-          <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-navigate"/></svg></span><div class="row-body"><div class="row-t">On my way</div><div class="row-m">Marcus · Today 1:52 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Invoice #INV-2042 sent</div><div class="row-m">System · Jul 13, 4:02 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report generated</div><div class="row-m">Marcus · Jul 13, 1:20 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-clipboard"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183 sent</div><div class="row-m">System · Jul 12, 2:30 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-air"/></svg></span><div class="row-body"><div class="row-t">Equipment placed · 4 units</div><div class="row-m">Marcus · Jul 11, 3:10 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-cal"/></svg></span><div class="row-body"><div class="row-t">Visit scheduled</div><div class="row-m">Dana (office) · Jul 10, 9:14 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-plus-circle"/></svg></span><div class="row-body"><div class="row-t">Job created</div><div class="row-m">Dana (office) · Jul 10, 9:02 AM</div></div></div>
-          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
         </div>
       </div>
       <div class="dock">
@@ -1810,8 +1831,9 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
           <!-- Z2 WORK CARD -->
-          <section class="card cklist">
-            <div class="ck-head"><span class="ck-title">Checklist</span><span class="ck-count" id="ckCount">2 of 5</span></div>
+          <section class="card cklist" data-collapsed="false">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count" id="ckCount">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
             <div class="prog"><div class="prog-fill" id="progFill" style="width:40%"></div></div>
             <div class="task task--open" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Master Bathroom</span></div>
             <div class="task task--open" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Kitchen</span></div>
@@ -1821,13 +1843,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg>Add photo</button>
               <button class="ck-act" type="button" data-toast data-toast-kind="info" data-toast-title="Note started" data-toast-msg="Jot a quick note for this visit."><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
-          </section>
+          </div></section>
           <!-- Z2 MODULE GATEWAYS -->
-          <h3 class="sect-title">Drying · Day 4</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Readings &amp; equipment</div><div class="row-m"><span class="dnum">2</span> of <span class="dnum">3</span> materials dry · <span class="dnum">4</span> units on site · read 9:46 AM</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><div class="row-body"><div class="row-t">Wood Subfloor · Kitchen</div><div class="row-m"><span class="dnum">22%</span> · goal 15% · 2d stalled</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Wet</span></div>
-          </section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
           <!-- Z4 BELOW FOLD -->
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
@@ -1858,20 +1880,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
-          <h3 class="sect-title">Activity</h3>
-          <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg></span><div class="row-body"><div class="row-t">Photo added</div><div class="row-m">Marcus · Today 11:18 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg></span><div class="row-body"><div class="row-t">Note edited</div><div class="row-m">Marcus · Today 11:15 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Moisture reading logged</div><div class="row-m">Marcus · Today 9:46 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-dotring"/></svg></span><div class="row-body"><div class="row-t">Clocked in</div><div class="row-m">Marcus · Today 9:30 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-navigate"/></svg></span><div class="row-body"><div class="row-t">On my way</div><div class="row-m">Marcus · Today 9:12 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Invoice #INV-2042 sent</div><div class="row-m">System · Jul 13, 4:02 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report generated</div><div class="row-m">Marcus · Jul 13, 1:20 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-clipboard"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183 sent</div><div class="row-m">System · Jul 12, 2:30 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-air"/></svg></span><div class="row-body"><div class="row-t">Equipment placed · 4 units</div><div class="row-m">Marcus · Jul 11, 3:10 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-cal"/></svg></span><div class="row-body"><div class="row-t">Visit scheduled</div><div class="row-m">Dana (office) · Jul 10, 9:14 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-plus-circle"/></svg></span><div class="row-body"><div class="row-t">Job created</div><div class="row-m">Dana (office) · Jul 10, 9:02 AM</div></div></div>
-          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
         </div>
       </div>
       <div class="dock">
@@ -1915,8 +1928,9 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist">
-            <div class="ck-head"><span class="ck-title">Checklist</span><span class="ck-count">2 of 5</span></div>
+          <section class="card cklist" data-collapsed="false">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:40%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Master Bathroom</span></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Kitchen</span></div>
@@ -1926,12 +1940,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg>Add photo</button>
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
-          </section>
-          <h3 class="sect-title">Drying · Day 4</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Readings &amp; equipment</div><div class="row-m"><span class="dnum">2</span> of <span class="dnum">3</span> materials dry · <span class="dnum">4</span> units on site · read 9:46 AM</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><div class="row-body"><div class="row-t">Wood Subfloor · Kitchen</div><div class="row-m"><span class="dnum">22%</span> · goal 15% · 2d stalled</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Wet</span></div>
-          </section>
+          </div></section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · this visit</div></div><span class="chip chip-red"><svg class="ic" width="14" height="14"><use href="#i-pause"/></svg>Paused</span></div>
@@ -1960,16 +1974,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
-          <h3 class="sect-title">Activity</h3>
-          <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-pause"/></svg></span><div class="row-body"><div class="row-t">Paused</div><div class="row-m">Marcus · Today 11:20 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg></span><div class="row-body"><div class="row-t">Photo added</div><div class="row-m">Marcus · Today 11:18 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Moisture reading logged</div><div class="row-m">Marcus · Today 9:46 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-dotring"/></svg></span><div class="row-body"><div class="row-t">Clocked in</div><div class="row-m">Marcus · Today 9:30 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-navigate"/></svg></span><div class="row-body"><div class="row-t">On my way</div><div class="row-m">Marcus · Today 9:12 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Invoice #INV-2042 sent</div><div class="row-m">System · Jul 13, 4:02 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-clipboard"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183 sent</div><div class="row-m">System · Jul 12, 2:30 PM</div></div></div>
-          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
         </div>
       </div>
       <div class="dock">
@@ -2012,16 +2021,17 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist">
-            <div class="ck-head"><span class="ck-title">Checklist</span><span class="ck-count">5 of 5</span></div>
+          <section class="card cklist" data-collapsed="false">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">5 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:100%"></div></div>
             <div class="task task--fold"><span class="ck ck--done"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="task-t">Done (5)</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Drying · Day 4</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Readings &amp; equipment</div><div class="row-m"><span class="dnum">2</span> of <span class="dnum">3</span> materials dry · <span class="dnum">4</span> units on site · read 9:46 AM</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><div class="row-body"><div class="row-t">Wood Subfloor · Kitchen</div><div class="row-m"><span class="dnum">22%</span> · goal 15% · 2d stalled</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Wet</span></div>
-          </section>
+          </div></section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · Travel 18m · On-site 3h 24m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
@@ -2050,18 +2060,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
-          <h3 class="sect-title">Activity</h3>
-          <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-check"/></svg></span><div class="row-body"><div class="row-t">Clocked out · 3h 42m</div><div class="row-m">Marcus · Today 11:20 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg></span><div class="row-body"><div class="row-t">Photo added</div><div class="row-m">Marcus · Today 11:18 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg></span><div class="row-body"><div class="row-t">Note edited</div><div class="row-m">Marcus · Today 11:15 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Moisture reading logged</div><div class="row-m">Marcus · Today 9:46 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-dotring"/></svg></span><div class="row-body"><div class="row-t">Clocked in</div><div class="row-m">Marcus · Today 9:30 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-navigate"/></svg></span><div class="row-body"><div class="row-t">On my way</div><div class="row-m">Marcus · Today 9:12 AM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Invoice #INV-2042 sent</div><div class="row-m">System · Jul 13, 4:02 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-clipboard"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183 sent</div><div class="row-m">System · Jul 12, 2:30 PM</div></div></div>
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-plus-circle"/></svg></span><div class="row-body"><div class="row-t">Job created</div><div class="row-m">Dana (office) · Jul 10, 9:02 AM</div></div></div>
-          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
         </div>
       </div>
       <div class="dock">
@@ -2082,6 +2085,39 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 
     <!-- BUILD:END -->
 
+    <!-- ═══════════ ACTIVITY LOG (full page) ═══════════ -->
+    <div class="screen" id="s-activity">
+      <div class="app">
+        <div class="app-top">
+          <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
+          <header class="hubhdr">
+            <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
+            <div class="hub-id"><div class="hub-name">Activity</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+          </header>
+        </div>
+        <div class="main">
+          <section class="card rowcard">
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-check"/></svg></span><div class="row-body"><div class="row-t">Clocked out · 3h 42m</div><div class="row-m">Marcus · Today 11:20 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg></span><div class="row-body"><div class="row-t">Photo added</div><div class="row-m">Marcus · Today 11:18 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg></span><div class="row-body"><div class="row-t">Note edited</div><div class="row-m">Marcus · Today 11:15 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-gauge"/></svg></span><div class="row-body"><div class="row-t">Moisture reading logged</div><div class="row-m">Marcus · Today 9:46 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-dotring"/></svg></span><div class="row-body"><div class="row-t">Clocked in</div><div class="row-m">Marcus · Today 9:30 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-navigate"/></svg></span><div class="row-body"><div class="row-t">On my way</div><div class="row-m">Marcus · Today 9:12 AM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Invoice #INV-2042 sent</div><div class="row-m">System · Jul 13, 4:02 PM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-clipboard"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183 sent</div><div class="row-m">System · Jul 12, 2:30 PM</div></div></div>
+            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-plus-circle"/></svg></span><div class="row-body"><div class="row-t">Job created</div><div class="row-m">Dana (office) · Jul 10, 9:02 AM</div></div></div>
+          </section>
+        </div>
+        <nav class="tabbar"><div class="tabs">
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
+        <button class="tab active" type="button" aria-current="page"><svg class="ic" width="24" height="24"><use href="#i-cal"/></svg><span class="tab-label">Schedule</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-chat"/></svg><span class="badge-num">2</span><span class="tab-label">Messages</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
+      </div><div class="home-ind"></div></nav>
+        <div class="toastwrap"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2093,6 +2129,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
   <button type="button" data-go="s-working" class="on">Working</button>
   <button type="button" data-go="s-paused">Paused</button>
   <button type="button" data-go="s-done">Done</button>
+  <button type="button" data-go="s-activity">Activity</button>
 </div>
 
 <script>
@@ -2263,6 +2300,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
       clearTimeout(armTimer); disarm();
     }
   }, true);
+})();
+</script>
+<script>
+/* Tasks: collapse / expand the checklist card */
+(function(){
+  document.addEventListener('click',function(e){
+    var b=e.target.closest('[data-taskstoggle]'); if(!b) return;
+    var card=b.closest('.cklist'); if(!card) return;
+    var collapsed=card.getAttribute('data-collapsed')==='true';
+    card.setAttribute('data-collapsed', collapsed?'false':'true');
+    b.setAttribute('aria-expanded', collapsed?'true':'false');
+  });
 })();
 </script>
 <script>
