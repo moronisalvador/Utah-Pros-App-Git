@@ -1242,6 +1242,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .hub-act:active{ background:var(--surface2); }
 .hub-act .ic{ color:var(--ink2); }
 .hub-act span{ line-height:1; }
+/* appointment date/time strip + inline Edit, inside the clock card */
+.stage-appt{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+.stage-appt-when{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--ink2); min-width:0; }
+.stage-appt-when .ic{ flex:none; color:var(--ink3); }
+.stage-edit{ flex:none; display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--hair); background:var(--surface); color:var(--ink2); font-size:13px; font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.stage-edit:active{ background:var(--surface2); }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1666,14 +1672,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
           </div>
           <div class="hub-actions">
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
           </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
+            <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num" style="color:var(--blue)">2:00</div><div class="timer-label">Scheduled 2:00 PM · in 40 min</div></div>
             <div class="rail">
               <div class="st"><span class="st-node st-node--next"><svg class="ic" width="16" height="16"><use href="#i-flag"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">Next</span></div>
@@ -1762,13 +1767,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
           </div>
           <div class="hub-actions">
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
           </div>
           <section class="card hero">
+            <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num js-timer" data-start="480" style="color:var(--amber)">0:08:00</div><div class="timer-label">On my way since 1:52 PM</div></div>
             <div class="rail">
               <div class="st"><span class="st-node st-node--next" style="background:var(--amber-bg);color:var(--amber);border:2px solid var(--amber)"><svg class="ic" width="16" height="16"><use href="#i-navigate"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">Underway</span></div>
@@ -1854,14 +1858,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
           </div>
           <div class="hub-actions">
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
           </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
+            <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num js-timer" id="stageTimer" data-start="7687">2:08:07</div><div class="timer-label">On the clock since 9:12 AM</div></div>
             <div class="rail">
               <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">9:12 AM<br>Travel 18m</span></div>
@@ -1953,13 +1956,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
           </div>
           <div class="hub-actions">
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
           </div>
           <section class="card hero">
+            <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num" style="color:var(--red)">2:08:07</div><div class="timer-label">Paused at 11:20 AM</div></div>
             <div class="rail">
               <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">9:12 AM<br>Travel 18m</span></div>
@@ -2045,13 +2047,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
           </div>
           <div class="hub-actions">
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
           </div>
           <section class="card hero">
+            <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num" style="color:var(--gray)">3:42:00</div><div class="timer-label">Finished 11:20 AM</div></div>
             <div class="rail">
               <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">9:12 AM<br>Travel 18m</span></div>
