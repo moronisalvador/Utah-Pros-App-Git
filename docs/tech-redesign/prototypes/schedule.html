@@ -1239,6 +1239,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .cal-cell.sel .cal-dot{ background:var(--pill-ink) !important; opacity:.9; }
 .cal-dot.d-scheduled{ background:var(--blue); } .cal-dot.d-working{ background:var(--green); } .cal-dot.d-enroute{ background:var(--amber); } .cal-dot.d-done{ background:var(--gray); }
 .cal-more{ font-size:11px; font-weight:600; color:var(--ink3); }
+.cal-cell.sel .cal-more{ color:var(--pill-ink); }
 /* week strip (day view) */
 .wk{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:12px 16px 4px; }
 .wk-day{ border:0; background:transparent; font-family:inherit; border-radius:12px; padding:8px 0; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; color:var(--ink2); min-height:56px; }
@@ -1279,13 +1280,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 /* division / referral choice pills (drawn icon + label, wrap grid) */
 .choice-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .choice-grid.col1{ grid-template-columns:1fr; }
-.choice{ position:relative; display:flex; align-items:center; gap:10px; min-width:0; min-height:56px; padding:10px 34px 10px 12px; border-radius:14px; background:var(--surface2); border:1.5px solid transparent; font-family:inherit; text-align:left; cursor:pointer; color:var(--ink); }
+.choice{ position:relative; display:flex; align-items:center; gap:10px; min-width:0; min-height:56px; padding:10px 14px; border-radius:14px; background:var(--surface2); border:1.5px solid transparent; font-family:inherit; text-align:left; cursor:pointer; color:var(--ink); }
 .choice:active{ transform:scale(.97); }
 .choice .lead{ color:var(--ink2); flex:none; }
 .choice-t{ font-size:15px; font-weight:600; line-height:1.15; min-width:0; text-wrap:balance; }
 .choice[aria-pressed="true"]{ border-color:var(--ink); background:var(--surface); }
 .choice[aria-pressed="true"] .lead{ color:var(--ink); }
-.choice-check{ position:absolute; top:50%; right:10px; transform:translateY(-50%); color:var(--ink); opacity:0; flex:none; }
+.choice-check{ display:none; } /* selection = border + fill only (owner: no checkmark; it overlapped long labels) */
 .choice[aria-pressed="true"] .choice-check{ opacity:1; }
 
 /* claim-fork segmented (New vs Existing) reuses .seg; sync banner */
@@ -1592,62 +1593,114 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="cal-cell out" type="button"><span class="cal-num">28</span></button>
               <button class="cal-cell out" type="button"><span class="cal-num">29</span></button>
               <button class="cal-cell out" type="button"><span class="cal-num">30</span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">1</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">2</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">3</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">4</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Wednesday, July 1" data-panel="empty"><span class="cal-num">1</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Thursday, July 2" data-panel="light"><span class="cal-num">2</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Friday, July 3" data-panel="light"><span class="cal-num">3</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Saturday, July 4" data-panel="empty"><span class="cal-num">4</span><span class="cal-dots"></span></button>
               <!-- Week 2 -->
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">5</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">6</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">7</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">8</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">9</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">10</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">11</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Sunday, July 5" data-panel="empty"><span class="cal-num">5</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Monday, July 6" data-panel="light"><span class="cal-num">6</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Tuesday, July 7" data-panel="mid"><span class="cal-num">7</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Wednesday, July 8" data-panel="light"><span class="cal-num">8</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Thursday, July 9" data-panel="mid"><span class="cal-num">9</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Friday, July 10" data-panel="light"><span class="cal-num">10</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Saturday, July 11" data-panel="empty"><span class="cal-num">11</span><span class="cal-dots"></span></button>
               <!-- Week 3 -->
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">12</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">13</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell today sel" type="button" aria-current="date" data-go="s-day"><span class="cal-num">14</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more" style="color:var(--pill-ink)">4</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">15</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">5</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day-empty"><span class="cal-num">16</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">17</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">18</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Sunday, July 12" data-panel="empty"><span class="cal-num">12</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Monday, July 13" data-panel="mid"><span class="cal-num">13</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
+              <button class="cal-cell today sel" type="button" aria-current="date" data-selday data-label="Tuesday, July 14" data-panel="busy"><span class="cal-num">14</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">4</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Wednesday, July 15" data-panel="mid"><span class="cal-num">15</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">5</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Thursday, July 16" data-panel="empty"><span class="cal-num">16</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Friday, July 17" data-panel="light"><span class="cal-num">17</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Saturday, July 18" data-panel="empty"><span class="cal-num">18</span><span class="cal-dots"></span></button>
               <!-- Week 4 -->
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">19</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">20</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">21</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">22</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">23</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">24</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">25</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Sunday, July 19" data-panel="empty"><span class="cal-num">19</span><span class="cal-dots"></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Monday, July 20" data-panel="mid"><span class="cal-num">20</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Tuesday, July 21" data-panel="light"><span class="cal-num">21</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Wednesday, July 22" data-panel="mid"><span class="cal-num">22</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Thursday, July 23" data-panel="light"><span class="cal-num">23</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Friday, July 24" data-panel="light"><span class="cal-num">24</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Saturday, July 25" data-panel="empty"><span class="cal-num">25</span><span class="cal-dots"></span></button>
               <!-- Week 5 -->
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">26</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">27</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">28</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">29</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">30</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" data-go="s-day"><span class="cal-num">31</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Sunday, July 26" data-panel="mid"><span class="cal-num">26</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Monday, July 27" data-panel="light"><span class="cal-num">27</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Tuesday, July 28" data-panel="mid"><span class="cal-num">28</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Wednesday, July 29" data-panel="light"><span class="cal-num">29</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Thursday, July 30" data-panel="mid"><span class="cal-num">30</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
+              <button class="cal-cell" type="button" data-selday data-label="Friday, July 31" data-panel="light"><span class="cal-num">31</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
               <button class="cal-cell out" type="button"><span class="cal-num">1</span></button>
             </div>
           </div>
 
-          <!-- month view previews the selected day -->
-          <div class="day-h">Tuesday, July 14</div>
-          <div class="card rowcard">
-            <div class="row" data-go="s-day">
+          <!-- month view previews the selected day IN PLACE — tapping a calendar day swaps the panel below, it does NOT navigate to the full Day view (that is the "Day" segmented button only) -->
+          <div class="day-h" id="monthDayTitle">Tuesday, July 14</div>
+
+          <!-- busy: the selected day (July 14) — 4 visits. rows open the job hub in the real app (jobHref); stubbed to a toast here -->
+          <div class="card rowcard" data-daypanel="busy">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">9:00</div><div class="row-m">AM</div></div>
               <div class="row-body"><div class="row-t">Dana Whitmore</div><div class="row-m">Mitigation · #26-1188</div></div>
               <span class="chip chip-gray"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg>Done</span>
             </div>
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">10:30</div><div class="row-m">AM</div></div>
               <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Water loss · 1420 N Oak Dr</div></div>
               <span class="chip chip-green"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-dotring"></use></svg>Working</span>
             </div>
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">1:30</div><div class="row-m">PM</div></div>
               <div class="row-body"><div class="row-t">Luis Ortega</div><div class="row-m">Reconstruction · #26-1181</div></div>
               <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+            <div class="row row--due" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">3:00</div><div class="row-m">PM</div></div>
+              <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m">Reconstruction · #26-1176</div></div>
+              <span class="chip chip-amber"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Due</span>
+            </div>
+          </div>
+
+          <!-- mid: a moderately-scheduled day — 2 visits -->
+          <div class="card rowcard" data-daypanel="mid" hidden>
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">9:00</div><div class="row-m">AM</div></div>
+              <div class="row-body"><div class="row-t">Priya Nasser</div><div class="row-m">Inspection · #26-1194</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">2:00</div><div class="row-m">PM</div></div>
+              <div class="row-body"><div class="row-t">Owen Bradley</div><div class="row-m">Mitigation · #26-1179</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+          </div>
+
+          <!-- light: a light day — 1 visit -->
+          <div class="card rowcard" data-daypanel="light" hidden>
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">11:00</div><div class="row-m">AM</div></div>
+              <div class="row-body"><div class="row-t">Marta Chen</div><div class="row-m">Inspection · #26-1201</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+          </div>
+
+          <!-- empty: no visits — never a dead end (tech law): empty state + upcoming work follows -->
+          <div data-daypanel="empty" hidden>
+            <div class="state">
+              <div class="state-ic"><svg class="ic" width="30" height="30" aria-hidden="true"><use href="#i-cal"></use></svg></div>
+              <div class="state-t">No visits this day</div>
+              <div class="state-sub">Nothing scheduled — tap + to add a visit</div>
+            </div>
+            <div class="day-h">Coming up</div>
+            <div class="card rowcard">
+              <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+                <div style="flex:none;min-width:54px"><div class="dnum">Fri</div><div class="row-m">Jul 17</div></div>
+                <div class="row-body"><div class="row-t">Sam Vetch</div><div class="row-m">Mitigation · #26-1203</div></div>
+                <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+              </div>
+              <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+                <div style="flex:none;min-width:54px"><div class="dnum">Mon</div><div class="row-m">Jul 20</div></div>
+                <div class="row-body"><div class="row-t">Luis Ortega</div><div class="row-m">Reconstruction · #26-1181</div></div>
+                <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+              </div>
             </div>
           </div>
         </main>
@@ -2049,7 +2102,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">11</span><span class="cal-dots"></span></button>
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">12</span><span class="cal-dots"></span></button>
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">13</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell today sel" type="button" tabindex="-1"><span class="cal-num">14</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more" style="color:var(--pill-ink)">4</span></span></button>
+              <button class="cal-cell today sel" type="button" tabindex="-1"><span class="cal-num">14</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">4</span></span></button>
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">15</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">5</span></span></button>
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">16</span><span class="cal-dots"></span></button>
               <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">17</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
@@ -2098,47 +2151,40 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="fgroup">
             <label class="flabel">Job</label>
             <button class="fpick" type="button" data-sheet="sheet-job" style="min-height:56px">
-              <span style="display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left">
                 <span>Gary Sorensen · #26-1173</span>
-                <span style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;color:var(--ink3)"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-pin"></use></svg>1420 N Oak Dr</span>
+                <span style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                  <span style="display:inline-flex;align-items:center;gap:5px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-pin"></use></svg>1420 N Oak Dr</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-cal"></use></svg>Loss Jul 2</span>
+                </span>
               </span>
               <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
             </button>
           </div>
-          <!-- Date -->
+          <!-- Date — opens our own calendar sheet (never a native date input) -->
           <div class="fgroup">
             <label class="flabel">Date</label>
-            <button class="fpick" type="button" data-toast data-toast-kind="info" data-toast-title="Pick a date">
+            <button class="fpick" type="button" data-sheet="sheet-date">
               <span>Tuesday, July 14</span>
               <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-cal"></use></svg>
             </button>
           </div>
-          <!-- Time — Start + End side by side (both pickable; End auto-fills start+2h, still editable) -->
+          <!-- Time — Start + End side by side; each opens our own time sheet (no native <select> chrome) -->
           <div class="fgroup">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label class="flabel" style="display:block;margin-bottom:6px" for="av-start">Start</label>
-                <div class="fsel-wrap">
-                  <select class="fsel" id="av-start" aria-label="Start time">
-                    <option>8:00 AM</option><option>8:30 AM</option><option>9:00 AM</option>
-                    <option>10:30 AM</option><option>11:00 AM</option><option>12:00 PM</option>
-                    <option>1:00 PM</option><option selected>1:30 PM</option><option>2:00 PM</option>
-                    <option>3:00 PM</option><option>3:30 PM</option><option>4:00 PM</option>
-                  </select>
-                  <svg class="ic fsel-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
-                </div>
+                <label class="flabel" style="display:block;margin-bottom:6px">Start</label>
+                <button class="fpick" type="button" data-sheet="sheet-time-start">
+                  <span>1:30 PM</span>
+                  <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
+                </button>
               </div>
               <div>
-                <label class="flabel" style="display:block;margin-bottom:6px" for="av-end">End</label>
-                <div class="fsel-wrap">
-                  <select class="fsel" id="av-end" aria-label="End time">
-                    <option>1:30 PM</option><option>2:00 PM</option><option>2:30 PM</option>
-                    <option>3:00 PM</option><option selected>3:30 PM</option><option>4:00 PM</option>
-                    <option>4:30 PM</option><option>5:00 PM</option><option>5:30 PM</option>
-                    <option>6:00 PM</option>
-                  </select>
-                  <svg class="ic fsel-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
-                </div>
+                <label class="flabel" style="display:block;margin-bottom:6px">End</label>
+                <button class="fpick" type="button" data-sheet="sheet-time-end">
+                  <span>3:30 PM</span>
+                  <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -2191,20 +2237,308 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         </div>
         <div class="sheet-body">
           <div class="search" style="margin-bottom:8px"><svg class="ic search-mag" width="20" height="20" aria-hidden="true"><use href="#i-search"></use></svg><input type="search" placeholder="Search jobs" enterkeyhint="search" aria-label="Search jobs"></div>
+          <!-- two Gary Sorensen floods at the SAME address, same month — told apart only by claim # + date of loss -->
           <button class="pk-opt" type="button" aria-selected="true" data-close>
-            <span class="pk-opt-body"><span class="pk-opt-t">Gary Sorensen · #26-1173</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span></span>
+            <span class="pk-opt-body">
+              <span class="pk-opt-t">Gary Sorensen · #26-1173</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 2</strong> · Water</span>
+            </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
-            <span class="pk-opt-body"><span class="pk-opt-t">Dana Whitmore · #26-1188</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>388 S Willow Way · Kaysville</span></span>
+            <span class="pk-opt-body">
+              <span class="pk-opt-t">Gary Sorensen · #26-1191</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 18</strong> · Water</span>
+            </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
-            <span class="pk-opt-body"><span class="pk-opt-t">Luis Ortega · #26-1181</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>2907 Ridgeline Dr · Farmington</span></span>
+            <span class="pk-opt-body">
+              <span class="pk-opt-t">Dana Whitmore · #26-1188</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>388 S Willow Way · Kaysville</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 9</strong> · Water</span>
+            </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
-            <span class="pk-opt-body"><span class="pk-opt-t">The Reeds · #26-1176</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>145 E Center St · Draper</span></span>
+            <span class="pk-opt-body">
+              <span class="pk-opt-t">Luis Ortega · #26-1181</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>2907 Ridgeline Dr · Farmington</span>
+              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 6</strong> · Storm</span>
+            </span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Date picker — our own calendar (matches the month view; no native chrome) -->
+      <div class="sheet-scrim" data-for="sheet-date"></div>
+      <div class="sheet" id="sheet-date" role="dialog" aria-modal="true" aria-labelledby="date-title">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title" id="date-title">Pick a date</div></div>
+          <button class="sheet-close" type="button" aria-label="Close" data-close><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+        <div class="sheet-body">
+          <div class="sch-title" style="padding:0 0 6px">
+            <div class="sch-month" style="font-size:17px">July 2026</div>
+            <div class="sch-nav">
+              <button class="sch-navbtn" type="button" aria-label="Previous month"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev-l"></use></svg></button>
+              <button class="sch-navbtn" type="button" aria-label="Next month"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev"></use></svg></button>
+            </div>
+          </div>
+          <div class="cal" style="padding:0 0 8px">
+            <div class="cal-dow"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+            <div class="cal-grid">
+            <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">28</span></button>
+            <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">29</span></button>
+            <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">30</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">1</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">2</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">3</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">4</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">5</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">6</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">7</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">8</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">9</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">10</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">11</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">12</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">13</span></button>
+            <button class="cal-cell today sel" type="button" aria-current="date" data-close><span class="cal-num">14</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">15</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">16</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">17</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">18</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">19</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">20</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">21</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">22</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">23</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">24</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">25</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">26</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">27</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">28</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">29</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">30</span></button>
+            <button class="cal-cell" type="button" data-close><span class="cal-num">31</span></button>
+            <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">1</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start-time picker (our own list; no native <select>) -->
+      <div class="sheet-scrim" data-for="sheet-time-start"></div>
+      <div class="sheet" id="sheet-time-start" role="dialog" aria-modal="true" aria-labelledby="ts-title">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title" id="ts-title">Start time</div></div>
+          <button class="sheet-close" type="button" aria-label="Close" data-close><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+        <div class="sheet-body">
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">7:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">7:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">8:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">8:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">9:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">9:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">10:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">10:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">11:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">11:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">12:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">12:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">1:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" aria-selected="true" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">1:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">2:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">2:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">3:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">3:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">4:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">4:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">5:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">5:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">6:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">6:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- End-time picker -->
+      <div class="sheet-scrim" data-for="sheet-time-end"></div>
+      <div class="sheet" id="sheet-time-end" role="dialog" aria-modal="true" aria-labelledby="te-title">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title" id="te-title">End time</div></div>
+          <button class="sheet-close" type="button" aria-label="Close" data-close><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+        <div class="sheet-body">
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">8:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">9:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">9:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">10:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">10:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">11:00 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">11:30 AM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">12:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">12:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">1:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">1:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">2:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">2:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">3:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" aria-selected="true" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">3:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">4:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">4:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">5:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">5:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">6:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">6:30 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">7:00 PM</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">7:30 PM</span></span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
         </div>
@@ -2311,3 +2645,27 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
   if (bar){ var themeBtn=bar.querySelector('[data-theme-toggle]'); if(themeBtn) themeBtn.addEventListener('click',function(){ var n=stage.getAttribute('data-theme')==='light'?'dark':'light'; stage.setAttribute('data-theme',n); themeBtn.textContent=n==='light'?'Light':'Dark'; }); }
   window.__protoToast = toast;
 })();</script>
+
+<!-- Month-view: tap a calendar day → swap the day-preview panel IN PLACE (no navigation). Self-contained; the full Day view stays reachable only via the "Day" segmented button. -->
+<script>
+(function(){
+  document.addEventListener('click', function(e){
+    var cell = e.target.closest('[data-selday]');
+    if (!cell) return;
+    var screen = cell.closest('.screen');
+    if (!screen) return;
+    // move selection to the tapped cell
+    var cells = screen.querySelectorAll('.cal-cell');
+    for (var i=0;i<cells.length;i++){ cells[i].classList.remove('sel'); cells[i].removeAttribute('aria-current'); }
+    cell.classList.add('sel');
+    cell.setAttribute('aria-current','date');
+    // retitle the preview
+    var title = screen.querySelector('#monthDayTitle');
+    if (title) title.textContent = cell.getAttribute('data-label') || '';
+    // show the matching panel, hide the other three
+    var want = cell.getAttribute('data-panel');
+    var panels = screen.querySelectorAll('[data-daypanel]');
+    for (var j=0;j<panels.length;j++){ panels[j].hidden = (panels[j].getAttribute('data-daypanel') !== want); }
+  });
+})();
+</script>

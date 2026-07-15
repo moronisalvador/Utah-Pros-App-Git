@@ -1239,6 +1239,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .cal-cell.sel .cal-dot{ background:var(--pill-ink) !important; opacity:.9; }
 .cal-dot.d-scheduled{ background:var(--blue); } .cal-dot.d-working{ background:var(--green); } .cal-dot.d-enroute{ background:var(--amber); } .cal-dot.d-done{ background:var(--gray); }
 .cal-more{ font-size:11px; font-weight:600; color:var(--ink3); }
+.cal-cell.sel .cal-more{ color:var(--pill-ink); }
 /* week strip (day view) */
 .wk{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:12px 16px 4px; }
 .wk-day{ border:0; background:transparent; font-family:inherit; border-radius:12px; padding:8px 0; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; color:var(--ink2); min-height:56px; }
@@ -1279,13 +1280,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 /* division / referral choice pills (drawn icon + label, wrap grid) */
 .choice-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .choice-grid.col1{ grid-template-columns:1fr; }
-.choice{ position:relative; display:flex; align-items:center; gap:10px; min-width:0; min-height:56px; padding:10px 34px 10px 12px; border-radius:14px; background:var(--surface2); border:1.5px solid transparent; font-family:inherit; text-align:left; cursor:pointer; color:var(--ink); }
+.choice{ position:relative; display:flex; align-items:center; gap:10px; min-width:0; min-height:56px; padding:10px 14px; border-radius:14px; background:var(--surface2); border:1.5px solid transparent; font-family:inherit; text-align:left; cursor:pointer; color:var(--ink); }
 .choice:active{ transform:scale(.97); }
 .choice .lead{ color:var(--ink2); flex:none; }
 .choice-t{ font-size:15px; font-weight:600; line-height:1.15; min-width:0; text-wrap:balance; }
 .choice[aria-pressed="true"]{ border-color:var(--ink); background:var(--surface); }
 .choice[aria-pressed="true"] .lead{ color:var(--ink); }
-.choice-check{ position:absolute; top:50%; right:10px; transform:translateY(-50%); color:var(--ink); opacity:0; flex:none; }
+.choice-check{ display:none; } /* selection = border + fill only (owner: no checkmark; it overlapped long labels) */
 .choice[aria-pressed="true"] .choice-check{ opacity:1; }
 
 /* claim-fork segmented (New vs Existing) reuses .seg; sync banner */
