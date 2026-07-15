@@ -5,7 +5,39 @@ compaction, or a fresh one opened later — reads **this file + `UX-FLOWS-BRIEF.
 + the prototypes on disk** and is fully caught up **without needing the chat history.** Update this file
 as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) predates the work below.
 
-**Last-updated: 2026-07-15**
+**Last-updated: 2026-07-15** (end of a long day — Job Hub LOCKED)
+
+---
+
+## ★ STATUS & TOMORROW'S TO-DO (read this first) ★
+
+**LOCKED / done this session** (prototypes committed + pushed on branch
+`claude/upr-field-tech-ux-flows-2-zt5bg4`; folded into `TECH-DESIGN-STANDARD.md` §12):
+- **Schedule** (month/day + Add-visit appointment creation) — `schedule.html`, §12.3/§12.6.
+- **Job Hub** — `job-hub.html`, §12.5. Owner: *"amazing, we nailed it."* Includes: 5 clock states +
+  job-mode view (adaptive hero) + room detail (Photos/Notes) + activity page + **Notes page**
+  (titles + photos) + **Docs page** (signatures + Generate Water-Loss-Report + request-signature FAB
+  sheet). Artifact: `claude.ai/code/artifact/96992ae5-afe9-4ed7-9d5d-b44f3ee35c86` (re-publishable
+  from the committed HTML anytime — the file is the source of truth).
+
+**REMAINING — tomorrow's to-do (to finish the flows session, then move to Session 3 = build):**
+1. **Job Hub loose ends** (quick): the **Work Auth compliance ALERT** (red banner when unsigned) + the
+   **Crew** row + owner picks the **drying-module name** (Arid / Dry Logs / Evap / …).
+2. **New Job flow rework** (brief §4a) — built (`new-job-flow.html`) but owner wants it improved; needs
+   his specifics. His stated priority order was schedule → job creation → hub, so this is next.
+3. **New Customer** flow (§4b) — not built; land-back-with-toast.
+4. **New Event + Edit Appointment** (§4c) — extend the Add-visit work (edit/reschedule, new non-job event).
+5. **Hydro / drying WRITE flows** (§4g) — Add-reading sheet · Place/Pull equipment · Chambers/rooms mgmt.
+   (The drying *module* mockup exists — `hydro-b.html` — but its write flows aren't designed.)
+6. **TechClaims** list + detail (§4h/§5) · **TechTasks** (§5) · **Messages pane** reskin (frozen seams) ·
+   **TechMore/Help/Feedback** (light).
+7. **Fold each newly-locked flow into `TECH-DESIGN-STANDARD.md` §12** as it locks (§12.1 New Job, §12.2
+   New Customer, §12.4 clock already there, §12.7 hydro-entry).
+
+Everything above is committed + pushed — resumable tomorrow on the same branch. Nothing is merged yet
+(design session continues; PR/merge when the session's deliverables are complete).
+
+---
 
 ---
 

@@ -1106,11 +1106,49 @@ IS the state (the 5-status law), status shown glyph **and** word (survives grays
 - **Done breakdown (per §8):** the Done state shows **Travel · On-site · Total** (e.g. "Travel 18m ·
   On-site 3h 24m · Total 3h 42m"), never a bare total; completed tasks collapsed to "Done (5)".
 
-### 12.5 Job hub composition (in review 2026-07-15 — not yet owner-locked)
+### 12.5 Job hub composition (LOCKED 2026-07-15 — owner: "amazing")
 
-Prototype of record: `job-hub.html` (published artifact; owner reacting). Fills the §8.2 LOCKED
-structure. Below-fold order: **Visits switcher · Job & Claim (contacts above photos) · Photos grid ·
-Documents · Activity log**. Awaiting owner reaction before this subsection LOCKS.
+Prototype of record: `docs/tech-redesign/prototypes/job-hub.html` (artifact
+`claude.ai/code/artifact/96992ae5-afe9-4ed7-9d5d-b44f3ee35c86`). The hub is **job-centric — "the job hub
+IS the job"** (there is no separate mobile job page). It fills the §8.2 structure with an adaptive hero
+and a top action model.
+
+**Adaptive hero — deterministic, data-driven (never a guess):**
+1. Any visit on this job **IN PROGRESS** (timer running — OMW/Working/Paused) → that visit's **live clock
+   card**. Always wins (you can't be "reviewing" while clocked in).
+2. Else arrived from a **specific appointment** (schedule route carries the appt id) → that appointment's
+   **clock card** (Scheduled → On my way).
+3. Else (from **Jobs/Claims nav**, nothing running) → the **job-status hero** (no clock).
+Decided by "is a timer running?" + "did an appointment send me here?" — both facts. A Finish button never
+appears with nothing to finish.
+
+**Clock card (appointment mode) — the LOCKED hero (owner: "perfect, don't touch"):** a top strip with the
+appointment date + time window ("Today · 9:00–11:30 AM") on the left and an **Edit** chip on the right
+(Edit is appointment-scoped — reschedule/change *this* visit; in job-mode there is no global Edit, you
+edit a visit from the Visits list); the stage clock (color = state); the station rail (stamps = TIMES; on
+Done the Travel/On-site/Total breakdown carries the DURATIONS — never both, §fixed 2026-07-15); the primary
+pill (Finish always solid black per §12.4; Resume on Paused; Back-to-schedule on Done) + Pause; the
+**address row = the navigate affordance** (tap → maps — present in BOTH hero modes, which is why there is
+no Navigate button); the office-note glance = the appointment note (§12.5.2).
+
+**Job-status hero (job mode):** phase title + a Drying-day chip, stat tiles (Materials dry / Open tasks /
+Photos), a **"Next visit" row** (tap → focuses/starts that visit = appointment mode), the address row
+(navigate). No clock.
+
+**Top action model (both modes):** the header **customer name is tappable → Customer page** (chevron
+affordance) and the **claim # is tappable → Claim page** (underline) — **NO pills** (removed; the hub is
+the job). Action bar: **Call · Text · Docs · Notes** (icon + label; Notes carries a count badge). Docs and
+Notes open dedicated pages (§12.5.3). **No Photo in the bar** — capture is room-first (§12.5.2).
+
+**Do-now zone (active work, in order):** **Drying widget** (Day N · materials dry · readings-due; taps
+into the drying / "Dry Logs" module — *module name is a pending owner pick: Arid / Dry Logs / Evap / …*) →
+**Tasks** (collapsible, DEFAULT-COLLAPSED per owner) → **Scope-sheet entry** (fill-on-site) → **Rooms
+grid**.
+
+**Look-up tail (in order):** **Visits on this job** → **Activity** (§12.5.1). The old "Job & Claim" and
+"Documents & signatures" sections and the inline Job-notes section are REMOVED (now the clickable header,
+the Docs page, and the Notes page). **No floating dock** on the hub (capture is room-first); the room
+detail keeps its Add Photo/Note dock.
 
 #### 12.5.1 Activity log (spec locked by decision — owner-authored content rule)
 
@@ -1121,6 +1159,40 @@ water-loss report generated, moisture readings logged), **system-automated messa
 tech's own sent SMS/notes), **invoices created & sent**, and **estimates created & sent**. Money and
 document events (`#INV-…`, `#EST-…`) carry their number. This is a read surface — no send affordance
 lives here (consent/send stays on the frozen worker path).
+
+#### 12.5.2 Room-first capture + three note scopes (LOCKED)
+
+Photo capture is **ROOM-FIRST** — there is no Photo action on the hub. A tech opens a room → Add Photo →
+it files to that room, so there is never a "which room?" pick and never a misfile (owner integrity call —
+beats raw snap-speed; matches Encircle). Room detail = header + **Photos | Notes** tabs + an Add Photo/Note
+dock. The **Rooms grid** is the documentation spine: 2-col cover-photo tiles (a **house icon** when there
+is no cover) + name overlay + photo-count badge, plus an "Add room" tile and an **"Unsorted"** bucket for
+any unfiled photo.
+
+**Three note scopes, kept visibly distinct:**
+- **Appointment note** — written at appointment creation, editable from the hub → the pinned "Office note"
+  glance in the clock card.
+- **Job notes** — job-wide → the dedicated Notes page (§12.5.3). A job note may carry a **bold title + an
+  attached photo grid** (the Encircle documentation model — techs document preexisting damage for carriers).
+- **Room notes** — per-room → inside each room's Notes tab.
+A Note action writes a *job* note from the hub, a *room* note from inside a room.
+
+#### 12.5.3 Dedicated pages — Notes & Docs (twins, LOCKED)
+
+Both open from the action bar; both are full pages with the app shell + a back button.
+- **Job Notes page:** a count + Add-note; notes **grouped by date** (Pinned / Today / date labels), each
+  note an **individual card**; the pinned note is tinted + distinct; notes support title + photo grid
+  (§12.5.2).
+- **Documents page:** a **Signatures** section (Work Auth *Signed*; other docs carry an *Unsigned* /
+  request status — long titles stay one line), a prominent **Generate Water Loss Report** CTA (built from
+  rooms/readings/equipment), a **Documents** list (PDFs), and a **black + FAB** → a **"Request a
+  signature"** bottom sheet listing the e-sign document types (Work Authorization, Certificate of
+  Completion, Certificate of Satisfaction, Authorization to Pay Direct, Mold Remediation Consent,
+  Non-Restorable Contents Release) → generate & send.
+
+**Still-open hub foundations (not yet built):** the **Work Authorization compliance ALERT** (a prominent
+banner near the top when unsigned — distinct from the calm signed-row on the Docs page) and the **Crew**
+row. The drying-module **name** is a pending owner pick (Arid / Dry Logs / Evap / …).
 
 ### 12.6 Schedule — month & day (LOCKED 2026-07-14)
 
