@@ -2097,17 +2097,17 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="card rowcard">
             <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">Today</div><div class="row-m">11:20a</div></div>
-              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Water loss · 1420 N Oak Dr · Layton</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 2 · #26-1173</span></div></div>
+              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 2 · Water loss</span></div><div class="row-m">1420 N Oak Dr · Layton</div><div class="row-m">Claim #26-1173 · Job #4821</div></div>
               <span class="chip chip-green"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-dotring"></use></svg>Working</span>
             </div>
             <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">Jul 20</div><div class="row-m">2:00p</div></div>
-              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Mitigation · 1420 N Oak Dr · Layton</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 18 · #26-1191</span></div></div>
+              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 18 · Water loss</span></div><div class="row-m">1420 N Oak Dr · Layton</div><div class="row-m">Claim #26-1191 · Job #4903</div></div>
               <span class="chip chip-gray"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg>Done</span>
             </div>
             <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">Jul 16</div><div class="row-m">10:00a</div></div>
-              <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m">Reconstruction · 84 Oakmont Ln · Draper</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 8 · #26-1176</span></div></div>
+              <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="12" height="12" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 8 · Fire loss</span></div><div class="row-m">84 Oakmont Ln · Draper</div><div class="row-m">Claim #26-1176 · Job #4855</div></div>
               <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
             </div>
           </div>
@@ -2125,92 +2125,20 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
     <!-- ═══════════════ 7 · ADD-VISIT SHEET (self-service create · previews 4c) ═══════════════ -->
     <!-- Month view is the backdrop; the sheet is rendered OPEN via inline transform so the harness's
          nav-close cleanup (which strips .in) can't collapse it. Close/Add both data-go back to s-month. -->
+    <!-- ═══════════════ ADD VISIT — full-screen page (scrolls like every screen; reachable close) ═══════════════ -->
     <div class="screen" id="s-addvisit">
-      <div class="app" aria-hidden="true">
+      <div class="app">
         <div class="app-top">
           <div class="statusbar"><span>11:20</span><span class="sb-right"></span></div>
-          <header style="padding:2px 8px 8px">
-            <div class="sch-title">
-              <div class="sch-month">July 2026</div>
-              <!-- offline surfaced (§5 zone-1 slot): dead-signal create path — visit will queue, not drop -->
-              <span class="chip chip-amber offline-pill"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-warn"></use></svg>Offline</span>
-              <div class="sch-nav">
-                <button class="sch-navbtn" type="button" tabindex="-1"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev-l"></use></svg></button>
-                <button class="sch-navbtn" type="button" tabindex="-1"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev"></use></svg></button>
-                <button class="iconbtn" type="button" tabindex="-1"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-search"></use></svg></button>
-              </div>
+          <header style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:2px 16px 12px;border-bottom:1px solid var(--hair)">
+            <div style="min-width:0">
+              <div style="font-size:20px;font-weight:700;letter-spacing:-.015em;line-height:1.2">Add visit</div>
+              <div style="font-size:13px;font-weight:500;color:var(--ink2);margin-top:1px">Schedule a new appointment</div>
             </div>
-            <div class="seg">
-              <button class="seg-btn" type="button" aria-pressed="true" tabindex="-1">Month</button>
-              <button class="seg-btn" type="button" aria-pressed="false" tabindex="-1">Day</button>
-            </div>
+            <button class="iconbtn" type="button" data-go="s-month" aria-label="Close" style="margin:-2px -6px 0 0"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-x"></use></svg></button>
           </header>
         </div>
-        <main class="main" style="padding-bottom:170px">
-          <div class="cal">
-            <div class="cal-dow"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
-            <div class="cal-grid">
-              <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">28</span></button>
-              <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">29</span></button>
-              <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">30</span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">1</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">2</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">3</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">4</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">5</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">6</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">7</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">8</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">9</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">10</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">11</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">12</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">13</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell today sel" type="button" tabindex="-1"><span class="cal-num">14</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">4</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">15</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">5</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">16</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">17</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">18</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">19</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">20</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">21</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">22</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">23</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">24</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">25</span><span class="cal-dots"></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">26</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">2</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">27</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">28</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">29</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">30</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span><span class="cal-more">3</span></span></button>
-              <button class="cal-cell" type="button" tabindex="-1"><span class="cal-num">31</span><span class="cal-dots"><span class="cal-dot" style="background:var(--ink3)"></span></span></button>
-              <button class="cal-cell out" type="button" tabindex="-1"><span class="cal-num">1</span></button>
-            </div>
-          </div>
-        </main>
-      </div>
-
-      <!-- FAB hidden behind the open sheet; tabbar stays for spatial anchor -->
-      <nav class="tabbar" aria-hidden="true"><div class="tabs">
-        <button class="tab" type="button" tabindex="-1"><svg class="ic" width="25" height="25" aria-hidden="true"><use href="#i-house"></use></svg><span class="tab-label">Dash</span></button>
-        <button class="tab" type="button" tabindex="-1"><svg class="ic" width="25" height="25" aria-hidden="true"><use href="#i-folder"></use></svg><span class="tab-label">Claims</span></button>
-        <button class="tab active" type="button" tabindex="-1"><svg class="ic" width="25" height="25" aria-hidden="true"><use href="#i-cal"></use></svg><span class="tab-label">Schedule</span></button>
-        <button class="tab" type="button" tabindex="-1"><svg class="ic" width="25" height="25" aria-hidden="true"><use href="#i-chat"></use></svg><span class="tab-label">Messages</span></button>
-        <button class="tab" type="button" tabindex="-1"><svg class="ic" width="25" height="25" aria-hidden="true"><use href="#i-dots-h"></use></svg><span class="tab-label">More</span></button>
-      </div><div class="home-ind"></div></nav>
-
-      <!-- open sheet (inline transform keeps it open; not driven by .in) -->
-      <div class="sheet-scrim" data-for="sheet-addvisit" style="display:block;opacity:1"></div>
-      <div class="sheet" id="sheet-addvisit" role="dialog" aria-modal="true" aria-labelledby="addvisit-title" style="transform:translateY(0)">
-        <div class="sheet-grab"></div>
-        <div class="sheet-head">
-          <div>
-            <div class="sheet-title" id="addvisit-title">Add visit</div>
-            <div class="sheet-sub">Schedule a new appointment</div>
-          </div>
-          <button class="sheet-close" type="button" aria-label="Close" data-go="s-month"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
-        </div>
-        <div class="sheet-body">
+        <main class="main" style="padding:8px 16px 132px">
           <!-- Job — selected value shows the address; picker lists every job WITH its address -->
           <div class="fgroup">
             <label class="flabel">Job</label>
@@ -2282,13 +2210,14 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <span class="opt-t">Diego Ramirez</span>
             </div>
           </div>
-        </div>
-        <div class="sheet-foot">
-          <!-- the ONE black pill on this screen -->
+        </main>
+      </div>
+      <!-- pinned action bar (always reachable; body scrolls above it) -->
+      <div style="position:absolute;left:0;right:0;bottom:0;z-index:25;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--hair)">
+        <!-- the ONE black pill on this screen -->
           <button class="pill-primary" type="button" data-go="s-month" data-toast data-toast-kind="info" data-toast-title="Queued — will sync" data-toast-msg="Mitigation — Gary Sorensen · Tue, Jul 14 1:30 PM · saved offline, sends when back online">
             <svg class="ic" width="19" height="19" aria-hidden="true"><use href="#i-plus"></use></svg>Add visit
           </button>
-        </div>
       </div>
 
       <!-- Job picker (stacks over the add-visit sheet) — every job row shows its address so you can tell them apart -->
