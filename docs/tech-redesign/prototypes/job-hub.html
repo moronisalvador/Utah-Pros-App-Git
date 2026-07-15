@@ -1248,6 +1248,21 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .stage-appt-when .ic{ flex:none; color:var(--ink3); }
 .stage-edit{ flex:none; display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--hair); background:var(--surface); color:var(--ink2); font-size:13px; font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .stage-edit:active{ background:var(--surface2); }
+/* ── job-status hero (hub opened from Jobs/Claims nav, no active visit) ── */
+.hero--job{ text-align:left; padding:16px; }
+.jh-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+.jh-title{ font-size:19px; font-weight:700; color:var(--ink); }
+.jh-stats{ display:flex; gap:8px; margin-bottom:12px; }
+.jh-stat{ flex:1; background:var(--surface2); border-radius:14px; padding:12px 8px; text-align:center; }
+.jh-stat-n{ font-size:22px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; line-height:1.1; }
+.jh-stat-l{ font-size:12px; font-weight:600; color:var(--ink3); margin-top:3px; }
+.jh-next{ display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--blue-bg); border-radius:14px; text-decoration:none; margin-bottom:4px; -webkit-tap-highlight-color:transparent; }
+.jh-next:active{ filter:brightness(.97); }
+.jh-next-ic{ flex:none; width:36px; height:36px; border-radius:11px; background:var(--surface); display:grid; place-items:center; color:var(--blue); }
+.jh-next-body{ flex:1; min-width:0; }
+.jh-next-t{ font-size:15px; font-weight:700; color:var(--ink); }
+.jh-next-m{ font-size:13px; font-weight:500; color:var(--ink2); }
+.jh-next .chev{ flex:none; color:var(--ink3); }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -2190,12 +2205,87 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         <div class="toastwrap has-dock"></div>
       </div>
     </div>
+
+    <!-- ═══════════ JOB VIEW (opened from Jobs / Claims nav — no active visit) ═══════════ -->
+    <div class="screen" id="s-job">
+      <div class="app">
+        <div class="app-top">
+          <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
+          <header class="hubhdr">
+            <button class="backbtn" type="button" data-go="s-working" aria-label="Back"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
+            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Water · Mitigation</div></div>
+            <span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Drying</span>
+          </header>
+        </div>
+        <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+          </div>
+          <section class="card hero hero--job">
+            <div class="jh-head"><span class="jh-title">Water mitigation</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Drying · Day 4</span></div>
+            <div class="jh-stats">
+              <div class="jh-stat"><div class="jh-stat-n">2/3</div><div class="jh-stat-l">Rooms dry</div></div>
+              <div class="jh-stat"><div class="jh-stat-n">3</div><div class="jh-stat-l">Open tasks</div></div>
+              <div class="jh-stat"><div class="jh-stat-n">44</div><div class="jh-stat-l">Photos</div></div>
+            </div>
+            <a class="jh-next" role="button" tabindex="0" data-go="s-scheduled" aria-label="Next visit today 2 PM"><span class="jh-next-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span><div class="jh-next-body"><div class="jh-next-t">Next visit · Today 2:00 PM</div><div class="jh-next-m">Equipment pull + final readings</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
+            <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
+          </section>
+          <h3 class="sect-title">Visits on this job</h3>
+          <section class="card rowcard">
+            <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today 2:00 PM · this visit</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
+            <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
+            <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
+          </section>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
+          
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+          </section>
+          <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
+            <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
+            <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
+            <svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg>
+          </a>
+        </div>
+        <nav class="tabbar"><div class="tabs">
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
+        <button class="tab active" type="button" aria-current="page"><svg class="ic" width="24" height="24"><use href="#i-cal"/></svg><span class="tab-label">Schedule</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-chat"/></svg><span class="badge-num">2</span><span class="tab-label">Messages</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
+      </div><div class="home-ind"></div></nav>
+        <div class="toastwrap"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="step-bar" id="stepBar">
   <button type="button" data-theme-toggle class="step-theme">Light</button>
   <!-- BUILD:STEPS -->
+  <button type="button" data-go="s-job">Job view</button>
   <button type="button" data-go="s-scheduled">Scheduled</button>
   <button type="button" data-go="s-omw">On my way</button>
   <button type="button" data-go="s-working" class="on">Working</button>

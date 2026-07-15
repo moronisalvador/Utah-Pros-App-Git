@@ -156,6 +156,25 @@ one line (previously only fit when the Done chip was narrow).
 - Still-pending foundations from the live-hub screenshots: **Work Auth compliance alert**, **Crew** row,
   **Water Loss Report** generate-or-open affordance. Carry the live hub's empty-state copy verbatim.
 
+**ADAPTIVE HERO — bulletproof rule (owner confirmed B, 2026-07-15):** the hub is JOB-centric; the hero
+is chosen by a deterministic ladder (no guessing):
+1. **Any visit on this job IN PROGRESS** (timer running: OMW/Working/Paused) → that visit's **live clock
+   card**. Always wins (you can't be "just reviewing" while clocked in). Regardless of entry point.
+2. **Else arrived from a specific appointment** (schedule route carries the appt id) → **that
+   appointment's clock card** in its pre-start state (Scheduled → On my way).
+3. **Else (from Jobs/Claims nav, nothing running)** → the **job-status hero** (no clock): phase +
+   Drying-day chip + stat tiles (rooms dry / open tasks / photos) + a "Next visit" row (tap → focuses/
+   starts that visit = appointment mode) + the address row (navigate) + a note glance.
+Mode is driven by DATA (timer running? appt id in the route?), never a guess → works right every time.
+Built as `s-job` (job-mode) alongside the 5 clock states. `Next visit` row → s-scheduled demo.
+
+**ACTION BAR final:** Navigate REMOVED (the clock-card/job-hero **address row** is the maps affordance,
+present in BOTH hero modes → nav works with no Navigate button). Labels **Docs** + **Text** (not
+Documents/SMS — persona clarity + space). **Edit** moved OUT of the bar INTO the clock card, paired with
+a new **appointment date/time strip** ("Today · 9:00–11:30 AM"); Edit is appointment-scoped, so in
+job-mode (no appt) there's no global Edit — you edit a visit from the Visits list. Bar is now **Call ·
+Text · Docs** (3). Pills: **Claim · Customer** (Job pill dropped — the hub IS the job).
+
 **OPEN DECISIONS:**
 - **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
   plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
