@@ -146,8 +146,13 @@ one line (previously only fit when the Done chip was narrow).
   Message · Documents · Edit, icon+label, no Photo) — mirrors the current app's structure.
 - Knock-on: remove the down-page **Job & Claim** section (now top pills) + **Documents & signatures**
   section (now the Documents top button). Work Auth compliance alert stays prominent.
-- **PENDING OWNER LOCKS:** (1) Documents button label — "Documents" vs "Reports & Signatures" vs "Files"
-  (critic flag: photos are also "documentation" to a tech). (2) Two rows (pills + actions) vs one combined bar.
+- **LOCKED + BUILT (2026-07-15):** (1) label = **"Documents"** (owner: photos & PDFs are different
+  documentation types; Documents = the files/signatures place). (2) **Two rows** — page pills
+  (Job · Claim · Customer) + action bar (Navigate · Call · Message · Documents · Edit, icon+label);
+  maps ~1:1 onto the current app (just Photo→Documents), least retraining. Floating dock REMOVED from
+  all 5 hub states (kept in room detail); Job & Claim + Documents & signatures sections REMOVED; hub
+  Notes relabeled **"Job notes"**. Chrome currently SCROLLS (matches current app); can go sticky if owner wants.
+  Verified in Chromium, no console errors.
 - Still-pending foundations from the live-hub screenshots: **Work Auth compliance alert**, **Crew** row,
   **Water Loss Report** generate-or-open affordance. Carry the live hub's empty-state copy verbatim.
 

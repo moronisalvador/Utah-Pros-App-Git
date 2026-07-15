@@ -1232,6 +1232,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .jd-entry-m{ font-size:13px; font-weight:500; color:var(--ink3); }
 .jd-entry .chev{ flex:none; color:var(--ink3); }
 @media (prefers-reduced-motion:reduce){ .jd-entry:active{ transform:none; } }
+/* ── hub top chrome: page pills + action bar ── */
+.hub-pills{ display:flex; gap:8px; padding:12px 16px 6px; flex-wrap:wrap; }
+.hub-pill{ display:inline-flex; align-items:center; gap:6px; height:36px; padding:0 14px; border-radius:999px; border:1px solid var(--hair); background:var(--surface); color:var(--ink); font-size:14px; font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.hub-pill:active{ background:var(--surface2); }
+.hub-pill .ic{ color:var(--ink2); }
+.hub-actions{ display:flex; gap:4px; padding:6px 8px 12px; border-bottom:1px solid var(--hair); margin-bottom:6px; }
+.hub-act{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:5px; min-height:56px; justify-content:center; padding:6px 2px; border:0; background:transparent; color:var(--ink); font-size:12px; font-weight:600; cursor:pointer; border-radius:12px; -webkit-tap-highlight-color:transparent; }
+.hub-act:active{ background:var(--surface2); }
+.hub-act .ic{ color:var(--ink2); }
+.hub-act span{ line-height:1; }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1651,6 +1661,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Job" data-toast-msg="Opens the job page."><svg class="ic" width="15" height="15"><use href="#i-house"/></svg>Job</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+          </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
             <div class="hero-timer"><div class="timer-num" style="color:var(--blue)">2:00</div><div class="timer-label">Scheduled 2:00 PM · in 40 min</div></div>
@@ -1700,20 +1722,8 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <h3 class="sect-title">Job &amp; Claim</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Documents &amp; signatures</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
           <!-- Z4 ACTIVITY (pre-arrival: only system/office entries so far) -->
-          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
@@ -1725,12 +1735,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </a>
         </div>
       </div>
-      <div class="dock">
-        <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-      </div>
+      
       <nav class="tabbar"><div class="tabs">
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
@@ -1753,6 +1758,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Job" data-toast-msg="Opens the job page."><svg class="ic" width="15" height="15"><use href="#i-house"/></svg>Job</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+          </div>
           <section class="card hero">
             <div class="hero-timer"><div class="timer-num js-timer" data-start="480" style="color:var(--amber)">0:08:00</div><div class="timer-label">On my way since 1:52 PM</div></div>
             <div class="rail">
@@ -1799,19 +1816,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <h3 class="sect-title">Job &amp; Claim</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Documents &amp; signatures</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
@@ -1823,12 +1828,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </a>
         </div>
       </div>
-      <div class="dock">
-        <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-      </div>
+      
       <nav class="tabbar"><div class="tabs">
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
@@ -1851,6 +1851,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Job" data-toast-msg="Opens the job page."><svg class="ic" width="15" height="15"><use href="#i-house"/></svg>Job</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+          </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
             <div class="hero-timer"><div class="timer-num js-timer" id="stageTimer" data-start="7687">2:08:07</div><div class="timer-label">On the clock since 9:12 AM</div></div>
@@ -1903,20 +1915,8 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <h3 class="sect-title">Job &amp; Claim</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Documents &amp; signatures</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
           <!-- Z4 ACTIVITY LOG (system/automated only — never tech-sent texts) -->
-          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
@@ -1928,12 +1928,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </a>
         </div>
       </div>
-      <div class="dock">
-        <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-      </div>
+      
       <nav class="tabbar"><div class="tabs">
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
@@ -1956,6 +1951,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Job" data-toast-msg="Opens the job page."><svg class="ic" width="15" height="15"><use href="#i-house"/></svg>Job</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+          </div>
           <section class="card hero">
             <div class="hero-timer"><div class="timer-num" style="color:var(--red)">2:08:07</div><div class="timer-label">Paused at 11:20 AM</div></div>
             <div class="rail">
@@ -2002,19 +2009,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <h3 class="sect-title">Job &amp; Claim</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Documents &amp; signatures</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
@@ -2026,12 +2021,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </a>
         </div>
       </div>
-      <div class="dock">
-        <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-      </div>
+      
       <nav class="tabbar"><div class="tabs">
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
@@ -2054,6 +2044,18 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
+          <div class="hub-pills">
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Job" data-toast-msg="Opens the job page."><svg class="ic" width="15" height="15"><use href="#i-house"/></svg>Job</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
+            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
+          </div>
+          <div class="hub-actions">
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Navigate" data-toast-msg="Opens maps to the job address."><svg class="ic" width="22" height="22"><use href="#i-navigate"/></svg><span>Navigate</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Message</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Documents</span></button>
+            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Edit" data-toast-msg="Edit or reschedule this appointment."><svg class="ic" width="22" height="22"><use href="#i-pencil"/></svg><span>Edit</span></button>
+          </div>
           <section class="card hero">
             <div class="hero-timer"><div class="timer-num" style="color:var(--gray)">3:42:00</div><div class="timer-label">Finished 11:20 AM</div></div>
             <div class="rail">
@@ -2092,19 +2094,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <h3 class="sect-title">Job &amp; Claim</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Documents &amp; signatures</h3>
-          <section class="card rowcard">
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
@@ -2116,12 +2106,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </a>
         </div>
       </div>
-      <div class="dock">
-        <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Snap-first — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
-        <button class="dock-btn" type="button"><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-      </div>
+      
       <nav class="tabbar"><div class="tabs">
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
