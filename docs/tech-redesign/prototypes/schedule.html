@@ -1633,7 +1633,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </div>
 
           <!-- month view previews the selected day IN PLACE — tapping a calendar day swaps the panel below, it does NOT navigate to the full Day view (that is the "Day" segmented button only) -->
-          <div class="day-h" id="monthDayTitle">Tuesday, July 14</div>
+          <div class="day-h js-selday-title" id="monthDayTitle">Tuesday, July 14</div>
 
           <!-- busy: the selected day (July 14) — 4 visits. rows open the job hub in the real app (jobHref); stubbed to a toast here -->
           <div class="card rowcard" data-daypanel="busy">
@@ -1723,10 +1723,10 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"></span></div>
           <header style="padding:2px 8px 8px">
             <div class="sch-title">
-              <div class="sch-month">Tue, Jul 14</div>
+              <div class="sch-month js-selday-title">Tue, Jul 14</div>
               <div class="sch-nav">
-                <button class="sch-navbtn" type="button" aria-label="Previous day" data-toast data-toast-kind="info" data-toast-title="Mon, Jul 13"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev-l"></use></svg></button>
-                <button class="sch-navbtn" type="button" aria-label="Next day" data-go="s-day-empty"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev"></use></svg></button>
+                <button class="sch-navbtn" type="button" aria-label="Previous day" data-daynav="prev"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev-l"></use></svg></button>
+                <button class="sch-navbtn" type="button" aria-label="Next day" data-daynav="next"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-chev"></use></svg></button>
                 <button class="iconbtn" type="button" aria-label="Search schedule" data-go="s-search"><svg class="ic" width="22" height="22" aria-hidden="true"><use href="#i-search"></use></svg></button>
               </div>
             </div>
@@ -1739,16 +1739,17 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 
         <main class="main" style="padding-bottom:170px">
           <div class="wk">
-            <button class="wk-day empty" type="button"><span class="wk-dow">Sun</span><span class="wk-num">12</span><span class="wk-dot"></span></button>
-            <button class="wk-day" type="button"><span class="wk-dow">Mon</span><span class="wk-num">13</span><span class="wk-dot"></span></button>
-            <button class="wk-day sel today" type="button" aria-current="date"><span class="wk-dow">Tue</span><span class="wk-num">14</span><span class="wk-dot"></span></button>
-            <button class="wk-day" type="button"><span class="wk-dow">Wed</span><span class="wk-num">15</span><span class="wk-dot"></span></button>
-            <button class="wk-day empty" type="button" data-go="s-day-empty"><span class="wk-dow">Thu</span><span class="wk-num">16</span><span class="wk-dot"></span></button>
-            <button class="wk-day" type="button"><span class="wk-dow">Fri</span><span class="wk-num">17</span><span class="wk-dot"></span></button>
-            <button class="wk-day empty" type="button"><span class="wk-dow">Sat</span><span class="wk-num">18</span><span class="wk-dot"></span></button>
+            <button class="wk-day empty" type="button" data-selday data-label="Sun, Jul 12" data-panel="empty"><span class="wk-dow">Sun</span><span class="wk-num">12</span><span class="wk-dot"></span></button>
+            <button class="wk-day" type="button" data-selday data-label="Mon, Jul 13" data-panel="mid"><span class="wk-dow">Mon</span><span class="wk-num">13</span><span class="wk-dot"></span></button>
+            <button class="wk-day sel today" type="button" data-selday data-label="Tue, Jul 14" data-panel="busy" aria-current="date"><span class="wk-dow">Tue</span><span class="wk-num">14</span><span class="wk-dot"></span></button>
+            <button class="wk-day" type="button" data-selday data-label="Wed, Jul 15" data-panel="mid"><span class="wk-dow">Wed</span><span class="wk-num">15</span><span class="wk-dot"></span></button>
+            <button class="wk-day empty" type="button" data-selday data-label="Thu, Jul 16" data-panel="empty"><span class="wk-dow">Thu</span><span class="wk-num">16</span><span class="wk-dot"></span></button>
+            <button class="wk-day" type="button" data-selday data-label="Fri, Jul 17" data-panel="light"><span class="wk-dow">Fri</span><span class="wk-num">17</span><span class="wk-dot"></span></button>
+            <button class="wk-day empty" type="button" data-selday data-label="Sat, Jul 18" data-panel="empty"><span class="wk-dow">Sat</span><span class="wk-num">18</span><span class="wk-dot"></span></button>
           </div>
 
-          <!-- glance-only day timeline (8 AM–5 PM). Non-tappable graphic; the rows below take taps. -->
+          <!-- busy day (14) -->
+          <div data-daypanel="busy">
           <div class="tl" role="img" aria-label="Tuesday July 14, 8 AM to 5 PM. Four visits: Dana Whitmore completed mid-morning, Gary Sorensen in progress now at 11:20, Luis Ortega at 1:30 PM, the Reeds at 3 PM.">
             <div class="tl-track">
               <div class="tl-block tl-gray" style="left:11.1%;width:8.3%"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg></div>
@@ -1763,29 +1764,92 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <span class="tl-tick tl-tick--end" style="left:100%">5 PM</span>
             </div>
           </div>
-
-          <div class="day-h">Tuesday, July 14 · 4 visits</div>
           <div class="card rowcard">
-            <!-- rows tap through to the job hub (real target: jobHref) — stubbed to s-day here -->
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">9:00</div><div class="row-m">AM</div></div>
               <div class="row-body"><div class="row-t">Dana Whitmore</div><div class="row-m">Mitigation · #26-1188</div></div>
               <span class="chip chip-gray"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg>Done</span>
             </div>
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">10:30</div><div class="row-m">AM</div></div>
               <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Water loss · 1420 N Oak Dr</div></div>
               <span class="chip chip-green"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-dotring"></use></svg>Working</span>
             </div>
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">1:30</div><div class="row-m">PM</div></div>
               <div class="row-body"><div class="row-t">Luis Ortega</div><div class="row-m">Reconstruction · #26-1181</div></div>
               <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
             </div>
-            <div class="row row--due" data-go="s-day">
+            <div class="row row--due" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">3:00</div><div class="row-m">PM</div></div>
               <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m">Reconstruction · #26-1176</div></div>
               <span class="chip chip-amber"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Due</span>
+            </div>
+          </div>
+          </div>
+
+          <!-- lighter day (mid: 13, 15) -->
+          <div data-daypanel="mid" hidden>
+          <div class="tl" role="img" aria-label="Two visits scheduled: 9 AM and 2 PM.">
+            <div class="tl-track">
+              <div class="tl-block tl-blue" style="left:11.1%;width:11.1%"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg></div>
+              <div class="tl-block tl-blue" style="left:66.7%;width:11.1%"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg></div>
+            </div>
+            <div class="tl-axis">
+              <span class="tl-tick" style="left:0">8 AM</span>
+              <span class="tl-tick tl-tick--mid" style="left:44.4%">12 PM</span>
+              <span class="tl-tick tl-tick--end" style="left:100%">5 PM</span>
+            </div>
+          </div>
+          <div class="card rowcard">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">9:00</div><div class="row-m">AM</div></div>
+              <div class="row-body"><div class="row-t">Priya Nasser</div><div class="row-m">Inspection · #26-1194</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">2:00</div><div class="row-m">PM</div></div>
+              <div class="row-body"><div class="row-t">Owen Bradley</div><div class="row-m">Mitigation · #26-1179</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+          </div>
+          </div>
+
+          <!-- light day (17) -->
+          <div data-daypanel="light" hidden>
+          <div class="tl" role="img" aria-label="One visit scheduled at 11 AM.">
+            <div class="tl-track">
+              <div class="tl-block tl-blue" style="left:33.3%;width:11.1%"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg></div>
+            </div>
+            <div class="tl-axis">
+              <span class="tl-tick" style="left:0">8 AM</span>
+              <span class="tl-tick tl-tick--mid" style="left:44.4%">12 PM</span>
+              <span class="tl-tick tl-tick--end" style="left:100%">5 PM</span>
+            </div>
+          </div>
+          <div class="card rowcard">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">11:00</div><div class="row-m">AM</div></div>
+              <div class="row-body"><div class="row-t">Marta Chen</div><div class="row-m">Inspection · #26-1201</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
+          </div>
+          </div>
+
+          <!-- empty day (12, 16, 18) -->
+          <div data-daypanel="empty" hidden>
+            <div class="state">
+              <div class="state-ic"><svg class="ic" width="28" height="28" aria-hidden="true"><use href="#i-cal"></use></svg></div>
+              <div class="state-t">No visits this day</div>
+              <div class="state-sub">Nothing scheduled — tap + to add a visit</div>
+            </div>
+            <div class="day-h">Coming up</div>
+            <div class="card rowcard">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">9:00</div><div class="row-m">AM</div></div>
+              <div class="row-body"><div class="row-t">Sam Vetch</div><div class="row-m">Mitigation · #26-1207</div></div>
+              <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
+            </div>
             </div>
           </div>
         </main>
@@ -2031,19 +2095,19 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         <main class="main" style="padding-bottom:170px">
           <div class="day-h">3 results for "oak"</div>
           <div class="card rowcard">
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">Today</div><div class="row-m">11:20a</div></div>
-              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Water loss · 1420 N Oak Dr</div></div>
+              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Water loss · 1420 N Oak Dr</div><div class="row-m"><svg class="ic" width="12" height="12" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-cal"></use></svg>Loss Jul 2 · #26-1173</div></div>
               <span class="chip chip-green"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-dotring"></use></svg>Working</span>
             </div>
-            <div class="row" data-go="s-day">
-              <div style="flex:none;min-width:54px"><div class="dnum">Jul 9</div><div class="row-m">2:00p</div></div>
-              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Mitigation · 1420 N Oak Dr</div></div>
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
+              <div style="flex:none;min-width:54px"><div class="dnum">Jul 20</div><div class="row-m">2:00p</div></div>
+              <div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Mitigation · 1420 N Oak Dr</div><div class="row-m"><svg class="ic" width="12" height="12" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-cal"></use></svg>Loss Jul 18 · #26-1191</div></div>
               <span class="chip chip-gray"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg>Done</span>
             </div>
-            <div class="row" data-go="s-day">
+            <div class="row" data-toast data-toast-kind="info" data-toast-title="Opens the job">
               <div style="flex:none;min-width:54px"><div class="dnum">Jul 16</div><div class="row-m">10:00a</div></div>
-              <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m">Reconstruction · 84 Oakmont Ln</div></div>
+              <div class="row-body"><div class="row-t">The Reeds</div><div class="row-m">Reconstruction · 84 Oakmont Ln</div><div class="row-m"><svg class="ic" width="12" height="12" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-cal"></use></svg>Loss Jul 8 · #26-1176</div></div>
               <span class="chip chip-blue"><svg class="ic" width="14" height="14" aria-hidden="true"><use href="#i-clock"></use></svg>Scheduled</span>
             </div>
           </div>
@@ -2202,7 +2266,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="fgroup">
             <label class="flabel">Title <span class="opt">· auto-suggested, editable</span></label>
             <div style="position:relative">
-              <input class="fld" value="Mitigation — Gary Sorensen" aria-label="Visit title" style="padding-right:44px">
+              <input class="fld" id="av-title" value="Mitigation — Gary Sorensen" aria-label="Visit title" style="padding-right:44px">
               <svg class="ic" width="18" height="18" aria-hidden="true" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--ink3);pointer-events:none"><use href="#i-pencil"></use></svg>
             </div>
           </div>
@@ -2334,7 +2398,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 
       <!-- Start-time picker (our own list; no native <select>) -->
       <div class="sheet-scrim" data-for="sheet-time-start"></div>
-      <div class="sheet" id="sheet-time-start" role="dialog" aria-modal="true" aria-labelledby="ts-title">
+      <div class="sheet" id="sheet-time-start" style="max-height:min(460px,60dvh)" role="dialog" aria-modal="true" aria-labelledby="ts-title">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
           <div><div class="sheet-title" id="ts-title">Start time</div></div>
@@ -2442,7 +2506,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 
       <!-- End-time picker -->
       <div class="sheet-scrim" data-for="sheet-time-end"></div>
-      <div class="sheet" id="sheet-time-end" role="dialog" aria-modal="true" aria-labelledby="te-title">
+      <div class="sheet" id="sheet-time-end" style="max-height:min(460px,60dvh)" role="dialog" aria-modal="true" aria-labelledby="te-title">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
           <div><div class="sheet-title" id="te-title">End time</div></div>
@@ -2649,23 +2713,38 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 <!-- Month-view: tap a calendar day → swap the day-preview panel IN PLACE (no navigation). Self-contained; the full Day view stays reachable only via the "Day" segmented button. -->
 <script>
 (function(){
-  document.addEventListener('click', function(e){
-    var cell = e.target.closest('[data-selday]');
-    if (!cell) return;
-    var screen = cell.closest('.screen');
-    if (!screen) return;
-    // move selection to the tapped cell
-    var cells = screen.querySelectorAll('.cal-cell');
+  function selectDay(cell){
+    var screen = cell.closest('.screen'); if (!screen) return;
+    var cells = screen.querySelectorAll('[data-selday]');
     for (var i=0;i<cells.length;i++){ cells[i].classList.remove('sel'); cells[i].removeAttribute('aria-current'); }
-    cell.classList.add('sel');
-    cell.setAttribute('aria-current','date');
-    // retitle the preview
-    var title = screen.querySelector('#monthDayTitle');
-    if (title) title.textContent = cell.getAttribute('data-label') || '';
-    // show the matching panel, hide the other three
+    cell.classList.add('sel'); cell.setAttribute('aria-current','date');
+    var titles = screen.querySelectorAll('.js-selday-title');
+    for (var t=0;t<titles.length;t++){ titles[t].textContent = cell.getAttribute('data-label') || ''; }
     var want = cell.getAttribute('data-panel');
     var panels = screen.querySelectorAll('[data-daypanel]');
     for (var j=0;j<panels.length;j++){ panels[j].hidden = (panels[j].getAttribute('data-daypanel') !== want); }
+  }
+  // auto-suggest the visit title from the selected Type (a manual edit would win in the real app)
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('.choice[data-group="visittype"]');
+    if (!t) return;
+    var input = document.getElementById('av-title');
+    var lbl = t.querySelector('.choice-t');
+    if (input && lbl) input.value = lbl.textContent.trim() + ' \u2014 Gary Sorensen';
+  });
+  document.addEventListener('click', function(e){
+    var cell = e.target.closest('[data-selday]');
+    if (cell){ selectDay(cell); return; }
+    // day-view prev/next arrows step to the adjacent day in place (same mechanism)
+    var nav = e.target.closest('[data-daynav]');
+    if (nav){
+      var screen = nav.closest('.screen'); if (!screen) return;
+      var sel = screen.querySelector('.wk-day.sel'); if (!sel) return;
+      var dir = nav.getAttribute('data-daynav');
+      var next = dir==='next' ? sel.nextElementSibling : sel.previousElementSibling;
+      while (next && !next.classList.contains('wk-day')) next = dir==='next' ? next.nextElementSibling : next.previousElementSibling;
+      if (next) selectDay(next);
+    }
   });
 })();
 </script>
