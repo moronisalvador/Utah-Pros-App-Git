@@ -1127,7 +1127,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .pk-opt{ display:flex; align-items:center; gap:12px; min-height:52px; padding:12px 4px; border:0; width:100%; background:transparent; font-family:inherit; text-align:left; cursor:pointer; }
 .pk-opt + .pk-opt{ border-top:1px solid var(--hair); }
 .pk-opt:active{ background:var(--surface2); }
-.pk-opt-body{ flex:1; min-width:0; }
+.pk-opt-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .pk-opt-t{ font-size:15px; font-weight:500; color:var(--ink); }
 .pk-opt[aria-selected="true"] .pk-opt-t{ font-weight:600; }
 .pk-opt-m{ font-size:13px; font-weight:500; color:var(--ink3); margin-top:1px; }
@@ -1165,6 +1165,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .note-time{ font-size:12px; font-weight:500; color:var(--ink3); font-variant-numeric:tabular-nums; }
 .note-time::before{ content:"\00B7"; margin:0 5px; color:var(--ink3); }
 .note-text{ font-size:15px; font-weight:500; color:var(--ink); line-height:1.4; margin:3px 0 0 30px; }
+.note-edit{ flex:none; width:44px; height:44px; margin:-11px -12px -11px auto; border:0; background:transparent; color:var(--ink3); display:grid; place-items:center; cursor:pointer; border-radius:10px; } /* 44px documented-secondary via negative-margin hit extension */
+.note-edit:active{ background:var(--surface2); transform:scale(.94); }
+.note-edit-box{ margin:6px 0 2px 30px; }
+.note-edit-acts{ display:flex; gap:8px; margin-top:8px; }
+.note-edit-acts .qbtn{ flex:1; height:42px; }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }

@@ -1127,7 +1127,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .pk-opt{ display:flex; align-items:center; gap:12px; min-height:52px; padding:12px 4px; border:0; width:100%; background:transparent; font-family:inherit; text-align:left; cursor:pointer; }
 .pk-opt + .pk-opt{ border-top:1px solid var(--hair); }
 .pk-opt:active{ background:var(--surface2); }
-.pk-opt-body{ flex:1; min-width:0; }
+.pk-opt-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
 .pk-opt-t{ font-size:15px; font-weight:500; color:var(--ink); }
 .pk-opt[aria-selected="true"] .pk-opt-t{ font-weight:600; }
 .pk-opt-m{ font-size:13px; font-weight:500; color:var(--ink3); margin-top:1px; }
@@ -1165,6 +1165,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .note-time{ font-size:12px; font-weight:500; color:var(--ink3); font-variant-numeric:tabular-nums; }
 .note-time::before{ content:"\00B7"; margin:0 5px; color:var(--ink3); }
 .note-text{ font-size:15px; font-weight:500; color:var(--ink); line-height:1.4; margin:3px 0 0 30px; }
+.note-edit{ flex:none; width:44px; height:44px; margin:-11px -12px -11px auto; border:0; background:transparent; color:var(--ink3); display:grid; place-items:center; cursor:pointer; border-radius:10px; } /* 44px documented-secondary via negative-margin hit extension */
+.note-edit:active{ background:var(--surface2); transform:scale(.94); }
+.note-edit-box{ margin:6px 0 2px 30px; }
+.note-edit-acts{ display:flex; gap:8px; margin-top:8px; }
+.note-edit-acts .qbtn{ flex:1; height:42px; }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -2237,11 +2242,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <textarea class="fld" placeholder="Add a note for this visit…" aria-label="Add a note" style="min-height:78px"></textarea>
             <button class="qbtn qbtn--wide" type="button" data-addnote style="margin-top:8px" data-toast data-toast-kind="ok" data-toast-title="Note added" data-toast-msg="Marcus (you) · just now"><svg class="ic" width="18" height="18" aria-hidden="true"><use href="#i-plus"></use></svg>Add note</button>
             <div class="note-item">
-              <div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span></div>
+              <div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"></use></svg></button></div>
               <div class="note-text">Lockbox code 4471. Gate is on the north side of the house.</div>
             </div>
             <div class="note-item">
-              <div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:18 AM</span></div>
+              <div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:18 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"></use></svg></button></div>
               <div class="note-text">Bringing the LGR + 4 air movers. Homeowner home after 1 PM.</div>
             </div>
           </div>
@@ -2265,36 +2270,40 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         </div>
         <div class="sheet-body">
           <div class="search" style="margin-bottom:8px"><svg class="ic search-mag" width="20" height="20" aria-hidden="true"><use href="#i-search"></use></svg><input type="search" placeholder="Search jobs" enterkeyhint="search" aria-label="Search jobs"></div>
-          <!-- two Gary Sorensen floods at the SAME address, same month — told apart only by claim # + date of loss -->
+          <!-- picker rows MATCH the polished search layout: name / DOL+type / address+city / claim#+job# -->
           <button class="pk-opt" type="button" aria-selected="true" data-close>
             <span class="pk-opt-body">
-              <span class="pk-opt-t">Gary Sorensen · #26-1173</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 2</strong> · Water</span>
+              <span class="pk-opt-t">Gary Sorensen</span>
+              <span class="pk-opt-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 2 · Water loss</span></span>
+              <span class="pk-opt-m">1420 N Oak Dr · Layton</span>
+              <span class="pk-opt-m" style="font-size:12px;white-space:nowrap">Claim #26-1173 · Job #4821</span>
             </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
             <span class="pk-opt-body">
-              <span class="pk-opt-t">Gary Sorensen · #26-1191</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 18</strong> · Water</span>
+              <span class="pk-opt-t">Gary Sorensen</span>
+              <span class="pk-opt-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 18 · Water loss</span></span>
+              <span class="pk-opt-m">1420 N Oak Dr · Layton</span>
+              <span class="pk-opt-m" style="font-size:12px;white-space:nowrap">Claim #26-1191 · Job #4903</span>
             </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
             <span class="pk-opt-body">
-              <span class="pk-opt-t">Dana Whitmore · #26-1188</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>388 S Willow Way · Kaysville</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 9</strong> · Water</span>
+              <span class="pk-opt-t">Dana Whitmore</span>
+              <span class="pk-opt-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 9 · Water loss</span></span>
+              <span class="pk-opt-m">388 S Willow Way · Kaysville</span>
+              <span class="pk-opt-m" style="font-size:12px;white-space:nowrap">Claim #26-1188 · Job #4788</span>
             </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
           <button class="pk-opt" type="button" data-close>
             <span class="pk-opt-body">
-              <span class="pk-opt-t">Luis Ortega · #26-1181</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-pin"></use></svg>2907 Ridgeline Dr · Farmington</span>
-              <span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><use href="#i-cal"></use></svg><strong style="font-weight:600;color:var(--ink2)">Loss Jul 6</strong> · Storm</span>
+              <span class="pk-opt-t">Luis Ortega</span>
+              <span class="pk-opt-m" style="display:flex;align-items:center;gap:4px"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-cal"></use></svg><span>Loss Jul 6 · Storm loss</span></span>
+              <span class="pk-opt-m">2907 Ridgeline Dr · Farmington</span>
+              <span class="pk-opt-m" style="font-size:12px;white-space:nowrap">Claim #26-1181 · Job #4830</span>
             </span>
             <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
@@ -2720,10 +2729,38 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
     var ta = grp.querySelector('textarea'); var txt = ta && ta.value.trim();
     if(!txt) return;
     var item = document.createElement('div'); item.className='note-item';
-    item.innerHTML = '<div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Just now</span></div><div class="note-text"></div>';
+    item.innerHTML = '<div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Just now</span><button class=\\"note-edit\\" type=\\"button\\" data-noteedit aria-label=\\"Edit note\\"><svg class=\\"ic\\" width=\\"16\\" height=\\"16\\" aria-hidden=\\"true\\"><use href=\\"#i-pencil\\"></use></svg></button></div><div class="note-text"></div>';
     item.querySelector('.note-text').textContent = txt;
     btn.insertAdjacentElement('afterend', item);
     ta.value='';
+  });
+})();
+</script>
+<script>
+(function(){
+  document.addEventListener('click', function(e){
+    var eb=e.target.closest('[data-noteedit]');
+    if(eb){
+      var item=eb.closest('.note-item'); if(!item||item.querySelector('.note-edit-box')) return;
+      var t=item.querySelector('.note-text'); t.style.display='none'; eb.style.display='none';
+      var box=document.createElement('div'); box.className='note-edit-box';
+      box.innerHTML='<textarea class="fld" style="min-height:60px"></textarea><div class="note-edit-acts"><button class="qbtn" type="button" data-notesave><svg class="ic" width="18" height="18"><use href="#i-check"></use></svg>Save</button><button class="qbtn" type="button" data-notecancel>Cancel</button></div>';
+      box.querySelector('textarea').value=t.textContent; item.appendChild(box); box.querySelector('textarea').focus(); return;
+    }
+    var sv=e.target.closest('[data-notesave]');
+    if(sv){
+      var item=sv.closest('.note-item'); var box=item.querySelector('.note-edit-box'); var v=box.querySelector('textarea').value.trim();
+      var t=item.querySelector('.note-text'); if(v) t.textContent=v; t.style.display='';
+      item.querySelector('.note-who').textContent='Marcus (you)';
+      item.querySelector('.note-av').textContent='MR';
+      item.querySelector('.note-time').textContent='Edited just now';
+      box.remove(); var pe=item.querySelector('.note-edit'); if(pe) pe.style.display=''; return;
+    }
+    var cn=e.target.closest('[data-notecancel]');
+    if(cn){
+      var item=cn.closest('.note-item'); item.querySelector('.note-edit-box').remove();
+      item.querySelector('.note-text').style.display=''; var pe=item.querySelector('.note-edit'); if(pe) pe.style.display=''; return;
+    }
   });
 })();
 </script>
