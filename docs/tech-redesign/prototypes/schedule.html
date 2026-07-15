@@ -2094,11 +2094,14 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <button class="sheet-close" type="button" aria-label="Close" data-go="s-month"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
         </div>
         <div class="sheet-body">
-          <!-- Job -->
+          <!-- Job — selected value shows the address; picker lists every job WITH its address -->
           <div class="fgroup">
             <label class="flabel">Job</label>
-            <button class="fpick" type="button" data-toast data-toast-kind="info" data-toast-title="Pick a different job">
-              <span>Gary Sorensen · #26-1173</span>
+            <button class="fpick" type="button" data-sheet="sheet-job" style="min-height:56px">
+              <span style="display:flex;flex-direction:column;gap:1px;min-width:0;text-align:left">
+                <span>Gary Sorensen · #26-1173</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;color:var(--ink3)"><svg class="ic" width="13" height="13" aria-hidden="true"><use href="#i-pin"></use></svg>1420 N Oak Dr</span>
+              </span>
               <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
             </button>
           </div>
@@ -2110,25 +2113,33 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <svg class="ic fpick-chev" width="18" height="18" aria-hidden="true"><use href="#i-cal"></use></svg>
             </button>
           </div>
-          <!-- Time (native select) -->
+          <!-- Time — Start + End side by side (both pickable; End auto-fills start+2h, still editable) -->
           <div class="fgroup">
-            <label class="flabel">Start time</label>
-            <div class="fsel-wrap">
-              <select class="fsel" aria-label="Start time">
-                <option>8:00 AM</option>
-                <option>8:30 AM</option>
-                <option>9:00 AM</option>
-                <option>10:30 AM</option>
-                <option>11:00 AM</option>
-                <option>12:00 PM</option>
-                <option>1:00 PM</option>
-                <option selected>1:30 PM</option>
-                <option>2:00 PM</option>
-                <option>3:00 PM</option>
-                <option>3:30 PM</option>
-                <option>4:00 PM</option>
-              </select>
-              <svg class="ic fsel-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="flabel" style="display:block;margin-bottom:6px" for="av-start">Start</label>
+                <div class="fsel-wrap">
+                  <select class="fsel" id="av-start" aria-label="Start time">
+                    <option>8:00 AM</option><option>8:30 AM</option><option>9:00 AM</option>
+                    <option>10:30 AM</option><option>11:00 AM</option><option>12:00 PM</option>
+                    <option>1:00 PM</option><option selected>1:30 PM</option><option>2:00 PM</option>
+                    <option>3:00 PM</option><option>3:30 PM</option><option>4:00 PM</option>
+                  </select>
+                  <svg class="ic fsel-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
+                </div>
+              </div>
+              <div>
+                <label class="flabel" style="display:block;margin-bottom:6px" for="av-end">End</label>
+                <div class="fsel-wrap">
+                  <select class="fsel" id="av-end" aria-label="End time">
+                    <option>1:30 PM</option><option>2:00 PM</option><option>2:30 PM</option>
+                    <option>3:00 PM</option><option selected>3:30 PM</option><option>4:00 PM</option>
+                    <option>4:30 PM</option><option>5:00 PM</option><option>5:30 PM</option>
+                    <option>6:00 PM</option>
+                  </select>
+                  <svg class="ic fsel-chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"></use></svg>
+                </div>
+              </div>
             </div>
           </div>
           <!-- Type pills (single-select) -->
@@ -2166,6 +2177,35 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <!-- the ONE black pill on this screen -->
           <button class="pill-primary" type="button" data-go="s-month" data-toast data-toast-kind="info" data-toast-title="Queued — will sync" data-toast-msg="Mitigation — Gary Sorensen · Tue, Jul 14 1:30 PM · saved offline, sends when back online">
             <svg class="ic" width="19" height="19" aria-hidden="true"><use href="#i-plus"></use></svg>Add visit
+          </button>
+        </div>
+      </div>
+
+      <!-- Job picker (stacks over the add-visit sheet) — every job row shows its address so you can tell them apart -->
+      <div class="sheet-scrim" data-for="sheet-job"></div>
+      <div class="sheet" id="sheet-job" role="dialog" aria-modal="true" aria-labelledby="job-title">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title" id="job-title">Pick a job</div></div>
+          <button class="sheet-close" type="button" aria-label="Close" data-close><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+        <div class="sheet-body">
+          <div class="search" style="margin-bottom:8px"><svg class="ic search-mag" width="20" height="20" aria-hidden="true"><use href="#i-search"></use></svg><input type="search" placeholder="Search jobs" enterkeyhint="search" aria-label="Search jobs"></div>
+          <button class="pk-opt" type="button" aria-selected="true" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">Gary Sorensen · #26-1173</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>1420 N Oak Dr · Layton</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">Dana Whitmore · #26-1188</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>388 S Willow Way · Kaysville</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">Luis Ortega · #26-1181</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>2907 Ridgeline Dr · Farmington</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
+          </button>
+          <button class="pk-opt" type="button" data-close>
+            <span class="pk-opt-body"><span class="pk-opt-t">The Reeds · #26-1176</span><span class="pk-opt-m"><svg class="ic" width="13" height="13" aria-hidden="true" style="vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>145 E Center St · Draper</span></span>
+            <svg class="ic pk-opt-check" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg>
           </button>
         </div>
       </div>
