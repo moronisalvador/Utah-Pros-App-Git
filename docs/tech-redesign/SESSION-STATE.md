@@ -111,11 +111,17 @@ one line (previously only fit when the Done chip was narrow).
   **default-OPEN** because tasks are the primary on-site work and the Done-collapse already keeps it
   short — one-line flip if owner still wants collapsed). ③ Drying gateway → a **progress widget**
   (Day 4 · 2/3 dry · 1 wet · Readings due) that taps into the hydro page.
-- NEXT (owner's new requirement): **Room tiles** — tap a room → that room's photos + notes (the
-  Encircle *function*, NOT its banned visuals). Must be the organizing spine (not another stacked
-  section) to keep the page short. This reshapes how Photos/Notes are grouped. Its own focused build.
+- DONE (Rooms, 2026-07-15): **Rooms tile grid** on the hub (cover-photo tiles + name overlay + count
+  badge + "Add room" + an "Unsorted" bucket for snap-first photos) → each tile opens a **room-detail
+  screen** (`s-room`) with **Photos | Notes** instant sub-tabs (Encircle's function; Contents/Sketches
+  noted as possible future tabs). Translated from the 4 owner-supplied Encircle screenshots — FUNCTION
+  only, Direction B look (ink/gray, NO orange chrome, no loud grid). The flat "Photos" section was
+  **retired** (photos now live under rooms — the length win). Room notes reuse the note component
+  (edit + ownership-transfer). Verified in Chromium (grid, both tabs, tab switch, no console errors).
 - STILL OPEN (my tile proposal, pending owner nod): Visits / Job & Claim / Documents → compact tap
-  tiles instead of full stacked sections (the real length fix).
+  tiles instead of full stacked sections (further length reduction).
+- Room ⇄ hydro reconciliation: hub Rooms (photos/notes) and the hydro module (moisture readings)
+  reference the same physical rooms — unify as one room list surfaced two ways (build-phase concern).
 
 **Sequencing (owner):** calendar/schedule 100% ✓ → **job creation rework (next)** → job hub ("most
 important"). NOTE: hub was built first as a draft to react to; the owner may still reorder.

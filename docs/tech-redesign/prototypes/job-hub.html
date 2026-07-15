@@ -1201,6 +1201,28 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .acti-row{ display:flex; align-items:center; gap:12px; padding:14px 16px; margin-top:8px; text-decoration:none; cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .acti-row:active{ background:var(--surface2); }
 @media (prefers-reduced-motion:reduce){ .jd-dry:active{ transform:none; } }
+/* ── Rooms grid (documentation spine) ── */
+.room-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+.room-tile{ position:relative; display:block; aspect-ratio:4/3; border-radius:16px; overflow:hidden; background:var(--surface2); text-decoration:none; -webkit-tap-highlight-color:transparent; }
+.room-tile:active{ transform:scale(.985); }
+.room-cover{ position:absolute; inset:0; display:grid; place-items:center; color:var(--ink3); }
+.room-scrim{ position:absolute; left:0; right:0; bottom:0; height:56%; background:linear-gradient(to top, rgba(0,0,0,.58), rgba(0,0,0,0)); }
+.room-name{ position:absolute; left:12px; right:12px; bottom:10px; z-index:1; color:#fff; font-size:15px; font-weight:650; }
+.room-count{ position:absolute; top:8px; right:8px; z-index:1; min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:3px; }
+.room-add{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; aspect-ratio:4/3; border-radius:16px; border:1.5px dashed var(--hair); background:transparent; color:var(--ink2); font-size:14px; font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.room-add:active{ background:var(--surface2); }
+.sect-meta{ margin-left:auto; margin-top:24px; font-size:13px; font-weight:600; color:var(--ink3); }
+/* ── Room detail (Photos / Notes tabs) ── */
+.room-tabs{ display:flex; gap:4px; padding:0 12px 4px; background:var(--surface); border-bottom:1px solid var(--hair); }
+.room-tab{ flex:none; display:inline-flex; align-items:center; gap:6px; padding:12px 6px; border:0; background:transparent; font:inherit; font-size:15px; font-weight:600; color:var(--ink3); border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.room-tab.on{ color:var(--ink); border-bottom-color:var(--ink); }
+.rt-badge{ min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--surface2); color:var(--ink2); font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+.room-tab.on .rt-badge{ background:var(--ink); color:var(--surface); }
+.room-pane[hidden]{ display:none; }
+.ph-grid--3{ display:grid; grid-template-columns:repeat(3,1fr); gap:3px; }
+.ph-grid--3 .ph{ aspect-ratio:1; border-radius:0; }
+.ph-sub{ font-size:13px; font-weight:600; color:var(--ink3); margin:14px 4px 8px; }
+@media (prefers-reduced-motion:reduce){ .room-tile:active{ transform:none; } }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1634,8 +1656,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
           <!-- Z2 WORK CARD -->
-          <section class="card cklist" data-collapsed="false">
-            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
+          <section class="card cklist" data-collapsed="true">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="false"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
             <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:0%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Arrival photos</span></div>
@@ -1648,13 +1675,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
-          <!-- Z2 MODULE GATEWAYS -->
-          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
-            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
-            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
-          </button>
           <!-- Z4 BELOW FOLD -->
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today 2:00 PM · this visit</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
@@ -1667,11 +1696,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Photos</h3>
-          <section class="card">
-            <div class="ph-head"><span class="ph-count">9 photos</span><button class="seeall" type="button">See all<svg class="ic chev" width="16" height="16"><use href="#i-chev"/></svg></button></div>
-            <div class="ph-grid" role="img" aria-label="9 job photos, most recent first"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
           </section>
           <h3 class="sect-title">Documents</h3>
           <section class="card rowcard">
@@ -1731,8 +1755,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist" data-collapsed="false">
-            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
+          <section class="card cklist" data-collapsed="true">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="false"><span class="ck-title">Tasks</span><span class="ck-count">0 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
             <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:0%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Arrival photos</span></div>
@@ -1745,11 +1774,14 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
-          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
-            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
-            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
-          </button>
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · this visit</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-navigate"/></svg>On my way</span></div>
@@ -1762,11 +1794,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Photos</h3>
-          <section class="card">
-            <div class="ph-head"><span class="ph-count">9 photos</span><button class="seeall" type="button">See all<svg class="ic chev" width="16" height="16"><use href="#i-chev"/></svg></button></div>
-            <div class="ph-grid" role="img" aria-label="9 job photos, most recent first"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
           </section>
           <h3 class="sect-title">Documents</h3>
           <section class="card rowcard">
@@ -1831,8 +1858,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
           <!-- Z2 WORK CARD -->
-          <section class="card cklist" data-collapsed="false">
-            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count" id="ckCount">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
+          <section class="card cklist" data-collapsed="true">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="false"><span class="ck-title">Tasks</span><span class="ck-count" id="ckCount">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
             <div class="ck-body">
             <div class="prog"><div class="prog-fill" id="progFill" style="width:40%"></div></div>
             <div class="task task--open" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Master Bathroom</span></div>
@@ -1844,13 +1876,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button" data-toast data-toast-kind="info" data-toast-title="Note started" data-toast-msg="Jot a quick note for this visit."><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
-          <!-- Z2 MODULE GATEWAYS -->
-          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
-            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
-            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
-          </button>
           <!-- Z4 BELOW FOLD -->
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · this visit</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-dotring"/></svg>Working</span></div>
@@ -1863,11 +1897,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Photos</h3>
-          <section class="card">
-            <div class="ph-head"><span class="ph-count">9 photos</span><button class="seeall" type="button">See all<svg class="ic chev" width="16" height="16"><use href="#i-chev"/></svg></button></div>
-            <div class="ph-grid" role="img" aria-label="9 job photos, most recent first"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
           </section>
           <h3 class="sect-title">Documents</h3>
           <section class="card rowcard">
@@ -1928,8 +1957,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist" data-collapsed="false">
-            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
+            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
+            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
+          </button>
+          <section class="card cklist" data-collapsed="true">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="false"><span class="ck-title">Tasks</span><span class="ck-count">2 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
             <div class="ck-body">
             <div class="prog"><div class="prog-fill" style="width:40%"></div></div>
             <div class="task" role="checkbox" aria-checked="false" tabindex="0"><span class="ck ck--open"></span><span class="task-t">Final moisture readings — Master Bathroom</span></div>
@@ -1941,11 +1975,14 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
-          <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
-            <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
-            <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
-          </button>
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · this visit</div></div><span class="chip chip-red"><svg class="ic" width="14" height="14"><use href="#i-pause"/></svg>Paused</span></div>
@@ -1958,11 +1995,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Photos</h3>
-          <section class="card">
-            <div class="ph-head"><span class="ph-count">9 photos</span><button class="seeall" type="button">See all<svg class="ic chev" width="16" height="16"><use href="#i-chev"/></svg></button></div>
-            <div class="ph-grid" role="img" aria-label="9 job photos, most recent first"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
           </section>
           <h3 class="sect-title">Documents</h3>
           <section class="card rowcard">
@@ -2021,17 +2053,25 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="hero-addr" role="button" tabindex="0"><svg class="ic pin" width="18" height="18"><use href="#i-pin"/></svg>1420 N Oak Dr, Layton<svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
             <div class="hero-next"><svg class="ic" width="16" height="16"><use href="#i-note"/></svg><span><strong>Office note</strong> · Lockbox on side gate, code 3311. Bill dehu days through today.</span></div>
           </section>
-          <section class="card cklist" data-collapsed="false">
-            <button class="ck-head" type="button" data-taskstoggle aria-expanded="true"><span class="ck-title">Tasks</span><span class="ck-count">5 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
-            <div class="ck-body">
-            <div class="prog"><div class="prog-fill" style="width:100%"></div></div>
-            <div class="task task--fold"><span class="ck ck--done"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="task-t">Done (5)</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </div></section>
           <button class="jd-dry" type="button" data-toast data-toast-kind="info" data-toast-title="Drying module" data-toast-msg="Opens the full hydro / drying page.">
             <div class="jd-dry-head"><span class="jd-dry-ic"><svg class="ic" width="20" height="20"><use href="#i-drop"/></svg></span><span class="jd-dry-title">Drying</span><span class="jd-dry-day">Day 4</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="prog jd-dry-prog"><div class="prog-fill" style="width:67%"></div></div>
             <div class="jd-dry-foot"><span><span class="dnum">2</span> of <span class="dnum">3</span> dry</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>1 wet · Kitchen</span><span class="jd-dry-due">Readings due</span></div>
           </button>
+          <section class="card cklist" data-collapsed="true">
+            <button class="ck-head" type="button" data-taskstoggle aria-expanded="false"><span class="ck-title">Tasks</span><span class="ck-count">5 of 5</span><svg class="ic chev ck-chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+            <div class="ck-body">
+            <div class="prog"><div class="prog-fill" style="width:100%"></div></div>
+            <div class="task task--fold"><span class="ck ck--done"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="task-t">Done (5)</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+          </div></section>
+          <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
+          <div class="room-grid">
+            <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
+          </div>
           <h3 class="sect-title">Visits on this job</h3>
           <section class="card rowcard">
             <div class="row"><div class="row-body"><div class="row-t">Equipment pull + final readings<span class="mini">Viewing</span></div><div class="row-m">Today · Travel 18m · On-site 3h 24m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
@@ -2044,11 +2084,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-          </section>
-          <h3 class="sect-title">Photos</h3>
-          <section class="card">
-            <div class="ph-head"><span class="ph-count">9 photos</span><button class="seeall" type="button">See all<svg class="ic chev" width="16" height="16"><use href="#i-chev"/></svg></button></div>
-            <div class="ph-grid" role="img" aria-label="9 job photos, most recent first"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
           </section>
           <h3 class="sect-title">Documents</h3>
           <section class="card rowcard">
@@ -2118,6 +2153,48 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         <div class="toastwrap"></div>
       </div>
     </div>
+
+    <!-- ═══════════ ROOM DETAIL (photos + notes) ═══════════ -->
+    <div class="screen" id="s-room">
+      <div class="app">
+        <div class="app-top">
+          <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
+          <header class="hubhdr">
+            <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
+            <div class="hub-id"><div class="hub-name">Bedroom</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+            <button class="iconbtn" type="button" aria-label="Room options"><svg class="ic" width="22" height="22"><use href="#i-dots-h"/></svg></button>
+          </header>
+          <div class="room-tabs" role="tablist">
+            <button class="room-tab on" type="button" role="tab" aria-selected="true" data-roomtab="photos">Photos <span class="rt-badge">31</span></button>
+            <button class="room-tab" type="button" role="tab" aria-selected="false" data-roomtab="notes">Notes <span class="rt-badge">1</span></button>
+          </div>
+        </div>
+        <div class="main">
+          <div class="room-pane" data-pane="photos">
+            <div class="ph-sub">31 photos · Today</div>
+            <div class="ph-grid--3" role="img" aria-label="31 photos in Bedroom"><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div><div class="ph"><svg class="ic" width="22" height="22"><use href="#i-photo"/></svg></div></div>
+          </div>
+          <div class="room-pane" data-pane="notes" hidden>
+            <div class="sect-head"><h3 class="sect-title">Room notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+            <section class="card notes-card">
+              <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 10:04 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Subfloor cut open under the window — saturated joist. Photographed before + after.</div></div>
+            </section>
+          </div>
+        </div>
+        <div class="dock">
+          <button class="dock-photo" type="button" data-toast data-toast-kind="ok" data-toast-title="Photo saved" data-toast-msg="Saved to Bedroom — add a note when you can." data-toast-act="Add note"><svg class="ic" width="22" height="22"><use href="#i-camera"/></svg>Photo</button>
+          <button class="dock-btn" type="button" data-noteadd><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span>Note</span></button>
+        </div>
+        <nav class="tabbar"><div class="tabs">
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
+        <button class="tab active" type="button" aria-current="page"><svg class="ic" width="24" height="24"><use href="#i-cal"/></svg><span class="tab-label">Schedule</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-chat"/></svg><span class="badge-num">2</span><span class="tab-label">Messages</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
+      </div><div class="home-ind"></div></nav>
+        <div class="toastwrap has-dock"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2129,6 +2206,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
   <button type="button" data-go="s-working" class="on">Working</button>
   <button type="button" data-go="s-paused">Paused</button>
   <button type="button" data-go="s-done">Done</button>
+  <button type="button" data-go="s-room">Room</button>
   <button type="button" data-go="s-activity">Activity</button>
 </div>
 
@@ -2300,6 +2378,17 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
       clearTimeout(armTimer); disarm();
     }
   }, true);
+})();
+</script>
+<script>
+/* Room detail: Photos / Notes tab switch (instant) */
+(function(){
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('[data-roomtab]'); if(!t) return;
+    var wrap=t.closest('.app'); var which=t.getAttribute('data-roomtab');
+    wrap.querySelectorAll('.room-tab').forEach(function(b){var on=b===t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on?'true':'false');});
+    wrap.querySelectorAll('.room-pane').forEach(function(p){p.hidden=p.getAttribute('data-pane')!==which;});
+  });
 })();
 </script>
 <script>
