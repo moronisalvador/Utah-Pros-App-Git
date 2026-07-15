@@ -1223,6 +1223,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .ph-grid--3 .ph{ aspect-ratio:1; border-radius:0; }
 .ph-sub{ font-size:13px; font-weight:600; color:var(--ink3); margin:14px 4px 8px; }
 @media (prefers-reduced-motion:reduce){ .room-tile:active{ transform:none; } }
+/* ── do-now entry card (Scope sheet) ── */
+.jd-entry{ display:flex; align-items:center; gap:12px; width:100%; background:var(--surface); border-radius:16px; box-shadow:var(--sh-card); padding:14px 16px; margin-top:14px; text-decoration:none; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jd-entry:active{ transform:scale(.99); }
+.jd-entry-ic{ flex:none; width:34px; height:34px; border-radius:11px; background:var(--surface2); display:grid; place-items:center; color:var(--ink2); }
+.jd-entry-body{ flex:1; min-width:0; }
+.jd-entry-t{ font-size:16px; font-weight:650; color:var(--ink); }
+.jd-entry-m{ font-size:13px; font-weight:500; color:var(--ink3); }
+.jd-entry .chev{ flex:none; color:var(--ink3); }
+@media (prefers-reduced-motion:reduce){ .jd-entry:active{ transform:none; } }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1676,12 +1685,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             </div>
           </div></section>
           <!-- Z4 BELOW FOLD -->
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
           <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
           <div class="room-grid">
             <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
           <h3 class="sect-title">Visits on this job</h3>
@@ -1692,15 +1702,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </section>
           <h3 class="sect-title">Job &amp; Claim</h3>
           <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
-          <h3 class="sect-title">Documents</h3>
+          <h3 class="sect-title">Documents &amp; signatures</h3>
           <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <!-- Z4 ACTIVITY (pre-arrival: only system/office entries so far) -->
           <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
@@ -1774,12 +1784,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
           <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
           <div class="room-grid">
             <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
           <h3 class="sect-title">Visits on this job</h3>
@@ -1790,15 +1801,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </section>
           <h3 class="sect-title">Job &amp; Claim</h3>
           <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
-          <h3 class="sect-title">Documents</h3>
+          <h3 class="sect-title">Documents &amp; signatures</h3>
           <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
@@ -1877,12 +1888,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             </div>
           </div></section>
           <!-- Z4 BELOW FOLD -->
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
           <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
           <div class="room-grid">
             <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
           <h3 class="sect-title">Visits on this job</h3>
@@ -1893,15 +1905,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </section>
           <h3 class="sect-title">Job &amp; Claim</h3>
           <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
-          <h3 class="sect-title">Documents</h3>
+          <h3 class="sect-title">Documents &amp; signatures</h3>
           <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <!-- Z4 ACTIVITY LOG (system/automated only — never tech-sent texts) -->
           <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
@@ -1975,12 +1987,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
               <button class="ck-act" type="button"><svg class="ic" width="18" height="18"><use href="#i-note"/></svg>Add note</button>
             </div>
           </div></section>
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
           <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
           <div class="room-grid">
             <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
           <h3 class="sect-title">Visits on this job</h3>
@@ -1991,15 +2004,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </section>
           <h3 class="sect-title">Job &amp; Claim</h3>
           <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
-          <h3 class="sect-title">Documents</h3>
+          <h3 class="sect-title">Documents &amp; signatures</h3>
           <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">
@@ -2064,12 +2077,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="prog"><div class="prog-fill" style="width:100%"></div></div>
             <div class="task task--fold"><span class="ck ck--done"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="task-t">Done (5)</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </div></section>
+          <a class="jd-entry" role="button" tabindex="0" data-toast data-toast-kind="info" data-toast-title="Scope sheet" data-toast-msg="Opens the room-by-room scope tool."><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-clipboard"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Scope sheet</div><div class="jd-entry-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></a>
           <div class="sect-head"><h3 class="sect-title">Rooms</h3><span class="sect-meta">4 rooms</span></div>
           <div class="room-grid">
             <button class="room-add" type="button" data-toast data-toast-kind="info" data-toast-title="Add room" data-toast-msg="Name the room, then start snapping."><svg class="ic" width="22" height="22"><use href="#i-plus"/></svg>Add room</button>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
-            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Exterior · 3 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>3</span><span class="room-name">Exterior</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bedroom · 31 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>31</span><span class="room-name">Bedroom</span></a>
+            <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
           <h3 class="sect-title">Visits on this job</h3>
@@ -2080,15 +2094,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </section>
           <h3 class="sect-title">Job &amp; Claim</h3>
           <section class="card rowcard">
-            <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-person"/></svg></span><div class="row-body"><div class="row-t">Gary Sorensen</div><div class="row-m">Insured · (801) 555-0163</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-folder"/></svg></span><div class="row-body"><div class="row-t">Claim #26-1173</div><div class="row-m">State Farm</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-house"/></svg></span><div class="row-body"><div class="row-t">Job #26-1173</div><div class="row-m">Mitigation · Water</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
-          <h3 class="sect-title">Documents</h3>
+          <h3 class="sect-title">Documents &amp; signatures</h3>
           <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Tap to send for signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
-            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card">

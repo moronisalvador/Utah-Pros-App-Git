@@ -118,9 +118,25 @@ one line (previously only fit when the Done chip was narrow).
   only, Direction B look (ink/gray, NO orange chrome, no loud grid). The flat "Photos" section was
   **retired** (photos now live under rooms — the length win). Room notes reuse the note component
   (edit + ownership-transfer). Verified in Chromium (grid, both tabs, tab switch, no console errors).
-- STILL OPEN (my tile proposal, pending owner nod): Visits / Job & Claim / Documents → compact tap
-  tiles instead of full stacked sections (further length reduction).
-- Room ⇄ hydro reconciliation: hub Rooms (photos/notes) and the hydro module (moisture readings)
+- DONE (2026-07-15, later): Tasks now default-COLLAPSED (owner override after seeing it live); Drying
+  widget moved ABOVE Tasks (every visit has drying; not every has tasks). **Scope sheet** = a do-now
+  entry (owner: techs fill it on-site; in the app it's a standalone tool opened from TechAppointment,
+  same place as the documents/signature section). **Documents & signatures** section = Work Auth
+  (Signed) + an Unsigned doc (tap to send for signature) + reports — the paperwork home (mirrors the
+  app's `sign_requests` + `/tech/jobs/:id/documents` hub). Work-auth row moved out of Job & Claim into
+  it. **Empty rooms** show the house icon (`#i-house`); Unsorted keeps the photo icon.
+- Current hub order — do-now: Drying widget → Tasks (collapsed) → Scope sheet → Rooms grid ·
+  look-up: Visits → Job & Claim → Documents & signatures → Notes → Activity row (bottom).
+- App reality confirmed in repo: `rooms` table exists (photos assign via `move_photo_to_room`);
+  Scope Sheet is a standalone tool; signatures in `sign_requests` (doc_type/status); Documents hub at
+  `/tech/jobs/:id/documents`. The hub design lines up with the real data model.
+
+**OPEN DECISIONS:**
+- **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
+  plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
+  owner picks; then relabel everywhere.
+- My tile proposal for Visits / Job & Claim (compact tiles vs full sections) — still on the table.
+- Room ⇄ drying reconciliation: hub Rooms (photos/notes) and the drying module (moisture readings)
   reference the same physical rooms — unify as one room list surfaced two ways (build-phase concern).
 
 **Sequencing (owner):** calendar/schedule 100% ✓ → **job creation rework (next)** → job hub ("most
