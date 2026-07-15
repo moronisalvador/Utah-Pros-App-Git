@@ -437,10 +437,14 @@ first:
    place to "Tap again to finish" (same geometry, colors, icon; ~3s auto-disarm via
    `useTwoClickConfirm`, blur cancels). Optional `.pill-note` microcopy below (12/500 ink3).
    Never for navigation, secondary capture, or rows. Never a modal confirm.
-   **Ripened variant** (`.pill-quiet`, sanctioned): while checklist tasks remain open,
+   ~~**Ripened variant** (`.pill-quiet`, sanctioned): while checklist tasks remain open,
    Finish renders as the outlined quiet pill (border 1.5px ink, `--t-surface` fill, ink
    label, trailing "· N left" 17/500 ink3); it ripens into the black pill when the list
-   completes — one primary action stays true at every moment.
+   completes — one primary action stays true at every moment.~~ **superseded-by: §12.0
+   owner decision 4d (2026-07-15) — Finish is ALWAYS the solid black two-tap pill; it never
+   renders as the quiet outlined variant. While tasks remain it shows the black pill with a
+   trailing "· N left"; the last-task-completes moment is the checklist Done-collapse +
+   check-pop + `notify()` haptic + toast, NOT a pill state change. See §12.4.**
    **Dock pill variant:** flex 1.6, min-height 56, label 16/600, icon 20 — when the dock's
    emphasized member IS the screen primary (Add reading).
 2. **Quiet button** (`.qbtn`): 48px, radius 14, `--t-surface2` fill, ink label 15/600,
@@ -839,10 +843,13 @@ Top to bottom — all ten zones, in this order:
   `#{job} · {purpose}`, ONE trailing chip = the selected visit's live status.
 - **Z2 — stage card** (the hero): 48px stage clock first (color = state), station rail,
   **stage meta line** (Story fold-in: centered 13/500 ink3 "2 of 5 tasks · 9 photos today"),
-  the primary pill — **state-aware Finish**: quiet outlined pill with "· N left" while
+  the primary pill — ~~**state-aware Finish**: quiet outlined pill with "· N left" while
   checklist tasks remain, ripening to the black two-tap-armed pill when complete (the
-  sanctioned flow-challenger variant); wide quiet Pause beneath; 48px address row; office-
-  note quiet footer.
+  sanctioned flow-challenger variant)~~ **superseded-by: §12.0 decision 4d — Finish is
+  ALWAYS the solid black two-tap pill (with trailing "· N left" while tasks remain); see
+  §12.4**; wide quiet Pause beneath; 48px address row; office-
+  note quiet footer. **On the Paused state the primary black pill is Resume work and Finish
+  drops to the quiet secondary (§12.4) — one black pill still holds.**
 - **Z2 continued — work card**: checklist (progress bar, 56px optimistic task rows, the
   **Done-collapse row** folding 2+ completed tasks into "Done (N)" — Story fold-in), and the
   **inline capture pair** ("Add photo" / "Add note" — Story fold-in; the quieter twins of
@@ -1008,3 +1015,152 @@ tiebreaker** — for those screens the rules are:
     the owner rules at dispatch of the foundation phase. Until then no session seeds a
     default-mode value; `ThemeContext`/`upr_theme_pref` mechanics (section 3.9) are
     unaffected either way.
+
+---
+
+## 12. Flow specifications (Session 2 — flows & remaining screens)
+
+**Last-verified: 2026-07-15** · Status: flows designed as steppable prototypes; each subsection
+LOCKS after the owner's reaction. Prototypes of record live in `docs/tech-redesign/prototypes/`
+(`schedule.html`, `new-job-flow.html`, `job-hub.html`) and share `kit.html` — the token/sprite/
+component foundation cloned verbatim from the three mockups of record. **Kit tokens are UNPREFIXED**
+(`--ground --surface --surface2 --ink --ink2 --ink3 --hair --pill-bg --pill-ink --amber/-bg
+--green/-bg --red/-bg --blue/-bg --gray/-bg --focus --frost --sh-card --sh-hero`) scoped to `.stage`
+(light) / `.stage[data-theme="dark"]` (dark) — the prototypes' operative names. Older sections above
+cite the F-S2 `--t-*` architecture (section 3.9); the two naming schemes are the **same tokens** —
+`--t-*` is the production/app-code binding, the unprefixed set is the prototype clone. The §8.4
+unmocked-screen composition rule still governs; these subsections add the flow-level choreography the
+static anatomies (§8) do not carry. Live-state anchor: `docs/tech-redesign/SESSION-STATE.md`.
+
+### 12.0 Owner flow decisions (2026-07-14/15 — binding, do not relitigate)
+
+| # | Decision | Ruling |
+|---|---|---|
+| 4a | Job save → destination | **Land on the new job hub** (not a forced schedule chain). The hub carries a quiet, non-forced "Schedule a visit" row. |
+| 4a | Quick-add customer scope | **Job-flow-only, minimal** (name + phone). Duplicate phone auto-selects the existing customer. Full role/company/billing lives in the standalone New Customer flow (§12.2). |
+| 4c | Tech scheduling | **Full tech self-service** — the "Add visit" create affordance is first-class (a FAB on Schedule, peer to the dashboard create). |
+| 4c | Appointment title | **Editable with auto-suggestion** — pre-filled from the job's type/phases, tech may override (a `#i-pencil` affordance signals editability). |
+| 4d | Finish pill | **Finish is always the solid black two-tap pill** — NOT gated/quieted while tasks remain. *(Supersedes §6.A.1 "ripened quiet-pill" and §8.2 "state-aware Finish" — struck in place 2026-07-15.)* |
+| 4f | Last open task completes | **Both** the Done-collapse (completed tasks fold to "Done (N)") **and** a coordinated emphasis moment fire together. Finish stays black (per 4d); the "you're clear to finish" acknowledgement is the collapse + a check-pop + `notify()` haptic + a "All tasks done" toast — NOT a pill state change. |
+| 4b | Customer save → destination | **Land back with a success toast** (stay in `/tech/*`; no desktop dead-end). |
+| 4g | Chamber setup | **Full tech chamber control** — techs may create chambers, assign rooms, set tolerances in the field. *(Chambers have no native UPR table — §11.5; native model is a separate reviewed change; Rooms remains the fallback grouping.)* |
+| 4e | Burst photo capture | **Not adopted** — the single snap-first loop (capture → instant upload → dismissable "Add note" toast) stays the law. |
+| — | Create-new-job from Add-visit | **Launch the full New Job flow, return the selected job** (§12.1) — not an inline mini-form. Scope the return-handoff so the UX makes sense. |
+| — | Activity-log content | **System-automated events only** (not tech-sent messages), PLUS invoices created & sent and estimates created & sent, on top of the base lifecycle events. See §12.5.1. |
+
+### 12.3 New / Edit Appointment — "Add visit" (LOCKED 2026-07-14)
+
+Prototype of record: `schedule.html` → `s-addvisit`. The owner's verdict: *"we nailed the schedule
+and appointment creation part."*
+
+- **Full-screen PAGE, never a bottom sheet.** Long creation forms are full-screen pages; only
+  pickers and quick actions are bottom sheets. Structure: a **pinned header with a reachable 48px X
+  (top-left, inside the safe area — never clipped under the notch)** + title "Add visit" · a normal
+  `.main` page scroller (so every field reaches on any iPhone) · a **pinned footer** carrying the one
+  black primary pill. *(This resolved repeated iPhone reports of a sheet that wouldn't scroll, a
+  clipped title, and an unreachable close.)*
+- **Fields, top to bottom:**
+  - **Job** — a field-picker row opening the `sheet-job` picker (see §12.6.1: it MATCHES the polished
+    search-result layout AND carries a "Create new job" entry that launches §12.1 and returns the
+    selected job).
+  - **Date** — opens the **native iOS date picker** (`<input type="date">`), never the Chromium/
+    desktop dropdown. The calendar glyph sits **on the same line as the date value** (a mismatched
+    line was flagged "funky").
+  - **Start** and **End** — **two blocks side-by-side**, each opening its own native time list sheet
+    (`sheet-time-start` / `sheet-time-end`, capped `max-height:min(440px,58svh)`). Both are required —
+    the UI makes the end-time obligation explicit.
+  - **Type of visit** — choice chips; **no checkmark** (the check clipped longer words like
+    "Reconstruction"); selection is shown by the chip's fill/border alone. Removed at kit level
+    (`.choice-check{display:none}`, symmetric `.choice` padding).
+  - **Title** — editable text, **auto-refreshes from the chosen type** until the tech overrides it
+    (decision 4c; pencil affordance).
+  - **Crew** — multi-select tech list; ships supporting **4–5 technicians** so the list scrolls.
+  - **Notes** — the §12.4.2 note component (add / edit / ownership-transfer).
+- Native pickers are an on-device iPhone gate (the owner tests them via the live artifact; Chromium
+  cannot render the iOS wheel).
+
+### 12.4 Clock state-walk & Finish resolution (LOCKED 2026-07-15)
+
+Prototype of record: `job-hub.html`. Five clock states, each a full hub render; the stage clock color
+IS the state (the 5-status law), status shown glyph **and** word (survives grayscale):
+
+| State | Timer color | Header chip (glyph+word) | Primary black pill | Secondary |
+|---|---|---|---|---|
+| Scheduled | blue `2:00` countdown | blue clock · Scheduled | **On my way** (arrow) | — |
+| On my way | amber `H:MM:SS` up | amber arrow · On my way | **Start work** (dot-in-ring) | — |
+| Working | green `H:MM:SS` up | green dot-in-ring · Working | **Finish · N left** (flag, two-tap) | quiet Pause (pause-bars) |
+| Paused | red `H:MM:SS` frozen | red pause-bars · Paused | **Resume work** (dot-in-ring) | quiet **Finish visit** (flag) |
+| Done | gray `H:MM:SS` total | gray check · Done | **Back to schedule** | — |
+
+- **Finish (decision 4d):** always the solid black two-tap pill. While checklist tasks remain it reads
+  **"Finish · N left"** with the microcopy "First tap arms · Tap again to finish"; it is NEVER the
+  quiet outlined pill. First tap arms (label → "Tap again to finish", ~3s auto-disarm, blur cancels);
+  second tap finishes.
+- **Last-task-completes moment (decision 4f):** checking the final open task **decrements the "· N
+  left" count to zero, collapses the completed rows to "Done (N)", drives the progress bar to 100%,
+  fires a check-pop + `notify('success')` haptic, and raises an "All tasks done · Ready to finish this
+  visit" toast.** Finish stays black throughout (no ripen).
+- **Paused precedence:** on Paused the primary black pill is **Resume work** (the tech paused to step
+  away; resuming is the intent); **Finish visit** drops to the quiet secondary — one black pill still
+  holds. *(Owner may still promote Finish to primary on Paused on reaction — open.)*
+- **Done breakdown (per §8):** the Done state shows **Travel · On-site · Total** (e.g. "Travel 18m ·
+  On-site 3h 24m · Total 3h 42m"), never a bare total; completed tasks collapsed to "Done (5)".
+
+### 12.5 Job hub composition (in review 2026-07-15 — not yet owner-locked)
+
+Prototype of record: `job-hub.html` (published artifact; owner reacting). Fills the §8.2 LOCKED
+structure. Below-fold order: **Visits switcher · Job & Claim (contacts above photos) · Photos grid ·
+Documents · Activity log**. Awaiting owner reaction before this subsection LOCKS.
+
+#### 12.5.1 Activity log (spec locked by decision — owner-authored content rule)
+
+An in-hub reverse-chronological log. Each entry: a leading 24-grid glyph, an event line, and an
+**actor** (`Marcus` for the tech, `System` for automated events, `Dana (office)` for office staff).
+**Included:** the job lifecycle (job created, visit scheduled, on-my-way, equipment placed/pulled,
+water-loss report generated, moisture readings logged), **system-automated messages sent** (never the
+tech's own sent SMS/notes), **invoices created & sent**, and **estimates created & sent**. Money and
+document events (`#INV-…`, `#EST-…`) carry their number. This is a read surface — no send affordance
+lives here (consent/send stays on the frozen worker path).
+
+### 12.6 Schedule — month & day (LOCKED 2026-07-14)
+
+Prototype of record: `schedule.html`. States: `s-month`, `s-day`, `s-day-empty`, `s-loading`
+(skeleton), `s-error` (banner over stale rows), `s-search`, `s-addvisit` (§12.3).
+
+- **Month view — tapping a day updates IN PLACE.** A day-cell tap re-renders that day's appointments
+  in the **preview panel below the grid** (busy / mid / light / empty variants); it does **NOT** switch
+  to the daily view. The daily view is a separate, optional destination. *(This corrected the original
+  behavior where a day-tap force-switched the whole screen to Day.)*
+- **Day view** carries a week strip (tap a weekday to switch days), prev/next day arrows, a glance
+  timeline, and the day's panels.
+- **First-class create:** an "Add visit" FAB (peer to the dashboard create) opens §12.3 (decision 4c).
+- **State law (honored):** cold load → skeleton (`s-loading`); a failed load → **error banner over the
+  last-good rows, never the empty state** (loading-error-states §1); a genuine empty day → upcoming
+  work, not a dead end (tech-mobile-ux empty-state rule).
+
+#### 12.6.1 Polished search-result layout (SHARED — reuse anywhere a job/claim is searched)
+
+Locked in `s-search` and reused verbatim by the Add-visit `sheet-job` picker. Three lines:
+
+1. **Water-loss type + abbreviated date of loss** on one line (people have >1 flood in the same
+   month — the DOL disambiguates).
+2. **Full street address + city** on the second line.
+3. **Claim number + job number** on the last line — standardized **smaller (12px, `white-space:nowrap`)
+   so they ALWAYS fit one line**, regardless of the row's right-side chip width.
+
+The `sheet-job` picker prepends a **"Create new job"** entry (launches §12.1, returns the selection).
+
+### 12.1 + New Job sequence — (built; owner wants rework, deferred after the hub)
+
+Prototype `new-job-flow.html` exists (7-step: FAB create menu → customer quick-add → job type
+[division + referral] → claim fork [new/existing + carrier + claim# + loss address] → review →
+non-blocking "Job created · sync pending" → land on the hub). The owner has asked to **improve the job
+creation workflow**; specifics held. Do NOT lock this subsection until the rework lands. Division
+precedes Claim (OOP gating). Job-numbering scheme is a pending open item (is `#26-1173` the claim or
+the job number?).
+
+### 12.2 Standalone New Customer — (not yet built)
+Land-back-with-toast (decision 4b). Fold after built.
+
+### 12.7 Hydro entry (add reading / place-pull equipment / chamber setup) — (not yet built)
+Full tech chamber control (decision 4g). Fold after built.
