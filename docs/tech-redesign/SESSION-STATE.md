@@ -131,6 +131,26 @@ one line (previously only fit when the Done chip was narrow).
   Scope Sheet is a standalone tool; signatures in `sign_requests` (doc_type/status); Documents hub at
   `/tech/jobs/:id/documents`. The hub design lines up with the real data model.
 
+**ACTION-MODEL RE-ARCHITECTURE (debated 2026-07-15, pending 2 owner locks):**
+- **Photos leave the hub entirely — capture is ROOM-FIRST** (owner integrity call, beats the critics'
+  hub-Photo-button: capturing from the hub forces a "which room?" pick → misfile risk). Room detail
+  keeps Add Photo. This also ends the floating-dock-vs-top-bar debate: no bottom capture dock on the hub.
+- **Two action critics (persona + apple-design) both independently said SPLIT BY FREQUENCY** — but with
+  Photo now room-only, everything left is occasional, so → a top action bar (owner's preference, familiar).
+- **Three note scopes, must be visibly distinct:** appointment note (= pinned "Office note" glance,
+  created at appt creation, editable from hub) · job notes (hub Notes section) · room notes (room tab).
+  Note action adds job-note from hub, room-note from a room.
+- **Edit STAYS** (reschedule/change appointment — occasional but real). Keep both Edit AND Documents.
+- **Customer + Claim + Job = page links** the owner wants accessible. My challenge: don't wall the top
+  with 8 equal icons. Proposed: page-link PILLS (Job · Claim · Customer) + action bar (Navigate · Call ·
+  Message · Documents · Edit, icon+label, no Photo) — mirrors the current app's structure.
+- Knock-on: remove the down-page **Job & Claim** section (now top pills) + **Documents & signatures**
+  section (now the Documents top button). Work Auth compliance alert stays prominent.
+- **PENDING OWNER LOCKS:** (1) Documents button label — "Documents" vs "Reports & Signatures" vs "Files"
+  (critic flag: photos are also "documentation" to a tech). (2) Two rows (pills + actions) vs one combined bar.
+- Still-pending foundations from the live-hub screenshots: **Work Auth compliance alert**, **Crew** row,
+  **Water Loss Report** generate-or-open affordance. Carry the live hub's empty-state copy verbatim.
+
 **OPEN DECISIONS:**
 - **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
   plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
