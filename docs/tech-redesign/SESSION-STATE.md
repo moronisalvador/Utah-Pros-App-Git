@@ -76,6 +76,13 @@ const {chromium}=pkg;`. Renders framed at 1040×940, or mobile at 430×860 (trig
 - **Add-visit notes:** add notes to a visit; **show who added each note + date/time**; if someone else
   edits a note, **ownership transfers to the editor.**
 - **Activity log** lives inside the **job hub** (built next).
+- **Visit-notes model (hub, 2026-07-15):** ONE notes stream per visit, surfaced twice — (1) the
+  stage-card quiet "Office note" line is the *pinned* note (glanceable access/billing instruction);
+  (2) a below-fold **Notes section** (between Documents and Activity) shows the full authored list
+  with author + timestamp + edit + ownership-transfer, and "+ Add note". The Add-visit notes feed
+  this same stream. Notes are SEPARATE from the Activity log (Activity = system-automated events
+  only, per the owner's rule). Pinned = a surfacing property, independent of authorship (editing a
+  pinned office note transfers ownership to the editor but keeps the pin).
 
 ### Polished SEARCH RESULT layout (locked — reuse everywhere a job/claim is searched)
 Line 1: **water-loss type + abbreviated date of loss** on the same line.

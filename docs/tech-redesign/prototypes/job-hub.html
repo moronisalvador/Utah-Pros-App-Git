@@ -1170,6 +1170,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .note-edit-box{ margin:6px 0 2px 30px; }
 .note-edit-acts{ display:flex; gap:8px; margin-top:8px; }
 .note-edit-acts .qbtn{ flex:1; height:42px; }
+/* Notes section header with inline add (hub Z4) */
+.sect-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sect-add{ flex:none; display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 10px; margin:24px 4px 8px 0; border:0; background:transparent; color:var(--ink2); font-size:13px; font-weight:600; cursor:pointer; border-radius:10px; -webkit-tap-highlight-color:transparent; }
+.sect-add:active{ background:var(--surface2); transform:scale(.96); }
+.note-pin{ flex:none; display:inline-flex; align-items:center; gap:3px; padding:1px 7px 1px 5px; border-radius:999px; background:var(--surface2); color:var(--ink3); font-size:11px; font-weight:600; }
+.note-item--pinned{ border-top:0; }
+.note-item--pinned .note-text{ color:var(--ink); }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
@@ -1647,6 +1654,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <!-- Z4 ACTIVITY (pre-arrival: only system/office entries so far) -->
+          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+          </section>
           <h3 class="sect-title">Activity</h3>
           <section class="card rowcard">
             <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-cal"/></svg></span><div class="row-body"><div class="row-t">Visit scheduled</div><div class="row-m">Dana (office) · Jul 10, 9:14 AM</div></div></div>
@@ -1734,6 +1746,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <section class="card rowcard">
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+          </section>
+          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
           <h3 class="sect-title">Activity</h3>
           <section class="card rowcard">
@@ -1836,6 +1853,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
           <!-- Z4 ACTIVITY LOG (system/automated only — never tech-sent texts) -->
+          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+          </section>
           <h3 class="sect-title">Activity</h3>
           <section class="card rowcard">
             <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-camera"/></svg></span><div class="row-body"><div class="row-t">Photo added</div><div class="row-m">Marcus · Today 11:18 AM</div></div></div>
@@ -1933,6 +1955,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
           </section>
+          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+          </section>
           <h3 class="sect-title">Activity</h3>
           <section class="card rowcard">
             <div class="row row--static"><span class="lnk-ic"><svg class="ic" width="18" height="18"><use href="#i-pause"/></svg></span><div class="row-body"><div class="row-t">Paused</div><div class="row-m">Marcus · Today 11:20 AM</div></div></div>
@@ -2017,6 +2044,11 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <section class="card rowcard">
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
             <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Scope sheet</div><div class="row-m">Room-by-room scope of work</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+          </section>
+          <div class="sect-head"><h3 class="sect-title">Notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
           </section>
           <h3 class="sect-title">Activity</h3>
           <section class="card rowcard">
@@ -2231,5 +2263,50 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
       clearTimeout(armTimer); disarm();
     }
   }, true);
+})();
+</script>
+<script>
+/* Notes: add / edit with ownership-transfer (cloned from schedule Add-visit) */
+(function(){
+  function mkBox(val){
+    var box=document.createElement('div'); box.className='note-edit-box';
+    box.innerHTML='<textarea class="fld" style="min-height:60px" placeholder="Jot a note for this visit…"></textarea><div class="note-edit-acts"><button class="qbtn" type="button" data-notesave><svg class="ic" width="18" height="18"><use href="#i-check"></use></svg>Save</button><button class="qbtn" type="button" data-notecancel>Cancel</button></div>';
+    box.querySelector('textarea').value=val||'';
+    return box;
+  }
+  document.addEventListener('click', function(e){
+    var ab=e.target.closest('[data-noteadd]');
+    if(ab){
+      var card=ab.closest('.sect-head').nextElementSibling;
+      if(!card||!card.classList.contains('notes-card')) return;
+      var item=document.createElement('div'); item.className='note-item'; item.setAttribute('data-fresh','1');
+      item.innerHTML='<div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Just now</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note" style="display:none"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"></use></svg></button></div><div class="note-text" style="display:none"></div>';
+      card.appendChild(item); item.appendChild(mkBox('')); item.querySelector('textarea').focus(); return;
+    }
+    var eb=e.target.closest('[data-noteedit]');
+    if(eb){
+      var item=eb.closest('.note-item'); if(!item||item.querySelector('.note-edit-box')) return;
+      var t=item.querySelector('.note-text'); t.style.display='none'; eb.style.display='none';
+      var box=mkBox(t.textContent); item.appendChild(box); box.querySelector('textarea').focus(); return;
+    }
+    var sv=e.target.closest('[data-notesave]');
+    if(sv){
+      var item=sv.closest('.note-item'), box=item.querySelector('.note-edit-box'), v=box.querySelector('textarea').value.trim(), t=item.querySelector('.note-text'), pe=item.querySelector('.note-edit');
+      if(item.getAttribute('data-fresh')){ if(!v){ item.remove(); return; } t.textContent=v; t.style.display=''; item.removeAttribute('data-fresh'); if(pe) pe.style.display=''; box.remove(); return; }
+      if(v) t.textContent=v; t.style.display='';
+      /* ownership transfers to the editor (owner rule) */
+      item.querySelector('.note-who').textContent='Marcus (you)';
+      item.querySelector('.note-av').textContent='MR';
+      item.querySelector('.note-time').textContent='Edited just now';
+      box.remove(); if(pe) pe.style.display=''; return;
+    }
+    var cn=e.target.closest('[data-notecancel]');
+    if(cn){
+      var item=cn.closest('.note-item');
+      if(item.getAttribute('data-fresh')){ item.remove(); return; }
+      item.querySelector('.note-edit-box').remove();
+      item.querySelector('.note-text').style.display=''; var pe=item.querySelector('.note-edit'); if(pe) pe.style.display=''; return;
+    }
+  });
 })();
 </script>
