@@ -1266,6 +1266,24 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .jn-list .note-edit{ order:6; margin:-8px -6px -8px 2px; }
 .jn-list .note-text{ font-size:15px; line-height:1.5; color:var(--ink); margin:9px 0 0 42px; }
 .jn-list .note-edit-box{ margin:9px 0 0 42px; }
+/* Notes: title + attached photos */
+.jn-list .note-title{ font-size:16px; font-weight:700; color:var(--ink); line-height:1.3; margin:9px 0 0 42px; }
+.jn-list .note-title + .note-text{ margin-top:5px; }
+.jn-list .note-photos{ display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin:11px 0 2px 42px; }
+.jn-photo{ aspect-ratio:1; border-radius:9px; background:var(--surface2); display:grid; place-items:center; color:var(--ink3); }
+/* Docs: request-signature FAB + e-sign sheet + one-line rows */
+.docs-fab{ position:absolute; right:16px; bottom:calc(94px + max(12px, env(safe-area-inset-bottom,12px)) + 14px); z-index:35; width:56px; height:56px; border-radius:999px; background:var(--pill-bg); color:var(--pill-ink); border:0; display:grid; place-items:center; box-shadow:var(--sh-hero); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.docs-fab:active{ transform:scale(.94); }
+#s-docs .rowcard .row-body{ min-width:0; }
+#s-docs .rowcard .row-t{ font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#s-docs .rowcard .chip{ flex:none; padding:4px 9px; font-size:12px; gap:4px; }
+#s-docs .rowcard .chip .ic{ width:12px; height:12px; }
+.esign-row{ display:flex; align-items:center; gap:12px; width:100%; padding:14px 4px; border:0; border-top:1px solid var(--hair); background:transparent; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.esign-row:first-child{ border-top:0; }
+.esign-row:active{ background:var(--surface2); }
+.esign-ic{ flex:none; width:34px; height:34px; border-radius:10px; background:var(--surface2); display:grid; place-items:center; color:var(--ink2); }
+.esign-t{ flex:1; min-width:0; font-size:15px; font-weight:600; color:var(--ink); }
+.esign-row .chev{ flex:none; color:var(--ink3); }
 /* appointment date/time strip + inline Edit, inside the clock card */
 .stage-appt{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
 .stage-appt-when{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--ink2); min-width:0; }
@@ -2265,14 +2283,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           </header>
         </div>
         <div class="main">
-          <div class="jn-head"><span class="jn-count">4 notes</span><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <div class="jn-head"><span class="jn-count">5 notes</span><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
           <section class="card notes-card jn-list">
             <div class="jn-glabel">Pinned</div>
             <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
             <div class="jn-glabel">Today</div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-title">Kitchen ceiling demolition & drying setup</div><div class="note-text">Covered the furniture and built a containment chamber, removed the affected ceiling drywall, HEPA-vacuumed the debris, then set up a tubing drying system on the exposed framing.</div><div class="note-photos"><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div></div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">10:04 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Homeowner will be home after 1 PM. Left a card on the door earlier.</div></div>
             <div class="jn-glabel">Jul 11</div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">3:40 PM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-title">Laundry room mitigation</div><div class="note-text">Removed the baseboards and drilled drying holes in the affected drywall, applied antimicrobial through the holes, then set up an Injectidry system on the wall cavity.</div><div class="note-photos"><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div><div class="jn-photo"><svg class="ic" width="20" height="20"><use href="#i-photo"/></svg></div></div></div>
             <div class="note-item"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">8:02 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Adjuster approved 3 air movers + 1 LGR. Photos of the subfloor requested.</div></div>
           </section>
         </div>
@@ -2318,6 +2337,20 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
       </div><div class="home-ind"></div></nav>
       <div class="toastwrap"></div>
+      <button class="docs-fab" type="button" data-sheet="sheet-esign" aria-label="Request a signature"><svg class="ic" width="26" height="26"><use href="#i-plus"/></svg></button>
+      <div class="sheet-scrim" data-for="sheet-esign"></div>
+      <div class="sheet" id="sheet-esign">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head"><div><div class="sheet-title">Request a signature</div><div class="sheet-sub">Pick a document to generate &amp; send for e-signature</div></div><button class="sheet-close" type="button" data-close aria-label="Close"><svg class="ic" width="20" height="20"><use href="#i-x"/></svg></button></div>
+        <div class="sheet-body">
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Work Authorization generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Work Authorization</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Certificate of Completion generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Certificate of Completion</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Certificate of Satisfaction generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Certificate of Satisfaction</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Authorization to Pay Direct generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Authorization to Pay Direct</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Mold Remediation Consent generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Mold Remediation Consent</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <button class="esign-row" type="button" data-close data-toast data-toast-kind="ok" data-toast-title="Sent for signature" data-toast-msg="Non-Restorable Contents Release generated & sent to the customer to sign."><span class="esign-ic"><svg class="ic" width="18" height="18"><use href="#i-doc"/></svg></span><span class="esign-t">Non-Restorable Contents Release</span><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
