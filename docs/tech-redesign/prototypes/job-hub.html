@@ -1242,6 +1242,13 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .hub-act:active{ background:var(--surface2); }
 .hub-act .ic{ color:var(--ink2); }
 .hub-act span{ line-height:1; }
+/* clickable header name + claim; notes count badge */
+.hub-name.hub-link{ display:inline-flex; align-items:center; gap:3px; border:0; background:transparent; font-family:inherit; cursor:pointer; padding:0; text-align:left; -webkit-tap-highlight-color:transparent; }
+.hub-name.hub-link:active{ opacity:.6; }
+.hub-name-chev{ flex:none; color:var(--ink3); margin-top:2px; }
+.hub-claim-link{ border:0; background:transparent; font:inherit; color:var(--ink2); font-weight:600; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; text-decoration-color:var(--ink3); -webkit-tap-highlight-color:transparent; }
+.hub-act-ic{ position:relative; display:inline-flex; }
+.hub-badge{ position:absolute; top:-5px; right:-9px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--ink); color:var(--surface); font-size:10px; font-weight:700; line-height:16px; text-align:center; font-variant-numeric:tabular-nums; }
 /* appointment date/time strip + inline Edit, inside the clock card */
 .stage-appt{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
 .stage-appt-when{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--ink2); min-width:0; }
@@ -1677,19 +1684,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" aria-label="Back to schedule"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Equipment pull + final readings</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Equipment pull + final readings</div></div>
             <span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
@@ -1742,11 +1746,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
           <!-- Z4 ACTIVITY (pre-arrival: only system/office entries so far) -->
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -1772,19 +1771,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" aria-label="Back to schedule"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Equipment pull + final readings</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Equipment pull + final readings</div></div>
             <span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-navigate"/></svg>On my way</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <section class="card hero">
             <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
@@ -1833,11 +1829,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -1863,19 +1854,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" aria-label="Back to schedule"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Equipment pull + final readings</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Equipment pull + final readings</div></div>
             <span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-dotring"/></svg>Working</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <!-- Z2 STAGE -->
           <section class="card hero">
@@ -1931,11 +1919,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
           <!-- Z4 ACTIVITY LOG (system/automated only — never tech-sent texts) -->
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -1961,19 +1944,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" aria-label="Back to schedule"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Equipment pull + final readings</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Equipment pull + final readings</div></div>
             <span class="chip chip-red"><svg class="ic" width="14" height="14"><use href="#i-pause"/></svg>Paused</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <section class="card hero">
             <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
@@ -2022,11 +2002,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -2052,25 +2027,22 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" aria-label="Back to schedule"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Equipment pull + final readings</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Equipment pull + final readings</div></div>
             <span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <section class="card hero">
             <div class="stage-appt"><span class="stage-appt-when"><svg class="ic" width="15" height="15"><use href="#i-cal"/></svg>Today · 9:00 – 11:30 AM</span><button class="stage-edit" type="button" data-toast data-toast-kind="info" data-toast-title="Edit appointment" data-toast-msg="Edit or reschedule this visit."><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Edit</button></div>
             <div class="hero-timer"><div class="timer-num" style="color:var(--gray)">3:42:00</div><div class="timer-label">Finished 11:20 AM</div></div>
             <div class="rail">
-              <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">9:12 AM<br>Travel 18m</span></div>
+              <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">On my way</span><span class="st-stamp">9:12 AM</span></div>
               <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">Started</span><span class="st-stamp">9:30 AM</span></div>
               <div class="st"><span class="st-node"><svg class="ic" width="16" height="16"><use href="#i-check"/></svg></span><span class="st-name">Finish up</span><span class="st-stamp">11:20 AM</span></div>
             </div>
@@ -2105,11 +2077,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <div class="row"><div class="row-body"><div class="row-t">Day 4 drying check</div><div class="row-m">Tomorrow 8:30 AM</div></div><span class="chip chip-blue"><svg class="ic" width="14" height="14"><use href="#i-clock"/></svg>Scheduled</span></div>
             <div class="row"><div class="row-body"><div class="row-t">Day 3 drying check</div><div class="row-m">Yesterday · Travel 20m · On-site 45m</div></div><span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-check"/></svg>Completed</span></div>
           </section>
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -2137,7 +2104,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Activity</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+            <div class="hub-id"><div class="hub-name">Activity</div><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Gary Sorensen</div></div>
           </header>
         </div>
         <div class="main">
@@ -2171,7 +2138,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Bedroom</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+            <div class="hub-id"><div class="hub-name">Bedroom</div><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Gary Sorensen</div></div>
             <button class="iconbtn" type="button" aria-label="Room options"><svg class="ic" width="22" height="22"><use href="#i-dots-h"/></svg></button>
           </header>
           <div class="room-tabs" role="tablist">
@@ -2213,19 +2180,16 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
           <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
           <header class="hubhdr">
             <button class="backbtn" type="button" data-go="s-working" aria-label="Back"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
-            <div class="hub-id"><div class="hub-name">Gary Sorensen</div><div class="hub-sub">#26-1173 · Water · Mitigation</div></div>
+            <div class="hub-id"><button class="hub-name hub-link" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page.">Gary Sorensen<svg class="ic hub-name-chev" width="15" height="15"><use href="#i-chev"/></svg></button><div class="hub-sub"><button class="hub-claim-link" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page.">#26-1173</button> · Water · Mitigation</div></div>
             <span class="chip chip-gray"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Drying</span>
           </header>
         </div>
         <div class="main">
-          <div class="hub-pills">
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Claim" data-toast-msg="Opens the claim page."><svg class="ic" width="15" height="15"><use href="#i-folder"/></svg>Claim</button>
-            <button class="hub-pill" type="button" data-toast data-toast-kind="info" data-toast-title="Customer" data-toast-msg="Opens the customer page."><svg class="ic" width="15" height="15"><use href="#i-person"/></svg>Customer</button>
-          </div>
           <div class="hub-actions">
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Call" data-toast-msg="Calls the customer."><svg class="ic" width="22" height="22"><use href="#i-phone"/></svg><span>Call</span></button>
             <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Message" data-toast-msg="Texts the customer."><svg class="ic" width="22" height="22"><use href="#i-chat"/></svg><span>Text</span></button>
-            <button class="hub-act" type="button" data-toast data-toast-kind="info" data-toast-title="Documents" data-toast-msg="Opens documents, reports & signatures."><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-docs"><svg class="ic" width="22" height="22"><use href="#i-doc"/></svg><span>Docs</span></button>
+            <button class="hub-act" type="button" data-go="s-notes"><span class="hub-act-ic"><svg class="ic" width="22" height="22"><use href="#i-note"/></svg><span class="hub-badge">2</span></span><span>Notes</span></button>
           </div>
           <section class="card hero hero--job">
             <div class="jh-head"><span class="jh-title">Water mitigation</span><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-drop"/></svg>Drying · Day 4</span></div>
@@ -2257,12 +2221,6 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Bathroom · 8 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-house"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>8</span><span class="room-name">Bathroom</span></a>
             <a class="room-tile" role="button" tabindex="0" data-go="s-room" aria-label="Unsorted · 2 photos"><span class="room-cover"><svg class="ic" width="26" height="26"><use href="#i-photo"/></svg></span><span class="room-scrim"></span><span class="room-count"><svg class="ic" width="11" height="11"><use href="#i-camera"/></svg>2</span><span class="room-name">Unsorted</span></a>
           </div>
-          
-          <div class="sect-head"><h3 class="sect-title">Job notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
-          <section class="card notes-card">
-            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
-            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
-          </section>
           <a class="card acti-row" role="button" tabindex="0" data-go="s-activity" aria-label="Open full activity log">
             <span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-clock"/></svg></span>
             <div class="row-body"><div class="row-t">Activity</div><div class="row-m">Invoice #INV-2042 sent · System · 2h ago</div></div>
@@ -2279,6 +2237,68 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
       </div><div class="home-ind"></div></nav>
         <div class="toastwrap"></div>
     </div>
+
+    <div class="screen" id="s-notes">
+      <div class="app">
+        <div class="app-top">
+          <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
+          <header class="hubhdr">
+            <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
+            <div class="hub-id"><div class="hub-name">Job notes</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+          </header>
+        </div>
+        <div class="main">
+          <div class="sect-head"><h3 class="sect-title">All notes</h3><button class="sect-add" type="button" data-noteadd><svg class="ic" width="15" height="15"><use href="#i-plus"/></svg>Add note</button></div>
+          <section class="card notes-card">
+            <div class="note-item note-item--pinned"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 10, 9:14 AM</span><span class="note-pin"><svg class="ic" width="11" height="11"><use href="#i-pin"/></svg>Pinned</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Lockbox on side gate, code 3311. Bill dehu days through today.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 11:22 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">North bedroom still smells musty — added an air mover, will recheck next visit.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">MR</span><span class="note-who">Marcus (you)</span><span class="note-time">Today, 10:04 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Homeowner will be home after 1 PM. Left a card on the door earlier.</div></div>
+            <div class="note-item"><div class="note-meta"><span class="note-av">DW</span><span class="note-who">Office · Dana</span><span class="note-time">Jul 11, 8:02 AM</span><button class="note-edit" type="button" data-noteedit aria-label="Edit note"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-pencil"/></svg></button></div><div class="note-text">Adjuster approved 3 air movers + 1 LGR. Photos of the subfloor requested.</div></div>
+          </section>
+        </div>
+      </div>
+      <nav class="tabbar"><div class="tabs">
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
+        <button class="tab active" type="button" aria-current="page"><svg class="ic" width="24" height="24"><use href="#i-cal"/></svg><span class="tab-label">Schedule</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-chat"/></svg><span class="badge-num">2</span><span class="tab-label">Messages</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
+      </div><div class="home-ind"></div></nav>
+      <div class="toastwrap"></div>
+    </div>
+
+    <div class="screen" id="s-docs">
+      <div class="app">
+        <div class="app-top">
+          <div class="statusbar"><span>11:20</span><span class="sb-right"><span style="font-size:13px;font-weight:600">5G</span><span aria-hidden="true" style="display:inline-block;width:24px;height:12px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.85"><span style="position:absolute;top:2px;bottom:2px;left:2px;right:7px;background:currentColor;border-radius:1px"></span></span></span></div>
+          <header class="hubhdr">
+            <button class="backbtn" type="button" data-go="s-working" aria-label="Back to job"><svg class="ic" width="24" height="24"><use href="#i-chev-l"/></svg></button>
+            <div class="hub-id"><div class="hub-name">Documents</div><div class="hub-sub">#26-1173 · Gary Sorensen</div></div>
+          </header>
+        </div>
+        <div class="main">
+          <h3 class="sect-title">Signatures</h3>
+          <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Work Authorization</div><div class="row-m">Signed Jul 12 · Gary Sorensen</div></div><span class="chip chip-green"><svg class="ic" width="14" height="14"><use href="#i-check-circle"/></svg>Signed</span></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Certificate of Completion</div><div class="row-m">Not sent — tap to request signature</div></div><span class="chip chip-amber"><svg class="ic" width="14" height="14"><use href="#i-pencil"/></svg>Unsigned</span></div>
+          </section>
+          <button class="jd-entry" type="button" data-toast data-toast-kind="ok" data-toast-title="Water Loss Report" data-toast-msg="Generating from rooms, readings & equipment…"><span class="jd-entry-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="jd-entry-body"><div class="jd-entry-t">Generate Water Loss Report</div><div class="jd-entry-m">From rooms, readings & equipment logged</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></button>
+          <h3 class="sect-title">Documents</h3>
+          <section class="card rowcard">
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Water loss report</div><div class="row-m">PDF · Generated Jul 13</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+            <div class="row"><span class="lnk-ic"><svg class="ic" width="20" height="20"><use href="#i-doc"/></svg></span><div class="row-body"><div class="row-t">Estimate #EST-1183</div><div class="row-m">PDF · Sent Jul 12</div></div><svg class="ic chev" width="20" height="20"><use href="#i-chev"/></svg></div>
+          </section>
+        </div>
+      </div>
+      <nav class="tabbar"><div class="tabs">
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-house"/></svg><span class="tab-label">Dash</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><span class="tab-label">Claims</span></button>
+        <button class="tab active" type="button" aria-current="page"><svg class="ic" width="24" height="24"><use href="#i-cal"/></svg><span class="tab-label">Schedule</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-chat"/></svg><span class="badge-num">2</span><span class="tab-label">Messages</span></button>
+        <button class="tab" type="button"><svg class="ic" width="24" height="24"><use href="#i-dots-h"/></svg><span class="tab-dot"></span><span class="tab-label">More</span></button>
+      </div><div class="home-ind"></div></nav>
+      <div class="toastwrap"></div>
+    </div>
   </div>
 </div>
 
@@ -2286,6 +2306,8 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
   <button type="button" data-theme-toggle class="step-theme">Light</button>
   <!-- BUILD:STEPS -->
   <button type="button" data-go="s-job">Job view</button>
+  <button type="button" data-go="s-notes">Notes pg</button>
+  <button type="button" data-go="s-docs">Docs pg</button>
   <button type="button" data-go="s-scheduled">Scheduled</button>
   <button type="button" data-go="s-omw">On my way</button>
   <button type="button" data-go="s-working" class="on">Working</button>

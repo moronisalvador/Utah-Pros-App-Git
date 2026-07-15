@@ -175,6 +175,24 @@ a new **appointment date/time strip** ("Today · 9:00–11:30 AM"); Edit is appo
 job-mode (no appt) there's no global Edit — you edit a visit from the Visits list. Bar is now **Call ·
 Text · Docs** (3). Pills: **Claim · Customer** (Job pill dropped — the hub IS the job).
 
+**HEADER + DEDICATED PAGES (2026-07-15):**
+- **Pills REMOVED.** Header customer name **"Gary Sorensen" → tappable (chevron) → Customer page**;
+  **#26-1173 → tappable (underline) → Claim page**. Saves the whole pill row (owner call; discoverability
+  tradeoff mitigated with chevron/underline — on-device confirm).
+- **Notes** added to the action bar with a **count badge** → **Call · Text · Docs · Notes** (4). Both
+  **Docs** and **Notes** now open **dedicated pages** (`s-docs`, `s-notes`), twins of each other.
+- **Inline "Job notes" section REMOVED** from the hub (now behind the Notes button — declutters).
+  Three note scopes stay: appointment note = pinned glance in clock card · job notes = Notes page ·
+  room notes = inside rooms.
+- **s-notes** = full job-notes list (pinned office note + tech/office notes) + Add note.
+- **s-docs** = Signatures (Work Auth Signed + Certificate Unsigned/request) + **Generate Water Loss
+  Report** CTA + documents list. Folds in 2 of the pending live-hub foundations.
+- **Done-state travel duplicate FIXED** (rail shows stage TIMES; breakdown shows Travel/On-site/Total once).
+- **Tab-bar bug FIXED** on all new screens (was nested in `.app`; moved under `.screen` to pin).
+
+**STILL PENDING FOUNDATIONS:** Work Auth compliance ALERT (prominent banner when unsigned — distinct
+from the Docs-page signature row), Crew row, and (built as a CTA on s-docs) Water Loss Report gen.
+
 **OPEN DECISIONS:**
 - **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
   plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
