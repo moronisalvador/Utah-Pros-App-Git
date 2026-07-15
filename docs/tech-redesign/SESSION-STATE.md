@@ -22,7 +22,13 @@ as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) 
 - **Combined clickable app** (`full-app.html`) — all three flows in one navigable prototype
   (Schedule → tap appointment → Job Hub → rooms/notes/docs → New Job), grouped jump-bar at the
   bottom. Artifact: `claude.ai/code/artifact/c7a22959-8a60-403a-8d4f-c000b08e730e`. Rebuilt from the
-  three prototypes by `/tmp/kit/combine.js` (union kit + all screens + all scripts).
+  three prototypes by `prototypes/_combine.js` (now committed; union kit + all screens + all scripts).
+  **Perf fix (owner reported Add-visit froze for seconds on open):** root cause was WebKit/iOS
+  instantiating ~89 SVG `<use>` shadow trees on that screen (every hidden time-picker checkmark counted).
+  Now emit the check only on the selected row → 89→41 `<use>` (in line with other screens); Chromium
+  never showed it. Also deduped the combined CSS (was 3× the kit = 338KB → 121KB; job-hub's block is a
+  verified superset). Lesson for the build session: keep per-screen `<use>` count modest; don't render
+  invisible sprite icons on long lists.
 
 **REMAINING — tomorrow's to-do (to finish the flows session, then move to Session 3 = build):**
 1. **Job Hub loose ends** (quick): the **Work Auth compliance ALERT** (red banner when unsigned) + the
