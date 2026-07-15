@@ -1156,6 +1156,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .tgl[aria-checked="true"] .tgl-knob{ transform:translateX(20px); background:var(--pill-ink); }
 .tgl-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:52px; }
 .tgl-row .opt-t{ flex:1; }
+/* visit notes (author + timestamp) */
+.note-item{ padding:12px 0 2px; border-top:1px solid var(--hair); }
+.note-item:first-of-type{ margin-top:8px; }
+.note-meta{ display:flex; align-items:center; gap:8px; }
+.note-av{ flex:none; width:22px; height:22px; border-radius:999px; background:var(--surface2); display:grid; place-items:center; font-size:10px; font-weight:700; color:var(--ink2); }
+.note-who{ font-size:12px; font-weight:600; color:var(--ink2); }
+.note-time{ font-size:12px; font-weight:500; color:var(--ink3); font-variant-numeric:tabular-nums; }
+.note-time::before{ content:"\00B7"; margin:0 5px; color:var(--ink3); }
+.note-text{ font-size:15px; font-weight:500; color:var(--ink); line-height:1.4; margin:3px 0 0 30px; }
 
 /* ═══════ BOTTOM SHEET (§6.E 30) ═══════ */
 .sheet-scrim{ position:absolute; inset:0; z-index:40; background:var(--scrim); opacity:0; transition:opacity var(--motion-duration-base) var(--motion-ease-decelerate); }
