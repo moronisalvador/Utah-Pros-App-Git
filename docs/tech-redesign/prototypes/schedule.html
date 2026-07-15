@@ -2270,6 +2270,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
         </div>
         <div class="sheet-body">
           <div class="search" style="margin-bottom:8px"><svg class="ic search-mag" width="20" height="20" aria-hidden="true"><use href="#i-search"></use></svg><input type="search" placeholder="Search jobs" enterkeyhint="search" aria-label="Search jobs"></div>
+          <!-- create a new job from here (owner: launches full New Job, returns with it selected) -->
+          <button class="pk-opt" type="button" data-close data-toast data-toast-kind="info" data-toast-title="Opens New Job" data-toast-msg="Create the job, then return here with it selected" style="border-bottom:1px solid var(--hair)">
+            <span style="width:36px;height:36px;border-radius:12px;background:var(--surface2);color:var(--ink2);display:grid;place-items:center;flex:none"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-plus-circle"></use></svg></span>
+            <span class="pk-opt-body"><span class="pk-opt-t" style="font-weight:600">Create new job</span><span class="pk-opt-m">Not in the list — start a new job</span></span>
+            <svg class="ic" width="16" height="16" aria-hidden="true" style="color:var(--ink3);flex:none"><use href="#i-chev"></use></svg>
+          </button>
           <!-- picker rows MATCH the polished search layout: name / DOL+type / address+city / claim#+job# -->
           <button class="pk-opt" type="button" aria-selected="true" data-close>
             <span class="pk-opt-body">
