@@ -8513,6 +8513,16 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-timeline-title { font-size: 12px; font-weight: 600; color: var(--crm-text-primary); }
 .crm-timeline-text { font-size: 12px; color: var(--crm-text-secondary); margin-top: 2px; }
 .crm-timeline-time { font-size: 11px; color: var(--crm-text-tertiary); margin-top: 2px; }
+/* A call transcript rendered as labeled speaker turns instead of one
+   unbroken paragraph (ActivityTimeline.jsx's parseTranscript). */
+.crm-transcript { display: flex; flex-direction: column; gap: 6px; }
+.crm-transcript-turn { display: flex; gap: 6px; }
+.crm-transcript-speaker { flex-shrink: 0; font-weight: 700; color: var(--crm-text-tertiary); }
+.crm-transcript-toggle {
+  display: inline-block; margin-top: 6px; padding: 0; border: none; background: none;
+  font: inherit; font-size: 11px; font-weight: 600; color: var(--crm-accent); cursor: pointer;
+}
+.crm-transcript-toggle:hover { text-decoration: underline; }
 
 /* ── CRM Settings — pipeline stage CRUD ── */
 .crm-stage-list { display: flex; flex-direction: column; gap: var(--space-2); }

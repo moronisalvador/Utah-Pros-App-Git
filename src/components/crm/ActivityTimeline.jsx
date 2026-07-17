@@ -17,7 +17,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (useAuth → db)
+ *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/transcript
+ *              (parseTranscript — pure, unit-tested separately)
  *   Data:      reads → get_contact_activity RPC · writes → none
  *
  * NOTES / GOTCHAS:
@@ -26,12 +27,65 @@
  *     message when contactId is falsy) — this component assumes it has an id.
  *   - Behavior-identical to the original inline Leads timeline: same RPC, same
  *     error toast, same .crm-timeline markup and empty/loading copy.
+ *   - A call's body (transcription) renders as labeled speaker turns via
+ *     ActivityBody/parseTranscript, collapsed to a short preview with a
+ *     "Show full transcript" toggle — anything that isn't a real
+ *     back-and-forth (including plain SMS/note bodies) just clamps at
+ *     BODY_PREVIEW_CHARS with a "Show more" toggle instead.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { parseTranscript } from '@/lib/transcript';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+
+const BODY_PREVIEW_CHARS = 220;
+const TRANSCRIPT_PREVIEW_TURNS = 2;
+
+// One activity's body — a transcript renders as labeled speaker turns
+// (collapsed to a short preview), everything else as plain text (also
+// clamped when long). Its own component so each timeline item's
+// expand/collapse state is independent.
+function ActivityBody({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const turns = useMemo(() => parseTranscript(text), [text]);
+
+  if (turns) {
+    const visible = expanded ? turns : turns.slice(0, TRANSCRIPT_PREVIEW_TURNS);
+    return (
+      <div className="crm-timeline-text">
+        <div className="crm-transcript">
+          {visible.map((t, i) => (
+            <div className="crm-transcript-turn" key={i}>
+              <span className="crm-transcript-speaker">Speaker {t.speaker}</span>
+              <span>{t.line}</span>
+            </div>
+          ))}
+        </div>
+        {turns.length > TRANSCRIPT_PREVIEW_TURNS && (
+          <button type="button" className="crm-transcript-toggle" onClick={() => setExpanded((e) => !e)}>
+            {expanded ? 'Show less' : `Show full transcript (${turns.length} lines)`}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (text.length > BODY_PREVIEW_CHARS) {
+    return (
+      <div className="crm-timeline-text">
+        {expanded ? text : `${text.slice(0, BODY_PREVIEW_CHARS).trimEnd()}…`}
+        {' '}
+        <button type="button" className="crm-transcript-toggle" onClick={() => setExpanded((e) => !e)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      </div>
+    );
+  }
+
+  return <div className="crm-timeline-text">{text}</div>;
+}
 
 export default function ActivityTimeline({ contactId }) {
   const { db } = useAuth();
@@ -65,7 +119,7 @@ export default function ActivityTimeline({ contactId }) {
           <span className="crm-timeline-badge" data-type={item.activity_type}>{item.activity_type}</span>
           <div className="crm-timeline-body">
             <div className="crm-timeline-title">{item.title}</div>
-            {item.body && <div className="crm-timeline-text">{item.body}</div>}
+            {item.body && <ActivityBody text={item.body} />}
             <div className="crm-timeline-time">{item.occurred_at ? new Date(item.occurred_at).toLocaleString() : '—'}</div>
           </div>
         </div>
