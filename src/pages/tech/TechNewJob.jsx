@@ -9,7 +9,8 @@
  *   new one right inline), then they pick the division (water, mold, etc.), the
  *   referral source, the loss/service address, the insurance carrier, and a few
  *   optional details. Saving creates the job (and its claim + contact links) in
- *   one step, then pushes the new claim up to Encircle before leaving the screen.
+ *   one step, then pushes the new claim up to Encircle (and, for reconstruction
+ *   jobs, the customer + project up to Houzz Pro) before leaving the screen.
  *
  * WHERE IT LIVES:
  *   Route:        /tech/new-job
@@ -38,6 +39,10 @@
  *     /api/sync-claim-to-encircle worker and is AWAITED (with an 8s internal
  *     timeout) before navigating away — a fire-and-forget call was being torn
  *     down on mobile, leaving claims unsynced with no error recorded.
+ *   - For a reconstruction-division job, syncJobToHouzz() POSTs to
+ *     /api/sync-houzz the same (awaited, 8s internal timeout) way, which
+ *     forwards the job to a Zapier webhook that creates the matching
+ *     customer + project in Houzz Pro (no public Houzz Pro API exists).
  *   - Inline quick-add: a duplicate phone (contacts_phone_key / Postgres 23505)
  *     is caught and the existing contact is auto-selected instead of erroring.
  *   - "Out of pocket" (OOP) carrier selection stores NULL for insurance_company
@@ -84,6 +89,34 @@ async function syncClaimToEncircle(claimId) {
     // AbortError = request likely still completing server-side; stay quiet so we
     // don't show a false failure. Real network errors surface to the user.
     if (e.name !== 'AbortError') toast(i18n.t('newJob:toastSyncError', { message: e.message }), 'error');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Push a new reconstruction job to Houzz Pro (via Zapier — Houzz Pro has no
+// public API). Awaited by the caller (with an internal timeout) BEFORE
+// navigating away, same discipline as syncClaimToEncircle above. Always
+// resolves so job creation itself never fails because of this.
+async function syncJobToHouzz(jobId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/sync-houzz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ job_id: jobId }),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (!data.skipped) toast(i18n.t('newJob:toastHouzzSynced'), 'success');
+    } else {
+      toast(i18n.t('newJob:toastHouzzSyncFailed'), 'error');
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast(i18n.t('newJob:toastHouzzSyncError', { message: e.message }), 'error');
   } finally {
     clearTimeout(timer);
   }
@@ -370,8 +403,11 @@ export default function TechNewJob() {
       // Awaited (with an internal timeout) so the request completes while this
       // screen is still alive — a fire-and-forget call was abandoned on mobile.
       if (claimMode === 'new' && result?.claim_id) await syncClaimToEncircle(result.claim_id);
-      // Open the new job's page instead of dead-ending back on the Dash.
+      // Reconstruction jobs also get pushed to Houzz Pro — awaited for the same
+      // reason as the Encircle push above (no fire-and-forget on mobile).
       const newJobId = result?.job?.id;
+      if (f.division === 'reconstruction' && newJobId) await syncJobToHouzz(newJobId);
+      // Open the new job's page instead of dead-ending back on the Dash.
       if (newJobId) navigate(`/tech/jobs/${newJobId}`, { replace: true });
       else navigate(-1);
     } catch (err) {
