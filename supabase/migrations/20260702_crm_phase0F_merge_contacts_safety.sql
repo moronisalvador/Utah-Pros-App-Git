@@ -1,6 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CRM Phase F — merge_contacts CRM-safety fix (P0)
 --
+-- RENAMED 2026-07-17 (phaseF → phase0F): filename-sort landmine fix, content
+-- unchanged — see 20260702_crm_phase0F_rpc_stubs.sql's header for why.
+--
 -- docs/crm-roadmap.md, "Phase F — Foundation" + the "P0 finding fixed in
 -- Phase F" note. The live merge_contacts RPC was never committed as a
 -- migration (schema drift) — its body is captured here verbatim, then
