@@ -72,11 +72,11 @@ export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEven
       body: {
         title: 'New lead',
         body: `Call from ${caller}${src}.`,
-        link: '/leads',
+        link: '/crm/leads',
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: lead.source_type || 'call', callrail_id: lead.callrail_id || null },
-        data: { route: '/leads', lead_id: lead.id || null },
+        data: { route: '/crm/leads', lead_id: lead.id || null },
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks lead ingest */ }

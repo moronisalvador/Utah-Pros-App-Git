@@ -147,7 +147,7 @@ export function buildLeadNotificationContent({ schema, data, formName, env } = {
 // used by functions/lib/email-template.js so every UPR email reads as one system.
 function buildLeadEmailHtml({ rows, name, form, env }) {
   const base = (env && env.APP_BASE_URL) || 'https://utahpros.app';
-  const leadsUrl = `${String(base).replace(/\/$/, '')}/leads`;
+  const leadsUrl = `${String(base).replace(/\/$/, '')}/crm/leads`;
 
   const rowsHtml = rows.length
     ? rows.map((r) => `
@@ -204,11 +204,11 @@ export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, d
         title,
         body,
         html,
-        link: '/leads',
+        link: '/crm/leads',
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: 'form', callrail_id: lead.callrail_id || null },
-        data: { route: '/leads', lead_id: lead.id || null },
+        data: { route: '/crm/leads', lead_id: lead.id || null },
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks form intake */ }
