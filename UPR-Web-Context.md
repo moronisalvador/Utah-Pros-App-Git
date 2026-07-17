@@ -6919,3 +6919,31 @@ Sonnet, mechanical). Owner action items: kick off Apple Developer Program + ABM 
 lead time, EIN now accepted for ABM itself per an April 2026 Apple Business platform change — but the
 separate paid Developer Program still shows D-U-N-S as of this writing, verify live at signup); make
 the distribution-model call; Xcode-side build-verify of F1 before any real device sees it.
+
+### App Store Readiness Phase B — in-app account deletion (Guideline 5.1.1(v), shipped 2026-07-17)
+
+Migration `20260717_account_deletion_requests.sql` (applied live to the shared Supabase). New table
+**`account_deletion_requests`** (`id`, `employee_id` FK→employees ON DELETE CASCADE, `requested_at`,
+`status` CHECK `pending|actioned|denied` default `pending`, `notes`, `actioned_by` FK→employees,
+`actioned_at`). RLS on: an employee SELECTs/INSERTs only their own row; an active `admin` SELECTs all
+and is the only role that can UPDATE (action/deny). A **partial unique index** (`employee_id` WHERE
+`status='pending'`) enforces one open request per person. `REVOKE ALL … FROM anon` (belt-and-suspenders
+over the default-privileges revoke).
+
+New SECURITY DEFINER RPCs (`GRANT EXECUTE TO authenticated, service_role` — never anon):
+- **`request_account_deletion(p_notes text DEFAULT NULL) → account_deletion_requests`** — resolves the
+  caller via `auth.uid()`→employees, idempotently files a pending request (an existing open request is
+  returned as-is, no dup, no re-notify; unique-violation race caught). On a NEW request it inserts one
+  **admin-targeted** bell notification per active admin (`notifications.recipient_id` = each admin,
+  `type='account_deletion_requested'`) — NOT an org-wide broadcast.
+- **`get_my_account_deletion_request() → account_deletion_requests`** — the caller's open pending
+  request (or null); SECURITY DEFINER so a fresh-table PostgREST cache lag can't 404 the read.
+
+UI: **request-and-confirm** flow (accounts are admin-provisioned; job/claim/time records are a shared
+business record, so no silent self-service hard-delete). `src/pages/settings/MyAccount.jsx` gains a
+"Delete my account" section — inline two-click confirm (`useTwoClickConfirm`, no modal/`confirm()`),
+shows the pending state instead of the button when a request already exists, `ErrorState` on a failed
+status read (never falls through to the button). Same edit migrated the file's local `errToast/okToast`
+copies to the sanctioned `@/lib/toast` and the disconnect button's hardcoded red to `--danger*` tokens.
+An admin actions the actual access deactivation + data retention (no admin-action UI built this phase —
+the bell notification is the surfacing hook; a future admin queue can read `account_deletion_requests`).
