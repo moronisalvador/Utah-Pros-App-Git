@@ -30,6 +30,13 @@
 --   identical return columns) — a WHERE-clause tightening only. One shared
 --   Supabase — live in dev + main the moment this applies.
 --
+--   Also tightens all four GRANTs from `anon, authenticated` to
+--   `authenticated, service_role` (database-standard.md least-privilege —
+--   these are CRM revenue/pipeline reporting RPCs, none are on the §2 public
+--   allowlist, and all three client callers — CrmOverview.jsx,
+--   CrmAttribution.jsx, CrmReports.jsx — are behind the `page:crm` flag +
+--   authenticated routes, so this is behavior-identical for the app).
+--
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
 --   Re-apply the prior bodies (drop the `AND COALESCE(il.spam_flag, false)
@@ -38,12 +45,11 @@
 --   lsh.lead_id` + spam filter from get_pipeline_movement, reverting to a
 --   bare `SELECT lsh.stage_id, lsh.from_stage_id FROM lead_stage_history
 --   lsh`) — see 20260701_crm_phase3_attribution.sql and
---   20260702_crm_phase9_intelligence_rpcs.sql for the pre-fix bodies.
+--   20260702_crm_phase9_intelligence_rpcs.sql for the pre-fix bodies. To also
+--   roll back the grant tightening, re-add `anon` to each GRANT.
 -- ════════════════════════════════════════════════
 
 -- ═══ 1. get_attribution_rollup — leads_agg CTE excludes spam ═══
-REVOKE EXECUTE ON FUNCTION public.get_attribution_rollup(date, date, uuid) FROM PUBLIC, anon;
-
 CREATE OR REPLACE FUNCTION get_attribution_rollup(
   p_start_date date DEFAULT NULL,
   p_end_date   date DEFAULT NULL,
@@ -146,11 +152,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_attribution_rollup(date, date, uuid) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_attribution_rollup(date, date, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_attribution_rollup(date, date, uuid) TO authenticated, service_role;
 
 -- ═══ 2. get_attribution_by_campaign — per-campaign lead count excludes spam ═══
-REVOKE EXECUTE ON FUNCTION public.get_attribution_by_campaign(date, date, uuid) FROM PUBLIC, anon;
-
 CREATE OR REPLACE FUNCTION get_attribution_by_campaign(
   p_start_date date DEFAULT NULL,
   p_end_date   date DEFAULT NULL,
@@ -198,11 +203,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_attribution_by_campaign(date, date, uuid) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_attribution_by_campaign(date, date, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_attribution_by_campaign(date, date, uuid) TO authenticated, service_role;
 
 -- ═══ 3. get_speed_to_lead — gaps CTE excludes spam (already joins inbound_leads) ═══
-REVOKE EXECUTE ON FUNCTION public.get_speed_to_lead(date, date, uuid) FROM PUBLIC, anon;
-
 CREATE OR REPLACE FUNCTION get_speed_to_lead(p_start date DEFAULT NULL, p_end date DEFAULT NULL, p_org_id uuid DEFAULT NULL)
 RETURNS SETOF json
 LANGUAGE plpgsql
@@ -260,11 +264,10 @@ BEGIN
   ORDER BY defs.sort_order;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION get_speed_to_lead(date, date, uuid) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_speed_to_lead(date, date, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_speed_to_lead(date, date, uuid) TO authenticated, service_role;
 
 -- ═══ 4. get_pipeline_movement — now joins inbound_leads to exclude spam ═══
-REVOKE EXECUTE ON FUNCTION public.get_pipeline_movement(date, date, uuid) FROM PUBLIC, anon;
-
 CREATE OR REPLACE FUNCTION get_pipeline_movement(p_start date DEFAULT NULL, p_end date DEFAULT NULL, p_org_id uuid DEFAULT NULL)
 RETURNS SETOF json
 LANGUAGE plpgsql
@@ -309,6 +312,7 @@ BEGIN
   ORDER BY ps.sort_order;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION get_pipeline_movement(date, date, uuid) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_pipeline_movement(date, date, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_pipeline_movement(date, date, uuid) TO authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';

@@ -84,11 +84,39 @@ describe.skipIf(!hasCreds)('CRM — reporting RPCs exclude spam-flagged leads (i
     expect(row.leads).toBe(1); // only the non-spam lead counts
   });
 
-  it('get_speed_to_lead and get_pipeline_movement counts are unchanged after moving a spam lead through a stage', async () => {
+  it('get_attribution_rollup counts only the non-spam lead on the referral channel (before/after delta)', async () => {
+    // 'Referral' hits crm_channel_for_source's direct keyword rule (no
+    // referral_sources lookup dependency), so the channel this lead lands on
+    // is deterministic regardless of any other fixture data.
+    const rowsBefore = await db.rpc('get_attribution_rollup', { p_org_id: orgId });
+    const before = rowsBefore.find(r => r.channel === 'referral')?.leads || 0;
+
+    const [realLead] = await db.insert('inbound_leads', {
+      org_id: orgId, source: 'Referral', source_type: 'call',
+      spam_flag: false, occurred_at: new Date().toISOString(), notes: `zz-spam-filter-rollup-real-${runId}`,
+    });
+    leadIds.push(realLead.id);
+    const [spamLead] = await db.insert('inbound_leads', {
+      org_id: orgId, source: 'Referral', source_type: 'call',
+      spam_flag: true, occurred_at: new Date().toISOString(), notes: `zz-spam-filter-rollup-spam-${runId}`,
+    });
+    leadIds.push(spamLead.id);
+
+    const rowsAfter = await db.rpc('get_attribution_rollup', { p_org_id: orgId });
+    const after = rowsAfter.find(r => r.channel === 'referral')?.leads || 0;
+
+    // +1 (the real lead), never +2 — the spam lead never counts.
+    expect(after - before).toBe(1);
+  });
+
+  it('get_speed_to_lead and get_pipeline_movement counts on the fixture stage/bucket are unchanged after moving a spam lead through a stage', async () => {
     const before = await Promise.all([
       db.rpc('get_speed_to_lead', { p_org_id: orgId }),
       db.rpc('get_pipeline_movement', { p_org_id: orgId }),
     ]);
+    // sort_order 1 = "≤5 min" — where an immediate move always lands.
+    const speedBefore = before[0].find(r => r.sort_order === 1)?.count;
+    const stageBefore = before[1].find(r => r.stage_id === openStageId);
 
     const [spamLead] = await db.insert('inbound_leads', {
       org_id: orgId, source: 'Referral', source_type: 'call',
@@ -101,10 +129,14 @@ describe.skipIf(!hasCreds)('CRM — reporting RPCs exclude spam-flagged leads (i
       db.rpc('get_speed_to_lead', { p_org_id: orgId }),
       db.rpc('get_pipeline_movement', { p_org_id: orgId }),
     ]);
+    const speedAfter = after[0].find(r => r.sort_order === 1)?.count;
+    const stageAfter = after[1].find(r => r.stage_id === openStageId);
 
-    // Same shape, same counts — the spam lead's move never registers.
-    expect(after[0].map(r => r.count)).toEqual(before[0].map(r => r.count));
-    expect(after[1].map(r => [r.moved_in, r.moved_out])).toEqual(before[1].map(r => [r.moved_in, r.moved_out]));
+    // Same counts on the exact bucket/stage the spam lead's move would have
+    // landed in — the spam lead's move never registers.
+    expect(speedAfter).toBe(speedBefore);
+    expect(stageAfter.moved_in).toBe(stageBefore.moved_in);
+    expect(stageAfter.moved_out).toBe(stageBefore.moved_out);
   });
 
   it('get_attribution_rollup, get_speed_to_lead, and get_pipeline_movement keep their shapes after the replace', async () => {
