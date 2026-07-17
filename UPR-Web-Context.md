@@ -6891,3 +6891,31 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   `page:tech_msgs_v2` in DevTools → Flags. Coordination seams: Job Hub H3 (`src/i18n/index.js` only),
   db-foundation P8 (`messages/mediaUpload.js` `publicMediaUrl` is the swap target), sms deep-link
   follow-up (sms-owned).
+
+## App Store Readiness & iOS Native Capabilities (2026-07-17 — masterplan committed, Wave 1 dispatched)
+
+Plan of record: `docs/app-store-readiness-roadmap.md` + `.claude/rules/app-store-readiness-wave-ownership.md`.
+Live-verified gap audit + adversarial challenge pass found: no `.entitlements` file exists (Push
+capability not enabled at the Xcode level); native APNs fully dormant (`AppDelegate.swift` has zero
+push-delegate code, `functions/api/send-push.js` has zero callers); `device_tokens` RLS policy named
+"Own tokens or admin read" is actually `USING (true)` — every employee can read every device token
+(security finding, fix owned by Phase A); no app-target `PrivacyInfo.xcprivacy` (Capacitor's bundled
+one is an empty declaration, confirmed by direct read — doesn't cover the app); Capgo OTA's
+`markBundleReady()` is defined but never called anywhere (docs previously claimed it was wired on
+`App.jsx` mount — that was false); stock Capacitor placeholder icon/splash still in place; **the
+single biggest finding**: Apple Guideline 3.2 ("Business") is a real-but-inconsistently-enforced risk
+for a single-company internal app on the **public** App Store (Walmart's "Me@Walmart" app is a
+documented live counter-example) — recommendation is **Apple Business Manager → Custom Apps**
+distribution instead, an owner decision not yet made. In-app account deletion (Guideline 5.1.1(v))
+is required regardless of which distribution path is chosen — no ABM/enterprise exemption exists
+(confirmed by direct re-verification, unlike Sign-in-with-Apple's 4.8 which correctly does not apply
+here). Four build phases dispatched in parallel via git-worktree-isolated subagents in one session
+(not separate cold sessions): **F1** (signing/entitlements/push-delegate/privacy-manifest — Opus, can't
+be compile-verified in this Linux environment, needs a real Xcode build-check before it reaches any
+device), **A** (device_tokens RLS fix + send-push.js auth/pruning fix + markBundleReady() wire-up —
+Opus, ships a migration on the shared prod Supabase), **B** (in-app account-deletion RPC + UI in
+`MyAccount.jsx` — Opus, compliance-sensitive), **D** (fastlane + CI scaffold, no signing creds yet —
+Sonnet, mechanical). Owner action items: kick off Apple Developer Program + ABM enrollment (longest
+lead time, EIN now accepted for ABM itself per an April 2026 Apple Business platform change — but the
+separate paid Developer Program still shows D-U-N-S as of this writing, verify live at signup); make
+the distribution-model call; Xcode-side build-verify of F1 before any real device sees it.
