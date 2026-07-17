@@ -5399,6 +5399,25 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
   (now selected in the load), red `.stale` at ≥7 days. (3) **click-to-call** — the lead's number is a
   `tel:` link that fire-and-forget inserts a `crm_click_to_call` `system_events` row (never blocks the
   dial).
+- `src/pages/crm/CrmLeads.jsx`'s `LeadDetailPanel` (2026-07-17) — fixes the gap where a web-form
+  lead's actual submitted answers, notes, tasks, and stage-move history were invisible in the UI even
+  though they were already captured. Four additions, all reusing existing data/RPCs (no migration):
+  (1) **Submitted answers** — renders `inbound_leads.form_data` as label/value rows; labels come from
+  the form's real published schema (fetched via `raw_payload.form_id` → `form_definitions` →
+  `form_definition_versions`) when that fetch succeeds, else a humanized version of the raw field key
+  (`formDataRows()`/`humanizeKey()`, mirroring `functions/api/form-submit.js`'s server-side
+  `leadNotificationRows()` for the email/push alert, but reading client-side). (2) **Notes** — a
+  textarea that saves straight to `inbound_leads.notes` via `db.update()` (same direct-update pattern
+  as `CustomerPage.jsx`'s contact notes), synced back into the parent's `leads`/`selectedLead` state via
+  a new `onLeadPatched` callback so a reopened panel shows the saved note without a full reload.
+  (3) **Tasks** — a compact list (reusing `CrmTasks.jsx`'s `crm-task-*` markup/CSS) of this lead's
+  `crm_tasks` rows (`get_crm_tasks({ p_lead_id })`), with check-off (`set_task_status`, optimistic with
+  revert-on-error) and a quick-add row (`upsert_crm_task({ p_lead_id, p_contact_id })`). (4) **Stage
+  history** — lists this lead's `lead_stage_history` rows (already written by `move_lead_to_stage` but
+  previously never rendered anywhere), stage names resolved client-side from the already-loaded
+  `stages` prop. Zero new CSS (all four reuse existing `crm-panel-*`/`crm-task-*`/`crm-input` classes)
+  and zero schema changes — `form_data`, `notes`, `crm_tasks`, and `lead_stage_history` all already
+  existed with `authenticated`-scoped policies from earlier CRM-wave phases.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
