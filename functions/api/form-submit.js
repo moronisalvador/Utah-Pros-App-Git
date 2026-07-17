@@ -121,7 +121,7 @@ function truncate(s, max) {
  * full submission in a UPR-styled card). Every submitted value is HTML-escaped
  * for the email: form data is untrusted public input.
  */
-export function buildLeadNotificationContent({ schema, data, formName, env } = {}) {
+export function buildLeadNotificationContent({ schema, data, formName, env, leadId } = {}) {
   const rows = leadNotificationRows(schema, data);
   const name = pickLeadName(rows);
   const form = formName && String(formName).trim();
@@ -138,16 +138,16 @@ export function buildLeadNotificationContent({ schema, data, formName, env } = {
     body = `Web form submission${form ? ` · ${form}` : ''}.`;
   }
 
-  const html = buildLeadEmailHtml({ rows, name, form, env });
+  const html = buildLeadEmailHtml({ rows, name, form, env, leadId });
   return { title, body, html };
 }
 
 // Branded HTML card for the email channel — mirrors the UPR design tokens
 // (#1e293b brand header, white card, --text-* / --border-* / --accent palette)
 // used by functions/lib/email-template.js so every UPR email reads as one system.
-function buildLeadEmailHtml({ rows, name, form, env }) {
+function buildLeadEmailHtml({ rows, name, form, env, leadId }) {
   const base = (env && env.APP_BASE_URL) || 'https://utahpros.app';
-  const leadsUrl = `${String(base).replace(/\/$/, '')}/crm/leads`;
+  const leadsUrl = `${String(base).replace(/\/$/, '')}/crm/leads${leadId ? `?lead=${leadId}` : ''}`;
 
   const rowsHtml = rows.length
     ? rows.map((r) => `
@@ -196,7 +196,8 @@ function buildLeadEmailHtml({ rows, name, form, env }) {
 export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, data, dispatchImpl = dispatchEvent }) {
   try {
     if (!lead || lead.spam_flag) return;
-    const { title, body, html } = buildLeadNotificationContent({ schema, data, formName, env });
+    const { title, body, html } = buildLeadNotificationContent({ schema, data, formName, env, leadId: lead.id });
+    const leadsLink = lead.id ? `/crm/leads?lead=${lead.id}` : '/crm/leads';
     await dispatchImpl({
       db, env,
       typeKey: 'lead.new',
@@ -204,11 +205,11 @@ export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, d
         title,
         body,
         html,
-        link: '/crm/leads',
+        link: leadsLink,
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: 'form', callrail_id: lead.callrail_id || null },
-        data: { route: '/crm/leads', lead_id: lead.id || null },
+        data: { route: leadsLink, lead_id: lead.id || null },
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks form intake */ }
