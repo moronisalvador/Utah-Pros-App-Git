@@ -1,0 +1,123 @@
+# ════════════════════════════════════════════════
+# FILE: Fastfile
+# ════════════════════════════════════════════════
+#
+# ⚠️ SIGNING CREDENTIALS DO NOT EXIST YET — this scaffold is INERT until the
+# owner completes Apple Developer Program enrollment and CI secrets
+# (APPLE_TEAM_ID, a signing certificate/profile — or an App Store Connect
+# API key — plus APPLE_ID / ASC_KEY_* as applicable) are added to both the
+# repo's GitHub Actions secrets and this file's referenced ENV vars. Until
+# then, every lane below will fail fast on a missing environment variable
+# the moment it runs — that is the intended, safe failure mode. Nothing here
+# can accidentally ship an unsigned or mis-signed build.
+#
+# WHAT THIS DOES (plain language):
+#   This is the build robot's instruction sheet for turning the iOS app into
+#   a signed package and sending it to Apple's TestFlight (Apple's internal
+#   beta-testing service), so the team can install it on real iPhones before
+#   it goes to the public App Store. It does not run automatically — someone
+#   has to trigger it by hand, and only after Apple credentials exist.
+#
+# SIGNING APPROACH (documented decision — manual/API-key signing, not `match`):
+#   This scaffold uses manual code signing via environment-provided signing
+#   identity + provisioning profile (or an App Store Connect API key for
+#   authentication), rather than fastlane `match` (which needs its own
+#   encrypted git repo + passphrase to bootstrap). Manual signing is the
+#   simpler scaffold to stand up before a distribution model is even chosen
+#   (see docs/app-store-readiness-roadmap.md §0). If the owner later prefers
+#   `match`, swap the `sync_code_signing`/manual env vars below for a
+#   `match(type: "appstore")` call — everything downstream (archive, upload)
+#   stays the same.
+#
+# DEPENDS ON:
+#   Packages:  fastlane (Ruby gem, installed via Gemfile/bundler in CI)
+#   Internal:  ios/App/App.xcodeproj (the Xcode project), ios/fastlane/Appfile
+#
+# REQUIRED ENV VARS (none of these exist as CI secrets yet):
+#   APPLE_TEAM_ID              — Apple Developer Program team ID
+#   APPLE_ID                   — App Store Connect account email (manual-signing path)
+#   APPLE_CERTIFICATE_BASE64   — base64-encoded .p12 signing certificate
+#   APPLE_CERTIFICATE_PASSWORD — password for the .p12 above
+#   APPLE_PROVISIONING_PROFILE_BASE64 — base64-encoded .mobileprovision
+#   ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT — App Store Connect API key
+#     (alternative to APPLE_ID + 2FA for `upload_to_testflight` auth; either
+#     this trio OR APPLE_ID-based auth is needed, not necessarily both)
+#
+# NOTES / GOTCHAS:
+#   - This file cannot be run or syntax-checked in this environment (no Ruby/
+#     fastlane/Xcode here) — it follows standard fastlane conventions from
+#     fastlane's own docs/templates; the owner should do a first dry run
+#     once secrets exist.
+#   - The workflow that calls these lanes (.github/workflows/ios-release.yml)
+#     is workflow_dispatch-only (manual trigger), so nobody runs this by
+#     accident before it's ready.
+# ════════════════════════════════════════════════
+
+default_platform(:ios)
+
+WORKSPACE_SCHEME = "App"
+XCODE_PROJECT = "App.xcodeproj"
+
+platform :ios do
+  desc "Import the CI signing certificate + provisioning profile from env vars"
+  private_lane :install_signing_assets do
+    # Inert until APPLE_CERTIFICATE_BASE64 / APPLE_PROVISIONING_PROFILE_BASE64
+    # secrets exist — create_keychain + import_certificate +
+    # install_provisioning_profile is the standard fastlane trio for manual
+    # signing in CI (no `match` git repo required).
+    create_keychain(
+      name: "ios-release.keychain",
+      password: ENV["KEYCHAIN_PASSWORD"] || SecureRandom.hex,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600
+    )
+
+    import_certificate(
+      certificate_path: ENV["APPLE_CERTIFICATE_PATH"] || "signing_certificate.p12",
+      certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"],
+      keychain_name: "ios-release.keychain"
+    )
+
+    install_provisioning_profile(
+      path: ENV["APPLE_PROVISIONING_PROFILE_PATH"] || "signing_profile.mobileprovision"
+    )
+  end
+
+  desc "Build and archive the App scheme (Release configuration)"
+  lane :build do
+    install_signing_assets
+
+    increment_build_number(
+      xcodeproj: XCODE_PROJECT,
+      build_number: ENV["BUILD_NUMBER"] || latest_testflight_build_number(
+        app_identifier: CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+      ) + 1
+    )
+
+    build_app(
+      workspace: "App.xcworkspace",
+      scheme: WORKSPACE_SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build",
+      export_options: {
+        provisioningProfiles: {
+          CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier) =>
+            ENV["APPLE_PROVISIONING_PROFILE_NAME"]
+        }
+      }
+    )
+  end
+
+  desc "Build, archive, and upload a new build to TestFlight"
+  lane :beta do
+    build
+
+    upload_to_testflight(
+      api_key_path: ENV["ASC_API_KEY_PATH"], # nil is fine — falls back to apple_id/2FA auth
+      skip_waiting_for_build_processing: true,
+      distribute_external: false # internal testers only until distribution model is decided
+    )
+  end
+end

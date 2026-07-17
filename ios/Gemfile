@@ -1,0 +1,19 @@
+# ════════════════════════════════════════════════
+# FILE: Gemfile
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Lists the Ruby tool (fastlane) needed to build and upload the iOS app,
+#   so CI can install an exact, repeatable version of it instead of
+#   "whatever's newest today." Standard fastlane convention — pairs with
+#   ios/fastlane/Fastfile and ios/fastlane/Appfile.
+#
+# NOTES / GOTCHAS:
+#   - This alone does not require any Apple signing secrets — it is safe to
+#     install/bundle at any time. The Fastfile lanes it enables are what's
+#     inert until signing secrets exist (see ios/fastlane/Fastfile header).
+# ════════════════════════════════════════════════
+
+source "https://rubygems.org"
+
+gem "fastlane"
