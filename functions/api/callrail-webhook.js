@@ -66,17 +66,18 @@ export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEven
     if (!lead || lead.spam_flag) return;   // never alert on flagged spam
     const caller = lead.caller_number || 'Unknown caller';
     const src = lead.source ? ` · ${lead.source}` : '';
+    const leadsLink = lead.id ? `/crm/leads?lead=${lead.id}` : '/crm/leads';
     await dispatchImpl({
       db, env,
       typeKey: 'lead.new',
       body: {
         title: 'New lead',
         body: `Call from ${caller}${src}.`,
-        link: '/crm/leads',
+        link: leadsLink,
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: lead.source_type || 'call', callrail_id: lead.callrail_id || null },
-        data: { route: '/crm/leads', lead_id: lead.id || null },
+        data: { route: leadsLink, lead_id: lead.id || null },
       },
     });
   } catch { /* fire-and-forget — a notify failure never breaks lead ingest */ }
