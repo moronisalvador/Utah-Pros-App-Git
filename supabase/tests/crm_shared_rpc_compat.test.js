@@ -96,4 +96,14 @@ describe.skipIf(!hasCreds)('CRM — shared RPC replaces stay backward-compatible
       expect(key in lead).toBe(true);
     }
   });
+
+  it('get_contact_activity now surfaces transcript_analysis in meta (2026-07-17 additive replace)', async () => {
+    const rows = await db.rpc('get_contact_activity', { p_contact_id: contactId });
+    const lead = rows.find(r => r.activity_type === 'lead');
+    expect(lead).toBeTruthy();
+    // This test lead was never transcribed, so the value is null — the point is
+    // the KEY exists (the UI can read meta.transcript_analysis without a
+    // separate fetch), not that every lead has a populated analysis.
+    expect('transcript_analysis' in lead.meta).toBe(true);
+  });
 });
