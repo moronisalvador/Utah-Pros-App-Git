@@ -5389,6 +5389,14 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     `turnsFromAnalysis` path; a 3rd+ distinct speaker (rare) keeps a neutral "Speaker N" label since
     there's no reliable default for it. Backward-compat: `crm_shared_rpc_compat.test.js` gained an
     assertion that `meta.transcript_analysis` key exists (integration, self-skips without creds).
+  - **Summary section (2026-07-17, follow-up)** — `LeadDetailPanel` gains a "Summary" section, shown
+    open (not collapsed — Deepgram's Audio Intelligence summary is inherently short) right after the
+    Source/Occurred block, gated on `lead.source_type === 'call' && lead.transcript_analysis?.summary`
+    (call leads only; `transcribe-call.js`'s Deepgram pass already writes this `summary` key). No
+    migration or new fetch — `transcript_analysis` is already returned by the board's existing
+    `select=*` on `inbound_leads`. A small "Generated from the call recording" caption
+    (`.crm-panel-empty`) discloses the AI origin. Zero new CSS — reuses `.crm-answer-value` for the
+    body text.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
