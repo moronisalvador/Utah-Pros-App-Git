@@ -5442,6 +5442,23 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
   `.crm-transcript-toggle`, all on existing `--crm-*` tokens. Shared component — the same fix reaches
   the Contacts detail screen (Phase 6a's `ContactDetail.jsx`) automatically. Unit-tested:
   `src/lib/transcript.test.js`.
+  - **Speaker labels (same date, follow-up)** — turns now show "Utah Pros"/"Customer" instead of
+    "Speaker 1"/"Speaker 2". Two paths, in preference order: `turnsFromAnalysis()` reads
+    `inbound_leads.transcript_analysis.turns[].role` (`'agent'|'customer'`) — the ALREADY-VERIFIED
+    identification a separate Claude pass makes during transcription
+    (`functions/api/transcribe-call.js`'s `nameSpeakers`/`resegmentSpeakers`, stored via
+    `set_lead_transcription`) — and is accurate regardless of raw diarization speaker numbering or
+    per-employee name (a captured "Ben" still displays as "Utah Pros", by design — company label, not
+    individual). `get_contact_activity` didn't expose `transcript_analysis` before; migration
+    `20260717_get_contact_activity_transcript_analysis.sql` adds it as one new `meta` key
+    (function-body-only `CREATE OR REPLACE`, additive, `REVOKE...FROM PUBLIC,anon` re-affirmed —
+    grants stay `authenticated, service_role` only, verified live before/after). `parseTranscript()`
+    (the flat-text fallback, for a call transcribed before this enrichment existed) now also labels
+    Utah Pros/Customer, but by a HEURISTIC — the raw speaker number that talks FIRST becomes Utah Pros
+    (an inbound call is always answered with a company greeting), not a verified identity like the
+    `turnsFromAnalysis` path; a 3rd+ distinct speaker (rare) keeps a neutral "Speaker N" label since
+    there's no reliable default for it. Backward-compat: `crm_shared_rpc_compat.test.js` gained an
+    assertion that `meta.transcript_analysis` key exists (integration, self-skips without creds).
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
