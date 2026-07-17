@@ -4013,6 +4013,28 @@ transcribe-call.js    — POST, authenticated. Transcribes call audio OURSELVES 
                          Topics are capped to the 6 most-confident in `buildTranscriptAnalysis`
                          (Deepgram over-tags). The Call Log renders turns as grouped speaker blocks
                          (consecutive same-speaker turns merged; name bold-blue; tinted by role).
+                         **Clean-up + summary pass (2026-07-17, best-effort, runs LAST):** owner
+                         feedback — Deepgram's `summarize=v2` is generic ("A roofing contractor
+                         introduces himself and pitches a partnership.") and raw transcript wording has
+                         obvious speech-to-text errors. A SECOND Claude Haiku call
+                         (`cleanAndSummarize` in transcribe-call.js; pure helpers in NEW
+                         `functions/lib/callCleanup.js` — buildCleanupPrompt/parseCleanupResponse/
+                         applyCleanup, unit-tested) runs after naming/resegmentation (so it sees the
+                         final Agent/Customer/name speaker labels) and (1) fixes obvious mis-heard
+                         words turn-by-turn WITHOUT changing what was said — each cleaned turn keeps
+                         the original as `rawText` for QA — and (2) writes a 2-4 sentence
+                         restoration-business-aware summary (damage type, urgency, key details, call
+                         outcome) that **replaces** `transcript_analysis.summary` (same key the lead
+                         panel already renders — no frontend change needed). **Strict turn-count
+                         guard:** `parseCleanupResponse` requires the returned `turns` array to have
+                         EXACTLY the same length as what was sent; a mismatch (merged/dropped lines) is
+                         treated as a parse failure and the pass is a no-op, same graceful-degradation
+                         contract as speaker naming. The flat `inbound_leads.transcription` text is then
+                         rebuilt from the final turns via NEW `turnsToFlatText()` (deepgram.js) instead
+                         of staying frozen at Deepgram's raw "Speaker 1/2" output — so it now matches
+                         the named + cleaned turns too. Adds one more Claude Haiku call per
+                         transcription (now up to 2 total: naming/resegment, then clean+summarize) —
+                         same cheap/fast model, same `ANTHROPIC_API_KEY`.
 ```
 
 **Frontend — the real CRM shell** (`src/components/CrmLayout.jsx`, replacing Phase 0's bare
