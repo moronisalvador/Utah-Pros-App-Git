@@ -190,7 +190,7 @@ same convention as this repo's other "owner-gated" items.
 
 ## 6. Status
 
-- [ ] Phase F1 — dispatched 2026-07-17
+- [x] Phase F1 — code shipped 2026-07-17 (PR into `dev`); **still owner-gated** on Xcode build-verify (cannot be compile-verified in the Linux env — see §5 / F1 block)
 - [ ] Phase A — dispatched 2026-07-17
 - [ ] Phase B — dispatched 2026-07-17
 - [ ] Phase D — dispatched 2026-07-17
