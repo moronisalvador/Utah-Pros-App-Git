@@ -1,6 +1,14 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CRM Phase F — signature-frozen RPC stubs for the parallel wave
 --
+-- RENAMED 2026-07-17 (phaseF → phase0F): filename-sort landmine fix, content
+-- unchanged. "phaseF" sorted AFTER every "phase<digit>" file on this same
+-- date (ASCII digits < uppercase letters), so a from-scratch migration
+-- replay would have applied the phase-specific RPC bodies FIRST, then this
+-- Foundation stub LAST — overwriting the real implementations with
+-- 'not implemented' stubs. "phase0F" sorts first, matching the real
+-- apply order this already ran in live. See UPR-Web-Context.md.
+--
 -- docs/crm-roadmap.md, "Phase F — Foundation": ~30 stubs, one owner phase each.
 -- Every stub is SECURITY DEFINER, GRANTed to anon + authenticated, and raises
 -- 'not implemented (phase X)' until its owning wave session fills the body via

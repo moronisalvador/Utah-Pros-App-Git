@@ -1,6 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CRM Phase F — the two shared live-RPC REPLACEs (done once, here only)
 --
+-- RENAMED 2026-07-17 (phaseF → phase0F): filename-sort landmine fix, content
+-- unchanged — see 20260702_crm_phase0F_rpc_stubs.sql's header for why.
+--
 -- docs/crm-roadmap.md, "Phase F — Foundation": these are the ONLY two live
 -- RPCs the wave touches. Both are backward-compatible so every shipped caller
 -- keeps working; downstream wave sessions must NOT re-REPLACE them.

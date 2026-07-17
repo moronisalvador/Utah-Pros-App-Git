@@ -3,7 +3,7 @@
 --
 -- docs/crm-roadmap.md "Phase 9 — Intelligence" + .claude/rules/crm-wave-ownership.md.
 -- Fills the bodies of Phase 9's eight signature-frozen stubs from
--- 20260702_crm_phaseF_rpc_stubs.sql. **Signatures are unchanged** (name / args /
+-- 20260702_crm_phase0F_rpc_stubs.sql. **Signatures are unchanged** (name / args /
 -- arg order / defaults / return type all identical to the stubs) — this is a
 -- body-only CREATE OR REPLACE, the only migration a wave session may ship
 -- (migration-safety-checker enforces). ZERO schema changes: no table/column is
