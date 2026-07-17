@@ -1,6 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- CRM Phase F — Foundation wave schema
 --
+-- RENAMED 2026-07-17 (phaseF → phase0F): filename-sort landmine fix, content
+-- unchanged — see 20260702_crm_phase0F_rpc_stubs.sql's header for why.
+--
 -- docs/crm-roadmap.md, "Phase F — Foundation". Phase F owns 100% of the
 -- parallel wave's SCHEMA — every table, column, constraint, policy and index
 -- the downstream phases (4d, 6a, 6b, 7, 8, 9, 10) consume. Those sessions ship

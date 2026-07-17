@@ -2,7 +2,7 @@
 -- CRM Phase 7 — task RPC bodies (function-body-only fills of Foundation stubs)
 --
 -- Fills the five signature-frozen Phase 7 stubs from
--- supabase/migrations/20260702_crm_phaseF_rpc_stubs.sql:
+-- supabase/migrations/20260702_crm_phase0F_rpc_stubs.sql:
 --   get_crm_tasks, upsert_crm_task, set_task_status, delete_crm_task,
 --   get_overdue_tasks
 --
