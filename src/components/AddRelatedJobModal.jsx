@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
+import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
 
 /* ═══ ICONS ═══ */
 function IconX(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);}
@@ -33,7 +35,40 @@ const PRIORITY_OPTIONS = [
  *   onClose     - close modal
  *   onCreated   - callback after job created: (newJob) => {}
  *   db          - supabase REST client
+ *
+ * A reconstruction-division job also gets awaited-pushed to Houzz Pro via
+ * /api/sync-houzz (see syncJobToHouzz below) before onCreated fires — this
+ * is a third job-creation entry point (besides TechNewJob.jsx and
+ * CreateJobModal.jsx) that must stay wired the same way.
  */
+
+// Push a new reconstruction job to Houzz Pro (via Zapier — Houzz Pro has no
+// public API). Awaited by the caller (with an internal timeout) BEFORE
+// onCreated fires, same discipline as TechNewJob.jsx/CreateJobModal.jsx's
+// syncClaimToEncircle/syncJobToHouzz helpers.
+async function syncJobToHouzz(jobId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/sync-houzz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ job_id: jobId }),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (!data.skipped) toast('Synced to Houzz Pro', 'success');
+    } else {
+      toast('Job created, but Houzz Pro sync failed', 'error');
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Houzz Pro sync failed: ' + e.message, 'error');
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, employees, onClose, onCreated, db }) {
   const [division, setDivision] = useState('reconstruction');
   const [priority, setPriority] = useState(3);
@@ -83,6 +118,11 @@ export default function AddRelatedJobModal({ sourceJob, claimData, siblingJobs, 
           lead_tech_id: leadTechId || null,
         });
         result = { job: rows?.[0] };
+      }
+      // Reconstruction jobs also get pushed to Houzz Pro — awaited for the same
+      // reason as the other two job-creation flows (no fire-and-forget).
+      if (result?.job?.division === 'reconstruction' && result?.job?.id) {
+        await syncJobToHouzz(result.job.id);
       }
       onCreated?.(result);
     } catch (err) {
