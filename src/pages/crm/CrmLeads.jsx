@@ -741,6 +741,14 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
           <div className="crm-panel-row"><span>Occurred</span><span>{lead.occurred_at ? new Date(lead.occurred_at).toLocaleString() : '—'}</span></div>
         </div>
 
+        {lead.source_type === 'call' && lead.transcript_analysis?.summary && (
+          <div className="crm-panel-section">
+            <div className="crm-panel-section-title">Summary</div>
+            <p className="crm-answer-value">{lead.transcript_analysis.summary}</p>
+            <p className="crm-panel-empty" style={{ marginTop: 'var(--space-2)' }}>Generated from the call recording</p>
+          </div>
+        )}
+
         {submittedRows.length > 0 && (
           <div className="crm-panel-section">
             <div className="crm-panel-section-title">Submitted answers</div>
