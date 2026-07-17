@@ -5411,6 +5411,22 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     `notifyNewLeadFromForm`. Tests: `functions/api/lead-notify.test.js` asserts the exact deep-linked
     URL on both the callrail and form paths (bell/push `link`+`data.route` and the email HTML href) plus
     the no-id fallback.
+  - **Spam excluded from reporting RPCs (2026-07-17, follow-up)** — the Leads board already excluded
+    `spam_flag=true` leads, but four reporting RPCs still counted them: `get_attribution_rollup`
+    (CrmOverview funnel), `get_attribution_by_campaign` (Attribution page per-campaign counts),
+    `get_speed_to_lead` (Reports SLA buckets), and `get_pipeline_movement` (Reports stage in/out —
+    previously had no reference to the underlying lead at all, just counted every
+    `lead_stage_history` row). Fixed via `20260717_crm_reporting_rpcs_spam_filter.sql`, four
+    function-body-only `CREATE OR REPLACE`s (same signatures/return shapes) adding a
+    `COALESCE(il.spam_flag, false) = false` exclusion (`get_pipeline_movement` gained a
+    `JOIN inbound_leads` to reach it). **Deliberately untouched:** the Call Log's
+    `get_inbound_leads` — it's a full call-audit list that shows spam on purpose (visible "Spam"
+    badge, staff can reclassify). Also hardened `CrmLeads.jsx`'s deep-link fallback fetch (above) to
+    filter spam. The migration also tightened all four RPCs' grants from `anon, authenticated` to
+    `authenticated, service_role` (database-standard.md least-privilege — DB-Foundation P3 had
+    already closed `anon` on these exact functions; verified live via the grant table, no
+    `anon`/`PUBLIC`). Proof: `supabase/tests/crm_pipeline_spam_filter.test.js` — before/after deltas
+    scoped to run-unique fixtures/specific stages/buckets (not shape-only, not org-wide live counts).
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /

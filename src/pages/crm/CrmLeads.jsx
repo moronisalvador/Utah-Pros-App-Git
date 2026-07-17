@@ -230,7 +230,7 @@ export default function CrmLeads() {
     if (found) { setSelectedLead(found); clearLeadParam(); return; }
     (async () => {
       try {
-        const rows = await db.select('inbound_leads', `id=eq.${deepLinkedLeadId}&select=*,contact:contacts(name,phone)`);
+        const rows = await db.select('inbound_leads', `id=eq.${deepLinkedLeadId}&spam_flag=eq.false&select=*,contact:contacts(name,phone)`);
         if (rows && rows[0]) setSelectedLead(rows[0]);
       } catch { /* deep-linked lead not found/loadable — board still usable */ }
       finally { clearLeadParam(); }
