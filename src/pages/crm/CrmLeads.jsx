@@ -102,8 +102,10 @@ function sourceLine(lead) {
 const FORM_DATA_SKIP_TYPES = new Set(['consent']);
 const FORM_DATA_SKIP_KEYS = new Set(['hp', 'honeypot']);
 
-function displayFieldValue(raw) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function displayFieldValue(raw) {
   if (Array.isArray(raw)) return raw.map(v => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
+  if (typeof raw === 'boolean') return raw ? 'Yes' : 'No';
   return raw == null ? '' : String(raw).trim();
 }
 
