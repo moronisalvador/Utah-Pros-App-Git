@@ -11,7 +11,7 @@
 --
 -- DEPENDS ON:
 --   Tables:  automation_settings (Foundation-owned; one row per org), crm_orgs
---   Replaces: the frozen stubs from 20260702_crm_phaseF_rpc_stubs.sql
+--   Replaces: the frozen stubs from 20260702_crm_phase0F_rpc_stubs.sql
 --
 -- NOTES / GOTCHAS:
 --   - FUNCTION-BODY-ONLY CREATE OR REPLACE (roadmap v3 wave rule): signatures

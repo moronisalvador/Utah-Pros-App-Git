@@ -4776,14 +4776,19 @@ example it points sessions at: docs/crm-roadmap.md "Roadmap v3" + docs/crm-dispa
 
 Owns 100% of the wave's schema + interfaces + wiring; downstream wave phases ship zero schema.
 Migrations (all applied + verified live, additive-only, RLS + explicit policy + org_id at creation):
+**Filenames renamed 2026-07-17** (`phaseF` → `phase0F`, content unchanged) — the bare `phaseF`
+prefix sorted *after* `phase10` lexicographically, putting Foundation's schema-creating migrations
+below phases that consume that schema in a fresh replay/drift-check ordering. `phase0F` sorts first
+as intended. Already-applied migrations were not re-run — this is a filename-only fix, documented
+via a rename-rationale header in each file (see `20260702_crm_phase0F_rpc_stubs.sql`).
 
-- `20260702_crm_phaseF_merge_contacts_safety.sql` — **P0 fix.** Captures the drifted live
+- `20260702_crm_phase0F_merge_contacts_safety.sql` — **P0 fix.** Captures the drifted live
   `merge_contacts` body as a migration and supersedes it: now reassigns `lead_attribution`,
   `email_campaign_recipients`, `email_campaign_exclusions` (dedupe on their `UNIQUE(campaign_id,
   contact_id)`) and `inbound_leads.contact_id` onto the survivor **before** deleting the loser.
   Signature unchanged. Proof: `supabase/tests/crm_merge_contacts_safety.test.js`. Merges are now
   CRM-history-safe.
-- `20260702_crm_phaseF_wave_schema.sql` — new tables: `automation_settings` (per-org; SMS
+- `20260702_crm_phase0F_wave_schema.sql` — new tables: `automation_settings` (per-org; SMS
   kill-switch `sms_sending_enabled` **default OFF** + 4 per-automation toggles; one row per org
   seeded), `crm_tasks`, `lead_stage_history` (append-only pipeline history), `crm_segments`,
   `crm_import_batches`, `crm_sequences`/`crm_sequence_steps`/`crm_sequence_enrollments`
@@ -4792,12 +4797,12 @@ Migrations (all applied + verified live, additive-only, RLS + explicit policy + 
   `submission_token` UNIQUE). New columns: `inbound_leads.lost_reason` + `.lead_score`,
   `contacts.owner_id` + `.lifecycle_status`, `pipeline_stages.win_probability` (0..1, NULL →
   positional fallback).
-- `20260702_crm_phaseF_shared_rpc_replaces.sql` — the **only two** live-RPC REPLACEs of the wave:
+- `20260702_crm_phase0F_shared_rpc_replaces.sql` — the **only two** live-RPC REPLACEs of the wave:
   `move_lead_to_stage` gains `p_lost_reason DEFAULT NULL` + writes a `lead_stage_history` row per
   move (dropped 3-arg + recreated 4-arg, no overload ambiguity; shipped 4a caller still works);
   `get_contact_activity` gains email/jobs/tasks arms (same 1-arg signature + columns). Proof:
   `supabase/tests/crm_shared_rpc_compat.test.js`. **Wave phases must NOT re-REPLACE these.**
-- `20260702_crm_phaseF_rpc_stubs.sql` — 30 signature-frozen stubs (SECURITY DEFINER, GRANT anon +
+- `20260702_crm_phase0F_rpc_stubs.sql` — 30 signature-frozen stubs (SECURITY DEFINER, GRANT anon +
   authenticated, body `RAISE EXCEPTION 'not implemented (phase X)'`), one owner phase each. Exact
   signatures + ownership in `.claude/rules/crm-wave-ownership.md`. Covers 4d(2), 6a(5), 6b(3),
   7(5), 8(4), 9(8: score_lead + 7 reports), 10(3).
