@@ -757,6 +757,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
 
         {!lead.contact_id && (
           <div className="crm-panel-section">
+            <div className="crm-panel-section-title">Customer</div>
             {!promoting ? (
               <>
                 <p className="crm-panel-empty">
@@ -764,7 +765,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                     ? 'Not a customer yet — raw calls stay contact-free until you qualify them.'
                     : 'Not linked to a contact yet — a lead stays contact-free until you qualify it.'}
                 </p>
-                <button className="crm-btn crm-btn-primary" onClick={() => setPromoting(true)}>+ Add as customer</button>
+                <button className="crm-btn crm-btn-primary crm-btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={() => setPromoting(true)}>+ Add as customer</button>
               </>
             ) : (
               <>
@@ -772,11 +773,11 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                 <input id="promote-name" className="crm-input" value={promoteName} onChange={e => setPromoteName(e.target.value)} placeholder="Jane Homeowner" autoFocus />
                 <label className="crm-panel-label" htmlFor="promote-email" style={{ marginTop: 'var(--space-3)' }}>Email</label>
                 <input id="promote-email" className="crm-input" value={promoteEmail} onChange={e => setPromoteEmail(e.target.value)} placeholder="optional" inputMode="email" />
-                <div className="crm-panel-actions" style={{ paddingLeft: 0, paddingRight: 0 }}>
-                  <button className="crm-btn crm-btn-primary" onClick={promote} disabled={saving}>{saving ? 'Adding…' : 'Add as customer'}</button>
-                  <button className="crm-btn crm-btn-ghost" onClick={() => setPromoting(false)}>Cancel</button>
+                <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
+                  <button className="crm-btn crm-btn-primary crm-btn-sm" onClick={promote} disabled={saving}>{saving ? 'Adding…' : 'Add as customer'}</button>
+                  <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setPromoting(false)}>Cancel</button>
                 </div>
-                <p className="crm-panel-empty">
+                <p className="crm-panel-empty" style={{ marginTop: 'var(--space-3)' }}>
                   {lead.caller_number
                     ? `Creates a contact from this number (${lead.caller_number}) and links this lead to it.`
                     : 'Creates a contact and links this lead to it.'}
