@@ -134,6 +134,13 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     expect(html).toContain('/crm/leads?lead=lead-42');
     expect(html).toContain('Jane Doe');
     expect(html).toContain('/crm/leads');
+    // Design pass: hidden inbox-preview text so a scanning inbox shows who
+    // and what before the email opens (first non-name field — here, phone)...
+    expect(html).toContain('Jane Doe — Phone: 801-555-1234');
+    // ...forces light rendering so dark-mode clients don't invert the brand...
+    expect(html).toContain('name="color-scheme" content="light"');
+    // ...and the phone number is a tap-to-call link, not just display text.
+    expect(html).toContain('href="tel:+18015551234"');
   });
 
   it('escapes untrusted submission values in the email HTML', () => {
@@ -169,8 +176,19 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
       { name: 'Bob', services: ['a', 'c'], notes: '', consent: true, hp: 'bot-filled' },
     );
     expect(rows).toEqual([
-      { key: 'name', label: 'Name', value: 'Bob' },
-      { key: 'services', label: 'Services', value: 'a, c' },
+      { key: 'name', label: 'Name', value: 'Bob', type: 'text' },
+      { key: 'services', label: 'Services', value: 'a, c', type: 'checkbox' },
+    ]);
+  });
+
+  it('leadNotificationRows renders a boolean checkbox as Yes/No, not raw true/false', () => {
+    const rows = leadNotificationRows(
+      { fields: [{ key: 'mold', label: 'Mold', type: 'checkbox' }, { key: 'fire', label: 'Fire', type: 'checkbox' }] },
+      { mold: true, fire: false },
+    );
+    expect(rows).toEqual([
+      { key: 'mold', label: 'Mold', value: 'Yes', type: 'checkbox' },
+      { key: 'fire', label: 'Fire', value: 'No', type: 'checkbox' },
     ]);
   });
 

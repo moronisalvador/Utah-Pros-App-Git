@@ -59,12 +59,15 @@ const NOTIFY_SKIP_KEYS = new Set(['hp', 'honeypot']);
 // truncated there; the HTML email keeps the full value.
 const PLAIN_VALUE_MAX = 140;
 
-// Turn a submitted value (string, array of chosen options, or empty) into one
-// display string. Arrays (multi-select checkboxes) join with commas; blanks drop.
+// Turn a submitted value (string, array of chosen options, boolean checkbox,
+// or empty) into one display string. Arrays (multi-select checkboxes) join
+// with commas; blanks drop; booleans read as "Yes"/"No", not the raw
+// "true"/"false" a checkbox field submits.
 function displayValue(raw) {
   if (Array.isArray(raw)) {
     return raw.map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
   }
+  if (typeof raw === 'boolean') return raw ? 'Yes' : 'No';
   return raw == null ? '' : String(raw).trim();
 }
 
@@ -88,7 +91,7 @@ export function leadNotificationRows(schema, data) {
     }
     const value = displayValue(d[f.key]);
     if (!value) continue;
-    rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || f.key, value });
+    rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || f.key, value, type: f.type });
     seen.add(f.key);
   }
   // Any submitted keys the schema didn't describe (defensive — schema is source
@@ -142,44 +145,87 @@ export function buildLeadNotificationContent({ schema, data, formName, env, lead
   return { title, body, html };
 }
 
+// US-only, best-effort: strip everything but digits, prefix +1 for a bare
+// 10-digit number so the tel: link dials correctly. Anything else (already
+// has a country code, or isn't a clean number) is passed through as digits
+// only — still dialable, just not normalized.
+function telHref(raw) {
+  const digits = String(raw).replace(/[^\d]/g, '');
+  if (digits.length === 10) return `tel:+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`;
+  return `tel:${digits}`;
+}
+
+// Inbox preview text (Gmail/Outlook/Apple Mail show this next to the
+// subject) — the single biggest lever for "glance and know whether to open
+// right now". Leads with the name plus the first non-name answer, so a
+// scanning inbox already tells you who and what before the email opens.
+function buildPreheader(rows, name) {
+  const hint = rows.find((r) => !/name/i.test(r.key) && !/name/i.test(r.label));
+  const parts = [name || 'New lead'];
+  if (hint) parts.push(`${hint.label}: ${truncate(hint.value, 60)}`);
+  return parts.join(' — ');
+}
+
 // Branded HTML card for the email channel — mirrors the UPR design tokens
 // (#1e293b brand header, white card, --text-* / --border-* / --accent palette)
-// used by functions/lib/email-template.js so every UPR email reads as one system.
+// used by functions/lib/email-template.js so every UPR email reads as one system;
+// the footer block and button padding match functions/api/send-esign.js's
+// buildEmailHtml exactly, and the phone "📞" tap-to-call treatment matches
+// CrmLeads.jsx's click-to-call links, so this alert looks and behaves like the
+// rest of the product, not a one-off.
 function buildLeadEmailHtml({ rows, name, form, env, leadId }) {
   const base = (env && env.APP_BASE_URL) || 'https://utahpros.app';
   const leadsUrl = `${String(base).replace(/\/$/, '')}/crm/leads${leadId ? `?lead=${leadId}` : ''}`;
+  const preheader = buildPreheader(rows, name);
 
   const rowsHtml = rows.length
-    ? rows.map((r) => `
+    ? rows.map((r) => {
+        const escapedValue = escapeHtml(r.value).replace(/\n/g, '<br>');
+        const valueHtml = r.type === 'phone'
+          ? `<a href="${escapeHtml(telHref(r.value))}" style="color:#111318;text-decoration:none;">&#128222; ${escapedValue}</a>`
+          : escapedValue;
+        return `
             <tr>
               <td style="padding:12px 0;border-bottom:1px solid #f0f1f3;vertical-align:top;width:36%;color:#5f6672;font-size:13px;">${escapeHtml(r.label)}</td>
-              <td style="padding:12px 0 12px 16px;border-bottom:1px solid #f0f1f3;vertical-align:top;color:#111318;font-size:14px;font-weight:500;">${escapeHtml(r.value).replace(/\n/g, '<br>')}</td>
-            </tr>`).join('')
+              <td style="padding:12px 0 12px 16px;border-bottom:1px solid #f0f1f3;vertical-align:top;color:#111318;font-size:15px;font-weight:500;line-height:1.4;">${valueHtml}</td>
+            </tr>`;
+      }).join('')
     : `
-            <tr><td style="padding:12px 0;color:#5f6672;font-size:14px;">A new web-form submission came in. Open the lead for details.</td></tr>`;
+            <tr><td style="padding:12px 0;color:#5f6672;font-size:15px;">A new web-form submission came in. Open the lead for details.</td></tr>`;
 
   return `<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+</head>
 <body style="margin:0;padding:0;background:#f8f9fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${escapeHtml(preheader)}</div>
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fb;padding:32px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);border:1px solid #e2e5e9;">
         <tr><td style="background:#1e293b;padding:24px 32px;">
           <p style="margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">New website lead</p>
-          <p style="margin:6px 0 0;font-size:20px;font-weight:700;color:#ffffff;">${escapeHtml(name || 'New lead')}</p>
+          <p style="margin:8px 0 0;font-size:20px;font-weight:700;color:#ffffff;">${escapeHtml(name || 'New lead')}</p>
           ${form ? `<p style="margin:4px 0 0;font-size:13px;color:#94a3b8;">${escapeHtml(form)}</p>` : ''}
         </td></tr>
-        <tr><td style="padding:8px 32px 28px;">
+        <tr><td style="padding:24px 32px 28px;">
           <table width="100%" cellpadding="0" cellspacing="0">
             ${rowsHtml}
           </table>
-          <div style="margin-top:24px;">
-            <a href="${escapeHtml(leadsUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">View lead &rarr;</a>
-          </div>
+          <table cellpadding="0" cellspacing="0" style="margin-top:24px;">
+            <tr><td style="border-radius:8px;background:#2563eb;">
+              <a href="${escapeHtml(leadsUrl)}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:14px 36px;">View lead &rarr;</a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6;">Utah Pros Restoration &middot; automated lead alert</p>
         </td></tr>
       </table>
-      <p style="margin:16px 0 0;font-size:12px;color:#8b929e;">Utah Pros Restoration &middot; lead notification</p>
     </td></tr>
   </table>
 </body>
