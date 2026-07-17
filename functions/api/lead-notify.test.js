@@ -43,9 +43,20 @@ describe('notifyNewLead (callrail lead.new)', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].typeKey).toBe('lead.new');
     expect(calls[0].body.entity_id).toBe('lead-1');
-    expect(calls[0].body.link).toBe('/crm/leads');
+    expect(calls[0].body.link).toBe('/crm/leads?lead=lead-1');
+    expect(calls[0].body.data.route).toBe('/crm/leads?lead=lead-1');
     expect(calls[0].body.body).toContain('+15551234567');
     expect(calls[0].body.body).toContain('Google');
+  });
+
+  it('falls back to the plain board link when the lead has no id yet', async () => {
+    const calls = [];
+    const dispatchImpl = async (evt) => { calls.push(evt); };
+    await notifyNewLead({
+      db: {}, env: ENV, dispatchImpl,
+      lead: { callrail_id: 'CR1', caller_number: '+15551234567', spam_flag: false },
+    });
+    expect(calls[0].body.link).toBe('/crm/leads');
   });
 
   it('skips flagged spam (no alert)', async () => {
@@ -74,6 +85,8 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].typeKey).toBe('lead.new');
     expect(calls[0].body.entity_id).toBe('lead-9');
+    expect(calls[0].body.link).toBe('/crm/leads?lead=lead-9');
+    expect(calls[0].body.data.route).toBe('/crm/leads?lead=lead-9');
     expect(calls[0].body.body).toContain('Water Damage Quote');
     expect(calls[0].body.payload.source_type).toBe('form');
   });
@@ -115,8 +128,10 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     expect(body).toContain('Basement flooded overnight');
     // ...but never the consent bookkeeping.
     expect(body).not.toContain('I agree to be contacted');
-    // Email HTML is present, branded, and links to the lead.
+    // Email HTML is present, branded, and the "View lead" button deep-links
+    // straight to this lead's panel, not just the unfiltered board.
     expect(html).toContain('New website lead');
+    expect(html).toContain('/crm/leads?lead=lead-42');
     expect(html).toContain('Jane Doe');
     expect(html).toContain('/crm/leads');
   });

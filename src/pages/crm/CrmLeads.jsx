@@ -64,6 +64,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
@@ -160,6 +161,7 @@ function daysInStage(updatedAt) {
 
 export default function CrmLeads() {
   const { db, employee } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [stages, setStages] = useState([]);
   const [leads, setLeads] = useState([]);
   const [stagePositions, setStagePositions] = useState({});
@@ -206,6 +208,34 @@ export default function CrmLeads() {
   }, [db]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link support: a "View lead" click from the lead.new email/bell/push
+  // lands here with ?lead=<id> — open that lead's panel automatically. Most
+  // leads are in the board's already-loaded (most-recent-200) set; an older
+  // lead outside that window gets a direct one-off fetch. Runs once per
+  // mount (deepLinkAttemptedRef) so it never re-fires as `leads` updates.
+  const deepLinkAttemptedRef = useRef(false);
+  const deepLinkedLeadId = searchParams.get('lead');
+  const clearLeadParam = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('lead');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  useEffect(() => {
+    if (!deepLinkedLeadId || deepLinkAttemptedRef.current || loading) return;
+    deepLinkAttemptedRef.current = true;
+    const found = leads.find(l => l.id === deepLinkedLeadId);
+    if (found) { setSelectedLead(found); clearLeadParam(); return; }
+    (async () => {
+      try {
+        const rows = await db.select('inbound_leads', `id=eq.${deepLinkedLeadId}&select=*,contact:contacts(name,phone)`);
+        if (rows && rows[0]) setSelectedLead(rows[0]);
+      } catch { /* deep-linked lead not found/loadable — board still usable */ }
+      finally { clearLeadParam(); }
+    })();
+  }, [deepLinkedLeadId, leads, loading, db, clearLeadParam]);
 
   const sortedStages = useMemo(() => sortStages(stages), [stages]);
   const grouped = useMemo(() => groupLeadsByStage(leads, stages, stagePositions), [leads, stages, stagePositions]);

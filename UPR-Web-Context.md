@@ -5472,6 +5472,20 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     `select=*` on `inbound_leads`. A small "Generated from the call recording" caption
     (`.crm-panel-empty`) discloses the AI origin. Zero new CSS — reuses `.crm-answer-value` for the
     body text.
+  - **Deep-link to the specific lead (2026-07-17, follow-up)** — the `lead.new` email's "View lead →"
+    button, and the bell/push click-through, used to land on `/crm/leads` with the board rendered but
+    no lead selected. `CrmLeads.jsx` now reads `useSearchParams()` for a `?lead=<id>` param on mount
+    (`deepLinkAttemptedRef` — runs once, never re-fires as `leads` updates) and opens that lead's panel:
+    first checked against the board's already-loaded most-recent-200 set, falling back to a direct
+    one-off `inbound_leads` fetch for an older lead outside that window. The param is stripped
+    (`setSearchParams(..., {replace:true})`) once acted on, success or failure, so the URL doesn't stay
+    "stuck". `functions/api/form-submit.js`'s `buildLeadEmailHtml`/`buildLeadNotificationContent` and
+    `functions/api/callrail-webhook.js`'s `notifyNewLead` now build `link`/`data.route`/the email's
+    button href as `/crm/leads?lead=<id>` (falls back to the plain board link when a lead somehow has no
+    id yet). `webflow-form-webhook.js` gets this for free — it already calls the same
+    `notifyNewLeadFromForm`. Tests: `functions/api/lead-notify.test.js` asserts the exact deep-linked
+    URL on both the callrail and form paths (bell/push `link`+`data.route` and the email HTML href) plus
+    the no-id fallback.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
