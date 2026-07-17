@@ -59,23 +59,28 @@ const NOTIFY_SKIP_KEYS = new Set(['hp', 'honeypot']);
 // truncated there; the HTML email keeps the full value.
 const PLAIN_VALUE_MAX = 140;
 
-// Turn a submitted value (string, array of chosen options, boolean checkbox,
-// or empty) into one display string. Arrays (multi-select checkboxes) join
-// with commas; blanks drop; booleans read as "Yes"/"No", not the raw
-// "true"/"false" a checkbox field submits.
+// Turn a submitted value (string, array of chosen options, or empty) into one
+// display string. Arrays (multi-select checkboxes) join with commas; blanks
+// drop. Booleans are handled by the caller (an unchecked box isn't worth a
+// row at all, and a checked one needs no "Yes" — the label already says it).
 function displayValue(raw) {
   if (Array.isArray(raw)) {
     return raw.map((v) => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
   }
-  if (typeof raw === 'boolean') return raw ? 'Yes' : 'No';
   return raw == null ? '' : String(raw).trim();
 }
 
 /**
- * Flatten a form submission into ordered { key, label, value } rows for the
- * notification — schema order first (so the alert reads like the form), skipping
- * consent/honeypot and any empty answer. Falls back to the raw data keys when a
- * schema is unavailable, so an alert is never blank.
+ * Flatten a form submission into ordered { key, label, value, boolean? } rows
+ * for the notification — schema order first (so the alert reads like the
+ * form), skipping consent/honeypot and any empty answer. Falls back to the
+ * raw data keys when a schema is unavailable, so an alert is never blank.
+ *
+ * A checkbox field (raw boolean) is the one type that isn't a label/value
+ * pair: an UNCHECKED box (false) is dropped entirely — "Fire and Smoke: No"
+ * for every service NOT requested is noise, not signal — and a CHECKED box
+ * (true) is flagged `boolean: true` with an empty value so the renderer
+ * shows just the label ("Mold"), never a redundant "Yes".
  */
 export function leadNotificationRows(schema, data) {
   const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
@@ -89,15 +94,26 @@ export function leadNotificationRows(schema, data) {
       seen.add(f.key); // schema-defined but intentionally omitted — don't let the raw fallback re-add it
       continue;
     }
-    const value = displayValue(d[f.key]);
+    seen.add(f.key);
+    const raw = d[f.key];
+    if (typeof raw === 'boolean') {
+      if (!raw) continue; // unchecked — not worth mentioning
+      rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || f.key, value: '', boolean: true, type: f.type });
+      continue;
+    }
+    const value = displayValue(raw);
     if (!value) continue;
     rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || f.key, value, type: f.type });
-    seen.add(f.key);
   }
   // Any submitted keys the schema didn't describe (defensive — schema is source
   // of truth, but never silently drop data the admin might need).
   for (const [k, v] of Object.entries(d)) {
     if (seen.has(k) || NOTIFY_SKIP_KEYS.has(k)) continue;
+    if (typeof v === 'boolean') {
+      if (!v) continue;
+      rows.push({ key: k, label: k, value: '', boolean: true });
+      continue;
+    }
     const value = displayValue(v);
     if (!value) continue;
     rows.push({ key: k, label: k, value });
@@ -131,10 +147,11 @@ export function buildLeadNotificationContent({ schema, data, formName, env, lead
 
   const title = name ? `New lead · ${name}` : 'New lead';
 
-  // Plain text — bell + OS push. One "Label: value" per line, values truncated.
+  // Plain text — bell + OS push. One "Label: value" per line (a checked box
+  // is just its label — no redundant "Yes"), values truncated.
   let body;
   if (rows.length) {
-    body = rows.map((r) => `${r.label}: ${truncate(r.value, PLAIN_VALUE_MAX)}`).join('\n');
+    body = rows.map((r) => (r.boolean ? r.label : `${r.label}: ${truncate(r.value, PLAIN_VALUE_MAX)}`)).join('\n');
     if (form) body += `\n— ${form}`;
   } else {
     // No parsed fields (e.g. schema-less) — keep the old, always-useful line.
@@ -163,7 +180,7 @@ function telHref(raw) {
 function buildPreheader(rows, name) {
   const hint = rows.find((r) => !/name/i.test(r.key) && !/name/i.test(r.label));
   const parts = [name || 'New lead'];
-  if (hint) parts.push(`${hint.label}: ${truncate(hint.value, 60)}`);
+  if (hint) parts.push(hint.boolean ? hint.label : `${hint.label}: ${truncate(hint.value, 60)}`);
   return parts.join(' — ');
 }
 
@@ -181,6 +198,15 @@ function buildLeadEmailHtml({ rows, name, form, env, leadId }) {
 
   const rowsHtml = rows.length
     ? rows.map((r) => {
+        // A checked box is a single-column row — its label IS the answer,
+        // no redundant "Yes" value column (an unchecked box never gets a
+        // row at all — see leadNotificationRows).
+        if (r.boolean) {
+          return `
+            <tr>
+              <td colspan="2" style="padding:12px 0;border-bottom:1px solid #f0f1f3;color:#111318;font-size:15px;font-weight:600;">&#10003; ${escapeHtml(r.label)}</td>
+            </tr>`;
+        }
         const escapedValue = escapeHtml(r.value).replace(/\n/g, '<br>');
         const valueHtml = r.type === 'phone'
           ? `<a href="${escapeHtml(telHref(r.value))}" style="color:#111318;text-decoration:none;">&#128222; ${escapedValue}</a>`

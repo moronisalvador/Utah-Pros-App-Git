@@ -155,6 +155,39 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     expect(body).toContain('<script>');
   });
 
+  it('only mentions the checkbox services that were actually selected — no false/No noise', () => {
+    const schema = {
+      fields: [
+        { key: 'name', label: 'Full name', type: 'text' },
+        { key: 'mold', label: 'Mold', type: 'checkbox' },
+        { key: 'water', label: 'Water Damage', type: 'checkbox' },
+        { key: 'fire', label: 'Fire and Smoke', type: 'checkbox' },
+        { key: 'remodel', label: 'Remodeling', type: 'checkbox' },
+      ],
+    };
+    const data = { name: 'Test Testando', mold: true, water: true, fire: false, remodel: false };
+    const { body, html } = buildLeadNotificationContent({ schema, data, formName: 'Free inspection request' });
+
+    // Plain text (bell/push): checked boxes appear as bare labels...
+    expect(body).toContain('Mold');
+    expect(body).toContain('Water Damage');
+    // ...unchecked ones never appear at all, in any form.
+    expect(body).not.toMatch(/Fire and Smoke/);
+    expect(body).not.toMatch(/Remodeling/);
+    expect(body).not.toContain('true');
+    expect(body).not.toContain('false');
+    expect(body).not.toContain('Yes');
+    expect(body).not.toContain('No');
+
+    // Email HTML: same story, rendered as a checkmark + label.
+    expect(html).toContain('&#10003; Mold');
+    expect(html).toContain('&#10003; Water Damage');
+    expect(html).not.toContain('Fire and Smoke');
+    expect(html).not.toContain('Remodeling');
+    expect(html).not.toMatch(/>Yes</);
+    expect(html).not.toMatch(/>No</);
+  });
+
   it('degrades to a generic line when no schema/data is available', () => {
     const { title, body } = buildLeadNotificationContent({ formName: 'Web Form' });
     expect(title).toBe('New lead');
@@ -181,14 +214,21 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     ]);
   });
 
-  it('leadNotificationRows renders a boolean checkbox as Yes/No, not raw true/false', () => {
+  it('leadNotificationRows drops an unchecked box entirely and flags a checked one boolean (no Yes/No)', () => {
     const rows = leadNotificationRows(
-      { fields: [{ key: 'mold', label: 'Mold', type: 'checkbox' }, { key: 'fire', label: 'Fire', type: 'checkbox' }] },
-      { mold: true, fire: false },
+      {
+        fields: [
+          { key: 'mold', label: 'Mold', type: 'checkbox' },
+          { key: 'water', label: 'Water Damage', type: 'checkbox' },
+          { key: 'fire', label: 'Fire and Smoke', type: 'checkbox' },
+        ],
+      },
+      { mold: true, water: true, fire: false },
     );
+    // Only the checked boxes get a row — "Fire and Smoke: false" never appears.
     expect(rows).toEqual([
-      { key: 'mold', label: 'Mold', value: 'Yes', type: 'checkbox' },
-      { key: 'fire', label: 'Fire', value: 'No', type: 'checkbox' },
+      { key: 'mold', label: 'Mold', value: '', boolean: true, type: 'checkbox' },
+      { key: 'water', label: 'Water Damage', value: '', boolean: true, type: 'checkbox' },
     ]);
   });
 

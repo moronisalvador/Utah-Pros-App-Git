@@ -16,7 +16,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/pages/crm/CrmLeads.jsx (lostReasonError, displayFieldValue helpers)
+ *   Internal:  src/pages/crm/CrmLeads.jsx (lostReasonError, displayFieldValue, formDataRows helpers)
  *
  * NOTES / GOTCHAS:
  *   - Mocks @/contexts/AuthContext so importing the page module does not pull
@@ -28,7 +28,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ db: {}, employee: null }) }));
 
-const { lostReasonError, displayFieldValue } = await import('./CrmLeads.jsx');
+const { lostReasonError, displayFieldValue, formDataRows } = await import('./CrmLeads.jsx');
 
 const lostStage = { id: 'l1', name: 'Lost', is_lost: true };
 const openStage = { id: 'o1', name: 'Qualified', is_lost: false };
@@ -56,11 +56,6 @@ describe('lostReasonError — reason required only on lost stages', () => {
 });
 
 describe('displayFieldValue — submitted-answer formatting', () => {
-  it('renders a boolean checkbox as Yes/No, not raw true/false', () => {
-    expect(displayFieldValue(true)).toBe('Yes');
-    expect(displayFieldValue(false)).toBe('No');
-  });
-
   it('joins a multi-select array and drops blanks', () => {
     expect(displayFieldValue(['a', '', 'b'])).toBe('a, b');
   });
@@ -72,5 +67,27 @@ describe('displayFieldValue — submitted-answer formatting', () => {
   it('renders null/undefined as an empty string', () => {
     expect(displayFieldValue(null)).toBe('');
     expect(displayFieldValue(undefined)).toBe('');
+  });
+});
+
+describe('formDataRows — only mentions checked boxes, never Yes/No', () => {
+  it('drops an unchecked box entirely and flags a checked one boolean', () => {
+    const rows = formDataRows(
+      { fields: [{ key: 'mold', label: 'Mold', type: 'checkbox' }, { key: 'fire', label: 'Fire and Smoke', type: 'checkbox' }] },
+      { mold: true, fire: false },
+    );
+    expect(rows).toEqual([
+      { key: 'mold', label: 'Mold', value: '', boolean: true },
+    ]);
+  });
+
+  it('matches the reference example: a multi-select array already reads correctly as-is', () => {
+    const rows = formDataRows(
+      { fields: [{ key: 'services', label: 'What do you need help with?', type: 'checkbox', options: ['Mold', 'Water Damage', 'Fire'] }] },
+      { services: ['Mold', 'Water Damage'] },
+    );
+    expect(rows).toEqual([
+      { key: 'services', label: 'What do you need help with?', value: 'Mold, Water Damage' },
+    ]);
   });
 });

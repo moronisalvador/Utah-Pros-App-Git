@@ -5514,11 +5514,24 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     up from a ~38px one; (5) `<meta name="color-scheme"/"supported-color-schemes" content="light">` so
     dark-mode email clients don't invert the brand card. Also fixed a real legibility bug this surfaced —
     `leadNotificationRows`'s `displayValue` (and `CrmLeads.jsx`'s mirrored `displayFieldValue`, now
-    exported for testing) rendered a checkbox field as the literal string `"true"`/`"false"`; both now
-    render `"Yes"`/`"No"`. Verified visually via a Playwright screenshot of the real render function (not
-    a mockup) before shipping. Tests: `functions/api/lead-notify.test.js` (preheader text, `tel:` href,
-    color-scheme meta, Yes/No formatting) + `crmLeads.lostReason.test.js` (client-side `displayFieldValue`
-    cases).
+    exported for testing) rendered a checkbox field as the literal string `"true"`/`"false"`. Verified
+    visually via a Playwright screenshot of the real render function (not a mockup) before shipping.
+    Tests: `functions/api/lead-notify.test.js` (preheader text, `tel:` href, color-scheme meta) +
+    `crmLeads.lostReason.test.js` (client-side `displayFieldValue`/`formDataRows` cases).
+    - **Checked-boxes-only, not Yes/No (2026-07-17, same-day follow-up)** — the `"Yes"`/`"No"` fix above
+      was itself still noisy: a form with one boolean field per service (e.g. separate Mold / Water
+      Damage / Fire and Smoke / Remodeling checkboxes, as opposed to one multi-select array field —
+      both schema shapes exist across UPR's forms) showed EVERY service, checked or not
+      (`"Fire and Smoke: No"` for every service NOT requested). `leadNotificationRows` (+ its
+      `CrmLeads.jsx` mirror `formDataRows`, now also exported) now drops an unchecked box (`false`)
+      entirely — no row at all — and flags a checked one (`true`) `boolean: true` with an empty
+      `value`, so the renderer shows just the label. Email HTML renders it as a single-column
+      `&#10003; Mold` row; the plain-text bell/push body as a bare `Mold` line; the CRM panel's
+      `.crm-answer-value` as `✓ Mold`. The existing multi-select-array case (e.g. "What do you need
+      help with? → Mold, Water Damage") was already correct — `displayValue`'s array branch only ever
+      included the selected options — and is now the reference example both code paths match. Tests
+      updated in both files to prove only-checked-shown with zero `true`/`false`/`Yes`/`No` anywhere in
+      either output.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
