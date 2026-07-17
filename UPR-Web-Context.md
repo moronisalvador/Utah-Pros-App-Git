@@ -5502,6 +5502,23 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     already closed `anon` on these exact functions; verified live via the grant table, no
     `anon`/`PUBLIC`). Proof: `supabase/tests/crm_pipeline_spam_filter.test.js` — before/after deltas
     scoped to run-unique fixtures/specific stages/buckets (not shape-only, not org-wide live counts).
+  - **`lead.new` email design pass (2026-07-17, follow-up, `/impeccable polish`)** — `buildLeadEmailHtml`
+    (`functions/api/form-submit.js`) gets a genuine polish, not just cosmetics: (1) a hidden inbox-preview
+    line (`buildPreheader`) so Gmail/Outlook/Apple Mail show "who + what" next to the subject before the
+    email opens — the single biggest lever for "glance and know whether to act now"; (2) phone-type
+    fields render as a tap-to-call `tel:` link with a 📞 prefix (`telHref`, US-only best-effort, matches
+    `CrmLeads.jsx`'s existing click-to-call `tel:` convention) — previously plain unclickable text; (3) the
+    footer moved inside the card with the same `border-top`/`background:#f8fafc` treatment
+    `functions/lib/email-template.js`/`send-esign.js` already use, instead of floating outside it; (4) the
+    button padding now matches `send-esign.js`'s CTA exactly (`14px 36px`) for a ≥44px touch target,
+    up from a ~38px one; (5) `<meta name="color-scheme"/"supported-color-schemes" content="light">` so
+    dark-mode email clients don't invert the brand card. Also fixed a real legibility bug this surfaced —
+    `leadNotificationRows`'s `displayValue` (and `CrmLeads.jsx`'s mirrored `displayFieldValue`, now
+    exported for testing) rendered a checkbox field as the literal string `"true"`/`"false"`; both now
+    render `"Yes"`/`"No"`. Verified visually via a Playwright screenshot of the real render function (not
+    a mockup) before shipping. Tests: `functions/api/lead-notify.test.js` (preheader text, `tel:` href,
+    color-scheme meta, Yes/No formatting) + `crmLeads.lostReason.test.js` (client-side `displayFieldValue`
+    cases).
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /

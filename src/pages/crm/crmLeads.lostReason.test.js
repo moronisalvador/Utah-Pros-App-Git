@@ -16,7 +16,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/pages/crm/CrmLeads.jsx (lostReasonError helper)
+ *   Internal:  src/pages/crm/CrmLeads.jsx (lostReasonError, displayFieldValue helpers)
  *
  * NOTES / GOTCHAS:
  *   - Mocks @/contexts/AuthContext so importing the page module does not pull
@@ -28,7 +28,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ db: {}, employee: null }) }));
 
-const { lostReasonError } = await import('./CrmLeads.jsx');
+const { lostReasonError, displayFieldValue } = await import('./CrmLeads.jsx');
 
 const lostStage = { id: 'l1', name: 'Lost', is_lost: true };
 const openStage = { id: 'o1', name: 'Qualified', is_lost: false };
@@ -52,5 +52,25 @@ describe('lostReasonError — reason required only on lost stages', () => {
   it('treats a missing/undefined stage as not requiring a reason', () => {
     expect(lostReasonError(undefined, '')).toBeNull();
     expect(lostReasonError(null, '')).toBeNull();
+  });
+});
+
+describe('displayFieldValue — submitted-answer formatting', () => {
+  it('renders a boolean checkbox as Yes/No, not raw true/false', () => {
+    expect(displayFieldValue(true)).toBe('Yes');
+    expect(displayFieldValue(false)).toBe('No');
+  });
+
+  it('joins a multi-select array and drops blanks', () => {
+    expect(displayFieldValue(['a', '', 'b'])).toBe('a, b');
+  });
+
+  it('passes through a plain string, trimmed', () => {
+    expect(displayFieldValue('  Jane  ')).toBe('Jane');
+  });
+
+  it('renders null/undefined as an empty string', () => {
+    expect(displayFieldValue(null)).toBe('');
+    expect(displayFieldValue(undefined)).toBe('');
   });
 });
