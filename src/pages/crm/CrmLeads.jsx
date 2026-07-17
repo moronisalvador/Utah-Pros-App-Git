@@ -85,6 +85,18 @@ function leadLabel(lead) {
   return lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form lead' : 'Unknown caller');
 }
 
+// "Call · Google My Business · Google My Business" reads like a bug when a
+// lead's source and campaign are the same string (common for CallRail leads
+// with no separate campaign tag) — join only the segments that differ.
+function sourceLine(lead) {
+  const parts = [lead.source_type === 'call' ? 'Call' : 'Web form'];
+  if (lead.source) parts.push(lead.source);
+  if (lead.campaign && lead.campaign.trim().toLowerCase() !== (lead.source || '').trim().toLowerCase()) {
+    parts.push(lead.campaign);
+  }
+  return parts.join(' · ');
+}
+
 // Field keys that are legal bookkeeping / spam traps, never shown as a "submitted answer".
 const FORM_DATA_SKIP_TYPES = new Set(['consent']);
 const FORM_DATA_SKIP_KEYS = new Set(['hp', 'honeypot']);
@@ -687,8 +699,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
       <div className="crm-panel" onClick={e => e.stopPropagation()}>
         <div className="crm-panel-header">
           <div>
-            <div className="crm-panel-title">{leadLabel(lead)}</div>
-            {lead.caller_number && (
+            <div className="crm-panel-title">
+              {lead.contact?.name || !lead.caller_number ? leadLabel(lead) : (
+                <a
+                  href={`tel:${lead.caller_number}`}
+                  className="crm-call-link"
+                  onClick={() => logClickToCall(lead.caller_number)}
+                >
+                  📞 {lead.caller_number}
+                </a>
+              )}
+            </div>
+            {lead.contact?.name && lead.caller_number && (
               <a
                 href={`tel:${lead.caller_number}`}
                 className="crm-call-link crm-panel-subtitle"
@@ -714,7 +736,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         </div>
 
         <div className="crm-panel-section">
-          <div className="crm-panel-row"><span>Source</span><span>{lead.source_type === 'call' ? 'Call' : 'Web form'}{lead.source ? ` · ${lead.source}` : ''}{lead.campaign ? ` · ${lead.campaign}` : ''}</span></div>
+          <div className="crm-panel-row"><span>Source</span><span>{sourceLine(lead)}</span></div>
           {lead.value != null && <div className="crm-panel-row"><span>Value</span><span>{formatMoney(lead.value)}</span></div>}
           <div className="crm-panel-row"><span>Occurred</span><span>{lead.occurred_at ? new Date(lead.occurred_at).toLocaleString() : '—'}</span></div>
         </div>
@@ -737,7 +759,11 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
           <div className="crm-panel-section">
             {!promoting ? (
               <>
-                <p className="crm-panel-empty">Not a customer yet — raw calls stay contact-free until you qualify them.</p>
+                <p className="crm-panel-empty">
+                  {lead.source_type === 'call'
+                    ? 'Not a customer yet — raw calls stay contact-free until you qualify them.'
+                    : 'Not linked to a contact yet — a lead stays contact-free until you qualify it.'}
+                </p>
                 <button className="crm-btn crm-btn-primary" onClick={() => setPromoting(true)}>+ Add as customer</button>
               </>
             ) : (
@@ -750,7 +776,11 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   <button className="crm-btn crm-btn-primary" onClick={promote} disabled={saving}>{saving ? 'Adding…' : 'Add as customer'}</button>
                   <button className="crm-btn crm-btn-ghost" onClick={() => setPromoting(false)}>Cancel</button>
                 </div>
-                <p className="crm-panel-empty">Creates a contact from this number ({lead.caller_number}) and links this lead to it.</p>
+                <p className="crm-panel-empty">
+                  {lead.caller_number
+                    ? `Creates a contact from this number (${lead.caller_number}) and links this lead to it.`
+                    : 'Creates a contact and links this lead to it.'}
+                </p>
               </>
             )}
           </div>
