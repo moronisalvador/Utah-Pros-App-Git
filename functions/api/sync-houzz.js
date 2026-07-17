@@ -40,9 +40,14 @@
  *     is a no-op (skipped:true) unless { force: true } is passed — so a
  *     retry from the UI (or a double-click) never double-creates a Houzz
  *     Pro project.
- *   - Requires the HOUZZ_ZAPIER_WEBHOOK_URL secret in Cloudflare (both
- *     Production and Preview env sets). Without it, returns 501 so a
- *     misconfigured environment fails loudly instead of silently no-oping.
+ *   - The Zapier webhook URL lives in integration_config (key
+ *     'houzz_zapier_webhook_url'), read via the service-role client — same
+ *     pattern as auth.js's checkCronSecret. Deliberately NOT a Cloudflare
+ *     env var: integration_config is service-role-only (RLS enabled, zero
+ *     policies — invisible to anon/authenticated over PostgREST per
+ *     database-standard.md §4), so it's settable live via Supabase without
+ *     a Cloudflare dashboard step. Without a configured row, returns 501 so
+ *     a misconfigured environment fails loudly instead of silently no-oping.
  * ════════════════════════════════════════════════
  */
 
@@ -55,6 +60,14 @@ import { recordWorkerRun } from '../lib/worker-runs.js';
 const JOB_FIELDS =
   'id,job_number,division,insured_name,address,city,state,zip,' +
   'client_email,client_phone,insurance_company,claim_number,type_of_loss,houzz_synced_at';
+
+async function getHouzzWebhookUrl(db) {
+  const rows = await db.select(
+    'integration_config',
+    "key=eq.houzz_zapier_webhook_url&select=value&limit=1",
+  );
+  return rows?.[0]?.value || null;
+}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -87,12 +100,13 @@ export async function onRequestPost(context) {
     return jsonResponse({ ok: true, skipped: true }, 200, request, env);
   }
 
-  if (!env.HOUZZ_ZAPIER_WEBHOOK_URL) {
+  const webhookUrl = await getHouzzWebhookUrl(db);
+  if (!webhookUrl) {
     return jsonResponse({ error: 'Houzz Pro sync is not configured' }, 501, request, env);
   }
 
   try {
-    const res = await fetchWithTimeout(env.HOUZZ_ZAPIER_WEBHOOK_URL, {
+    const res = await fetchWithTimeout(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
