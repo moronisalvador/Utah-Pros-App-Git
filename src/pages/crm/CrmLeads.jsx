@@ -105,7 +105,6 @@ const FORM_DATA_SKIP_KEYS = new Set(['hp', 'honeypot']);
 // eslint-disable-next-line react-refresh/only-export-components
 export function displayFieldValue(raw) {
   if (Array.isArray(raw)) return raw.map(v => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
-  if (typeof raw === 'boolean') return raw ? 'Yes' : 'No';
   return raw == null ? '' : String(raw).trim();
 }
 
@@ -116,12 +115,16 @@ function humanizeKey(key) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : key;
 }
 
-// Flatten a lead's raw form_data into ordered { key, label, value } rows —
-// schema order + real labels when the published schema loaded, humanized-key
-// fallback otherwise, so a submission never renders blank. Mirrors
-// functions/api/form-submit.js's leadNotificationRows (server-side, for the
-// email/push alert) but reads client-side jsonb, not a Cloudflare Worker payload.
-function formDataRows(schema, data) {
+// Flatten a lead's raw form_data into ordered { key, label, value, boolean? }
+// rows — schema order + real labels when the published schema loaded,
+// humanized-key fallback otherwise, so a submission never renders blank.
+// Mirrors functions/api/form-submit.js's leadNotificationRows (server-side,
+// for the email/push alert) but reads client-side jsonb, not a Cloudflare
+// Worker payload — including the same checkbox handling: an unchecked box
+// (false) is dropped entirely, a checked one (true) is flagged `boolean:
+// true` with an empty value so the panel shows just the label, not "Yes".
+// eslint-disable-next-line react-refresh/only-export-components
+export function formDataRows(schema, data) {
   const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
   const d = data && typeof data === 'object' ? data : {};
   const rows = [];
@@ -129,13 +132,24 @@ function formDataRows(schema, data) {
   for (const f of fields) {
     if (!f || !f.key) continue;
     if (FORM_DATA_SKIP_TYPES.has(f.type) || FORM_DATA_SKIP_KEYS.has(f.key)) { seen.add(f.key); continue; }
-    const value = displayFieldValue(d[f.key]);
+    seen.add(f.key);
+    const raw = d[f.key];
+    if (typeof raw === 'boolean') {
+      if (!raw) continue;
+      rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || humanizeKey(f.key), value: '', boolean: true });
+      continue;
+    }
+    const value = displayFieldValue(raw);
     if (!value) continue;
     rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || humanizeKey(f.key), value });
-    seen.add(f.key);
   }
   for (const [k, v] of Object.entries(d)) {
     if (seen.has(k) || FORM_DATA_SKIP_KEYS.has(k)) continue;
+    if (typeof v === 'boolean') {
+      if (!v) continue;
+      rows.push({ key: k, label: humanizeKey(k), value: '', boolean: true });
+      continue;
+    }
     const value = displayFieldValue(v);
     if (!value) continue;
     rows.push({ key: k, label: humanizeKey(k), value });
@@ -787,8 +801,14 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
             <div className="crm-answer-list">
               {submittedRows.map(row => (
                 <div key={row.key}>
-                  <span className="crm-panel-label">{row.label}</span>
-                  <p className="crm-answer-value">{row.value}</p>
+                  {row.boolean ? (
+                    <p className="crm-answer-value">&#10003; {row.label}</p>
+                  ) : (
+                    <>
+                      <span className="crm-panel-label">{row.label}</span>
+                      <p className="crm-answer-value">{row.value}</p>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
