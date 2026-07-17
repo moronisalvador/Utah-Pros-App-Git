@@ -43,7 +43,7 @@ describe('notifyNewLead (callrail lead.new)', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].typeKey).toBe('lead.new');
     expect(calls[0].body.entity_id).toBe('lead-1');
-    expect(calls[0].body.link).toBe('/leads');
+    expect(calls[0].body.link).toBe('/crm/leads');
     expect(calls[0].body.body).toContain('+15551234567');
     expect(calls[0].body.body).toContain('Google');
   });
@@ -118,7 +118,7 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     // Email HTML is present, branded, and links to the lead.
     expect(html).toContain('New website lead');
     expect(html).toContain('Jane Doe');
-    expect(html).toContain('/leads');
+    expect(html).toContain('/crm/leads');
   });
 
   it('escapes untrusted submission values in the email HTML', () => {

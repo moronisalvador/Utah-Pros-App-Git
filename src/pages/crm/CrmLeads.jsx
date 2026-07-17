@@ -10,8 +10,10 @@
  *   drag a card to a new column to move it forward, with a mouse on desktop
  *   or a finger on iPad/iPhone. Tap a card (without dragging it) to open its
  *   details: who it is, how to reach them, a dropdown to change its stage,
- *   and a combined timeline of every call, text, note, and estimate tied to
- *   that contact.
+ *   every answer they typed into the web form that created the lead, a
+ *   free-text notes box, the to-dos tied to this lead, a log of every stage
+ *   it's moved through, and a combined timeline of every call, text, note,
+ *   and estimate tied to that contact.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/leads
@@ -22,15 +24,24 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db, employee),
  *              @/lib/crmIcons (IconLeads), @/lib/crmPipeline (sortStages,
- *              groupLeadsByStage, weightedPipelineValue)
+ *              groupLeadsByStage, weightedPipelineValue),
+ *              @/components/TabLoading
  *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC),
- *                       inbound_leads (embeds contacts), lead_pipeline_stage,
- *                       get_contact_activity RPC (opened lead's timeline)
+ *                       inbound_leads (embeds contacts; .form_data/.notes read
+ *                       by the detail panel), lead_pipeline_stage,
+ *                       get_contact_activity RPC (opened lead's timeline),
+ *                       form_definitions + form_definition_versions (the
+ *                       submitted form's schema, for real field labels),
+ *                       crm_tasks (get_crm_tasks RPC, filtered by lead_id),
+ *                       lead_stage_history (this lead's stage-move log)
  *              writes → lead_pipeline_stage (via move_lead_to_stage RPC),
  *                       inbound_leads + contacts (via create_manual_lead RPC —
  *                       the "+ New lead" manual-entry button; and
  *                       promote_lead_to_contact — the "+ Add as customer" action
  *                       that turns a raw lead into a linked contact),
+ *                       inbound_leads.notes (direct update — the panel's
+ *                       Notes box), crm_tasks (upsert_crm_task/set_task_status
+ *                       — the panel's Tasks quick-add/check-off),
  *                       system_events (direct insert — click-to-call logging)
  *
  * NOTES / GOTCHAS:
@@ -45,6 +56,11 @@
  *     classes for identical visual feedback. The stage <select> in the
  *     detail panel still works as an always-available fallback on any
  *     device — tapping a card without dragging it still opens that panel.
+ *   - The detail panel's "Submitted answers" section labels each field using
+ *     the form's real published schema when it can load one (fetched by
+ *     raw_payload.form_id); if that fetch fails or the lead predates a
+ *     schema, it falls back to a humanized version of the raw field key so
+ *     the submitted values are never hidden, just less prettily labeled.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
@@ -53,6 +69,7 @@ import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
 import { normalizePhone } from '@/lib/phone';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
+import TabLoading from '@/components/TabLoading';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
 const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
@@ -66,6 +83,61 @@ function formatMoney(n) {
 
 function leadLabel(lead) {
   return lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form lead' : 'Unknown caller');
+}
+
+// "Call · Google My Business · Google My Business" reads like a bug when a
+// lead's source and campaign are the same string (common for CallRail leads
+// with no separate campaign tag) — join only the segments that differ.
+function sourceLine(lead) {
+  const parts = [lead.source_type === 'call' ? 'Call' : 'Web form'];
+  if (lead.source) parts.push(lead.source);
+  if (lead.campaign && lead.campaign.trim().toLowerCase() !== (lead.source || '').trim().toLowerCase()) {
+    parts.push(lead.campaign);
+  }
+  return parts.join(' · ');
+}
+
+// Field keys that are legal bookkeeping / spam traps, never shown as a "submitted answer".
+const FORM_DATA_SKIP_TYPES = new Set(['consent']);
+const FORM_DATA_SKIP_KEYS = new Set(['hp', 'honeypot']);
+
+function displayFieldValue(raw) {
+  if (Array.isArray(raw)) return raw.map(v => (v == null ? '' : String(v).trim())).filter(Boolean).join(', ');
+  return raw == null ? '' : String(raw).trim();
+}
+
+// "multiple_choice_field" -> "Multiple choice field" — used only when the
+// form's real schema label can't be loaded (see LeadDetailPanel's formSchema fetch).
+function humanizeKey(key) {
+  const s = String(key).replace(/_/g, ' ').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : key;
+}
+
+// Flatten a lead's raw form_data into ordered { key, label, value } rows —
+// schema order + real labels when the published schema loaded, humanized-key
+// fallback otherwise, so a submission never renders blank. Mirrors
+// functions/api/form-submit.js's leadNotificationRows (server-side, for the
+// email/push alert) but reads client-side jsonb, not a Cloudflare Worker payload.
+function formDataRows(schema, data) {
+  const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
+  const d = data && typeof data === 'object' ? data : {};
+  const rows = [];
+  const seen = new Set();
+  for (const f of fields) {
+    if (!f || !f.key) continue;
+    if (FORM_DATA_SKIP_TYPES.has(f.type) || FORM_DATA_SKIP_KEYS.has(f.key)) { seen.add(f.key); continue; }
+    const value = displayFieldValue(d[f.key]);
+    if (!value) continue;
+    rows.push({ key: f.key, label: (f.label && String(f.label).trim()) || humanizeKey(f.key), value });
+    seen.add(f.key);
+  }
+  for (const [k, v] of Object.entries(d)) {
+    if (seen.has(k) || FORM_DATA_SKIP_KEYS.has(k)) continue;
+    const value = displayFieldValue(v);
+    if (!value) continue;
+    rows.push({ key: k, label: humanizeKey(k), value });
+  }
+  return rows;
 }
 
 // Client-side guard: a reason is required to move a lead into a "lost" stage,
@@ -389,6 +461,10 @@ export default function CrmLeads() {
           createdBy={employee?.id || null}
           actorId={employee?.id || null}
           onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load(); }}
+          onLeadPatched={(patch) => {
+            setSelectedLead(prev => (prev ? { ...prev, ...patch } : prev));
+            setLeads(prev => prev.map(l => (l.id === selectedLead.id ? { ...l, ...patch } : l)));
+          }}
           db={db}
         />
       )}
@@ -484,11 +560,63 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
 /* ═══════════════════════════════════════════════════
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
-function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, db }) {
+function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, onLeadPatched, db }) {
   const [promoting, setPromoting] = useState(false);
   const [promoteName, setPromoteName] = useState('');
   const [promoteEmail, setPromoteEmail] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [formSchema, setFormSchema] = useState(null);
+  const [notes, setNotes] = useState(lead.notes || '');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const [stageHistory, setStageHistory] = useState([]);
+
+  const submittedRows = useMemo(() => formDataRows(formSchema, lead.form_data), [formSchema, lead.form_data]);
+
+  // The full published form schema (for real field labels) — best-effort; a
+  // failed/skipped fetch just falls back to humanized field-key labels above.
+  useEffect(() => {
+    if (lead.source_type !== 'form' || !lead.raw_payload?.form_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const formRows = await db.select('form_definitions', `id=eq.${lead.raw_payload.form_id}&select=published_version_id`);
+        const versionId = formRows[0]?.published_version_id;
+        if (!versionId) return;
+        const versionRows = await db.select('form_definition_versions', `id=eq.${versionId}&select=schema`);
+        if (!cancelled) setFormSchema(versionRows[0]?.schema || null);
+      } catch { /* non-fatal — humanized key labels still render */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, lead.id]);
+
+  // This lead's tasks (any status, mirrors CrmTasks.jsx) + its pipeline-stage
+  // move history, so "progress on this lead" is visible without leaving the panel.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setTasksLoading(true);
+      try {
+        const [taskRows, historyRows] = await Promise.all([
+          db.rpc('get_crm_tasks', { p_lead_id: lead.id }),
+          db.select('lead_stage_history', `lead_id=eq.${lead.id}&select=id,stage_id,from_stage_id,lost_reason,moved_at&order=moved_at.desc&limit=20`),
+        ]);
+        if (cancelled) return;
+        setTasks(taskRows || []);
+        setStageHistory(historyRows || []);
+      } catch {
+        if (!cancelled) { setTasks([]); setStageHistory([]); err('Failed to load tasks and stage history'); }
+      } finally {
+        if (!cancelled) setTasksLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [db, lead.id]);
 
   // Log a click-to-call as an activity event, then let the tel: link dial.
   // Fire-and-forget — never block or fail the call on a logging error.
@@ -518,13 +646,71 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     }
   }, [db, lead.id, promoteName, promoteEmail, createdBy, onPromoted]);
 
+  const saveNotes = useCallback(async () => {
+    setSavingNotes(true);
+    try {
+      const trimmed = notes.trim() || null;
+      await db.update('inbound_leads', `id=eq.${lead.id}`, { notes: trimmed, updated_at: new Date().toISOString() });
+      onLeadPatched?.({ notes: trimmed });
+      ok('Note saved');
+    } catch {
+      err('Failed to save the note');
+    } finally {
+      setSavingNotes(false);
+    }
+  }, [db, lead.id, notes, onLeadPatched]);
+
+  const addTask = useCallback(async () => {
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    setAddingTask(true);
+    try {
+      const row = await db.rpc('upsert_crm_task', {
+        p_title: title,
+        p_contact_id: lead.contact_id || null,
+        p_lead_id: lead.id,
+        p_created_by: createdBy,
+      });
+      setTasks(prev => [{ ...row, assignee_name: null, contact_name: null }, ...prev]);
+      setNewTaskTitle('');
+      ok('Task added');
+    } catch {
+      err('Failed to add the task');
+    } finally {
+      setAddingTask(false);
+    }
+  }, [db, newTaskTitle, lead.contact_id, lead.id, createdBy]);
+
+  const toggleTaskStatus = useCallback(async (task) => {
+    const next = task.status === 'done' ? 'open' : 'done';
+    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: next } : t)));
+    try {
+      await db.rpc('set_task_status', { p_task_id: task.id, p_status: next, p_actor_id: actorId });
+    } catch {
+      setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, status: task.status } : t)));
+      err('Failed to update task');
+    }
+  }, [db, actorId]);
+
+  const stageNameFor = useCallback((stageId) => stages.find(s => s.id === stageId)?.name || 'Unknown stage', [stages]);
+
   return (
     <div className="crm-panel-overlay" onClick={onClose}>
       <div className="crm-panel" onClick={e => e.stopPropagation()}>
         <div className="crm-panel-header">
           <div>
-            <div className="crm-panel-title">{leadLabel(lead)}</div>
-            {lead.caller_number && (
+            <div className="crm-panel-title">
+              {lead.contact?.name || !lead.caller_number ? leadLabel(lead) : (
+                <a
+                  href={`tel:${lead.caller_number}`}
+                  className="crm-call-link"
+                  onClick={() => logClickToCall(lead.caller_number)}
+                >
+                  📞 {lead.caller_number}
+                </a>
+              )}
+            </div>
+            {lead.contact?.name && lead.caller_number && (
               <a
                 href={`tel:${lead.caller_number}`}
                 className="crm-call-link crm-panel-subtitle"
@@ -550,16 +736,34 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         </div>
 
         <div className="crm-panel-section">
-          <div className="crm-panel-row"><span>Source</span><span>{lead.source_type === 'call' ? 'Call' : 'Web form'}{lead.source ? ` · ${lead.source}` : ''}{lead.campaign ? ` · ${lead.campaign}` : ''}</span></div>
+          <div className="crm-panel-row"><span>Source</span><span>{sourceLine(lead)}</span></div>
           {lead.value != null && <div className="crm-panel-row"><span>Value</span><span>{formatMoney(lead.value)}</span></div>}
           <div className="crm-panel-row"><span>Occurred</span><span>{lead.occurred_at ? new Date(lead.occurred_at).toLocaleString() : '—'}</span></div>
         </div>
+
+        {submittedRows.length > 0 && (
+          <div className="crm-panel-section">
+            <div className="crm-panel-section-title">Submitted answers</div>
+            <div className="crm-answer-list">
+              {submittedRows.map(row => (
+                <div key={row.key}>
+                  <span className="crm-panel-label">{row.label}</span>
+                  <p className="crm-answer-value">{row.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {!lead.contact_id && (
           <div className="crm-panel-section">
             {!promoting ? (
               <>
-                <p className="crm-panel-empty">Not a customer yet — raw calls stay contact-free until you qualify them.</p>
+                <p className="crm-panel-empty">
+                  {lead.source_type === 'call'
+                    ? 'Not a customer yet — raw calls stay contact-free until you qualify them.'
+                    : 'Not linked to a contact yet — a lead stays contact-free until you qualify it.'}
+                </p>
                 <button className="crm-btn crm-btn-primary" onClick={() => setPromoting(true)}>+ Add as customer</button>
               </>
             ) : (
@@ -572,9 +776,95 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   <button className="crm-btn crm-btn-primary" onClick={promote} disabled={saving}>{saving ? 'Adding…' : 'Add as customer'}</button>
                   <button className="crm-btn crm-btn-ghost" onClick={() => setPromoting(false)}>Cancel</button>
                 </div>
-                <p className="crm-panel-empty">Creates a contact from this number ({lead.caller_number}) and links this lead to it.</p>
+                <p className="crm-panel-empty">
+                  {lead.caller_number
+                    ? `Creates a contact from this number (${lead.caller_number}) and links this lead to it.`
+                    : 'Creates a contact and links this lead to it.'}
+                </p>
               </>
             )}
+          </div>
+        )}
+
+        <div className="crm-panel-section">
+          <div className="crm-panel-section-title">Notes</div>
+          <textarea
+            className="crm-input crm-task-textarea"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Anything worth remembering about this lead…"
+            rows={3}
+          />
+          <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
+            <button
+              className="crm-btn crm-btn-primary crm-btn-sm"
+              onClick={saveNotes}
+              disabled={savingNotes || (notes.trim() || '') === (lead.notes || '')}
+            >
+              {savingNotes ? 'Saving…' : 'Save note'}
+            </button>
+          </div>
+        </div>
+
+        <div className="crm-panel-section">
+          <div className="crm-panel-section-title">Tasks</div>
+          {tasksLoading ? (
+            <TabLoading />
+          ) : (
+            <>
+              {tasks.length === 0 && <p className="crm-panel-empty">No tasks for this lead yet.</p>}
+              {tasks.length > 0 && (
+                <ul className="crm-task-list">
+                  {tasks.map(task => (
+                    <li key={task.id} className={`crm-task-row${task.status === 'done' ? ' done' : ''}`}>
+                      <button
+                        className={`crm-task-check${task.status === 'done' ? ' checked' : ''}`}
+                        onClick={() => toggleTaskStatus(task)}
+                        role="checkbox"
+                        aria-checked={task.status === 'done'}
+                        aria-label={task.status === 'done' ? 'Reopen task' : 'Mark done'}
+                      >
+                        {task.status === 'done' && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        )}
+                      </button>
+                      <span className="crm-task-body">
+                        <span className="crm-task-title">{task.title}</span>
+                        {task.due_at && <span className="crm-task-tags"><span className="crm-task-due">Due {new Date(task.due_at).toLocaleDateString()}</span></span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
+                <input
+                  className="crm-input"
+                  value={newTaskTitle}
+                  onChange={e => setNewTaskTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addTask(); }}
+                  placeholder="Follow up call, send estimate…"
+                  aria-label="New task title"
+                />
+                <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={addTask} disabled={addingTask || !newTaskTitle.trim()}>
+                  {addingTask ? 'Adding…' : '+ Add'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {stageHistory.length > 0 && (
+          <div className="crm-panel-section">
+            <div className="crm-panel-section-title">Stage history</div>
+            {stageHistory.map(h => (
+              <div className="crm-panel-row" key={h.id}>
+                <span>
+                  {h.from_stage_id ? `${stageNameFor(h.from_stage_id)} → ${stageNameFor(h.stage_id)}` : `Entered ${stageNameFor(h.stage_id)}`}
+                  {h.lost_reason ? ` — ${h.lost_reason}` : ''}
+                </span>
+                <span>{h.moved_at ? new Date(h.moved_at).toLocaleDateString() : '—'}</span>
+              </div>
+            ))}
           </div>
         )}
 
