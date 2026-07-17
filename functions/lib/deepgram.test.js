@@ -11,7 +11,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  ./deepgram.js (formatDeepgramTranscript)
+ *   Internal:  ./deepgram.js (formatDeepgramTranscript, turnsToFlatText)
  *
  * NOTES / GOTCHAS:
  *   - Written test-first (CRM roadmap "test-first" gate): this file was committed
@@ -20,7 +20,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { formatDeepgramTranscript, buildTranscriptAnalysis } from './deepgram.js';
+import { formatDeepgramTranscript, buildTranscriptAnalysis, turnsToFlatText } from './deepgram.js';
 
 // A trimmed-down shape of a real Deepgram pre-recorded response with
 // diarize=true + smart_format (paragraphs, each tagged with a speaker index).
@@ -226,5 +226,35 @@ describe('buildTranscriptAnalysis', () => {
     };
     expect(formatDeepgramTranscript(paraTextOnly)).toBe('Speaker 0: Hello.');
     expect(buildTranscriptAnalysis(paraTextOnly)).not.toBeNull();
+  });
+});
+
+describe('turnsToFlatText', () => {
+  it('joins speaker-labeled turns with a blank line between paragraphs', () => {
+    const turns = [
+      { speaker: 'Agent', text: 'Thank you for calling the Pros.' },
+      { speaker: 'Customer', text: 'Hi, I have a mold question.' },
+    ];
+    expect(turnsToFlatText(turns)).toBe(
+      'Agent: Thank you for calling the Pros.\n\nCustomer: Hi, I have a mold question.'
+    );
+  });
+
+  it('reflects renamed speakers (e.g. after the Claude naming/clean-up passes)', () => {
+    const turns = [
+      { speaker: 'Ben', text: 'Thanks for calling.' },
+      { speaker: 'Colton', text: 'I have a flood.' },
+    ];
+    expect(turnsToFlatText(turns)).toBe('Ben: Thanks for calling.\n\nColton: I have a flood.');
+  });
+
+  it('omits the label (but keeps the text) when a turn has no speaker', () => {
+    expect(turnsToFlatText([{ text: 'Just some text.' }])).toBe('Just some text.');
+  });
+
+  it('skips blank turns and returns null when nothing usable remains', () => {
+    expect(turnsToFlatText([{ speaker: 'Agent', text: '   ' }])).toBeNull();
+    expect(turnsToFlatText([])).toBeNull();
+    expect(turnsToFlatText(null)).toBeNull();
   });
 });

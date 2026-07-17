@@ -21,7 +21,8 @@
  *   Packages:      none (platform fetch)
  *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/google-drive.js
  *                  (getActorEmployee), ../lib/callrail-api.js (resolveCallRecording),
- *                  ../lib/deepgram.js (formatDeepgramTranscript)
+ *                  ../lib/deepgram.js (formatDeepgramTranscript, turnsToFlatText),
+ *                  ../lib/callCleanup.js (the clean-up + summarize pass)
  *   External API:  CallRail (the call's recording), Deepgram (api.deepgram.com)
  *   Data:          reads  → inbound_leads (recording_url, transcription,
  *                           transcript_analysis), integration_credentials
@@ -31,7 +32,8 @@
  *                           a blank linked contact's name (via set_lead_caller_name);
  *                           system_events, worker_runs
  *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
- *                  (Claude Haiku — names the Agent/Customer speakers, best-effort)
+ *                  (Claude Haiku — names the Agent/Customer speakers, then cleans
+ *                  up wording + writes the summary; both best-effort)
  *
  * NOTES / GOTCHAS:
  *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
@@ -41,6 +43,15 @@
  *     resegmentSpeakers() rebuilds the turns with Claude. The structured result
  *     (turns + intelligence) is built by buildTranscriptAnalysis() and stored in
  *     inbound_leads.transcript_analysis; the flat text stays too.
+ *   - After speaker naming/resegmentation, cleanAndSummarize() makes ONE MORE
+ *     Claude call to (a) fix obvious speech-to-text mistakes turn-by-turn without
+ *     changing what was said, and (b) replace Deepgram's generic one-line
+ *     summarize=v2 summary with a restoration-business-aware one (damage type,
+ *     urgency, key details, call outcome). Best-effort like naming — any failure
+ *     leaves the transcript/summary exactly as Deepgram produced them. The flat
+ *     `transcription` text is then rebuilt from the final turns (turnsToFlatText)
+ *     so it matches the named/cleaned speaker labels and wording, not Deepgram's
+ *     raw "Speaker 1/2" output.
  *   - We hand Deepgram the SIGNED CDN URL when CallRail gives us one, so Deepgram
  *     fetches the audio itself and we don't buffer a long call in the Worker.
  *     Only when CallRail streams audio directly do we download the bytes and POST
@@ -56,11 +67,12 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
-import { formatDeepgramTranscript, buildTranscriptAnalysis } from '../lib/deepgram.js';
+import { formatDeepgramTranscript, buildTranscriptAnalysis, turnsToFlatText } from '../lib/deepgram.js';
 import {
   buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities,
   needsResegment, buildResegmentPrompt, parseResegmentedTurns,
 } from '../lib/speakerNaming.js';
+import { buildCleanupPrompt, parseCleanupResponse, applyCleanup } from '../lib/callCleanup.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -86,6 +98,23 @@ const DEEPGRAM_URL =
 // System prompt for the re-segmentation pass (mono-recording rescue). Shares the
 // Agent/Customer framing with NAMING_SYSTEM but asks Claude to REBUILD the turns.
 const RESEGMENT_SYSTEM = `You are given a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that was NOT split by speaker. One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting. Split the words into an ordered list of speaker turns and label each. Return ONLY the requested JSON — no prose, no markdown.`;
+
+// System prompt for the clean-up + summarize pass (runs AFTER speaker naming/
+// resegmentation, so speaker labels here are already correct — this pass only
+// touches wording and writes the summary). Replaces Deepgram's generic
+// summarize=v2 output with a business-aware one; fixes obvious speech-to-text
+// errors in each turn without changing what was actually said.
+const CLEANUP_MODEL = NAMING_MODEL; // same cheap/fast model as naming
+const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). The transcript came from automatic speech-to-text and may contain mis-heard words, dropped words, or garbled phrases — but the speaker labels are already correct, so do not change who said what.
+
+1) For each numbered turn, fix obvious transcription errors using context (a mis-heard word that makes no sense in context, a garbled but otherwise-clear detail). Keep the speaker's actual wording, tone, and meaning intact — do NOT paraphrase, do NOT invent content, do NOT remove real information. Trim filler ("um", "uh") only when it doesn't change the meaning. If a turn is already clean, return it unchanged.
+
+2) Write a 2-4 sentence summary a busy office manager can scan in five seconds: the type of damage/service (water, fire, mold, roofing, remodel, etc.), urgency, any key details mentioned (location, timing), and how the call ended (e.g. appointment scheduled, quote requested, caller will call back, not a fit, voicemail).
+
+Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>"}
+
+The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -140,6 +169,34 @@ async function resegmentSpeakers(env, analysis, transcriptText) {
     return { analysis: { ...analysis, turns: parsed.turns, speakerMode: 'resegment' }, callerName: parsed.caller_name };
   } catch {
     return { analysis, callerName: null };
+  }
+}
+
+// Best-effort: ask Claude to fix obvious speech-to-text mistakes in each turn's
+// wording and write a restoration-business-aware summary (replacing Deepgram's
+// generic one-liner). Runs AFTER speaker naming/resegmentation so the prompt's
+// speaker labels are already correct. Any failure (no key, API error, unparseable
+// answer, turn-count mismatch) leaves the analysis exactly as-is — this is an
+// enrichment, never a hard dependency of transcription.
+async function cleanAndSummarize(env, analysis) {
+  const turns = analysis?.turns || [];
+  const usableCount = turns.filter((t) => t && typeof t.text === 'string' && t.text.trim()).length;
+  const prompt = buildCleanupPrompt(turns);
+  if (!env.ANTHROPIC_API_KEY || !prompt) return analysis;
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 4096, system: CLEANUP_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) return analysis;
+    const data = await res.json().catch(() => null);
+    const out = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const cleaned = parseCleanupResponse(out, usableCount);
+    if (!cleaned) return analysis;
+    return applyCleanup(analysis, cleaned);
+  } catch {
+    return analysis;
   }
 }
 
@@ -206,9 +263,18 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     callerName = named.callerName;
   }
 
+  // Fix obvious speech-to-text errors turn-by-turn and replace Deepgram's generic
+  // summary with a restoration-business-aware one — best-effort, runs last so it
+  // sees the final (named/resegmented) speaker labels.
+  analysis = await cleanAndSummarize(env, analysis);
+
+  // Keep the flat display transcript in sync with the named + cleaned turns
+  // (falls back to Deepgram's raw output when there are no usable turns at all).
+  const flatText = turnsToFlatText(analysis.turns) || text;
+
   await db.rpc('set_lead_transcription', {
     p_lead_id: lead.id,
-    p_transcription: text,
+    p_transcription: flatText,
     p_source: 'deepgram',
     p_analysis: analysis,
   });
@@ -221,7 +287,7 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
-  return { id: lead.id, chars: text.length, transcription: text, analysis, callerName: callerName || null };
+  return { id: lead.id, chars: flatText.length, transcription: flatText, analysis, callerName: callerName || null };
 }
 
 // ─── SECTION: Handler ──────────────
