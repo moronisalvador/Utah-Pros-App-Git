@@ -722,9 +722,14 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         {submittedRows.length > 0 && (
           <div className="crm-panel-section">
             <div className="crm-panel-section-title">Submitted answers</div>
-            {submittedRows.map(row => (
-              <div className="crm-panel-row" key={row.key}><span>{row.label}</span><span>{row.value}</span></div>
-            ))}
+            <div className="crm-answer-list">
+              {submittedRows.map(row => (
+                <div key={row.key}>
+                  <span className="crm-panel-label">{row.label}</span>
+                  <p className="crm-answer-value">{row.value}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -760,7 +765,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
             placeholder="Anything worth remembering about this lead…"
             rows={3}
           />
-          <div className="crm-panel-actions" style={{ paddingLeft: 0, paddingRight: 0 }}>
+          <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
             <button
               className="crm-btn crm-btn-primary crm-btn-sm"
               onClick={saveNotes}
@@ -801,7 +806,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   ))}
                 </ul>
               )}
-              <div className="crm-panel-actions" style={{ paddingLeft: 0, paddingRight: 0, marginTop: 'var(--space-3)' }}>
+              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
                 <input
                   className="crm-input"
                   value={newTaskTitle}
