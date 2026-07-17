@@ -5419,6 +5419,29 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
   `stages` prop. Zero new CSS (all four reuse existing `crm-panel-*`/`crm-task-*`/`crm-input` classes)
   and zero schema changes — `form_data`, `notes`, `crm_tasks`, and `lead_stage_history` all already
   existed with `authenticated`-scoped policies from earlier CRM-wave phases.
+  - Also polished (same date, same panel): the header no longer shows a contact-less lead's phone
+    number twice (title falls back to it via `leadLabel()`, and the subtitle used to unconditionally
+    repeat it as a `tel:` link — now the title itself becomes the link and the subtitle is skipped);
+    the Source row (`sourceLine()`) dedupes a `source`/`campaign` pair that are the same string
+    (common for CallRail leads with no distinct campaign tag, e.g. "Call · Google My Business ·
+    Google My Business"); the "not a customer yet" copy is source-type-aware instead of always
+    saying "raw calls"; and the `!lead.contact_id` "Customer" block got a `crm-panel-section-title`
+    heading + `crm-btn-sm` sizing to match every other section in the panel (it was previously the
+    only section with neither, reading like a floating card rather than a section).
+- `src/components/crm/ActivityTimeline.jsx` + new `src/lib/transcript.js` (2026-07-17) — a call's
+  activity entry (`get_contact_activity`'s `'lead'` arm, `body = COALESCE(il.transcription,
+  il.notes)`) used to render a full Deepgram-diarized transcript ("Speaker 1: ... Speaker 2: ...")
+  as one unbroken paragraph. `parseTranscript()` (pure, in the new `src/lib/transcript.js` — kept out
+  of `ActivityTimeline.jsx` specifically so it's unit-testable without a Supabase env stub, since
+  that file transitively imports `AuthContext`/`realtime.js`) splits it into ordered `{speaker,
+  line}` turns; `ActivityBody` (a new sub-component, one per timeline item so expand state is
+  independent) renders them as labeled turns, collapsed to the first 2 with a "Show full transcript
+  (N lines)" toggle. Anything that isn't a recognizable 2+-turn back-and-forth (SMS bodies, notes,
+  a single-turn fragment) falls back to plain text, itself clamped at 220 chars with a "Show more"
+  toggle when long. New CSS: `.crm-transcript`/`.crm-transcript-turn`/`.crm-transcript-speaker`/
+  `.crm-transcript-toggle`, all on existing `--crm-*` tokens. Shared component — the same fix reaches
+  the Contacts detail screen (Phase 6a's `ContactDetail.jsx`) automatically. Unit-tested:
+  `src/lib/transcript.test.js`.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
