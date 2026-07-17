@@ -114,6 +114,19 @@ function turnsFromParagraphs(paras) {
     .filter(Boolean);
 }
 
+// Rebuild the flat display transcript from an analysis's turns — used after
+// speaker naming/resegmentation and the Claude clean-up pass so the flat
+// inbound_leads.transcription text matches what the turns actually say now
+// (rather than staying frozen at Deepgram's raw "Speaker 1/2" output). Same
+// "<speaker>: <text>" per-paragraph shape as formatDeepgramTranscript.
+export function turnsToFlatText(turns) {
+  if (!Array.isArray(turns)) return null;
+  const lines = turns
+    .filter((t) => t && typeof t.text === 'string' && t.text.trim())
+    .map((t) => (t.speaker ? `${t.speaker}: ${t.text.trim()}` : t.text.trim()));
+  return lines.length ? lines.join('\n\n') : null;
+}
+
 /**
  * Turn a Deepgram response into the structured analysis stored in
  * inbound_leads.transcript_analysis. Returns null when there's no usable
