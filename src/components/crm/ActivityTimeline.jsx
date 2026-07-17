@@ -18,8 +18,10 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/transcript
- *              (parseTranscript — pure, unit-tested separately)
- *   Data:      reads → get_contact_activity RPC · writes → none
+ *              (turnsFromAnalysis + parseTranscript — pure, unit-tested
+ *              separately)
+ *   Data:      reads → get_contact_activity RPC (meta.transcript_analysis,
+ *              2026-07-17 additive replace) · writes → none
  *
  * NOTES / GOTCHAS:
  *   - Self-loading: pass a contactId and it fetches its own data. Caller is
@@ -27,16 +29,20 @@
  *     message when contactId is falsy) — this component assumes it has an id.
  *   - Behavior-identical to the original inline Leads timeline: same RPC, same
  *     error toast, same .crm-timeline markup and empty/loading copy.
- *   - A call's body (transcription) renders as labeled speaker turns via
- *     ActivityBody/parseTranscript, collapsed to a short preview with a
- *     "Show full transcript" toggle — anything that isn't a real
- *     back-and-forth (including plain SMS/note bodies) just clamps at
- *     BODY_PREVIEW_CHARS with a "Show more" toggle instead.
+ *   - A call's body (transcription) renders as labeled speaker turns,
+ *     collapsed to a short preview with a "Show full transcript" toggle.
+ *     Speakers are labeled "Utah Pros"/"Customer" — ActivityBody prefers
+ *     item.meta.transcript_analysis (the backend's own verified
+ *     agent/customer identification, turnsFromAnalysis) and only falls back
+ *     to guessing from the flat "Speaker 1/2" text (parseTranscript) when
+ *     that structured data isn't there yet (an older, un-enriched call).
+ *     Anything that isn't a real back-and-forth (including plain SMS/note
+ *     bodies) just clamps at BODY_PREVIEW_CHARS with a "Show more" toggle.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { parseTranscript } from '@/lib/transcript';
+import { turnsFromAnalysis, parseTranscript } from '@/lib/transcript';
 
 const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
 
@@ -47,9 +53,12 @@ const TRANSCRIPT_PREVIEW_TURNS = 2;
 // (collapsed to a short preview), everything else as plain text (also
 // clamped when long). Its own component so each timeline item's
 // expand/collapse state is independent.
-function ActivityBody({ text }) {
+function ActivityBody({ text, analysis }) {
   const [expanded, setExpanded] = useState(false);
-  const turns = useMemo(() => parseTranscript(text), [text]);
+  // Prefer the backend's already-verified Utah Pros/Customer identification
+  // (transcript_analysis); fall back to the flat-text best-effort guess only
+  // when that isn't available yet — see src/lib/transcript.js.
+  const turns = useMemo(() => turnsFromAnalysis(analysis) || parseTranscript(text), [analysis, text]);
 
   if (turns) {
     const visible = expanded ? turns : turns.slice(0, TRANSCRIPT_PREVIEW_TURNS);
@@ -58,7 +67,7 @@ function ActivityBody({ text }) {
         <div className="crm-transcript">
           {visible.map((t, i) => (
             <div className="crm-transcript-turn" key={i}>
-              <span className="crm-transcript-speaker">Speaker {t.speaker}</span>
+              <span className="crm-transcript-speaker">{t.speaker}</span>
               <span>{t.line}</span>
             </div>
           ))}
@@ -119,7 +128,7 @@ export default function ActivityTimeline({ contactId }) {
           <span className="crm-timeline-badge" data-type={item.activity_type}>{item.activity_type}</span>
           <div className="crm-timeline-body">
             <div className="crm-timeline-title">{item.title}</div>
-            {item.body && <ActivityBody text={item.body} />}
+            {item.body && <ActivityBody text={item.body} analysis={item.meta?.transcript_analysis} />}
             <div className="crm-timeline-time">{item.occurred_at ? new Date(item.occurred_at).toLocaleString() : '—'}</div>
           </div>
         </div>
