@@ -11,6 +11,8 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
+import { markBundleReady } from '@/lib/nativeUpdater';
+import { Capacitor } from '@capacitor/core';
 import {
   checkBiometricAvailable,
   isBiometricEnabled,
@@ -617,8 +619,11 @@ export default function App() {
     enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();
-    // notifyAppReady() is already called in src/main.jsx before React mounts —
-    // that's the Capgo-recommended placement and earlier = safer rollback behavior
+    // Confirm the OTA (Capgo) bundle booted OK now that React has actually
+    // mounted — a stronger "this bundle works" signal than the module-load
+    // notifyAppReady() in src/main.jsx. Guarded so it's a true no-op on
+    // web/PWA; markBundleReady() is idempotent, so the two calls don't conflict.
+    if (Capacitor.isNativePlatform()) markBundleReady();
   }, []);
   return (
     <ThemeProvider>

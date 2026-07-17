@@ -1,6 +1,9 @@
 // POST /api/send-push
 // Sends an APNs push to every device token associated with an employee.
 //
+// Auth: requires an admin/manager session (requireRole) — pushing to an
+//       arbitrary employee_id is privileged; a valid session alone is not enough.
+//
 // Body: { employee_id: uuid, title: string, body: string, data?: object }
 //
 // Requires these env vars (set in Cloudflare Pages → Settings → Environment Variables):
@@ -14,7 +17,13 @@
 // safely without accidentally hitting Apple with bad credentials.
 
 import { supabase } from '../lib/supabase.js';
+import { requireRole } from '../lib/auth.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+
+// Server-side role gate: sending a push to an ARBITRARY employee_id is a
+// privileged action (a valid session alone is not enough — workers-standard.md
+// §1). Mirrors the device_tokens RLS admin tier ('admin','project_manager').
+const PUSH_SEND_ROLES = ['admin', 'project_manager'];
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -23,8 +32,9 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  const authCheck = await requireAuth(request, env);
-  if (authCheck.error) return jsonResponse({ error: authCheck.error }, authCheck.status, request, env);
+  const db = supabase(env);
+  const auth = await requireRole(request, env, db, PUSH_SEND_ROLES);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const cfg = readApnsConfig(env);
   if (!cfg.ok) {
@@ -40,7 +50,6 @@ export async function onRequestPost(context) {
     return jsonResponse({ error: 'employee_id, title, and body are required' }, 400, request, env);
   }
 
-  const db = supabase(env);
   const tokens = await db.select(
     'device_tokens',
     `employee_id=eq.${employee_id}&platform=eq.ios&select=id,token`
@@ -77,14 +86,20 @@ export async function onRequestPost(context) {
       body: payload,
     });
 
-    // 410 = token invalid/unregistered; prune from DB
+    // 410 Gone = token invalid/unregistered; prune from DB
     if (res.status === 410) {
-      try { await db.delete('device_tokens', `id=eq.${row.id}`); } catch {}
+      try { await db.delete('device_tokens', `id=eq.${row.id}`); } catch { /* best-effort prune */ }
       return { token_id: row.id, status: 410, pruned: true };
     }
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
+      // 400 BadDeviceToken = permanently invalid token (wrong APNs env or a
+      // malformed/stale token) — prune it like a 410 so it stops being retried.
+      if (res.status === 400 && /BadDeviceToken/i.test(errBody)) {
+        try { await db.delete('device_tokens', `id=eq.${row.id}`); } catch { /* best-effort prune */ }
+        return { token_id: row.id, status: 400, pruned: true, error: errBody };
+      }
       return { token_id: row.id, status: res.status, error: errBody };
     }
 
@@ -156,19 +171,4 @@ function b64url(bytes) {
 
 function b64urlJson(obj) {
   return b64url(new TextEncoder().encode(JSON.stringify(obj)));
-}
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
-
-async function requireAuth(request, env) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true };
 }
