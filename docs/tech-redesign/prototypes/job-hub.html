@@ -2494,7 +2494,9 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
     var tg = e.target.closest('[data-toggle]'); if (tg){
       var attr = tg.hasAttribute('aria-checked') ? 'aria-checked' : 'aria-pressed';
       var grp = tg.getAttribute('data-group');
-      if (grp && attr==='aria-pressed'){ var sibs=(tg.closest('[data-group-scope]')||stage).querySelectorAll('[data-group="'+grp+'"]'); for(var i=0;i<sibs.length;i++) sibs[i].setAttribute('aria-pressed','false'); tg.setAttribute('aria-pressed','true'); }
+      if (grp && attr==='aria-pressed'){ var sibs=(tg.closest('[data-group-scope]')||stage).querySelectorAll('[data-group="'+grp+'"]'); for(var i=0;i<sibs.length;i++) sibs[i].setAttribute('aria-pressed','false'); tg.setAttribute('aria-pressed','true');
+        // radio-style content swap: each sibling's OWN bound data-toggle target follows ITS aria-pressed
+        for(var k=0;k<sibs.length;k++){ var st=sibs[k].getAttribute('data-toggle'); if(st){ var starget=document.getElementById(st); if(starget) starget.hidden = sibs[k].getAttribute('aria-pressed')!=='true'; } } }
       else { tg.setAttribute(attr, tg.getAttribute(attr)==='true'?'false':'true'); }
       var t = tg.getAttribute('data-toggle'); if (t) { var target=document.getElementById(t); if(target) target.hidden = tg.getAttribute(attr)!=='true'; }
     }
