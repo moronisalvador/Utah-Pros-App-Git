@@ -191,7 +191,7 @@ same convention as this repo's other "owner-gated" items.
 ## 6. Status
 
 - [x] Phase F1 — code shipped 2026-07-17 (PR into `dev`); **still owner-gated** on Xcode build-verify (cannot be compile-verified in the Linux env — see §5 / F1 block)
-- [ ] Phase A — dispatched 2026-07-17
+- [x] Phase A — built 2026-07-17: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning, guarded `markBundleReady()` on App mount. PR into `dev` open (owner merges).
 - [ ] Phase B — dispatched 2026-07-17
 - [ ] Phase D — dispatched 2026-07-17
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
