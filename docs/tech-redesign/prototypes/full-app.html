@@ -3556,10 +3556,12 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
             </div>
           </div>
 
-          <!-- NEW CLAIM: a fresh folder — its number is assigned automatically on save, nothing to type. -->
+          <!-- NEW CLAIM: a fresh folder — its number is assigned automatically on save, nothing to type.
+               Carrier is genuinely OPTIONAL (owner correction, 2026-07-18) — not every job has insurance;
+               leaving it blank simply means no carrier, no forced "out of pocket" tap needed. -->
           <div id="claim-new" hidden style="margin-top:16px">
             <div class="fgroup">
-              <label class="flabel">Carrier <span class="opt" style="color:var(--red)">*</span></label>
+              <label class="flabel">Carrier <span class="opt">· optional, if there's insurance</span></label>
               <button class="fpick is-empty" type="button" data-sheet="sheet-carrier"><span>Select carrier</span><svg class="ic fpick-chev" width="20" height="20" aria-hidden="true"><use href="#i-chev"/></svg></button>
             </div>
             <div class="fgroup">
