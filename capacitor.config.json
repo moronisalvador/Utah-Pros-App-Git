@@ -11,7 +11,8 @@
   },
   "plugins": {
     "SplashScreen": {
-      "launchAutoHide": false,
+      "launchAutoHide": true,
+      "launchShowDuration": 2500,
       "backgroundColor": "#ffffff",
       "iosSplashResourceName": "Splash",
       "splashFullScreen": true,
