@@ -37,6 +37,10 @@
  *     the return-confirm auto-cancels after 3 seconds.
  *   - An appointment can have multiple visits; prior completed entries render as
  *     a "Visit N" history summary above the active station row.
+ *   - A synchronous ref lock drops a double/triple OMW tap client-side; a
+ *     residual 23505 unique_violation on 'omw' (a duplicate tap that raced the
+ *     DB's one-open-clock guard) is treated as a harmless no-op and refreshed
+ *     silently instead of shown as an error.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -278,9 +282,12 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
         const pc = await runOmwPrecheck(db, appt.id, employee.id);
         if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
         else toast(t('toastClockElsewhere'), 'error');
-      } else if (action === 'omw' && msg.includes('23505')) {
-        // A duplicate OMW tap raced the DB's uq_jte_one_open_clock_per_employee guard —
-        // an earlier tap already clocked this in. Harmless; just refresh quietly.
+      } else if (action === 'omw' && msg.includes('uq_jte_one_open_clock_per_employee')) {
+        // A duplicate OMW tap raced the DB's one-open-clock guard — an earlier tap
+        // already clocked this in. Harmless; just refresh quietly. Matched on the
+        // specific constraint name (not the bare 23505 code) so an unrelated future
+        // unique-violation still falls through to the error toast below.
+        console.warn('TimeTracker: duplicate OMW tap absorbed', msg);
         await loadEntries();
         if (onUpdate) onUpdate();
         ok = true;
