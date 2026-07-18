@@ -11,6 +11,13 @@ as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) 
 
 ## ★ STATUS & TOMORROW'S TO-DO (read this first) ★
 
+> **⚠ HANDOFF TO LOCAL (2026-07-18):** the owner is moving this work to a local Claude session on
+> his MacBook (Safari/WebKit, iOS Simulator, Xcode, real iPhone). **A new local session must read
+> [`LOCAL-SESSION-HANDOFF.md`](LOCAL-SESSION-HANDOFF.md) FIRST** — it adapts the working loop
+> (WebKit-first verification, local phone review instead of artifact round-trips) and carries the
+> machine preflight. Plan/arc/deliverables unchanged; only where + how verification happens changes.
+> One branch, one line of work: never run cloud and local sessions on this branch simultaneously.
+
 **LOCKED / done this session** (prototypes committed + pushed on branch
 `claude/upr-field-tech-ux-flows-2-zt5bg4`; folded into `TECH-DESIGN-STANDARD.md` §12):
 - **Schedule** (month/day + Add-visit appointment creation) — `schedule.html`, §12.3/§12.6.

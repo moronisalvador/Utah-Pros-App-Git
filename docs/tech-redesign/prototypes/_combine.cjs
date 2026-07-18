@@ -1,5 +1,5 @@
 const fs=require('fs');
-const dir='/home/user/Utah-Pros-App-Git/docs/tech-redesign/prototypes/';
+const dir=__dirname+'/'; // path-independent: runs from any clone (cloud or local)
 const files=['schedule.html','job-hub.html','new-job-flow.html'];
 const src=Object.fromEntries(files.map(f=>[f,fs.readFileSync(dir+f,'utf8')]));
 
